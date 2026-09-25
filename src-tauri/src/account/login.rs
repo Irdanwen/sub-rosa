@@ -127,20 +127,12 @@ pub async fn account_login_open(
 /// shown, so an interrupted prompt leaves a recoverable browser fallback.
 #[tauri::command]
 pub async fn account_login_passkey(app: AppHandle, device_name: String) -> Result<(), AppError> {
-    #[cfg(not(any(
-        target_os = "android",
-        target_os = "ios",
-        target_os = "macos"
-    )))]
+    #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
     {
         let _ = (app, device_name);
         return Err(error("account_passkey_unavailable"));
     }
-    #[cfg(any(
-        target_os = "android",
-        target_os = "ios",
-        target_os = "macos"
-    ))]
+    #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
     {
         let login = account_login_open(app.clone(), device_name).await?;
         let pool = pool(&app).await?;
