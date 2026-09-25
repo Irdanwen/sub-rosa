@@ -7,13 +7,13 @@ use axum::{
 use june_api::{ApiLimits, ApiState, ApiStateParams, AttestationInfo, router};
 use june_config::{ModelPriceConfig, ModelProvider, ModelType, PriceUnit};
 use june_domain::{
-    AgentChatCompleter, AgentChatCompletion, AgentChatRequest, AudioDurationProbe, AuthError,
-    Authorization, AuthorizeRequest, CleanedText, Cleaner, CleanupRequest, Credits, DomainError,
-    GeneratedImage, GeneratedNote, GenerationRequest, Generator, ImageGenerationRequest,
-    ImageGenerator, IssueReport, IssueReportSink, OsAccountsClient, PlaceResult,
-    PlacesSearchRequest, PlacesSearchResults, PlacesSearcher, Receipt, TokenUsage, Transcriber,
-    Transcript, TranscriptionRequest, UserId, WebFetchRequest, WebFetchResult, WebFetcher,
-    WebSearchRequest, WebSearchResult, WebSearchResults, WebSearcher,
+    AgentChatCompleter, AgentChatCompletion, AgentChatRequest, AgentChatResponse, AgentChatStream,
+    AudioDurationProbe, AuthError, Authorization, AuthorizeRequest, CleanedText, Cleaner,
+    CleanupRequest, Credits, DomainError, GeneratedImage, GeneratedNote, GenerationRequest,
+    Generator, ImageGenerationRequest, ImageGenerator, IssueReport, IssueReportSink,
+    OsAccountsClient, PlaceResult, PlacesSearchRequest, PlacesSearchResults, PlacesSearcher,
+    Receipt, TokenUsage, Transcriber, Transcript, TranscriptionRequest, UserId, WebFetchRequest,
+    WebFetchResult, WebFetcher, WebSearchRequest, WebSearchResult, WebSearchResults, WebSearcher,
 };
 use june_services::{
     AgentChatService, AgentChatServiceDeps, DictateService, DictateServiceDeps, ImageService,
@@ -542,6 +542,63 @@ async fn integration_image_generate_returns_enveloped_image() -> Result<(), Box<
     assert_eq!(body["data"]["mimeType"], "image/png");
     assert_eq!(body["data"]["model"], "venice-sd35");
     assert_eq!(body["data"]["provider"], "fake-image");
+    Ok(())
+}
+
+#[tokio::test]
+async fn integration_buffered_chat_completion_carries_metering_headers()
+-> Result<(), Box<dyn Error>> {
+    let response = send(json_request(
+        "/v1/chat/completions",
+        &serde_json::json!({
+            "model": "text-model",
+            "messages": [{ "role": "user", "content": "hi" }],
+        }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["x-june-prompt-tokens"], "100");
+    assert_eq!(response.headers()["x-june-completion-tokens"], "100");
+    Ok(())
+}
+
+/// A streamed completion answers before its usage exists, so it carries no
+/// metering headers; the shell reads the usage from the final frame instead
+/// (ADR-0063).
+#[tokio::test]
+async fn integration_streamed_chat_completion_relays_the_stream_without_metering_headers()
+-> Result<(), Box<dyn Error>> {
+    let response = send(json_request(
+        "/v1/chat/completions",
+        &serde_json::json!({
+            "model": "text-model",
+            "stream": true,
+            "messages": [{ "role": "user", "content": "hi" }],
+        }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/event-stream"
+    );
+    assert!(
+        !response
+            .headers()
+            .keys()
+            .any(|name| name.as_str().starts_with("x-june-")),
+        "headers: {:?}",
+        response.headers()
+    );
+    let body = to_bytes(response.into_body(), usize::MAX).await?;
+    assert_eq!(
+        String::from_utf8(body.to_vec())?,
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"
+    );
     Ok(())
 }
 
@@ -1086,10 +1143,27 @@ struct FakeChatCompleter;
 
 #[async_trait]
 impl AgentChatCompleter for FakeChatCompleter {
-    async fn complete(
-        &self,
-        _request: AgentChatRequest,
-    ) -> Result<AgentChatCompletion, DomainError> {
+    async fn complete(&self, request: AgentChatRequest) -> Result<AgentChatResponse, DomainError> {
+        if request
+            .body
+            .get("stream")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            let frames = [
+                "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+                "data: [DONE]\n\n",
+            ];
+            return Ok(AgentChatStream {
+                body: Box::pin(futures_util::stream::iter(
+                    frames.map(|frame| bytes::Bytes::from_static(frame.as_bytes())),
+                )),
+                content_type: "text/event-stream".to_string(),
+                provider: "fake-chat".to_string(),
+                usage: Box::pin(std::future::ready(TokenUsage::default())),
+            }
+            .into());
+        }
         Ok(AgentChatCompletion {
             body: br#"{"id":"chatcmpl_test"}"#.to_vec(),
             content_type: "application/json".to_string(),
@@ -1099,7 +1173,8 @@ impl AgentChatCompleter for FakeChatCompleter {
                 completion_tokens: 100,
                 ..TokenUsage::default()
             },
-        })
+        }
+        .into())
     }
 }
 

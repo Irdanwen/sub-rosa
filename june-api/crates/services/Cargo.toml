@@ -22,4 +22,6 @@ tracing.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
 pretty_assertions.workspace = true

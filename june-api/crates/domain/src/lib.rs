@@ -1,6 +1,8 @@
 use async_trait::async_trait;
+use bytes::Bytes;
+use futures_core::Stream;
 use serde::{Deserialize, Serialize};
-use std::{fmt, time::Duration};
+use std::{fmt, future::Future, pin::Pin, time::Duration};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -78,6 +80,9 @@ pub struct CleanedText {
     pub usage: TokenUsage,
 }
 
+/// A chat completion read to the end before it is returned: the body is whole
+/// and the usage is known, so it can be settled before a byte reaches the
+/// client.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentChatCompletion {
@@ -85,6 +90,62 @@ pub struct AgentChatCompletion {
     pub content_type: String,
     pub provider: String,
     pub usage: TokenUsage,
+}
+
+/// The body of a streamed completion: the upstream's bytes, relayed as they
+/// arrive.
+///
+/// It always ends cleanly, never with an error item. A read failure halfway
+/// through is logged by the provider and the stream simply stops: the
+/// generation has already run (and been billed) upstream, so there is nothing
+/// to replay, and the client sees a stream that ended early (ADR-0063).
+pub type AgentChatByteStream = Pin<Box<dyn Stream<Item = Bytes> + Send + 'static>>;
+
+/// Resolves to what a streamed completion consumed, once its body stream has
+/// ended or been dropped. It waits on nothing else, so awaiting it never
+/// outlives the stream. A stream that carried no usage frame resolves to
+/// [`TokenUsage::default`].
+pub type AgentChatUsage = Pin<Box<dyn Future<Output = TokenUsage> + Send + 'static>>;
+
+/// A chat completion whose body is still arriving. The usage is only known at
+/// the end of the stream, so settlement has to wait for [`Self::usage`].
+pub struct AgentChatStream {
+    pub body: AgentChatByteStream,
+    pub content_type: String,
+    pub provider: String,
+    pub usage: AgentChatUsage,
+}
+
+impl fmt::Debug for AgentChatStream {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AgentChatStream")
+            .field("content_type", &self.content_type)
+            .field("provider", &self.provider)
+            .finish_non_exhaustive()
+    }
+}
+
+/// What an [`AgentChatCompleter`] hands back: a completion read whole, or one
+/// relayed as it is generated. A provider streams only when the client asked
+/// for a stream AND the upstream is really sending one; everything else stays
+/// buffered.
+#[derive(Debug)]
+pub enum AgentChatResponse {
+    Buffered(AgentChatCompletion),
+    Streamed(AgentChatStream),
+}
+
+impl From<AgentChatCompletion> for AgentChatResponse {
+    fn from(completion: AgentChatCompletion) -> Self {
+        Self::Buffered(completion)
+    }
+}
+
+impl From<AgentChatStream> for AgentChatResponse {
+    fn from(stream: AgentChatStream) -> Self {
+        Self::Streamed(stream)
+    }
 }
 
 /// What one metered turn consumed.
@@ -488,8 +549,7 @@ pub trait Cleaner: Send + Sync {
 
 #[async_trait]
 pub trait AgentChatCompleter: Send + Sync {
-    async fn complete(&self, request: AgentChatRequest)
-    -> Result<AgentChatCompletion, DomainError>;
+    async fn complete(&self, request: AgentChatRequest) -> Result<AgentChatResponse, DomainError>;
 }
 
 #[async_trait]

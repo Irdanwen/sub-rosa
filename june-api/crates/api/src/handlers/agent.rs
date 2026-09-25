@@ -7,12 +7,15 @@ use crate::{
 };
 use axum::{
     Json,
+    body::Body,
     extract::State,
     http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
 };
+use futures_util::StreamExt;
 use june_domain::{ModelId, ModelKind, TokenUsage};
-use june_services::AgentChatParams;
+use june_services::{AgentChatOutput, AgentChatParams};
+use std::convert::Infallible;
 
 /// Per-turn metering, republished as response headers.
 ///
@@ -24,6 +27,10 @@ use june_services::AgentChatParams;
 ///
 /// Additive only: nothing reads these but Sub Rosa's own shell, and a client
 /// that ignores them behaves exactly as before.
+///
+/// Only a buffered completion carries them. A streamed one sends its headers
+/// before the usage exists, so the shell reads the same numbers from the final
+/// SSE frame instead (ADR-0063).
 const PROMPT_TOKENS_HEADER: HeaderName = HeaderName::from_static("x-june-prompt-tokens");
 const COMPLETION_TOKENS_HEADER: HeaderName = HeaderName::from_static("x-june-completion-tokens");
 const CACHED_TOKENS_HEADER: HeaderName = HeaderName::from_static("x-june-cached-tokens");
@@ -86,13 +93,31 @@ pub(crate) async fn chat_completions(
             provider_credentials,
         })
         .await?;
-    let mut response_headers = usage_headers(output.completion.usage);
-    // `content_type` is a runtime string (it mirrors whatever the upstream
-    // sent), so it cannot be a const header value like the metering ones.
-    let content_type = HeaderValue::from_str(&output.completion.content_type)
-        .unwrap_or_else(|_| HeaderValue::from_static("application/json"));
-    response_headers.insert(CONTENT_TYPE, content_type);
-    Ok((StatusCode::OK, response_headers, output.completion.body).into_response())
+    match output {
+        AgentChatOutput::Settled { completion, .. } => {
+            let mut response_headers = usage_headers(completion.usage);
+            response_headers.insert(CONTENT_TYPE, content_type_header(&completion.content_type));
+            Ok((StatusCode::OK, response_headers, completion.body).into_response())
+        }
+        AgentChatOutput::Streaming { body, content_type } => {
+            // Relayed as it arrives. The provider ends the stream cleanly on a
+            // read failure, so the body never carries an error item.
+            let body = Body::from_stream(body.map(Ok::<_, Infallible>));
+            Ok((
+                StatusCode::OK,
+                [(CONTENT_TYPE, content_type_header(&content_type))],
+                body,
+            )
+                .into_response())
+        }
+    }
+}
+
+/// `content_type` is a runtime string (it mirrors whatever the upstream sent),
+/// so it cannot be a const header value like the metering ones.
+fn content_type_header(content_type: &str) -> HeaderValue {
+    HeaderValue::from_str(content_type)
+        .unwrap_or_else(|_| HeaderValue::from_static("application/json"))
 }
 
 #[cfg(test)]

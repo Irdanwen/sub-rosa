@@ -16,6 +16,7 @@ pub mod venice_augment;
 pub mod venice_image;
 pub mod wav_probe;
 
+mod agent_chat_stream;
 mod retry;
 mod transcription;
 
