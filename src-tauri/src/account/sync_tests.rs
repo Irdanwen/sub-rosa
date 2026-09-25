@@ -26,7 +26,7 @@ async fn insert_note(conn: &mut SqliteConnection, id: &str, title: &str) {
 }
 fn session_fixture() -> Session {
     Session {
-        base: "https://example.test".into(),
+        base: "https://localhost".into(),
         account: Account {
             id: "account-one".into(),
             email: "one@example.test".into(),
