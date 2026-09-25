@@ -176,9 +176,8 @@ export function createHermesActivityStore(
       subagents: new Map<string, BackgroundHermesActivity>(),
       lastEventAt: Date.now(),
       emittedAt: Number.NEGATIVE_INFINITY,
+      emittedState: undefined,
     };
-    const before = existing ? visibleState(existing) : undefined;
-
     // The mode can sharpen over a session's life (a sandboxed session opting
     // into unrestricted) but never downgrade: `mode` defaults to `sandboxed`
     // for an unresolved session, so re-asserting it on a late event would mask
@@ -196,15 +195,18 @@ export function createHermesActivityStore(
     // re-renders each subscriber. Only announce what a reader can see change:
     // the row itself, a subagent frame (it upserts the sub-list), an eviction,
     // or an age that moved by at least a second (the drawer shows "just now"
-    // for the first 45).
+    // for the first 45). The row is compared with what was last announced,
+    // not with its state before this frame: the pending count is read live and
+    // can move between two frames without either of them changing it.
+    const state = visibleState(row, pendingCountFor(sessionId));
     if (
-      before === undefined ||
       evicted ||
       event.kind === "background_activity" ||
-      visibleState(row) !== before ||
+      state !== row.emittedState ||
       row.lastEventAt - row.emittedAt >= AGE_EMIT_GRANULARITY_MS
     ) {
       row.emittedAt = row.lastEventAt;
+      row.emittedState = state;
       emit();
     }
   }
@@ -309,15 +311,20 @@ type InternalRecord = {
   /** `lastEventAt` as of the last emit, so an age-only change emits at most
    * once per {@link AGE_EMIT_GRANULARITY_MS}. */
   emittedAt: number;
+  /** {@link visibleState} as of the last emit. */
+  emittedState: string | undefined;
 };
 
 /** How far a row's last-event time may move before an otherwise unchanged row
  * is announced again. */
 const AGE_EMIT_GRANULARITY_MS = 1000;
 
-/** The row fields a reader renders, apart from its age and its subagents. */
-function visibleState(row: InternalRecord): string {
-  return `${row.phase}\u0000${row.currentTool ?? ""}\u0000${row.mode}\u0000${row.title ?? ""}`;
+/** The row fields a reader renders, apart from its age and its subagents. The
+ * pending count is not stored on the row (it is read live), so it is passed in. */
+function visibleState(row: InternalRecord, pendingActionCount: number): string {
+  return [row.phase, row.currentTool ?? "", row.mode, row.title ?? "", pendingActionCount].join(
+    "\u0000",
+  );
 }
 
 /**
