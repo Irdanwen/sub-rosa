@@ -174,3 +174,12 @@ the type docs now do.
   this decision leans on.
 - ADR-0008 — the direct-call pattern this deliberately does not use: cache
   telemetry rides the sidecar the completion already went through.
+
+## Addendum (2026-09-25): streamed turns carry no headers
+
+[ADR-0063](0063-the-sidecar-streams-agent-chat.md) makes the sidecar relay a
+real upstream stream as it arrives, so it answers before the usage exists. The
+six headers now describe buffered turns only (the `/router` rail, non-streaming
+clients). For a streamed turn the shell reads the same `usage` object from the
+final SSE frame as the body passes through, one line at a time, without
+buffering it. Headers still win whenever they are present.
