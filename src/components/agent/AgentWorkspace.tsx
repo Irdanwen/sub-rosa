@@ -367,6 +367,8 @@ import { createFrameBatcher, requestFrame } from "../../lib/frame-batch";
 import { createPostTurnRefresher } from "../../lib/post-turn-refresh";
 import { useEventCallback } from "../../lib/use-event-callback";
 import {
+  assignArtifactsToTurns,
+  attachmentPromptPath,
   chatTurnsSignature,
   mergeThinkingTurns,
   stabilizeLists,
@@ -12986,12 +12988,6 @@ function unsupportedImageInputPrompt({
     .join("\n");
 }
 
-function attachmentPromptPath(path: string) {
-  const workspaceMatch = path.match(/(?:^|[/\\])workspace[/\\](.+)$/);
-  if (workspaceMatch?.[1]) return workspaceMatch[1];
-  return path;
-}
-
 function filesystemEntriesToArtifacts(
   entries: HermesFilesystemEntry[],
   rootLabel: string,
@@ -13009,46 +13005,6 @@ function filesystemEntriesToArtifacts(
       ...children,
     ];
   });
-}
-
-// Assigns each workspace file to the first turn that mentions it, so its
-// download card renders once instead of at the end of every later response
-// that happens to repeat the file name. User turns can claim a file too, using
-// either the full artifact path or the workspace-relative path injected for
-// attachments, so a file the user just handed us shouldn't bounce back as a
-// download. Name-only matches are also deduplicated by name, so two workspace
-// copies of the same file don't produce twin cards.
-function assignArtifactsToTurns(
-  turns: AgentChatTurn[],
-  artifacts: AgentArtifact[],
-): Map<string, AgentArtifact[]> {
-  const byTurn = new Map<string, AgentArtifact[]>();
-  if (!artifacts.length) return byTurn;
-  const claimedPaths = new Set<string>();
-  const claimedNames = new Set<string>();
-  for (const turn of turns) {
-    const text = turn.parts
-      .map((part) => (part.type === "text" ? part.text : ""))
-      .join("\n")
-      .toLowerCase();
-    if (!text.trim()) continue;
-    const mentioned: AgentArtifact[] = [];
-    for (const artifact of artifacts) {
-      const name = artifact.name.toLowerCase();
-      if (!name || claimedPaths.has(artifact.path)) continue;
-      const pathMentioned =
-        text.includes(artifact.path.toLowerCase()) ||
-        text.includes(attachmentPromptPath(artifact.path).toLowerCase());
-      const nameMentioned =
-        turn.role === "assistant" && !claimedNames.has(name) && text.includes(name);
-      if (!pathMentioned && !nameMentioned) continue;
-      claimedPaths.add(artifact.path);
-      claimedNames.add(name);
-      if (turn.role === "assistant") mentioned.push(artifact);
-    }
-    if (mentioned.length) byTurn.set(turn.id, mentioned);
-  }
-  return byTurn;
 }
 
 function includesQuery(value: unknown, query: string) {
