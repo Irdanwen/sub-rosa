@@ -1777,6 +1777,16 @@ input:focus-visible,
   font-size: var(--fs-sm);
 }
 
+.agent-render-error-retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .agent-hermes-message {
   width: 100%;
   padding: var(--sp-1) var(--sp-2);

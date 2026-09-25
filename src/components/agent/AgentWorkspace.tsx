@@ -7810,7 +7810,11 @@ export function AgentWorkspace({
       />
       <TranscriptErrorBoundary scope="conversation" resetKey={hermesTurns}>
         {hermesTurns.map((turn) => (
-          <TranscriptErrorBoundary key={turn.id} scope="message" resetKey={turn}>
+          <TranscriptErrorBoundary
+            key={turn.id}
+            scope="message"
+            resetKey={[turn, turnArtifacts.get(turn.id), activeThinkingKey, thinkingOpen]}
+          >
             <AgentChatTurnRow
               turn={turn}
               activeThinkingKey={activeThinkingKey}
