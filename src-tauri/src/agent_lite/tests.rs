@@ -560,3 +560,32 @@ async fn saving_a_reply_and_completing_its_task_is_atomic() {
     assert_eq!(completed.messages.len(), 2);
     assert_eq!(completed.status, AgentTaskStatus::Completed);
 }
+
+/// A phone that locks mid-reply drops the connection in the middle of the
+/// body, where the transport retry of the request cannot see it. That, and a
+/// body that ended early, are replayed once; a refusal is not.
+#[test]
+fn a_cut_stream_is_replayed_but_a_refusal_is_not() {
+    assert!(replays_after(&AppError::new(
+        "june_request_failed",
+        "reset"
+    )));
+    assert!(replays_after(&crate::sse_lines::cut_off_reply()));
+    assert!(!replays_after(&AppError::new("agent_lite_credits", "low")));
+    assert!(!replays_after(&AppError::new("agent_lite_invalid", "bad")));
+}
+
+#[test]
+fn a_replay_takes_back_exactly_what_the_failed_attempt_showed() {
+    assert_eq!(
+        retraction("t1", ""),
+        None,
+        "nothing shown, nothing to take back"
+    );
+    let event = retraction("t1", "caf\u{e9} \u{1F600}").expect("an event");
+    // "café " is five UTF-16 units, the emoji two.
+    assert_eq!(
+        event,
+        serde_json::json!({ "taskId": "t1", "text": "", "retract": 7 })
+    );
+}

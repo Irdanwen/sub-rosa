@@ -460,6 +460,10 @@ async fn run_turn(
     // any route that answers a streamed request with nothing usable gets the
     // turn replayed buffered rather than an error.
     let mut stream_withheld = false;
+    // A streamed iteration that breaks mid-body is replayed once. The
+    // request's own transport retry cannot see that failure: it happens after
+    // the status line, typically when a screen lock suspends the app.
+    let mut stream_replayed = false;
 
     for _iteration in 0..=MAX_TOOL_ITERATIONS {
         emit_status(app, task_id, "thinking", None);
@@ -558,10 +562,25 @@ async fn run_turn(
         let message = if streamed {
             let mut response = response;
             let mut reply = StreamedReply::default();
-            collect_stream(&mut response, &mut reply, |text| {
+            let read = collect_stream(&mut response, &mut reply, |text| {
                 emit_delta(app, task_id, text);
             })
-            .await?;
+            .await;
+            if let Err(error) = read {
+                if stream_replayed || !replays_after(&error) {
+                    return Err(error);
+                }
+                tracing::warn!(
+                    "streamed completion broke, replaying it once: {}",
+                    error.message
+                );
+                stream_replayed = true;
+                if let Some(event) = retraction(task_id, &reply.content) {
+                    let _ = app.emit(AGENT_LITE_DELTA_EVENT, event);
+                }
+                continue;
+            }
+            stream_replayed = false;
             if reply.is_empty() {
                 // Nothing usable came out of the stream. Replay this same
                 // iteration buffered before giving up on the turn.
@@ -1047,6 +1066,25 @@ async fn collect_stream(
         return Err(crate::sse_lines::cut_off_reply());
     }
     Ok(())
+}
+
+/// Whether a streamed iteration that failed this way is worth one replay: the
+/// connection dropped mid-body, or the body ended before the reply did.
+fn replays_after(error: &AppError) -> bool {
+    matches!(error.code.as_str(), "june_request_failed" | "reply_cut_off")
+}
+
+/// The event that takes back what a failed streamed attempt already showed,
+/// so its replay does not print the same words twice. `retract` counts UTF-16
+/// code units because that is how the webview measures its string.
+fn retraction(task_id: &str, shown: &str) -> Option<serde_json::Value> {
+    (!shown.is_empty()).then(|| {
+        serde_json::json!({
+            "taskId": task_id,
+            "text": "",
+            "retract": shown.encode_utf16().count(),
+        })
+    })
 }
 
 fn emit_delta(app: &AppHandle, task_id: &str, text: &str) {

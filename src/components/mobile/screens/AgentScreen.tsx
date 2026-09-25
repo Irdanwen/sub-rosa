@@ -1,5 +1,6 @@
 import "../../../styles/chat-reading.css";
 import { useAccountSyncUpdated } from "../../../lib/account-sync-events";
+import { type AgentLiteDeltaDto, applyAgentLiteDelta } from "../../../lib/agent-lite-delta";
 import {
   type ChatSessionItem,
   type HistorySection,
@@ -598,13 +599,10 @@ export function AgentSessionScreen({
         return [...prev, event.payload];
       });
     });
-    const unlistenDelta = listen<{ taskId: string; text: string }>(
-      AGENT_LITE_DELTA_EVENT,
-      (event) => {
-        if (!mountedRef.current || event.payload.taskId !== taskIdRef.current) return;
-        setStreamed((current) => current + event.payload.text);
-      },
-    );
+    const unlistenDelta = listen<AgentLiteDeltaDto>(AGENT_LITE_DELTA_EVENT, (event) => {
+      if (!mountedRef.current || event.payload.taskId !== taskIdRef.current) return;
+      setStreamed((current) => applyAgentLiteDelta(current, event.payload));
+    });
     const unlistenDone = listen<AgentTaskDto>(AGENT_LITE_DONE_EVENT, (event) => {
       if (!mountedRef.current || event.payload.id !== taskIdRef.current) return;
       taskRevisionRef.current += 1;
