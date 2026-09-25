@@ -2942,14 +2942,18 @@ export function AgentWorkspace({
         // an assistant row appears from the agent loop's first step onward, so
         // ending a run here declared a still-running turn finished. Only a
         // terminal gateway event or the runtime's own session.active_list ends
-        // one now (see reconcileWorkingSessionsAgainstRuntime).
+        // one now (see reconcileWorkingSessionsAgainstRuntime). The current
+        // turn's failure stays: Hermes never stores it (see refreshHermesSession).
         if (hermesMessagesHaveAssistantReply(combined)) {
           promotePendingIssueReportToReview(selectedHermesSessionId, {
             queueDiagnosisRefresh: false,
           });
           liveEventsRef.current = {
             ...liveEventsRef.current,
-            [selectedHermesSessionId]: [],
+            [selectedHermesSessionId]: currentTurnLiveErrors(
+              liveEventsRef.current[selectedHermesSessionId] ?? [],
+              combined,
+            ),
           };
           liveEventsPublisher.flush();
         }

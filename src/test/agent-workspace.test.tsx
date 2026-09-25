@@ -5016,6 +5016,48 @@ describe("AgentWorkspace", () => {
     },
   );
 
+  it("keeps the current turn's failure when the conversation is opened again", async () => {
+    const user = userEvent.setup();
+    const providerFailed = /The model provider could not answer this message/;
+    const secondSession = {
+      ...existingSession,
+      id: "session-2",
+      title: "Second session",
+      preview: "Second preview",
+      last_active: "2026-06-04T12:05:00Z",
+    };
+    mocks.listHermesSessions.mockResolvedValue([existingSession, secondSession]);
+    let firstSessionMessages: unknown[] = [];
+    mocks.listHermesSessionMessages.mockImplementation((sessionId: string) =>
+      Promise.resolve(sessionId === "session-1" ? firstSessionMessages : []),
+    );
+
+    const { rerender } = render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "first question");
+    const askedAt = new Date(Date.now() - 1000).toISOString();
+    // The agent loop stored one step, then the next model call failed. Hermes
+    // stores the step but not the failure.
+    firstSessionMessages = [
+      { id: "m1", role: "user", content: "first question", timestamp: askedAt },
+      { id: "m2", role: "assistant", content: "Let me check.", timestamp: askedAt },
+    ];
+    emitGatewayEvent({
+      type: "error",
+      session_id: "runtime-session-1",
+      payload: { message: "upstream_provider_failed" },
+    });
+    expect(await screen.findByText(providerFailed)).toBeInTheDocument();
+    await flushDeferredSessionWork();
+
+    rerender(<AgentWorkspace initialSession={secondSession} />);
+    await waitFor(() => expect(screen.queryByText(providerFailed)).toBeNull());
+    rerender(<AgentWorkspace initialSession={existingSession} />);
+    expect(await screen.findByText("Let me check.")).toBeInTheDocument();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(screen.getByText(providerFailed)).toBeInTheDocument();
+    await flushDeferredSessionWork();
+  });
+
   it("keeps the opening of a reply streamed in more frames than the live buffer holds", async () => {
     const user = userEvent.setup();
     mocks.listHermesSessionMessages.mockResolvedValue([]);
