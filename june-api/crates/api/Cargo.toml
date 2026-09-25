@@ -12,7 +12,6 @@ workspace = true
 
 [dependencies]
 axum.workspace = true
-futures-util.workspace = true
 june-config.workspace = true
 june-domain.workspace = true
 june-services.workspace = true
@@ -28,5 +27,6 @@ url.workspace = true
 [dev-dependencies]
 async-trait.workspace = true
 bytes.workspace = true
+futures-util.workspace = true
 pretty_assertions.workspace = true
 tower = { workspace = true, features = ["util"] }

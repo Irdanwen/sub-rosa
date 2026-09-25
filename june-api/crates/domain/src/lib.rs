@@ -95,11 +95,13 @@ pub struct AgentChatCompletion {
 /// The body of a streamed completion: the upstream's bytes, relayed as they
 /// arrive.
 ///
-/// It always ends cleanly, never with an error item. A read failure halfway
-/// through is logged by the provider and the stream simply stops: the
-/// generation has already run (and been billed) upstream, so there is nothing
-/// to replay, and the client sees a stream that ended early (ADR-0063).
-pub type AgentChatByteStream = Pin<Box<dyn Stream<Item = Bytes> + Send + 'static>>;
+/// A read failure halfway through is yielded once, as the last item, and never
+/// replayed: the generation has already run (and been billed) upstream. The
+/// error has to reach the client as an error: the HTTP layer then aborts the
+/// response without its terminator, so a stream that broke can never be read
+/// as a short answer that finished (ADR-0063).
+pub type AgentChatByteStream =
+    Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static>>;
 
 /// Resolves to what a streamed completion consumed, once its body stream has
 /// ended or been dropped. It waits on nothing else, so awaiting it never

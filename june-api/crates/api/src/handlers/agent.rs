@@ -12,10 +12,8 @@ use axum::{
     http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
 };
-use futures_util::StreamExt;
 use june_domain::{ModelId, ModelKind, TokenUsage};
 use june_services::{AgentChatOutput, AgentChatParams};
-use std::convert::Infallible;
 
 /// Per-turn metering, republished as response headers.
 ///
@@ -100,9 +98,10 @@ pub(crate) async fn chat_completions(
             Ok((StatusCode::OK, response_headers, completion.body).into_response())
         }
         AgentChatOutput::Streaming { body, content_type } => {
-            // Relayed as it arrives. The provider ends the stream cleanly on a
-            // read failure, so the body never carries an error item.
-            let body = Body::from_stream(body.map(Ok::<_, Infallible>));
+            // Relayed as it arrives. An upstream read failure is the stream's
+            // last item; hyper then aborts the body without its terminator, so
+            // the client sees a broken stream, never a short one that ended.
+            let body = Body::from_stream(body);
             Ok((
                 StatusCode::OK,
                 [(CONTENT_TYPE, content_type_header(&content_type))],

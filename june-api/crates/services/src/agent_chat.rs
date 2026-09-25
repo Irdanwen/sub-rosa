@@ -423,7 +423,8 @@ mod tests {
                 .expect("lock")
                 .take()
                 .expect("one turn per test");
-            let body = futures_util::stream::poll_fn(move |context| chunks.poll_recv(context));
+            let body =
+                futures_util::stream::poll_fn(move |context| chunks.poll_recv(context)).map(Ok);
             Ok(AgentChatStream {
                 body: Box::pin(body),
                 content_type: "text/event-stream".to_string(),
@@ -465,7 +466,10 @@ mod tests {
             .send(Bytes::from_static(b"data: {}\n\n"))
             .expect("send");
         assert_eq!(
-            body.next().await.expect("a chunk"),
+            body.next()
+                .await
+                .expect("a chunk")
+                .expect("an unbroken stream"),
             Bytes::from_static(b"data: {}\n\n")
         );
         tokio::task::yield_now().await;

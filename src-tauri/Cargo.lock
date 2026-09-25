@@ -3265,7 +3265,6 @@ name = "june-api"
 version = "0.2.0"
 dependencies = [
  "axum",
- "futures-util",
  "june-config",
  "june-domain",
  "june-services",

@@ -1575,6 +1575,12 @@ mod tests {
         matchers::{body_string_contains, header, method, path},
     };
 
+    async fn next_item(
+        body: &mut june_domain::AgentChatByteStream,
+    ) -> Option<Result<bytes::Bytes, std::io::Error>> {
+        std::future::poll_fn(|context| body.as_mut().poll_next(context)).await
+    }
+
     /// Reads a response to its end the way a client would, so the assertions
     /// hold whether the provider relayed the body or buffered it.
     async fn settle(response: AgentChatResponse) -> AgentChatCompletion {
@@ -1585,7 +1591,7 @@ mod tests {
                 while let Some(chunk) =
                     std::future::poll_fn(|context| stream.body.as_mut().poll_next(context)).await
                 {
-                    body.extend_from_slice(&chunk);
+                    body.extend_from_slice(&chunk.expect("an unbroken stream"));
                 }
                 AgentChatCompletion {
                     body,
@@ -3076,7 +3082,8 @@ mod tests {
         )
         .await
         .expect("the first delta arrives before the upstream finishes")
-        .expect("a first chunk");
+        .expect("a first chunk")
+        .expect("an unbroken stream");
         assert_eq!(String::from_utf8_lossy(&chunk), first);
         assert!(
             !upstream_done.load(std::sync::atomic::Ordering::SeqCst),
@@ -3087,7 +3094,7 @@ mod tests {
         while let Some(chunk) =
             std::future::poll_fn(|context| stream.body.as_mut().poll_next(context)).await
         {
-            body.extend_from_slice(&chunk);
+            body.extend_from_slice(&chunk.expect("an unbroken stream"));
         }
         assert_eq!(
             String::from_utf8(body).expect("utf8"),
@@ -3119,6 +3126,46 @@ mod tests {
         let usage = tokio::time::timeout(std::time::Duration::from_secs(1), stream.usage)
             .await
             .expect("usage resolves once the body is dropped");
+        assert_eq!(usage, june_domain::TokenUsage::default());
+    }
+
+    /// An upstream that drops the connection after its 200 must reach the
+    /// client as a broken stream. Ending it cleanly would hand a truncated
+    /// answer (or a tool call cut in half) to the caller as a finished one.
+    #[tokio::test]
+    async fn a_stream_cut_after_its_status_ends_in_an_error_not_a_short_answer() {
+        let first = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n";
+        let (addr, _) = sse_upstream(first, None, std::time::Duration::from_millis(50)).await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "cdm_test".to_string(),
+                base_url: format!("http://{addr}"),
+            },
+        );
+
+        let AgentChatResponse::Streamed(mut stream) = agent
+            .complete(stream_request(true))
+            .await
+            .expect("the status line was a success")
+        else {
+            panic!("expected a relayed stream");
+        };
+        let body = &mut stream.body;
+        let chunk = next_item(body)
+            .await
+            .expect("the first delta")
+            .expect("delivered");
+        assert_eq!(String::from_utf8_lossy(&chunk), first);
+        assert!(
+            matches!(next_item(body).await, Some(Err(_))),
+            "the cut must surface as an error item"
+        );
+        assert!(next_item(body).await.is_none(), "nothing follows the error");
+        // Never replayed, still settled: on what was seen, here nothing.
+        let usage = tokio::time::timeout(std::time::Duration::from_secs(1), stream.usage)
+            .await
+            .expect("usage resolves after the error");
         assert_eq!(usage, june_domain::TokenUsage::default());
     }
 
@@ -3158,6 +3205,21 @@ mod tests {
     async fn slow_sse_upstream(
         first: &'static str,
         rest: &'static str,
+        pause: std::time::Duration,
+    ) -> (
+        std::net::SocketAddr,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        sse_upstream(first, Some(rest), pause).await
+    }
+
+    /// Answers 200 with a chunked SSE body, sends `first`, waits `pause`, then
+    /// either finishes with `rest` and the chunked terminator or, when `rest`
+    /// is `None`, drops the connection mid-body the way a failing upstream
+    /// does.
+    async fn sse_upstream(
+        first: &'static str,
+        rest: Option<&'static str>,
         pause: std::time::Duration,
     ) -> (
         std::net::SocketAddr,
@@ -3205,9 +3267,11 @@ mod tests {
             socket.flush().await.expect("flush");
             tokio::time::sleep(pause).await;
             finished.store(true, std::sync::atomic::Ordering::SeqCst);
-            let _ = socket
-                .write_all(format!("{}0\r\n\r\n", chunk(rest)).as_bytes())
-                .await;
+            if let Some(rest) = rest {
+                let _ = socket
+                    .write_all(format!("{}0\r\n\r\n", chunk(rest)).as_bytes())
+                    .await;
+            }
             let _ = socket.shutdown().await;
         });
         (addr, done)

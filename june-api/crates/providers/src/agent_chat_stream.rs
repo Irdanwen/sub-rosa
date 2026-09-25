@@ -97,37 +97,50 @@ pub(crate) fn relay_sse(
     provider: &str,
     model: &str,
 ) -> AgentChatStream {
-    let (report, usage) = oneshot::channel();
-    let relay = MeteredRelay {
-        upstream: Box::pin(response.bytes_stream()),
-        scanner: SseUsageScanner::default(),
-        report: Some(report),
-        model: model.to_string(),
-    };
+    let (relay, usage) = MeteredRelay::new(Box::pin(response.bytes_stream()), model);
     AgentChatStream {
         body: Box::pin(relay),
         content_type,
         provider: provider.to_string(),
-        // The relay reports on every exit path, drop included, so a closed
-        // channel cannot happen in practice; default to zero rather than hang.
-        usage: Box::pin(async move { usage.await.unwrap_or_default() }),
+        usage,
     }
 }
 
-type UpstreamBytes = Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>;
+/// How a relay ended. Only a stream that ran to its end is expected to carry
+/// a usage frame; a broken or abandoned one is short of it by construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ending {
+    Complete,
+    Broken,
+    Abandoned,
+}
 
 /// The upstream byte stream, relayed item for item, with the usage scanner in
 /// the path. It reports the usage exactly once: when the upstream ends, when a
 /// read fails, or when the client stops listening and the relay is dropped.
-struct MeteredRelay {
-    upstream: UpstreamBytes,
+struct MeteredRelay<S> {
+    upstream: S,
     scanner: SseUsageScanner,
     report: Option<oneshot::Sender<TokenUsage>>,
     model: String,
 }
 
-impl MeteredRelay {
-    fn report(&mut self) {
+impl<S> MeteredRelay<S> {
+    fn new(upstream: S, model: &str) -> (Self, june_domain::AgentChatUsage) {
+        let (report, usage) = oneshot::channel();
+        let relay = Self {
+            upstream,
+            scanner: SseUsageScanner::default(),
+            report: Some(report),
+            model: model.to_string(),
+        };
+        // The relay reports on every exit path, drop included, so a closed
+        // channel cannot happen in practice; default to zero rather than hang.
+        let usage = Box::pin(async move { usage.await.unwrap_or_default() });
+        (relay, usage)
+    }
+
+    fn report(&mut self, _ending: Ending) {
         let Some(report) = self.report.take() else {
             return;
         };
@@ -143,28 +156,35 @@ impl MeteredRelay {
     }
 }
 
-impl Stream for MeteredRelay {
-    type Item = Bytes;
+impl<S, E> Stream for MeteredRelay<S>
+where
+    S: Stream<Item = Result<Bytes, E>> + Unpin,
+    E: std::fmt::Display,
+{
+    type Item = Result<Bytes, std::io::Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Bytes>> {
+    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.report.is_none() {
             return Poll::Ready(None);
         }
-        match self.upstream.as_mut().poll_next(context) {
+        match Pin::new(&mut self.upstream).poll_next(context) {
             Poll::Ready(Some(Ok(chunk))) => {
                 self.scanner.feed(&chunk);
-                Poll::Ready(Some(chunk))
+                Poll::Ready(Some(Ok(chunk)))
             }
             Poll::Ready(Some(Err(error))) => {
                 // Not replayed: the generation already ran (and billed)
-                // upstream. End the stream where it broke and settle on what
-                // was seen.
+                // upstream. Settle on what was seen, then hand the failure on
+                // as the last item so the client sees a broken stream rather
+                // than a short answer that looks finished.
                 tracing::error!(%error, model = %self.model, "venice: agent chat stream read failed");
-                self.report();
-                Poll::Ready(None)
+                self.report(Ending::Broken);
+                Poll::Ready(Some(Err(std::io::Error::other(format!(
+                    "upstream stream broke: {error}"
+                )))))
             }
             Poll::Ready(None) => {
-                self.report();
+                self.report(Ending::Complete);
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
@@ -172,7 +192,7 @@ impl Stream for MeteredRelay {
     }
 }
 
-impl Drop for MeteredRelay {
+impl<S> Drop for MeteredRelay<S> {
     fn drop(&mut self) {
         if self.report.is_some() {
             // The client left before the end. Settle on the usage seen so far
@@ -182,16 +202,66 @@ impl Drop for MeteredRelay {
                 model = %self.model,
                 "venice: agent chat stream dropped before its end, settling on the usage seen"
             );
-            self.report();
+            self.report(Ending::Abandoned);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SseUsageScanner;
+    use super::{MeteredRelay, SseUsageScanner};
+    use bytes::Bytes;
+    use futures_core::Stream;
     use june_domain::TokenUsage;
     use pretty_assertions::assert_eq;
+    use std::collections::VecDeque;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    /// An upstream that yields the items it was given, then ends.
+    struct Scripted(VecDeque<Result<Bytes, &'static str>>);
+
+    impl Stream for Scripted {
+        type Item = Result<Bytes, &'static str>;
+        fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Ready(self.0.pop_front())
+        }
+    }
+
+    fn scripted(items: impl IntoIterator<Item = Result<&'static str, &'static str>>) -> Scripted {
+        Scripted(
+            items
+                .into_iter()
+                .map(|item| item.map(|text| Bytes::from_static(text.as_bytes())))
+                .collect(),
+        )
+    }
+
+    fn poll_once<S: Stream + Unpin>(stream: &mut S) -> Poll<Option<S::Item>> {
+        let mut context = Context::from_waker(std::task::Waker::noop());
+        Pin::new(stream).poll_next(&mut context)
+    }
+
+    /// A read failure is yielded once, as the last item, and the usage seen
+    /// before it is still reported.
+    #[tokio::test]
+    async fn a_read_failure_is_the_last_item_and_still_settles() {
+        let (mut relay, usage) = MeteredRelay::new(
+            scripted([
+                Ok("data: {\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":1}}\n\n"),
+                Err("connection reset"),
+                Ok("data: [DONE]\n\n"),
+            ]),
+            "m",
+        );
+        assert!(matches!(poll_once(&mut relay), Poll::Ready(Some(Ok(_)))));
+        let Poll::Ready(Some(Err(error))) = poll_once(&mut relay) else {
+            panic!("the failure reaches the client as an error");
+        };
+        assert!(error.to_string().contains("connection reset"), "{error}");
+        assert!(matches!(poll_once(&mut relay), Poll::Ready(None)));
+        assert_eq!(usage.await.prompt_tokens, 5);
+    }
 
     fn scan(chunks: &[&[u8]]) -> Option<TokenUsage> {
         let mut scanner = SseUsageScanner::default();

@@ -602,6 +602,72 @@ async fn integration_streamed_chat_completion_relays_the_stream_without_metering
     Ok(())
 }
 
+/// An upstream that breaks after the 200 must not become a short answer the
+/// client takes for a finished one: the body is aborted, so reading it fails.
+#[tokio::test]
+async fn integration_a_stream_broken_mid_body_fails_to_read() -> Result<(), Box<dyn Error>> {
+    let response = send(json_request(
+        "/v1/chat/completions",
+        &serde_json::json!({
+            "model": "text-model",
+            "stream": true,
+            "messages": [{ "role": "user", "content": "break" }],
+        }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        to_bytes(response.into_body(), usize::MAX).await.is_err(),
+        "a broken stream must not read as a complete body"
+    );
+    Ok(())
+}
+
+/// The same, over a real socket: hyper must abort the chunked body without
+/// its `0\r\n\r\n` terminator, which is what lets an HTTP client on the other
+/// side (the shell's proxy) tell a broken stream from a finished one.
+#[tokio::test]
+async fn integration_a_broken_stream_is_not_terminated_on_the_wire() -> Result<(), Box<dyn Error>> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move { axum::serve(listener, test_router()).await });
+
+    let body =
+        r#"{"model":"text-model","stream":true,"messages":[{"role":"user","content":"break"}]}"#;
+    let mut socket = tokio::net::TcpStream::connect(addr).await?;
+    socket
+        .write_all(
+            format!(
+                "POST /v1/chat/completions HTTP/1.1\r\nhost: {addr}\r\nauthorization: {AUTHORIZATION}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .await?;
+    let mut wire = Vec::new();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        socket.read_to_end(&mut wire),
+    )
+    .await??;
+    let wire = String::from_utf8_lossy(&wire);
+
+    assert!(wire.starts_with("HTTP/1.1 200"), "{wire}");
+    assert!(wire.contains("transfer-encoding: chunked"), "{wire}");
+    assert!(
+        wire.contains("\"hi\""),
+        "the delta before the break is relayed: {wire}"
+    );
+    assert!(
+        !wire.ends_with("0\r\n\r\n"),
+        "a broken stream must not end with the chunked terminator: {wire}"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn integration_image_generate_requires_auth() -> Result<(), Box<dyn Error>> {
     let response = send(json_request(
@@ -1150,13 +1216,25 @@ impl AgentChatCompleter for FakeChatCompleter {
             .and_then(serde_json::Value::as_bool)
             == Some(true)
         {
-            let frames = [
-                "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
-                "data: [DONE]\n\n",
-            ];
+            let first = Ok(bytes::Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+            ));
+            // A prompt of "break" plays an upstream that drops the connection
+            // after its first delta.
+            let last = if request.body.to_string().contains("\"break\"") {
+                Err(std::io::Error::other("upstream stream broke"))
+            } else {
+                Ok(bytes::Bytes::from_static(b"data: [DONE]\n\n"))
+            };
             return Ok(AgentChatStream {
-                body: Box::pin(futures_util::stream::iter(
-                    frames.map(|frame| bytes::Bytes::from_static(frame.as_bytes())),
+                // The last item comes after a beat, as it would from a
+                // network, so the first delta is on the wire before it.
+                body: Box::pin(futures_util::StreamExt::chain(
+                    futures_util::stream::iter([first]),
+                    futures_util::stream::once(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                        last
+                    }),
                 )),
                 content_type: "text/event-stream".to_string(),
                 provider: "fake-chat".to_string(),
