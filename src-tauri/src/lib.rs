@@ -79,6 +79,8 @@ pub mod share_ios;
 pub mod spotlight;
 pub mod sse_lines;
 #[cfg(desktop)]
+pub mod stream_relay;
+#[cfg(desktop)]
 pub mod theme_icon;
 #[cfg(desktop)]
 pub mod updates;
