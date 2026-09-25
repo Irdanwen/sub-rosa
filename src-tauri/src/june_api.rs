@@ -2,7 +2,11 @@
 //! action; provider keys live there, never here.
 
 use crate::{
-    carpe_diem::cache_stats::TurnUsage as CacheTurnUsage, domain::types::AppError,
+    carpe_diem::{
+        cache_stats::TurnUsage as CacheTurnUsage,
+        stream_usage::{usage_tap_for, StreamUsageTap},
+    },
+    domain::types::AppError,
     providers::PROVIDER_OPENAI,
 };
 use reqwest::multipart::{Form, Part};
@@ -136,6 +140,9 @@ pub struct AgentChatCompletionsResponse {
     pub status: u16,
     pub content_type: String,
     upstream: reqwest::Response,
+    /// Watches the body for the final usage frame when the sidecar streamed
+    /// the turn and so could not meter it in headers (ADR-0063).
+    usage_tap: Option<StreamUsageTap>,
 }
 
 /// Reads one `x-june-*` metering header. Absent, unparsable or negative reads
@@ -169,18 +176,24 @@ impl AgentChatCompletionsResponse {
     /// Next chunk of the upstream body as it arrives. Returns `Ok(None)`
     /// once the body is complete.
     pub async fn chunk(&mut self) -> Result<Option<Vec<u8>>, AppError> {
-        Ok(self
-            .upstream
-            .chunk()
-            .await
-            .map_err(network_error)?
-            .map(|chunk| chunk.to_vec()))
+        let chunk = self.upstream.chunk().await.map_err(network_error)?;
+        if let Some(bytes) = &chunk {
+            self.usage_tap.iter_mut().for_each(|tap| tap.feed(bytes));
+        } else if let Some(tap) = self.usage_tap.take() {
+            tap.record();
+        }
+        Ok(chunk.map(|chunk| chunk.to_vec()))
     }
 
     /// Buffer the entire body. For small non-streamed responses such as
     /// session-title suggestions.
     pub async fn collect_body(self) -> Result<Vec<u8>, AppError> {
-        Ok(self.upstream.bytes().await.map_err(network_error)?.to_vec())
+        let body = self.upstream.bytes().await.map_err(network_error)?;
+        if let Some(mut tap) = self.usage_tap {
+            tap.feed(&body);
+            tap.record();
+        }
+        Ok(body.to_vec())
     }
 }
 
@@ -442,12 +455,17 @@ pub async fn proxy_agent_chat_completions(
     let send_venice_api_key = body_model_accepts_venice_api_key(&body);
     ensure_sidecar_ready().await;
     let url = format!("{}/v1/chat/completions", require_june_api_url()?);
+    // Serialized once: the egress ledger wants its size and a replay sends the
+    // same bytes, so neither needs to walk the conversation again.
+    let payload = serde_json::to_vec(&body)
+        .map_err(|error| AppError::new("invalid_request", error.to_string()))?;
     let mut token = crate::os_accounts::access_token().await?;
     for attempt in 0..2 {
         let request = agent_http_client()
             .post(&url)
             .bearer_auth(&token)
-            .json(&body);
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(payload.clone());
         let response =
             match with_venice_api_key("/v1/chat/completions", request, send_venice_api_key)
                 .send()
@@ -468,9 +486,7 @@ pub async fn proxy_agent_chat_completions(
         record_egress(
             "/v1/chat/completions",
             "POST",
-            serde_json::to_vec(&body)
-                .map(|b| b.len() as u64)
-                .unwrap_or(0),
+            payload.len() as u64,
             0,
             Some(response.status().as_u16()),
             body.get("model")
@@ -491,12 +507,17 @@ pub async fn proxy_agent_chat_completions(
         // Every completion on both shells passes through here — the desktop
         // agent, the mobile chat, memory extraction, session titles, Studio
         // briefs — so this is the one place the prompt cache can be counted
-        // once for all of them.
-        crate::carpe_diem::cache_stats::record(turn_usage_from_headers(response.headers()));
+        // once for all of them. A buffered turn is metered in headers; a
+        // streamed one is only known at its end, so it is read from the final
+        // frame as the body passes through (ADR-0063).
+        let header_usage = turn_usage_from_headers(response.headers());
+        crate::carpe_diem::cache_stats::record(header_usage);
+        let usage_tap = usage_tap_for(status, header_usage, &content_type);
         return Ok(AgentChatCompletionsResponse {
             status,
             content_type,
             upstream: response,
+            usage_tap,
         });
     }
     Err(AppError::new("unauthorized", "Not signed in."))
