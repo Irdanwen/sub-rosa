@@ -35,9 +35,9 @@ settles the turn when the stream ends.** Everything else is unchanged.
 
 - **Domain.** `AgentChatCompleter::complete` returns `AgentChatResponse`:
   `Buffered(AgentChatCompletion)` (the existing struct, untouched) or
-  `Streamed(AgentChatStream)`. A stream is a body (`Stream<Item = Bytes>`, which
-  always ends cleanly) plus a `usage` future that resolves once the body has
-  ended or been dropped.
+  `Streamed(AgentChatStream)`. A stream is a body (`Stream<Item =
+  Result<Bytes, io::Error>>`) plus a `usage` future that resolves once the body
+  has ended, broken or been dropped.
 - **Provider.** `june-api/crates/providers/src/agent_chat_stream.rs` wraps the
   upstream `bytes_stream()` in a relay that passes every chunk through untouched
   and feeds a line scanner. The scanner splits on the `\n` byte, tolerates a
@@ -48,21 +48,37 @@ settles the turn when the stream ends.** Everything else is unchanged.
   end of the stream, on a read error, or when it is dropped.
 - **Retries are untouched.** Transient statuses, backoff and the replay without
   `stream_options` (ADR-0015 addenda) are all decided on the status line, before
-  a byte of the body is read. Once relaying has begun nothing is replayed: a read
-  error mid-stream is logged and the stream ends where it broke, because the
-  generation has already run, and been billed, upstream.
+  a byte of the body is read. Once relaying has begun nothing is replayed by the
+  sidecar, because the generation has already run, and been billed, upstream. A
+  read error mid-stream settles on the usage seen and is then yielded as the
+  body's last item, so hyper aborts the response without its chunked
+  terminator: the client sees a broken stream, never a short one that ended.
 - **Service.** Authorization still runs before the upstream call. A streamed
   turn is handed back at once and a task awaits its usage, prices it with
   `price_settled_work`, clamps it to the cap and charges it with the same
   idempotency key as before.
 - **Handler.** `Body::from_stream` with the upstream's content type and no
   `x-june-*` headers, which cannot exist before the usage does. The buffered
-  path keeps its six headers exactly as ADR-0023 defined them.
+  path keeps its six headers exactly as ADR-0023 defined them. The listener sets
+  `TCP_NODELAY` on every connection, or Nagle's algorithm would hold each small
+  frame until the client's delayed ACK of the previous one.
 - **Shell.** When a 2xx answer has no metering headers and is
   `text/event-stream`, `carpe_diem::stream_usage` taps the body as it passes
   through (the same line-at-a-time rule, bounded to one 64 KiB line) and records
   the last usage in the prompt-cache ledger once the body has been read to its
   end. Headers win whenever they are present.
+- **A stream is only an answer if it says it finished.** Every shell reader
+  (agent-lite, ask, note rewrites) requires a `finish_reason` or `[DONE]`; a body
+  that breaks, or ends holding text or a tool call before either, is an error
+  (`reply_cut_off`), never a shorter answer and never a tool call run on cut
+  arguments. The provider proxy to Hermes, which delimits its body by closing
+  the connection, ends a broken stream on a `data: {"error": ...}` frame so the
+  runtime raises instead of keeping the fragment.
+- **Agent-lite replays a broken streamed iteration once.** A screen lock used to
+  cut the connection during the request, where the proxy's transport retry
+  healed the sidecar and replayed it. It now cuts the body instead, so the tool
+  loop replays that iteration once, after sending the webview a retraction of
+  what the broken attempt had shown.
 
 The `/router` rail never streams (ADR-0015): its buffered JSON is still read
 whole and rebuilt into SSE, and still carries the headers. A client that did not
