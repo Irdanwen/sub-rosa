@@ -2976,6 +2976,7 @@
   "The recording is saved, so you can pick it up where it left off.": "The recording is saved, so you can pick it up where it left off.",
   "the reference model": "the reference model",
   "The render failed.": "The render failed.",
+  "The reply stopped before it was finished. Try again.": "The reply stopped before it was finished. Try again.",
   "The report settings could not be read.": "The report settings could not be read.",
   "The request never reached the backend. Check the connection, then start it again.": "The request never reached the backend. Check the connection, then start it again.",
   "The routine can read the web and memory but cannot touch your files.": "The routine can read the web and memory but cannot touch your files.",

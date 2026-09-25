@@ -190,44 +190,22 @@ async fn collect_answer(
             .map_err(|error| AppError::new("ask_failed", error.to_string()))?;
         return Ok(june_api::extract_chat_completion_text(&value).unwrap_or_default());
     }
-    let mut collected = String::new();
-    // Split on bytes, decode whole lines: a chunk may end mid-character.
-    let mut lines = crate::sse_lines::SseLines::default();
-    let stop = claim.map(|claim| Arc::clone(&claim.stop));
-    loop {
-        let chunk = match &stop {
-            Some(stop) => {
-                let stopped = stop.notified();
-                tokio::pin!(stopped);
-                tokio::select! {
-                    // Cancelling wins the race even mid-chunk; dropping the
-                    // response closes the connection so the upstream stops.
-                    _ = &mut stopped => {
-                        return Err(AppError::new("ask_cancelled", "Stopped."));
-                    }
-                    chunk = response.chunk() => chunk?,
-                }
-            }
-            None => response.chunk().await?,
-        };
-        let Some(chunk) = chunk else { break };
-        let before = collected.len();
-        for line in lines.push(&chunk) {
-            let Some(frame) = crate::sse_lines::data_frame(&line) else {
-                continue;
-            };
-            if let Some(delta) = frame
-                .pointer("/choices/0/delta/content")
-                .and_then(|v| v.as_str())
-            {
-                collected.push_str(delta);
-            }
+    // A stream that breaks or stops before it says it is finished is an
+    // error: what arrived is a fragment, not a shorter answer.
+    let read = crate::sse_lines::read_content(&mut response, |delta| {
+        if let Some(claim) = claim {
+            emit_delta(app, &claim.request_id, delta);
         }
-        if let (Some(claim), true) = (claim, collected.len() > before) {
-            emit_delta(app, &claim.request_id, &collected[before..]);
-        }
+    });
+    let Some(stop) = claim.map(|claim| Arc::clone(&claim.stop)) else {
+        return read.await;
+    };
+    tokio::select! {
+        // Cancelling wins the race even mid-chunk; dropping the response
+        // closes the connection so the upstream stops.
+        () = stop.notified() => Err(AppError::new("ask_cancelled", "Stopped.")),
+        answer = read => answer,
     }
-    Ok(collected)
 }
 
 /// A passage that was sent, and can be cited.

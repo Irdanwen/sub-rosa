@@ -2976,6 +2976,7 @@
   "The recording is saved, so you can pick it up where it left off.": "L'enregistrement est conservé : vous pouvez reprendre là où il s'est arrêté.",
   "the reference model": "le modèle de référence",
   "The render failed.": "Le rendu a échoué.",
+  "The reply stopped before it was finished. Try again.": "La réponse s'est arrêtée avant la fin. Réessayez.",
   "The report settings could not be read.": "Les réglages de rapport n'ont pas pu être lus.",
   "The request never reached the backend. Check the connection, then start it again.": "La demande n'a jamais atteint le service. Vérifiez la connexion, puis relancez.",
   "The routine can read the web and memory but cannot touch your files.": "La routine peut lire le web et la mémoire mais ne peut pas toucher à vos fichiers.",
