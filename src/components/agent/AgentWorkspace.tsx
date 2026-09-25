@@ -4529,6 +4529,18 @@ export function AgentWorkspace({
       if (event.type === "message.start") {
         hermesBackgroundProcessStore.clearFinished(storedSessionId);
       }
+      // A turn the gateway starts on its own (a finished background job, the
+      // goal loop) has no send to clear the finished turn's frames, which would
+      // render again under the prompt the gateway stores. Clear them as a send
+      // does and fetch their stored copy.
+      if (
+        event.type === "message.start" &&
+        !workingSessionIdsRef.current.has(storedSessionId) &&
+        !waitingSessionIdsRef.current.has(storedSessionId) &&
+        dropFinishedLiveTurns(storedSessionId, true)
+      ) {
+        void refreshHermesSessionRef.current(storedSessionId, { keepLiveFrames: true });
+      }
       const nextSessionEvents = appendLiveHermesEvent(
         liveEventsRef.current[storedSessionId] ?? [],
         liveEvent,
@@ -5636,8 +5648,13 @@ export function AgentWorkspace({
   }
 
   /** Resolves true once the stored transcript shows a reply after the user's
-   * latest message (the post-turn retries stop there). */
-  async function refreshHermesSession(sessionId: string): Promise<boolean> {
+   * latest message (the post-turn retries stop there). `keepLiveFrames` only
+   * fetches: a turn the gateway just chained has no stored prompt yet, so the
+   * transcript would look caught up and the clear would take its opening. */
+  async function refreshHermesSession(
+    sessionId: string,
+    options?: { keepLiveFrames?: boolean },
+  ): Promise<boolean> {
     try {
       const messages = await listSessionMessagesOrdered(sessionId);
       if (!messages) return false;
@@ -5664,7 +5681,7 @@ export function AgentWorkspace({
       // here settled turns that were still going. Activity now ends only on a
       // terminal gateway event or on the runtime's session.active_list.
       const caughtUp = hermesMessagesHaveAssistantReply([...messages, ...retainedPending]);
-      if (caughtUp) {
+      if (caughtUp && !options?.keepLiveFrames) {
         promotePendingIssueReportToReview(sessionId, {
           queueDiagnosisRefresh: false,
         });

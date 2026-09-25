@@ -2284,6 +2284,17 @@ describe("live frames across a new prompt", () => {
     expect(liveEventsForNewTurn(running, { turnInProgress: true })).toBe(running);
   });
 
+  it("keeps only a turn the gateway chained after a finished one", () => {
+    // Nothing was sent from the app: the gateway started the next turn itself
+    // (a finished background job). Its first frame may already be buffered.
+    const finished = [frame("message.start"), frame("message.delta"), frame("message.complete")];
+    const chained = [frame("message.start"), frame("tool.start")];
+    expect(liveEventsForNewTurn([...finished, ...chained], { turnInProgress: true })).toEqual(
+      chained,
+    );
+    expect(liveEventsForNewTurn(finished, { turnInProgress: true })).toEqual([]);
+  });
+
   it("keeps an error only until the user sends past it", () => {
     const error = frame("error", "2026-09-25T10:00:05.000Z");
     const asked: HermesSessionMessage = {

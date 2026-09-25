@@ -5016,6 +5016,44 @@ describe("AgentWorkspace", () => {
     },
   );
 
+  it("shows a finished reply once when the gateway chains the next turn right after it", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "run the benchmark");
+    const askedAt = new Date(Date.now() - 2000).toISOString();
+    const chainedAt = new Date(Date.now() + 1000).toISOString();
+    streamReply("Started it in the background.");
+    // The store has the finished turn and, just after it, the prompt the
+    // gateway chains with the background process's output.
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      { id: "m1", role: "user", content: "run the benchmark", timestamp: askedAt },
+      {
+        id: "m2",
+        role: "assistant",
+        content: "Started it in the background.",
+        timestamp: askedAt,
+      },
+      { id: "m3", role: "user", content: "Process bg-1 finished.", timestamp: chainedAt },
+    ]);
+    // Chained before any post-turn refresh cleared the finished turn's frames.
+    emitGatewayEvent({ type: "message.start", session_id: "runtime-session-1" });
+    emitGatewayEvent({
+      type: "message.delta",
+      session_id: "runtime-session-1",
+      payload: { text: "The benchmark is done." },
+    });
+    expect(await screen.findByText("The benchmark is done.")).toBeInTheDocument();
+    const chainedPrompt = await within(timelineOf()).findByText("Process bg-1 finished.");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+
+    const answers = within(timelineOf()).getAllByText("Started it in the background.");
+    expect(answers).toHaveLength(1);
+    expect(precedes(answers[0] as Element, chainedPrompt)).toBe(true);
+    await flushDeferredSessionWork();
+  });
+
   it("keeps the current turn's failure when the conversation is opened again", async () => {
     const user = userEvent.setup();
     const providerFailed = /The model provider could not answer this message/;
