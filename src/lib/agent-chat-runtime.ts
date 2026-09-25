@@ -1392,6 +1392,92 @@ export function appendLiveHermesEvent(
   return [...events, event].slice(-HERMES_LIVE_EVENT_LIMIT);
 }
 
+// Frames that end the session's TURN. Deliberately excludes `background.*`: a
+// background process finishing is the opposite of an ending — the gateway's
+// notification poller chains a fresh agent turn with that process's output, so
+// treating it as terminal ended the run and dropped the live subscription at
+// the exact moment the agent was about to pick the work back up, and the
+// chained turn then streamed to nobody (see ADR-0016 addendum).
+export function isTerminalHermesEvent(type: string) {
+  const normalized = type.toLowerCase();
+  return (
+    normalized === "error" ||
+    normalized === "message.complete" ||
+    normalized === "message.completed" ||
+    normalized === "turn.complete" ||
+    normalized === "turn.completed" ||
+    normalized === "session.complete" ||
+    normalized === "session.completed"
+  );
+}
+
+/**
+ * The live frames a session keeps when the user sends a new prompt. A new
+ * prompt starts a new turn, so everything a finished turn left in the buffer
+ * goes: its reply is either in the stored transcript already or about to be,
+ * and kept here it would be rendered next to (and, before the ordering fix,
+ * under) the new prompt, then again once the stored copy arrived. Only a turn
+ * that is still running (a steer, or a send the runtime will queue) keeps the
+ * frames after its last turn boundary. Returns the input when nothing goes.
+ */
+export function liveEventsForNewTurn(
+  events: LiveHermesEvent[],
+  options: { turnInProgress: boolean },
+): LiveHermesEvent[] {
+  if (!events.length) return events;
+  if (!options.turnInProgress) return [];
+  let lastBoundary = -1;
+  events.forEach((event, index) => {
+    if (isTerminalHermesEvent(event.type)) lastBoundary = index;
+  });
+  return lastBoundary < 0 ? events : events.slice(lastBoundary + 1);
+}
+
+/**
+ * The live `error` frames that still describe the session's current turn: those
+ * no user message (stored or pending) is newer than. A failure Hermes never
+ * stores has only its live frame to show it, so it must survive the buffer
+ * being dropped once the stored transcript catches up. But a failure from a turn
+ * the user has since moved on from is not the current turn's: kept forever, it
+ * resurfaced under every later prompt and marked every later run as failed.
+ */
+export function currentTurnLiveErrors(
+  events: LiveHermesEvent[],
+  messages: HermesSessionMessage[],
+): LiveHermesEvent[] {
+  const latestUserAt = latestUserMessageTimeMs(messages);
+  return events.filter((event) => {
+    if (event.type !== "error") return false;
+    if (latestUserAt === undefined) return true;
+    const receivedAt = Date.parse(event.receivedAt);
+    return !(latestUserAt > receivedAt);
+  });
+}
+
+function latestUserMessageTimeMs(messages: HermesSessionMessage[]) {
+  let latest: number | undefined;
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    const at = messageTimeMs(message);
+    if (at !== undefined && (latest === undefined || at > latest)) latest = at;
+  }
+  return latest;
+}
+
+// Hermes stores epoch seconds (sometimes milliseconds); pending messages carry
+// ISO strings.
+function messageTimeMs(message: HermesSessionMessage) {
+  const raw = message.timestamp ?? message.created_at;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw > 0 && raw < 10_000_000_000 ? raw * 1000 : raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
+}
+
 function isCompactableDelta(event: HermesGatewayEvent) {
   return (
     event.type === "message.delta" ||

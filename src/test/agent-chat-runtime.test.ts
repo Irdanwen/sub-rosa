@@ -3,6 +3,8 @@ import { PRODUCT_NAME } from "../lib/branding";
 import {
   appendLiveHermesEvent,
   buildAgentChatTurns,
+  currentTurnLiveErrors,
+  liveEventsForNewTurn,
   buildHermesSessionChatTurns,
   completedHermesMessageText,
   displayedComposerUserMessageText,
@@ -2258,5 +2260,49 @@ describe("live turn ordering", () => {
       "user:Question",
       "assistant:Answer.",
     ]);
+  });
+});
+
+describe("live frames across a new prompt", () => {
+  const frame = (type: string, receivedAt = "2026-09-25T10:00:05.000Z"): LiveHermesEvent => ({
+    type,
+    session_id: "s1",
+    payload: type === "error" ? { message: "upstream_provider_failed" } : { text: "x" },
+    receivedAt,
+  });
+
+  it("starts a new turn from nothing once the previous one finished", () => {
+    const events = [frame("message.start"), frame("message.delta"), frame("message.complete")];
+    expect(liveEventsForNewTurn(events, { turnInProgress: false })).toEqual([]);
+  });
+
+  it("keeps only the running turn's frames for a steer", () => {
+    const running = [frame("message.start"), frame("tool.start")];
+    const events = [frame("message.start"), frame("message.complete"), ...running];
+    expect(liveEventsForNewTurn(events, { turnInProgress: true })).toEqual(running);
+    // Nothing to drop: the same array comes back, so callers can skip a render.
+    expect(liveEventsForNewTurn(running, { turnInProgress: true })).toBe(running);
+  });
+
+  it("keeps an error only until the user sends past it", () => {
+    const error = frame("error", "2026-09-25T10:00:05.000Z");
+    const asked: HermesSessionMessage = {
+      id: "m1",
+      role: "user",
+      content: "question",
+      timestamp: "2026-09-25T10:00:01Z",
+    };
+    expect(currentTurnLiveErrors([frame("message.start"), error], [asked])).toEqual([error]);
+    const askedAgain: HermesSessionMessage = {
+      id: "pending:user:2",
+      role: "user",
+      content: "again",
+      timestamp: "2026-09-25T10:00:09.000Z",
+    };
+    expect(currentTurnLiveErrors([error], [asked, askedAgain])).toEqual([]);
+    // Hermes stores epoch seconds.
+    expect(currentTurnLiveErrors([error], [{ ...askedAgain, timestamp: 1_790_330_409 }])).toEqual(
+      [],
+    );
   });
 });

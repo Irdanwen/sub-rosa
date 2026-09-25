@@ -333,7 +333,10 @@ import {
   hermesMessagesEndInterrupted,
   hermesMessagesHaveAssistantReply,
   hermesMessagesShowCompletedTurn,
+  currentTurnLiveErrors,
   isProcessNoticeTurn,
+  isTerminalHermesEvent,
+  liveEventsForNewTurn,
   repairContractionSpacing,
   textFromHermesContent,
   appendLiveHermesEvent,
@@ -355,6 +358,7 @@ import {
   type AgentChatGallerySection,
 } from "../../lib/agent-chat-gallery";
 import { attachScrollThumbFade } from "../../lib/scroll-thumb-fade";
+import { createPostTurnRefresher } from "../../lib/post-turn-refresh";
 
 const POLLED_STATUSES = new Set<AgentTaskStatus>(["queued", "running", "waitingForUser"]);
 const AGENT_TITLE_TIMEOUT_MS = 2500;
@@ -1576,6 +1580,14 @@ export function AgentWorkspace({
   // stack a second one — otherwise every event lands twice in liveEvents.
   const sessionGatewayUnlistenRef = useRef<Map<string, () => void>>(new Map());
   const liveEventsRef = useRef<Record<string, LiveHermesEvent[]>>(liveEvents);
+  // A finished turn is refreshed a few times until its stored reply shows up.
+  const refreshHermesSessionRef = useRef(refreshHermesSession);
+  refreshHermesSessionRef.current = refreshHermesSession;
+  const postTurnRefresher = useMemo(
+    () => createPostTurnRefresher((sessionId) => refreshHermesSessionRef.current(sessionId)),
+    [],
+  );
+  useEffect(() => () => postTurnRefresher.cancelAll(), [postTurnRefresher]);
   const hydratedTaskIdsRef = useRef<Set<string>>(new Set());
   // Tasks whose hydration fetch has resolved (hydratedTaskIdsRef only says
   // the fetch *started*) — the scroll-settling logic needs the landing.
@@ -1931,12 +1943,13 @@ export function AgentWorkspace({
       // its jobs has nothing left to point at.
       hermesBackgroundProcessStore.clearSession(sessionId);
       sessionGatewayUnlistenRef.current.get(sessionId)?.();
+      postTurnRefresher.cancel(sessionId);
       liveEventsRef.current = omitRecordKey(liveEventsRef.current, sessionId);
       setLiveEvents(liveEventsRef.current);
       // A deleted session must not be the restore target on the next mount.
       forgetLastOpenSessionId(sessionId);
     },
-    [clearSessionActivity],
+    [clearSessionActivity, postTurnRefresher],
   );
 
   const selectedTask = useMemo(
@@ -3676,6 +3689,7 @@ export function AgentWorkspace({
       // clean completion resend anything still pending as a follow-up.
       // `registered` tracks whether Hermes accepted the steer, so a
       // tool.complete only clears ones a tool could actually have drained.
+      dropFinishedLiveTurns(steerSessionId, true);
       const steerEntry = { text: message, accepted: false, toolDrained: false };
       pendingSteerBySessionIdRef.current = {
         ...pendingSteerBySessionIdRef.current,
@@ -4613,11 +4627,7 @@ export function AgentWorkspace({
         const promotedIssueReport = promotePendingIssueReportToReview(storedSessionId, {
           queueDiagnosisRefresh: true,
         });
-        if (!promotedIssueReport) {
-          window.setTimeout(() => {
-            void refreshHermesSession(storedSessionId);
-          }, 300);
-        }
+        if (!promotedIssueReport) postTurnRefresher.schedule(storedSessionId);
       }
     });
     unlisten = () => {
@@ -4956,6 +4966,13 @@ export function AgentWorkspace({
         }
         return [optimisticSessionItem, ...current];
       });
+    }
+    const turnInProgress =
+      workingSessionIdsRef.current.has(storedSessionId) ||
+      waitingSessionIdsRef.current.has(storedSessionId);
+    // The reply those frames showed may not be stored yet: fetch it now, not at the next poll.
+    if (dropFinishedLiveTurns(storedSessionId, turnInProgress)) {
+      void refreshHermesSession(storedSessionId);
     }
     const pendingUserMessage: HermesSessionMessage = {
       id: optimisticSession?.userMessage.id ?? `pending:user:${Date.now()}`,
@@ -5467,9 +5484,12 @@ export function AgentWorkspace({
    * mid-tool-loop as failed rather than letting it settle silently. */
   function settleSessionRun(sessionId: string, summary: string, reason: string) {
     const activityCounts = clearSessionActivity(sessionId);
-    const turnFailed = (liveEventsRef.current[sessionId] ?? []).some(
-      (event) => event.type === "error",
-    );
+    // Only this turn's failure counts: an error the user has sent past is over.
+    const turnFailed =
+      currentTurnLiveErrors(liveEventsRef.current[sessionId] ?? [], [
+        ...(hermesSessionMessagesRef.current[sessionId] ?? []),
+        ...(pendingHermesMessagesRef.current[sessionId] ?? []),
+      ]).length > 0;
     // Which authority ended this run is the first question to ask when a chat
     // looks stuck (or looks finished while it is not), and the answer used to
     // exist nowhere. Recorded next to the gateway frames it sits between.
@@ -5570,10 +5590,12 @@ export function AgentWorkspace({
     return messages;
   }
 
-  async function refreshHermesSession(sessionId: string) {
+  /** Resolves true once the stored transcript shows a reply after the user's
+   * latest message (the post-turn retries stop there). */
+  async function refreshHermesSession(sessionId: string): Promise<boolean> {
     try {
       const messages = await listSessionMessagesOrdered(sessionId);
-      if (!messages) return;
+      if (!messages) return false;
       const retainedPending = retainUnpersistedPendingMessages(
         pendingHermesMessagesRef.current[sessionId] ?? [],
         messages,
@@ -5596,7 +5618,8 @@ export function AgentWorkspace({
       // the agent loop persists an assistant row at every step, so ending it
       // here settled turns that were still going. Activity now ends only on a
       // terminal gateway event or on the runtime's session.active_list.
-      if (hermesMessagesHaveAssistantReply([...messages, ...retainedPending])) {
+      const caughtUp = hermesMessagesHaveAssistantReply([...messages, ...retainedPending]);
+      if (caughtUp) {
         promotePendingIssueReportToReview(sessionId, {
           queueDiagnosisRefresh: false,
         });
@@ -5605,22 +5628,27 @@ export function AgentWorkspace({
         // a tool-call assistant message exists the persisted rebuild has no
         // error part and the turn would settle silently (the reported "the chat
         // just stops"). Everything else is now reflected in `messages`, so keep
-        // only the error frames across the clear — buildHermesSessionChatTurns
-        // folds them back into a visible notice/error part.
-        const preservedErrors = (liveEventsRef.current[sessionId] ?? []).filter(
-          (event) => event.type === "error",
-        );
-        liveEventsRef.current = { ...liveEventsRef.current, [sessionId]: preservedErrors };
+        // only the current turn's error frames across the clear
+        // (buildHermesSessionChatTurns folds them back into a visible notice);
+        // one the user has since sent past belongs to a turn that is over.
+        liveEventsRef.current = {
+          ...liveEventsRef.current,
+          [sessionId]: currentTurnLiveErrors(liveEventsRef.current[sessionId] ?? [], [
+            ...messages,
+            ...retainedPending,
+          ]),
+        };
         setLiveEvents(liveEventsRef.current);
       }
       await loadHermesSessions();
+      return caughtUp;
     } catch (err) {
       const message = messageFromError(err);
       // Background refresh racing a just-created session: a transient
       // "Session not found" 404 resolves on the next poll, so don't surface
       // it as an error banner (JUN-116).
-      if (isSessionGoneError(message)) return;
-      setError(message, { sessionId });
+      if (!isSessionGoneError(message)) setError(message, { sessionId });
+      return false;
     }
   }
 
@@ -5900,6 +5928,18 @@ export function AgentWorkspace({
     } finally {
       setBranchingMessageId(null);
     }
+  }
+
+  // A new prompt (or a steer) opens a new beat of the conversation: drop what a
+  // finished turn left in the live buffer (see liveEventsForNewTurn). Returns
+  // whether anything went, so a send can fetch the stored copy right away.
+  function dropFinishedLiveTurns(sessionId: string, turnInProgress: boolean) {
+    const events = liveEventsRef.current[sessionId] ?? [];
+    const kept = liveEventsForNewTurn(events, { turnInProgress });
+    if (kept === events) return false;
+    liveEventsRef.current = { ...liveEventsRef.current, [sessionId]: kept };
+    setLiveEvents(liveEventsRef.current);
+    return true;
   }
 
   function pushLiveEvent(key: string, event: HermesGatewayEvent) {
@@ -6571,6 +6611,12 @@ export function AgentWorkspace({
             buildHermesSessionChatTurns(
               selectedHermesMessages,
               liveEvents[selectedHermesSessionId] ?? [],
+              // Pending prompts share the live frames' clock (see the option).
+              {
+                pendingMessageIds: new Set(
+                  pendingHermesMessages[selectedHermesSessionId]?.map(({ id }) => id),
+                ),
+              },
             ),
           ),
           ...(imageTurnsBySession[selectedHermesSessionId] ?? []),
@@ -13096,25 +13142,6 @@ function shouldResumeSessionActivity(messages: HermesSessionMessage[]) {
   if (!latestUser) return false;
   const sentAt = hermesMessageTimestampMs(latestUser);
   return sentAt !== undefined && Date.now() - sentAt < RESUME_ACTIVITY_WINDOW_MS;
-}
-
-// Frames that end the session's TURN. Deliberately excludes `background.*`: a
-// background process finishing is the opposite of an ending — the gateway's
-// notification poller chains a fresh agent turn with that process's output, so
-// treating it as terminal ended the run and dropped the live subscription at
-// the exact moment the agent was about to pick the work back up, and the
-// chained turn then streamed to nobody (see ADR-0016 addendum).
-function isTerminalHermesEvent(type: string) {
-  const normalized = type.toLowerCase();
-  return (
-    normalized === "error" ||
-    normalized === "message.complete" ||
-    normalized === "message.completed" ||
-    normalized === "turn.complete" ||
-    normalized === "turn.completed" ||
-    normalized === "session.complete" ||
-    normalized === "session.completed"
-  );
 }
 
 function hermesToolEventPhase(type: string): HermesToolEventPhase | undefined {
