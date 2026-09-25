@@ -3973,7 +3973,10 @@ describe("AgentWorkspace", () => {
     });
 
     await screen.findByText(/Reading another source/);
-    expect(scrollTo).toHaveBeenCalledTimes(2);
+    // Output growing inside the same turn is followed too, with a direct
+    // assignment once a frame rather than a smooth scroll restarted per frame.
+    await waitFor(() => expect(scroller.scrollTop).toBe(2000));
+    expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 
   it("does not pull the transcript back down after scrollbar scrolling", async () => {

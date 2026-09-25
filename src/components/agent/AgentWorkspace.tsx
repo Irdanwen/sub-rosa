@@ -90,6 +90,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
+  memo,
   useCallback,
   useEffect,
   useId,
@@ -188,6 +189,7 @@ import {
   AGENT_SESSIONS_CHANGED_EVENT,
   dispatchAgentSessionsChanged,
   dispatchAgentSessionStatus,
+  repeatsLastAgentSessionStatus,
   type AgentGalleryDetail,
   type AgentSessionsChangedDetail,
   type AgentSessionStatusKind,
@@ -334,10 +336,12 @@ import {
   hermesMessagesHaveAssistantReply,
   hermesMessagesShowCompletedTurn,
   currentTurnLiveErrors,
+  eventText,
   isProcessNoticeTurn,
   isTerminalHermesEvent,
   liveEventsForNewTurn,
   repairContractionSpacing,
+  stringValue,
   textFromHermesContent,
   appendLiveHermesEvent,
   withInterruptedTurnNotice,
@@ -358,7 +362,15 @@ import {
   type AgentChatGallerySection,
 } from "../../lib/agent-chat-gallery";
 import { attachScrollThumbFade } from "../../lib/scroll-thumb-fade";
+import { createFrameBatcher, requestFrame } from "../../lib/frame-batch";
 import { createPostTurnRefresher } from "../../lib/post-turn-refresh";
+import { useEventCallback } from "../../lib/use-event-callback";
+import {
+  chatTurnsSignature,
+  mergeThinkingTurns,
+  stabilizeLists,
+  stabilizeTurns,
+} from "../../lib/agent-chat-transcript";
 
 const POLLED_STATUSES = new Set<AgentTaskStatus>(["queued", "running", "waitingForUser"]);
 const AGENT_TITLE_TIMEOUT_MS = 2500;
@@ -690,6 +702,8 @@ type AgentWorkspaceNotice = {
 type AgentDeleteSessionDetail = {
   sessionId: string;
 };
+
+type TurnPart<Kind extends AgentChatPart["type"]> = Extract<AgentChatPart, { type: Kind }>;
 
 type AgentArtifact = {
   name: string;
@@ -1580,6 +1594,14 @@ export function AgentWorkspace({
   // stack a second one — otherwise every event lands twice in liveEvents.
   const sessionGatewayUnlistenRef = useRef<Map<string, () => void>>(new Map());
   const liveEventsRef = useRef<Record<string, LiveHermesEvent[]>>(liveEvents);
+  // The ref takes every live frame at once (every handler reads it); the render
+  // is published at most once per animation frame, so a streamed reply stops
+  // re-rendering the workspace per token. Anything but a streamed delta flushes.
+  const liveEventsPublisher = useMemo(
+    () => createFrameBatcher(() => setLiveEvents(liveEventsRef.current)),
+    [],
+  );
+  useEffect(() => () => liveEventsPublisher.cancel(), [liveEventsPublisher]);
   // A finished turn is refreshed a few times until its stored reply shows up.
   const refreshHermesSessionRef = useRef(refreshHermesSession);
   refreshHermesSessionRef.current = refreshHermesSession;
@@ -1873,8 +1895,11 @@ export function AgentWorkspace({
     return false;
   }
 
+  // Both return the current Set when nothing changes: a new Set per streamed
+  // frame re-rendered the workspace and re-armed the working poll's interval.
   const setSessionWorking = useCallback((sessionId: string, working: boolean) => {
     setWorkingSessionIds((current) => {
+      if (current.has(sessionId) === working) return current;
       const next = new Set(current);
       if (working) {
         next.add(sessionId);
@@ -1888,6 +1913,7 @@ export function AgentWorkspace({
 
   const setSessionWaiting = useCallback((sessionId: string, waiting: boolean) => {
     setWaitingSessionIds((current) => {
+      if (current.has(sessionId) === waiting) return current;
       const next = new Set(current);
       if (waiting) {
         next.add(sessionId);
@@ -1945,11 +1971,11 @@ export function AgentWorkspace({
       sessionGatewayUnlistenRef.current.get(sessionId)?.();
       postTurnRefresher.cancel(sessionId);
       liveEventsRef.current = omitRecordKey(liveEventsRef.current, sessionId);
-      setLiveEvents(liveEventsRef.current);
+      liveEventsPublisher.flush();
       // A deleted session must not be the restore target on the next mount.
       forgetLastOpenSessionId(sessionId);
     },
-    [clearSessionActivity, postTurnRefresher],
+    [clearSessionActivity, liveEventsPublisher, postTurnRefresher],
   );
 
   const selectedTask = useMemo(
@@ -2921,7 +2947,7 @@ export function AgentWorkspace({
             ...liveEventsRef.current,
             [selectedHermesSessionId]: [],
           };
-          setLiveEvents(liveEventsRef.current);
+          liveEventsPublisher.flush();
         }
       })
       .catch((err: unknown) => {
@@ -2938,7 +2964,7 @@ export function AgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [bridge.running, selectedHermesSessionId]);
+  }, [bridge.running, liveEventsPublisher, selectedHermesSessionId]);
 
   useEffect(() => {
     if (!bridge.running || !selectedHermesSessionId) return;
@@ -4357,7 +4383,7 @@ export function AgentWorkspace({
       return next;
     });
     liveEventsRef.current = moveRecordKey(liveEventsRef.current, fromSessionId, toSessionId);
-    setLiveEvents(liveEventsRef.current);
+    liveEventsPublisher.flush();
     setWorkingSessionIds((current) => {
       const next = new Set(current);
       if (next.delete(fromSessionId)) next.add(toSessionId);
@@ -4395,7 +4421,7 @@ export function AgentWorkspace({
     let nextLiveEvents = liveEventsRef.current;
     for (const id of ids) nextLiveEvents = omitRecordKey(nextLiveEvents, id);
     liveEventsRef.current = nextLiveEvents;
-    setLiveEvents(nextLiveEvents);
+    liveEventsPublisher.flush();
     setWorkingSessionIds((current) => {
       const next = new Set(current);
       for (const id of ids) next.delete(id);
@@ -4503,7 +4529,11 @@ export function AgentWorkspace({
         ...liveEventsRef.current,
         [storedSessionId]: nextSessionEvents,
       };
-      setLiveEvents(liveEventsRef.current);
+      if (/^(message|thinking|reasoning)\.delta$/.test(event.type)) {
+        liveEventsPublisher.schedule();
+      } else {
+        liveEventsPublisher.flush();
+      }
       const toolEventPhase = hermesToolEventPhase(event.type);
       if (toolEventPhase === "complete") {
         // Hermes drains every accepted steer into the tool result it just
@@ -4550,14 +4580,15 @@ export function AgentWorkspace({
         // session.
         pendingActionStore.resolveSession(storedSessionId);
       }
-      if (status) {
-        dispatchAgentSessionStatus({
-          sessionId: storedSessionId,
-          title: sessionDisplayTitle,
-          status,
-          summary: agentStatusSummaryFromHermesEvent(event, status),
-          ...activityCounts,
-        });
+      const statusDetail = status && {
+        sessionId: storedSessionId,
+        title: sessionDisplayTitle,
+        status,
+        summary: agentStatusSummaryFromHermesEvent(event, status),
+        ...activityCounts,
+      };
+      if (statusDetail && !(status === "running" && repeatsLastAgentSessionStatus(statusDetail))) {
+        dispatchAgentSessionStatus(statusDetail);
       }
       if (isTerminalHermesEvent(event.type)) {
         // The subscription deliberately OUTLIVES the turn (it is replaced by the
@@ -5638,7 +5669,7 @@ export function AgentWorkspace({
             ...retainedPending,
           ]),
         };
-        setLiveEvents(liveEventsRef.current);
+        liveEventsPublisher.flush();
       }
       await loadHermesSessions();
       return caughtUp;
@@ -5695,7 +5726,7 @@ export function AgentWorkspace({
           clearSessionActivity(key);
         }
         liveEventsRef.current = omitRecordKey(liveEventsRef.current, liveEventKey);
-        setLiveEvents(liveEventsRef.current);
+        liveEventsPublisher.flush();
         // The request can never be answered now — retire its card so neither the
         // sidebar count nor the inline prompt offers a dead-end "Respond".
         pendingActionStore.resolveRequest(sessionId, requestId);
@@ -5938,7 +5969,7 @@ export function AgentWorkspace({
     const kept = liveEventsForNewTurn(events, { turnInProgress });
     if (kept === events) return false;
     liveEventsRef.current = { ...liveEventsRef.current, [sessionId]: kept };
-    setLiveEvents(liveEventsRef.current);
+    liveEventsPublisher.flush();
     return true;
   }
 
@@ -5949,7 +5980,7 @@ export function AgentWorkspace({
       ...liveEventsRef.current,
       [key]: nextEvents,
     };
-    setLiveEvents(liveEventsRef.current);
+    liveEventsPublisher.flush();
   }
 
   // Feature 06: steer a STILL-WORKING session with a mid-run instruction,
@@ -6595,57 +6626,145 @@ export function AgentWorkspace({
   // Hoisted so the trailing "Thinking…" indicator only shows in the gap after a
   // send (last turn is the user's) — once an assistant turn exists it carries
   // its own thinking/streaming state, so we don't double up.
-  const hermesTurns = selectedHermesSessionId
-    ? // Merge the `/image` overlay (client-synthesized assistant image turns)
-      // with the gateway-derived turns, ordered by createdAt. Array.sort is
-      // stable, and an image turn's createdAt is minted strictly after its user
-      // prompt, so the image always renders below the prompt that produced it.
-      // Then flag a session that stopped mid agent-loop with no persisted error
-      // (the reload gap ADR-0012's live-frame fix can't cover). Only when it is
-      // idle: a still-working session sits on a tool result because the next
-      // model call is in flight, and one awaiting input (approval / clarify) is
-      // not interrupted — either would misread as a dead turn.
-      withInterruptedTurnNotice(
-        [
-          ...mergeThinkingTurns(
-            buildHermesSessionChatTurns(
-              selectedHermesMessages,
-              liveEvents[selectedHermesSessionId] ?? [],
-              // Pending prompts share the live frames' clock (see the option).
-              {
-                pendingMessageIds: new Set(
-                  pendingHermesMessages[selectedHermesSessionId]?.map(({ id }) => id),
+  // Rebuilt at most once per published live frame (memoized), and turns that
+  // did not change keep their identity so their memoized rows skip rendering.
+  const selectedLiveEvents = selectedHermesSessionId
+    ? liveEvents[selectedHermesSessionId]
+    : undefined;
+  const selectedImageTurns = selectedHermesSessionId
+    ? imageTurnsBySession[selectedHermesSessionId]
+    : undefined;
+  const selectedPendingMessages = selectedHermesSessionId
+    ? pendingHermesMessages[selectedHermesSessionId]
+    : undefined;
+  const selectedTurnInterrupted =
+    Boolean(selectedHermesSessionId) &&
+    !workingSessionIds.has(selectedHermesSessionId ?? "") &&
+    !waitingSessionIds.has(selectedHermesSessionId ?? "") &&
+    // A turn that parked a long job and ended is not interrupted — it is
+    // waiting, and the gateway will chain the next turn when the job finishes.
+    // The background notice already says so; claiming the turn died would
+    // invite a retry that duplicates the work.
+    !hasRunningBackgroundWork(sessionBackgroundProcesses) &&
+    hermesMessagesEndInterrupted(selectedHermesMessages);
+  const turnIdentityRef = useRef(new Map<string, AgentChatTurn>());
+  const hermesTurns = useMemo(
+    () =>
+      selectedHermesSessionId
+        ? stabilizeTurns(
+            turnIdentityRef.current,
+            // Merge the `/image` overlay (client-synthesized assistant image
+            // turns) with the gateway-derived turns, ordered by createdAt.
+            // Array.sort is stable, and an image turn's createdAt is minted
+            // strictly after its user prompt, so the image always renders below
+            // the prompt that produced it. Then flag a session that stopped mid
+            // agent-loop with no persisted error (the reload gap ADR-0012's
+            // live-frame fix can't cover). Only when it is idle: a still-working
+            // session sits on a tool result because the next model call is in
+            // flight, and one awaiting input (approval / clarify) is not
+            // interrupted — either would misread as a dead turn.
+            withInterruptedTurnNotice(
+              [
+                ...mergeThinkingTurns(
+                  buildHermesSessionChatTurns(selectedHermesMessages, selectedLiveEvents ?? [], {
+                    pendingMessageIds: new Set(selectedPendingMessages?.map(({ id }) => id)),
+                  }),
                 ),
-              },
+                ...(selectedImageTurns ?? []),
+              ].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+              { interrupted: selectedTurnInterrupted },
             ),
-          ),
-          ...(imageTurnsBySession[selectedHermesSessionId] ?? []),
-        ].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-        {
-          interrupted:
-            !workingSessionIds.has(selectedHermesSessionId) &&
-            !waitingSessionIds.has(selectedHermesSessionId) &&
-            // A turn that parked a long job and ended is not interrupted — it
-            // is waiting, and the gateway will chain the next turn when the job
-            // finishes. The background notice already says so; claiming the
-            // turn died would invite a retry that duplicates the work.
-            !hasRunningBackgroundWork(sessionBackgroundProcesses) &&
-            hermesMessagesEndInterrupted(selectedHermesMessages),
-        },
-      )
-    : [];
-  const taskTurns = selectedTask
-    ? mergeThinkingTurns(
-        buildAgentChatTurns(
-          selectedTask.messages,
-          selectedTask.toolEvents,
-          liveEvents[selectedTask.id] ?? [],
-        ),
-      )
-    : [];
-  const turnArtifacts = assignArtifactsToTurns(
-    selectedHermesSessionId ? hermesTurns : taskTurns,
-    chatArtifacts,
+          )
+        : [],
+    [
+      selectedHermesMessages,
+      selectedHermesSessionId,
+      selectedImageTurns,
+      selectedLiveEvents,
+      selectedPendingMessages,
+      selectedTurnInterrupted,
+    ],
+  );
+  const selectedTaskLiveEvents = selectedTask ? liveEvents[selectedTask.id] : undefined;
+  const taskTurns = useMemo(
+    () =>
+      selectedTask
+        ? mergeThinkingTurns(
+            buildAgentChatTurns(
+              selectedTask.messages,
+              selectedTask.toolEvents,
+              selectedTaskLiveEvents ?? [],
+            ),
+          )
+        : [],
+    [selectedTask, selectedTaskLiveEvents],
+  );
+  const visibleTurns = selectedHermesSessionId ? hermesTurns : taskTurns;
+  const turnArtifactsRef = useRef(new Map<string, AgentArtifact[]>());
+  const turnArtifacts = useMemo(
+    () =>
+      stabilizeLists(turnArtifactsRef.current, assignArtifactsToTurns(visibleTurns, chatArtifacts)),
+    [visibleTurns, chatArtifacts],
+  );
+  // The transcript rows are memoized: every handler they take keeps its
+  // identity across renders (useEventCallback) so a streamed frame re-renders
+  // only the turn that grew.
+  const sessionIdForRow = (sessionId?: string) => sessionId ?? selectedHermesSessionId ?? "";
+  const rowMode = () => sessionUnrestricted(selectedHermesSessionId);
+  const hermesRowHandlers = {
+    onApproval: useEventCallback((part: TurnPart<"approval">, choice: AgentApprovalChoice) => {
+      void respondToApproval(
+        sessionIdForRow(),
+        sessionIdForRow(part.sessionId),
+        part.id,
+        choice,
+        rowMode(),
+      );
+    }),
+    onClarify: useEventCallback((part: TurnPart<"clarify">, answer: string) => {
+      void respondToClarify(sessionIdForRow(), part.id, answer, rowMode());
+    }),
+    onSudo: useEventCallback((part: TurnPart<"sudo">, approved: boolean) => {
+      void respondToSudo(
+        sessionIdForRow(),
+        sessionIdForRow(part.sessionId),
+        part.id,
+        approved,
+        part.mode,
+        rowMode(),
+      );
+    }),
+    onSecret: useEventCallback((part: TurnPart<"secret">, value: string) => {
+      void respondToSecret(
+        sessionIdForRow(),
+        sessionIdForRow(part.sessionId),
+        part.id,
+        value,
+        rowMode(),
+      );
+    }),
+    onBranch: useEventCallback((messageId: string, sessionId?: string) => {
+      void branchFromMessage(sessionIdForRow(sessionId), messageId, sessionIdForRow());
+    }),
+    onEditUserPrompt: useEventCallback((text: string) => editUserPrompt(text)),
+    onRetry: useEventCallback(() => retryLastHermesUserTurn()),
+    onDownloadArtifact: useEventCallback(
+      (artifact: AgentArtifact) => void downloadArtifact(artifact),
+    ),
+    onOpenArtifact: useEventCallback((artifact: AgentArtifact) => openArtifact(artifact)),
+    onDownloadImage: useEventCallback(
+      (part: TurnPart<"image">) => void downloadGeneratedImage(part),
+    ),
+    onOpenImage: useEventCallback((part: TurnPart<"image">) => openGeneratedImage(part)),
+  };
+  const enableCliAccess = useEventCallback(() => void enableCliAccessFromChat());
+  const cliAccessCard = useMemo(
+    () => ({
+      enabled: cliAccessEnabled,
+      submitting: cliAccessSubmitting,
+      onEnable: enableCliAccess,
+    }),
+    [cliAccessEnabled, cliAccessSubmitting, enableCliAccess],
   );
   const activeThinkingKey = selectedHermesSessionId
     ? `session:${selectedHermesSessionId}:active`
@@ -6735,9 +6854,7 @@ export function AgentWorkspace({
   // Aggregate size of the rendered conversation so streaming deltas — which
   // grow text inside an existing turn without changing any count — still keep
   // the scroller pinned to the bottom.
-  const renderedTurnsSignature = chatTurnsSignature(
-    selectedHermesSessionId ? hermesTurns : taskTurns,
-  );
+  const renderedTurnsSignature = useMemo(() => chatTurnsSignature(visibleTurns), [visibleTurns]);
 
   // Which conversation the scroller is already settled in. A switch (and the
   // history fetch that fills the new conversation in) must land at the bottom
@@ -6747,6 +6864,9 @@ export function AgentWorkspace({
   const transcriptProgrammaticScrollRef = useRef(false);
   const transcriptProgrammaticScrollTimeoutRef = useRef<number | undefined>();
   const transcriptLastScrollTopRef = useRef(0);
+  const transcriptTurnCountRef = useRef(0);
+  const transcriptScrollFrameRef = useRef<() => void>();
+  const visibleTurnCount = visibleTurns.length;
 
   // History for the selected conversation has landed: a session gets an entry
   // in hermesSessionMessages (even an empty one) once its fetch resolves;
@@ -6845,12 +6965,29 @@ export function AgentWorkspace({
     } else {
       transcriptProgrammaticScrollRef.current = false;
     }
-    scroller.scrollTo({
-      top: scroller.scrollHeight,
-      behavior: settled ? "smooth" : "auto",
-    });
+    // A reply growing in place is followed with a plain assignment, at most
+    // once a frame: restarting a smooth scroll per streamed frame made the
+    // browser chase a moving target. A new turn still glides.
+    const growingInPlace = settled && transcriptTurnCountRef.current === visibleTurnCount;
+    transcriptTurnCountRef.current = visibleTurnCount;
+    if (growingInPlace) {
+      transcriptScrollFrameRef.current ??= requestFrame(() => {
+        transcriptScrollFrameRef.current = undefined;
+        // The reader may have scrolled away since this was scheduled.
+        if (transcriptShouldStickToBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
+      });
+    } else {
+      scroller.scrollTo({ top: scroller.scrollHeight, behavior: settled ? "smooth" : "auto" });
+    }
     transcriptShouldStickToBottomRef.current = true;
-  }, [renderedTurnsSignature, selectedHermesSessionId, selectedHistoryLoaded, selectedTaskId]);
+  }, [
+    renderedTurnsSignature,
+    selectedHermesSessionId,
+    selectedHistoryLoaded,
+    selectedTaskId,
+    visibleTurnCount,
+  ]);
+  useEffect(() => () => transcriptScrollFrameRef.current?.(), []);
 
   // Reshuffle the deck each time the hero comes back, so repeat visits start
   // from a fresh hand instead of wherever the last rotation left off.
@@ -7680,65 +7817,13 @@ export function AgentWorkspace({
           clarifySubmitting={clarifySubmitting}
           sudoSubmitting={sudoSubmitting}
           secretSubmitting={secretSubmitting}
-          cliAccess={{
-            enabled: cliAccessEnabled,
-            submitting: cliAccessSubmitting,
-            onEnable: () => void enableCliAccessFromChat(),
-          }}
+          cliAccess={cliAccessCard}
           thinkingOpen={thinkingOpen}
           onThinkingOpenChange={setThinkingOpen}
-          onDownloadArtifact={downloadArtifact}
-          onOpenArtifact={openArtifact}
-          onDownloadImage={downloadGeneratedImage}
-          onOpenImage={openGeneratedImage}
-          onApproval={(part, choice) =>
-            void respondToApproval(
-              selectedHermesSessionId,
-              part.sessionId ?? selectedHermesSessionId,
-              part.id,
-              choice,
-              sessionUnrestricted(selectedHermesSessionId),
-            )
-          }
+          {...hermesRowHandlers}
           onTopUp={handleTopUp}
           topUpLabel={topUpLabel}
-          onClarify={(part, answer) =>
-            void respondToClarify(
-              selectedHermesSessionId,
-              part.id,
-              answer,
-              sessionUnrestricted(selectedHermesSessionId),
-            )
-          }
-          onSudo={(part, approved) =>
-            void respondToSudo(
-              selectedHermesSessionId,
-              part.sessionId ?? selectedHermesSessionId,
-              part.id,
-              approved,
-              part.mode,
-              sessionUnrestricted(selectedHermesSessionId),
-            )
-          }
-          onSecret={(part, value) =>
-            void respondToSecret(
-              selectedHermesSessionId,
-              part.sessionId ?? selectedHermesSessionId,
-              part.id,
-              value,
-              sessionUnrestricted(selectedHermesSessionId),
-            )
-          }
-          onBranch={(messageId, sessionId) =>
-            void branchFromMessage(
-              sessionId ?? selectedHermesSessionId,
-              messageId,
-              selectedHermesSessionId,
-            )
-          }
           branchingMessageId={branchingMessageId}
-          onEditUserPrompt={editUserPrompt}
-          onRetry={retryLastHermesUserTurn}
         />
       ))}
       {workingSessionIds.has(selectedHermesSessionId) && hermesTurns.at(-1)?.role === "user" ? (
@@ -9836,22 +9921,6 @@ function CapabilityRow({
   );
 }
 
-// Sums turn/part counts plus streamed text lengths so the auto-scroll effect
-// re-fires as streamed output grows, not only when a whole turn is added.
-function chatTurnsSignature(turns: AgentChatTurn[]) {
-  return turns.reduce(
-    (total, turn) =>
-      total +
-      1 +
-      turn.parts.reduce(
-        (size, part) =>
-          size + 1 + ("text" in part && typeof part.text === "string" ? part.text.length : 0),
-        0,
-      ),
-    0,
-  );
-}
-
 const AGENT_TRANSCRIPT_BOTTOM_THRESHOLD_PX = 48;
 
 function isAgentTranscriptNearBottom(scroller: HTMLElement) {
@@ -9859,44 +9928,6 @@ function isAgentTranscriptNearBottom(scroller: HTMLElement) {
     scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <=
     AGENT_TRANSCRIPT_BOTTOM_THRESHOLD_PX
   );
-}
-
-// Collapse runs of "thinking-only" assistant turns (reasoning/tool, no answer
-// text) into the next answer turn, so a back-to-back chain of thoughts shows as
-// a single "Thought" disclosure rather than several stacked in a row.
-function mergeThinkingTurns(turns: AgentChatTurn[]): AgentChatTurn[] {
-  const isThinkingOnly = (turn: AgentChatTurn): boolean =>
-    turn.role === "assistant" &&
-    turn.parts.length > 0 &&
-    turn.parts.every((part) => part.type === "reasoning" || part.type === "tool");
-  const rebuild = (turn: AgentChatTurn, parts: AgentChatPart[]): AgentChatTurn => ({
-    id: turn.id,
-    role: turn.role,
-    createdAt: turn.createdAt,
-    status: turn.status,
-    parts,
-  });
-
-  const out: AgentChatTurn[] = [];
-  let pending: AgentChatTurn | undefined;
-  for (const turn of turns) {
-    if (isThinkingOnly(turn)) {
-      pending = pending === undefined ? turn : rebuild(turn, [...pending.parts, ...turn.parts]);
-      continue;
-    }
-    if (turn.role === "assistant" && pending !== undefined) {
-      out.push(rebuild(turn, [...pending.parts, ...turn.parts]));
-      pending = undefined;
-      continue;
-    }
-    if (pending !== undefined) {
-      out.push(pending);
-      pending = undefined;
-    }
-    out.push(turn);
-  }
-  if (pending !== undefined) out.push(pending);
-  return out;
 }
 
 // Dev-only catalog of every agent response part type, rendered through the real
@@ -9978,7 +10009,8 @@ function AgentResponseGallery({
 
 // Exported for the transcript rendering tests (the dev gallery renders it
 // through <AgentResponseGallery>); not part of the workspace's public surface.
-export function AgentChatTurnRow({
+// Memoized: a streamed frame re-renders only the turn whose data changed.
+export const AgentChatTurnRow = memo(function AgentChatTurnRow({
   activeThinkingKey,
   approvalSubmitting,
   artifacts,
@@ -10404,7 +10436,7 @@ export function AgentChatTurnRow({
       </div>
     </article>
   );
-}
+});
 
 function copyableTextForTurn(turn: AgentChatTurn): string {
   if (turn.role === "user") return userPromptTextForTurn(turn);
@@ -12378,7 +12410,9 @@ function isMarkdownPath(path: string) {
   return /\.(md|markdown|mdx)$/i.test(path);
 }
 
-function MarkdownContent({
+// Memoized on its (primitive) props: a finished message is parsed once, not on
+// every frame of the reply streaming below it.
+const MarkdownContent = memo(function MarkdownContent({
   markdown,
   highlight,
   // Repairs the gateway's dropped-space-after-contraction artifact ("it'snot"
@@ -12399,7 +12433,7 @@ function MarkdownContent({
       {renderMarkdownBlocks(markdown, highlight, repairProse, streaming)}
     </div>
   );
-}
+});
 
 /** Wraps case-insensitive matches of `highlight` in <mark>, leaving the text
  * untouched when there's nothing to find. Every text emission point in the
@@ -12683,40 +12717,6 @@ export function renderInlineMarkdown(
     nodes.push(...markProse(text.slice(lastIndex), "t"));
   }
   return nodes;
-}
-
-function eventText(event: HermesGatewayEvent) {
-  const payload = event.payload as Record<string, unknown> | undefined;
-  if (!payload) return "";
-  for (const key of [
-    "text",
-    "delta",
-    "message",
-    "summary",
-    "status",
-    "content",
-    "output",
-    "result",
-    "command",
-  ]) {
-    const value = stringValue(
-      payload[key],
-      key === "text" || key === "delta" || key === "message" || key === "content",
-    );
-    if (value) return value;
-  }
-  return "";
-}
-
-function stringValue(value: unknown, preserveWhitespace = false) {
-  if (typeof value === "string") {
-    if (!value.trim()) return undefined;
-    return preserveWhitespace ? value : value.trim();
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return undefined;
 }
 
 function capabilityMatches(

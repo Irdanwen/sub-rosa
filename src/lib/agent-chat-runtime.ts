@@ -1294,7 +1294,7 @@ function upsertSecretPart(
   });
 }
 
-function eventText(event: HermesGatewayEvent) {
+export function eventText(event: HermesGatewayEvent) {
   const payload = event.payload as Record<string, unknown> | undefined;
   if (!payload) return "";
   for (const key of [
@@ -1766,7 +1766,7 @@ function stringArrayValue(value: unknown) {
     : [];
 }
 
-function stringValue(value: unknown, preserveWhitespace = false) {
+export function stringValue(value: unknown, preserveWhitespace = false) {
   if (typeof value === "string") {
     if (!value.trim()) return undefined;
     return preserveWhitespace ? value : value.trim();
