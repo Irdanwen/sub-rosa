@@ -2186,3 +2186,77 @@ describe("appendLiveHermesEvent", () => {
     expect(events).toHaveLength(HERMES_LIVE_EVENT_LIMIT);
   });
 });
+
+describe("live turn ordering", () => {
+  const text = (turn: AgentChatTurn) =>
+    turn.parts.map((part) => ("text" in part ? part.text : "")).join("");
+  const liveReply = (answer: string, at: string): LiveHermesEvent[] => [
+    { type: "message.start", session_id: "s1", receivedAt: at },
+    { type: "message.delta", session_id: "s1", payload: { text: answer }, receivedAt: at },
+    { type: "message.complete", session_id: "s1", payload: { text: answer }, receivedAt: at },
+  ];
+
+  it("keeps a finished live reply above a message the user sent after it", () => {
+    // The previous turn finished but the transcript that would replace its live
+    // frames never arrived, and the user sent again. The reply must stay where
+    // it happened, not be restamped with the newest message's time and
+    // rendered under it.
+    const messages: HermesSessionMessage[] = [
+      { id: "m1", role: "user", content: "First question", timestamp: "2026-09-25T10:00:00Z" },
+      {
+        id: "pending:user:1",
+        role: "user",
+        content: "Second question",
+        timestamp: "2026-09-25T10:00:20.000Z",
+      },
+    ];
+    const turns = buildHermesSessionChatTurns(
+      messages,
+      liveReply("First answer.", "2026-09-25T10:00:05.000Z"),
+      { pendingMessageIds: new Set(["pending:user:1"]) },
+    );
+    expect(turns.map((turn) => `${turn.role}:${text(turn)}`)).toEqual([
+      "user:First question",
+      "assistant:First answer.",
+      "user:Second question",
+    ]);
+  });
+
+  it("keeps a live reply below the stored prompt that triggered it, whatever the clocks say", () => {
+    // Hermes stores the prompt at turn start, after it has already announced
+    // the reply: the stored timestamp is later than the reply's first frame.
+    // The reply must still render below the prompt (JUN-115).
+    const messages: HermesSessionMessage[] = [
+      { id: "m1", role: "user", content: "Question", timestamp: "2026-09-25T10:00:03Z" },
+    ];
+    const turns = buildHermesSessionChatTurns(
+      messages,
+      liveReply("Answer.", "2026-09-25T10:00:01.000Z"),
+      { pendingMessageIds: new Set() },
+    );
+    expect(turns.map((turn) => `${turn.role}:${text(turn)}`)).toEqual([
+      "user:Question",
+      "assistant:Answer.",
+    ]);
+  });
+
+  it("keeps a live reply below a just-sent prompt that is not stored yet", () => {
+    const messages: HermesSessionMessage[] = [
+      {
+        id: "pending:user:1",
+        role: "user",
+        content: "Question",
+        timestamp: "2026-09-25T10:00:01.000Z",
+      },
+    ];
+    const turns = buildHermesSessionChatTurns(
+      messages,
+      liveReply("Answer.", "2026-09-25T10:00:01.500Z"),
+      { pendingMessageIds: new Set(["pending:user:1"]) },
+    );
+    expect(turns.map((turn) => `${turn.role}:${text(turn)}`)).toEqual([
+      "user:Question",
+      "assistant:Answer.",
+    ]);
+  });
+});

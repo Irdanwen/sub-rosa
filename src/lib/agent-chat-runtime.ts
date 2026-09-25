@@ -209,12 +209,22 @@ export function buildAgentChatTurns(
   );
 }
 
+export type HermesSessionChatTurnsOptions = {
+  /** Ids of the messages in `messages` that are still pending: optimistic
+   * bubbles for prompts sent from this app and not stored yet. They are stamped
+   * on the same clock as live frames, so a live turn can tell whether one of
+   * them came after it (see {@link createAssistantTurn}). */
+  pendingMessageIds?: ReadonlySet<string>;
+};
+
 export function buildHermesSessionChatTurns(
   messages: HermesSessionMessage[],
   liveEvents: LiveHermesEvent[] = [],
+  options: HermesSessionChatTurnsOptions = {},
 ): AgentChatTurn[] {
   const turns: AgentChatTurn[] = [];
   const toolResults = new Map<string, HermesSessionMessage>();
+  const clientStampedTurns = new Set<AgentChatTurn>();
 
   for (const message of messages) {
     if (message.role === "tool") {
@@ -299,10 +309,11 @@ export function buildHermesSessionChatTurns(
 
     if (turn.parts.length) {
       turns.push(turn);
+      if (options.pendingMessageIds?.has(message.id)) clientStampedTurns.add(turn);
     }
   }
 
-  appendLiveHermesEvents(turns, liveEvents);
+  appendLiveHermesEvents(turns, liveEvents, clientStampedTurns);
   return sortAgentChatTurns(
     turns.filter((turn) =>
       turn.parts.some((part) => part.type === "tool" || partText(part).trim()),
@@ -588,7 +599,11 @@ function assistantTurnForTimestamp(turns: AgentChatTurn[], createdAt: string | u
   return undefined;
 }
 
-function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[]) {
+function appendLiveHermesEvents(
+  turns: AgentChatTurn[],
+  events: LiveHermesEvent[],
+  clientStampedTurns?: ReadonlySet<AgentChatTurn>,
+) {
   let currentAssistant: AgentChatTurn | null = null;
   // Hermes 0.19 seals mid-turn commentary as `message.interim`; remember the
   // bubble it produced so a previewed final (`response_previewed`) can fold
@@ -619,14 +634,14 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "message.start") {
-      currentAssistant = createAssistantTurn(turns, event.receivedAt);
+      currentAssistant = createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       lastInterimAssistant = null;
       continue;
     }
 
     if (event.type === "message.delta") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       appendAssistantTextPart(currentAssistant.parts, deltaEventText(event), "running");
       continue;
@@ -638,7 +653,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       // remember it, so a message.complete that only extends this preview folds
       // back in instead of duplicating the text.
       if (text) {
-        currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+        currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
         completeAssistantTextPart(currentAssistant.parts, text);
         currentAssistant.status = "complete";
         completeRunningParts(currentAssistant.parts);
@@ -665,7 +680,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       if (settlesInterimPreview && lastInterimAssistant) {
         currentAssistant = lastInterimAssistant;
       }
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       // A billing failure is recognizable from its "Error:" text prefix; a
       // context overflow is not, so only fold it when the turn actually failed
       // — an ordinary sentence that mentions "context length" stays prose.
@@ -695,7 +710,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "thinking.delta" || event.type === "reasoning.delta") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       appendReasoningPart(currentAssistant.parts, deltaEventText(event));
       continue;
@@ -710,7 +725,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       // each subagent as a tool-style row keyed by its id, so N parallel
       // subagents show as N live rows that resolve as they finish.
       if (!currentAssistant) {
-        currentAssistant = createAssistantTurn(turns, event.receivedAt);
+        currentAssistant = createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
         toolCreatedTurns.add(currentAssistant);
       }
       const payload = event.payload as Record<string, unknown> | undefined;
@@ -783,7 +798,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
         continue;
       }
       if (!currentAssistant) {
-        currentAssistant = createAssistantTurn(turns, event.receivedAt);
+        currentAssistant = createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
         toolCreatedTurns.add(currentAssistant);
       }
       const status = toolEventStatus(event);
@@ -810,7 +825,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "clarify.request") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       const payload = event.payload as Record<string, unknown> | undefined;
       upsertClarifyPart(currentAssistant.parts, {
@@ -844,7 +859,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "approval.request") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       const payload = event.payload as Record<string, unknown> | undefined;
       upsertApprovalPart(currentAssistant.parts, {
@@ -880,7 +895,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "sudo.request") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       const payload = event.payload as Record<string, unknown> | undefined;
       upsertSudoPart(currentAssistant.parts, {
@@ -921,7 +936,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "secret.request") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       const payload = event.payload as Record<string, unknown> | undefined;
       // Read ONLY the metadata fields — never `value`/`api_key`, even if the
@@ -960,7 +975,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "error") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       const notice = text ? turnNotice(text) : undefined;
       if (notice) {
         currentAssistant.parts.push(notice);
@@ -980,19 +995,34 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
 }
 
 function createAssistantTurn(turns: AgentChatTurn[], createdAt: string) {
+  return createAssistantTurnAfter(turns, createdAt);
+}
+
+function createAssistantTurnAfter(
+  turns: AgentChatTurn[],
+  createdAt: string,
+  clientStampedTurns?: ReadonlySet<AgentChatTurn>,
+) {
   // A live assistant turn's `createdAt` is the client's event receive time,
   // while the user/persisted turns it follows carry server timestamps. Those
-  // clocks differ, so a raw sort by `createdAt` can float the assistant above
-  // the user turn that triggered it — surfacing as a duplicated, misplaced
-  // "Thinking…" (the mis-sorted turn shows its own indicator while the gap
-  // indicator also fires because the user turn is now last). Clamp to the
-  // latest existing turn so an appended turn never sorts before the turns it
-  // causally follows; the sort's index tiebreak then keeps a same-timestamp
-  // user turn first.
-  const latestExisting = turns.reduce(
-    (latest, existing) => (existing.createdAt > latest ? existing.createdAt : latest),
-    "",
-  );
+  // clocks differ (Hermes stores a prompt at turn start, after it has already
+  // announced the reply), so a raw sort by `createdAt` can float the assistant
+  // above the user turn that triggered it — surfacing as a duplicated,
+  // misplaced "Thinking…" (the mis-sorted turn shows its own indicator while
+  // the gap indicator also fires because the user turn is now last). Clamp to
+  // the latest turn it can have followed so an appended turn never sorts before
+  // the turns it causally follows; the sort's index tiebreak then keeps a
+  // same-timestamp user turn first.
+  //
+  // "Can have followed" excludes one kind of turn: a pending prompt (sent from
+  // this app, not stored yet) stamped after the frame arrived. It is on the
+  // same clock as the frame, so the comparison is exact, and it means the
+  // prompt came later. Clamping to it restamped a finished reply with the next
+  // prompt's time and rendered it under that prompt.
+  const latestExisting = turns.reduce((latest, existing) => {
+    if (clientStampedTurns?.has(existing) && existing.createdAt > createdAt) return latest;
+    return existing.createdAt > latest ? existing.createdAt : latest;
+  }, "");
   const orderedCreatedAt = latestExisting > createdAt ? latestExisting : createdAt;
   // The `turns.length` suffix keeps ids unique when several turns are created
   // within the same millisecond, while staying deterministic across rebuilds
