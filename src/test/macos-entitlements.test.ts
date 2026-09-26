@@ -1,13 +1,9 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import entitlements from "../../src-tauri/Entitlements.plist?raw";
+import macosConfig from "../../src-tauri/tauri.macos.conf.json";
 
-const root = resolve(__dirname, "../..");
-const entitlements = readFileSync(resolve(root, "src-tauri/Entitlements.plist"), "utf8");
-const macosConfig = JSON.parse(
-  readFileSync(resolve(root, "src-tauri/tauri.macos.conf.json"), "utf8"),
-) as { bundle?: { macOS?: { files?: Record<string, string> } } };
-
+// Read through Vite (?raw / JSON import), never node:fs: the test tsconfig
+// has no @types/node.
 // A Developer ID app that claims a restricted entitlement (every
 // `com.apple.developer.*` key) must embed a provisioning profile granting it.
 // Without one, AMFI kills the binary at launch: signing and notarization both
@@ -18,9 +14,9 @@ describe("macOS entitlements", () => {
     const restricted = [
       ...entitlements.matchAll(/<key>(com\.apple\.developer\.[^<]+)<\/key>/g),
     ].map((match) => match[1]);
-    const embedsProfile = Object.keys(macosConfig.bundle?.macOS?.files ?? {}).some((target) =>
-      target.endsWith("embedded.provisionprofile"),
-    );
+    const embedsProfile = Object.keys(
+      (macosConfig.bundle.macOS as { files?: Record<string, string> }).files ?? {},
+    ).some((target) => target.endsWith("embedded.provisionprofile"));
     if (!embedsProfile) {
       expect(restricted).toEqual([]);
     }
