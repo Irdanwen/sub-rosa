@@ -45,7 +45,7 @@ cc = "1"
 
 [dependencies]
 anyhow = "1.0"
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 base64 = "0.22"
 # The archive (Settings › Import / export): a tar stream, optionally wrapped
 # in age with a passphrase. Both are pure Rust and compile for iOS.
