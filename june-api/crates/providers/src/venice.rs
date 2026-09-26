@@ -3,9 +3,9 @@ use crate::transcription::TranscriptionWireResponse;
 use async_trait::async_trait;
 use june_config::{ModelPriceConfig, ModelProvider, ModelType, PriceUnit, UpstreamConfig};
 use june_domain::{
-    AgentChatCompleter, AgentChatCompletion, AgentChatRequest, CleanedText, Cleaner,
-    CleanupRequest, DomainError, GeneratedNote, GenerationRequest, Generator, ProviderCredentials,
-    TokenUsage, Transcriber, Transcript, TranscriptionRequest,
+    AgentChatCompleter, AgentChatCompletion, AgentChatRequest, AgentChatResponse, CleanedText,
+    Cleaner, CleanupRequest, DomainError, GeneratedNote, GenerationRequest, Generator,
+    ProviderCredentials, TokenUsage, Transcriber, Transcript, TranscriptionRequest,
 };
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
@@ -362,10 +362,7 @@ impl VeniceAgentChat {
 
 #[async_trait]
 impl AgentChatCompleter for VeniceAgentChat {
-    async fn complete(
-        &self,
-        request: AgentChatRequest,
-    ) -> Result<AgentChatCompletion, DomainError> {
+    async fn complete(&self, request: AgentChatRequest) -> Result<AgentChatResponse, DomainError> {
         self.chat
             .complete_raw(request.body, request.model, &request.provider_credentials)
             .await
@@ -515,7 +512,7 @@ impl VeniceChat {
         mut body: serde_json::Value,
         model: june_domain::ModelId,
         provider_credentials: &ProviderCredentials,
-    ) -> Result<AgentChatCompletion, DomainError> {
+    ) -> Result<AgentChatResponse, DomainError> {
         let Some(object) = body.as_object_mut() else {
             return Err(DomainError::InvalidInput {
                 reason: "invalid_chat_completion_body".to_string(),
@@ -627,7 +624,7 @@ impl VeniceChat {
         url: &str,
         body: &serde_json::Value,
         api_key: &str,
-    ) -> Result<AgentChatCompletion, UpstreamAttemptError> {
+    ) -> Result<AgentChatResponse, UpstreamAttemptError> {
         // The caller already stamped the model id into the body.
         let model = body
             .get("model")
@@ -672,6 +669,21 @@ impl VeniceChat {
                 bad_request,
             });
         }
+        let upstream_is_sse = content_type.contains(EVENT_STREAM_CONTENT_TYPE);
+        if client_wants_stream && upstream_is_sse {
+            // A real stream: relay it as it is generated instead of reading it
+            // whole, so the first token reaches the client before the last one
+            // is written (ADR-0063). Every retry decision above was taken on
+            // the status line, before a byte of the body was read, so none of
+            // them is affected; from here on nothing is replayed.
+            return Ok(crate::agent_chat_stream::relay_sse(
+                response,
+                content_type,
+                PROVIDER_NAME,
+                model,
+            )
+            .into());
+        }
         let body = response.bytes().await.map_err(|error| {
             tracing::error!(%error, %url, model, "venice: agent chat body read failed");
             UpstreamAttemptError::fatal(DomainError::UpstreamProvider)
@@ -683,7 +695,6 @@ impl VeniceChat {
         // when the client asked for SSE — which would surface to the agent as an
         // "empty stream with no finish_reason". Normalize both into the
         // Venice/OpenAI contract the caller expects instead of failing.
-        let upstream_is_sse = content_type.contains("text/event-stream");
         let (out_body, out_content_type, usage) = if client_wants_stream && !upstream_is_sse {
             synthesize_sse_stream(&body).map_or_else(
                 || {
@@ -706,7 +717,8 @@ impl VeniceChat {
             content_type: out_content_type,
             provider: PROVIDER_NAME.to_string(),
             usage,
-        })
+        }
+        .into())
     }
 }
 
@@ -857,24 +869,10 @@ fn usage_from_chat_body(body: &[u8], content_type: &str) -> Result<TokenUsage, D
 }
 
 fn usage_from_sse(body: &[u8]) -> Result<TokenUsage, DomainError> {
-    let text = std::str::from_utf8(body).map_err(|_| DomainError::UpstreamProvider)?;
-    let mut usage = None;
-    for line in text.lines() {
-        let Some(data) = line.trim().strip_prefix("data:") else {
-            continue;
-        };
-        let data = data.trim();
-        if data == "[DONE]" || data.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
-            continue;
-        };
-        if let Some(parsed) = value.get("usage").and_then(token_usage_from_value) {
-            usage = Some(parsed);
-        }
-    }
-    usage.ok_or(DomainError::UpstreamProvider)
+    // The same scanner the streamed relay uses, fed the whole body at once.
+    let mut scanner = crate::agent_chat_stream::SseUsageScanner::default();
+    scanner.feed(body);
+    scanner.finish().ok_or(DomainError::UpstreamProvider)
 }
 
 /// Reads a `usage` object leniently. `prompt_tokens` and `completion_tokens`
@@ -887,7 +885,7 @@ fn usage_from_sse(body: &[u8]) -> Result<TokenUsage, DomainError> {
 /// `carpe_*_usdc_micro` siblings. Both live inside `usage`, on the buffered
 /// JSON body and in the final SSE billing frame alike, so nothing here needs
 /// to read response headers.
-fn token_usage_from_value(value: &serde_json::Value) -> Option<TokenUsage> {
+pub(crate) fn token_usage_from_value(value: &serde_json::Value) -> Option<TokenUsage> {
     let details = value.get("prompt_tokens_details");
     Some(TokenUsage {
         prompt_tokens: value.get("prompt_tokens")?.as_u64()?,
@@ -1567,8 +1565,8 @@ mod tests {
     use june_config::ModelType;
     use june_config::UpstreamConfig;
     use june_domain::{
-        AgentChatCompleter, AgentChatRequest, DomainError, GenerationRequest, Generator, ModelId,
-        ProviderCredentials,
+        AgentChatCompleter, AgentChatCompletion, AgentChatRequest, AgentChatResponse, DomainError,
+        GenerationRequest, Generator, ModelId, ProviderCredentials,
     };
     use pretty_assertions::assert_eq;
     use serde_json::json;
@@ -1576,6 +1574,50 @@ mod tests {
         Mock, MockServer, ResponseTemplate,
         matchers::{body_string_contains, header, method, path},
     };
+
+    async fn next_item(
+        body: &mut june_domain::AgentChatByteStream,
+    ) -> Option<Result<bytes::Bytes, std::io::Error>> {
+        std::future::poll_fn(|context| body.as_mut().poll_next(context)).await
+    }
+
+    /// Reads a response to its end the way a client would, so the assertions
+    /// hold whether the provider relayed the body or buffered it.
+    async fn settle(response: AgentChatResponse) -> AgentChatCompletion {
+        match response {
+            AgentChatResponse::Buffered(completion) => completion,
+            AgentChatResponse::Streamed(mut stream) => {
+                let mut body = Vec::new();
+                while let Some(chunk) =
+                    std::future::poll_fn(|context| stream.body.as_mut().poll_next(context)).await
+                {
+                    body.extend_from_slice(&chunk.expect("an unbroken stream"));
+                }
+                AgentChatCompletion {
+                    body,
+                    content_type: stream.content_type,
+                    provider: stream.provider,
+                    usage: stream.usage.await,
+                }
+            }
+        }
+    }
+
+    trait CompleteSettled {
+        async fn complete_settled(
+            &self,
+            request: AgentChatRequest,
+        ) -> Result<AgentChatCompletion, DomainError>;
+    }
+
+    impl CompleteSettled for VeniceAgentChat {
+        async fn complete_settled(
+            &self,
+            request: AgentChatRequest,
+        ) -> Result<AgentChatCompletion, DomainError> {
+            Ok(settle(self.complete(request).await?).await)
+        }
+    }
 
     #[tokio::test]
     async fn parses_content_and_usage() {
@@ -1947,7 +1989,7 @@ mod tests {
         );
 
         let completion = agent
-            .complete(AgentChatRequest {
+            .complete_settled(AgentChatRequest {
                 body: json!({
                     "model": "text-model",
                     "stream": true,
@@ -1989,7 +2031,7 @@ mod tests {
         );
 
         let completion = agent
-            .complete(AgentChatRequest {
+            .complete_settled(AgentChatRequest {
                 body: json!({
                     "model": "text-model",
                     "stream": true,
@@ -2057,13 +2099,16 @@ mod tests {
             provider_credentials: ProviderCredentials::default(),
         };
 
-        let completion = agent.complete(request()).await.expect("replay succeeds");
+        let completion = agent
+            .complete_settled(request())
+            .await
+            .expect("replay succeeds");
         assert_eq!(completion.usage.prompt_tokens, 5);
 
         // The downgrade is remembered: the next turn never sends the field
         // again, so exactly one request in the whole run carried it.
         agent
-            .complete(request())
+            .complete_settled(request())
             .await
             .expect("second turn succeeds without a wasted round trip");
         let carried_options = server
@@ -2113,10 +2158,13 @@ mod tests {
         };
 
         agent
-            .complete(request())
+            .complete_settled(request())
             .await
             .expect_err("a 400 that outlives the withdrawal still fails");
-        agent.complete(request()).await.expect_err("still fails");
+        agent
+            .complete_settled(request())
+            .await
+            .expect_err("still fails");
 
         // Both turns asked for the usage frame: the first tried once with the
         // field and once without (the one bounded replay), the second started
@@ -2163,7 +2211,7 @@ mod tests {
         );
 
         let completion = agent
-            .complete(AgentChatRequest {
+            .complete_settled(AgentChatRequest {
                 body: json!({ "messages": [{ "role": "user", "content": "hi" }] }),
                 model: ModelId("text-model".to_string()),
                 provider_credentials: ProviderCredentials::default(),
@@ -2198,7 +2246,7 @@ mod tests {
         );
 
         let error = agent
-            .complete(AgentChatRequest {
+            .complete_settled(AgentChatRequest {
                 body: json!({ "messages": [{ "role": "user", "content": "hi" }] }),
                 model: ModelId("text-model".to_string()),
                 provider_credentials: ProviderCredentials::default(),
@@ -2234,7 +2282,7 @@ mod tests {
         );
 
         let error = agent
-            .complete(AgentChatRequest {
+            .complete_settled(AgentChatRequest {
                 body: json!({ "messages": [{ "role": "user", "content": "hi" }] }),
                 model: ModelId("text-model".to_string()),
                 provider_credentials: ProviderCredentials::default(),
@@ -2309,7 +2357,7 @@ mod tests {
         );
 
         agent
-            .complete(AgentChatRequest {
+            .complete_settled(AgentChatRequest {
                 body: json!({
                     "model": "text-model",
                     "messages": [
@@ -2968,7 +3016,7 @@ mod tests {
             .await;
 
         let completion = agent_chat_for(&server)
-            .complete(stream_request(true))
+            .complete_settled(stream_request(true))
             .await
             .expect("completion");
 
@@ -2993,7 +3041,7 @@ mod tests {
             .await;
 
         let completion = agent_chat_for(&server)
-            .complete(stream_request(true))
+            .complete_settled(stream_request(true))
             .await
             .expect("completion");
 
@@ -3001,6 +3049,232 @@ mod tests {
         assert_eq!(String::from_utf8(completion.body).expect("utf8"), upstream);
         assert_eq!(completion.usage.prompt_tokens, 2);
         assert_eq!(completion.usage.completion_tokens, 1);
+    }
+
+    #[tokio::test]
+    async fn agent_chat_relays_a_real_stream_instead_of_buffering_it() {
+        // The upstream sends its first delta, then keeps generating. The client
+        // must be able to read that delta while the upstream is still busy:
+        // time to first token is the whole point (ADR-0063).
+        let first = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n";
+        let rest = "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n";
+        let (addr, upstream_done) =
+            slow_sse_upstream(first, rest, std::time::Duration::from_secs(2)).await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "cdm_test".to_string(),
+                base_url: format!("http://{addr}"),
+            },
+        );
+
+        let response = agent
+            .complete(stream_request(true))
+            .await
+            .expect("completion");
+        let AgentChatResponse::Streamed(mut stream) = response else {
+            panic!("a real upstream stream must be relayed, not buffered");
+        };
+        assert!(stream.content_type.contains("text/event-stream"));
+        let chunk = tokio::time::timeout(
+            std::time::Duration::from_millis(1_500),
+            std::future::poll_fn(|context| stream.body.as_mut().poll_next(context)),
+        )
+        .await
+        .expect("the first delta arrives before the upstream finishes")
+        .expect("a first chunk")
+        .expect("an unbroken stream");
+        assert_eq!(String::from_utf8_lossy(&chunk), first);
+        assert!(
+            !upstream_done.load(std::sync::atomic::Ordering::SeqCst),
+            "the upstream was still generating when the client read its first delta"
+        );
+
+        let mut body = chunk.to_vec();
+        while let Some(chunk) =
+            std::future::poll_fn(|context| stream.body.as_mut().poll_next(context)).await
+        {
+            body.extend_from_slice(&chunk.expect("an unbroken stream"));
+        }
+        assert_eq!(
+            String::from_utf8(body).expect("utf8"),
+            format!("{first}{rest}")
+        );
+        let usage = stream.usage.await;
+        assert_eq!((usage.prompt_tokens, usage.completion_tokens), (4, 2));
+    }
+
+    #[tokio::test]
+    async fn a_streamed_turn_dropped_early_still_reports_its_usage() {
+        let server = MockServer::start().await;
+        let upstream = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":6,\"completion_tokens\":1}}\n\n";
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(upstream, "text/event-stream"))
+            .mount(&server)
+            .await;
+
+        let response = agent_chat_for(&server)
+            .complete(stream_request(true))
+            .await
+            .expect("completion");
+        let AgentChatResponse::Streamed(stream) = response else {
+            panic!("expected a relayed stream");
+        };
+        // The client leaves without reading a byte: settlement must not hang.
+        drop(stream.body);
+        let usage = tokio::time::timeout(std::time::Duration::from_secs(1), stream.usage)
+            .await
+            .expect("usage resolves once the body is dropped");
+        assert_eq!(usage, june_domain::TokenUsage::default());
+    }
+
+    /// An upstream that drops the connection after its 200 must reach the
+    /// client as a broken stream. Ending it cleanly would hand a truncated
+    /// answer (or a tool call cut in half) to the caller as a finished one.
+    #[tokio::test]
+    async fn a_stream_cut_after_its_status_ends_in_an_error_not_a_short_answer() {
+        let first = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n";
+        let (addr, _) = sse_upstream(first, None, std::time::Duration::from_millis(50)).await;
+        let agent = VeniceAgentChat::from_config(
+            http::default_client(),
+            &UpstreamConfig {
+                api_key: "cdm_test".to_string(),
+                base_url: format!("http://{addr}"),
+            },
+        );
+
+        let AgentChatResponse::Streamed(mut stream) = agent
+            .complete(stream_request(true))
+            .await
+            .expect("the status line was a success")
+        else {
+            panic!("expected a relayed stream");
+        };
+        let body = &mut stream.body;
+        let chunk = next_item(body)
+            .await
+            .expect("the first delta")
+            .expect("delivered");
+        assert_eq!(String::from_utf8_lossy(&chunk), first);
+        assert!(
+            matches!(next_item(body).await, Some(Err(_))),
+            "the cut must surface as an error item"
+        );
+        assert!(next_item(body).await.is_none(), "nothing follows the error");
+        // Never replayed, still settled: on what was seen, here nothing.
+        let usage = tokio::time::timeout(std::time::Duration::from_secs(1), stream.usage)
+            .await
+            .expect("usage resolves after the error");
+        assert_eq!(usage, june_domain::TokenUsage::default());
+    }
+
+    #[tokio::test]
+    async fn a_transient_status_is_retried_before_a_stream_is_relayed() {
+        // Retries are decided on the status line, before any byte is relayed,
+        // so a 503 followed by a real stream is still a clean single stream.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(503))
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+        let upstream = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1}}\n\ndata: [DONE]\n\n";
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(upstream, "text/event-stream"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let response = agent_chat_for(&server)
+            .complete(stream_request(true))
+            .await
+            .expect("the retry succeeds");
+        assert!(matches!(response, AgentChatResponse::Streamed(_)));
+        let completion = settle(response).await;
+        assert_eq!(String::from_utf8(completion.body).expect("utf8"), upstream);
+        assert_eq!(completion.usage.prompt_tokens, 3);
+    }
+
+    /// A one-connection upstream that answers with `first`, waits `pause`,
+    /// then sends `rest` and closes. wiremock can only delay a whole response,
+    /// so it cannot show that the relay forwards bytes before the end.
+    async fn slow_sse_upstream(
+        first: &'static str,
+        rest: &'static str,
+        pause: std::time::Duration,
+    ) -> (
+        std::net::SocketAddr,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        sse_upstream(first, Some(rest), pause).await
+    }
+
+    /// Answers 200 with a chunked SSE body, sends `first`, waits `pause`, then
+    /// either finishes with `rest` and the chunked terminator or, when `rest`
+    /// is `None`, drops the connection mid-body the way a failing upstream
+    /// does.
+    async fn sse_upstream(
+        first: &'static str,
+        rest: Option<&'static str>,
+        pause: std::time::Duration,
+    ) -> (
+        std::net::SocketAddr,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = std::sync::Arc::clone(&done);
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            // Read the request head and body; the content is not inspected.
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 8192];
+            loop {
+                let read = socket.read(&mut buffer).await.expect("read");
+                request.extend_from_slice(&buffer[..read]);
+                let text = String::from_utf8_lossy(&request);
+                if let Some(head_end) = text.find("\r\n\r\n") {
+                    let length = text[..head_end]
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|value| value.trim().parse::<usize>().unwrap_or(0))
+                        })
+                        .unwrap_or(0);
+                    if request.len() >= head_end + 4 + length {
+                        break;
+                    }
+                }
+                if read == 0 {
+                    break;
+                }
+            }
+            let chunk = |data: &str| format!("{:x}\r\n{data}\r\n", data.len());
+            let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n";
+            socket
+                .write_all(format!("{head}{}", chunk(first)).as_bytes())
+                .await
+                .expect("write first");
+            socket.flush().await.expect("flush");
+            tokio::time::sleep(pause).await;
+            finished.store(true, std::sync::atomic::Ordering::SeqCst);
+            if let Some(rest) = rest {
+                let _ = socket
+                    .write_all(format!("{}0\r\n\r\n", chunk(rest)).as_bytes())
+                    .await;
+            }
+            let _ = socket.shutdown().await;
+        });
+        (addr, done)
     }
 
     #[tokio::test]
@@ -3022,7 +3296,7 @@ mod tests {
             .await;
 
         let completion = agent_chat_for(&server)
-            .complete(stream_request(false))
+            .complete_settled(stream_request(false))
             .await
             .expect("completion");
 

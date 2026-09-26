@@ -8726,8 +8726,8 @@ async fn write_raw_response(
 /// Forwards an upstream chat-completions response to the socket chunk by
 /// chunk, so Hermes sees streamed tokens (`stream: true`) as they are
 /// generated instead of one buffered body after generation completes. The
-/// proxy already speaks `Connection: close`, so the body is delimited by
-/// closing the connection and no Content-Length is sent.
+/// body is delimited by closing the connection, so a stream that breaks ends
+/// on an error frame instead ([`crate::stream_relay`]).
 async fn write_streaming_response(
     stream: &mut tokio::net::TcpStream,
     mut response: crate::june_api::AgentChatCompletionsResponse,
@@ -8739,22 +8739,8 @@ async fn write_streaming_response(
         content_type = response.content_type,
     );
     stream.write_all(headers.as_bytes()).await?;
-    loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) => stream.write_all(&chunk).await?,
-            Ok(None) => break,
-            Err(error) => {
-                // Headers are already on the wire, so an error response is
-                // no longer possible. Close the connection to end the body;
-                // the client sees a truncated stream and surfaces the abort.
-                eprintln!(
-                    "June provider proxy upstream stream failed: {}",
-                    error.message
-                );
-                break;
-            }
-        }
-    }
+    let sse = response.content_type.contains("event-stream");
+    crate::stream_relay::relay_body(stream, &mut response, sse).await?;
     stream.shutdown().await
 }
 

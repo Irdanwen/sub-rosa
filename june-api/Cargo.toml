@@ -25,6 +25,9 @@ bytes = "1"
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 figment = { version = "0.10", features = ["env", "toml"] }
+# The byte-stream contract of a streamed agent chat completion (ADR-0063).
+futures-core = "0.3"
+futures-util = { version = "0.3", default-features = false }
 hound = "3.5"
 jsonwebtoken = { version = "10.3", default-features = false, features = ["use_pem", "rust_crypto"] }
 sha2 = "0.11"

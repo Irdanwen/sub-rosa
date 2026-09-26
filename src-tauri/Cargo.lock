@@ -3294,6 +3294,8 @@ name = "june-domain"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "bytes",
+ "futures-core",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -3321,6 +3323,8 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
+ "bytes",
+ "futures-core",
  "hound",
  "jsonwebtoken",
  "june-config",

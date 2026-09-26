@@ -203,6 +203,114 @@ fn a_tool_call_without_a_name_is_dropped_rather_than_sent_nameless() {
     assert!(reply.into_message().get("tool_calls").is_none());
 }
 
+/// The sidecar now relays the upstream stream as it is generated, so chunk
+/// boundaries fall wherever the network puts them, including inside a
+/// two-byte character. It must reach the reply whole, not as `\u{FFFD}`.
+#[test]
+fn a_character_cut_between_two_chunks_reaches_the_reply_whole() {
+    let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Voil\u{e0} caf\u{e9}\"}}]}\n\ndata: [DONE]\n\n"
+        .as_bytes();
+    let cut = body
+        .windows(2)
+        .position(|pair| pair == "\u{e9}".as_bytes())
+        .expect("the accented character")
+        + 1;
+    let mut frames = crate::sse_lines::CompletionFrames::default();
+    let mut reply = StreamedReply::default();
+    for chunk in [&body[..cut], &body[cut..]] {
+        for frame in frames.push(chunk) {
+            reply.apply_frame(&frame);
+        }
+    }
+    assert_eq!(reply.content, "Voil\u{e0} caf\u{e9}");
+}
+
+/// A stream that stops mid tool call must not hand the loop a call to run:
+/// its arguments are a fragment, and the loop would run it with `{}` or a
+/// half-written query. The same stream, finished, is a call.
+#[tokio::test]
+async fn a_tool_call_cut_before_the_stream_finished_is_never_run() {
+    let call = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\": \\\"lis\"}}]}}]}\n\n";
+    let mut reply = StreamedReply::default();
+    let error = collect_stream(
+        &mut crate::sse_lines::ScriptedChunks::of(&[call]),
+        &mut reply,
+        |_| {},
+    )
+    .await
+    .expect_err("an unfinished stream holding a call is cut off");
+    assert_eq!(error.code, "reply_cut_off");
+
+    let mut reply = StreamedReply::default();
+    collect_stream(
+        &mut crate::sse_lines::ScriptedChunks::of(&[
+            call,
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"bon\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+        ]),
+        &mut reply,
+        |_| {},
+    )
+    .await
+    .expect("a finished stream");
+    let message = reply.into_message();
+    assert_eq!(
+        message["tool_calls"][0]["function"]["arguments"],
+        "{\"query\": \"lisbon\"}"
+    );
+}
+
+/// An empty stream that never finished is not an error here: the turn replays
+/// it buffered, as it does for any route that streamed nothing usable.
+#[tokio::test]
+async fn an_empty_unfinished_stream_is_left_to_the_buffered_replay() {
+    let mut reply = StreamedReply::default();
+    collect_stream(
+        &mut crate::sse_lines::ScriptedChunks::of(&[": keep-alive\n\n"]),
+        &mut reply,
+        |_| {},
+    )
+    .await
+    .expect("nothing to mistake for a reply");
+    assert!(reply.is_empty());
+}
+
+/// A body that broke is an error, whatever it held.
+#[tokio::test]
+async fn a_broken_stream_is_an_error() {
+    let mut reply = StreamedReply::default();
+    let error = collect_stream(
+        &mut crate::sse_lines::ScriptedChunks::broken(&[
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Lis\"}}]}\n\n",
+        ]),
+        &mut reply,
+        |_| {},
+    )
+    .await
+    .expect_err("the body broke");
+    assert_eq!(error.code, "june_request_failed");
+    assert_eq!(
+        reply.content, "Lis",
+        "what arrived is kept for the retraction"
+    );
+}
+
+#[test]
+fn a_tool_call_with_an_absurd_index_is_ignored_without_panicking() {
+    let mut reply = StreamedReply::default();
+    reply.apply(&serde_json::json!({
+        "tool_calls": [
+            { "index": u64::MAX, "id": "x", "function": { "name": "web_search", "arguments": "{}" } },
+            { "index": 4_000_000_000_u64, "id": "y", "function": { "name": "web_search", "arguments": "{}" } },
+            { "index": 0, "id": "a", "function": { "name": "read_note", "arguments": "{}" } }
+        ]
+    }));
+    assert_eq!(reply.calls.len(), 1);
+    let message = reply.into_message();
+    let calls = message["tool_calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["id"], "a");
+}
+
 #[test]
 fn web_snippets_lose_their_markup_and_duplicate_paragraph() {
     // Exactly the shape the provider returns: highlight tags, then the
@@ -451,4 +559,33 @@ async fn saving_a_reply_and_completing_its_task_is_atomic() {
     let completed = repos.get_agent_task(&task.id).await.unwrap();
     assert_eq!(completed.messages.len(), 2);
     assert_eq!(completed.status, AgentTaskStatus::Completed);
+}
+
+/// A phone that locks mid-reply drops the connection in the middle of the
+/// body, where the transport retry of the request cannot see it. That, and a
+/// body that ended early, are replayed once; a refusal is not.
+#[test]
+fn a_cut_stream_is_replayed_but_a_refusal_is_not() {
+    assert!(replays_after(&AppError::new(
+        "june_request_failed",
+        "reset"
+    )));
+    assert!(replays_after(&crate::sse_lines::cut_off_reply()));
+    assert!(!replays_after(&AppError::new("agent_lite_credits", "low")));
+    assert!(!replays_after(&AppError::new("agent_lite_invalid", "bad")));
+}
+
+#[test]
+fn a_replay_takes_back_exactly_what_the_failed_attempt_showed() {
+    assert_eq!(
+        retraction("t1", ""),
+        None,
+        "nothing shown, nothing to take back"
+    );
+    let event = retraction("t1", "caf\u{e9} \u{1F600}").expect("an event");
+    // "café " is five UTF-16 units, the emoji two.
+    assert_eq!(
+        event,
+        serde_json::json!({ "taskId": "t1", "text": "", "retract": 7 })
+    );
 }

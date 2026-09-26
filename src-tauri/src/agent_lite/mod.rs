@@ -460,6 +460,10 @@ async fn run_turn(
     // any route that answers a streamed request with nothing usable gets the
     // turn replayed buffered rather than an error.
     let mut stream_withheld = false;
+    // A streamed iteration that breaks mid-body is replayed once. The
+    // request's own transport retry cannot see that failure: it happens after
+    // the status line, typically when a screen lock suspends the app.
+    let mut stream_replayed = false;
 
     for _iteration in 0..=MAX_TOOL_ITERATIONS {
         emit_status(app, task_id, "thinking", None);
@@ -556,7 +560,27 @@ async fn run_turn(
         // whichever shape actually came back rather than trusting the request.
         let streamed = !stream_withheld && response.content_type.contains("event-stream");
         let message = if streamed {
-            let reply = collect_stream(app, task_id, response).await?;
+            let mut response = response;
+            let mut reply = StreamedReply::default();
+            let read = collect_stream(&mut response, &mut reply, |text| {
+                emit_delta(app, task_id, text);
+            })
+            .await;
+            if let Err(error) = read {
+                if stream_replayed || !replays_after(&error) {
+                    return Err(error);
+                }
+                tracing::warn!(
+                    "streamed completion broke, replaying it once: {}",
+                    error.message
+                );
+                stream_replayed = true;
+                if let Some(event) = retraction(task_id, &reply.content) {
+                    let _ = app.emit(AGENT_LITE_DELTA_EVENT, event);
+                }
+                continue;
+            }
+            stream_replayed = false;
             if reply.is_empty() {
                 // Nothing usable came out of the stream. Replay this same
                 // iteration buffered before giving up on the turn.
@@ -890,6 +914,11 @@ fn truncate(text: String, limit: usize) -> String {
 /// write notes through that one module.
 pub use crate::agent_notes::NOTES_CHANGED_EVENT as AGENT_LITE_NOTES_CHANGED_EVENT;
 
+/// The most tool calls one streamed reply may address. Well above anything a
+/// model sends in one turn; it exists so a delta's `index` cannot size an
+/// arbitrarily large vector.
+const MAX_STREAMED_TOOL_CALLS: usize = 64;
+
 /// An assistant message rebuilt from a stream of deltas.
 #[derive(Default)]
 struct StreamedReply {
@@ -933,6 +962,13 @@ impl StreamedReply {
         message
     }
 
+    /// Applies one frame of the stream: its delta, if it has one.
+    fn apply_frame(&mut self, frame: &serde_json::Value) {
+        if let Some(delta) = frame.pointer("/choices/0/delta") {
+            self.apply(delta);
+        }
+    }
+
     fn apply(&mut self, delta: &serde_json::Value) {
         if let Some(text) = delta.get("content").and_then(serde_json::Value::as_str) {
             self.content.push_str(text);
@@ -949,7 +985,19 @@ impl StreamedReply {
             let index = call
                 .get("index")
                 .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0) as usize;
+                .unwrap_or(0);
+            // The index sizes a vector, so a hostile or corrupt frame must not
+            // be able to ask for billions of slots. No real turn comes close.
+            let Some(index) = usize::try_from(index)
+                .ok()
+                .filter(|index| *index < MAX_STREAMED_TOOL_CALLS)
+            else {
+                tracing::warn!(
+                    index,
+                    "agent-lite: ignoring a tool call with an out-of-range index"
+                );
+                continue;
+            };
             if self.calls.len() <= index {
                 self.calls
                     .resize(index + 1, (String::new(), String::new(), String::new()));
@@ -978,52 +1026,72 @@ impl StreamedReply {
     }
 }
 
-/// Read a server-sent completion stream to the end, emitting the reply text to
-/// the webview as it arrives.
+/// Read a server-sent completion stream to the end into `reply`, handing the
+/// reply text to `on_text` as it arrives.
 ///
-/// Batched one emit per network chunk rather than per token: a chunk already
+/// Batched one call per network chunk rather than per token: a chunk already
 /// groups whatever arrived together, and an event per token would spend more
 /// time crossing the IPC boundary than rendering.
+///
+/// Fails if the body broke, or if it ended holding something before the
+/// completion said it was finished: a fragment of a reply, or a tool call
+/// whose arguments were cut, must never be taken for the whole. An empty
+/// unfinished stream is left to the caller, which replays it buffered.
 async fn collect_stream(
-    app: &AppHandle,
-    task_id: &str,
-    mut response: june_api::AgentChatCompletionsResponse,
-) -> Result<StreamedReply, AppError> {
-    let mut reply = StreamedReply::default();
-    let mut buffer = String::new();
-    while let Some(chunk) = response.chunk().await? {
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+    source: &mut impl crate::sse_lines::ChunkSource,
+    reply: &mut StreamedReply,
+    mut on_text: impl FnMut(&str),
+) -> Result<(), AppError> {
+    // Frames are newline-delimited and a chunk may end mid-line, or
+    // mid-character: the reader keeps the tail as bytes until the next chunk
+    // completes it.
+    let mut frames = crate::sse_lines::CompletionFrames::default();
+    while let Some(chunk) = source.next_chunk().await? {
         let before = reply.content.len();
-        // Frames are newline-delimited; keep the tail, which may be a partial
-        // line that the next chunk completes.
-        while let Some(newline) = buffer.find('\n') {
-            let line = buffer[..newline].trim().to_string();
-            buffer.drain(..newline + 1);
-            let Some(data) = line.strip_prefix("data:") else {
-                continue;
-            };
-            let data = data.trim();
-            if data.is_empty() || data == "[DONE]" {
-                continue;
-            }
-            let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
-                continue;
-            };
-            if let Some(delta) = frame.pointer("/choices/0/delta") {
-                reply.apply(delta);
-            }
+        for frame in frames.push(&chunk) {
+            reply.apply_frame(&frame);
         }
         if reply.content.len() > before {
-            let _ = app.emit(
-                AGENT_LITE_DELTA_EVENT,
-                serde_json::json!({
-                    "taskId": task_id,
-                    "text": &reply.content[before..],
-                }),
-            );
+            on_text(&reply.content[before..]);
         }
     }
-    Ok(reply)
+    if let Some(frame) = frames.finish() {
+        let before = reply.content.len();
+        reply.apply_frame(&frame);
+        if reply.content.len() > before {
+            on_text(&reply.content[before..]);
+        }
+    }
+    if !frames.is_finished() && !reply.is_empty() {
+        return Err(crate::sse_lines::cut_off_reply());
+    }
+    Ok(())
+}
+
+/// Whether a streamed iteration that failed this way is worth one replay: the
+/// connection dropped mid-body, or the body ended before the reply did.
+fn replays_after(error: &AppError) -> bool {
+    matches!(error.code.as_str(), "june_request_failed" | "reply_cut_off")
+}
+
+/// The event that takes back what a failed streamed attempt already showed,
+/// so its replay does not print the same words twice. `retract` counts UTF-16
+/// code units because that is how the webview measures its string.
+fn retraction(task_id: &str, shown: &str) -> Option<serde_json::Value> {
+    (!shown.is_empty()).then(|| {
+        serde_json::json!({
+            "taskId": task_id,
+            "text": "",
+            "retract": shown.encode_utf16().count(),
+        })
+    })
+}
+
+fn emit_delta(app: &AppHandle, task_id: &str, text: &str) {
+    let _ = app.emit(
+        AGENT_LITE_DELTA_EVENT,
+        serde_json::json!({ "taskId": task_id, "text": text }),
+    );
 }
 
 async fn execute_tool(

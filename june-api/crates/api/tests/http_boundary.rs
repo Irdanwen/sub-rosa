@@ -7,13 +7,13 @@ use axum::{
 use june_api::{ApiLimits, ApiState, ApiStateParams, AttestationInfo, router};
 use june_config::{ModelPriceConfig, ModelProvider, ModelType, PriceUnit};
 use june_domain::{
-    AgentChatCompleter, AgentChatCompletion, AgentChatRequest, AudioDurationProbe, AuthError,
-    Authorization, AuthorizeRequest, CleanedText, Cleaner, CleanupRequest, Credits, DomainError,
-    GeneratedImage, GeneratedNote, GenerationRequest, Generator, ImageGenerationRequest,
-    ImageGenerator, IssueReport, IssueReportSink, OsAccountsClient, PlaceResult,
-    PlacesSearchRequest, PlacesSearchResults, PlacesSearcher, Receipt, TokenUsage, Transcriber,
-    Transcript, TranscriptionRequest, UserId, WebFetchRequest, WebFetchResult, WebFetcher,
-    WebSearchRequest, WebSearchResult, WebSearchResults, WebSearcher,
+    AgentChatCompleter, AgentChatCompletion, AgentChatRequest, AgentChatResponse, AgentChatStream,
+    AudioDurationProbe, AuthError, Authorization, AuthorizeRequest, CleanedText, Cleaner,
+    CleanupRequest, Credits, DomainError, GeneratedImage, GeneratedNote, GenerationRequest,
+    Generator, ImageGenerationRequest, ImageGenerator, IssueReport, IssueReportSink,
+    OsAccountsClient, PlaceResult, PlacesSearchRequest, PlacesSearchResults, PlacesSearcher,
+    Receipt, TokenUsage, Transcriber, Transcript, TranscriptionRequest, UserId, WebFetchRequest,
+    WebFetchResult, WebFetcher, WebSearchRequest, WebSearchResult, WebSearchResults, WebSearcher,
 };
 use june_services::{
     AgentChatService, AgentChatServiceDeps, DictateService, DictateServiceDeps, ImageService,
@@ -542,6 +542,129 @@ async fn integration_image_generate_returns_enveloped_image() -> Result<(), Box<
     assert_eq!(body["data"]["mimeType"], "image/png");
     assert_eq!(body["data"]["model"], "venice-sd35");
     assert_eq!(body["data"]["provider"], "fake-image");
+    Ok(())
+}
+
+#[tokio::test]
+async fn integration_buffered_chat_completion_carries_metering_headers()
+-> Result<(), Box<dyn Error>> {
+    let response = send(json_request(
+        "/v1/chat/completions",
+        &serde_json::json!({
+            "model": "text-model",
+            "messages": [{ "role": "user", "content": "hi" }],
+        }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["x-june-prompt-tokens"], "100");
+    assert_eq!(response.headers()["x-june-completion-tokens"], "100");
+    Ok(())
+}
+
+/// A streamed completion answers before its usage exists, so it carries no
+/// metering headers; the shell reads the usage from the final frame instead
+/// (ADR-0063).
+#[tokio::test]
+async fn integration_streamed_chat_completion_relays_the_stream_without_metering_headers()
+-> Result<(), Box<dyn Error>> {
+    let response = send(json_request(
+        "/v1/chat/completions",
+        &serde_json::json!({
+            "model": "text-model",
+            "stream": true,
+            "messages": [{ "role": "user", "content": "hi" }],
+        }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/event-stream"
+    );
+    assert!(
+        !response
+            .headers()
+            .keys()
+            .any(|name| name.as_str().starts_with("x-june-")),
+        "headers: {:?}",
+        response.headers()
+    );
+    let body = to_bytes(response.into_body(), usize::MAX).await?;
+    assert_eq!(
+        String::from_utf8(body.to_vec())?,
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"
+    );
+    Ok(())
+}
+
+/// An upstream that breaks after the 200 must not become a short answer the
+/// client takes for a finished one: the body is aborted, so reading it fails.
+#[tokio::test]
+async fn integration_a_stream_broken_mid_body_fails_to_read() -> Result<(), Box<dyn Error>> {
+    let response = send(json_request(
+        "/v1/chat/completions",
+        &serde_json::json!({
+            "model": "text-model",
+            "stream": true,
+            "messages": [{ "role": "user", "content": "break" }],
+        }),
+        Some(AUTHORIZATION),
+    )?)
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        to_bytes(response.into_body(), usize::MAX).await.is_err(),
+        "a broken stream must not read as a complete body"
+    );
+    Ok(())
+}
+
+/// The same, over a real socket: hyper must abort the chunked body without
+/// its `0\r\n\r\n` terminator, which is what lets an HTTP client on the other
+/// side (the shell's proxy) tell a broken stream from a finished one.
+#[tokio::test]
+async fn integration_a_broken_stream_is_not_terminated_on_the_wire() -> Result<(), Box<dyn Error>> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move { axum::serve(listener, test_router()).await });
+
+    let body =
+        r#"{"model":"text-model","stream":true,"messages":[{"role":"user","content":"break"}]}"#;
+    let mut socket = tokio::net::TcpStream::connect(addr).await?;
+    socket
+        .write_all(
+            format!(
+                "POST /v1/chat/completions HTTP/1.1\r\nhost: {addr}\r\nauthorization: {AUTHORIZATION}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .await?;
+    let mut wire = Vec::new();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        socket.read_to_end(&mut wire),
+    )
+    .await??;
+    let wire = String::from_utf8_lossy(&wire);
+
+    assert!(wire.starts_with("HTTP/1.1 200"), "{wire}");
+    assert!(wire.contains("transfer-encoding: chunked"), "{wire}");
+    assert!(
+        wire.contains("\"hi\""),
+        "the delta before the break is relayed: {wire}"
+    );
+    assert!(
+        !wire.ends_with("0\r\n\r\n"),
+        "a broken stream must not end with the chunked terminator: {wire}"
+    );
     Ok(())
 }
 
@@ -1086,10 +1209,39 @@ struct FakeChatCompleter;
 
 #[async_trait]
 impl AgentChatCompleter for FakeChatCompleter {
-    async fn complete(
-        &self,
-        _request: AgentChatRequest,
-    ) -> Result<AgentChatCompletion, DomainError> {
+    async fn complete(&self, request: AgentChatRequest) -> Result<AgentChatResponse, DomainError> {
+        if request
+            .body
+            .get("stream")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            let first = Ok(bytes::Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+            ));
+            // A prompt of "break" plays an upstream that drops the connection
+            // after its first delta.
+            let last = if request.body.to_string().contains("\"break\"") {
+                Err(std::io::Error::other("upstream stream broke"))
+            } else {
+                Ok(bytes::Bytes::from_static(b"data: [DONE]\n\n"))
+            };
+            return Ok(AgentChatStream {
+                // The last item comes after a beat, as it would from a
+                // network, so the first delta is on the wire before it.
+                body: Box::pin(futures_util::StreamExt::chain(
+                    futures_util::stream::iter([first]),
+                    futures_util::stream::once(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                        last
+                    }),
+                )),
+                content_type: "text/event-stream".to_string(),
+                provider: "fake-chat".to_string(),
+                usage: Box::pin(std::future::ready(TokenUsage::default())),
+            }
+            .into());
+        }
         Ok(AgentChatCompletion {
             body: br#"{"id":"chatcmpl_test"}"#.to_vec(),
             content_type: "application/json".to_string(),
@@ -1099,7 +1251,8 @@ impl AgentChatCompleter for FakeChatCompleter {
                 completion_tokens: 100,
                 ..TokenUsage::default()
             },
-        })
+        }
+        .into())
     }
 }
 

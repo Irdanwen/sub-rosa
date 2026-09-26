@@ -13,6 +13,7 @@ import {
   sendAssistantChat,
   startAssistantChat,
 } from "../../lib/assistants";
+import { type AgentLiteDeltaDto, applyAgentLiteDelta } from "../../lib/agent-lite-delta";
 import { messageFromError } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import { SimpleMarkdown } from "../../lib/simple-markdown";
@@ -114,9 +115,9 @@ export function AssistantChat({
     async function subscribe() {
       try {
         const listeners = await Promise.all([
-          listen<{ taskId: string; text: string }>(AGENT_LITE_DELTA_EVENT, ({ payload }) => {
+          listen<AgentLiteDeltaDto>(AGENT_LITE_DELTA_EVENT, ({ payload }) => {
             if (!disposed && alive.current && payload.taskId === activeId.current)
-              setStream((previous) => previous + payload.text);
+              setStream((previous) => applyAgentLiteDelta(previous, payload));
           }),
           listen<AgentLiteStatusDto>(AGENT_LITE_STATUS_EVENT, ({ payload }) => {
             if (!disposed && alive.current && payload.taskId === activeId.current)

@@ -187,3 +187,13 @@ unchanged. The upstream defects are reported separately in
 [`docs/reports/2026-07-29-carpe-diem-router-rail.md`](../reports/2026-07-29-carpe-diem-router-rail.md);
 this addendum is the client-side compensation, which stands whether or not they
 are fixed.
+
+## Addendum (2026-09-25): true streaming on `/v1`
+
+The "true streaming passthrough" deferred above is
+[ADR-0063](0063-the-sidecar-streams-agent-chat.md). It changes only the case this
+ADR passed through untouched (a client asking for a stream and an upstream really
+sending `text/event-stream`), which is now relayed as it arrives instead of read
+whole. The `/router` synthesis, the `stream_options` withdrawal and replay, and
+the retries are unchanged: they are all decided before a byte of the body is
+read.

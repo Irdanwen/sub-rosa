@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
 //! Embeddable composition root for the June API server.
 //!
 //! Historically the dependency-injection wiring lived in the `june` binary.
@@ -9,6 +10,7 @@
 //!   server instead runs on a Tokio task inside the app process, configured
 //!   programmatically through [`EmbedOptions`].
 
+use axum::serve::ListenerExt;
 use june_api::{ApiLimits, ApiState, ApiStateParams, AttestationInfo};
 use june_config::{
     AppConfig, ModelPriceConfig, ModelProvider, OPENAI_API_KEY_PLACEHOLDER,
@@ -107,12 +109,27 @@ pub async fn serve_config(
     ));
     let pricing = load_pricing(config, upstream_http.clone()).await;
     let app = build_router(config, &http, &upstream_http, pricing);
-    let listener = tokio::net::TcpListener::bind(address).await?;
+    let listener = bind(address).await?;
     tracing::info!(%address, "june-api listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())
+}
+
+/// Binds the server's listener, with Nagle's algorithm off on every accepted
+/// connection. A streamed completion is a run of small SSE frames; with Nagle
+/// on, a frame waits for the client's delayed ACK of the previous one before
+/// it is sent, so tokens would arrive in bursts instead of as they are made.
+async fn bind(
+    address: SocketAddr,
+) -> std::io::Result<impl axum::serve::Listener<Io = tokio::net::TcpStream, Addr = SocketAddr>> {
+    let listener = tokio::net::TcpListener::bind(address).await?;
+    Ok(listener.tap_io(|stream| {
+        if let Err(error) = stream.set_nodelay(true) {
+            tracing::debug!(%error, "could not disable Nagle on a sidecar connection");
+        }
+    }))
 }
 
 /// Merge the Venice model catalog into the configured pricing table (skipped
@@ -368,5 +385,26 @@ fn build_issue_report_sink(
     } else {
         tracing::info!("no issue report sink configured; reports will be logged only");
         Arc::new(LogIssueReportSink)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::serve::Listener;
+
+    /// A streamed reply is a run of small SSE frames. With Nagle's algorithm
+    /// on, each frame after the first waits for the client's delayed ACK
+    /// before it leaves, which is exactly the latency streaming removes.
+    #[tokio::test]
+    async fn accepted_connections_send_small_frames_without_delay() {
+        let mut listener = super::bind("127.0.0.1:0".parse().expect("address"))
+            .await
+            .expect("bind");
+        let address = listener.local_addr().expect("local address");
+        let _client = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("connect");
+        let (stream, _) = listener.accept().await;
+        assert!(stream.nodelay().expect("nodelay"), "Nagle must be off");
     }
 }

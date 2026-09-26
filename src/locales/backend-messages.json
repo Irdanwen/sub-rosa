@@ -255,6 +255,7 @@
   "The processing service returned an invalid response.",
   "The provider failed.",
   "The rate-limits response is missing balances.",
+  "The reply stopped before it was finished. Try again.",
   "The routines database looks healthy now; nothing was reset.",
   "The run could not be recorded.",
   "The selected audio file could not be read.",

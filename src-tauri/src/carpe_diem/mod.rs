@@ -18,4 +18,5 @@ pub mod local_session;
 pub mod media;
 pub mod settings;
 pub mod sidecar;
+pub mod stream_usage;
 pub mod workflow_runs;

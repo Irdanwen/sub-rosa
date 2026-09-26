@@ -1,17 +1,18 @@
 use crate::{
     charge_flow::{
-        AuthorizeParams, ChargeParams, authorize_or_deny, charge, clamp_to_cap, log_settled,
-        price_settled_work,
+        AsyncChargeParams, AuthorizeParams, ChargeParams, authorize_or_deny, charge, clamp_to_cap,
+        log_settled, price_settled_work, settle_charge,
     },
     error::ServiceError,
     pricing::PricingTable,
     util::sha256_hex,
 };
 use june_domain::{
-    ActionSlug, AgentChatCompleter, AgentChatCompletion, AgentChatRequest, Credits, ModelId,
-    ModelKind, OsAccountsClient, ProviderCredentials, Receipt, UserId,
+    ActionSlug, AgentChatByteStream, AgentChatCompleter, AgentChatCompletion, AgentChatRequest,
+    AgentChatResponse, AgentChatUsage, Credits, ModelId, ModelKind, OsAccountsClient,
+    ProviderCredentials, Receipt, UserId,
 };
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 pub struct AgentChatServiceDeps {
     pub pricing: Arc<PricingTable>,
@@ -53,7 +54,7 @@ impl AgentChatService {
         })
         .await?;
         let body_digest = body_digest(&params.body);
-        let completion = self
+        let response = self
             .chat_completer
             .complete(AgentChatRequest {
                 body: params.body,
@@ -61,6 +62,32 @@ impl AgentChatService {
                 provider_credentials: params.provider_credentials.clone(),
             })
             .await?;
+        let idempotency_key = format!(
+            "agent_chat:{}:{}:{}",
+            params.user_id.0, params.model_id.0, body_digest
+        );
+        let completion = match response {
+            AgentChatResponse::Buffered(completion) => completion,
+            AgentChatResponse::Streamed(stream) => {
+                // The body goes back to the client now; the charge waits for
+                // the usage, which only exists once the stream has ended
+                // (ADR-0063). The task lives exactly as long as the stream.
+                tokio::spawn(settle_streamed_turn(StreamedSettlement {
+                    usage: stream.usage,
+                    pricing: Arc::clone(&self.pricing),
+                    os_accounts: Arc::clone(&self.os_accounts),
+                    user_id: params.user_id,
+                    model_id: params.model_id,
+                    action_token: authorization.action_token,
+                    cap_credits: authorization.cap_credits,
+                    idempotency_key,
+                }));
+                return Ok(AgentChatOutput::Streaming {
+                    body: stream.body,
+                    content_type: stream.content_type,
+                });
+            }
+        };
         // The completion already ran upstream: `price_settled_work` keeps a
         // pricing failure from throwing away an answer the user has paid for.
         // `ensure_model_kind` above proved the model carries both token rates,
@@ -78,10 +105,7 @@ impl AgentChatService {
             os_accounts: self.os_accounts.as_ref(),
             action_token: authorization.action_token,
             credits: charge_credits,
-            idempotency_key: format!(
-                "agent_chat:{}:{}:{}",
-                params.user_id.0, params.model_id.0, body_digest
-            ),
+            idempotency_key,
         })
         .await?;
         log_settled(
@@ -90,11 +114,53 @@ impl AgentChatService {
             &params.model_id.0,
             &receipt,
         );
-        Ok(AgentChatOutput {
+        Ok(AgentChatOutput::Settled {
             completion,
             receipt,
         })
     }
+}
+
+/// Everything needed to charge a streamed turn once its usage is known.
+struct StreamedSettlement {
+    usage: AgentChatUsage,
+    pricing: Arc<PricingTable>,
+    os_accounts: Arc<dyn OsAccountsClient>,
+    user_id: UserId,
+    model_id: ModelId,
+    action_token: String,
+    cap_credits: Option<Credits>,
+    idempotency_key: String,
+}
+
+/// Charges a streamed turn when its stream is over.
+///
+/// A stream the client abandoned is charged too, on the usage seen before it
+/// left, which is usually nothing because the billing frame comes last. That
+/// under-charges a turn the upstream may have partly billed, and it is the
+/// right way round: the alternative is to keep reading a generation nobody
+/// will see just to learn its price, or to guess one. A charge failure can no
+/// longer reach the client, whose answer is already delivered; it is logged.
+async fn settle_streamed_turn(settlement: StreamedSettlement) {
+    let usage = settlement.usage.await;
+    let actual = price_settled_work(
+        settlement
+            .pricing
+            .price_token_usage(&settlement.model_id.0, usage),
+        ActionSlug::AgentChat,
+        &settlement.model_id.0,
+        usage.total().unwrap_or(u64::MAX),
+    );
+    settle_charge(AsyncChargeParams {
+        os_accounts: settlement.os_accounts,
+        user_id: settlement.user_id,
+        action: ActionSlug::AgentChat,
+        model_id: Some(settlement.model_id.0),
+        action_token: settlement.action_token,
+        credits: clamp_to_cap(actual, settlement.cap_credits),
+        idempotency_key: settlement.idempotency_key,
+    })
+    .await;
 }
 
 #[derive(Clone, Debug)]
@@ -105,10 +171,37 @@ pub struct AgentChatParams {
     pub provider_credentials: ProviderCredentials,
 }
 
-#[derive(Clone, Debug)]
-pub struct AgentChatOutput {
-    pub completion: AgentChatCompletion,
-    pub receipt: Receipt,
+pub enum AgentChatOutput {
+    /// A buffered completion, charged before it is returned.
+    Settled {
+        completion: AgentChatCompletion,
+        receipt: Receipt,
+    },
+    /// A completion still being generated. Its charge settles on its own once
+    /// the stream ends, so there is no receipt and no usage to report yet.
+    Streaming {
+        body: AgentChatByteStream,
+        content_type: String,
+    },
+}
+
+impl fmt::Debug for AgentChatOutput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Settled {
+                completion,
+                receipt,
+            } => formatter
+                .debug_struct("Settled")
+                .field("completion", completion)
+                .field("receipt", receipt)
+                .finish(),
+            Self::Streaming { content_type, .. } => formatter
+                .debug_struct("Streaming")
+                .field("content_type", content_type)
+                .finish_non_exhaustive(),
+        }
+    }
 }
 
 fn body_digest(body: &serde_json::Value) -> String {
@@ -117,19 +210,24 @@ fn body_digest(body: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentChatParams, AgentChatService, AgentChatServiceDeps, body_digest};
+    use super::{
+        AgentChatOutput, AgentChatParams, AgentChatService, AgentChatServiceDeps, body_digest,
+    };
     use crate::pricing::PricingTable;
     use async_trait::async_trait;
+    use bytes::Bytes;
+    use futures_util::StreamExt;
     use june_config::{ModelPriceConfig, ModelProvider, ModelType, PriceUnit};
     use june_domain::{
-        AgentChatCompleter, AgentChatCompletion, AgentChatRequest, Authorization, AuthorizeRequest,
-        ChargeRequest, Credits, DomainError, ModelId, OsAccountsClient, ProviderCredentials,
-        Receipt, TokenUsage, UserId,
+        AgentChatCompleter, AgentChatCompletion, AgentChatRequest, AgentChatResponse,
+        AgentChatStream, Authorization, AuthorizeRequest, ChargeRequest, Credits, DomainError,
+        ModelId, OsAccountsClient, ProviderCredentials, Receipt, TokenUsage, UserId,
     };
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::collections::BTreeMap;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::{mpsc, oneshot};
 
     #[test]
     fn body_digest_is_stable_full_sha256_hex() {
@@ -182,13 +280,14 @@ mod tests {
         async fn complete(
             &self,
             _request: AgentChatRequest,
-        ) -> Result<AgentChatCompletion, DomainError> {
+        ) -> Result<AgentChatResponse, DomainError> {
             Ok(AgentChatCompletion {
                 body: b"{\"choices\":[]}".to_vec(),
                 content_type: "application/json".to_string(),
                 provider: "test".to_string(),
                 usage: self.0,
-            })
+            }
+            .into())
         }
     }
 
@@ -252,8 +351,15 @@ mod tests {
             .await
             .expect("a completed turn is returned even when it cannot be priced");
 
-        assert_eq!(output.completion.body, b"{\"choices\":[]}".to_vec());
-        assert_eq!(output.receipt.credits_charged, Credits(0));
+        let AgentChatOutput::Settled {
+            completion,
+            receipt,
+        } = output
+        else {
+            panic!("a buffered completion is settled before it is returned");
+        };
+        assert_eq!(completion.body, b"{\"choices\":[]}".to_vec());
+        assert_eq!(receipt.credits_charged, Credits(0));
     }
 
     /// The guard must not swallow real prices: a normal turn still settles.
@@ -267,6 +373,130 @@ mod tests {
 
         let output = service(usage).complete(params()).await.expect("completes");
 
-        assert_eq!(output.receipt.credits_charged, Credits(370));
+        let AgentChatOutput::Settled { receipt, .. } = output else {
+            panic!("a buffered completion is settled before it is returned");
+        };
+        assert_eq!(receipt.credits_charged, Credits(370));
+    }
+
+    /// An OS Accounts double that allows everything and reports each charge.
+    struct RecordingOsAccounts {
+        charges: mpsc::UnboundedSender<ChargeRequest>,
+    }
+
+    #[async_trait]
+    impl OsAccountsClient for RecordingOsAccounts {
+        async fn authorize(&self, request: AuthorizeRequest) -> Result<Authorization, DomainError> {
+            AllowingOsAccounts.authorize(request).await
+        }
+
+        async fn charge(&self, request: ChargeRequest) -> Result<Receipt, DomainError> {
+            let credits = request.credits;
+            let _ = self.charges.send(request);
+            Ok(Receipt {
+                credits_charged: credits,
+                idempotent_replay: false,
+            })
+        }
+    }
+
+    /// A completer that hands back a stream the test feeds by hand, with a
+    /// usage the test resolves when it decides the stream is over.
+    struct StreamingCompleter {
+        parts: Mutex<
+            Option<(
+                mpsc::UnboundedReceiver<Bytes>,
+                oneshot::Receiver<TokenUsage>,
+            )>,
+        >,
+    }
+
+    #[async_trait]
+    impl AgentChatCompleter for StreamingCompleter {
+        async fn complete(
+            &self,
+            _request: AgentChatRequest,
+        ) -> Result<AgentChatResponse, DomainError> {
+            let (mut chunks, usage) = self
+                .parts
+                .lock()
+                .expect("lock")
+                .take()
+                .expect("one turn per test");
+            let body =
+                futures_util::stream::poll_fn(move |context| chunks.poll_recv(context)).map(Ok);
+            Ok(AgentChatStream {
+                body: Box::pin(body),
+                content_type: "text/event-stream".to_string(),
+                provider: "test".to_string(),
+                usage: Box::pin(async move { usage.await.unwrap_or_default() }),
+            }
+            .into())
+        }
+    }
+
+    /// A streamed turn goes back to the client before it is charged, and is
+    /// charged once its usage is known, on that usage.
+    #[tokio::test]
+    async fn a_streamed_turn_is_charged_after_its_stream_ends() {
+        let (chunk_tx, chunk_rx) = mpsc::unbounded_channel();
+        let (usage_tx, usage_rx) = oneshot::channel();
+        let (charge_tx, mut charges) = mpsc::unbounded_channel();
+        let service = AgentChatService::new(AgentChatServiceDeps {
+            pricing: Arc::new(text_model_table()),
+            os_accounts: Arc::new(RecordingOsAccounts { charges: charge_tx }),
+            chat_completer: Arc::new(StreamingCompleter {
+                parts: Mutex::new(Some((chunk_rx, usage_rx))),
+            }),
+            hold_ttl_seconds: 60,
+            flat_estimate_credits: 1,
+        });
+
+        let output = service.complete(params()).await.expect("completes");
+        let AgentChatOutput::Streaming {
+            mut body,
+            content_type,
+        } = output
+        else {
+            panic!("a streamed completion is returned before it is settled");
+        };
+        assert_eq!(content_type, "text/event-stream");
+
+        chunk_tx
+            .send(Bytes::from_static(b"data: {}\n\n"))
+            .expect("send");
+        assert_eq!(
+            body.next()
+                .await
+                .expect("a chunk")
+                .expect("an unbroken stream"),
+            Bytes::from_static(b"data: {}\n\n")
+        );
+        tokio::task::yield_now().await;
+        assert!(
+            charges.try_recv().is_err(),
+            "nothing is charged while the stream is still running"
+        );
+
+        drop(chunk_tx);
+        assert!(body.next().await.is_none());
+        usage_tx
+            .send(TokenUsage {
+                prompt_tokens: 1_000_000,
+                completion_tokens: 1_000_000,
+                ..TokenUsage::default()
+            })
+            .expect("usage");
+        let charge = tokio::time::timeout(std::time::Duration::from_secs(1), charges.recv())
+            .await
+            .expect("the charge settles once the usage is known")
+            .expect("a charge");
+        assert_eq!(charge.credits, Credits(370));
+        assert_eq!(charge.action_token, "agt_test");
+        assert!(
+            charge
+                .idempotency_key
+                .starts_with("agent_chat:user_1:priced-text:")
+        );
     }
 }

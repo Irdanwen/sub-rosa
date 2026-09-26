@@ -263,51 +263,20 @@ async fn stream_rewrite(
         return finish(extract_whole(&body));
     }
 
-    let mut collected = String::new();
-    let mut buffer = String::new();
-    let stopped = claim.stop.notified();
-    tokio::pin!(stopped);
-    loop {
-        let chunk = tokio::select! {
-            // Cancelling wins the race even mid-chunk. Returning here drops
-            // `response`, which closes the connection, so the upstream stops
-            // generating rather than finishing into a void.
-            _ = &mut stopped => {
-                return Err(AppError::new("note_rewrite_cancelled", "Rewrite stopped."));
-            }
-            chunk = response.chunk() => chunk?,
-        };
-        let Some(chunk) = chunk else { break };
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-        let before = collected.len();
-        // Frames are newline-delimited; the tail may be a partial line that the
-        // next chunk completes.
-        while let Some(newline) = buffer.find('\n') {
-            let line = buffer[..newline].trim().to_string();
-            buffer.drain(..newline + 1);
-            let Some(data) = line.strip_prefix("data:") else {
-                continue;
-            };
-            let data = data.trim();
-            if data.is_empty() || data == "[DONE]" {
-                continue;
-            }
-            let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
-                continue;
-            };
-            if let Some(delta) = frame
-                .pointer("/choices/0/delta/content")
-                .and_then(|v| v.as_str())
-            {
-                collected.push_str(delta);
-            }
+    // A stream that breaks or stops before it says it is finished is an
+    // error: a fragment must never replace the passage it was rewriting.
+    let read = crate::sse_lines::read_content(&mut response, |delta| {
+        emit(app, request_id, "delta", Some(delta));
+    });
+    tokio::select! {
+        // Cancelling wins the race even mid-chunk. Returning here drops
+        // `response`, which closes the connection, so the upstream stops
+        // generating rather than finishing into a void.
+        () = claim.stop.notified() => {
+            Err(AppError::new("note_rewrite_cancelled", "Rewrite stopped."))
         }
-        if collected.len() > before {
-            emit(app, request_id, "delta", Some(&collected[before..]));
-        }
+        text = read => finish(Some(text?)),
     }
-
-    finish(Some(collected))
 }
 
 fn extract_whole(body: &[u8]) -> Option<String> {

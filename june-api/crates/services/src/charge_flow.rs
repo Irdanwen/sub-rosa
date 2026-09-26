@@ -127,7 +127,7 @@ pub(crate) fn spawn_charge(params: AsyncChargeParams) {
     });
 }
 
-async fn settle_charge(params: AsyncChargeParams) {
+pub(crate) async fn settle_charge(params: AsyncChargeParams) {
     let receipt = match charge(ChargeParams {
         os_accounts: params.os_accounts.as_ref(),
         action_token: params.action_token,
