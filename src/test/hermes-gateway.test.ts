@@ -181,4 +181,28 @@ describe("HermesGatewayClient", () => {
     client.close();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps delivering an event to every subscriber when one of them throws", async () => {
+    const client = new HermesGatewayClient();
+    const first = client.connect("ws://gateway");
+    FakeWebSocket.instances[0].open();
+    await first;
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = vi.fn(() => {
+      throw new Error("render bug");
+    });
+    const healthy = vi.fn();
+    client.onEvent(failing);
+    client.onEvent(healthy);
+
+    const frame = { jsonrpc: "2.0", method: "event", params: { type: "message.delta" } };
+    FakeWebSocket.instances[0].message(frame);
+    FakeWebSocket.instances[0].message(frame);
+
+    expect(failing).toHaveBeenCalledTimes(2);
+    expect(healthy).toHaveBeenCalledTimes(2);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
 });

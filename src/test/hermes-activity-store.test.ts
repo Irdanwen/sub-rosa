@@ -229,6 +229,47 @@ describe("createHermesActivityStore", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("does not notify subscribers for streamed frames that change nothing a reader sees", () => {
+    const store = createHermesActivityStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.record(classified("message.start", "s1"), "sandboxed");
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // A reply streams one frame per token; the row stays "running".
+    for (let index = 0; index < 50; index += 1) {
+      store.record(classified("message.delta", "s1", { text: `${index} ` }), "sandboxed");
+    }
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // Its age still moves, at most once a second.
+    advance(1000);
+    store.record(classified("message.delta", "s1", { text: "more" }), "sandboxed");
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(store.getRecord("s1")?.lastEventAt).toBe(now);
+
+    // And a visible change is announced at once.
+    store.record(classified("tool.start", "s1", { tool_name: "read_file" }), "sandboxed");
+    expect(listener).toHaveBeenCalledTimes(3);
+  });
+
+  it("announces a streamed frame when the session's pending count changed since the last one", () => {
+    let pending = 0;
+    const store = createHermesActivityStore({ pendingCountFor: () => pending });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.record(classified("message.start", "s1"), "sandboxed");
+    store.record(classified("message.delta", "s1", { text: "a" }), "sandboxed");
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // A blocker is answered (or raised) between two frames: the drawer's count
+    // badge reads it, so the next frame must reach it.
+    pending = 1;
+    store.record(classified("message.delta", "s1", { text: "b" }), "sandboxed");
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(store.getRecord("s1")?.pendingActionCount).toBe(1);
+  });
+
   it("ignores events without a session id (nothing to attribute)", () => {
     const store = createHermesActivityStore();
     // reasoning with no session id classifies to sessionId "" — unattributable.

@@ -209,12 +209,22 @@ export function buildAgentChatTurns(
   );
 }
 
+export type HermesSessionChatTurnsOptions = {
+  /** Ids of the messages in `messages` that are still pending: optimistic
+   * bubbles for prompts sent from this app and not stored yet. They are stamped
+   * on the same clock as live frames, so a live turn can tell whether one of
+   * them came after it (see {@link createAssistantTurn}). */
+  pendingMessageIds?: ReadonlySet<string>;
+};
+
 export function buildHermesSessionChatTurns(
   messages: HermesSessionMessage[],
   liveEvents: LiveHermesEvent[] = [],
+  options: HermesSessionChatTurnsOptions = {},
 ): AgentChatTurn[] {
   const turns: AgentChatTurn[] = [];
   const toolResults = new Map<string, HermesSessionMessage>();
+  const clientStampedTurns = new Set<AgentChatTurn>();
 
   for (const message of messages) {
     if (message.role === "tool") {
@@ -299,10 +309,11 @@ export function buildHermesSessionChatTurns(
 
     if (turn.parts.length) {
       turns.push(turn);
+      if (options.pendingMessageIds?.has(message.id)) clientStampedTurns.add(turn);
     }
   }
 
-  appendLiveHermesEvents(turns, liveEvents);
+  appendLiveHermesEvents(turns, liveEvents, clientStampedTurns);
   return sortAgentChatTurns(
     turns.filter((turn) =>
       turn.parts.some((part) => part.type === "tool" || partText(part).trim()),
@@ -588,7 +599,11 @@ function assistantTurnForTimestamp(turns: AgentChatTurn[], createdAt: string | u
   return undefined;
 }
 
-function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[]) {
+function appendLiveHermesEvents(
+  turns: AgentChatTurn[],
+  events: LiveHermesEvent[],
+  clientStampedTurns?: ReadonlySet<AgentChatTurn>,
+) {
   let currentAssistant: AgentChatTurn | null = null;
   // Hermes 0.19 seals mid-turn commentary as `message.interim`; remember the
   // bubble it produced so a previewed final (`response_previewed`) can fold
@@ -619,14 +634,14 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "message.start") {
-      currentAssistant = createAssistantTurn(turns, event.receivedAt);
+      currentAssistant = createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       lastInterimAssistant = null;
       continue;
     }
 
     if (event.type === "message.delta") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       appendAssistantTextPart(currentAssistant.parts, deltaEventText(event), "running");
       continue;
@@ -638,7 +653,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       // remember it, so a message.complete that only extends this preview folds
       // back in instead of duplicating the text.
       if (text) {
-        currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+        currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
         completeAssistantTextPart(currentAssistant.parts, text);
         currentAssistant.status = "complete";
         completeRunningParts(currentAssistant.parts);
@@ -665,7 +680,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       if (settlesInterimPreview && lastInterimAssistant) {
         currentAssistant = lastInterimAssistant;
       }
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       // A billing failure is recognizable from its "Error:" text prefix; a
       // context overflow is not, so only fold it when the turn actually failed
       // — an ordinary sentence that mentions "context length" stays prose.
@@ -695,7 +710,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "thinking.delta" || event.type === "reasoning.delta") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       appendReasoningPart(currentAssistant.parts, deltaEventText(event));
       continue;
@@ -710,7 +725,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
       // each subagent as a tool-style row keyed by its id, so N parallel
       // subagents show as N live rows that resolve as they finish.
       if (!currentAssistant) {
-        currentAssistant = createAssistantTurn(turns, event.receivedAt);
+        currentAssistant = createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
         toolCreatedTurns.add(currentAssistant);
       }
       const payload = event.payload as Record<string, unknown> | undefined;
@@ -783,7 +798,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
         continue;
       }
       if (!currentAssistant) {
-        currentAssistant = createAssistantTurn(turns, event.receivedAt);
+        currentAssistant = createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
         toolCreatedTurns.add(currentAssistant);
       }
       const status = toolEventStatus(event);
@@ -810,7 +825,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "clarify.request") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       const payload = event.payload as Record<string, unknown> | undefined;
       upsertClarifyPart(currentAssistant.parts, {
@@ -844,7 +859,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "approval.request") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       const payload = event.payload as Record<string, unknown> | undefined;
       upsertApprovalPart(currentAssistant.parts, {
@@ -880,7 +895,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "sudo.request") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       const payload = event.payload as Record<string, unknown> | undefined;
       upsertSudoPart(currentAssistant.parts, {
@@ -921,7 +936,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "secret.request") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       currentAssistant.status = "running";
       const payload = event.payload as Record<string, unknown> | undefined;
       // Read ONLY the metadata fields — never `value`/`api_key`, even if the
@@ -960,7 +975,7 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
     }
 
     if (event.type === "error") {
-      currentAssistant ??= createAssistantTurn(turns, event.receivedAt);
+      currentAssistant ??= createAssistantTurnAfter(turns, event.receivedAt, clientStampedTurns);
       const notice = text ? turnNotice(text) : undefined;
       if (notice) {
         currentAssistant.parts.push(notice);
@@ -980,19 +995,34 @@ function appendLiveHermesEvents(turns: AgentChatTurn[], events: LiveHermesEvent[
 }
 
 function createAssistantTurn(turns: AgentChatTurn[], createdAt: string) {
+  return createAssistantTurnAfter(turns, createdAt);
+}
+
+function createAssistantTurnAfter(
+  turns: AgentChatTurn[],
+  createdAt: string,
+  clientStampedTurns?: ReadonlySet<AgentChatTurn>,
+) {
   // A live assistant turn's `createdAt` is the client's event receive time,
   // while the user/persisted turns it follows carry server timestamps. Those
-  // clocks differ, so a raw sort by `createdAt` can float the assistant above
-  // the user turn that triggered it — surfacing as a duplicated, misplaced
-  // "Thinking…" (the mis-sorted turn shows its own indicator while the gap
-  // indicator also fires because the user turn is now last). Clamp to the
-  // latest existing turn so an appended turn never sorts before the turns it
-  // causally follows; the sort's index tiebreak then keeps a same-timestamp
-  // user turn first.
-  const latestExisting = turns.reduce(
-    (latest, existing) => (existing.createdAt > latest ? existing.createdAt : latest),
-    "",
-  );
+  // clocks differ (Hermes stores a prompt at turn start, after it has already
+  // announced the reply), so a raw sort by `createdAt` can float the assistant
+  // above the user turn that triggered it — surfacing as a duplicated,
+  // misplaced "Thinking…" (the mis-sorted turn shows its own indicator while
+  // the gap indicator also fires because the user turn is now last). Clamp to
+  // the latest turn it can have followed so an appended turn never sorts before
+  // the turns it causally follows; the sort's index tiebreak then keeps a
+  // same-timestamp user turn first.
+  //
+  // "Can have followed" excludes one kind of turn: a pending prompt (sent from
+  // this app, not stored yet) stamped after the frame arrived. It is on the
+  // same clock as the frame, so the comparison is exact, and it means the
+  // prompt came later. Clamping to it restamped a finished reply with the next
+  // prompt's time and rendered it under that prompt.
+  const latestExisting = turns.reduce((latest, existing) => {
+    if (clientStampedTurns?.has(existing) && existing.createdAt > createdAt) return latest;
+    return existing.createdAt > latest ? existing.createdAt : latest;
+  }, "");
   const orderedCreatedAt = latestExisting > createdAt ? latestExisting : createdAt;
   // The `turns.length` suffix keeps ids unique when several turns are created
   // within the same millisecond, while staying deterministic across rebuilds
@@ -1264,7 +1294,7 @@ function upsertSecretPart(
   });
 }
 
-function eventText(event: HermesGatewayEvent) {
+export function eventText(event: HermesGatewayEvent) {
   const payload = event.payload as Record<string, unknown> | undefined;
   if (!payload) return "";
   for (const key of [
@@ -1310,8 +1340,8 @@ export const HERMES_LIVE_EVENT_LIMIT = 200;
 
 /**
  * Append a live gateway event to the bounded per-session tail, compacting a run
- * of `message.delta` frames for the same message into a single accumulated
- * event first.
+ * of streamed deltas for the same message into a single accumulated event
+ * first.
  *
  * A long streamed assistant reply emits hundreds of `message.delta` frames.
  * Storing each one and then keeping only the last `HERMES_LIVE_EVENT_LIMIT`
@@ -1321,33 +1351,155 @@ export const HERMES_LIVE_EVENT_LIMIT = 200;
  * the whole streamed message as one event that can never evict itself. Frames of
  * a different kind (a tool step, thinking) break the run, matching the renderer,
  * which only concatenates consecutive deltas onto the current assistant turn.
+ * Reasoning deltas are folded the same way, for the same reason.
+ *
+ * The runtime this app ships (Hermes 0.19, `_stream` in `tui_gateway/server.py`)
+ * sends `{ text }` plus an optional `rendered` preview and NO message id, so
+ * two deltas merge when they carry the same id or when neither carries one. A
+ * frame that names its message never merges with one that does not. The merged
+ * frame keeps the key the renderer reads first and drops `rendered`: nothing
+ * reads it, and on a merged frame it would describe only the last chunk.
  */
 export function appendLiveHermesEvent(
   events: LiveHermesEvent[],
   event: LiveHermesEvent,
 ): LiveHermesEvent[] {
   const previous = events.at(-1);
-  const messageId = liveEventMessageId(event);
   if (
     previous &&
-    previous.type === "message.delta" &&
-    event.type === "message.delta" &&
+    isCompactableDelta(event) &&
+    previous.type === event.type &&
     previous.session_id === event.session_id &&
-    messageId !== undefined &&
-    liveEventMessageId(previous) === messageId
+    liveEventMessageId(previous) === liveEventMessageId(event)
   ) {
+    const {
+      text: _text,
+      delta: _delta,
+      message: _message,
+      content: _content,
+      rendered: _rendered,
+      ...rest
+    } = (event.payload ?? {}) as Record<string, unknown>;
+    const key = hasStringText(previous) ? "text" : "delta";
     const merged: LiveHermesEvent = {
       ...event,
-      payload: {
-        ...(event.payload as Record<string, unknown>),
-        delta: deltaEventText(previous) + deltaEventText(event),
-      },
+      payload: { ...rest, [key]: deltaEventText(previous) + deltaEventText(event) },
       // Keep the opening frame's timestamp so the turn's start time is stable.
       receivedAt: previous.receivedAt,
     };
     return [...events.slice(0, -1), merged];
   }
   return [...events, event].slice(-HERMES_LIVE_EVENT_LIMIT);
+}
+
+// Frames that end the session's TURN. Deliberately excludes `background.*`: a
+// background process finishing is the opposite of an ending — the gateway's
+// notification poller chains a fresh agent turn with that process's output, so
+// treating it as terminal ended the run and dropped the live subscription at
+// the exact moment the agent was about to pick the work back up, and the
+// chained turn then streamed to nobody (see ADR-0016 addendum).
+export function isTerminalHermesEvent(type: string) {
+  const normalized = type.toLowerCase();
+  return (
+    normalized === "error" ||
+    normalized === "message.complete" ||
+    normalized === "message.completed" ||
+    normalized === "turn.complete" ||
+    normalized === "turn.completed" ||
+    normalized === "session.complete" ||
+    normalized === "session.completed"
+  );
+}
+
+/**
+ * The live frames a session keeps when the user sends a new prompt. A new
+ * prompt starts a new turn, so everything a finished turn left in the buffer
+ * goes: its reply is either in the stored transcript already or about to be,
+ * and kept here it would be rendered next to (and, before the ordering fix,
+ * under) the new prompt, then again once the stored copy arrived. Only a turn
+ * that is still running (a steer, or a send the runtime will queue) keeps the
+ * frames after its last turn boundary. Returns the input when nothing goes.
+ */
+export function liveEventsForNewTurn(
+  events: LiveHermesEvent[],
+  options: { turnInProgress: boolean },
+): LiveHermesEvent[] {
+  if (!events.length) return events;
+  if (!options.turnInProgress) return [];
+  let lastBoundary = -1;
+  events.forEach((event, index) => {
+    if (isTerminalHermesEvent(event.type)) lastBoundary = index;
+  });
+  return lastBoundary < 0 ? events : events.slice(lastBoundary + 1);
+}
+
+/**
+ * The live `error` frames that still describe the session's current turn: those
+ * no user message (stored or pending) is newer than. A failure Hermes never
+ * stores has only its live frame to show it, so it must survive the buffer
+ * being dropped once the stored transcript catches up. But a failure from a turn
+ * the user has since moved on from is not the current turn's: kept forever, it
+ * resurfaced under every later prompt and marked every later run as failed.
+ */
+export function currentTurnLiveErrors(
+  events: LiveHermesEvent[],
+  messages: HermesSessionMessage[],
+): LiveHermesEvent[] {
+  const latestUserAt = latestUserMessageTimeMs(messages);
+  return events.filter((event) => {
+    if (event.type !== "error") return false;
+    if (latestUserAt === undefined) return true;
+    const receivedAt = Date.parse(event.receivedAt);
+    return !(latestUserAt > receivedAt);
+  });
+}
+
+/** Puts frames back in front of a session's buffer, skipping any it still
+ * holds. A send clears the finished turn's failure; when the send is rejected,
+ * that failure is the latest turn's again and has no other record. */
+export function withRestoredLiveEvents(
+  events: LiveHermesEvent[],
+  restored: LiveHermesEvent[],
+): LiveHermesEvent[] {
+  const missing = restored.filter((event) => !events.includes(event));
+  return missing.length ? [...missing, ...events] : events;
+}
+
+function latestUserMessageTimeMs(messages: HermesSessionMessage[]) {
+  let latest: number | undefined;
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    const at = messageTimeMs(message);
+    if (at !== undefined && (latest === undefined || at > latest)) latest = at;
+  }
+  return latest;
+}
+
+// Hermes stores epoch seconds (sometimes milliseconds); pending messages carry
+// ISO strings.
+function messageTimeMs(message: HermesSessionMessage) {
+  const raw = message.timestamp ?? message.created_at;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw > 0 && raw < 10_000_000_000 ? raw * 1000 : raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
+}
+
+function isCompactableDelta(event: HermesGatewayEvent) {
+  return (
+    event.type === "message.delta" ||
+    event.type === "thinking.delta" ||
+    event.type === "reasoning.delta"
+  );
+}
+
+function hasStringText(event: HermesGatewayEvent) {
+  const payload = event.payload as Record<string, unknown> | undefined;
+  return typeof payload?.text === "string";
 }
 
 function messageTimestamp(message: HermesSessionMessage) {
@@ -1625,7 +1777,7 @@ function stringArrayValue(value: unknown) {
     : [];
 }
 
-function stringValue(value: unknown, preserveWhitespace = false) {
+export function stringValue(value: unknown, preserveWhitespace = false) {
   if (typeof value === "string") {
     if (!value.trim()) return undefined;
     return preserveWhitespace ? value : value.trim();

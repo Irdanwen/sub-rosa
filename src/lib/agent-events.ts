@@ -47,7 +47,31 @@ export type AgentSessionsChangedDetail = {
   backgroundSessionIds?: string[];
 };
 
+// The last status announced per session, from any caller, so a live stream can
+// tell a real change from the same status re-announced per frame.
+const lastAnnouncedStatus = new Map<string, string>();
+
+// Everything a listener shows: a conversation named mid-run must reach the
+// menu bar even though its status and summary did not move.
+function statusSignature(detail: AgentSessionStatusDetail) {
+  return [detail.status, detail.summary ?? "", detail.title ?? ""].join("\u0000");
+}
+
+/** True when `detail` would re-announce exactly what was last announced for its
+ * session. A reasoning stream (or a chatty tool) reports "running" once per
+ * frame; each dispatch re-renders the app shell and crosses IPC to the menu bar,
+ * for a status nobody can see change. */
+export function repeatsLastAgentSessionStatus(detail: AgentSessionStatusDetail) {
+  return (
+    detail.sessionId !== undefined &&
+    lastAnnouncedStatus.get(detail.sessionId) === statusSignature(detail)
+  );
+}
+
 export function dispatchAgentSessionStatus(detail: AgentSessionStatusDetail) {
+  if (detail.sessionId !== undefined) {
+    lastAnnouncedStatus.set(detail.sessionId, statusSignature(detail));
+  }
   window.dispatchEvent(
     new CustomEvent<AgentSessionStatusDetail>(AGENT_SESSION_STATUS_EVENT, {
       detail,

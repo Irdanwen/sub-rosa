@@ -175,8 +175,9 @@ export function createHermesActivityStore(
       currentTool: undefined,
       subagents: new Map<string, BackgroundHermesActivity>(),
       lastEventAt: Date.now(),
+      emittedAt: Number.NEGATIVE_INFINITY,
+      emittedState: undefined,
     };
-
     // The mode can sharpen over a session's life (a sandboxed session opting
     // into unrestricted) but never downgrade: `mode` defaults to `sandboxed`
     // for an unresolved session, so re-asserting it on a late event would mask
@@ -189,8 +190,25 @@ export function createHermesActivityStore(
     // Re-key so this becomes the most-recently-touched entry for eviction.
     bySession.delete(sessionId);
     bySession.set(sessionId, row);
-    evict();
-    emit();
+    const evicted = evict();
+    // A streamed reply feeds this store one frame per token, and every emit
+    // re-renders each subscriber. Only announce what a reader can see change:
+    // the row itself, a subagent frame (it upserts the sub-list), an eviction,
+    // or an age that moved by at least a second (the drawer shows "just now"
+    // for the first 45). The row is compared with what was last announced,
+    // not with its state before this frame: the pending count is read live and
+    // can move between two frames without either of them changing it.
+    const state = visibleState(row, pendingCountFor(sessionId));
+    if (
+      evicted ||
+      event.kind === "background_activity" ||
+      state !== row.emittedState ||
+      row.lastEventAt - row.emittedAt >= AGE_EMIT_GRANULARITY_MS
+    ) {
+      row.emittedAt = row.lastEventAt;
+      row.emittedState = state;
+      emit();
+    }
   }
 
   function clearSession(sessionId: string): void {
@@ -226,12 +244,15 @@ export function createHermesActivityStore(
   }
 
   /** Keep the map within the cap by dropping the oldest (least recently active). */
-  function evict(): void {
+  function evict(): boolean {
+    let evicted = false;
     while (bySession.size > ACTIVITY_SESSIONS_CAP) {
       const oldest = bySession.keys().next().value;
       if (oldest === undefined) break;
       bySession.delete(oldest);
+      evicted = true;
     }
+    return evicted;
   }
 
   // Project an internal row into the public, count-resolved record. The pending
@@ -287,7 +308,24 @@ type InternalRecord = {
   currentTool?: string;
   subagents: Map<string, BackgroundHermesActivity>;
   lastEventAt: number;
+  /** `lastEventAt` as of the last emit, so an age-only change emits at most
+   * once per {@link AGE_EMIT_GRANULARITY_MS}. */
+  emittedAt: number;
+  /** {@link visibleState} as of the last emit. */
+  emittedState: string | undefined;
 };
+
+/** How far a row's last-event time may move before an otherwise unchanged row
+ * is announced again. */
+const AGE_EMIT_GRANULARITY_MS = 1000;
+
+/** The row fields a reader renders, apart from its age and its subagents. The
+ * pending count is not stored on the row (it is read live), so it is passed in. */
+function visibleState(row: InternalRecord, pendingActionCount: number): string {
+  return [row.phase, row.currentTool ?? "", row.mode, row.title ?? "", pendingActionCount].join(
+    "\u0000",
+  );
+}
 
 /**
  * Fold one event into a session's row. This is the SINGLE place phase is

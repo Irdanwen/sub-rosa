@@ -184,7 +184,19 @@ export class HermesGatewayClient {
       return;
     }
     if (frame.method === "event" && frame.params?.type) {
-      for (const handler of this.handlers) handler(frame.params);
+      // Each subscriber is isolated: one that throws must not starve the
+      // others of this frame (every session's live view shares the socket),
+      // nor stop the frames after it. Snapshot the set so a handler that
+      // subscribes or unsubscribes during dispatch cannot change who hears
+      // this frame.
+      for (const handler of [...this.handlers]) {
+        try {
+          handler(frame.params);
+        } catch (error) {
+          // biome-ignore lint/suspicious/noConsole: a failing subscriber must stay visible
+          console.error("[hermes] event handler failed", frame.params.type, error);
+        }
+      }
     }
   }
 

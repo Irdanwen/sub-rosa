@@ -3973,7 +3973,10 @@ describe("AgentWorkspace", () => {
     });
 
     await screen.findByText(/Reading another source/);
-    expect(scrollTo).toHaveBeenCalledTimes(2);
+    // Output growing inside the same turn is followed too, with a direct
+    // assignment once a frame rather than a smooth scroll restarted per frame.
+    await waitFor(() => expect(scroller.scrollTop).toBe(2000));
+    expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 
   it("does not pull the transcript back down after scrollbar scrolling", async () => {
@@ -4718,12 +4721,11 @@ describe("AgentWorkspace", () => {
     emitGatewayEvent({
       type: "message.start",
       session_id: "runtime-session-1",
-      payload: { message_id: "chained-1" },
     });
     emitGatewayEvent({
       type: "message.delta",
       session_id: "runtime-session-1",
-      payload: { message_id: "chained-1", delta: "Le benchmark est terminé." },
+      payload: { text: "Le benchmark est terminé." },
     });
 
     expect(await screen.findByText("Le benchmark est terminé.")).toBeInTheDocument();
@@ -4769,9 +4771,412 @@ describe("AgentWorkspace", () => {
     emitGatewayEvent({
       type: "message.delta",
       session_id: "runtime-session-1",
-      payload: { message_id: "chained-1", delta: "Reprise après la coupure." },
+      payload: { text: "Reprise après la coupure." },
     });
     expect(await screen.findByText("Reprise après la coupure.")).toBeInTheDocument();
+    await flushDeferredSessionWork();
+  });
+
+  // Live turns across a send. The runtime this app ships streams
+  // `message.delta` as `{ text }` with no message id (Hermes 0.19 `_stream`),
+  // so these tests use that shape. The live buffer for a session used to be
+  // dropped only when a later transcript fetch showed a reply after the user's
+  // latest message: a finished turn whose one post-turn fetch came back stale
+  // survived into the next send, was restamped with the new prompt's time, and
+  // then rendered twice once the stored copy arrived.
+  const timelineOf = () => {
+    const timeline = document.querySelector(".agent-timeline");
+    if (!(timeline instanceof HTMLElement)) throw new Error("no timeline");
+    return timeline;
+  };
+  const precedes = (first: Element, second: Element) =>
+    Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const streamReply = (text: string) => {
+    emitGatewayEvent({ type: "message.start", session_id: "runtime-session-1" });
+    const middle = Math.ceil(text.length / 2);
+    emitGatewayEvent({
+      type: "message.delta",
+      session_id: "runtime-session-1",
+      payload: { text: text.slice(0, middle) },
+    });
+    emitGatewayEvent({
+      type: "message.delta",
+      session_id: "runtime-session-1",
+      payload: { text: text.slice(middle) },
+    });
+    emitGatewayEvent({
+      type: "message.complete",
+      session_id: "runtime-session-1",
+      payload: { text },
+    });
+  };
+
+  it("shows a finished reply once, above the next message, when its refresh came back stale", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "first question");
+    const askedAt = new Date().toISOString();
+    // Every fetch after the turn sees only the prompt: the reply is not stored
+    // yet.
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      { id: "m1", role: "user", content: "first question", timestamp: askedAt },
+    ]);
+    streamReply("First answer.");
+    expect(await screen.findByText("First answer.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+
+    // The user asks again right away. By now the store has caught up.
+    await user.type(screen.getByRole("textbox"), "second question");
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      { id: "m1", role: "user", content: "first question", timestamp: askedAt },
+      { id: "m2", role: "assistant", content: "First answer.", timestamp: askedAt },
+    ]);
+    const fetchesBeforeSend = mocks.listHermesSessionMessages.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+        session_id: "runtime-session-1",
+        text: "second question",
+      }),
+    );
+    // Let the stored transcript land (the send asks for it; the working poll
+    // would too, later).
+    await waitFor(
+      () =>
+        expect(mocks.listHermesSessionMessages.mock.calls.length).toBeGreaterThan(
+          fetchesBeforeSend,
+        ),
+      { timeout: 4000 },
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+
+    const timeline = timelineOf();
+    const answers = within(timeline).getAllByText("First answer.");
+    expect(answers).toHaveLength(1);
+    const second = within(timeline).getByText("second question");
+    expect(precedes(answers[0] as Element, second)).toBe(true);
+    await flushDeferredSessionWork();
+  }, 10000);
+
+  it("retries the refresh after a turn until the stored reply shows up, then stops", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "first question");
+    const askedAt = new Date().toISOString();
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      { id: "m1", role: "user", content: "first question", timestamp: askedAt },
+    ]);
+    const fetchesBeforeReply = mocks.listHermesSessionMessages.mock.calls.length;
+    streamReply("Streamed reply.");
+    await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+
+    // The first post-turn fetch comes back before the reply is stored...
+    await waitFor(() =>
+      expect(mocks.listHermesSessionMessages.mock.calls.length).toBeGreaterThan(fetchesBeforeReply),
+    );
+    // ...and the store catches up just after it.
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      { id: "m1", role: "user", content: "first question", timestamp: askedAt },
+      { id: "m2", role: "assistant", content: "Stored reply.", timestamp: askedAt },
+    ]);
+
+    // A retry picks it up, and the stored copy replaces the live one.
+    expect(await screen.findByText("Stored reply.", {}, { timeout: 2500 })).toBeInTheDocument();
+    expect(screen.queryByText("Streamed reply.")).toBeNull();
+
+    // Once the stored reply is seen, the retries stop.
+    const fetchesAfterCatchUp = mocks.listHermesSessionMessages.mock.calls.length;
+    await act(() => new Promise((resolve) => setTimeout(resolve, 2300)));
+    expect(mocks.listHermesSessionMessages.mock.calls.length).toBe(fetchesAfterCatchUp);
+  }, 10000);
+
+  it("does not carry an earlier turn's error into the next one", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const statuses: AgentSessionStatusDetail[] = [];
+    const onStatus = (event: Event) => {
+      statuses.push((event as CustomEvent<AgentSessionStatusDetail>).detail);
+    };
+    window.addEventListener(AGENT_SESSION_STATUS_EVENT, onStatus);
+    const providerFailed = /The model provider could not answer this message/;
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      mocks.listHermesSessionMessages.mockResolvedValue([]);
+      mocks.gatewayRequest.mockImplementation((method: string) => {
+        if (method === "session.resume")
+          return Promise.resolve({ session_id: "runtime-session-1" });
+        // The runtime reports nothing running, so a run whose stream dies is
+        // settled by the poll (ADR-0016) rather than by a terminal frame.
+        if (method === "session.active_list") return Promise.resolve({ sessions: [] });
+        return Promise.resolve({});
+      });
+
+      render(<AgentWorkspace initialSession={existingSession} />);
+      await sendFirstTurn(user, "first question");
+      // The first turn dies on a provider failure. Hermes never stores it, so
+      // the live frame is the only record of it.
+      emitGatewayEvent({
+        type: "error",
+        session_id: "runtime-session-1",
+        payload: { message: "upstream_provider_failed" },
+      });
+      expect(await screen.findByText(providerFailed)).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      await user.type(screen.getByRole("textbox"), "second question");
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() =>
+        expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+          session_id: "runtime-session-1",
+          text: "second question",
+        }),
+      );
+      // The second turn starts, then its stream dies without a terminal frame.
+      emitGatewayEvent({ type: "message.start", session_id: "runtime-session-1" });
+      emitGatewayEvent({
+        type: "message.delta",
+        session_id: "runtime-session-1",
+        payload: { text: "Looking into it" },
+      });
+      expect(await screen.findByText("Looking into it")).toBeInTheDocument();
+
+      // The old failure never renders under the new message.
+      const timeline = timelineOf();
+      const second = within(timeline).getByText("second question");
+      for (const notice of within(timeline).queryAllByText(providerFailed)) {
+        expect(precedes(notice, second)).toBe(true);
+      }
+
+      // And when the runtime settles the second turn, it is not reported as
+      // failed on the strength of the first one's error.
+      statuses.length = 0;
+      for (let poll = 0; poll < 3; poll += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2500);
+        });
+      }
+      const settled = statuses.find(
+        (detail) => detail.status === "completed" || detail.status === "failed",
+      );
+      expect(settled?.status).toBe("completed");
+    } finally {
+      window.removeEventListener(AGENT_SESSION_STATUS_EVENT, onStatus);
+      vi.useRealTimers();
+    }
+  }, 15000);
+
+  it.each([
+    ["the gateway is not connected", () => new Error("Hermes gateway is not connected.")],
+    ["the session is busy", () => new HermesGatewayError("session busy", 4009)],
+  ])(
+    "keeps the previous turn's failure when the next send is rejected because %s",
+    async (_reason, failure) => {
+      const user = userEvent.setup();
+      const providerFailed = /The model provider could not answer this message/;
+      let rejectSubmit = false;
+      mocks.listHermesSessionMessages.mockResolvedValue([]);
+      mocks.gatewayRequest.mockImplementation((method: string) => {
+        if (method === "session.resume")
+          return Promise.resolve({ session_id: "runtime-session-1" });
+        if (method === "prompt.submit" && rejectSubmit) return Promise.reject(failure());
+        return Promise.resolve({});
+      });
+
+      render(<AgentWorkspace initialSession={existingSession} />);
+      await sendFirstTurn(user, "first question");
+      // Hermes never stores a provider failure: this frame is its only record.
+      emitGatewayEvent({
+        type: "error",
+        session_id: "runtime-session-1",
+        payload: { message: "upstream_provider_failed" },
+      });
+      expect(await screen.findByText(providerFailed)).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+
+      rejectSubmit = true;
+      await user.type(screen.getByRole("textbox"), "second question");
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() =>
+        expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+          session_id: "runtime-session-1",
+          text: "second question",
+        }),
+      );
+      // The rejected prompt never entered the session, so its bubble goes...
+      await waitFor(() => expect(within(timelineOf()).queryByText("second question")).toBeNull());
+      // ...and the failure it was sent after is still there to act on.
+      expect(within(timelineOf()).getByText(providerFailed)).toBeInTheDocument();
+      await flushDeferredSessionWork();
+    },
+  );
+
+  it("shows a finished reply once when the gateway chains the next turn right after it", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "run the benchmark");
+    const askedAt = new Date(Date.now() - 2000).toISOString();
+    const chainedAt = new Date(Date.now() + 1000).toISOString();
+    streamReply("Started it in the background.");
+    // The store has the finished turn and, just after it, the prompt the
+    // gateway chains with the background process's output.
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      { id: "m1", role: "user", content: "run the benchmark", timestamp: askedAt },
+      {
+        id: "m2",
+        role: "assistant",
+        content: "Started it in the background.",
+        timestamp: askedAt,
+      },
+      { id: "m3", role: "user", content: "Process bg-1 finished.", timestamp: chainedAt },
+    ]);
+    // Chained before any post-turn refresh cleared the finished turn's frames.
+    emitGatewayEvent({ type: "message.start", session_id: "runtime-session-1" });
+    emitGatewayEvent({
+      type: "message.delta",
+      session_id: "runtime-session-1",
+      payload: { text: "The benchmark is done." },
+    });
+    expect(await screen.findByText("The benchmark is done.")).toBeInTheDocument();
+    const chainedPrompt = await within(timelineOf()).findByText("Process bg-1 finished.");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+
+    const answers = within(timelineOf()).getAllByText("Started it in the background.");
+    expect(answers).toHaveLength(1);
+    expect(precedes(answers[0] as Element, chainedPrompt)).toBe(true);
+    await flushDeferredSessionWork();
+  });
+
+  it("keeps the current turn's failure when the conversation is opened again", async () => {
+    const user = userEvent.setup();
+    const providerFailed = /The model provider could not answer this message/;
+    const secondSession = {
+      ...existingSession,
+      id: "session-2",
+      title: "Second session",
+      preview: "Second preview",
+      last_active: "2026-06-04T12:05:00Z",
+    };
+    mocks.listHermesSessions.mockResolvedValue([existingSession, secondSession]);
+    let firstSessionMessages: unknown[] = [];
+    mocks.listHermesSessionMessages.mockImplementation((sessionId: string) =>
+      Promise.resolve(sessionId === "session-1" ? firstSessionMessages : []),
+    );
+
+    const { rerender } = render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "first question");
+    const askedAt = new Date(Date.now() - 1000).toISOString();
+    // The agent loop stored one step, then the next model call failed. Hermes
+    // stores the step but not the failure.
+    firstSessionMessages = [
+      { id: "m1", role: "user", content: "first question", timestamp: askedAt },
+      { id: "m2", role: "assistant", content: "Let me check.", timestamp: askedAt },
+    ];
+    emitGatewayEvent({
+      type: "error",
+      session_id: "runtime-session-1",
+      payload: { message: "upstream_provider_failed" },
+    });
+    expect(await screen.findByText(providerFailed)).toBeInTheDocument();
+    await flushDeferredSessionWork();
+
+    rerender(<AgentWorkspace initialSession={secondSession} />);
+    await waitFor(() => expect(screen.queryByText(providerFailed)).toBeNull());
+    rerender(<AgentWorkspace initialSession={existingSession} />);
+    expect(await screen.findByText("Let me check.")).toBeInTheDocument();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(screen.getByText(providerFailed)).toBeInTheDocument();
+    await flushDeferredSessionWork();
+  });
+
+  it("fetches the stored copy of a finished turn a steer clears away", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      mocks.listHermesSessionMessages.mockResolvedValue([]);
+      render(<AgentWorkspace initialSession={existingSession} />);
+      await sendFirstTurn(user, "run the benchmark");
+      const askedAt = new Date(Date.now() - 2000).toISOString();
+      // Every post-turn fetch comes back before the reply is stored.
+      mocks.listHermesSessionMessages.mockResolvedValue([
+        { id: "m1", role: "user", content: "run the benchmark", timestamp: askedAt },
+      ]);
+      streamReply("Started it in the background.");
+      await waitFor(() => expect(screen.queryByLabelText("Stop Sub Rosa")).toBeNull());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+
+      // The gateway chains a turn that opens on a tool call, and the user
+      // steers it. By now the store has caught up.
+      emitGatewayEvent({
+        type: "tool.start",
+        session_id: "runtime-session-1",
+        payload: { name: "terminal", tool_id: "tool-1" },
+      });
+      await waitFor(() => expect(screen.getByLabelText("Stop Sub Rosa")).toBeInTheDocument());
+      mocks.listHermesSessionMessages.mockResolvedValue([
+        { id: "m1", role: "user", content: "run the benchmark", timestamp: askedAt },
+        {
+          id: "m2",
+          role: "assistant",
+          content: "Started it in the background.",
+          timestamp: askedAt,
+        },
+      ]);
+      // While a turn runs the send button is Stop; Enter steers.
+      await user.type(screen.getByRole("textbox"), "also report the memory use");
+      await user.keyboard("{Enter}");
+      await waitFor(() =>
+        expect(mocks.gatewayRequest).toHaveBeenCalledWith(
+          "session.steer",
+          expect.objectContaining({ text: "also report the memory use" }),
+        ),
+      );
+
+      // The steer drops the finished turn's frames; its stored copy replaces
+      // them right away, not at the next working poll.
+      await waitFor(
+        () =>
+          expect(within(timelineOf()).getAllByText("Started it in the background.")).toHaveLength(
+            1,
+          ),
+        { timeout: 1000 },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+    await flushDeferredSessionWork();
+  }, 15000);
+
+  it("keeps the opening of a reply streamed in more frames than the live buffer holds", async () => {
+    const user = userEvent.setup();
+    mocks.listHermesSessionMessages.mockResolvedValue([]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+    await sendFirstTurn(user, "write a long answer");
+    emitGatewayEvent({ type: "message.start", session_id: "runtime-session-1" });
+    act(() => {
+      for (let index = 0; index < 250; index += 1) {
+        for (const handler of mocks.gatewayEventHandlers) {
+          handler({
+            type: "message.delta",
+            session_id: "runtime-session-1",
+            payload: { text: `w${index} ` },
+          });
+        }
+      }
+    });
+
+    const reply = await screen.findByText(/w249/);
+    expect(reply.textContent?.startsWith("w0 w1 w2")).toBe(true);
     await flushDeferredSessionWork();
   });
 
@@ -4949,7 +5354,6 @@ describe("AgentWorkspace", () => {
     emitGatewayEvent({
       type: "message.start",
       session_id: "runtime-session-1",
-      payload: { message_id: "chained-1" },
     });
     await waitFor(() => expect(screen.queryByText(/picking it back up/)).toBeNull());
     await flushDeferredSessionWork();

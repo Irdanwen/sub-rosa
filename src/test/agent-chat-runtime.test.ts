@@ -3,6 +3,8 @@ import { PRODUCT_NAME } from "../lib/branding";
 import {
   appendLiveHermesEvent,
   buildAgentChatTurns,
+  currentTurnLiveErrors,
+  liveEventsForNewTurn,
   buildHermesSessionChatTurns,
   completedHermesMessageText,
   displayedComposerUserMessageText,
@@ -2039,49 +2041,136 @@ describe("turn settlement (ADR-0016)", () => {
 });
 
 describe("appendLiveHermesEvent", () => {
-  const delta = (messageId: string, text: string, session = "s1"): LiveHermesEvent => ({
-    type: "message.delta",
-    session_id: session,
-    payload: { message_id: messageId, delta: text },
-    receivedAt: "2026-07-21T00:00:00.000Z",
-  });
+  // Two frame shapes reach this buffer. The runtime this app ships (Hermes 0.19,
+  // `tui_gateway/server.py` `_stream`) emits `{ text }` with an optional
+  // `rendered` preview and NO message id; the older contract carried a
+  // `message_id` and a `delta` key. Both must compact, or a long reply floods
+  // the bounded tail one frame per token.
+  const formats = [
+    {
+      name: "the runtime's real frames (text, no message id)",
+      delta: (text: string, session = "s1"): LiveHermesEvent => ({
+        type: "message.delta",
+        session_id: session,
+        payload: { text, rendered: `<p>${text}</p>` },
+        receivedAt: "2026-07-21T00:00:00.000Z",
+      }),
+      start: (): LiveHermesEvent => ({
+        type: "message.start",
+        session_id: "s1",
+        receivedAt: "2026-07-21T00:00:00.000Z",
+      }),
+    },
+    {
+      name: "frames that carry a message id",
+      delta: (text: string, session = "s1"): LiveHermesEvent => ({
+        type: "message.delta",
+        session_id: session,
+        payload: { message_id: "m1", delta: text },
+        receivedAt: "2026-07-21T00:00:00.000Z",
+      }),
+      start: (): LiveHermesEvent => ({
+        type: "message.start",
+        session_id: "s1",
+        payload: { message_id: "m1" },
+        receivedAt: "2026-07-21T00:00:00.000Z",
+      }),
+    },
+  ];
 
   function fold(events: LiveHermesEvent[]): LiveHermesEvent[] {
     return events.reduce<LiveHermesEvent[]>((acc, event) => appendLiveHermesEvent(acc, event), []);
   }
 
-  it("compacts consecutive deltas of the same message into one accumulated event", () => {
-    const events = fold([delta("m1", "Hello"), delta("m1", " "), delta("m1", "world")]);
-    expect(events).toHaveLength(1);
-    expect((events[0].payload as { delta: string }).delta).toBe("Hello world");
-    // The opening frame's timestamp is preserved.
-    expect(events[0].receivedAt).toBe("2026-07-21T00:00:00.000Z");
-  });
+  function streamedText(events: LiveHermesEvent[]) {
+    return buildHermesSessionChatTurns([], events)
+      .flatMap((turn) => turn.parts)
+      .map((part) => ("text" in part ? part.text : ""))
+      .join("");
+  }
 
-  it("keeps a long streamed reply as a single event so it never evicts its own prefix", () => {
-    const deltas = Array.from({ length: 500 }, (_, index) => delta("m1", `${index} `));
-    const events = fold([
-      { type: "message.start", session_id: "s1", payload: { message_id: "m1" }, receivedAt: "t" },
-      ...deltas,
-    ]);
-    // message.start + one folded delta — never the 200-cap eviction that used to
-    // drop the opening chunks of a long response.
-    expect(events).toHaveLength(2);
-    expect(events[0].type).toBe("message.start");
-    expect((events[1].payload as { delta: string }).delta).toContain("0 ");
-    expect((events[1].payload as { delta: string }).delta).toContain("499 ");
-  });
+  for (const format of formats) {
+    describe(format.name, () => {
+      it("compacts consecutive deltas into one accumulated event", () => {
+        const events = fold([format.delta("Hello"), format.delta(" "), format.delta("world")]);
+        expect(events).toHaveLength(1);
+        expect(streamedText(events)).toBe("Hello world");
+        // The opening frame's timestamp is preserved.
+        expect(events[0].receivedAt).toBe("2026-07-21T00:00:00.000Z");
+        // Nothing reads the runtime's `rendered` preview, and a merged frame
+        // must not carry one that describes only its last chunk.
+        expect(events[0].payload).not.toHaveProperty("rendered");
+      });
+
+      it("keeps a long streamed reply as a single event so it never evicts its own prefix", () => {
+        const deltas = Array.from({ length: 500 }, (_, index) => format.delta(`${index} `));
+        const events = fold([format.start(), ...deltas]);
+        // message.start + one folded delta — never the 200-cap eviction that
+        // used to drop the opening chunks of a long response.
+        expect(events).toHaveLength(2);
+        expect(events[0].type).toBe("message.start");
+        const text = streamedText(events);
+        expect(text.startsWith("0 1 2 ")).toBe(true);
+        expect(text).toContain("499 ");
+      });
+
+      it("does not merge across a different session", () => {
+        const events = fold([format.delta("a", "s1"), format.delta("b", "s2")]);
+        expect(events).toHaveLength(2);
+      });
+    });
+  }
 
   it("does not merge across a different message id", () => {
-    const events = fold([delta("m1", "a"), delta("m2", "b")]);
+    const withId = (id: string, text: string): LiveHermesEvent => ({
+      type: "message.delta",
+      session_id: "s1",
+      payload: { message_id: id, delta: text },
+      receivedAt: "t",
+    });
+    const events = fold([withId("m1", "a"), withId("m2", "b")]);
     expect(events).toHaveLength(2);
     expect((events[0].payload as { delta: string }).delta).toBe("a");
     expect((events[1].payload as { delta: string }).delta).toBe("b");
   });
 
-  it("does not merge across a different session", () => {
-    const events = fold([delta("m1", "a", "s1"), delta("m1", "b", "s2")]);
+  it("does not merge a frame that names its message with one that does not", () => {
+    const events = fold([
+      { type: "message.delta", session_id: "s1", payload: { text: "a" }, receivedAt: "t" },
+      {
+        type: "message.delta",
+        session_id: "s1",
+        payload: { message_id: "m1", delta: "b" },
+        receivedAt: "t",
+      },
+    ]);
     expect(events).toHaveLength(2);
+  });
+
+  it("compacts a long reasoning stream the same way", () => {
+    const thinking = Array.from(
+      { length: 300 },
+      (_, index): LiveHermesEvent => ({
+        type: "thinking.delta",
+        session_id: "s1",
+        payload: { text: `${index} ` },
+        receivedAt: "t",
+      }),
+    );
+    const events = fold([
+      { type: "message.start", session_id: "s1", receivedAt: "t" },
+      ...thinking,
+      { type: "message.delta", session_id: "s1", payload: { text: "Done." }, receivedAt: "t" },
+    ]);
+    expect(events.map((event) => event.type)).toEqual([
+      "message.start",
+      "thinking.delta",
+      "message.delta",
+    ]);
+    const reasoning = buildHermesSessionChatTurns([], events)
+      .flatMap((turn) => turn.parts)
+      .find((part) => part.type === "reasoning");
+    expect(reasoning && "text" in reasoning ? reasoning.text.startsWith("0 1 ") : false).toBe(true);
   });
 
   it("still bounds unrelated events to the limit", () => {
@@ -2097,5 +2186,134 @@ describe("appendLiveHermesEvent", () => {
       ),
     );
     expect(events).toHaveLength(HERMES_LIVE_EVENT_LIMIT);
+  });
+});
+
+describe("live turn ordering", () => {
+  const text = (turn: AgentChatTurn) =>
+    turn.parts.map((part) => ("text" in part ? part.text : "")).join("");
+  const liveReply = (answer: string, at: string): LiveHermesEvent[] => [
+    { type: "message.start", session_id: "s1", receivedAt: at },
+    { type: "message.delta", session_id: "s1", payload: { text: answer }, receivedAt: at },
+    { type: "message.complete", session_id: "s1", payload: { text: answer }, receivedAt: at },
+  ];
+
+  it("keeps a finished live reply above a message the user sent after it", () => {
+    // The previous turn finished but the transcript that would replace its live
+    // frames never arrived, and the user sent again. The reply must stay where
+    // it happened, not be restamped with the newest message's time and
+    // rendered under it.
+    const messages: HermesSessionMessage[] = [
+      { id: "m1", role: "user", content: "First question", timestamp: "2026-09-25T10:00:00Z" },
+      {
+        id: "pending:user:1",
+        role: "user",
+        content: "Second question",
+        timestamp: "2026-09-25T10:00:20.000Z",
+      },
+    ];
+    const turns = buildHermesSessionChatTurns(
+      messages,
+      liveReply("First answer.", "2026-09-25T10:00:05.000Z"),
+      { pendingMessageIds: new Set(["pending:user:1"]) },
+    );
+    expect(turns.map((turn) => `${turn.role}:${text(turn)}`)).toEqual([
+      "user:First question",
+      "assistant:First answer.",
+      "user:Second question",
+    ]);
+  });
+
+  it("keeps a live reply below the stored prompt that triggered it, whatever the clocks say", () => {
+    // Hermes stores the prompt at turn start, after it has already announced
+    // the reply: the stored timestamp is later than the reply's first frame.
+    // The reply must still render below the prompt (JUN-115).
+    const messages: HermesSessionMessage[] = [
+      { id: "m1", role: "user", content: "Question", timestamp: "2026-09-25T10:00:03Z" },
+    ];
+    const turns = buildHermesSessionChatTurns(
+      messages,
+      liveReply("Answer.", "2026-09-25T10:00:01.000Z"),
+      { pendingMessageIds: new Set() },
+    );
+    expect(turns.map((turn) => `${turn.role}:${text(turn)}`)).toEqual([
+      "user:Question",
+      "assistant:Answer.",
+    ]);
+  });
+
+  it("keeps a live reply below a just-sent prompt that is not stored yet", () => {
+    const messages: HermesSessionMessage[] = [
+      {
+        id: "pending:user:1",
+        role: "user",
+        content: "Question",
+        timestamp: "2026-09-25T10:00:01.000Z",
+      },
+    ];
+    const turns = buildHermesSessionChatTurns(
+      messages,
+      liveReply("Answer.", "2026-09-25T10:00:01.500Z"),
+      { pendingMessageIds: new Set(["pending:user:1"]) },
+    );
+    expect(turns.map((turn) => `${turn.role}:${text(turn)}`)).toEqual([
+      "user:Question",
+      "assistant:Answer.",
+    ]);
+  });
+});
+
+describe("live frames across a new prompt", () => {
+  const frame = (type: string, receivedAt = "2026-09-25T10:00:05.000Z"): LiveHermesEvent => ({
+    type,
+    session_id: "s1",
+    payload: type === "error" ? { message: "upstream_provider_failed" } : { text: "x" },
+    receivedAt,
+  });
+
+  it("starts a new turn from nothing once the previous one finished", () => {
+    const events = [frame("message.start"), frame("message.delta"), frame("message.complete")];
+    expect(liveEventsForNewTurn(events, { turnInProgress: false })).toEqual([]);
+  });
+
+  it("keeps only the running turn's frames for a steer", () => {
+    const running = [frame("message.start"), frame("tool.start")];
+    const events = [frame("message.start"), frame("message.complete"), ...running];
+    expect(liveEventsForNewTurn(events, { turnInProgress: true })).toEqual(running);
+    // Nothing to drop: the same array comes back, so callers can skip a render.
+    expect(liveEventsForNewTurn(running, { turnInProgress: true })).toBe(running);
+  });
+
+  it("keeps only a turn the gateway chained after a finished one", () => {
+    // Nothing was sent from the app: the gateway started the next turn itself
+    // (a finished background job). Its first frame may already be buffered.
+    const finished = [frame("message.start"), frame("message.delta"), frame("message.complete")];
+    const chained = [frame("message.start"), frame("tool.start")];
+    expect(liveEventsForNewTurn([...finished, ...chained], { turnInProgress: true })).toEqual(
+      chained,
+    );
+    expect(liveEventsForNewTurn(finished, { turnInProgress: true })).toEqual([]);
+  });
+
+  it("keeps an error only until the user sends past it", () => {
+    const error = frame("error", "2026-09-25T10:00:05.000Z");
+    const asked: HermesSessionMessage = {
+      id: "m1",
+      role: "user",
+      content: "question",
+      timestamp: "2026-09-25T10:00:01Z",
+    };
+    expect(currentTurnLiveErrors([frame("message.start"), error], [asked])).toEqual([error]);
+    const askedAgain: HermesSessionMessage = {
+      id: "pending:user:2",
+      role: "user",
+      content: "again",
+      timestamp: "2026-09-25T10:00:09.000Z",
+    };
+    expect(currentTurnLiveErrors([error], [asked, askedAgain])).toEqual([]);
+    // Hermes stores epoch seconds.
+    expect(currentTurnLiveErrors([error], [{ ...askedAgain, timestamp: 1_790_330_409 }])).toEqual(
+      [],
+    );
   });
 });
