@@ -269,6 +269,25 @@ jobs:
               exit 1
             fi
           fi
+          # The sidecar ships through bundle.macOS.files, which Tauri does not
+          # sign (it would sign an externalBin with the app's entitlements, and
+          # the app claims associated domains only its own provisioning profile
+          # grants: a sidecar carrying them is killed at launch). Sign it here,
+          # with the helpers' entitlements, before the bundle is sealed.
+          SIDECAR=src-tauri/binaries/june-api-macos
+          test -f "$SIDECAR"
+          for attempt in 1 2 3; do
+            if codesign --force --timestamp --options runtime \
+                 --entitlements src-tauri/HelperEntitlements.plist \
+                 --sign "$APPLE_SIGNING_IDENTITY" "$SIDECAR"; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::could not sign the june-api sidecar after 3 attempts." >&2
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
 
       - name: Build + sign app (tauri-action)
         id: tauri
@@ -289,6 +308,39 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           args: --target ${{ matrix.target }} --config ${{ matrix.config }}
+
+      # Signing and notarization both pass on an app macOS refuses to run:
+      # 1.74.0 claimed a restricted entitlement without the provisioning profile
+      # that grants it, and AMFI killed every launch (SIGKILL, exit 137). Start
+      # the signed binaries and fail on exactly that, before anything ships.
+      - name: Launch the signed app (macOS)
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -uo pipefail
+          if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then echo "unsigned build; nothing for AMFI to refuse"; exit 0; fi
+          APP="src-tauri/target/$TARGET/release/bundle/macos/Sub Rosa.app"
+          test -d "$APP" || { echo "::error::no app bundle at $APP"; exit 1; }
+          codesign --verify --deep --strict "$APP"
+          killed() { [ "$1" = 137 ]; }
+          "$APP/Contents/MacOS/june-api" --version >/dev/null 2>&1; code=$?
+          if killed "$code"; then echo "::error::macOS killed the june-api sidecar at launch (exit 137)."; exit 1; fi
+          for helper in "$APP/Contents/Resources/native/bin/"*.app; do
+            bin="$helper/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$helper/Contents/Info.plist")"
+            ( "$bin" >/dev/null 2>&1; echo $? > "$RUNNER_TEMP/helper.code" ) & pid=$!
+            sleep 4; kill "$pid" 2>/dev/null; pkill -f "$bin" 2>/dev/null; sleep 1
+            code=$(cat "$RUNNER_TEMP/helper.code" 2>/dev/null || echo running)
+            if killed "$code"; then echo "::error::macOS killed $(basename "$helper") at launch (exit 137)."; exit 1; fi
+            rm -f "$RUNNER_TEMP/helper.code"
+          done
+          ( "$APP/Contents/MacOS/os-june" >/dev/null 2>&1; echo $? > "$RUNNER_TEMP/app.code" ) &
+          sleep 8
+          code=$(cat "$RUNNER_TEMP/app.code" 2>/dev/null || echo running)
+          pkill -f "$APP/Contents/MacOS/" 2>/dev/null || true
+          if killed "$code"; then echo "::error::macOS killed Sub Rosa at launch (exit 137): check the entitlements against embedded.provisionprofile."; exit 1; fi
+          echo "launch check passed (app: $code)"
 
       - name: Collect + prefix bundle and updater artifacts
         shell: bash

@@ -9,6 +9,7 @@ const DICTATION_HELPER_MIN_MACOS_VERSION: &str = "14.0";
 fn main() {
     println!("cargo:rerun-if-changed=tauri.conf.json");
     println!("cargo:rerun-if-changed=Entitlements.plist");
+    println!("cargo:rerun-if-changed=HelperEntitlements.plist");
     println!("cargo:rerun-if-changed=icons/icon.icns");
     println!("cargo:rerun-if-changed=icons/icon.png");
     println!("cargo:rerun-if-changed=icons/32x32.png");
@@ -496,7 +497,10 @@ fn sign_helper_app(manifest_dir: &std::path::Path, app_dir: &std::path::Path) {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "-".to_string());
-    let entitlements = manifest_dir.join("Entitlements.plist");
+    // Not the app's Entitlements.plist: that one claims restricted entitlements
+    // (associated domains) granted only by the app's provisioning profile, and
+    // a helper carrying them without a profile of its own is killed at launch.
+    let entitlements = manifest_dir.join("HelperEntitlements.plist");
     let mut command = std::process::Command::new("codesign");
     command
         .arg("--force")
