@@ -36,7 +36,7 @@ pub const KEEP_AT: f64 = 0.3;
 pub const NOTHING_BELOW: f64 = 0.25;
 const UNSURE_KEEP: usize = 3;
 /// Characters of a candidate shown to the model.
-const CANDIDATE_CHARS: usize = 1_500;
+const CANDIDATE_CHARS: usize = 1_800;
 /// Questions per call.
 const MAX_CANDIDATES: usize = 32;
 

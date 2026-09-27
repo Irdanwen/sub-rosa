@@ -1659,3 +1659,28 @@ le **tri de pertinence** des recherches.
 - `select` compte un candidat sans réponse comme limite (`KEEP_AT`), pas comme
   rejeté ; `examined` ne liste que ce qui a réellement été envoyé.
 
+
+## Les réflexes, suite : l'agent desktop, les briefs, les références (2026-09-27, ADR-0064 addendum)
+
+- **MCP `june_context`** : `search_meeting_notes` et `search_user_memories`
+  appellent d'abord `/v1/notes/search` et `/v1/memories/search` sur le proxy
+  local (`call_proxy`), puis retombent sur leur recherche SQLite si l'app ne
+  répond pas. Les routes vivent dans `src-tauri/src/hermes_bridge/local_reads.rs`
+  (avec `forward_calendar_search`, déplacée : `hermes_bridge.rs` était au
+  plafond du cliquet de taille, entrée abaissée à 11723).
+- **Briefs** (`moments.rs::brief_context`) → `ask::screened_note_search`
+  (plusieurs requêtes, un état, une question de tri) ; 6 extraits au plus.
+- **Références d'assistant** (`assistants/references.rs::reference_context`)
+  → `reference_candidates` + tri ; sans réflexe, `select_reference_context`
+  inchangé.
+- **Notice unique** `ReflexNotice` (desktop `App.tsx`, mobile `MobileApp.tsx`,
+  sous `RailSwitchBanner`) ; `noticeSeen` dans `reflex.json` ;
+  `set_reflex_settings` prend un changement partiel (`ReflexSettingsChange`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/hermes_bridge.rs` | `mod local_reads` ; 2 routes ; calendrier déplacé | Réappliquer |
+| `src-tauri/src/hermes/june_context_mcp.py` | `search_through_app` avant SQLite | Réappliquer |
+| `src/app/App.tsx` | `<ReflexNotice />` | Réappliquer |

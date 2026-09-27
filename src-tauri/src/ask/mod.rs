@@ -369,8 +369,38 @@ pub async fn agent_note_search(
     if query.is_empty() {
         return Ok(Vec::new());
     }
-    let classic = repos.search_note_context(query, 12).await?;
-    let terms = content_terms(query);
+    screened_note_search(
+        repos,
+        &[query.to_string()],
+        &format!("Search query: {query}"),
+        AGENT_SEARCH_INSTRUCTIONS,
+        "search",
+        limit,
+    )
+    .await
+}
+
+/// The notes that bear on `state`, found through `queries` and screened.
+///
+/// Each query runs the old every-word search (which reads long-form
+/// summaries too); together they run the any-word passage search and the
+/// search by meaning. Everything is fused by note, and a reflex asked
+/// `instructions` of each candidate keeps what bears on `state`.
+pub async fn screened_note_search(
+    repos: &crate::db::repositories::Repositories,
+    queries: &[String],
+    state: &str,
+    instructions: &str,
+    purpose: &'static str,
+    limit: usize,
+) -> Result<Vec<crate::db::repositories::NoteContextSnippet>, AppError> {
+    let mut classic = Vec::new();
+    for query in queries.iter().map(|q| q.trim()).filter(|q| !q.is_empty()) {
+        let found = repos.search_note_context(query, 12).await?;
+        classic = semantic::fuse(classic, found, SCREENED);
+    }
+    let joined = queries.join(" ");
+    let terms = content_terms(&joined);
     let lexical = match passages_match(&terms) {
         Some(fts) => {
             repos
@@ -379,15 +409,15 @@ pub async fn agent_note_search(
         }
         None => Vec::new(),
     };
-    let by_meaning = semantic::semantic_passages(repos, query, CANDIDATES as usize, None).await?;
+    let by_meaning = semantic::semantic_passages(repos, &joined, CANDIDATES as usize, None).await?;
     let passages = semantic::fuse(lexical, by_meaning, SCREENED);
     let candidates = semantic::fuse(classic, passages, SCREENED);
     let screened = crate::egress_ledger::scoped(
-        "search",
+        purpose,
         None,
         crate::reflex::screen::screen(
-            &format!("Search query: {query}"),
-            AGENT_SEARCH_INSTRUCTIONS,
+            state,
+            instructions,
             candidates,
             |snippet| format!("{} ({})\n{}", snippet.title, snippet.kind, snippet.snippet),
             limit,

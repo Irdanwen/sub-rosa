@@ -146,9 +146,10 @@ TOOLS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        "A question or a few words. Any of the content words match, "
-                        "over the notes and their transcripts, best first; stop words "
-                        "are ignored. Leave empty to list recent notes."
+                        "A question or a few words. Notes match by any of the content "
+                        "words and by meaning, and only passages that bear on the query "
+                        "come back, best first. An empty list means nothing in the notes "
+                        "is about it. Leave empty to list recent notes."
                     ),
                 },
                 "limit": {
@@ -405,13 +406,13 @@ def call_tool(
     arguments = params.get("arguments") or {}
     try:
         if name == "search_meeting_notes":
-            result = search_meeting_notes(db_path, arguments)
+            result = search_meeting_notes(db_path, arguments, proxy_coords)
         elif name == "get_note":
             result = get_note(db_path, arguments)
         elif name == "search_dictation_history":
             result = search_dictation_history(db_path, arguments)
         elif name == "search_user_memories" and memory_enabled:
-            result = search_user_memories(db_path, arguments)
+            result = search_user_memories(db_path, arguments, proxy_coords)
         elif name == "search_calendar" and proxy_coords:
             result = search_calendar(proxy_coords, arguments)
         elif name == "create_note" and proxy_coords:
@@ -490,9 +491,36 @@ def snippet_any(text: str, terms: list[str]) -> str:
     return snippet(text, min(hits)[1] if hits else "")
 
 
-def search_meeting_notes(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
+def search_through_app(
+    proxy_coords: str, path: str, query: str, limit: int
+) -> dict[str, Any] | None:
+    """The app's own search, when it can be reached (ADR-0064).
+
+    The app searches by any word and by meaning, and keeps only what a
+    relevance screen says bears on the query; this server has the words
+    alone. Anything short of an answer (no coordinates, the app closed, a
+    refusal) returns None and the local SQLite search below does the job.
+    """
+    if not proxy_coords or not query:
+        return None
+    try:
+        result = call_proxy(proxy_coords, path, {"query": query, "limit": limit})
+    except Exception:
+        return None
+    if not isinstance(result, dict) or not isinstance(result.get("items"), list):
+        return None
+    return result
+
+
+def search_meeting_notes(
+    db_path: Path, arguments: dict[str, Any], proxy_coords: str = ""
+) -> dict[str, Any]:
     query = str(arguments.get("query") or "").strip()
     limit = bounded_limit(arguments.get("limit"))
+
+    through_app = search_through_app(proxy_coords, "/notes/search", query, limit)
+    if through_app is not None:
+        return through_app
 
     if not db_path.exists():
         return {"query": query, "items": [], "message": "June notes database does not exist yet."}
@@ -720,9 +748,15 @@ def search_dictation_history(db_path: Path, arguments: dict[str, Any]) -> dict[s
     return {"query": query, "count": len(items), "items": items}
 
 
-def search_user_memories(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
+def search_user_memories(
+    db_path: Path, arguments: dict[str, Any], proxy_coords: str = ""
+) -> dict[str, Any]:
     query = str(arguments.get("query") or "").strip()
     limit = bounded_limit(arguments.get("limit"))
+
+    through_app = search_through_app(proxy_coords, "/memories/search", query, limit)
+    if through_app is not None:
+        return through_app
 
     if not db_path.exists():
         return {"query": query, "items": [], "message": "June notes database does not exist yet."}

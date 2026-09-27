@@ -8050,7 +8050,13 @@ async fn handle_june_provider_connection(
             forward_places_tool(&mut stream, &request.body).await?;
         }
         ("POST", "/v1/calendar/search") => {
-            forward_calendar_search(&mut stream, &request.body).await?;
+            local_reads::forward_calendar_search(&mut stream, &request.body).await?;
+        }
+        ("POST", "/v1/notes/search") => {
+            local_reads::forward_notes_search(&app, &mut stream, &request.body).await?;
+        }
+        ("POST", "/v1/memories/search") => {
+            local_reads::forward_memories_search(&app, &mut stream, &request.body).await?;
         }
         ("POST", "/v1/notes/create") => {
             forward_note_write(&app, &mut stream, &request.body, NoteWrite::Create).await?;
@@ -8367,66 +8373,6 @@ async fn forward_places_tool(
             .await
         }
     }
-}
-
-/// The day, for the agent: a window of the user's own calendar, read on this
-/// device and answered here. Deliberately a retrieval route — the model asks
-/// about a day and gets that day, and the planning is never injected into a
-/// prompt (see `crate::calendar`).
-async fn forward_calendar_search(
-    stream: &mut tokio::net::TcpStream,
-    request_body: &[u8],
-) -> io::Result<()> {
-    let body = serde_json::from_slice::<serde_json::Value>(request_body)
-        .unwrap_or_else(|_| serde_json::json!({}));
-    let days = body
-        .get("days")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(1)
-        .clamp(-7, 7);
-    let query = body
-        .get("query")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("")
-        .to_lowercase();
-    let now = chrono::Utc::now().timestamp();
-    let (start, end) = if days >= 0 {
-        (now - 12 * 3600, now + days.max(1) * 86_400)
-    } else {
-        (now + days * 86_400, now + 12 * 3600)
-    };
-    let events = crate::calendar::calendar_events_between(crate::calendar::CalendarWindowRequest {
-        start,
-        end,
-    })
-    .unwrap_or_default();
-    let matching: Vec<serde_json::Value> = events
-        .iter()
-        .filter(|event| {
-            query.is_empty()
-                || event.title.to_lowercase().contains(&query)
-                || event
-                    .attendees
-                    .iter()
-                    .any(|name| name.to_lowercase().contains(&query))
-        })
-        .take(20)
-        .map(|event| {
-            serde_json::json!({
-                "title": event.title,
-                "start": crate::domain::types::rfc3339_from_epoch_secs(event.start),
-                "end": crate::domain::types::rfc3339_from_epoch_secs(event.end),
-                "allDay": event.all_day,
-                "attendees": event.attendees,
-            })
-        })
-        .collect();
-    write_json_response(
-        stream,
-        200,
-        serde_json::json!({ "success": true, "data": { "events": matching } }),
-    )
-    .await
 }
 
 /// Which write the `june_context` MCP asked for.
@@ -8805,6 +8751,8 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
         format!("Hermes backend did not become ready: {last_error}"),
     ))
 }
+
+mod local_reads;
 
 #[cfg(test)]
 mod config_tests;

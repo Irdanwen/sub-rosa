@@ -16,6 +16,7 @@ import { useDesktopBootstrap } from "./useDesktopBootstrap";
 import { StartupFailure } from "../components/brand/StartupFailure";
 import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../components/carpe-diem/RailSwitchBanner";
+import { ReflexNotice } from "../components/carpe-diem/ReflexNotice";
 import { SIDECAR_STATUS_EVENT } from "../components/settings/CarpeDiemSettings";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
 import type { FirstNoteIntent } from "../components/onboarding/steps/FirstNoteStep";
@@ -2952,6 +2953,7 @@ export function App() {
             onRetryAll={() => void offline.retryAll().then(refreshNotesList)}
           />
           <RailSwitchBanner />
+          <ReflexNotice />
           {calendarAmbiguity ? (
             <MeetingAmbiguityPrompt
               noteId={calendarAmbiguity.noteId}

@@ -134,3 +134,32 @@ This ADR covers screening. The same client and question types are meant for:
 - routing a turn to a model.
 
 Each one that acts without a tap will say so in its own ADR, with an undo.
+
+## Addendum (2026-09-27): every search that feeds a model
+
+The screen now also runs on:
+
+- **The desktop agent's search.** The `june_context` MCP holds the notes
+  database read-only and has neither the embeddings nor the screen, so
+  `search_meeting_notes` and `search_user_memories` ask the app first. They
+  call two read routes on the local provider proxy, `/v1/notes/search` and
+  `/v1/memories/search` (`hermes_bridge/local_reads.rs`), which run the same
+  searches as agent-lite. When the app cannot be reached, the MCP keeps its
+  own SQLite search.
+- **Meeting briefs.** The title and each attendee's first name are searched
+  through `ask::screened_note_search`. A reflex keeps what would help prepare
+  this meeting. When nothing would, the context is empty, and the silence rule
+  fires before the brief's model is paid.
+- **Assistant references.** Candidates are the passages sharing the most words
+  with the request and, room permitting, the rest, so meaning can find what
+  words miss. Without a reflex, the old word-overlap cut applies unchanged.
+
+**The notice is said once.** A banner in both shells, `ReflexNotice`, tells a
+person who never opens Settings that checks leave the enclave. It offers
+"Got it" and "Turn off". Whether it was read is kept in `reflex.json`
+(`noticeSeen`), and the settings command takes a partial change so the switch
+cannot bring the notice back.
+
+**Not screened, on purpose.** The ⌘K palette is not screened. Reordering a list
+a second after it appears moves results under the pointer, and a question in
+natural language already goes to Ask, which screens.

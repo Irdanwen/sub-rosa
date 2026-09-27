@@ -35,8 +35,9 @@ const SCHEDULE_HORIZON_SECS: i64 = 12 * 60 * 60;
 const BRIEF_STALE_SECS: i64 = 5 * 60;
 /// The cap that keeps a busy day from becoming a notification storm.
 const MAX_BRIEFS_PER_DAY: i64 = 6;
-/// How many past notes feed one brief.
-const NOTES_IN_BRIEF: i64 = 4;
+/// How many excerpts of past notes feed one brief (the cap the old
+/// per-query search reached at most).
+const EXCERPTS_IN_BRIEF: usize = 6;
 /// Notification bodies are read on a lock screen, not in a reader.
 const MAX_BRIEF_CHARS: usize = 240;
 
@@ -267,7 +268,13 @@ async fn deliver_due(app: &AppHandle) -> Result<(), AppError> {
 
 /// The excerpts a brief is written from: the user's own notes about these
 /// people and this subject. Nothing else is read, and nothing leaves the
-/// device except what goes into the one completion below.
+/// device except what goes into the one completion below and the relevance
+/// screen that picks the excerpts (ADR-0064).
+///
+/// The title and each attendee's first name are searched, by every word, by
+/// any word and by meaning; a reflex keeps what would help prepare this
+/// meeting. When it says nothing would, the context is empty and the silence
+/// rule fires before the brief's model is paid.
 async fn brief_context(
     repos: &crate::db::repositories::Repositories,
     event: &calendar::CalendarEventDto,
@@ -284,28 +291,45 @@ async fn brief_context(
             queries.push(first.to_string());
         }
     }
-    let mut seen = std::collections::HashSet::new();
-    let mut excerpts: Vec<String> = Vec::new();
-    for query in queries {
-        let Ok(snippets) = repos.search_note_context(&query, NOTES_IN_BRIEF).await else {
-            continue;
-        };
-        for snippet in snippets {
-            let text = snippet.snippet.trim().to_string();
-            if text.is_empty() || !seen.insert(text.clone()) {
-                continue;
-            }
-            excerpts.push(format!("[{}] {}", snippet.title, text));
-            if excerpts.len() >= 6 {
-                break;
-            }
-        }
-        if excerpts.len() >= 6 {
-            break;
-        }
+    if queries.is_empty() {
+        return String::new();
     }
-    excerpts.join("\n\n")
+    let state = if event.attendees.is_empty() {
+        format!("Upcoming meeting: {title}")
+    } else {
+        format!(
+            "Upcoming meeting: {title}\nWith: {}",
+            event.attendees.join(", ")
+        )
+    };
+    let Ok(snippets) = crate::ask::screened_note_search(
+        repos,
+        &queries,
+        &state,
+        BRIEF_SCREEN_INSTRUCTIONS,
+        "brief",
+        EXCERPTS_IN_BRIEF,
+    )
+    .await
+    else {
+        return String::new();
+    };
+    let mut seen = std::collections::HashSet::new();
+    snippets
+        .into_iter()
+        .filter_map(|snippet| {
+            let text = snippet.snippet.trim().to_string();
+            (!text.is_empty() && seen.insert(text.clone()))
+                .then(|| format!("[{}] {}", snippet.title, text))
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
+
+const BRIEF_SCREEN_INSTRUCTIONS: &str = "Would this candidate passage, taken from the person's \
+own notes, help them prepare for the upcoming meeting in the state: the same subject, the same \
+people, or something left open with them? Answer yes only if the passage itself bears on this \
+meeting.";
 
 /// One completion, on whatever model the proxy defaults to, with a tight
 /// budget. A brief must never be felt on the bill.

@@ -6,12 +6,17 @@ import { invoke } from "@tauri-apps/api/core";
  * request leaves the Carpe Diem enclave for the model's operator,
  * anonymized, which is why the switch lives in Settings › Privacy.
  */
-export type ReflexSettingsDto = { enabled: boolean };
+export type ReflexSettingsDto = { enabled: boolean; noticeSeen?: boolean };
+
+/** A change to the settings: only what is named changes. */
+export type ReflexSettingsChange = { enabled?: boolean; noticeSeen?: boolean };
 
 export async function reflexSettings(): Promise<ReflexSettingsDto> {
   return invoke<ReflexSettingsDto>("reflex_settings");
 }
 
-export async function setReflexSettings(settings: ReflexSettingsDto): Promise<ReflexSettingsDto> {
+export async function setReflexSettings(
+  settings: ReflexSettingsChange,
+): Promise<ReflexSettingsDto> {
   return invoke<ReflexSettingsDto>("set_reflex_settings", { request: settings });
 }

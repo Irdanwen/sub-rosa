@@ -40,6 +40,19 @@ out["word"] = m.search_meeting_notes(db, {"query": "migration"})
 c = sqlite3.connect(db); c.execute('DROP TABLE notes_fts'); c.commit(); c.close()
 out["fallback"] = m.search_meeting_notes(db, {"query": "budget"})
 out["recent"] = m.search_meeting_notes(db, {"query": ""})
+calls = []
+def fake_proxy(coords, path, payload):
+    calls.append([path, payload])
+    return {"query": payload["query"], "count": 1, "items": [{"id": "n9", "title": "Screened", "kind": "note", "snippet": "s", "updatedAt": ""}]}
+m.call_proxy = fake_proxy
+out["app"] = m.search_meeting_notes(db, {"query": "budget", "limit": 3}, "/coords.json")
+out["appMemories"] = m.search_user_memories(db, {"query": "lyon"}, "/coords.json")
+out["appRecent"] = m.search_meeting_notes(db, {"query": ""}, "/coords.json")
+def broken_proxy(coords, path, payload):
+    raise RuntimeError("The Sub Rosa proxy is unreachable")
+m.call_proxy = broken_proxy
+out["appDown"] = m.search_meeting_notes(db, {"query": "budget"}, "/coords.json")
+out["calls"] = calls
 print(json.dumps(out))
 `;
 
@@ -86,4 +99,18 @@ describe("june_context_mcp search_meeting_notes", () => {
       expect(result?.recent.items.map((item) => item.id)).toEqual(["n2", "n1"]);
     },
   );
+
+  maybe("asks the app first, which searches by meaning and screens for relevance", () => {
+    expect(result?.app.items.map((item) => item.id)).toEqual(["n9"]);
+    expect(result?.appMemories.items.map((item) => item.id)).toEqual(["n9"]);
+    expect(result?.calls).toEqual([
+      ["/notes/search", { query: "budget", limit: 3 }],
+      ["/memories/search", { query: "lyon", limit: 8 }],
+    ]);
+  });
+
+  maybe("keeps its own search when the app is not reachable, and lists recents locally", () => {
+    expect(result?.appDown.items.map((item) => item.id)).toEqual(["n2"]);
+    expect(result?.appRecent.items.length).toBeGreaterThan(0);
+  });
 });

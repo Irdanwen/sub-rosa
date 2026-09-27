@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { BrandGradientMark } from "../../components/brand/Marks";
 import { CarpeDiemGate } from "../../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../../components/carpe-diem/RailSwitchBanner";
+import { ReflexNotice } from "../../components/carpe-diem/ReflexNotice";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../../lib/chat-blocks-nav";
@@ -1072,6 +1073,7 @@ export function MobileApp() {
     <div className="mobile-shell">
       <MobileErrorBanner error={error} onDismiss={() => setError(null)} />
       <RailSwitchBanner compact />
+      <ReflexNotice compact />
       {calendarAmbiguity ? (
         <MeetingAmbiguityPrompt
           noteId={calendarAmbiguity.noteId}
