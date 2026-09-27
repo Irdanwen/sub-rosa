@@ -166,6 +166,46 @@ async fn search_matches_enabled_memories_and_escapes_like_wildcards() {
 }
 
 #[tokio::test]
+async fn any_content_word_finds_a_memory_accents_folded_and_disabled_ones_stay_hidden() {
+    let repos = repos().await;
+    repos
+        .insert_memory("Habite à Lyon depuis septembre.", MemorySource::Auto, 2)
+        .await
+        .expect("insert");
+    repos
+        .insert_memory("Aime la randonnée.", MemorySource::Auto, 6)
+        .await
+        .expect("insert other");
+    let hidden = repos
+        .insert_memory("Travaille à Lyon le mardi.", MemorySource::Auto, 4)
+        .await
+        .expect("insert hidden");
+    repos
+        .update_memory(&hidden.id, None, Some(true))
+        .await
+        .expect("disable");
+
+    // A sentence the whole-phrase LIKE never matched.
+    let question = "Dans quelle ville est-ce que j'habite maintenant, lyon ?";
+    let terms = os_june_lib::ask::content_terms(question);
+    let fts = os_june_lib::ask::passages_match(&terms).expect("content words");
+    let hits = repos.search_memories_fts(&fts, 10).await.expect("search");
+    assert_eq!(hits.len(), 1);
+    assert!(hits[0].text.starts_with("Habite"));
+    assert!(repos
+        .search_memories(question, 10)
+        .await
+        .expect("like")
+        .is_empty());
+
+    let folded = repos
+        .search_memories_fts("\"randonnee\"", 10)
+        .await
+        .expect("search folded");
+    assert_eq!(folded.len(), 1);
+}
+
+#[tokio::test]
 async fn embedding_backfill_finds_only_unembedded_enabled_memories() {
     let repos = repos().await;
     let pending = repos

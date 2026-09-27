@@ -73,6 +73,7 @@ pub mod photos_ios;
 pub mod places;
 pub mod providers;
 pub mod redacted;
+pub mod reflex;
 pub mod share_inbox;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
@@ -265,6 +266,8 @@ pub fn run() {
             ask::ask_cancel,
             ask::semantic::ask_index_status,
             ask::semantic::set_ask_settings,
+            reflex::reflex_settings,
+            reflex::set_reflex_settings,
             diagnostics::diagnostics_report_text,
             egress_ledger::egress_ledger,
             archive::import_archive,
@@ -612,6 +615,8 @@ pub fn run() {
         ask::ask_cancel,
         ask::semantic::ask_index_status,
         ask::semantic::set_ask_settings,
+        reflex::reflex_settings,
+        reflex::set_reflex_settings,
         diagnostics::diagnostics_report_text,
         egress_ledger::egress_ledger,
         archive::import_archive,
@@ -899,6 +904,7 @@ pub fn run() {
             diagnostics::mark("sidecar setup");
             memory::setup(app);
             ask::semantic::setup(app);
+            reflex::setup(app);
             egress_ledger::spawn_flusher(app.handle());
             moments::setup(app);
             spotlight::setup(app);

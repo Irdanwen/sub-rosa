@@ -973,6 +973,18 @@ An index that was never sent is *invented*, and the answer says so rather
 than hiding it.
 _Avoid:_ "reference", "footnote".
 
+**Reflex** — a typed, one-pass decision asked of the decision model
+(`/v1/decisions`): a probability of yes, a label out of a set, or a place
+on a scale, for several questions over one state in one call (ADR-0064).
+A reflex sorts, filters and decides; it never writes text. The first use is
+the **relevance screen**: the candidates a search gathered, each asked
+"does this bear on the question", the ones that do kept best first, and
+nothing kept when nothing does. Settings › Privacy calls it "check relevance
+with quick decisions". Passages sent only to be screened are **screened**,
+and listed under what was sent.
+_Avoid:_ "judge", "judgement" (the council's), "decision" alone (a meeting's
+decisions live in notes), "reranker" in copy, "AI filter".
+
 ### Sharing in (fork)
 
 **Share inbox** — the folder in the app group container where the iOS

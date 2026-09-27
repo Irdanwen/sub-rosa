@@ -5,6 +5,7 @@ import { IconLock } from "central-icons/IconLock";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { useEffect, useState } from "react";
 import { EgressLedgerCard } from "./EgressLedgerCard";
+import { ReflexCard } from "./ReflexCard";
 import { SemanticAskCard } from "./SemanticAskCard";
 import {
   type EgressHost,
@@ -75,6 +76,8 @@ export function PrivacySettingsSection() {
       <EgressLedgerCard />
 
       <SemanticAskCard />
+
+      <ReflexCard />
 
       <div className="settings-card privacy-stays">
         <div className="privacy-stays-icon" aria-hidden>

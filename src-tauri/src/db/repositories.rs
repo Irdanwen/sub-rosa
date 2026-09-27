@@ -14,6 +14,7 @@ use sqlx::row::Row;
 use sqlx_sqlite::SqlitePool;
 use uuid::Uuid;
 mod conversations;
+mod memories;
 pub mod passages;
 const DICTATION_HISTORY_RETENTION_DAYS: i64 = 7;
 
@@ -903,10 +904,9 @@ impl Repositories {
         Ok(hits)
     }
 
-    /// Free-text context retrieval for the agent-lite chat: newest notes and
-    /// transcripts whose title or content matches the query, trimmed to
-    /// snippets. LIKE keeps it simple and index-free; the corpus is one
-    /// user's local notes, not a search engine (FTS5 is a later upgrade).
+    /// Free-text context: notes by FTS5 (every word required), then long-form
+    /// summaries and transcripts by LIKE, cut to snippets. The agents' tool
+    /// widens it with passages and a relevance screen (`ask::agent_note_search`).
     pub async fn search_note_context(
         &self,
         search: &str,

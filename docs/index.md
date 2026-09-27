@@ -72,6 +72,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0061](adr/0061-the-montage-document-is-independent-of-takes.md) — a separately editable montage, artifact-bound clips, frame-based timing and honest export compatibility
 - [adr/0062](adr/0062-passkeys-belong-to-the-account-origin.md) — first-party passkeys on the account origin authenticate the website or approve a PKCE-bound native request; pairing and recovery still guard the vault
 - [adr/0063](adr/0063-the-sidecar-streams-agent-chat.md) — when the client asks for a stream and the upstream really streams, the sidecar relays the SSE bytes as they arrive and settles the turn at the end; the streamed path has no `x-june-*` headers, so the shell reads the usage from the final frame
+- [adr/0064](adr/0064-reflexes-screen-for-relevance-and-leave-the-enclave-by-default.md) — a reflex is a one-pass typed answer from the decision model on `/v1/decisions`; searches gather 24 candidates and keep what it says bears on the question, answer "nothing in your notes" for free when nothing does, and fall back to the old cut whenever it is off or down; on by default, the request leaves the enclave anonymized, and Settings › Privacy says so
 
 ## Enforceable rules (spec/)
 

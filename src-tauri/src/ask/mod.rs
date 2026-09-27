@@ -45,6 +45,17 @@ pub const ASK_PROMPT_VERSION: u32 = 1;
 /// Passages handed to the model. Eight is what fits a short answer's
 /// context with room to spare on the small models people pick for cost.
 const PASSAGES: i64 = 8;
+/// Passages each ranking contributes before the relevance screen, and how
+/// many of the fused list the screen reads. Without a reflex the screen
+/// keeps the first `PASSAGES` of them, which is the old cut.
+const CANDIDATES: i64 = 20;
+const SCREENED: usize = 24;
+/// The reflex asked of every candidate. Decidable from the text in front of
+/// the model, which is the only kind of question it answers reliably.
+const SCREEN_INSTRUCTIONS: &str =
+    "Does this candidate passage, taken from the person's own notes, \
+contain information that helps answer the question in the state? Answer yes only if the passage \
+itself bears on the question, not if it merely shares a word with it.";
 const MAX_TOKENS: u32 = 900;
 const TEMPERATURE: f32 = 0.2;
 
@@ -228,6 +239,9 @@ pub struct AskAnswer {
     pub citations: Vec<AskSource>,
     /// Everything that was sent, cited or not: what left the machine.
     pub sent: Vec<AskSource>,
+    /// Passages sent only to be screened for relevance (a reflex) and not
+    /// passed on to the answering model. They left the machine too.
+    pub screened: Vec<AskSource>,
     /// Indices the model cited that were never handed to it; shown, not hidden.
     pub invented: Vec<usize>,
     pub prompt_version: u32,
@@ -337,6 +351,91 @@ pub fn parse_citations(answer: &str, sent: &[AskSource]) -> (Vec<AskSource>, Vec
     (cited, invented)
 }
 
+/// What an agent's `search_notes` tool reads (agent-lite on the phone, the
+/// desktop agent through the local proxy).
+///
+/// The tool used to be one FTS query with every word required, so the four
+/// to six words a model sends ("budget embauches réunion mars") mostly found
+/// nothing. It now gathers the old list (which also reads long-form
+/// summaries), the passages any of the words find, and the passages closest
+/// by meaning, fuses them by note, and keeps what a reflex says bears on the
+/// query (ADR-0064). Without a reflex, the first `limit` of the fused list.
+pub async fn agent_note_search(
+    repos: &crate::db::repositories::Repositories,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<crate::db::repositories::NoteContextSnippet>, AppError> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let classic = repos.search_note_context(query, 12).await?;
+    let terms = content_terms(query);
+    let lexical = match passages_match(&terms) {
+        Some(fts) => {
+            repos
+                .retrieve_passages(&fts, &terms, CANDIDATES, None)
+                .await?
+        }
+        None => Vec::new(),
+    };
+    let by_meaning = semantic::semantic_passages(repos, query, CANDIDATES as usize, None).await?;
+    let passages = semantic::fuse(lexical, by_meaning, SCREENED);
+    let candidates = semantic::fuse(classic, passages, SCREENED);
+    let screened = crate::egress_ledger::scoped(
+        "search",
+        None,
+        crate::reflex::screen::screen(
+            &format!("Search query: {query}"),
+            AGENT_SEARCH_INSTRUCTIONS,
+            candidates,
+            |snippet| format!("{} ({})\n{}", snippet.title, snippet.kind, snippet.snippet),
+            limit,
+        ),
+    )
+    .await;
+    Ok(screened.kept)
+}
+
+const AGENT_SEARCH_INSTRUCTIONS: &str = "Is this candidate passage, taken from the person's own \
+notes, about what the search query in the state is looking for? Answer yes only if the passage \
+itself is about it, not if it merely shares a word with it.";
+
+/// Snippets as numbered sources, numbering from `first`.
+fn sources(
+    snippets: Vec<crate::db::repositories::NoteContextSnippet>,
+    first: usize,
+) -> Vec<AskSource> {
+    snippets
+        .into_iter()
+        .enumerate()
+        .map(|(i, snippet)| AskSource {
+            index: first + i,
+            note_id: snippet.note_id,
+            title: if snippet.title.trim().is_empty() {
+                "Untitled note".to_string()
+            } else {
+                snippet.title
+            },
+            kind: snippet.kind,
+            excerpt: snippet.snippet,
+        })
+        .collect()
+}
+
+/// What the relevance screen decides against: the question, and for a
+/// follow-up the question before it, since that is what it is about.
+pub fn screen_state(question: &str, history: &[AskTurn]) -> String {
+    match history.last() {
+        Some(previous) => format!(
+            "Question: {}\nEarlier question in the same conversation: {}",
+            question.trim(),
+            previous.question.trim()
+        ),
+        None => format!("Question: {}", question.trim()),
+    }
+}
+
 #[tauri::command]
 pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAnswer, AppError> {
     let question = request.question.trim().to_string();
@@ -362,7 +461,7 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
     let lexical = match passages_match(&terms) {
         Some(fts) => {
             repos
-                .retrieve_passages(&fts, &terms, PASSAGES, scope)
+                .retrieve_passages(&fts, &terms, CANDIDATES, scope)
                 .await?
         }
         None => Vec::new(),
@@ -370,34 +469,41 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
     // By meaning as well as by word (ADR-0046); empty when the setting is
     // off, the question cannot be embedded, or nothing is embedded yet.
     let by_meaning =
-        semantic::semantic_passages(&repos, &question, PASSAGES as usize, scope).await?;
-    let snippets = match scope {
-        Some(_) => semantic::fuse_within_note(lexical, by_meaning, PASSAGES as usize),
-        None => semantic::fuse(lexical, by_meaning, PASSAGES as usize),
+        semantic::semantic_passages(&repos, &question, CANDIDATES as usize, scope).await?;
+    let candidates = match scope {
+        Some(_) => semantic::fuse_within_note(lexical, by_meaning, SCREENED),
+        None => semantic::fuse(lexical, by_meaning, SCREENED),
     };
-    let sent: Vec<AskSource> = snippets
-        .into_iter()
-        .enumerate()
-        .map(|(i, snippet)| AskSource {
-            index: i + 1,
-            note_id: snippet.note_id,
-            title: if snippet.title.trim().is_empty() {
-                "Untitled note".to_string()
-            } else {
-                snippet.title
-            },
-            kind: snippet.kind,
-            excerpt: snippet.snippet,
-        })
-        .collect();
+    // Which of them bear on the question (ADR-0064). The fused order is a
+    // rank, not a judgement: the eighth passage came eighth, which says
+    // nothing about whether it answers anything.
+    let screened = crate::egress_ledger::scoped(
+        "ask",
+        scope.map(str::to_string),
+        crate::reflex::screen::screen(
+            &screen_state(&question, &request.history),
+            SCREEN_INSTRUCTIONS,
+            candidates,
+            |snippet| format!("{} ({})\n{}", snippet.title, snippet.kind, snippet.snippet),
+            PASSAGES as usize,
+        ),
+    )
+    .await;
+    let nothing_relevant = screened.outcome == crate::reflex::screen::Outcome::NothingRelevant;
+    let sent = sources(screened.kept, 1);
+    let screened = sources(screened.examined, sent.len() + 1);
     if sent.is_empty() {
+        let answer = match (scope, nothing_relevant) {
+            (Some(_), false) => "Nothing in this note mentions this.",
+            (None, false) => "Nothing in your notes mentions this.",
+            (Some(_), true) => "Nothing in this note answers this.",
+            (None, true) => "Nothing in your notes answers this.",
+        };
         return Ok(AskAnswer {
-            answer: match scope {
-                Some(_) => "Nothing in this note mentions this.".to_string(),
-                None => "Nothing in your notes mentions this.".to_string(),
-            },
+            answer: answer.to_string(),
             citations: Vec::new(),
             sent,
+            screened,
             invented: Vec::new(),
             prompt_version: ASK_PROMPT_VERSION,
         });
@@ -439,6 +545,7 @@ pub async fn ask_notes(app: AppHandle, request: AskNotesRequest) -> Result<AskAn
         answer,
         citations,
         sent,
+        screened,
         invented,
         prompt_version: ASK_PROMPT_VERSION,
     })
