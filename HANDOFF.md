@@ -56,6 +56,25 @@ vérifié sur v1.58.0 le 2026-09-02). Le runtime Hermes et les helpers Swift son
 que la notarisation passe ; voir les étapes de signature du workflow. Un timeout Apple `-1001` se relance
 avec `gh run rerun --failed`, on ne re-tagge jamais.
 
+**Profil de provisioning (passkeys, depuis 2026-09-27).** L'app revendique
+`com.apple.developer.associated-domains` (passkeys natifs), un entitlement
+**restreint** : il n'est accepté que parce que `src-tauri/embedded.provisionprofile`
+(profil Developer ID « Sub Rosa Developer ID », `FSS76VAWFH`) l'accorde. Sans lui,
+macOS tue l'app au lancement alors que signature et notarisation passent (c'est
+ce qu'a fait 1.74.0). Trois règles :
+- **Le profil expire avec le certificat (2027-02-01).** Au renouvellement du
+  Developer ID, régénérer le profil (portail › Profiles › Developer ID, ou l'API
+  App Store Connect) et remplacer le fichier, sinon la release suivante ne
+  démarrera pas.
+- **Seule l'app porte ces clés.** Le sidecar passe par `bundle.macOS.files`
+  (pré-signé dans `release.yml` avec `HelperEntitlements.plist`) parce que Tauri
+  signe tout `externalBin` avec les entitlements de l'app ; les helpers Swift sont
+  signés par `build.rs` avec `HelperEntitlements.plist`.
+- **Modifier une capability de l'App ID invalide ses profils**, iOS compris :
+  régénérer « Sub Rosa App Store » et mettre à jour `IOS_PROVISION_PROFILE`.
+`src/test/macos-entitlements.test.ts` garde ces règles, et `release.yml` lance
+l'app signée avant de publier.
+
 ## 4. Signature Windows — ➖ volontairement non signé
 Choix produit : **pas de signature Windows** pour l'instant. `scripts/windows-sign.ps1` **skip proprement** (exit 0)
 quand `WINDOWS_CERTIFICATE_PATH`/`_PASSWORD` sont absents → la CI produit un **NSIS non signé** (SmartScreen avertit).

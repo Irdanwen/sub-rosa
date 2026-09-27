@@ -66,6 +66,18 @@ copyFileSync(builtBinary, dest);
 if (!isWindows) chmodSync(dest, 0o755);
 console.log(`[build-sidecar] staged ${dest}`);
 
+// macOS ships the sidecar through `bundle.macOS.files`, not `externalBin`:
+// Tauri signs every external binary with the app's entitlements, and the app
+// claims restricted ones (associated domains) that only its own provisioning
+// profile grants, so a sidecar signed with them is killed at launch. The
+// release pre-signs this copy with HelperEntitlements.plist instead.
+if (target.includes("apple-darwin")) {
+  const macosDest = join(binariesDir, "june-api-macos");
+  copyFileSync(builtBinary, macosDest);
+  chmodSync(macosDest, 0o755);
+  console.log(`[build-sidecar] staged ${macosDest}`);
+}
+
 function optionValue(argv, option) {
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === option) return argv[index + 1];
