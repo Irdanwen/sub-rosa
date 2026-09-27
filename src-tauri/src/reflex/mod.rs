@@ -26,6 +26,7 @@
 //! exactly that, next to the switch that turns them off.
 
 pub mod client;
+pub mod journal;
 pub mod question;
 pub mod screen;
 

@@ -14,6 +14,7 @@ import {
 import { SettingsActionRow, SettingsGroup, SettingsRow, SettingsToggleRow } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
+import { ReflexJournalGroup } from "../../settings/ReflexJournal";
 
 /**
  * Memory, as its own pushed screen.
@@ -202,6 +203,8 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
             ))
           )}
         </SettingsGroup>
+
+        <ReflexJournalGroup />
 
         {items.length > 0 ? (
           <SettingsGroup>

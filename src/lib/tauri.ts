@@ -1032,8 +1032,8 @@ export type MemoryExtractResult = {
   added: number;
 };
 
-export async function memoryExtract(messages: MemoryConversationMessage[]) {
-  return invoke<MemoryExtractResult>("memory_extract", { request: { messages } });
+export async function memoryExtract(messages: MemoryConversationMessage[], turns?: number) {
+  return invoke<MemoryExtractResult>("memory_extract", { request: { messages, turns } });
 }
 
 export async function agentHudShow() {

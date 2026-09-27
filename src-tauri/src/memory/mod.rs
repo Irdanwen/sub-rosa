@@ -22,6 +22,7 @@ use std::{
 };
 use tauri::{AppHandle, Manager, State};
 
+pub mod consolidate;
 pub mod extract;
 pub mod recall;
 
@@ -100,6 +101,50 @@ pub async fn prompt_block(repos: &crate::db::repositories::Repositories) -> Opti
     }
     let memories = repos.top_memories(INJECTED_MEMORY_LIMIT).await.ok()?;
     format_memory_block(&memories)
+}
+
+/// The most important memories always ride along in a turn's block.
+const CORE_MEMORIES: i64 = 8;
+/// Memories chosen for what this turn is about, on top of the core.
+const TURN_MEMORIES: usize = 12;
+/// The most a turn waits for its memories before falling back to the
+/// static block: a chat's first word must not wait on recall.
+const TURN_RECALL_BUDGET: std::time::Duration = std::time::Duration::from_millis(2_500);
+
+/// [`prompt_block`], chosen for the turn (ADR-0065).
+///
+/// While everything remembered fits in the static block, that block is the
+/// answer and nothing is fetched. Past that, the static top-N left out
+/// whatever was not "important" in general even when it was exactly what
+/// this message is about. So the block becomes the core (most important) plus
+/// the memories recall finds for the message and the relevance screen keeps.
+/// Recall that is slow or fails falls back to the static block.
+pub async fn prompt_block_for_turn(
+    repos: &crate::db::repositories::Repositories,
+    message: &str,
+) -> Option<String> {
+    if !settings().enabled {
+        return None;
+    }
+    let all = repos.top_memories(INJECTED_MEMORY_LIMIT + 1).await.ok()?;
+    if all.len() as i64 <= INJECTED_MEMORY_LIMIT || message.trim().is_empty() {
+        return format_memory_block(&all[..all.len().min(INJECTED_MEMORY_LIMIT as usize)]);
+    }
+    let relevant = tokio::time::timeout(
+        TURN_RECALL_BUDGET,
+        recall::recall(repos, message, TURN_MEMORIES),
+    )
+    .await;
+    let Ok(Ok(relevant)) = relevant else {
+        return prompt_block(repos).await;
+    };
+    let mut chosen = repos.top_memories(CORE_MEMORIES).await.ok()?;
+    for memory in relevant {
+        if !chosen.iter().any(|m| m.id == memory.id) {
+            chosen.push(memory);
+        }
+    }
+    format_memory_block(&chosen)
 }
 
 /// [`prompt_block`] for callers that only hold an [`AppHandle`] (the Hermes

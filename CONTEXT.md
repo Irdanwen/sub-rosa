@@ -985,6 +985,17 @@ and listed under what was sent.
 _Avoid:_ "judge", "judgement" (the council's), "decision" alone (a meeting's
 decisions live in notes), "reranker" in copy, "AI filter".
 
+**Autonomous change** — something the app changed on its own after a
+reflex decided, recorded in the journal (`autonomous_changes`, local, never
+synchronised) with the state before and after and an **undo** (ADR-0065).
+The first kinds are memory's: a **replacement** rewrites a stored memory a
+newer fact replaced, and a **repeat** is a candidate left out because a
+stored memory already says it. An undo restores the state before only while
+the memory still holds the state after. Settings › Memory calls the journal
+"Changed by Sub Rosa".
+_Avoid:_ "auto-edit", "AI edit", "suggestion" (nothing is proposed: it is
+done, and can be undone).
+
 ### Sharing in (fork)
 
 **Share inbox** — the folder in the app group container where the iOS
