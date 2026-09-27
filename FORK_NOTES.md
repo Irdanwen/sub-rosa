@@ -1684,3 +1684,31 @@ le **tri de pertinence** des recherches.
 | `src-tauri/src/hermes_bridge.rs` | `mod local_reads` ; 2 routes ; calendrier déplacé | Réappliquer |
 | `src-tauri/src/hermes/june_context_mcp.py` | `search_through_app` avant SQLite | Réappliquer |
 | `src/app/App.tsx` | `<ReflexNotice />` | Réappliquer |
+
+## La mémoire se tient à jour seule (2026-09-27, ADR-0065)
+
+- **Filtre** (`memory/extract.rs::extraction_due`) : un réflexe `noul` sur le
+  dernier message à chaque tour (seuil 0,5) ; la cadence 1 tour sur 3 sans
+  réponse. Le desktop (`src/lib/memory.ts`) appelle `memory_extract` à chaque
+  tour avec `turns` ; la cadence n'y est plus dupliquée.
+- **Consolidation** (`memory/consolidate.rs`) : voisins par sens + mots, deux
+  `choice` par candidat (`new`/`same`/`replacement`, puis le fait visé, dont
+  le texte est l'étiquette) ; à 0,8 ou plus, remplacement sur place
+  (`update_memory`) ou doublon écarté.
+- **Journal** (`reflex/journal.rs`, migration 035, **local**, jamais
+  synchronisé : `memories` a une liste de colonnes fermée) ; commandes
+  `reflex_journal` / `reflex_undo` dans les deux listes ; annulation en
+  compare-and-set. Interface : `ReflexJournalCard` (desktop, Réglages ›
+  Mémoire) et `ReflexJournalGroup` (écran Mémoire du téléphone).
+- **Mémoire par tour sur mobile** (`memory::prompt_block_for_turn`) : bloc
+  statique tant que tout tient en 20 ; au-delà, 8 essentiels + 12 rappelés et
+  triés, budget 2,5 s.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | 2 commandes × 2 listes | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | Migration 035 | Réappliquer |
+| `src/lib/tauri.ts` | `memoryExtract(messages, turns?)` | Réappliquer |
+

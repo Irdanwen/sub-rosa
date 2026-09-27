@@ -19,6 +19,7 @@ import {
 } from "../../lib/tauri";
 import { Dialog, DialogField } from "../ui/Dialog";
 import { Switch } from "../ui/Switch";
+import { ReflexJournalCard } from "./ReflexJournal";
 
 type Draft = {
   text: string;
@@ -337,6 +338,8 @@ export function MemorySettingsSection() {
         ) : null}
       </div>
       {error ? <p className="settings-row-error">{error}</p> : null}
+
+      <ReflexJournalCard />
 
       <MemoryDialog
         open={dialogOpen}

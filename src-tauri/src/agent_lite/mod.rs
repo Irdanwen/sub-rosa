@@ -375,7 +375,8 @@ async fn run_turn(
         .as_ref()
         .map_or(true, |snapshot| snapshot.definition.allow_memory);
     let memory_block = if memory_allowed {
-        crate::memory::prompt_block(repos).await
+        let latest = task.messages.last().map_or("", |m| m.content.as_str());
+        crate::memory::prompt_block_for_turn(repos, latest).await
     } else {
         None
     };

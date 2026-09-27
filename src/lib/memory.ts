@@ -3,10 +3,12 @@
  *
  * Desktop chat transcripts live inside Hermes (not in the app's SQLite), so
  * the Rust side has no post-turn hook of its own: this module watches
- * completed assistant turns from the workspace, and every 3rd assistant
- * reply per session sends the recent message window to the `memory_extract`
- * command (which prompts the extraction model and stores survivors). The
- * mobile agent-lite pipeline has the equivalent hook in Rust
+ * completed assistant turns from the workspace and, after every one, sends
+ * the recent message window and the turn count to the `memory_extract`
+ * command. Rust decides whether the turn is worth a pass (a reflex reads the
+ * latest message, ADR-0065; the every-3rd cadence when none answers), then
+ * prompts the extraction model and stores survivors. The mobile agent-lite
+ * pipeline has the equivalent hook in Rust
  * (`memory::extract::maybe_extract_after_agent_lite_turn`).
  *
  * Everything here is best-effort: extraction failures are swallowed, never
@@ -22,8 +24,6 @@ import {
   memoryGetSettings,
 } from "./tauri";
 
-/** Keep in sync with EXTRACTION_CADENCE in src-tauri/src/memory/extract.rs. */
-const EXTRACTION_CADENCE = 3;
 /** Keep in sync with CONTEXT_MESSAGES_PER_ROLE in memory/extract.rs. */
 const CONTEXT_MESSAGES_PER_ROLE = 5;
 
@@ -46,11 +46,11 @@ async function extractIfDue(sessionId: string): Promise<void> {
   const raw = response.messages ?? response.items ?? response.data ?? [];
   const conversation = conversationFromHermesMessages(raw);
   const assistantTurns = conversation.filter((message) => message.role === "assistant").length;
-  if (assistantTurns === 0 || assistantTurns % EXTRACTION_CADENCE !== 0) return;
+  if (assistantTurns === 0) return;
   if (extractedAtTurn.get(sessionId) === assistantTurns) return;
   extractedAtTurn.set(sessionId, assistantTurns);
 
-  await memoryExtract(windowedConversation(conversation));
+  await memoryExtract(windowedConversation(conversation), assistantTurns);
 }
 
 /** Normalizes Hermes session messages to plain (role, content) pairs; tool

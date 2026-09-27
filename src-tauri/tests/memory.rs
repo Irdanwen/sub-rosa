@@ -240,3 +240,22 @@ async fn embedding_backfill_finds_only_unembedded_enabled_memories() {
         .expect("pending row");
     assert!(empty.embedding.is_none());
 }
+
+#[tokio::test]
+async fn a_small_memory_is_injected_whole_without_recall() {
+    let repos = repos().await;
+    for (text, importance) in [("Habite à Lyon.", 2), ("Aime le jazz.", 7)] {
+        repos
+            .insert_memory(text, MemorySource::Auto, importance)
+            .await
+            .expect("insert");
+    }
+    // Everything fits the static block, so nothing is fetched for the turn.
+    let block = os_june_lib::memory::prompt_block_for_turn(&repos, "Un bon concert ce soir ?")
+        .await
+        .expect("block");
+    assert!(block.contains("- Habite à Lyon.\n- Aime le jazz.\n"));
+    assert!(os_june_lib::memory::prompt_block_for_turn(&repos, "")
+        .await
+        .is_some());
+}

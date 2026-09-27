@@ -3596,6 +3596,17 @@
   opacity: 0.35;
 }
 
+/* Undo on a change Sub Rosa made to memory on its own (ADR-0065). */
+.mobile-memory-undo {
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
 .mobile-memory-empty {
   margin: 0;
   padding: var(--sp-4);

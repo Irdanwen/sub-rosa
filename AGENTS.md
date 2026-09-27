@@ -150,8 +150,12 @@ essentials for anyone touching chat, prompts, or the DB:
   (`run_migrations` splits statements on `;`).
 - **Module**: `src-tauri/src/memory/` — `mod.rs` (settings `memory.json`:
   `enabled`/`auto_extract`, CRUD commands, the shared `prompt_block`),
-  `extract.rs` (every-3rd-assistant-reply extraction over the last 5+5
-  messages; importance 1-10 where LOWER is more important, > 8 discarded),
+  `extract.rs` (a reflex gate on every turn decides whether to extract,
+  the every-3rd-assistant-reply cadence when no reflex answers, over the last
+  5+5 messages; importance 1-10 where LOWER is more important, > 8
+  discarded), `consolidate.rs` (each candidate set against its closest stored
+  facts: a sure replacement rewrites in place, a sure repeat is left out,
+  both journaled with an undo, ADR-0065),
   `recall.rs` (BGE-M3 embeddings via a **direct Carpe Diem `/embeddings`
   call** — the ADR-0008 pattern, NOT the sidecar — f32 LE blobs, hybrid
   LIKE + cosine merged with RRF, keyword-only fallback when offline).

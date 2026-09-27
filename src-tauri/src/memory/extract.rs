@@ -20,8 +20,19 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 /// Extract every Nth assistant reply — extracting on every turn would double
-/// the cost of a conversation for marginal recall gain.
+/// the cost of a conversation for marginal recall gain. The rule when no
+/// reflex answers; with one, the gate below decides turn by turn.
 pub const EXTRACTION_CADENCE: usize = 3;
+/// The gate's bar (ADR-0065). Measured live: messages that told something
+/// lasting about the person scored 0.86 to 0.92, requests, questions and
+/// thanks 0.03 to 0.13.
+const GATE_AT: f64 = 0.5;
+const GATE_INSTRUCTIONS: &str = "Does the person's latest message, in the state, reveal a \
+durable fact about the person themselves that would still be useful in future conversations (who \
+they are, where they live, their work, people close to them, lasting preferences, standing \
+instructions, ongoing projects)? Answer no for one-off requests, questions, thanks, and facts \
+about other things than the person.";
+const GATE_MESSAGE_CHARS: usize = 2_000;
 /// How much recent conversation the extractor sees, per role.
 const CONTEXT_MESSAGES_PER_ROLE: usize = 5;
 /// Candidates scored above this are too trivial to keep.
@@ -54,8 +65,14 @@ pub struct ConversationMessage {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtractMemoriesRequest {
     pub messages: Vec<ConversationMessage>,
+    /// The session's assistant replies so far. Present, the pass runs only
+    /// when [`extraction_due`] says this turn is worth it, so the desktop
+    /// can ask after every turn; absent, the pass runs unconditionally.
+    #[serde(default, alias = "turns")]
+    pub assistant_turns: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -90,6 +107,11 @@ pub async fn memory_extract(
     app: AppHandle,
     request: ExtractMemoriesRequest,
 ) -> Result<ExtractMemoriesResult, AppError> {
+    if let Some(turns) = request.assistant_turns {
+        if !extraction_due(&request.messages, turns).await {
+            return Ok(ExtractMemoriesResult { added: 0 });
+        }
+    }
     let repos = crate::commands::repositories(&app).await?;
     let added = extract_and_store(&repos, &request.messages).await?;
     if added > 0 {
@@ -128,7 +150,7 @@ pub fn maybe_extract_after_agent_lite_turn(app: &AppHandle, task_id: String) {
                 .iter()
                 .filter(|message| message.role == "assistant")
                 .count();
-            if !should_extract(assistant_turns) {
+            if !extraction_due(&messages, assistant_turns).await {
                 return Ok::<usize, AppError>(0);
             }
             let added = extract_and_store(&repos, &messages).await?;
@@ -145,9 +167,50 @@ pub fn maybe_extract_after_agent_lite_turn(app: &AppHandle, task_id: String) {
 }
 
 /// Whether a conversation that now counts `assistant_turns` assistant replies
-/// is due for an extraction pass.
+/// is due for an extraction pass by the cadence alone.
 pub fn should_extract(assistant_turns: usize) -> bool {
     assistant_turns > 0 && assistant_turns % EXTRACTION_CADENCE == 0
+}
+
+/// Whether this turn is worth an extraction pass (ADR-0065).
+///
+/// A reflex reads the person's latest message and says whether it tells
+/// something lasting about them: every turn is looked at, so a fact said on
+/// the second turn is no longer lost to a cadence that fires on the third,
+/// and the extraction model is only paid when there is something to find.
+/// Without a reflex answer, the cadence decides, as before.
+pub async fn extraction_due(messages: &[ConversationMessage], assistant_turns: usize) -> bool {
+    if assistant_turns == 0 {
+        return false;
+    }
+    let latest = messages
+        .iter()
+        .rev()
+        .find(|message| message.role == "user" && !message.content.trim().is_empty());
+    if let Some(latest) = latest.filter(|_| crate::reflex::settings().enabled) {
+        let content: String = latest
+            .content
+            .trim()
+            .chars()
+            .take(GATE_MESSAGE_CHARS)
+            .collect();
+        let batch =
+            crate::reflex::question::Batch::new(format!("The person's latest message: {content}"))
+                .ask(
+                    "durable",
+                    crate::reflex::question::Question::noul(GATE_INSTRUCTIONS),
+                );
+        let answered =
+            crate::egress_ledger::scoped("memory", None, crate::reflex::client::decide(&batch))
+                .await;
+        if let Some(p) = answered
+            .ok()
+            .and_then(|answers| answers.get("durable").and_then(|a| a.yes()))
+        {
+            return p >= GATE_AT;
+        }
+    }
+    should_extract(assistant_turns)
 }
 
 /// Runs one extraction pass over `messages` (oldest first) and stores the
@@ -199,7 +262,7 @@ pub async fn extract_and_store(
     })?;
     let candidates = parse_extracted_memories(&text);
 
-    let mut added = 0;
+    let mut kept: Vec<ExtractedCandidate> = Vec::new();
     for candidate in candidates.into_iter().take(MAX_NEW_MEMORIES_PER_PASS) {
         let text = candidate.text.trim();
         if text.is_empty()
@@ -211,10 +274,67 @@ pub async fn extract_and_store(
         if repos.memory_with_text_exists(text).await? {
             continue;
         }
-        repos
-            .insert_memory(text, MemorySource::Auto, candidate.importance)
-            .await?;
-        added += 1;
+        kept.push(ExtractedCandidate {
+            text: text.to_string(),
+            importance: candidate.importance,
+        });
+    }
+    // Set against what is already remembered (ADR-0065): a replacement
+    // rewrites the stored fact, a repeat is left out, and both are journaled
+    // with their undo. Without a reflex every verdict is Add, as before.
+    let texts: Vec<String> = kept.iter().map(|c| c.text.clone()).collect();
+    let verdicts = super::consolidate::judge(repos, &texts).await;
+    let mut added = 0;
+    for (candidate, verdict) in kept.iter().zip(verdicts) {
+        use crate::reflex::journal::{self, MemoryState};
+        match verdict {
+            super::consolidate::Verdict::Add => {
+                repos
+                    .insert_memory(&candidate.text, MemorySource::Auto, candidate.importance)
+                    .await?;
+                added += 1;
+            }
+            super::consolidate::Verdict::Same { existing, p } => {
+                journal::record(
+                    &repos.pool,
+                    journal::MEMORY_SAME,
+                    &existing.id,
+                    &MemoryState {
+                        text: candidate.text.clone(),
+                        disabled: false,
+                    },
+                    &MemoryState {
+                        text: existing.text.clone(),
+                        disabled: existing.disabled,
+                    },
+                    p,
+                )
+                .await?;
+            }
+            super::consolidate::Verdict::Update { existing, p } => {
+                repos
+                    .update_memory(&existing.id, Some(&candidate.text), None)
+                    .await?;
+                journal::record(
+                    &repos.pool,
+                    journal::MEMORY_UPDATE,
+                    &existing.id,
+                    &MemoryState {
+                        text: existing.text.clone(),
+                        disabled: existing.disabled,
+                    },
+                    &MemoryState {
+                        text: candidate.text.clone(),
+                        disabled: existing.disabled,
+                    },
+                    p,
+                )
+                .await?;
+                // A rewritten memory lost its vector: the backfill the
+                // callers run after a pass that changed something refills it.
+                added += 1;
+            }
+        }
     }
     Ok(added)
 }
@@ -353,6 +473,15 @@ mod tests {
 
         assert!(parse_extracted_memories("no json here").is_empty());
         assert!(parse_extracted_memories("{\"memories\":[]}").is_empty());
+    }
+
+    #[test]
+    fn the_request_carries_the_turn_count_when_the_caller_wants_the_gate() {
+        let gated: ExtractMemoriesRequest =
+            serde_json::from_str(r#"{"messages":[],"turns":4}"#).unwrap();
+        assert_eq!(gated.assistant_turns, Some(4));
+        let plain: ExtractMemoriesRequest = serde_json::from_str(r#"{"messages":[]}"#).unwrap();
+        assert_eq!(plain.assistant_turns, None);
     }
 
     #[test]
