@@ -604,13 +604,85 @@ fn sheet_text(xml: &str, strings: &[String]) -> Result<String, AppError> {
     }
     Ok(out)
 }
+/// The passages of an assistant's references that bear on `query_text`.
+///
+/// Word overlap alone missed a passage that says the same thing in other
+/// words, and ranked by how many words a passage shared rather than whether
+/// it helps. The candidates are now the best overlaps and, for references
+/// small enough, every other passage too, and a reflex keeps the ones that
+/// help with the request (ADR-0064). Without a reflex, the old overlap cut.
 pub async fn reference_context(
     pool: &SqlitePool,
     assistant_id: &str,
     query_text: &str,
 ) -> Result<String, AppError> {
     let refs = list_references(pool, assistant_id).await?;
-    Ok(select_reference_context(&refs, query_text))
+    let candidates = reference_candidates(&refs, query_text);
+    if candidates.is_empty() || query_text.trim().is_empty() {
+        return Ok(select_reference_context(&refs, query_text));
+    }
+    let screened = crate::egress_ledger::scoped(
+        "assistant",
+        None,
+        crate::reflex::screen::screen(
+            &format!("Request: {}", query_text.trim()),
+            REFERENCE_SCREEN_INSTRUCTIONS,
+            candidates,
+            Clone::clone,
+            REFERENCE_PASSAGES,
+        ),
+    )
+    .await;
+    Ok(match screened.outcome {
+        crate::reflex::screen::Outcome::Unjudged => select_reference_context(&refs, query_text),
+        _ => screened.kept.join("\n\n"),
+    })
+}
+
+const REFERENCE_PASSAGES: usize = 6;
+const REFERENCE_CANDIDATES: usize = 24;
+const REFERENCE_SCREEN_INSTRUCTIONS: &str = "Does this candidate passage, taken from a reference \
+document the person gave their assistant, help with the request in the state? Answer yes only if \
+the passage itself bears on the request.";
+
+/// Passages for the screen: those sharing words with the query, most shared
+/// first, then the rest in document order while there is room, so a passage
+/// that shares no word can still be found by what it means.
+fn reference_candidates(refs: &[AssistantReference], query_text: &str) -> Vec<String> {
+    let words: Vec<_> = query_text
+        .split_whitespace()
+        .filter(|s| s.len() > 2)
+        .map(str::to_lowercase)
+        .collect();
+    let mut scored = Vec::new();
+    for reference in refs.iter().filter(|r| r.status == "ready") {
+        let chars: Vec<_> = reference.text.chars().collect();
+        for (index, chunk) in chars.chunks(1600).enumerate() {
+            let text: String = chunk.iter().collect();
+            let lower = text.to_lowercase();
+            let score = words
+                .iter()
+                .filter(|word| lower.contains(word.as_str()))
+                .count();
+            scored.push((
+                score,
+                format!(
+                    "[Reference: {}; passage {}; id: {}]\n{}",
+                    reference.name,
+                    index + 1,
+                    reference.id,
+                    text
+                ),
+            ));
+        }
+    }
+    // Stable: equal overlaps keep document order.
+    scored.sort_by_key(|entry| std::cmp::Reverse(entry.0));
+    scored
+        .into_iter()
+        .take(REFERENCE_CANDIDATES)
+        .map(|(_, text)| text)
+        .collect()
 }
 pub fn select_reference_context(refs: &[AssistantReference], query_text: &str) -> String {
     let words: Vec<_> = query_text
@@ -654,6 +726,42 @@ pub fn select_reference_context(refs: &[AssistantReference], query_text: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn reference(name: &str, text: &str, status: &str) -> AssistantReference {
+        AssistantReference {
+            id: format!("id-{name}"),
+            assistant_id: "a".into(),
+            name: name.into(),
+            format: "text".into(),
+            text: text.into(),
+            status: status.into(),
+            error: None,
+            note_id: None,
+            file_name: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn candidates_put_shared_words_first_and_keep_the_rest_for_meaning() {
+        let refs = vec![
+            reference("tarifs", "Les prix augmentent de 5 % en janvier.", "ready"),
+            reference(
+                "contrat",
+                "Le contrat de maintenance court jusqu'en 2027.",
+                "ready",
+            ),
+            reference("brouillon", "Contrat en cours d'import.", "pending"),
+        ];
+        let candidates = reference_candidates(&refs, "Jusqu'à quand court le contrat ?");
+        assert_eq!(candidates.len(), 2, "a reference not ready is never read");
+        assert!(candidates[0].starts_with("[Reference: contrat; passage 1;"));
+        assert!(
+            candidates[1].starts_with("[Reference: tarifs;"),
+            "no shared word, still a candidate the screen can keep by meaning"
+        );
+    }
     fn pdf(catalog_extra: &str) -> Vec<u8> {
         let content = "BT /F1 12 Tf 72 720 Td (Hello PDF) Tj ET";
         let objects = [

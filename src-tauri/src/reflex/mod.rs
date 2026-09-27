@@ -48,11 +48,42 @@ static SETTINGS: OnceLock<Mutex<ReflexSettings>> = OnceLock::new();
 #[serde(rename_all = "camelCase", default)]
 pub struct ReflexSettings {
     pub enabled: bool,
+    /// Whether the one-time notice that reflexes are on has been read. Kept
+    /// here rather than in the webview's storage, which a person can clear
+    /// without meaning to be told again.
+    pub notice_seen: bool,
 }
 
 impl Default for ReflexSettings {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            notice_seen: false,
+        }
+    }
+}
+
+/// A change to the settings: only what is named changes, so the switch in
+/// Settings cannot bring the notice back and the notice cannot flip the
+/// switch by accident.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReflexSettingsChange {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub notice_seen: Option<bool>,
+}
+
+impl ReflexSettings {
+    fn with(mut self, change: &ReflexSettingsChange) -> Self {
+        if let Some(enabled) = change.enabled {
+            self.enabled = enabled;
+        }
+        if let Some(seen) = change.notice_seen {
+            self.notice_seen = seen;
+        }
+        self
     }
 }
 
@@ -114,17 +145,18 @@ pub fn reflex_settings() -> ReflexSettings {
 #[tauri::command]
 pub fn set_reflex_settings(
     app: AppHandle,
-    request: ReflexSettings,
+    request: ReflexSettingsChange,
 ) -> Result<ReflexSettings, AppError> {
+    let next = settings().with(&request);
     let state = app.state::<ReflexState>();
-    persist(&state.config_path, &request)?;
-    replace_mirror(request.clone());
-    Ok(request)
+    persist(&state.config_path, &next)?;
+    replace_mirror(next.clone());
+    Ok(next)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ReflexSettings;
+    use super::{ReflexSettings, ReflexSettingsChange};
 
     #[test]
     fn reflexes_are_on_by_default_and_a_missing_field_keeps_the_default() {
@@ -133,5 +165,25 @@ mod tests {
         assert!(parsed.enabled);
         let off: ReflexSettings = serde_json::from_str(r#"{"enabled":false}"#).unwrap();
         assert!(!off.enabled);
+        assert!(
+            !off.notice_seen,
+            "a file from before the notice has not seen it"
+        );
+    }
+
+    #[test]
+    fn a_change_touches_only_what_it_names() {
+        let seen = ReflexSettings::default().with(&ReflexSettingsChange {
+            enabled: None,
+            notice_seen: Some(true),
+        });
+        assert!(seen.enabled && seen.notice_seen);
+        let off: ReflexSettingsChange = serde_json::from_str(r#"{"enabled":false}"#).unwrap();
+        let next = seen.with(&off);
+        assert!(!next.enabled);
+        assert!(
+            next.notice_seen,
+            "the switch does not bring the notice back"
+        );
     }
 }
