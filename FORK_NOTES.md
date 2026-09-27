@@ -1613,3 +1613,49 @@ garde, qui suffira peut-être. L'extraction des WAV par tour hors du thread
 async, le subscriber `tracing` de production (tous les `tracing::` du shell
 sont aujourd'hui des no-ops) et le point ambiant « notes » de la tab bar mobile
 restent à faire.
+
+## Les réflexes : trier ce qu'une recherche a trouvé (2026-09-27, ADR-0064)
+
+Carpe Diem sert un modèle de décision (Jev) sur `POST /v1/decisions` : un
+`state`, des questions typées (`noul`, `choice`, `score`), une réponse
+probabilisée par question, en une passe d'environ une seconde. Premier usage :
+le **tri de pertinence** des recherches.
+
+- **`src-tauri/src/reflex/`** : `question.rs` (schéma vérifié en direct :
+  `criteria` est un **objet** pour `choice`, un **tableau** pour `score` ; la
+  doc Carpe Diem ne documente que `noul`), `client.rs` (appel direct à la base
+  **catalogue** `/v1`, jamais `/router` ; timeout 8 s ; disjoncteur 3 échecs →
+  10 min ; ligne au registre des sorties), `screen.rs` (`KEEP_AT` 0,3,
+  `NOTHING_BELOW` 0,25, tirés de 60 jugements mesurés), `mod.rs` (réglage
+  `reflex.json`, `enabled` vrai par défaut, commandes `reflex_settings` /
+  `set_reflex_settings` dans **les deux** listes).
+- **Ask your notes** (`ask/mod.rs`) : 20 + 20 candidats fusionnés en 24, triés,
+  8 gardés au plus ; « Nothing in your notes answers this. » sans appel au
+  modèle quand rien ne passe ; `AskAnswer.screened` liste ce qui n'a été
+  envoyé qu'au tri (panneau : `sentLabel`, `ownAnswer`).
+- **`search_notes` d'agent-lite** passe par `ask::agent_note_search` :
+  l'ancienne liste (résumés longs compris) + passages en OU + sens, fusionnés
+  puis triés.
+- **Rappel mémoire** (`memory/recall.rs`) : `memories_fts` en OU
+  (`db/repositories/memories.rs`) au lieu du `LIKE` sur la phrase entière,
+  puis tri.
+- **Interface** : `ReflexCard` dans Réglages › Confidentialité (partagé
+  desktop et mobile), qui dit que ces requêtes quittent l'enclave, anonymisées.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | `pub mod reflex`, `reflex::setup`, 2 commandes × 2 listes | Réappliquer |
+| `src-tauri/src/db/repositories.rs` | `mod memories` ; commentaire de `search_note_context` | Réappliquer |
+| `src-tauri/src/agent_lite/mod.rs` | `search_notes` → `ask::agent_note_search` | Réappliquer |
+
+### Pièges
+
+- `/v1/decisions/models` est public et ne prouve rien ; valider avec un vrai
+  `POST` (clé `cdm_`). Une étiquette `choice` numérique (« 0 »/« 1 ») est
+  refusée par `Question::validate` : le modèle suit le nom de l'option plus que
+  sa description.
+- `select` compte un candidat sans réponse comme limite (`KEEP_AT`), pas comme
+  rejeté ; `examined` ne liste que ce qui a réellement été envoyé.
+

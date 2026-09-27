@@ -42,7 +42,15 @@ pub async fn recall(
     if !super::settings().enabled {
         return Ok(Vec::new());
     }
-    let keyword = repos.search_memories(query, limit as i64).await?;
+    // Candidates for the relevance screen: a few times what is asked for,
+    // so the screen has something to choose between.
+    let pool = (limit * 3).max(24);
+    // Any of the query's content words, ranked (the FTS index kept since
+    // migration 020); the whole-phrase LIKE when the query has none.
+    let keyword = match crate::ask::passages_match(&crate::ask::content_terms(query)) {
+        Some(fts) => repos.search_memories_fts(&fts, pool as i64).await?,
+        None => repos.search_memories(query, pool as i64).await?,
+    };
 
     let semantic = match embed(&[query.to_string()]).await {
         Ok(mut vectors) if !vectors.is_empty() => {
@@ -59,15 +67,33 @@ pub async fn recall(
             scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
             scored
                 .into_iter()
-                .take(limit)
+                .take(pool)
                 .map(|(_, memory)| memory)
                 .collect()
         }
         _ => Vec::new(),
     };
 
-    Ok(reciprocal_rank_fusion(keyword, semantic, limit))
+    let fused = reciprocal_rank_fusion(keyword, semantic, pool);
+    // Which of them bear on the query (ADR-0064); without a reflex, the
+    // first `limit` of the fused list, as before.
+    let screened = crate::egress_ledger::scoped(
+        "memory",
+        None,
+        crate::reflex::screen::screen(
+            &format!("Query: {query}"),
+            RECALL_INSTRUCTIONS,
+            fused,
+            |memory| memory.text.clone(),
+            limit,
+        ),
+    )
+    .await;
+    Ok(screened.kept)
 }
+
+const RECALL_INSTRUCTIONS: &str = "Is this remembered fact about the person relevant to the \
+query in the state? Answer yes only if knowing the fact helps with what the query asks.";
 
 /// Embeds every stored memory that still lacks a vector. Best-effort by
 /// design: callers spawn it detached and a failure just leaves the memory on

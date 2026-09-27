@@ -1,6 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AskNotesPanel, answerParts, looksLikeAQuestion } from "../components/ask/AskNotesPanel";
+import {
+  AskNotesPanel,
+  answerParts,
+  looksLikeAQuestion,
+  ownAnswer,
+  sentLabel,
+} from "../components/ask/AskNotesPanel";
 
 type Listener = (event: { payload: unknown }) => void;
 
@@ -171,5 +177,45 @@ describe("AskNotesPanel", () => {
     mocks.askNotes.mockRejectedValue(new Error("The model returned status 503."));
     render(<AskNotesPanel question="Why did it fail?" onOpenNote={() => {}} onClose={() => {}} />);
     expect(await screen.findByText("The model returned status 503.")).toBeInTheDocument();
+  });
+
+  it("lists what was only screened for relevance under what was sent", async () => {
+    mocks.askNotes.mockResolvedValue({
+      answer: "Nothing in your notes answers this.",
+      citations: [],
+      sent: [],
+      screened: [
+        { index: 1, noteId: "n1", title: "Budget", kind: "note", excerpt: "Hiring froze." },
+      ],
+      invented: [],
+      promptVersion: 1,
+    });
+    render(
+      <AskNotesPanel question="Who won the match?" onOpenNote={() => {}} onClose={() => {}} />,
+    );
+    expect(await screen.findByText("Nothing in your notes answers this.")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "What was sent (0 passages, 1 more checked for relevance)",
+      }),
+    );
+    expect(screen.getByText(/Checked for relevance by a quick decision model/)).toBeInTheDocument();
+    expect(screen.getByText("Hiring froze.")).toBeInTheDocument();
+  });
+});
+
+describe("ownAnswer and sentLabel", () => {
+  it("passes the model's answers through and names screened passages only when there are some", () => {
+    expect(ownAnswer("Lundi [1].")).toBe("Lundi [1].");
+    expect(ownAnswer("Nothing in this note mentions this.")).toBe(
+      "Nothing in this note mentions this.",
+    );
+    const base = { answer: "", citations: [], invented: [], promptVersion: 1 };
+    const one = { index: 1, noteId: "n", title: "T", kind: "note", excerpt: "" };
+    expect(sentLabel({ ...base, sent: [one] })).toBe("What was sent (1 passages)");
+    expect(sentLabel({ ...base, sent: [one], screened: [] })).toBe("What was sent (1 passages)");
+    expect(sentLabel({ ...base, sent: [one], screened: [one, one] })).toBe(
+      "What was sent (1 passages, 2 more checked for relevance)",
+    );
   });
 });

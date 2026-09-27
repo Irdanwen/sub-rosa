@@ -13,6 +13,11 @@ export type AskAnswerDto = {
   answer: string;
   citations: AskSourceDto[];
   sent: AskSourceDto[];
+  /**
+   * Passages sent only to be screened for relevance and not passed on to
+   * the answering model. Absent from builds before reflexes (ADR-0064).
+   */
+  screened?: AskSourceDto[];
   invented: number[];
   promptVersion: number;
 };

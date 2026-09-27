@@ -61,6 +61,36 @@ export function answerParts(
 }
 
 /**
+ * The answers the app writes itself, when no passage went to the model,
+ * in the reader's language. The model's own answers are already in the
+ * language of the question.
+ */
+export function ownAnswer(answer: string): string {
+  switch (answer) {
+    case "Nothing in your notes mentions this.":
+      return t("Nothing in your notes mentions this.");
+    case "Nothing in this note mentions this.":
+      return t("Nothing in this note mentions this.");
+    case "Nothing in your notes answers this.":
+      return t("Nothing in your notes answers this.");
+    case "Nothing in this note answers this.":
+      return t("Nothing in this note answers this.");
+    default:
+      return answer;
+  }
+}
+
+/** The label of the "what was sent" toggle, screened passages included. */
+export function sentLabel(result: AskAnswerDto): string {
+  const screened = result.screened?.length ?? 0;
+  if (screened === 0) return t("What was sent ({count} passages)", { count: result.sent.length });
+  return t("What was sent ({count} passages, {screened} more checked for relevance)", {
+    count: result.sent.length,
+    screened,
+  });
+}
+
+/**
  * The answer to a question over the notes, with every claim linked to its
  * note and, underneath, the exact passages that were sent. The second list
  * is the point: a person sees what left the machine for this answer.
@@ -165,7 +195,7 @@ export function AskNotesPanel({
       ) : result ? (
         <>
           <p className="ask-panel-answer">
-            {answerParts(result.answer, result.citations).map((part, i) =>
+            {answerParts(ownAnswer(result.answer), result.citations).map((part, i) =>
               "citation" in part ? (
                 <button
                   type="button"
@@ -210,9 +240,7 @@ export function AskNotesPanel({
             aria-expanded={showSent}
             onClick={() => setShowSent((value) => !value)}
           >
-            {showSent
-              ? t("Hide what was sent")
-              : t("What was sent ({count} passages)", { count: result.sent.length })}
+            {showSent ? t("Hide what was sent") : sentLabel(result)}
           </button>
           <form
             className="ask-panel-follow-up"
@@ -241,6 +269,24 @@ export function AskNotesPanel({
                 </li>
               ))}
             </ol>
+          ) : null}
+          {showSent && result.screened && result.screened.length > 0 ? (
+            <>
+              <p className="ask-panel-note">
+                {t(
+                  "Checked for relevance by a quick decision model, then not passed on to the answer:",
+                )}
+              </p>
+              <ul className="ask-panel-sent">
+                {result.screened.map((source) => (
+                  <li key={source.index}>
+                    <strong>{source.title}</strong>
+                    <span className="ask-source-kind"> · {source.kind}</span>
+                    <p>{source.excerpt}</p>
+                  </li>
+                ))}
+              </ul>
+            </>
           ) : null}
         </>
       ) : partial ? (

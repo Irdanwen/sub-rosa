@@ -1105,13 +1105,13 @@ async fn execute_tool(
     match name {
         "search_notes" => {
             emit_status(app, task_id, "searching-notes", Some(query.clone()));
-            match repos.search_note_context(&query, 6).await {
+            match crate::ask::agent_note_search(repos, &query, 6).await {
                 Ok(snippets) if snippets.is_empty() => {
                     "No matching notes or transcripts were found.".to_string()
                 }
                 Ok(snippets) => serde_json::to_string(&snippets)
                     .unwrap_or_else(|_| "Search failed to serialize.".to_string()),
-                Err(error) => format!("Note search failed: {error}"),
+                Err(error) => format!("Note search failed: {}", error.message),
             }
         }
         "search_memories" => {
