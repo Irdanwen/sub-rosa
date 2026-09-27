@@ -319,7 +319,10 @@ jobs:
           TARGET: ${{ matrix.target }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
-          set -uo pipefail
+          # Actions runs this with `bash -e`: the probes below exit non-zero on
+          # purpose (a CLI refusing `--version`, a helper we stop), and only a
+          # SIGKILL counts, so errexit must be off.
+          set +e -uo pipefail
           if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then echo "unsigned build; nothing for AMFI to refuse"; exit 0; fi
           APP="src-tauri/target/$TARGET/release/bundle/macos/Sub Rosa.app"
           test -d "$APP" || { echo "::error::no app bundle at $APP"; exit 1; }
