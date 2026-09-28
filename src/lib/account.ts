@@ -61,6 +61,8 @@ export type AccountConflict = {
   kind: string;
   object_id: string;
   created_at: string;
+  /** The preserved version is a deletion made on another device. */
+  deleted?: boolean;
 };
 
 /**

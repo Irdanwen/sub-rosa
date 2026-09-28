@@ -422,31 +422,85 @@ fn snapshot_body(t: &Table, prefix: &str) -> String {
         )
     }
 }
+/// Only a change to a column that travels is a change worth sending. Without
+/// this, a local-only write (a memory's embedding) or a write that changes
+/// nothing re-sent the whole row, and every device that did the same thing
+/// left the others a sibling revision to review.
+fn changed_columns(t: &Table) -> String {
+    format!(
+        " AND ({})",
+        t.columns
+            .iter()
+            .map(|c| format!("OLD.{c} IS NOT NEW.{c}"))
+            .collect::<Vec<_>>()
+            .join(" OR ")
+    )
+}
+/// The trigger statements that queue a snapshot of `object`. Every row carries
+/// the whole object, so a newer edit rewrites the object's last unsent row in
+/// place instead of queueing another: a recording's once-a-second checkpoint
+/// used to leave thousands of rows for one object. The row keeps its place, so
+/// a note still leaves before the transcript that needs it. A row that may
+/// already be on the server (sealed: its operation id is the retry key), a
+/// resolution (it names the siblings a person acknowledged) and a row held
+/// back by an issue are never rewritten; the edit queues after them.
+///
+/// `from` is empty, or a `FROM … WHERE …` naming the row the snapshot reads.
+fn enqueue(object: &str, kind: &str, body: &str, deleted: u8, from: &str) -> String {
+    let last = format!("sequence=(SELECT MAX(sequence) FROM account_sync_outbox WHERE object_id={object}) AND kind='{kind}' AND ciphertext IS NULL AND resolved_revisions='[]' AND operation_id NOT IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox')");
+    let join = if from.contains(" WHERE ") {
+        " AND"
+    } else {
+        " WHERE"
+    };
+    format!("UPDATE account_sync_outbox SET body=(SELECT {body}{from}),deleted={deleted} WHERE {last} AND EXISTS(SELECT 1{from}); INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},{object},'{kind}',{body},{deleted}{from}{join} NOT EXISTS(SELECT 1 FROM account_sync_outbox WHERE {last});")
+}
+/// Replaces a trigger whose definition changed, in one transaction so no
+/// write lands in between unrecorded. SQLite keeps the statement text, so an
+/// unchanged trigger costs one lookup.
+async fn ensure_trigger(
+    pool: &SqlitePool,
+    name: &str,
+    sql: &str,
+) -> Result<(), sqlx::error::Error> {
+    let current: Option<String> =
+        query("SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?")
+            .bind(name)
+            .fetch_optional(pool)
+            .await?
+            .and_then(|row| row.get("sql"));
+    if current.as_deref() == Some(sql) {
+        return Ok(());
+    }
+    let mut tx = pool.begin().await?;
+    query(&format!("DROP TRIGGER IF EXISTS {name}"))
+        .execute(&mut *tx)
+        .await?;
+    query(sql).execute(&mut *tx).await?;
+    tx.commit().await
+}
 /// Installed only after the additive schema migration. The trigger body is
 /// executed as one SQLite statement, not fed to the legacy semicolon splitter.
 pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
-    // Upgrade existing task triggers so a portable conversation always travels
-    // with its permissions, including on previously initialized databases.
-    for action in ["insert", "update", "delete"] {
-        query(&format!(
-            "DROP TRIGGER IF EXISTS account_sync_agent_tasks_{action}"
-        ))
-        .execute(pool)
-        .await?;
-    }
+    // `ensure_trigger` replaces any trigger whose definition changed, so an
+    // older database picks up every one of these, not only the task triggers
+    // that used to be dropped at each launch.
     for t in TABLES {
         for (action, prefix, deleted) in [
-            ("INSERT", "NEW.", 0),
+            ("INSERT", "NEW.", 0u8),
             ("UPDATE", "NEW.", 0),
             ("DELETE", "OLD.", 1),
         ] {
             let gate = if t.name == "agent_tasks" && action == "INSERT" {
-                " AND NEW.safety_profile<>'custom_assistant'"
+                " AND NEW.safety_profile<>'custom_assistant'".to_string()
+            } else if action == "UPDATE" {
+                changed_columns(t)
             } else {
-                ""
+                String::new()
             };
-            let sql=format!("CREATE TRIGGER IF NOT EXISTS account_sync_{}_{} AFTER {} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) VALUES ({UUID_SQL},{prefix}id,'{}',{},{deleted}); END",t.name,action.to_lowercase(),action,t.name,t.kind,snapshot_body(t,prefix));
-            query(&sql).execute(pool).await?;
+            let name = format!("account_sync_{}_{}", t.name, action.to_lowercase());
+            let sql=format!("CREATE TRIGGER {name} AFTER {action} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN {} END",t.name,enqueue(&format!("{prefix}id"),t.kind,&snapshot_body(t,prefix),deleted,""));
+            ensure_trigger(pool, &name, &sql).await?;
         }
     }
     let tasks = TABLES
@@ -454,7 +508,9 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
         .find(|t| t.name == "agent_tasks")
         .ok_or_else(|| sqlx::error::Error::Protocol("task schema missing".into()))?;
     for action in ["INSERT", "UPDATE"] {
-        query(&format!("CREATE TRIGGER IF NOT EXISTS account_assistant_snapshot_{} AFTER {} ON assistant_conversations WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},agent_tasks.id,'conversation',{},0 FROM agent_tasks WHERE agent_tasks.id=NEW.task_id; END",action.to_lowercase(),action,snapshot_body(tasks,"agent_tasks."))).execute(pool).await?;
+        let name = format!("account_assistant_snapshot_{}", action.to_lowercase());
+        let sql = format!("CREATE TRIGGER {name} AFTER {action} ON assistant_conversations WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN {} END",enqueue("NEW.task_id","conversation",&snapshot_body(tasks,"agent_tasks."),0," FROM agent_tasks WHERE agent_tasks.id=NEW.task_id"));
+        ensure_trigger(pool, &name, &sql).await?;
     }
     let notes = TABLES
         .iter()
@@ -465,7 +521,9 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
         ("UPDATE", "NEW.", " AND NEW.status='ready'"),
         ("DELETE", "OLD.", ""),
     ] {
-        query(&format!("CREATE TRIGGER IF NOT EXISTS account_summary_{} AFTER {} ON note_summaries WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){} BEGIN INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},notes.id,'note',{},0 FROM notes WHERE notes.id={prefix}note_id; END",action.to_lowercase(),action,ready,snapshot_body(notes,"notes."))).execute(pool).await?;
+        let name = format!("account_summary_{}", action.to_lowercase());
+        let sql = format!("CREATE TRIGGER {name} AFTER {action} ON note_summaries WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){ready} BEGIN {} END",enqueue(&format!("{prefix}note_id"),"note",&snapshot_body(notes,"notes."),0,&format!(" FROM notes WHERE notes.id={prefix}note_id")));
+        ensure_trigger(pool, &name, &sql).await?;
     }
     query(&format!("CREATE TRIGGER IF NOT EXISTS account_membership_insert AFTER INSERT ON note_folders WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_note_folders(id,note_id,folder_id,assigned_at) SELECT {UUID_SQL},NEW.note_id,NEW.folder_id,NEW.assigned_at WHERE NOT EXISTS(SELECT 1 FROM account_note_folders WHERE note_id=NEW.note_id AND folder_id=NEW.folder_id); UPDATE account_note_folders SET deleted=0,assigned_at=NEW.assigned_at WHERE note_id=NEW.note_id AND folder_id=NEW.folder_id; END")).execute(pool).await?;
     query("CREATE TRIGGER IF NOT EXISTS account_membership_delete AFTER DELETE ON note_folders WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN UPDATE account_note_folders SET deleted=1 WHERE note_id=OLD.note_id AND folder_id=OLD.folder_id; END").execute(pool).await?;
@@ -677,7 +735,94 @@ pub(super) async fn synchronize(
     }
     replay_pending(pool, s, key).await?;
     auto_merge_note_conflicts(pool, s, key).await;
+    auto_resolve_identical_conflicts(pool, s, key).await;
     Ok(())
+}
+
+/// A sibling that says exactly what this device already holds is not a
+/// disagreement, and asking a person to review it is noise. It happens
+/// whenever two devices send the same content from the same parent: a memory
+/// re-sent after a local-only write, a setting touched twice. Keeping the
+/// local copy acknowledges the sibling, so the other devices converge too.
+/// Deletions and real differences stay for review.
+async fn auto_resolve_identical_conflicts(pool: &SqlitePool, s: &Session, key: &[u8; 32]) {
+    let rows = match query("SELECT * FROM account_sync_conflicts WHERE resolved=0 AND deleted=0 ORDER BY created_at LIMIT 200")
+        .fetch_all(pool)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(failure) => {
+            tracing::warn!(%failure,"identical conflict scan deferred");
+            return;
+        }
+    };
+    for row in rows {
+        let id: String = row.get("id");
+        match conflict_matches_local(pool, s, key, &row).await {
+            Ok(true) => {
+                if let Err(failure) = resolve_in_store(pool, s, key, &id, "keep_local").await {
+                    if failure.code != "sync_pending_changes"
+                        && failure.code != "sync_dependencies_pending"
+                    {
+                        tracing::warn!(code=%failure.code,"identical conflict deferred");
+                    }
+                }
+            }
+            Ok(false) => {}
+            Err(failure) => tracing::warn!(code=%failure.code,"identical conflict check deferred"),
+        }
+    }
+}
+
+async fn conflict_matches_local(
+    pool: &SqlitePool,
+    s: &Session,
+    key: &[u8; 32],
+    row: &sqlx_sqlite::SqliteRow,
+) -> Result<bool, AppError> {
+    let c = conflict_change(row)?;
+    let remote = verify(s, key, &c)?;
+    let name = remote["table"]
+        .as_str()
+        .ok_or_else(|| error("sync_format_invalid"))?;
+    if name == "carpe_diem_settings" {
+        return Ok(false);
+    }
+    let t = table(name)?;
+    let local = query(&format!(
+        "SELECT {} AS body FROM {} WHERE id=?",
+        snapshot_body(t, &format!("{}.", t.name)),
+        t.name
+    ))
+    .bind(&c.object_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(local) = local else {
+        return Ok(false);
+    };
+    let local: Value = serde_json::from_str(&local.get::<String, _>("body"))
+        .map_err(|_| error("sync_local_object_invalid"))?;
+    Ok(same_content(&local, &remote))
+}
+
+/// The envelope fields describe a revision, not what it says.
+fn same_content(local: &Value, remote: &Value) -> bool {
+    let content = |body: &Value| {
+        let mut body = body.clone();
+        if let Some(fields) = body.as_object_mut() {
+            for envelope in [
+                "v",
+                "operation_id",
+                "parent_revision",
+                "deleted",
+                "resolved_revisions",
+            ] {
+                fields.remove(envelope);
+            }
+        }
+        body
+    };
+    content(local) == content(remote)
 }
 
 async fn auto_merge_note_conflicts(pool: &SqlitePool, s: &Session, key: &[u8; 32]) {
@@ -804,13 +949,22 @@ async fn push_one(
             serde_json::to_vec(&body).map_err(|_| error("sync_local_object_invalid"))?,
         );
         let ciphertext = crypto::seal(key, &aad(s, &kind, &id), &clear)?;
-        query("UPDATE account_sync_outbox SET ciphertext=?,parent_revision=? WHERE sequence=?")
+        let sealed = query("UPDATE account_sync_outbox SET ciphertext=?,parent_revision=? WHERE sequence=? AND ciphertext IS NULL AND body=?")
             .bind(&ciphertext)
             .bind(&parent)
             .bind(sequence)
+            .bind(row.get::<String, _>("body"))
             .execute(&mut *tx)
-            .await?;
+            .await?
+            .rows_affected();
         tx.commit().await?;
+        // A newer edit of the same object rewrote this unsent row after it was
+        // read (the triggers keep one unsent snapshot per object). Sealing the
+        // stale body would send it and drop the edit, so nothing is sent and
+        // the row is read again.
+        if sealed == 0 {
+            return Ok(true);
+        }
         (ciphertext, parent)
     };
     if ciphertext.len() > 1024 * 1024 {
@@ -1226,6 +1380,20 @@ pub async fn resolve_conflict(app: &AppHandle, id: &str, resolution: &str) -> Re
     let key = vault_key(&s)?;
     resolve_in_store(&pool, &s, &key, id, resolution).await
 }
+fn conflict_change(r: &sqlx_sqlite::SqliteRow) -> Result<Change, AppError> {
+    Ok(Change {
+        sequence: 0,
+        resolved_revisions: serde_json::from_str(&r.get::<String, _>("resolved_revisions"))
+            .map_err(|_| error("sync_format_invalid"))?,
+        object_id: r.get("object_id"),
+        revision: r.get("id"),
+        parent_revision: r.get("parent_revision"),
+        kind: r.get("kind"),
+        ciphertext: r.get("ciphertext"),
+        deleted: r.get("deleted"),
+        operation_id: r.get("operation_id"),
+    })
+}
 pub(super) async fn resolve_in_store(
     pool: &SqlitePool,
     s: &Session,
@@ -1237,18 +1405,7 @@ pub(super) async fn resolve_in_store(
         .bind(id)
         .fetch_one(pool)
         .await?;
-    let c = Change {
-        sequence: 0,
-        resolved_revisions: serde_json::from_str(&r.get::<String, _>("resolved_revisions"))
-            .map_err(|_| error("sync_format_invalid"))?,
-        object_id: r.get("object_id"),
-        revision: r.get("id"),
-        parent_revision: r.get("parent_revision"),
-        kind: r.get("kind"),
-        ciphertext: r.get("ciphertext"),
-        deleted: r.get("deleted"),
-        operation_id: r.get("operation_id"),
-    };
+    let c = conflict_change(&r)?;
     let remote = verify(s, key, &c)?;
     let mut tx = pool.begin().await?;
     if query("SELECT 1 FROM account_sync_outbox WHERE object_id=? LIMIT 1")

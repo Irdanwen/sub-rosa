@@ -58,6 +58,11 @@ export function accountSyncError(code: string): string {
       return t(
         "An item on this device could not be prepared for sync. Other items will continue to sync.",
       );
+    case "storage_unavailable":
+    case "migration_failed":
+      return t(
+        "Synchronization could not use this device's local library. Your data is untouched. Restart Sub Rosa, and update it if this continues.",
+      );
     default:
       return t("Synchronization could not finish. Your local copies are preserved. Try again.");
   }

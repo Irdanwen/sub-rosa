@@ -374,6 +374,20 @@ pub(super) async fn install_session(
     let secret = bundle
         .as_object_mut()
         .and_then(|b| b.remove("device_secret"));
+    if let Some(secret) = secret.as_ref().and_then(Value::as_str) {
+        crypto::decode_key(secret).map_err(|_| error("account_response_invalid"))?;
+    }
+    // The binding is written first and committed last. A keychain holding the
+    // new device's secret while this row still names the old device can
+    // neither renew nor be reused, so every later sign-in became another
+    // device: if either side fails, neither changes.
+    let mut tx = pool.begin().await?;
+    query("UPDATE account_sync_control SET account_id=?,account_json=?,device_id=?,renew_attempted_at=NULL WHERE id=1")
+        .bind(&account.id)
+        .bind(serde_json::to_string(&account).map_err(|_| error("account_response_invalid"))?)
+        .bind(device)
+        .execute(&mut *tx)
+        .await?;
     put_secret(
         base,
         &account.id,
@@ -381,7 +395,6 @@ pub(super) async fn install_session(
         &Zeroizing::new(bundle.to_string()),
     )?;
     if let Some(secret) = secret.as_ref().and_then(Value::as_str) {
-        crypto::decode_key(secret).map_err(|_| error("account_response_invalid"))?;
         put_secret(
             base,
             &account.id,
@@ -389,12 +402,7 @@ pub(super) async fn install_session(
             &Zeroizing::new(secret.to_string()),
         )?;
     }
-    query("UPDATE account_sync_control SET account_id=?,account_json=?,device_id=?,renew_attempted_at=NULL WHERE id=1")
-        .bind(&account.id)
-        .bind(serde_json::to_string(&account).map_err(|_| error("account_response_invalid"))?)
-        .bind(device)
-        .execute(pool)
-        .await?;
+    tx.commit().await?;
     Ok(())
 }
 /// Asks whether this account has a vault yet, so the panel offers "open" or

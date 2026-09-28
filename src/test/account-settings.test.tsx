@@ -411,6 +411,43 @@ describe("Account settings", () => {
     });
   });
 
+  it("names each preserved version and keeps this device's version for all of them", async () => {
+    state = { ...connected, conflicts: 3 };
+    handlers.account_sync_conflicts = () => [
+      { id: "memory-1", kind: "memory", object_id: "m-1", created_at: "2026-09-23T13:04:00Z" },
+      {
+        id: "note-1",
+        kind: "note",
+        object_id: "n-1",
+        created_at: "2026-09-23T13:04:00Z",
+        deleted: true,
+      },
+      { id: "memory-2", kind: "memory", object_id: "m-2", created_at: "2026-09-23T13:04:00Z" },
+    ];
+    handlers.account_sync_resolve_conflict = (args) =>
+      args?.conflictId === "memory-2"
+        ? Promise.reject({ code: "sync_pending_changes", message: "" })
+        : state;
+    const user = userEvent.setup();
+    render(<AccountSettingsSection />);
+    expect(
+      await screen.findByText(/^Note deleted on another device, preserved version from/),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/^Memory entry, preserved version from/)).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Keep this device's version for all" }));
+    for (const conflictId of ["memory-1", "note-1", "memory-2"]) {
+      expect(mocks.invoke).toHaveBeenCalledWith("account_sync_resolve_conflict", {
+        conflictId,
+        resolution: "keep_local",
+      });
+    }
+    expect(
+      await screen.findByText(
+        "1 version is waiting for this device to send its changes. Try again after the next sync.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("offers retry when local account status cannot load", async () => {
     handlers.account_status = () => Promise.reject(new Error("internal-secret"));
     render(<AccountSettingsSection />);
