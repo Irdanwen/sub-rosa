@@ -183,6 +183,16 @@ fn microphone_permission_hint() -> String {
     }
 }
 
+/// A capture start that panicked (a platform audio backend failing in a way it
+/// does not report as an error) is a bug to log, not a sentence for the screen.
+pub fn start_task_failed(error: tokio::task::JoinError) -> AppError {
+    tracing::error!(%error, "recording start task failed");
+    AppError::new(
+        "recording_start_failed",
+        "The microphone could not start. Try again, and restart the app if it keeps happening.",
+    )
+}
+
 pub fn start_capture(
     app: tauri::AppHandle,
     paths: &AppPaths,
