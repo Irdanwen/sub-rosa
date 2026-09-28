@@ -455,36 +455,69 @@ fn enqueue(object: &str, kind: &str, body: &str, deleted: u8, from: &str) -> Str
     };
     format!("UPDATE account_sync_outbox SET body=(SELECT {body}{from}),deleted={deleted} WHERE {last} AND EXISTS(SELECT 1{from}); INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},{object},'{kind}',{body},{deleted}{from}{join} NOT EXISTS(SELECT 1 FROM account_sync_outbox WHERE {last});")
 }
-/// Replaces a trigger whose definition changed, in one transaction so no
-/// write lands in between unrecorded. SQLite keeps the statement text, so an
-/// unchanged trigger costs one lookup.
-async fn ensure_trigger(
+/// Installs the outbox triggers as one set, in one transaction, and only
+/// when their definition changed: the set's digest is ledgered next to the
+/// migration files, so an ordinary launch costs one lookup. One transaction
+/// matters twice. No write can land between a DROP and its CREATE unrecorded,
+/// and a launch racing another sees one schema change instead of a hundred
+/// (each one invalidates the other connections' prepared statements). The
+/// write lock is taken up front, because upgrading a read lock while another
+/// launch migrates fails at once instead of waiting its turn.
+async fn install_managed(
     pool: &SqlitePool,
-    name: &str,
-    sql: &str,
+    triggers: &[(String, String)],
 ) -> Result<(), sqlx::error::Error> {
-    let current: Option<String> =
-        query("SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?")
-            .bind(name)
-            .fetch_optional(pool)
-            .await?
-            .and_then(|row| row.get("sql"));
-    if current.as_deref() == Some(sql) {
+    use sha2::Digest as _;
+    const LEDGER: &str = "account_sync_triggers";
+    let mut digest = sha2::Sha256::new();
+    for (name, sql) in triggers {
+        digest.update(name.as_bytes());
+        digest.update([0]);
+        digest.update(sql.as_bytes());
+        digest.update([0]);
+    }
+    let sum: String = digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let recorded = "SELECT checksum FROM schema_migrations WHERE name=?";
+    let current = |row: Option<sqlx_sqlite::SqliteRow>| {
+        row.is_some_and(|row| row.get::<String, _>("checksum") == sum)
+    };
+    if current(query(recorded).bind(LEDGER).fetch_optional(pool).await?) {
         return Ok(());
     }
-    let mut tx = pool.begin().await?;
-    query(&format!("DROP TRIGGER IF EXISTS {name}"))
-        .execute(&mut *tx)
-        .await?;
-    query(sql).execute(&mut *tx).await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    // Another launch may have installed them while this one waited.
+    if !current(
+        query(recorded)
+            .bind(LEDGER)
+            .fetch_optional(&mut *tx)
+            .await?,
+    ) {
+        for (name, sql) in triggers {
+            query(&format!("DROP TRIGGER IF EXISTS {name}"))
+                .execute(&mut *tx)
+                .await?;
+            query(sql).execute(&mut *tx).await?;
+        }
+        query("INSERT INTO schema_migrations(name,checksum,applied_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET checksum=excluded.checksum,applied_at=excluded.applied_at")
+            .bind(LEDGER)
+            .bind(&sum)
+            .bind(chrono::Utc::now().to_rfc3339())
+            .execute(&mut *tx)
+            .await?;
+    }
     tx.commit().await
 }
 /// Installed only after the additive schema migration. The trigger body is
 /// executed as one SQLite statement, not fed to the legacy semicolon splitter.
 pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
-    // `ensure_trigger` replaces any trigger whose definition changed, so an
-    // older database picks up every one of these, not only the task triggers
-    // that used to be dropped at each launch.
+    // `install_managed` replaces the whole set whenever its definition
+    // changes, so an older database picks up every one of these, not only the
+    // task triggers that used to be dropped at each launch.
+    let mut managed = Vec::new();
     for t in TABLES {
         for (action, prefix, deleted) in [
             ("INSERT", "NEW.", 0u8),
@@ -500,7 +533,7 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
             };
             let name = format!("account_sync_{}_{}", t.name, action.to_lowercase());
             let sql=format!("CREATE TRIGGER {name} AFTER {action} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN {} END",t.name,enqueue(&format!("{prefix}id"),t.kind,&snapshot_body(t,prefix),deleted,""));
-            ensure_trigger(pool, &name, &sql).await?;
+            managed.push((name, sql));
         }
     }
     let tasks = TABLES
@@ -510,7 +543,7 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
     for action in ["INSERT", "UPDATE"] {
         let name = format!("account_assistant_snapshot_{}", action.to_lowercase());
         let sql = format!("CREATE TRIGGER {name} AFTER {action} ON assistant_conversations WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN {} END",enqueue("NEW.task_id","conversation",&snapshot_body(tasks,"agent_tasks."),0," FROM agent_tasks WHERE agent_tasks.id=NEW.task_id"));
-        ensure_trigger(pool, &name, &sql).await?;
+        managed.push((name, sql));
     }
     let notes = TABLES
         .iter()
@@ -523,8 +556,9 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
     ] {
         let name = format!("account_summary_{}", action.to_lowercase());
         let sql = format!("CREATE TRIGGER {name} AFTER {action} ON note_summaries WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){ready} BEGIN {} END",enqueue(&format!("{prefix}note_id"),"note",&snapshot_body(notes,"notes."),0,&format!(" FROM notes WHERE notes.id={prefix}note_id")));
-        ensure_trigger(pool, &name, &sql).await?;
+        managed.push((name, sql));
     }
+    install_managed(pool, &managed).await?;
     query(&format!("CREATE TRIGGER IF NOT EXISTS account_membership_insert AFTER INSERT ON note_folders WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_note_folders(id,note_id,folder_id,assigned_at) SELECT {UUID_SQL},NEW.note_id,NEW.folder_id,NEW.assigned_at WHERE NOT EXISTS(SELECT 1 FROM account_note_folders WHERE note_id=NEW.note_id AND folder_id=NEW.folder_id); UPDATE account_note_folders SET deleted=0,assigned_at=NEW.assigned_at WHERE note_id=NEW.note_id AND folder_id=NEW.folder_id; END")).execute(pool).await?;
     query("CREATE TRIGGER IF NOT EXISTS account_membership_delete AFTER DELETE ON note_folders WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN UPDATE account_note_folders SET deleted=1 WHERE note_id=OLD.note_id AND folder_id=OLD.folder_id; END").execute(pool).await?;
     query(&format!("CREATE TRIGGER IF NOT EXISTS account_usage_insert AFTER INSERT ON egress_ledger WHEN NEW.method='POST' AND NEW.purpose IN ('chat','transcription','embeddings','note generation','dictation','image','video','speech','music','ask') AND (SELECT account_id IS NOT NULL AND device_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_usage(id,device_id,day,model,request_count,request_bytes,response_bytes) VALUES ({UUID_SQL},(SELECT device_id FROM account_sync_control WHERE id=1),substr(NEW.at,1,10),COALESCE(NEW.model,''),1,NEW.request_bytes,NEW.response_bytes) ON CONFLICT(device_id,day,model) DO UPDATE SET request_count=request_count+1,request_bytes=request_bytes+NEW.request_bytes,response_bytes=response_bytes+NEW.response_bytes; END")).execute(pool).await?;
