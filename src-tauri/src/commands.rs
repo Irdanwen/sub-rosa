@@ -740,7 +740,7 @@ pub async fn start_recording(
         start_capture(app, &capture_paths, capture_note_id, source_mode)
     })
     .await
-    .map_err(|error| AppError::new("recording_start_failed", error.to_string()))??;
+    .map_err(crate::audio::capture::start_task_failed)??;
     repos
         .create_recording_session(
             &note.id,

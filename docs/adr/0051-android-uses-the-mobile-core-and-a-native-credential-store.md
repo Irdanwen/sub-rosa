@@ -50,3 +50,20 @@ account sessions, maps and issue reporting. It adds a small native bridge and
 requires on-device restart tests: compiling Rust cannot prove Keystore or
 Android permissions work. Android-only system behavior must be validated on
 an emulator or phone as well as by the build pipeline.
+
+## Addendum 2026-09-28: cpal needs ndk-context
+
+The first recording on a phone failed with `task N panicked with message
+"android context was not initialized"`. cpal's oboe backend asks the
+`ndk-context` crate for the JavaVM and a Context (to read
+`AudioRecord.getMinBufferSize` in `default_input_config()`), and neither
+Tauri, tao nor wry fills that crate: they keep their own copies. Compiling
+could not catch it, which is the risk the paragraph above names.
+
+`SubRosaPlugin` now calls the native `initNdkContext` with the application
+context when it is constructed, which happens at setup, before any command
+can reach the microphone. `android.rs` hands the process-wide JavaVM and a
+leaked global reference to `ndk_context::initialize_android_context` once.
+The application context is used rather than the activity because it outlives
+activity recreation. A panicking capture task now reaches the screen as a
+sentence, not as the panic text.

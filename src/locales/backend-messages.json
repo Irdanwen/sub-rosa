@@ -243,6 +243,7 @@
   "The local backend is not running yet. Try again in a moment.",
   "The local backend returned no data.",
   "The media file could not be found.",
+  "The microphone could not start. Try again, and restart the app if it keeps happening.",
   "The model provider could not answer this message. Send again, or switch to another model.",
   "The model returned no answer.",
   "The model returned nothing to put back.",

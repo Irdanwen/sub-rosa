@@ -7,7 +7,7 @@
     "src-tauri/src/db/repositories.rs": 5592,
     "src/app/App.tsx": 3942,
     "src-tauri/src/domain/processing.rs": 2501,
-    "src-tauri/src/commands.rs": 2718,
+    "src-tauri/src/commands.rs": 2717,
     "src/lib/tauri.ts": 2681,
     "src-tauri/src/audio/turns.rs": 2497
   }

@@ -29,6 +29,37 @@ pub fn init() -> TauriPlugin<tauri::Wry> {
         .build()
 }
 
+/// Called by `SubRosaPlugin` when it is constructed, before any command can
+/// reach the microphone. cpal's oboe backend asks ndk-context for the JavaVM
+/// and a Context (for `AudioRecord.getMinBufferSize`, device listing); Tauri
+/// keeps its own copies and never fills ndk-context, so without this the first
+/// `default_input_config()` panics. `initialize_android_context` asserts it
+/// runs once, hence the `Once`; the global reference is leaked on purpose
+/// because ndk-context holds the raw pointer for the life of the process.
+#[no_mangle]
+pub extern "system" fn Java_xyz_carpediem_subrosa_nativebridge_SubRosaPlugin_initNdkContext(
+    env: jni::JNIEnv,
+    _plugin: jni::objects::JObject,
+    context: jni::objects::JObject,
+) {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let (Ok(vm), Ok(context)) = (env.get_java_vm(), env.new_global_ref(context)) else {
+            tracing::warn!("Android context unavailable; microphone capture will fail");
+            return;
+        };
+        // SAFETY: both pointers stay valid for the process: the JavaVM is
+        // process-wide and the global reference is never deleted.
+        unsafe {
+            ndk_context::initialize_android_context(
+                vm.get_java_vm_pointer().cast(),
+                context.as_obj().as_raw().cast(),
+            );
+        }
+        std::mem::forget(context);
+    });
+}
+
 pub fn invoke<T: DeserializeOwned>(command: &str, payload: impl Serialize) -> Result<T, AppError> {
     let native = NATIVE.get().ok_or_else(|| {
         AppError::new(
