@@ -740,7 +740,14 @@ pub async fn start_recording(
         start_capture(app, &capture_paths, capture_note_id, source_mode)
     })
     .await
-    .map_err(|error| AppError::new("recording_start_failed", error.to_string()))??;
+    .map_err(|error| {
+        // A panicking audio backend is a bug, not a sentence for the screen.
+        tracing::error!(%error, "recording start task failed");
+        AppError::new(
+            "recording_start_failed",
+            "The microphone could not start. Try again, and restart the app if it keeps happening.",
+        )
+    })??;
     repos
         .create_recording_session(
             &note.id,

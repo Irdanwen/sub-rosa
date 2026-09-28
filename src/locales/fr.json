@@ -2967,6 +2967,7 @@
   "The model catalog did not respond. Try again in a moment.": "Le catalogue de modèles n’a pas répondu. Réessayez dans un instant.",
   "The model catalog is unavailable.": "Le catalogue des modèles est indisponible.",
   "The model cited {citations}, which was not among the passages it was given; treat that sentence with care.": "Le modèle a cité {citations}, qui ne faisait pas partie des passages qu'on lui a donnés ; prenez cette phrase avec prudence.",
+  "The microphone could not start. Try again, and restart the app if it keeps happening.": "Le micro n'a pas pu démarrer. Réessayez, et relancez l'app si le problème persiste.",
   "The model provider could not answer this message. Send again, or switch to another model.": "Le fournisseur du modèle n'a pas pu répondre à ce message. Renvoyez, ou passez à un autre modèle.",
   "The model provider could not answer this message. Try again, or switch to another model.": "Le fournisseur du modèle n'a pas pu répondre à ce message. Réessayez, ou passez à un autre modèle.",
   "The model returned no answer.": "Le modèle n'a renvoyé aucune réponse.",

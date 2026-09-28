@@ -2,6 +2,7 @@ package xyz.carpediem.subrosa.nativebridge
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
@@ -36,6 +37,16 @@ class PasskeyArgs {
 class SubRosaPlugin(private val activity: Activity) : Plugin(activity) {
     private val credentials by lazy { CredentialStore(activity.applicationContext) }
     private var recordings = 0
+
+    // cpal's Android backend reaches Java through ndk-context, which nothing in
+    // Tauri initializes. Without this, the first recording panics with
+    // "android context was not initialized". The application context outlives
+    // any activity, so it is the one handed to native code.
+    private external fun initNdkContext(context: Context)
+
+    init {
+        initNdkContext(activity.applicationContext)
+    }
 
     @Command
     fun passkeyGet(invoke: Invoke) {
