@@ -34,14 +34,23 @@ describe("the next account step", () => {
     expect(accountNextStep({ ...connected, recoveryConfirmed: false }).id).toBe("confirm-recovery");
   });
 
-  it("asks for the key last, and only when this device has none", () => {
+  it("asks for the key only when this device has none", () => {
     expect(accountNextStep({ ...connected, hasLocalKey: false }).id).toBe("restore-key");
     expect(accountNextStep(connected).id).toBe("done");
   });
 
-  it("asks for explicit sync consent before restoring a provider key", () => {
+  it("brings the key down before asking about sync", () => {
+    // Restoring the key uploads nothing, and a phone without it is stuck at
+    // the key gate. Sync consent can wait until the app runs.
     expect(accountNextStep({ ...connected, syncEnabled: false, hasLocalKey: false }).id).toBe(
-      "enable-sync",
+      "restore-key",
+    );
+    expect(accountNextStep({ ...connected, syncEnabled: false }).id).toBe("enable-sync");
+  });
+
+  it("never offers the key before a new recovery key is confirmed", () => {
+    expect(accountNextStep({ ...connected, recoveryConfirmed: false, hasLocalKey: false }).id).toBe(
+      "confirm-recovery",
     );
   });
 
@@ -63,6 +72,9 @@ describe("the next account step", () => {
         state = { ...state, recoveryConfirmed: true, syncEnabled: false, hasLocalKey: false };
       },
       () => {
+        state = { ...state, hasLocalKey: true };
+      },
+      () => {
         state = { ...state, syncEnabled: true };
       },
     ]) {
@@ -76,9 +88,10 @@ describe("the next account step", () => {
       "create-vault",
       "open-vault",
       "confirm-recovery",
+      "restore-key",
       "enable-sync",
     ]);
-    expect(seen).toEqual([1, 2, 2, 3, 4]);
+    expect(seen).toEqual([1, 2, 2, 3, 4, 5]);
     expect(seen.every((n) => n <= ACCOUNT_STEP_TOTAL)).toBe(true);
   });
 });

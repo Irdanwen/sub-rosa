@@ -937,10 +937,96 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* The welcome card was sized for a desktop window; let it breathe on phones. */
+/* The welcome card was sized for a desktop window; let it breathe on phones.
+ * The desktop screen is a fixed layer centred in the window. Inside the
+ * phone's gate scroller that took the card out of the flow: the scroller had
+ * nothing to scroll, and a card taller than the screen spilled past both
+ * edges with no way to reach either. On a phone the screen is ordinary
+ * content, top-aligned, and the scroller does the rest. */
 .mobile-shell .welcome-screen {
+  position: static;
+  inset: auto;
   min-height: 100%;
-  padding: var(--sp-6) var(--sp-4);
+  place-items: start center;
+  padding: var(--sp-6) var(--mobile-gutter, var(--sp-4)) var(--sp-8);
+}
+
+/* The chooser has two short cards: centring it reads as a welcome, not a
+ * form. The two paths behind it are long, so they start at the top. */
+.mobile-shell .welcome-screen-phone:has(.welcome-paths) {
+  place-items: center;
+}
+
+.welcome-paths {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-block: var(--sp-4);
+}
+
+.welcome-path {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 64px;
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  color: var(--muted-foreground);
+  text-align: start;
+  transition: background-color 120ms var(--ease-out);
+}
+
+.welcome-path:active {
+  background: var(--muted);
+}
+
+.welcome-path-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.welcome-path-text strong {
+  color: var(--foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.welcome-path-text span {
+  font-size: var(--fs-md);
+}
+
+.welcome-back {
+  align-self: flex-start;
+  margin-inline-start: calc(var(--sp-2) * -1);
+}
+
+.welcome-screen-phone .account-settings[data-mode="restore"] {
+  text-align: start;
+}
+
+.carpe-diem-advanced {
+  margin-top: var(--sp-4);
+  text-align: start;
+}
+
+.carpe-diem-advanced summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+.carpe-diem-advanced > .settings-card {
+  margin-top: var(--sp-2);
 }
 
 .mobile-shell .welcome-card,

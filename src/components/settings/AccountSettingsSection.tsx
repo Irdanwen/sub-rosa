@@ -38,16 +38,41 @@ import {
 import { errorCode } from "../../lib/errors";
 import { isMobilePlatform, supportsNativePasskeys } from "../../lib/mobile";
 import { t, intlLocale } from "../../lib/i18n";
-import { carpeDiemGetSettings, openExternalUrl } from "../../lib/tauri";
+import {
+  type CarpeDiemSidecarStatusDto,
+  carpeDiemGetSettings,
+  openExternalUrl,
+} from "../../lib/tauri";
+import { SIDECAR_STATUS_EVENT } from "./CarpeDiemSettings";
 import { InlineNotice } from "../ui/InlineNotice";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import "./account-settings.css";
 
+/** How a restore from the vault is going, in the phone's first-run path. */
+type KeyRestore = "idle" | "restoring" | "restored" | "missing" | "failed";
+
 /** An optional, identical account boundary in both shells and first run.
- * Only the short-lived login is polled here. Durable synchronization is native. */
-export function AccountSettingsSection() {
+ * Only the short-lived login is polled here. Durable synchronization is native.
+ *
+ * `mode="restore"` is the phone's "I already use Sub Rosa" path at the key
+ * gate: sign in, open the vault, and the Carpe Diem key comes back by itself.
+ * Everything that only matters once the app runs (sync, devices, sharing,
+ * deletion) waits for Settings, so the way out is never below the fold. */
+export function AccountSettingsSection({
+  mode = "settings",
+  onUseKey,
+}: {
+  mode?: "settings" | "restore";
+  /** Restore mode: leave for the paste-a-key path. */
+  onUseKey?: () => void;
+} = {}) {
+  const restoring = mode === "restore";
   const [status, setStatus] = useState<AccountStatus | null>(null);
-  const [hasLocalKey, setHasLocalKey] = useState(false);
+  // `null` until the keychain answers: an unknown key must not trigger a
+  // restore that would replace one.
+  const [hasLocalKey, setHasLocalKey] = useState<boolean | null>(null);
+  const [keyRestore, setKeyRestore] = useState<KeyRestore>("idle");
+  const restoreAttempted = useRef(false);
   const [serverUrl, setServerUrl] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [login, setLogin] = useState<AccountLogin | null>(null);
@@ -224,13 +249,50 @@ export function AccountSettingsSection() {
     }
   }
 
-  // The last guided step asks whether this device has a Carpe Diem key of its
-  // own. Failing to read it only costs the step its certainty, never the panel.
+  // A guided step asks whether this device has a Carpe Diem key of its own.
+  // Failing to read it only costs the step its certainty, never the panel. It
+  // is followed afterwards, because a key restored or pasted elsewhere on the
+  // screen changes the answer.
   useEffect(() => {
     carpeDiemGetSettings()
-      .then((settings) => setHasLocalKey(settings.hasApiKey))
+      .then((settings) => {
+        if (mounted.current) setHasLocalKey(settings.hasApiKey);
+      })
       .catch(() => undefined);
+    const unlisten = listen<CarpeDiemSidecarStatusDto>(SIDECAR_STATUS_EVENT, (event) => {
+      if (mounted.current) setHasLocalKey(event.payload.hasApiKey);
+    }).catch(() => () => {});
+    return () => {
+      void unlisten.then((stop) => stop()).catch(() => {});
+    };
   }, []);
+
+  // Opening the vault is the out-of-band admission (ADR 0050); the key it
+  // holds follows without another question on a device that has none. The
+  // gate lifts on its own once the engine reports the key.
+  const restoreKey = useCallback(async () => {
+    setKeyRestore("restoring");
+    setError(null);
+    try {
+      await accountVaultRestoreCarpeDiem();
+      if (mounted.current) setKeyRestore("restored");
+    } catch (cause) {
+      if (!mounted.current) return;
+      if (errorCode(cause) === "vault_credential_missing") {
+        setKeyRestore("missing");
+      } else {
+        setKeyRestore("failed");
+        setError(accountError(cause));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!restoring || !status?.vault_unlocked || hasLocalKey !== false) return;
+    if (restoreAttempted.current) return;
+    restoreAttempted.current = true;
+    void restoreKey();
+  }, [restoring, status?.vault_unlocked, hasLocalKey, restoreKey]);
 
   function chosenDeviceName() {
     return deviceName.trim() || (isMobilePlatform() ? t("My iPhone") : t("My computer"));
@@ -286,6 +348,9 @@ export function AccountSettingsSection() {
         await accountDelete();
       } else if (confirmation.kind === "logout") {
         await accountLogout();
+        // Another account may hold another vault: its key gets its own try.
+        restoreAttempted.current = false;
+        setKeyRestore("idle");
       } else if (confirmation.kind === "restore-key") {
         await accountVaultRestoreCarpeDiem();
       } else if (confirmation.kind === "revoke") {
@@ -300,16 +365,177 @@ export function AccountSettingsSection() {
     if (!succeeded) throw new Error("account_action_failed");
   }
 
-  return (
-    <section className="settings-group account-settings" aria-labelledby="account-heading">
-      <h2 id="account-heading" className="settings-group-heading">
-        {t("Account and sync")}
-      </h2>
-      <p className="settings-group-description">
-        {t(
-          "Find your work and your Carpe Diem key on your other devices. Your account is optional; you can keep working locally.",
+  /** Both ways into a locked vault. Shared by Settings and the phone's
+   * first-run restore path, so the two can never drift apart. */
+  function renderVaultUnlock(current: AccountStatus) {
+    return (
+      <div className="account-form">
+        {/* Both ways in, in one place, with the one that types nothing
+            first. A recovery key pulled out of a password manager and
+            pasted is the moment it is most likely to leak, so the
+            order here is a security choice, not a layout one. */}
+        {current.vault_exists === true ? (
+          <>
+            <AccountPairingSection
+              unlocked={false}
+              serverUrl={current.server_url}
+              onUnlocked={refresh}
+            />
+            <p className="settings-row-description">{t("Or, if you have your recovery key:")}</p>
+          </>
+        ) : null}
+        <form
+          className="account-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const key = recoveryKey.trim();
+            setRecoveryKey("");
+            void run(() => accountVaultUnlock(key), t("Your vault is unlocked on this device."));
+          }}
+        >
+          <label className="account-field">
+            <span>{t("Recovery key")}</span>
+            <input
+              type="password"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={recoveryKey}
+              onChange={(event) => setRecoveryKey(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button
+            className="primary-action primary-solid"
+            type="submit"
+            disabled={busy || !recoveryKey.trim()}
+          >
+            {t("Unlock your vault")}
+          </button>
+        </form>
+        {current.vault_exists !== true ? (
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const kit = await accountVaultCreate();
+                setNewRecoveryKey(kit.recovery_key);
+              })
+            }
+          >
+            {t("Create a vault for this account")}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  /** The phone's first-run path once signed in: open the vault, and the key
+   * follows. Only what that needs is here; the rest waits for Settings. */
+  function renderRestore(current: AccountStatus) {
+    const email = current.account?.email;
+    return (
+      <>
+        <div className="settings-card account-card">
+          <div className="account-heading-row">
+            <IconShieldCheck size={20} />
+            <strong>{email}</strong>
+          </div>
+          <div className="account-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy || keyRestore === "restoring"}
+              onClick={() => setConfirmation({ kind: "logout" })}
+            >
+              {t("Use another account")}
+            </button>
+          </div>
+        </div>
+        {current.vault_unlocked ? (
+          <AccountCard title={t("Your Carpe Diem key")}>
+            {keyRestore === "missing" ? (
+              <InlineNotice
+                body={t(
+                  "Your vault does not hold a Carpe Diem key yet. On a device where Sub Rosa already works, open Settings, then Account, and choose Share this device's key. Then try again here.",
+                )}
+              />
+            ) : (
+              <p role="status" className="settings-row-description">
+                {keyRestore === "restored"
+                  ? t("Your key is back on this device. Sub Rosa is starting.")
+                  : keyRestore === "failed"
+                    ? t("Your key could not be brought back from your vault.")
+                    : t("Bringing your key back from your vault…")}
+              </p>
+            )}
+            {keyRestore === "missing" || keyRestore === "failed" ? (
+              <div className="account-actions">
+                <button
+                  type="button"
+                  className="primary-action primary-solid"
+                  onClick={() => void restoreKey()}
+                >
+                  {t("Try again")}
+                </button>
+                {onUseKey ? (
+                  <button type="button" className="btn btn-secondary" onClick={onUseKey}>
+                    {t("Paste a key instead")}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </AccountCard>
+        ) : current.vault_exists === false ? (
+          <AccountCard title={t("No vault on this account yet")}>
+            <p className="settings-row-description">
+              {t(
+                "There is no key to bring back yet. Start with your Carpe Diem key; you can create your vault later in Settings.",
+              )}
+            </p>
+            {onUseKey ? (
+              <div className="account-actions">
+                <button type="button" className="primary-action primary-solid" onClick={onUseKey}>
+                  {t("Start with a key")}
+                </button>
+              </div>
+            ) : null}
+          </AccountCard>
+        ) : (
+          <AccountCard title={t("Open your vault")}>
+            <p className="settings-row-description">
+              {t(
+                "Signing in alone cannot unlock your data. Use a device that is already open, or your recovery key.",
+              )}
+            </p>
+            {renderVaultUnlock(current)}
+          </AccountCard>
         )}
-      </p>
+      </>
+    );
+  }
+
+  return (
+    <section
+      className="settings-group account-settings"
+      data-mode={mode}
+      aria-labelledby={restoring ? undefined : "account-heading"}
+      aria-label={restoring ? t("Your Sub Rosa account") : undefined}
+    >
+      {restoring ? null : (
+        <>
+          <h2 id="account-heading" className="settings-group-heading">
+            {t("Account and sync")}
+          </h2>
+          <p className="settings-group-description">
+            {t(
+              "Find your work and your Carpe Diem key on your other devices. Your account is optional; you can keep working locally.",
+            )}
+          </p>
+        </>
+      )}
       {error && !confirmation ? (
         <InlineNotice role="alert" tone="destructive" body={error} />
       ) : null}
@@ -477,6 +703,8 @@ export function AccountSettingsSection() {
             )}
           </details>
         </div>
+      ) : restoring ? (
+        renderRestore(status)
       ) : (
         <>
           <AccountNextStep
@@ -486,7 +714,7 @@ export function AccountSettingsSection() {
               vaultUnlocked: status.vault_unlocked,
               recoveryConfirmed: status.recovery_confirmed,
               syncEnabled: status.sync_enabled,
-              hasLocalKey,
+              hasLocalKey: hasLocalKey ?? false,
             })}
             busy={busy}
             onRestoreKey={() => setConfirmation({ kind: "restore-key" })}
@@ -593,71 +821,7 @@ export function AccountSettingsSection() {
                 ) : null}
               </>
             ) : (
-              <div className="account-form">
-                {/* Both ways in, in one place, with the one that types nothing
-                    first. A recovery key pulled out of a password manager and
-                    pasted is the moment it is most likely to leak, so the
-                    order here is a security choice, not a layout one. */}
-                {status.vault_exists === true ? (
-                  <>
-                    <AccountPairingSection
-                      unlocked={false}
-                      serverUrl={status.server_url}
-                      onUnlocked={refresh}
-                    />
-                    <p className="settings-row-description">
-                      {t("Or, if you have your recovery key:")}
-                    </p>
-                  </>
-                ) : null}
-                <form
-                  className="account-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const key = recoveryKey.trim();
-                    setRecoveryKey("");
-                    void run(
-                      () => accountVaultUnlock(key),
-                      t("Your vault is unlocked on this device."),
-                    );
-                  }}
-                >
-                  <label className="account-field">
-                    <span>{t("Recovery key")}</span>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      value={recoveryKey}
-                      onChange={(event) => setRecoveryKey(event.target.value)}
-                      disabled={busy}
-                    />
-                  </label>
-                  <button
-                    className="primary-action primary-solid"
-                    type="submit"
-                    disabled={busy || !recoveryKey.trim()}
-                  >
-                    {t("Unlock your vault")}
-                  </button>
-                </form>
-                {status.vault_exists !== true ? (
-                  <button
-                    className="btn btn-secondary"
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => {
-                        const kit = await accountVaultCreate();
-                        setNewRecoveryKey(kit.recovery_key);
-                      })
-                    }
-                  >
-                    {t("Create a vault for this account")}
-                  </button>
-                ) : null}
-              </div>
+              renderVaultUnlock(status)
             )}
           </AccountCard>
 

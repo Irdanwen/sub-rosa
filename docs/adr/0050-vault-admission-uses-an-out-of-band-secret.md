@@ -57,3 +57,18 @@ rejection. It does not claim the stronger signed-device/epoch guarantees of the
 initial design. Keep these limitations in security documentation and require
 the stronger protocol before promising confidentiality from a revoked device
 colluding with a compromised server.
+
+## Addendum 2026-09-28: opening the vault brings the key to a device without one
+
+A person signed in on a new iPhone, opened their vault, and stayed at the key
+gate. Opening the vault stored the vault key and nothing else. The Carpe Diem
+key only came down from a button further down the panel, and the guided steps
+put it after sync consent, although restoring it decrypts one settings object
+and uploads nothing.
+
+Opening the vault is the out-of-band admission this ADR requires, so on the
+phone's first-run path the key now follows it with no further question, when
+the device holds no key of its own. A device that already has a key is never
+overwritten this way: replacing one stays the explicit, confirmed action in
+Settings. The guided steps now bring the key down before asking about sync.
+Signing in alone still grants nothing.
