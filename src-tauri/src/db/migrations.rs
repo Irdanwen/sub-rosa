@@ -392,6 +392,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     ensure_column(_pool, "account_file_uploads", "source_path", "TEXT").await?;
     ensure_column(_pool, "account_file_uploads", "source_format", "TEXT").await?;
     ensure_column(_pool, "account_sync_control", "last_sync_error", "TEXT").await?;
+    // 026_account_device_renewal.sql shipped without being wired in here, so
+    // no database ever took it and every device renewal failed on the missing
+    // column. It is folded into an idempotent `ensure_column` rather than
+    // replayed: the file is a bare ALTER, which a hand-patched database would
+    // refuse.
+    ensure_column(_pool, "account_sync_control", "renew_attempted_at", "TEXT").await?;
     replay(
         _pool,
         "027_assistants.sql",
@@ -444,6 +450,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         _pool,
         "035_autonomous_changes.sql",
         include_str!("../../migrations/035_autonomous_changes.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "036_outbox_compaction.sql",
+        include_str!("../../migrations/036_outbox_compaction.sql"),
     )
     .await?;
     crate::account::sync::install(_pool).await?;

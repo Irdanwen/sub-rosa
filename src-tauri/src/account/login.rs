@@ -76,24 +76,59 @@ pub async fn account_login_open(
     let row = query("SELECT device_id,account_id FROM account_sync_control WHERE id=1")
         .fetch_one(&pool)
         .await?;
-    let mut body = json!({"device_name":device_name,"challenge":challenge,"native":true});
+    let fresh = json!({"device_name":device_name,"challenge":challenge,"native":true});
+    let mut rebind = None;
     if let (Some(device), Some(account)) = (
         row.get::<Option<String>, _>("device_id"),
         row.get::<Option<String>, _>("account_id"),
     ) {
         if let Ok(Some(secret)) = get_secret(&base, &account, DEVICE) {
+            let mut body = fresh.clone();
             body["device_id"] = json!(device);
             body["device_secret"] = json!(secret.expose_str());
+            rebind = Some((account, body));
         }
     }
-    let result = request(
-        &base,
-        None,
-        reqwest::Method::POST,
-        "/api/v1/device-login",
-        Some(body),
-    )
-    .await?;
+    let result = match rebind {
+        Some((account, body)) => {
+            match request(
+                &base,
+                None,
+                reqwest::Method::POST,
+                "/api/v1/device-login",
+                Some(body),
+            )
+            .await
+            {
+                // The service refused the proof: the secret here belongs to
+                // another row, or that row was revoked. Reuse was a courtesy,
+                // never a condition, so the sign-in goes on as a new device
+                // instead of failing on a secret the person cannot see.
+                Err(failure) if failure.code == "account_not_connected" => {
+                    let _ = remove_secret(&base, &account, DEVICE);
+                    request(
+                        &base,
+                        None,
+                        reqwest::Method::POST,
+                        "/api/v1/device-login",
+                        Some(fresh),
+                    )
+                    .await?
+                }
+                other => other?,
+            }
+        }
+        None => {
+            request(
+                &base,
+                None,
+                reqwest::Method::POST,
+                "/api/v1/device-login",
+                Some(fresh),
+            )
+            .await?
+        }
+    };
     let login: NativeLogin =
         serde_json::from_value(result).map_err(|_| error("account_response_invalid"))?;
     // The start link has to come from the service we are talking to, and it has

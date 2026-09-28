@@ -401,14 +401,15 @@ async fn edit_and_outbox_are_atomic_and_disabled_sync_retains_edits() {
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(
-        query("SELECT count(*) AS n FROM account_sync_outbox")
-            .fetch_one(&pool)
-            .await
-            .unwrap()
-            .get::<i64, _>("n"),
-        2
-    );
+    // The newer snapshot supersedes the unsent one: the edit is retained, once.
+    let r = query("SELECT body FROM account_sync_outbox")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(r.len(), 1);
+    assert!(r[0]
+        .get::<String, _>("body")
+        .contains("Changed while offline"));
 }
 #[tokio::test]
 async fn inbound_apply_does_not_echo_and_never_starts_processing() {
@@ -647,4 +648,214 @@ async fn encrypted_input_cannot_write_unknown_columns_or_tables() {
     let body = verify(&s, &key, &c).unwrap();
     let mut tx = pool.begin().await.unwrap();
     assert!(apply(&mut tx, &c, &body).await.is_err());
+}
+
+async fn outbox_rows(pool: &SqlitePool, id: &str) -> Vec<sqlx_sqlite::SqliteRow> {
+    query("SELECT * FROM account_sync_outbox WHERE object_id=? ORDER BY sequence")
+        .bind(id)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_local_only_or_empty_update_sends_nothing() {
+    let pool = database().await;
+    let id = uuid::Uuid::new_v4().to_string();
+    query("INSERT INTO memories(id,text,created_at,updated_at) VALUES(?,'Likes tea','2026-07-01','2026-07-01')")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    query("DELETE FROM account_sync_outbox")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The embedding backfill: a column that never travels.
+    query("UPDATE memories SET embedding=x'00000000' WHERE id=?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    query("UPDATE memories SET text=text WHERE id=?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(outbox_rows(&pool, &id).await.is_empty());
+    query("UPDATE memories SET text='Likes green tea' WHERE id=?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let rows = outbox_rows(&pool, &id).await;
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].get::<String, _>("body").contains("Likes green tea"));
+}
+
+#[tokio::test]
+async fn checkpoints_leave_one_unsent_snapshot_but_never_drop_a_sealed_one() {
+    let pool = database().await;
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut conn = pool.acquire().await.unwrap();
+    insert_note(&mut conn, &id, "Draft").await;
+    drop(conn);
+    for n in 0..10 {
+        query("UPDATE notes SET title=? WHERE id=?")
+            .bind(format!("Draft {n}"))
+            .bind(&id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let rows = outbox_rows(&pool, &id).await;
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].get::<String, _>("body").contains("Draft 9"));
+    // Sealed: it may already be on the server under its operation id.
+    query("UPDATE account_sync_outbox SET ciphertext='sealed' WHERE object_id=?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // A resolution names the siblings someone acknowledged.
+    query("UPDATE notes SET title='Resolved' WHERE id=?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    query("UPDATE account_sync_outbox SET resolved_revisions='[\"sibling\"]' WHERE object_id=? AND ciphertext IS NULL")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    query("UPDATE notes SET title='After' WHERE id=?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let rows = outbox_rows(&pool, &id).await;
+    assert_eq!(rows.len(), 3);
+    assert_eq!(
+        rows[0].get::<Option<String>, _>("ciphertext").as_deref(),
+        Some("sealed")
+    );
+    assert_eq!(
+        rows[1].get::<String, _>("resolved_revisions"),
+        "[\"sibling\"]"
+    );
+    assert!(rows[2].get::<String, _>("body").contains("After"));
+}
+
+#[tokio::test]
+async fn outbox_compaction_keeps_the_last_unsent_snapshot_per_object() {
+    let pool = database().await;
+    let insert = |sequence: i64, object: &'static str, sealed: bool, resolved: &'static str| {
+        let pool = pool.clone();
+        async move {
+            query("INSERT INTO account_sync_outbox(sequence,operation_id,object_id,kind,body,ciphertext,resolved_revisions) VALUES(?,?,?,'artifact','{}',?,?)")
+                .bind(sequence)
+                .bind(uuid::Uuid::new_v4().to_string())
+                .bind(object)
+                .bind(sealed.then_some("sealed"))
+                .bind(resolved)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    insert(1, "a", true, "[]").await;
+    insert(2, "a", false, "[]").await;
+    insert(3, "a", false, "[\"r\"]").await;
+    insert(4, "a", false, "[]").await;
+    insert(5, "a", false, "[]").await;
+    insert(6, "b", false, "[]").await;
+    for statement in include_str!("../../migrations/036_outbox_compaction.sql")
+        .split(';')
+        .map(str::trim)
+        .filter(|statement| !statement.is_empty())
+    {
+        query(statement).execute(&pool).await.unwrap();
+    }
+    let left: Vec<i64> = query("SELECT sequence FROM account_sync_outbox ORDER BY sequence")
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| row.get("sequence"))
+        .collect();
+    assert_eq!(left, vec![1, 3, 5, 6]);
+}
+
+#[tokio::test]
+async fn an_identical_sibling_resolves_itself_and_a_different_one_waits() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = [5; 32];
+    let base_revision = uuid::Uuid::new_v4().to_string();
+    let mut revisions = Vec::new();
+    for title in ["Same", "Different"] {
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut conn = pool.acquire().await.unwrap();
+        insert_note(&mut conn, &id, title).await;
+        drop(conn);
+        let notes = table("notes").unwrap();
+        let body = query(&format!(
+            "SELECT {} AS body FROM notes WHERE id=?",
+            snapshot_body(notes, "notes.")
+        ))
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let mut remote: Value = serde_json::from_str(&body.get::<String, _>("body")).unwrap();
+        if title == "Different" {
+            remote["row"]["title"] = json!("Edited elsewhere");
+        }
+        let operation = uuid::Uuid::new_v4().to_string();
+        remote["v"] = json!(1);
+        remote["operation_id"] = json!(operation);
+        remote["parent_revision"] = json!(base_revision);
+        remote["resolved_revisions"] = json!([]);
+        remote["deleted"] = json!(false);
+        let cipher = crypto::seal(
+            &key,
+            &aad(&s, "note", &id),
+            &serde_json::to_vec(&remote).unwrap(),
+        )
+        .unwrap();
+        let local_revision = uuid::Uuid::new_v4().to_string();
+        query("INSERT INTO account_sync_heads(object_id,revision,kind) VALUES(?,?,'note')")
+            .bind(&id)
+            .bind(&local_revision)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let remote_revision = uuid::Uuid::new_v4().to_string();
+        query("INSERT INTO account_sync_conflicts(id,object_id,kind,ciphertext,parent_revision,operation_id,deleted,created_at) VALUES(?,?,'note',?,?,?,0,'now')")
+            .bind(&remote_revision).bind(&id).bind(cipher).bind(&base_revision).bind(&operation).execute(&pool).await.unwrap();
+        revisions.push(remote_revision);
+    }
+    query("DELETE FROM account_sync_outbox")
+        .execute(&pool)
+        .await
+        .unwrap();
+    auto_resolve_identical_conflicts(&pool, &s, &key).await;
+    let resolved = |id: String| {
+        let pool = pool.clone();
+        async move {
+            query("SELECT resolved FROM account_sync_conflicts WHERE id=?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .get::<i64, _>("resolved")
+        }
+    };
+    assert_eq!(resolved(revisions[0].clone()).await, 1);
+    assert_eq!(resolved(revisions[1].clone()).await, 0);
+    // The acknowledgement travels, so the other devices converge too.
+    let outbound = next_outbox(&pool, None).await.unwrap().unwrap();
+    let acknowledged: Vec<String> =
+        serde_json::from_str(&outbound.get::<String, _>("resolved_revisions")).unwrap();
+    assert_eq!(acknowledged, vec![revisions[0].clone()]);
 }

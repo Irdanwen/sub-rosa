@@ -1,4 +1,4 @@
-import { AccountConflictReview } from "./AccountConflictReview";
+import { AccountConflictList } from "./AccountConflictList";
 import { AccountPairingSection } from "./AccountPairingSection";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -763,16 +763,11 @@ export function AccountSettingsSection() {
                 )}
               />
             ) : null}
-            {conflicts.map((conflict) => (
-              <div className="account-device" key={conflict.id}>
-                <p className="settings-row-description">
-                  {t("Preserved version from {time}", {
-                    time: formatAccountDate(conflict.created_at),
-                  })}
-                </p>
-                <AccountConflictReview conflict={conflict} onResolved={refresh} />
-              </div>
-            ))}
+            <AccountConflictList
+              conflicts={conflicts}
+              onResolved={refresh}
+              formatDate={formatAccountDate}
+            />
           </AccountCard>
 
           <AccountCard title={t("Carpe Diem on your devices")}>
