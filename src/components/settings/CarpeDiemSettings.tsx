@@ -292,8 +292,19 @@ function CarpeDiemCache({ hasApiKey }: { hasApiKey: boolean }) {
  * Carpe Diem connection controls: base URL + API key + Test connection + the
  * rail-aware Payment panel, with live sidecar status. Reused in the Settings
  * tab and (compact) in onboarding.
+ *
+ * `firstRun` is the phone's paste-a-key path: the key comes first and the
+ * endpoint choice folds away under advanced settings. A new person should not
+ * have to understand two network rails before they can start; the default
+ * stays whatever the app already picked.
  */
-export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
+export function CarpeDiemSettings({
+  compact = false,
+  firstRun = false,
+}: {
+  compact?: boolean;
+  firstRun?: boolean;
+}) {
   const { settings, status, refresh, setSettings } = useCarpeDiem();
   const [keyDraft, setKeyDraft] = useState("");
   const [notice, setNotice] = useState<string>();
@@ -318,7 +329,9 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
         const next = await carpeDiemSetBaseUrl(url);
         setSettings(next);
         setNotice(
-          choice === "router" ? "Switched to the Router endpoint." : "Switched to the V1 endpoint.",
+          choice === "router"
+            ? t("Switched to the Router endpoint.")
+            : t("Switched to the V1 endpoint."),
         );
         setTest({ kind: "idle" });
       } catch (err) {
@@ -369,37 +382,40 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
   const hasApiKey = settings?.hasApiKey ?? false;
   const canSaveKey = keyDraft.trim().length > 0;
 
+  const endpointRow = (
+    <div className="settings-row">
+      <div className="settings-row-info">
+        <h3 className="settings-row-title">{t("Endpoint")}</h3>
+        <p className="settings-row-description">
+          {endpoint === "router"
+            ? t(
+                "Router: served by the cheapest market, so some requests may leave Carpe Diem's confidential network.",
+              )
+            : t(
+                "V1: every request stays inside Carpe Diem's confidential network, at standard price.",
+              )}
+        </p>
+      </div>
+      <div className="settings-row-control">
+        <SegmentedControl<EndpointChoice>
+          aria-label={t("Carpe Diem endpoint")}
+          value={endpoint}
+          onValueChange={(value) => void selectEndpoint(value)}
+          options={[
+            { value: "v1", label: "V1", ariaLabel: "V1 (private)" },
+            { value: "router", label: t("Router"), ariaLabel: "Router (best price)" },
+          ]}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className={compact ? "carpe-diem-connect" : "settings-group"}>
       {!compact ? <h2 className="settings-group-heading">{t("Carpe Diem")}</h2> : null}
       <div className="settings-card">
         <div className="settings-rows">
-          {/* Endpoint (V1 vs Router) */}
-          <div className="settings-row">
-            <div className="settings-row-info">
-              <h3 className="settings-row-title">{t("Endpoint")}</h3>
-              <p className="settings-row-description">
-                {endpoint === "router"
-                  ? t(
-                      "Router: served by the cheapest market, so some requests may leave Carpe Diem's confidential network.",
-                    )
-                  : t(
-                      "V1: every request stays inside Carpe Diem's confidential network, at standard price.",
-                    )}
-              </p>
-            </div>
-            <div className="settings-row-control">
-              <SegmentedControl<EndpointChoice>
-                aria-label={t("Carpe Diem endpoint")}
-                value={endpoint}
-                onValueChange={(value) => void selectEndpoint(value)}
-                options={[
-                  { value: "v1", label: "V1", ariaLabel: "V1 (private)" },
-                  { value: "router", label: t("Router"), ariaLabel: "Router (best price)" },
-                ]}
-              />
-            </div>
-          </div>
+          {firstRun ? null : endpointRow}
 
           {/* API key */}
           <div className="settings-row settings-row-venice-key">
@@ -490,6 +506,14 @@ export function CarpeDiemSettings({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
       </div>
+      {firstRun ? (
+        <details className="carpe-diem-advanced">
+          <summary>{t("Advanced settings")}</summary>
+          <div className="settings-card">
+            <div className="settings-rows">{endpointRow}</div>
+          </div>
+        </details>
+      ) : null}
       <CarpeDiemPayment hasApiKey={hasApiKey} />
       <CarpeDiemCache hasApiKey={hasApiKey} />
       {notice ? <p className="settings-row-description settings-row-substatus">{notice}</p> : null}

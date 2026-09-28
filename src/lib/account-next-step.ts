@@ -3,8 +3,8 @@
  * a person to work it out from a page of controls.
  *
  * Connecting an app is five moves: sign in, open or create the vault, confirm
- * recovery when creating it, consent to sync, then bring the Carpe Diem key to
- * a device that needs it. Existing devices skip completed moves.
+ * recovery when creating it, bring the Carpe Diem key to a device that needs
+ * it, then consent to sync. Existing devices skip completed moves.
  */
 export type AccountStepId =
   | "sign-in"
@@ -43,7 +43,11 @@ export function accountNextStep(state: {
   if (state.vaultExists !== true) return step("create-vault", 2);
   if (!state.vaultUnlocked) return step("open-vault", 2);
   if (!state.recoveryConfirmed) return step("confirm-recovery", 3);
-  if (!state.syncEnabled) return step("enable-sync", 4);
-  if (!state.hasLocalKey) return step("restore-key", 5);
+  // The key comes before sync consent: restoring it decrypts one settings
+  // object and uploads nothing, and a device without it cannot run at all.
+  // Asking for sync first left a new phone at the key gate with the way out
+  // below a consent form it had no reason to fill in.
+  if (!state.hasLocalKey) return step("restore-key", 4);
+  if (!state.syncEnabled) return step("enable-sync", 5);
   return step("done", ACCOUNT_STEP_TOTAL);
 }
