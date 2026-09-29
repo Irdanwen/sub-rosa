@@ -30,6 +30,7 @@ import { useAccountSyncUpdated } from "../../lib/account-sync-events";
 import { messageFromError } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import { useModalFocus } from "../../lib/modal-focus";
+import { openAssistantEditor, useAssistantsModalClosures } from "./launcher-store";
 import {
   listNotes,
   listVeniceModels,
@@ -47,13 +48,27 @@ export function AssistantsDialog({
   open,
   onClose,
   initialTaskId,
+  initialEditId,
+  initialCreate,
 }: {
   open: boolean;
   onClose: () => void;
   initialTaskId?: string;
+  /** Opens straight on this assistant's editor. */
+  initialEditId?: string;
+  /** Opens straight on the guided creator, seeded with this idea. */
+  initialCreate?: string;
 }) {
   if (!open) return null;
-  return <AssistantsSurface onClose={onClose} initialTaskId={initialTaskId} />;
+  return (
+    <AssistantsSurface
+      variant="modal"
+      onClose={onClose}
+      initialTaskId={initialTaskId}
+      initialEditId={initialEditId}
+      initialCreate={initialCreate}
+    />
+  );
 }
 
 /**
@@ -64,28 +79,50 @@ export function AssistantsDialog({
  * not a modal: nothing to close, no focus trap, and the tab bar stays.
  */
 export function AssistantsScreen({ initialTaskId }: { initialTaskId?: string }) {
-  return <AssistantsSurface embedded onClose={() => undefined} initialTaskId={initialTaskId} />;
+  return (
+    <AssistantsSurface variant="screen" onClose={() => undefined} initialTaskId={initialTaskId} />
+  );
+}
+
+/**
+ * The library and its conversations inside the desktop chat's right-hand
+ * panel, beside the main conversation. The panel is one column wide, so the
+ * creator and the editor, which need the room, open the full surface instead.
+ * Not modal: the conversation behind it stays usable.
+ */
+export function AssistantsPanelView({ initialTaskId }: { initialTaskId?: string }) {
+  return (
+    <AssistantsSurface variant="panel" onClose={() => undefined} initialTaskId={initialTaskId} />
+  );
 }
 
 type View = "library" | "create" | "edit" | "chat";
+/** A layer over the app, a tab's screen on the phone, or the chat's panel. */
+type Variant = "modal" | "screen" | "panel";
 type Tab = "general" | "instructions" | "references" | "tools";
 
 function AssistantsSurface({
   onClose,
   initialTaskId,
-  embedded = false,
+  initialEditId,
+  initialCreate,
+  variant,
 }: {
   onClose: () => void;
   initialTaskId?: string;
-  /** Rendered as a tab's screen rather than as a layer over the app. */
-  embedded?: boolean;
+  initialEditId?: string;
+  initialCreate?: string;
+  variant: Variant;
 }) {
+  const embedded = variant !== "modal";
+  const inPanel = variant === "panel";
+  const closures = useAssistantsModalClosures();
   const ref = useRef<HTMLDivElement>(null);
   const keyboardInset = useKeyboardInset();
   const [items, setItems] = useState<AssistantDefinition[]>([]);
   const [archive, setArchive] = useState<AssistantConversation[]>([]);
   const [initialTask, setInitialTask] = useState<AgentTaskDto | undefined>();
-  const [view, setView] = useState<View>("library");
+  const [view, setView] = useState<View>(initialCreate !== undefined ? "create" : "library");
   const [draft, setDraft] = useState<AssistantDefinition>(emptyAssistant);
   const [saved, setSaved] = useState<AssistantDefinition | null>(null);
   const [tab, setTab] = useState<Tab>("general");
@@ -94,7 +131,7 @@ function AssistantsSurface({
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<AssistantDefinition | null>(null);
   const [discardTarget, setDiscardTarget] = useState<"close" | "library" | null>(null);
-  const [need, setNeed] = useState("");
+  const [need, setNeed] = useState(initialCreate ?? "");
   const [questionIndex, setQuestionIndex] = useState(-1);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [freeAnswers, setFreeAnswers] = useState<Record<string, string>>({});
@@ -117,12 +154,26 @@ function AssistantsSurface({
     setItems(definitions);
     setArchive(conversations);
   }, []);
+  // Opened on one assistant's editor: wait for the library, then open it.
+  const pendingEdit = useRef(initialEditId);
+  // `closures` reloads the panel's library after the full surface closed:
+  // an assistant may have been created, edited or deleted there.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: closures is the trigger
   useEffect(() => {
-    if (view !== "library") return;
+    if (view !== "library" && !pendingEdit.current) return;
     void refresh()
       .catch((err) => setError(messageFromError(err)))
       .finally(() => setLoading(false));
-  }, [refresh, view]);
+  }, [refresh, view, closures]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once the library arrives
+  useEffect(() => {
+    const id = pendingEdit.current;
+    if (!id) return;
+    const item = items.find((entry) => entry.id === id);
+    if (!item) return;
+    pendingEdit.current = undefined;
+    edit(item);
+  }, [items]);
   useAccountSyncUpdated(refresh);
   useEffect(() => {
     void listVeniceModels("generation")
@@ -166,6 +217,10 @@ function AssistantsSurface({
     }
   }
   function edit(item: AssistantDefinition) {
+    if (inPanel) {
+      openAssistantEditor({ editId: item.id });
+      return;
+    }
     setDraft(item);
     setSaved(item);
     setInitialTask(undefined);
@@ -177,6 +232,10 @@ function AssistantsSurface({
     setDraft((previous) => ({ ...previous, ...value }));
   }
   function begin(prompt = "") {
+    if (inPanel) {
+      openAssistantEditor({ create: prompt });
+      return;
+    }
     setNeed(prompt);
     setQuestionIndex(-1);
     setAnswers({});
@@ -231,6 +290,7 @@ function AssistantsSurface({
       <div
         className="assistants-surface"
         data-view={view}
+        data-variant={variant}
         ref={ref}
         // A layer is a dialog; a tab's screen is not.
         {...(embedded
@@ -238,55 +298,62 @@ function AssistantsSurface({
           : { role: "dialog", "aria-modal": true, "aria-label": t("My assistants") })}
         tabIndex={-1}
       >
-        <header className="assistants-header">
-          <div className="assistants-header-start">
-            {view !== "library" && (
-              <button type="button" className="btn btn-secondary" disabled={busy} onClick={back}>
-                {t("My assistants")}
-              </button>
-            )}
-            <strong>
-              {view === "library"
-                ? t("My assistants")
-                : view === "create"
-                  ? t("Create your assistant")
-                  : draft.name || t("New assistant")}
-            </strong>
-          </div>
-          <div className="assistant-actions">
-            {view === "edit" && (
-              <>
+        {/* In the panel the tabs above name the library; a header is only
+            needed to get back from a conversation. */}
+        {inPanel && view === "library" ? null : (
+          <header className="assistants-header">
+            <div className="assistants-header-start">
+              {view !== "library" && (
+                <button type="button" className="btn btn-secondary" disabled={busy} onClick={back}>
+                  {t("My assistants")}
+                </button>
+              )}
+              {/* In the panel the conversation's own header names the assistant. */}
+              {inPanel ? null : (
+                <strong>
+                  {view === "library"
+                    ? t("My assistants")
+                    : view === "create"
+                      ? t("Create your assistant")
+                      : draft.name || t("New assistant")}
+                </strong>
+              )}
+            </div>
+            <div className="assistant-actions">
+              {view === "edit" && (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={!saved || dirty || busy}
+                    onClick={() => setPreview((value) => !value)}
+                  >
+                    {preview ? t("Hide preview") : t("Preview")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={busy || !draft.name.trim() || !draft.instructions.trim() || !dirty}
+                    onClick={() => void save()}
+                  >
+                    {busy ? t("Saving…") : t("Save")}
+                  </button>
+                </>
+              )}
+              {embedded ? null : (
                 <button
                   type="button"
-                  className="btn btn-secondary"
-                  disabled={!saved || dirty || busy}
-                  onClick={() => setPreview((value) => !value)}
+                  className="assistant-icon-button"
+                  disabled={busy}
+                  aria-label={t("Close")}
+                  onClick={close}
                 >
-                  {preview ? t("Hide preview") : t("Preview")}
+                  <IconCrossMedium size={20} />
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={busy || !draft.name.trim() || !draft.instructions.trim() || !dirty}
-                  onClick={() => void save()}
-                >
-                  {busy ? t("Saving…") : t("Save")}
-                </button>
-              </>
-            )}
-            {embedded ? null : (
-              <button
-                type="button"
-                className="assistant-icon-button"
-                disabled={busy}
-                aria-label={t("Close")}
-                onClick={close}
-              >
-                <IconCrossMedium size={20} />
-              </button>
-            )}
-          </div>
-        </header>
+              )}
+            </div>
+          </header>
+        )}
         {error && (
           <div className="assistant-error" role="alert">
             {error}

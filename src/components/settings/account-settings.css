@@ -148,12 +148,6 @@
   text-align: start;
   cursor: pointer;
 }
-.portable-entry {
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--sp-3) var(--sp-6);
-  flex-shrink: 0;
-}
 
 /* The guided step sits above the panel and says which control matters now. */
 .account-next-step {

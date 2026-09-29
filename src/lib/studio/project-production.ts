@@ -1,9 +1,10 @@
 import { t } from "../i18n";
 import { carpeDiemGetCredits } from "../tauri";
+import { defaultEditModel, imageEditModels } from "./catalog";
 import type { MediaCatalog } from "./types";
 import type { ProjectDocument, ProjectShot } from "./projects";
-import { bibleNameInUse } from "./projects";
-import { portraitPrompt } from "./bible/portrait";
+import { bibleNameInUse, referencePromptOf, sheetSource } from "./projects";
+import { pickPortraitModel, portraitPrompt } from "./bible/portrait";
 import type { BibleRole } from "./bible/types";
 import type { ProjectBibleEntry } from "./projects";
 import { compileShotList } from "./workflow/compile";
@@ -110,8 +111,23 @@ export function compileProject(
   return compileProjectWithNotes(name, document, catalog, onlyShotId).workflow;
 }
 
-export function compileOpeningImage(shot: ProjectShot, name: string): Workflow {
-  if (!shot.imageModelId || !shot.imagePrompt.trim())
+/** The edit model an opening image is composed with: the shot's choice while
+ * it is still offered, the app's automatic pick otherwise. */
+export function openingImageModel(shot: ProjectShot, catalog: MediaCatalog) {
+  return (
+    imageEditModels(catalog).find((candidate) => candidate.id === shot.imageModelId) ??
+    defaultEditModel(catalog)
+  );
+}
+
+export function compileOpeningImage(
+  shot: ProjectShot,
+  name: string,
+  catalog: MediaCatalog,
+  aspectRatio?: string,
+): Workflow {
+  const model = openingImageModel(shot, catalog);
+  if (!model || !shot.imagePrompt.trim())
     throw new Error(t("Choose an image model and describe your opening image."));
   if (!shot.imageReferenceIds.length || shot.imageReferenceIds.length > 3)
     throw new Error(t("Choose one to three reference images."));
@@ -128,7 +144,8 @@ export function compileOpeningImage(shot: ProjectShot, name: string): Workflow {
     type: "imageEdit",
     label: shot.title,
     position: { x: 300, y: 0 },
-    params: { model: shot.imageModelId, prompt: shot.imagePrompt },
+    // The frame opens the shot, so it comes out in the project's format.
+    params: { model: model.id, prompt: shot.imagePrompt, aspectRatio: aspectRatio ?? "" },
   });
   return {
     id: crypto.randomUUID(),
@@ -155,12 +172,50 @@ export function compileBibleReference(
   name: string,
 ): Workflow {
   if (role === "voice") throw new Error(t("Choose an image reference role."));
+  const prompt = referencePromptOf(entry, role)?.trim() || portraitPrompt(entry, role);
+  const target = `bible-${entry.id}-${role}`;
+  const base = { id: crypto.randomUUID(), name, createdAt: Date.now(), updatedAt: Date.now() };
+  // A sheet drawn from the portrait keeps the face the person already chose;
+  // one drawn from text would be a new face that happens to match the traits.
+  const portrait = role === "sheet" ? sheetSource(entry) : undefined;
+  if (portrait) {
+    const editModel =
+      imageEditModels(catalog).find((candidate) => candidate.id === entry.editModelId) ??
+      defaultEditModel(catalog);
+    if (!editModel) throw new Error(t("Choose an available image model for this reference."));
+    const source = `${target}-source`;
+    return {
+      ...base,
+      nodes: [
+        {
+          id: source,
+          type: "asset",
+          label: "",
+          position: { x: 0, y: 0 },
+          params: { artifactId: portrait },
+        },
+        {
+          id: target,
+          type: "imageEdit",
+          label: entry.name,
+          position: { x: 300, y: 0 },
+          params: {
+            model: editModel.id,
+            prompt: `Keep the identity of the person in image 1 exactly: the same face, hair, build and outfit. ${prompt}`,
+            bibleEntryId: entry.id,
+            bibleRole: role,
+          },
+        },
+      ],
+      edges: [{ id: `${source}-${target}`, source, target, targetPort: "images" }],
+    };
+  }
+  const modelId = entry.imageModelId || pickPortraitModel(catalog)?.id;
   const model = catalog.models.find(
     (candidate) =>
-      candidate.id === entry.imageModelId && candidate.mediaType === "image" && !candidate.offline,
+      candidate.id === modelId && candidate.mediaType === "image" && !candidate.offline,
   );
   if (!model) throw new Error(t("Choose an available image model for this reference."));
-  const prompt = entry.imagePrompt?.trim() || portraitPrompt(entry, role);
   const ratio = entry.kind === "location" ? "16:9" : "1:1";
   const ratios = model.constraints?.aspectRatios ?? model.constraints?.aspect_ratios;
   const params = {
@@ -171,20 +226,9 @@ export function compileBibleReference(
     bibleRole: role,
   };
   return {
-    id: crypto.randomUUID(),
-    name,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    ...base,
     edges: [],
-    nodes: [
-      {
-        id: `bible-${entry.id}-${role}`,
-        type: "image",
-        label: entry.name,
-        position: { x: 0, y: 0 },
-        params,
-      },
-    ],
+    nodes: [{ id: target, type: "image", label: entry.name, position: { x: 0, y: 0 }, params }],
   };
 }
 

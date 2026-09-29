@@ -188,19 +188,19 @@ describe("shot editing", () => {
         onImage={onImage}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add reference image" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add from gallery" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose gallery fixture" }));
     expect(fixtures.onChange).not.toHaveBeenCalled();
     fixtures.picked = "image-3";
-    fireEvent.click(screen.getByRole("button", { name: "Add reference image" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add from gallery" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose gallery fixture" }));
     expect(fixtures.onChange.mock.lastCall?.[0][0].imageReferenceIds).toEqual([
       "image-1",
       "image-2",
       "image-3",
     ]);
-    expect(screen.getByRole("button", { name: "Add reference image" })).toBeDisabled();
-    fireEvent.change(screen.getByRole("textbox", { name: "Image prompt" }), {
+    expect(screen.getByRole("button", { name: "Add from gallery" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Opening image prompt" }), {
       target: { value: "Compose a wide shot" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Quote opening image" }));
@@ -220,7 +220,7 @@ describe("shot editing", () => {
       />,
     );
     expect(screen.getByRole("heading", { name: "Opening image" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Add source image" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add from gallery" }));
     fixtures.picked = "image-2";
     fireEvent.click(screen.getByRole("button", { name: "Choose gallery fixture" }));
     expect(fixtures.onChange.mock.lastCall?.[0][0].imageReferenceIds).toEqual(["image-2"]);
@@ -252,9 +252,110 @@ describe("shot editing", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Quote opening image" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Add reference image" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add from gallery" })).toBeDisabled();
     expect(screen.getAllByRole("img")).toHaveLength(4);
     expect(fixtures.onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("composing an opening image", () => {
+  function withBible(patch: Partial<ProjectShot> = {}): ProjectDocument {
+    const document = shotDocument(patch);
+    document.bible = [
+      {
+        ...bibleEntry("character"),
+        id: "marie",
+        name: "Marie",
+        refs: [
+          {
+            id: "p",
+            entryId: "marie",
+            artifactId: "image-1",
+            role: "portrait",
+            label: "",
+            ordinal: 0,
+          },
+          {
+            id: "s",
+            entryId: "marie",
+            artifactId: "image-2",
+            role: "sheet",
+            label: "",
+            ordinal: 1,
+          },
+        ],
+      },
+      {
+        ...bibleEntry("location"),
+        id: "flat",
+        name: "The flat",
+        refs: [
+          { id: "w", entryId: "flat", artifactId: "image-3", role: "wide", label: "", ordinal: 0 },
+        ],
+      },
+    ];
+    return document;
+  }
+
+  it("is offered to a text to video shot, and a character brings its sheet", () => {
+    render(<Shots initial={withBible()} />);
+    const bible = screen.getByRole("combobox", { name: "Add from the bible" }) as HTMLSelectElement;
+    expect(Array.from(bible.options, (option) => option.value)).toEqual(["", "image-2", "image-3"]);
+    fireEvent.change(bible, { target: { value: "image-2" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Add from the bible" }), {
+      target: { value: "image-3" },
+    });
+    expect(fixtures.onChange.mock.lastCall?.[0][0].imageReferenceIds).toEqual([
+      "image-2",
+      "image-3",
+    ]);
+    expect(screen.getByText("Image 1")).toBeInTheDocument();
+    expect(screen.getByText("Image 2")).toBeInTheDocument();
+  });
+
+  it("moves a text shot to image to video when a composed frame is chosen", () => {
+    render(
+      <Shots
+        initial={withBible({
+          mode: "text",
+          modelId: "video-text",
+          imageReferenceIds: ["image-2", "image-3"],
+          imageCandidates: ["image-4"],
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Start the shot from this image/ }));
+    expect(fixtures.onChange.mock.lastCall?.[0][0]).toMatchObject({
+      openingArtifactId: "image-4",
+      mode: "image",
+      modelId: undefined,
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("switched to image to video");
+  });
+
+  it("keeps an image shot in its mode when a frame is chosen", () => {
+    render(
+      <Shots
+        initial={withBible({
+          mode: "image",
+          modelId: "video-image",
+          imageReferenceIds: ["image-2"],
+          imageCandidates: ["image-4"],
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Use this image/ }));
+    const shot = fixtures.onChange.mock.lastCall?.[0][0];
+    expect(shot).toMatchObject({
+      openingArtifactId: "image-4",
+      mode: "image",
+      modelId: "video-image",
+    });
+  });
+
+  it("is not offered to a shot that continues the previous one", () => {
+    render(<Shots initial={withBible({ mode: "continuation" })} />);
+    expect(screen.queryByText("Compose the opening image")).toBeNull();
   });
 });
 

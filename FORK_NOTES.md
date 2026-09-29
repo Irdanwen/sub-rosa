@@ -773,7 +773,10 @@ section « Writing a note (fork) » de [CONTEXT.md](CONTEXT.md).
 | `src/components/note-editor/useAnchoredPanel.ts` | mesure, calage aux bords, bascule sous la sélection quand il n'y a pas la place au-dessus |
 | `src/components/note-editor/RewritePanel.tsx` | la **révision** : ce que le modèle propose, tant que personne n'a cliqué |
 | `src/lib/note-rewrite.ts` | le hook qui pilote un run (deltas, annulation, erreurs) et **n'écrit rien** |
-| `src-tauri/src/note_ai/` | `mod.rs` + `prompts.rs` : sept réécritures, streaming, annulation, bornes |
+| `src-tauri/src/note_ai/` | `mod.rs` + `prompts.rs` : sept réécritures, validation, bornes ; le run lui-même passe par `rewrite_stream.rs` |
+| `src-tauri/src/rewrite_stream.rs` | (2026-09-29) le run partagé par `note_ai` et `studio_ai` : registre `Notify` par id, streaming, annulation, réponse vide = erreur, clôture ``` retirée. Les erreurs sont des fonctions du `Channel` pour garder des `AppError::new("code", "phrase")` littéraux que `rust-messages.mjs` sait collecter |
+| `src-tauri/src/studio_ai/` | (2026-09-29, addendum ADR-0038) « Améliorer avec l'IA » du Studio : scénario (4 intentions), prompt vidéo d'un plan, prompt d'image de la Bible, prompt de composition. Le contexte (modèle cible, limites, mode, entrées de la Bible) fait l'optimisation ; les guides par famille sont dans `prompts.rs` (`STUDIO_AI_PROMPT_VERSION`) |
+| `src/lib/studio/studio-rewrite.ts`, `src/components/studio/AiRewrite.tsx` | le hook (n'écrit rien) et le champ Proposition · Accepter · Réessayer · Ignorer · Annuler, posé sous Scénario, Prompt vidéo et Prompt de l'image |
 | `note-lab.html`, `src/dev/note-lab.tsx` | banc d'essai : monte l'éditeur seul, sans sidecar, avec un faux pont Tauri. **Pas une entrée de build** (`vite.config.ts` liste 4 HTML, celui-ci n'y est pas) |
 | `src/test/note-markdown.test.ts` | la propriété : un document survit à l'aller-retour (corpus + 1000 docs générés) |
 | `src/test/note-{preview,toolbar,rewrite}.test.tsx` | le câblage, la surface d'écriture, la révision |
@@ -783,7 +786,7 @@ section « Writing a note (fork) » de [CONTEXT.md](CONTEXT.md).
 | Fichier | Modification |
 | --- | --- |
 | `src/components/note-editor/NotePreview.tsx` | passe par `note-markdown` et `noteEditorExtensions`, porte la barre, la palette et le panneau ; l'ancien convertisseur est supprimé |
-| `src-tauri/src/lib.rs` | `note_ai` + `note_rewrite` / `cancel_note_rewrite` dans les **deux** listes |
+| `src-tauri/src/lib.rs` | `note_ai` + `note_rewrite` / `cancel_note_rewrite`, puis `rewrite_stream`, `studio_ai` + `studio_rewrite` / `cancel_studio_rewrite`, dans les **deux** listes |
 | `src/lib/tauri.ts` | `NOTE_REWRITE_EVENT`, `RewriteKind`, `noteRewrite`, `cancelNoteRewrite`, `MAX_REWRITE_CHARS` |
 | `src/styles/app.css` | hiérarchie des titres, listes numérotées, cases à cocher, surlignage, citation, code, filet, liens ; barre, palette, menu, panneau |
 | `src/styles/tokens.css` | `--note-highlight` (clair + sombre) |
@@ -1300,6 +1303,53 @@ l'adresse du VPS).
   `import_shared_item` renvoie `kind: "platform"` avec l'`url`, et le shell ouvre
   la feuille Importer dessus. Même traitement pour `subrosa://import?url=`
   (prévisualisation d'abord).
+
+## La planche personnage 3×3 (2026-09-29, ADR-0066)
+
+Un rôle de référence `sheet` pour les personnages : neuf vues d'une même personne
+dans une grille fixe. Elle sert à composer les premières images et donne un
+portrait et un profil à découper. Elle n'est **jamais** envoyée à un modèle vidéo.
+
+| Fichier | Rôle |
+| --- | --- |
+| `src/lib/studio/bible/sheet.ts` | le découpage : `gridBounds` retire la marge unie que le modèle dessine autour de la grille, `sheetCell` coupe en tiers avec un retrait (5 %), `cutSheet` sort le portrait (case 3) et le profil (case 5) en PNG depuis une data URI (canvas jamais « tainted ») |
+| `src/lib/studio/bible/{types,portrait}.ts` | le rôle `sheet` (personnages seulement), `SHEET_LAYOUT` : le gabarit que le découpeur lit |
+| `src/lib/studio/project-production.ts` | `compileBibleReference` : une planche part du portrait via un modèle d'édition (`imageEdit` + nœud `asset`) quand il y en a un, sinon du texte, en 1:1 |
+| `src/lib/studio/projects.ts` | `imagePrompts` par rôle (l'ancien `imagePrompt` vaut pour tous les rôles sauf la planche), `editModelId`, `referencePromptOf`, `sheetSource` |
+| `src/components/studio/ProjectBible.tsx` | note explicative, choix du modèle d'édition, bouton « Découper le portrait et le profil » sur une planche |
+| `src-tauri/src/bible.rs` | `ROLES` accepte `sheet`, pour que la bibliothèque globale ne refuse pas une planche copiée |
+
+Pièges :
+
+- **Trois endroits décrivent la même grille** : `SHEET_LAYOUT`, `SHEET_CUTS` et
+  `studio_ai::prompts::SHEET_RULE`. Qui en change un change les trois.
+- **Le découpage est positionnel.** Testé sur une vraie planche : la grille est
+  respectée, mais il y a une marge autour. Sans `gridBounds`, les tiers
+  tombaient sur les bordures.
+- `referenceStack` n'énumère pas `sheet` : c'est ce qui la tient hors de la
+  vidéo. Ne pas l'ajouter « parce que c'est la meilleure ancre ».
+
+## Composer la première image d'un plan (2026-09-29)
+
+Le compositeur d'image de départ existait, mais seulement en image vers vidéo et
+en référence. Il est maintenant dans tous les modes sauf « Suite du plan
+précédent ».
+
+| Fichier | Rôle |
+| --- | --- |
+| `src/components/studio/OpeningComposer.tsx` | 3 emplacements numérotés (« Image 1… »), remplis depuis la Bible (`composeReference` : planche > portrait > profil pour un personnage, plan large pour un lieu, détail pour un objet) ou la galerie ; réordonnables ; prompt rédigé par l'IA (`studio_rewrite`, `kind: composition`) ; choisir une image fait passer un plan texte (ou référence sans image de départ) en image vers vidéo, et l'annonce |
+| `src/lib/studio/edit-image.ts` | `composeImages(…, { aspectRatio })` : un format passe par `/image/multi-edit`, **même pour une seule image** |
+| `src/lib/studio/workflow/{schema,engine}.ts` | paramètre `aspectRatio` du nœud `imageEdit`, envoyé en `aspect_ratio` sur la file multi-edit |
+| `src/lib/studio/project-production.ts` | `compileOpeningImage(shot, name, catalog, aspectRatio)` et `openingImageModel` : le modèle d'édition automatique par défaut, au format du projet |
+
+Pièges :
+
+- **`aspect_ratio` vérifié en réel (2026-09-29)** : `seedream-v5-lite-edit` via
+  `/image/multi-edit/queue`, une planche carrée en image 1 et un décor 16:9 → une
+  sortie en 2672×1504 (16:9). `/image/edit` suit sa seule entrée, d'où le détour
+  par multi-edit dès qu'un format est demandé.
+- `seedream-v5-lite-edit` refuse le chemin synchrone (`409 MODEL_REQUIRES_ASYNC`) :
+  la composition passe toujours par la file, ce que `nativeQueuedImage` fait déjà.
 
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
