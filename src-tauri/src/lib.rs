@@ -74,6 +74,7 @@ pub mod places;
 pub mod providers;
 pub mod redacted;
 pub mod reflex;
+pub mod rewrite_stream;
 pub mod share_inbox;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
@@ -90,6 +91,7 @@ pub mod updates;
 pub mod bible;
 pub mod shotlist;
 pub mod studio_actions;
+pub mod studio_ai;
 pub mod studio_project;
 pub mod timeline;
 pub mod win_console;
@@ -433,6 +435,8 @@ pub fn run() {
             longform::forget_note_summary,
             note_ai::note_rewrite,
             note_ai::cancel_note_rewrite,
+            studio_ai::studio_rewrite,
+            studio_ai::cancel_studio_rewrite,
             council::council_plan,
             council::council_convene,
             council::council_cycle,
@@ -729,6 +733,8 @@ pub fn run() {
         longform::forget_note_summary,
         note_ai::note_rewrite,
         note_ai::cancel_note_rewrite,
+        studio_ai::studio_rewrite,
+        studio_ai::cancel_studio_rewrite,
         timeline::export_timeline_bundle,
         bible::list_bible_entries,
         bible::save_bible_entry,

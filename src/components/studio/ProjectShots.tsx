@@ -11,7 +11,9 @@ import {
   type ProjectDocument,
   type ProjectShot,
 } from "../../lib/studio/projects";
+import { rewriteTargetModel } from "../../lib/studio/studio-rewrite";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
+import { AiRewrite } from "./AiRewrite";
 import { GalleryPicker } from "./GalleryPicker";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 
@@ -23,6 +25,7 @@ export function ProjectShots({
   onGenerate,
   onImage,
   onBible,
+  writingModelId,
   busy,
 }: {
   document: ProjectDocument;
@@ -32,6 +35,8 @@ export function ProjectShots({
   onGenerate: (id: string) => void;
   onImage: (id: string) => void;
   onBible: () => void;
+  /** The text model the AI rewrites write with. The app's when absent. */
+  writingModelId?: string;
   busy: boolean;
 }) {
   const [selected, setSelected] = useState(document.shots[0]?.id);
@@ -303,16 +308,6 @@ export function ProjectShots({
               </p>
             ) : null}
             <fieldset disabled={busy}>
-              <label className="project-field">
-                {t("Video prompt")}
-                <textarea
-                  aria-label={t("Video prompt")}
-                  rows={5}
-                  value={shot.prompt ?? shot.action}
-                  onChange={(event) => update({ prompt: event.target.value })}
-                  placeholder={t("Describe the action and camera movement")}
-                />
-              </label>
               <div className="project-two-columns">
                 <label className="project-field">
                   {t("Action")}
@@ -349,6 +344,72 @@ export function ProjectShots({
                   />
                 </label>
               </details>
+              <label className="project-field">
+                {t("Video prompt")}
+                <textarea
+                  aria-label={t("Video prompt")}
+                  rows={5}
+                  value={shot.prompt ?? shot.action}
+                  onChange={(event) => update({ prompt: event.target.value })}
+                  placeholder={t("Describe the action and camera movement")}
+                />
+              </label>
+              {shot.promptOptimizedFor ? (
+                shot.promptOptimizedFor === model?.id ? (
+                  <p className="project-badge">
+                    {t("Optimized for {model}", { model: model.name })}
+                  </p>
+                ) : (
+                  <p className="project-warning">
+                    {t("This prompt was written for {previous}. Improve it again for {model}.", {
+                      previous:
+                        catalog.models.find((item) => item.id === shot.promptOptimizedFor)?.name ??
+                        shot.promptOptimizedFor,
+                      model: model?.name ?? t("the selected model"),
+                    })}
+                  </p>
+                )
+              ) : null}
+              <AiRewrite
+                label={t("Video prompt")}
+                value={shot.prompt ?? ""}
+                disabled={busy}
+                onAccept={(prompt) =>
+                  update({ prompt, promptOptimizedFor: prompt ? model?.id : undefined })
+                }
+                hint={t("Written in English, the language these video models follow best.")}
+                request={() =>
+                  shot.prompt?.trim() || shot.action.trim() || shot.title.trim()
+                    ? {
+                        kind: "shotPrompt",
+                        text: shot.prompt ?? "",
+                        modelId: writingModelId,
+                        context: {
+                          targetModel: rewriteTargetModel(model),
+                          mode,
+                          title: shot.title,
+                          action: shot.action,
+                          camera: shot.camera,
+                          speaker: shot.speaker,
+                          dialogue: shot.dialogue,
+                          duration: shot.duration ? String(shot.duration) : undefined,
+                          aspectRatio: document.settings.aspectRatio,
+                          entries: document.bible
+                            .filter((entry) =>
+                              entry.kind === "location"
+                                ? entry.name === shot.location
+                                : shot.characters.includes(entry.name),
+                            )
+                            .map((entry) => ({
+                              name: entry.name,
+                              kind: entry.kind,
+                              traits: entry.traits,
+                            })),
+                        },
+                      }
+                    : undefined
+                }
+              />
             </fieldset>
             <div className="project-actions">
               <h3>{t("Takes")}</h3>

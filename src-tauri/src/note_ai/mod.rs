@@ -28,16 +28,36 @@
 pub mod prompts;
 
 use crate::domain::types::AppError;
-use crate::june_api;
+use crate::rewrite_stream::{self, Channel, Completion};
 use prompts::NOTE_AI_PROMPT_VERSION;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
-use tauri::{AppHandle, Emitter};
-use tokio::sync::Notify;
+use tauri::AppHandle;
 
 /// Emitted as a rewrite arrives, so the panel can show it being written.
 pub const NOTE_REWRITE_EVENT: &str = "june://note-rewrite";
+
+const CHANNEL: Channel = Channel {
+    event: NOTE_REWRITE_EVENT,
+    already_running: || {
+        AppError::new(
+            "note_rewrite_already_running",
+            "That rewrite is already running.",
+        )
+    },
+    cancelled: || AppError::new("note_rewrite_cancelled", "Rewrite stopped."),
+    empty_reply: || {
+        AppError::new(
+            "note_rewrite_empty_reply",
+            "The model returned nothing to put back.",
+        )
+    },
+    failed: |status| {
+        AppError::new(
+            "note_rewrite_failed",
+            format!("The model returned status {status}."),
+        )
+    },
+};
 
 /// Ceiling on a selection, in characters.
 ///
@@ -104,53 +124,6 @@ pub struct RewriteResult {
     pub prompt_version: &'static str,
 }
 
-/// The rewrites running in this process right now, each with the handle that
-/// stops it.
-///
-/// A `Notify` rather than a flag the loop polls: a flag is only read between
-/// chunks, so cancelling a stream that has stalled would do nothing until the
-/// provider sent something — which is exactly when a person reaches for the
-/// stop button. The run selects on it, so cancelling lands immediately, and
-/// dropping the response closes the connection.
-///
-/// This is also the run registry, which is why a second rewrite under the same
-/// id is refused rather than raced.
-static RUNNING: std::sync::LazyLock<Mutex<HashMap<String, Arc<Notify>>>> =
-    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
-
-fn running() -> MutexGuard<'static, HashMap<String, Arc<Notify>>> {
-    RUNNING.lock().unwrap_or_else(|poison| poison.into_inner())
-}
-
-/// RAII claim over one request id. Whatever ends the run — success, failure,
-/// cancellation — releases it, so the id can be used again.
-struct RunClaim {
-    request_id: String,
-    stop: Arc<Notify>,
-}
-
-impl RunClaim {
-    /// `None` when a rewrite is already running under this id.
-    fn take(request_id: &str) -> Option<Self> {
-        let stop = Arc::new(Notify::new());
-        let mut running = running();
-        if running.contains_key(request_id) {
-            return None;
-        }
-        running.insert(request_id.to_string(), Arc::clone(&stop));
-        Some(Self {
-            request_id: request_id.to_string(),
-            stop,
-        })
-    }
-}
-
-impl Drop for RunClaim {
-    fn drop(&mut self) {
-        running().remove(&self.request_id);
-    }
-}
-
 fn validate(request: &RewriteRequest) -> Result<&str, AppError> {
     let text = request.text.trim_matches(|c: char| c == '\u{feff}');
     if text.trim().is_empty() {
@@ -184,149 +157,34 @@ fn validate(request: &RewriteRequest) -> Result<&str, AppError> {
     Ok(text)
 }
 
-fn emit(app: &AppHandle, request_id: &str, phase: &str, text: Option<&str>) {
-    let _ = app.emit(
-        NOTE_REWRITE_EVENT,
-        serde_json::json!({ "requestId": request_id, "phase": phase, "text": text }),
-    );
-}
-
 /// Rewrite a passage. Returns the whole replacement; the deltas that arrived
 /// on the way are a preview, not the answer.
 pub async fn rewrite(app: &AppHandle, request: RewriteRequest) -> Result<RewriteResult, AppError> {
     let text = validate(&request)?.to_string();
-    let Some(claim) = RunClaim::take(&request.request_id) else {
-        return Err(AppError::new(
-            "note_rewrite_already_running",
-            "That rewrite is already running.",
-        ));
-    };
-
     let user = prompts::user_message(
         request.kind,
         &text,
         request.target_language.as_deref(),
         request.instruction.as_deref(),
     );
-
-    emit(app, &request.request_id, "started", None);
-    let outcome = stream_rewrite(
+    let text = rewrite_stream::run(
         app,
+        CHANNEL,
         &request.request_id,
-        &user,
-        text.chars().count(),
-        &claim,
+        Completion {
+            model: crate::providers::generation_model(),
+            system: prompts::SHARED_RULES,
+            user: &user,
+            max_tokens: output_budget(text.chars().count()),
+            temperature: TEMPERATURE,
+        },
     )
-    .await;
-    match &outcome {
-        Ok(text) => emit(app, &request.request_id, "done", Some(text)),
-        Err(error) => emit(app, &request.request_id, "failed", Some(&error.message)),
-    }
-
+    .await?;
     Ok(RewriteResult {
         request_id: request.request_id,
-        text: outcome?,
+        text,
         prompt_version: NOTE_AI_PROMPT_VERSION,
     })
-}
-
-async fn stream_rewrite(
-    app: &AppHandle,
-    request_id: &str,
-    user: &str,
-    input_chars: usize,
-    claim: &RunClaim,
-) -> Result<String, AppError> {
-    let mut response = june_api::proxy_agent_chat_completions(serde_json::json!({
-        "model": crate::providers::generation_model(),
-        "messages": [
-            { "role": "system", "content": prompts::SHARED_RULES },
-            { "role": "user", "content": user }
-        ],
-        "temperature": TEMPERATURE,
-        "max_tokens": output_budget(input_chars),
-        "stream": true
-    }))
-    .await?;
-
-    if !(200..300).contains(&response.status) {
-        return Err(AppError::new(
-            "note_rewrite_failed",
-            format!("The model returned status {}.", response.status),
-        ));
-    }
-
-    // A route that ignored `stream` answers with ordinary JSON. Same fallback
-    // agent_lite makes, for the same reason: some upstream rails do.
-    if !response.content_type.contains("event-stream") {
-        let body = response.collect_body().await?;
-        return finish(extract_whole(&body));
-    }
-
-    // A stream that breaks or stops before it says it is finished is an
-    // error: a fragment must never replace the passage it was rewriting.
-    let read = crate::sse_lines::read_content(&mut response, |delta| {
-        emit(app, request_id, "delta", Some(delta));
-    });
-    tokio::select! {
-        // Cancelling wins the race even mid-chunk. Returning here drops
-        // `response`, which closes the connection, so the upstream stops
-        // generating rather than finishing into a void.
-        () = claim.stop.notified() => {
-            Err(AppError::new("note_rewrite_cancelled", "Rewrite stopped."))
-        }
-        text = read => finish(Some(text?)),
-    }
-}
-
-fn extract_whole(body: &[u8]) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
-    june_api::extract_chat_completion_text(&value)
-}
-
-/// Trim the wrapper a model sometimes puts around an answer it was told not to
-/// wrap, and refuse an empty one rather than replacing a paragraph with
-/// nothing.
-fn finish(text: Option<String>) -> Result<String, AppError> {
-    let text = text
-        .map(|text| strip_wrapping_fence(text.trim()))
-        .unwrap_or_default();
-    if text.trim().is_empty() {
-        return Err(AppError::new(
-            "note_rewrite_empty_reply",
-            "The model returned nothing to put back.",
-        ));
-    }
-    Ok(text)
-}
-
-/// A fence around the *whole* reply is the model wrapping its answer, not
-/// content: a passage that is genuinely one code block keeps its fence because
-/// the opening line then carries a language or the body contains a blank line
-/// the naive check would not survive. Only the unmistakable case is stripped.
-fn strip_wrapping_fence(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-    if lines.len() < 3 {
-        return text.to_string();
-    }
-    let first = lines[0].trim();
-    let last = lines[lines.len() - 1].trim();
-    let opens_bare_markdown = first == "```"
-        || first.eq_ignore_ascii_case("```markdown")
-        || first.eq_ignore_ascii_case("```md");
-    if !opens_bare_markdown || last != "```" {
-        return text.to_string();
-    }
-    // A fence inside the body means the reply really is a document containing
-    // code, and the outer pair is still the wrapper — but a second bare fence
-    // would make the strip ambiguous, so leave it alone.
-    if lines[1..lines.len() - 1]
-        .iter()
-        .any(|line| line.trim().starts_with("```"))
-    {
-        return text.to_string();
-    }
-    lines[1..lines.len() - 1].join("\n")
 }
 
 #[tauri::command]
@@ -341,11 +199,7 @@ pub async fn note_rewrite(
 /// tap on a stop button looks like.
 #[tauri::command]
 pub fn cancel_note_rewrite(request_id: String) -> Result<(), AppError> {
-    if let Some(stop) = running().get(&request_id) {
-        // `notify_one` stores a permit, so a cancel that arrives between two
-        // chunks is still waiting when the run next reaches the select.
-        stop.notify_one();
-    }
+    rewrite_stream::cancel(&request_id);
     Ok(())
 }
 
@@ -454,26 +308,6 @@ mod tests {
     }
 
     #[test]
-    fn strips_a_fence_the_model_wrapped_the_whole_answer_in() {
-        assert_eq!(
-            strip_wrapping_fence("```markdown\n# Title\n\nBody\n```"),
-            "# Title\n\nBody"
-        );
-        assert_eq!(
-            strip_wrapping_fence("```\n- one\n- two\n```"),
-            "- one\n- two"
-        );
-    }
-
-    #[test]
-    fn keeps_a_fence_that_is_the_content() {
-        let code = "```rust\nfn main() {}\n```";
-        assert_eq!(strip_wrapping_fence(code), code);
-        let two = "```\nfirst\n```\n\n```\nsecond\n```";
-        assert_eq!(strip_wrapping_fence(two), two);
-    }
-
-    #[test]
     fn the_output_budget_follows_the_passage() {
         // A one-line correction does not reserve the ceiling...
         assert_eq!(output_budget(40), 2_048);
@@ -487,30 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn one_run_per_request_id() {
-        let first = RunClaim::take("dup").expect("first claim");
-        assert!(
-            RunClaim::take("dup").is_none(),
-            "a second rewrite under a live id must be refused, not raced"
-        );
-        drop(first);
-        assert!(
-            RunClaim::take("dup").is_some(),
-            "the id is usable again once the run ends"
-        );
-    }
-
-    #[test]
     fn cancelling_an_id_that_is_not_running_is_quiet() {
         assert!(cancel_note_rewrite("never-started".into()).is_ok());
-    }
-
-    #[test]
-    fn refuses_a_reply_with_nothing_in_it() {
-        assert_eq!(
-            finish(Some("   ".into())).unwrap_err().code,
-            "note_rewrite_empty_reply"
-        );
-        assert_eq!(finish(None).unwrap_err().code, "note_rewrite_empty_reply");
     }
 }

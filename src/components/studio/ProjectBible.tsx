@@ -8,11 +8,13 @@ import {
   listBibleEntries,
   type BibleRole,
 } from "../../lib/studio/bible";
-import { portraitPrompt } from "../../lib/studio/bible/portrait";
+import { pickPortraitModel, portraitPrompt } from "../../lib/studio/bible/portrait";
 import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import { bibleNameInUse, uniqueBibleName, type ProjectBibleEntry } from "../../lib/studio/projects";
+import { rewriteTargetModel } from "../../lib/studio/studio-rewrite";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
+import { AiRewrite } from "./AiRewrite";
 import { GalleryPicker } from "./GalleryPicker";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 
@@ -23,6 +25,7 @@ export function ProjectBible({
   catalog,
   onArtifact,
   onGenerate,
+  writingModelId,
   busy,
 }: {
   entries: ProjectBibleEntry[];
@@ -31,6 +34,8 @@ export function ProjectBible({
   catalog: MediaCatalog;
   onArtifact: (artifactId: string) => void;
   onGenerate: (entryId: string, role: BibleRole) => void;
+  /** The text model the AI rewrites write with. The app's when absent. */
+  writingModelId?: string;
   busy: boolean;
 }) {
   const [selected, setSelected] = useState(entries[0]?.id);
@@ -48,7 +53,11 @@ export function ProjectBible({
   const activeRole =
     entry && !ROLES_BY_KIND[entry.kind].includes(role) ? ROLES_BY_KIND[entry.kind][0] : role;
   const models = modelsOfType(catalog, "image");
-  const model = models.find((item) => item.id === entry?.imageModelId);
+  // An entry with no model of its own draws with the cheapest, the same one
+  // `compileBibleReference` falls back to, so the price is shown from the start.
+  const model = entry?.imageModelId
+    ? models.find((item) => item.id === entry.imageModelId)
+    : pickPortraitModel(catalog);
   const cost = model
     ? estimateCostCredits(model, { multiplier: catalog.priceMultiplier })
     : undefined;
@@ -275,7 +284,7 @@ export function ProjectBible({
             {activeRole !== "voice" ? (
               <>
                 <MediaModelPicker
-                  value={entry.imageModelId ?? ""}
+                  value={entry.imageModelId || model?.id || ""}
                   options={models.map(mediaModelOption)}
                   onChange={(imageModelId) => update({ imageModelId })}
                   ariaLabel={t("Reference image model")}
@@ -289,6 +298,27 @@ export function ProjectBible({
                     onChange={(event) => update({ imagePrompt: event.target.value })}
                   />
                 </label>
+                <AiRewrite
+                  label={t("Image prompt")}
+                  value={entry.imagePrompt ?? portraitPrompt(entry, activeRole)}
+                  disabled={busy}
+                  onAccept={(imagePrompt) => update({ imagePrompt })}
+                  hint={t("Written in English, the language these image models follow best.")}
+                  request={() =>
+                    entry.name.trim()
+                      ? {
+                          kind: "imagePrompt",
+                          text: entry.imagePrompt ?? portraitPrompt(entry, activeRole),
+                          modelId: writingModelId,
+                          context: {
+                            targetModel: rewriteTargetModel(model),
+                            entry: { name: entry.name, kind: entry.kind, traits: entry.traits },
+                            role: activeRole,
+                          },
+                        }
+                      : undefined
+                  }
+                />
                 <button
                   type="button"
                   className="btn btn-primary"
