@@ -368,6 +368,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         default: "",
         acceptsInputMarker: true,
       },
+      { name: "aspectRatio", type: "string", label: "Aspect ratio", default: "" },
     ],
   },
   tts: {

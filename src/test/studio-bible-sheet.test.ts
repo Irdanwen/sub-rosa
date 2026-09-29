@@ -8,8 +8,13 @@ import {
   type BibleRef,
   type BibleRole,
 } from "../lib/studio/bible/types";
-import { compileBibleReference } from "../lib/studio/project-production";
-import { referencePromptOf, sheetSource, type ProjectBibleEntry } from "../lib/studio/projects";
+import { compileBibleReference, compileOpeningImage } from "../lib/studio/project-production";
+import {
+  newShot,
+  referencePromptOf,
+  sheetSource,
+  type ProjectBibleEntry,
+} from "../lib/studio/projects";
 import type { MediaCatalog } from "../lib/studio/types";
 
 /**
@@ -158,5 +163,23 @@ describe("a prompt per role", () => {
     expect(referencePromptOf(entry, "portrait")).toBe("Old.");
     const workflow = compileBibleReference(entry, "profile", catalog, "Project");
     expect(workflow.nodes[0]?.params.prompt).toBe("Marie in profile.");
+  });
+});
+
+describe("the opening image of a shot", () => {
+  it("is composed in the project's format, with the automatic edit model by default", () => {
+    const shot = {
+      ...newShot(0),
+      id: "s1",
+      imagePrompt: "Marie from image 1 in the flat of image 2.",
+      imageReferenceIds: ["sheet.png", "flat.png"],
+    };
+    const workflow = compileOpeningImage(shot, "Project", catalog, "16:9");
+    const target = workflow.nodes.find((node) => node.id === "image-s1");
+    expect(target).toMatchObject({
+      type: "imageEdit",
+      params: { model: "nano-banana-2-edit", aspectRatio: "16:9" },
+    });
+    expect(workflow.edges.map((edge) => edge.source)).toEqual(["reference-0", "reference-1"]);
   });
 });

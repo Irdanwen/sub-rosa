@@ -654,7 +654,15 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       const selected = snapshot.document.shots.find((shot) => shot.id === shotId);
       const compiled =
         image && selected
-          ? { workflow: compileOpeningImage(selected, snapshot.name), notes: [] }
+          ? {
+              workflow: compileOpeningImage(
+                selected,
+                snapshot.name,
+                catalog,
+                snapshot.document.settings.aspectRatio,
+              ),
+              notes: [],
+            }
           : compileProjectWithNotes(snapshot.name, snapshot.document, catalog, shotId);
       const { workflow, notes } = compiled;
       const estimate = await quoteProject(workflow, catalog);

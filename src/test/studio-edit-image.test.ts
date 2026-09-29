@@ -215,6 +215,25 @@ describe("composeImages", () => {
     expect(listen).toHaveBeenCalledWith("june://media-job", expect.any(Function));
   });
 
+  it("sends a format through /image/multi-edit, even with a single image", async () => {
+    // /image/edit follows its input's shape; an opening frame must come out in
+    // the project's format, which only multi-edit takes (checked 2026-09-29).
+    await composeImages("seedream-v4-edit", "frame it", [IMG], { aspectRatio: "16:9" });
+    expect(invoke).toHaveBeenCalledWith("media_job_queue", {
+      request: expect.objectContaining({
+        queuePath: "/image/multi-edit/queue",
+        queueBody: {
+          model: "seedream-v4-edit",
+          prompt: "frame it",
+          images: [IMG],
+          aspect_ratio: "16:9",
+          safe_mode: false,
+        },
+      }),
+    });
+    expect(mediaRawMock).not.toHaveBeenCalled();
+  });
+
   it("refuses more than three source images without silently dropping one", async () => {
     await expect(
       composeImages("seedream-v4-edit", "merge", [IMG, IMG2, IMG3, IMG]),

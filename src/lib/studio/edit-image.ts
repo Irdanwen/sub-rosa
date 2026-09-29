@@ -187,6 +187,7 @@ export async function composeImages(
   modelId: string,
   prompt: string,
   imageDataUris: string[],
+  options: { aspectRatio?: string } = {},
 ): Promise<string> {
   const images = imageDataUris.filter((uri) => uri.trim());
   if (images.length > MAX_COMPOSE_IMAGES)
@@ -194,13 +195,18 @@ export async function composeImages(
   if (images.length === 0) {
     throw new MediaError("Add at least one image to compose.", { status: 0 });
   }
-  if (images.length === 1) {
+  // A frame for a shot has to come out in the shot's format. `/image/edit`
+  // follows its input; `/image/multi-edit` takes `aspect_ratio` (checked
+  // against the operator on 2026-09-29: a square first input came back 16:9)
+  // and accepts a single image, so a format sends even one image there.
+  if (images.length === 1 && !options.aspectRatio) {
     return editImage(modelId, prompt, images[0]);
   }
   return nativeQueuedImage("/image/multi-edit", {
     model: modelId,
     prompt,
     images,
+    ...(options.aspectRatio ? { aspect_ratio: options.aspectRatio } : {}),
     safe_mode: false,
   });
 }

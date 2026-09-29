@@ -1329,6 +1329,28 @@ Pièges :
 - `referenceStack` n'énumère pas `sheet` : c'est ce qui la tient hors de la
   vidéo. Ne pas l'ajouter « parce que c'est la meilleure ancre ».
 
+## Composer la première image d'un plan (2026-09-29)
+
+Le compositeur d'image de départ existait, mais seulement en image vers vidéo et
+en référence. Il est maintenant dans tous les modes sauf « Suite du plan
+précédent ».
+
+| Fichier | Rôle |
+| --- | --- |
+| `src/components/studio/OpeningComposer.tsx` | 3 emplacements numérotés (« Image 1… »), remplis depuis la Bible (`composeReference` : planche > portrait > profil pour un personnage, plan large pour un lieu, détail pour un objet) ou la galerie ; réordonnables ; prompt rédigé par l'IA (`studio_rewrite`, `kind: composition`) ; choisir une image fait passer un plan texte (ou référence sans image de départ) en image vers vidéo, et l'annonce |
+| `src/lib/studio/edit-image.ts` | `composeImages(…, { aspectRatio })` : un format passe par `/image/multi-edit`, **même pour une seule image** |
+| `src/lib/studio/workflow/{schema,engine}.ts` | paramètre `aspectRatio` du nœud `imageEdit`, envoyé en `aspect_ratio` sur la file multi-edit |
+| `src/lib/studio/project-production.ts` | `compileOpeningImage(shot, name, catalog, aspectRatio)` et `openingImageModel` : le modèle d'édition automatique par défaut, au format du projet |
+
+Pièges :
+
+- **`aspect_ratio` vérifié en réel (2026-09-29)** : `seedream-v5-lite-edit` via
+  `/image/multi-edit/queue`, une planche carrée en image 1 et un décor 16:9 → une
+  sortie en 2672×1504 (16:9). `/image/edit` suit sa seule entrée, d'où le détour
+  par multi-edit dès qu'un format est demandé.
+- `seedream-v5-lite-edit` refuse le chemin synchrone (`409 MODEL_REQUIRES_ASYNC`) :
+  la composition passe toujours par la file, ce que `nativeQueuedImage` fait déjà.
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

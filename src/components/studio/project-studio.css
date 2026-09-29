@@ -523,3 +523,26 @@
   color: var(--muted-foreground);
   font-size: var(--fs-xs);
 }
+.project-composer {
+  display: grid;
+  gap: var(--sp-4);
+}
+.project-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.project-slots:empty {
+  display: none;
+}
+.project-slots .project-reference strong {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+.project-composer > .project-actions > select {
+  flex: 1 1 160px;
+  min-width: 0;
+}
