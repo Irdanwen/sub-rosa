@@ -1,9 +1,11 @@
 # Sub Rosa website
 
 The public pages and account UI share the repository's React/Vite toolchain and
-single pnpm lockfile. Public pages are prerendered in English at build time.
-The website remains English regardless of browser locale or a previously saved
-French preference. The native apps keep their own language settings.
+single pnpm lockfile. Public pages are prerendered in English at their existing
+paths and in French below `/fr/`. A first visit to the home page follows the
+browser language; the EN/FR control remembers an explicit choice. Account,
+share and native return URLs remain unprefixed to preserve their protocols.
+The native apps keep their own language settings.
 No external font requests, analytics, browser session recording or third-party
 executable scripts.
 
@@ -17,8 +19,9 @@ dark preference. The website owns its tokens in `src/style.css`; this does not
 change the native apps' theme or Sub Rosa's name and mark.
 
 Latin font subsets were copied from the CarpeDiem build and are served locally
-from `public/fonts/`, with their SIL Open Font License notices. The former
-French-language Studio screenshot is no longer rendered on the English site.
+from `public/fonts/`, with their SIL Open Font License notices. The Studio
+images are captures of the app in each language. The home-page note composition
+is an illustration, not a claim that the app has that exact screen layout.
 
 ## Local development
 
@@ -58,7 +61,7 @@ VITE_SITE_BASE=/subrosa/ VITE_ACCOUNTS_UNAVAILABLE=1 pnpm build:website
 ```
 
 Mount `website/dist/` at `/subrosa/`, redirect `/subrosa` to `/subrosa/`, and
-resolve public routes to their prerendered `index.html`. Account routes beneath
+resolve English and `/fr/` public routes to their prerendered `index.html`. Account routes beneath
 the prefix may fall back to the main `index.html`; they show the availability
 page and never mount the account UI or call the shared host's API. Other
 unmatched routes should return 404. Fonts, scripts, styles and navigation all

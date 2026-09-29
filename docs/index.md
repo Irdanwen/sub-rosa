@@ -74,6 +74,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0063](adr/0063-the-sidecar-streams-agent-chat.md) — when the client asks for a stream and the upstream really streams, the sidecar relays the SSE bytes as they arrive and settles the turn at the end; the streamed path has no `x-june-*` headers, so the shell reads the usage from the final frame
 - [adr/0064](adr/0064-reflexes-screen-for-relevance-and-leave-the-enclave-by-default.md) — a reflex is a one-pass typed answer from the decision model on `/v1/decisions`; searches gather 24 candidates and keep what it says bears on the question, answer "nothing in your notes" for free when nothing does, and fall back to the old cut whenever it is off or down; on by default, the request leaves the enclave anonymized, and Settings › Privacy says so
 - [adr/0065](adr/0065-memory-keeps-itself-current-with-a-journal-and-an-undo.md) — a reflex gates extraction turn by turn and sets each new fact against its closest stored ones; above 0.8 a replacement rewrites the memory in place and a repeat is left out, each recorded in a local journal with a compare-and-set undo; the phone injects the core plus the memories this turn is about once memory outgrows the static block
+- [adr/0066](adr/0066-the-website-localizes-public-paths-without-changing-account-callbacks.md) — English and French public URLs are prerendered separately while account, share and native callback paths keep their existing wire contracts
 
 ## Enforceable rules (spec/)
 

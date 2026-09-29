@@ -10,7 +10,8 @@ import {
   type Device,
   type VaultRecord,
 } from "../lib/api";
-import { date, number, t } from "../lib/i18n";
+import { date, number, t, websiteLocale } from "../lib/i18n";
+import { localizedSiteHref } from "../lib/paths";
 import { registerPasskey, signInWithPasskey } from "../lib/passkeys";
 import { decryptObject, prepareObject, prepareVault, sendObject, unlockVault } from "../lib/vault";
 import { Library } from "./library";
@@ -52,6 +53,15 @@ function errorMessage(error: unknown) {
     "We could not complete this action. Check your connection and try again.",
     "Cette action n’a pas abouti. Vérifiez votre connexion et réessayez.",
   );
+}
+
+export function accountSignInReturnPath(path: string) {
+  const route = path.split("?")[0];
+  const code = new URLSearchParams(path.split("?")[1] ?? "").get("code") ?? "";
+  if (route === "/account/top-up") return route;
+  if (route === "/account/devices/verify" && /^[A-Z0-9]{8}$/.test(code))
+    return `${route}?code=${code}`;
+  return "/account";
 }
 
 export function AccountPage({ path }: { path: string }) {
@@ -146,6 +156,9 @@ export function AccountPage({ path }: { path: string }) {
       setError(errorMessage(err));
     }
   };
+  const query = new URLSearchParams(path.split("?")[1] ?? "");
+  const signupIntent = query.get("intent") === "signup";
+  const signInReturnPath = accountSignInReturnPath(path);
   if (loading)
     return (
       <section className="page wrap" aria-busy="true">
@@ -155,13 +168,13 @@ export function AccountPage({ path }: { path: string }) {
   if (!account)
     return (
       <section className="page wrap">
-        <div className="prose">
-          <p className="eyebrow">Sub Rosa</p>
-          <h1>{t("Your space, together.", "Votre espace, réuni.")}</h1>
+        <div className="prose account-signin">
+          <p className="eyebrow">{t("Your Sub Rosa account", "Votre compte Sub Rosa")}</p>
+          <h1>{t("Your work, within reach.", "Votre travail à portée de main.")}</h1>
           <p className="lede">
             {t(
-              "Sign in to connect your devices, manage Carpe Diem and find your work again.",
-              "Connectez-vous pour réunir vos appareils, gérer Carpe Diem et retrouver votre travail.",
+              "Sign in to find your notes, connect a device and manage your encrypted workspace.",
+              "Connectez-vous pour retrouver vos notes, connecter un appareil et gérer votre espace chiffré.",
             )}
           </p>
           {error && (
@@ -170,8 +183,13 @@ export function AccountPage({ path }: { path: string }) {
             </p>
           )}
           <div className="actions">
+            {signupIntent && (
+              <a className="button primary" href="/auth/login?intent=signup&return_to=%2Faccount">
+                {t("Create an account", "Créer un compte")}
+              </a>
+            )}
             <button
-              className="button primary"
+              className={signupIntent ? "button" : "button primary"}
               type="button"
               disabled={passkeyBusy}
               onClick={() => {
@@ -186,13 +204,15 @@ export function AccountPage({ path }: { path: string }) {
             </button>
             <a
               className="button"
-              href={`/auth/login?intent=signin&return_to=${encodeURIComponent(path.startsWith("/account/devices/verify") || path.startsWith("/account/top-up") ? path : "/account")}`}
+              href={`/auth/login?intent=signin&return_to=${encodeURIComponent(signInReturnPath)}`}
             >
               {t("Sign in", "Se connecter")}
             </a>
-            <a className="button" href="/auth/login?intent=signup&return_to=%2Faccount">
-              {t("Create an account", "Créer un compte")}
-            </a>
+            {!signupIntent && (
+              <a className="text-link" href="/auth/login?intent=signup&return_to=%2Faccount">
+                {t("Create an account", "Créer un compte")} →
+              </a>
+            )}
           </div>
           <p className="quiet">
             {t(
@@ -237,6 +257,19 @@ export function AccountPage({ path }: { path: string }) {
             </a>
           ))}
         </nav>
+        <details className="account-nav-mobile">
+          <summary>
+            {tabs.find(([href]) => href === section)?.[1] ??
+              t("Account sections", "Rubriques du compte")}
+          </summary>
+          <nav aria-label={t("Account navigation", "Navigation du compte")}>
+            {tabs.map(([href, label]) => (
+              <a key={href} href={href} aria-current={section === href ? "page" : undefined}>
+                {label}
+              </a>
+            ))}
+          </nav>
+        </details>
         <div className="stack">
           {section === "/account/top-up" ? (
             <TopUp />
@@ -264,9 +297,9 @@ export function AccountPage({ path }: { path: string }) {
             />
           ) : (
             <>
-              {!vaultKey ? (
+              {section !== "/account" && !vaultKey ? (
                 <VaultGate account={account} onOpen={open} />
-              ) : (
+              ) : vaultKey ? (
                 <div className="notice row">
                   <span>
                     {t(
@@ -278,7 +311,7 @@ export function AccountPage({ path }: { path: string }) {
                     {t("Lock", "Verrouiller")}
                   </button>
                 </div>
-              )}
+              ) : null}
               {section === "/account/pair" && vaultKey && (
                 <PairApproval accountId={account.id} vaultKey={vaultKey} />
               )}
@@ -289,34 +322,76 @@ export function AccountPage({ path }: { path: string }) {
               ) : section === "/account/usage" && vaultKey ? (
                 <Usage account={account} vaultKey={vaultKey} />
               ) : section === "/account" ? (
-                <>
-                  <article className="card">
-                    <h2>{t("Pick up the thread", "Reprenez le fil")}</h2>
-                    <p>
+                <div>
+                  <p className="account-intro">
+                    {t(
+                      "Choose what you want to do. Your encrypted information opens only when you unlock the vault.",
+                      "Choisissez votre prochaine action. Vos informations chiffrées ne s’ouvrent qu’après le déverrouillage du coffre.",
+                    )}
+                  </p>
+                  <div className="account-quick-grid">
+                    <article className="card">
+                      <h2>{t("Your notes", "Vos notes")}</h2>
+                      <p>
+                        {t(
+                          "Return to the work you synced.",
+                          "Retrouvez le travail que vous avez synchronisé.",
+                        )}
+                      </p>
+                      <a className="text-link" href="/account/library">
+                        {t("Open notes", "Ouvrir les notes")} →
+                      </a>
+                    </article>
+                    <article className="card">
+                      <h2>{t("Your devices", "Vos appareils")}</h2>
+                      <p>
+                        {t(
+                          "Connect a new device or review the ones you use.",
+                          "Connectez un appareil ou consultez ceux que vous utilisez.",
+                        )}
+                      </p>
+                      <a className="text-link" href="/account/devices">
+                        {t("Manage devices", "Gérer les appareils")} →
+                      </a>
+                    </article>
+                    <article className="card">
+                      <h2>Carpe Diem</h2>
+                      <p>
+                        {t(
+                          "Keep your key in your encrypted vault.",
+                          "Gardez votre clé dans votre coffre chiffré.",
+                        )}
+                      </p>
+                      <a className="text-link" href="/account/provider">
+                        {t("Manage your key", "Gérer votre clé")} →
+                      </a>
+                    </article>
+                    <article className="card">
+                      <h2>{t("Usage", "Consommation")}</h2>
+                      <p>
+                        {t(
+                          "Review activity and available balance snapshots.",
+                          "Consultez l’activité et les relevés de solde disponibles.",
+                        )}
+                      </p>
+                      <a className="text-link" href="/account/usage">
+                        {t("View usage", "Voir la consommation")} →
+                      </a>
+                    </article>
+                  </div>
+                  <p className="quiet">
+                    <a
+                      className="text-link"
+                      href={localizedSiteHref("/downloads", websiteLocale())}
+                    >
                       {t(
-                        "Connect the same account in the app on your Mac, PC or iPhone. Your recovery kit opens your encrypted vault on a new device.",
-                        "Connectez le même compte dans l’app sur votre Mac, PC ou iPhone. Votre kit de récupération ouvre votre coffre chiffré sur un nouvel appareil.",
-                      )}
-                    </p>
-                    <a className="text-link" href="/downloads">
-                      {t("Download the app", "Télécharger l’app")} →
+                        "Download Sub Rosa for another device",
+                        "Télécharger Sub Rosa sur un autre appareil",
+                      )}{" "}
+                      →
                     </a>
-                  </article>
-                  <article className="card">
-                    <h2>
-                      {t("One Carpe Diem configuration", "Une seule configuration Carpe Diem")}
-                    </h2>
-                    <p>
-                      {t(
-                        "Save your key in your encrypted vault, then restore it from your approved apps.",
-                        "Enregistrez votre clé dans votre coffre chiffré, puis restaurez-la depuis vos applications autorisées.",
-                      )}
-                    </p>
-                    <a href="/account/provider" className="text-link">
-                      {t("Manage Carpe Diem", "Gérer Carpe Diem")} →
-                    </a>
-                  </article>
-                </>
+                  </p>
+                </div>
               ) : null}
             </>
           )}

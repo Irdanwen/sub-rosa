@@ -27,7 +27,21 @@ export function createSitePaths(base = "/", accountOrigin = "") {
     if (url.origin !== currentOrigin || url.hash) return false;
     const path = route(url.pathname);
     if (!path) return false;
-    if (["/", "/downloads", "/privacy", "/security", "/help"].includes(path)) return true;
+    if (
+      [
+        "/",
+        "/downloads",
+        "/privacy",
+        "/security",
+        "/help",
+        "/fr",
+        "/fr/downloads",
+        "/fr/privacy",
+        "/fr/security",
+        "/fr/help",
+      ].includes(path)
+    )
+      return true;
     // A share link is a fresh page load: it reads its key from the fragment,
     // which `handles` refuses to intercept anyway, and it must not inherit the
     // state of whatever tab the reader clicked from.
@@ -49,5 +63,12 @@ export const sitePaths = createSitePaths(
   import.meta.env.VITE_ACCOUNT_ORIGIN ?? "",
 );
 export const siteHref = sitePaths.href;
+export function localizedSiteHref(path: string, locale: "en" | "fr") {
+  if (path === "/account" || path.startsWith("/account/") || path.startsWith("/account?")) {
+    const separator = path.includes("?") ? "&" : "?";
+    return siteHref(`${path}${separator}lang=${locale}`);
+  }
+  return siteHref(locale === "fr" ? (path === "/" ? "/fr/" : `/fr${path}`) : path);
+}
 export const accountsUnavailable =
   import.meta.env.VITE_PREVIEW_ONLY === "1" || import.meta.env.VITE_ACCOUNTS_UNAVAILABLE === "1";

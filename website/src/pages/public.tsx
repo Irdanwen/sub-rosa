@@ -1,6 +1,6 @@
-import { t, number } from "../lib/i18n";
+import { t, number, websiteLocale } from "../lib/i18n";
 import releases from "../releases.json";
-import { accountsUnavailable, siteHref } from "../lib/paths";
+import { accountsUnavailable, localizedSiteHref } from "../lib/paths";
 
 /** The newest Android test build, from its own prerelease; absent until one is published. */
 type AndroidDownload = {
@@ -25,17 +25,28 @@ export function Downloads() {
       <p className="lede">
         {accountsUnavailable
           ? t(
-              "Start locally with your Carpe Diem key. Version 1.63.0 adds optional encrypted sync with a configured account service. Public account registration is not open yet.",
-              "Commencez localement avec votre clé Carpe Diem. La version 1.63.0 ajoute la synchronisation chiffrée facultative avec un service de compte configuré. Les inscriptions publiques ne sont pas encore ouvertes.",
+              "Start locally with your Carpe Diem key. Optional encrypted sync is available with a configured account service. Public account registration is not open yet.",
+              "Commencez en local avec votre clé Carpe Diem. La synchronisation chiffrée facultative est disponible avec un service de compte configuré. Les inscriptions publiques ne sont pas encore ouvertes.",
             )
           : t(
               "Download the app for your device. You can start locally, then connect your account when you are ready.",
               "Téléchargez l’app pour votre appareil. Commencez localement, puis connectez votre compte quand vous le souhaitez.",
             )}
       </p>
+      <nav
+        className="download-platforms"
+        aria-label={t("Choose your device", "Choisir votre appareil")}
+      >
+        <span>{t("Your device", "Votre appareil")}</span>
+        <a href="#mac-arm">Mac · Apple Silicon</a>
+        <a href="#mac-intel">Mac · Intel</a>
+        <a href="#windows">Windows</a>
+        {android && <a href="#android">Android</a>}
+        <a href="#iphone">iPhone</a>
+      </nav>
       <div className="grid">
         {releases.assets.map((asset) => (
-          <article className="card" key={asset.platform}>
+          <article className="card" id={asset.platform} key={asset.platform}>
             <h2>{titles[asset.platform]}</h2>
             <p className="muted">
               {asset.platform === "mac-arm"
@@ -74,7 +85,7 @@ export function Downloads() {
           </article>
         ))}
         {android ? (
-          <article className="card" key="android">
+          <article className="card" id="android" key="android">
             <h2>Android · 64 bits</h2>
             <p className="muted">
               {t(
@@ -105,7 +116,7 @@ export function Downloads() {
           </article>
         ) : null}
       </div>
-      <article className="card row">
+      <article className="card row" id="iphone">
         <div>
           <h2>iPhone</h2>
           <p className="muted">
@@ -276,7 +287,7 @@ export function Information({ path }: { path: string }) {
           "Cette adresse ne correspond à aucune page Sub Rosa.",
         )}
       </p>
-      <a className="button" href={siteHref("/")}>
+      <a className="button" href={localizedSiteHref("/", websiteLocale())}>
         {t("Back to home", "Retour à l’accueil")}
       </a>
     </section>
