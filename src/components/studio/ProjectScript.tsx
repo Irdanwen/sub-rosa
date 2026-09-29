@@ -9,7 +9,7 @@ import { AiRewrite } from "./AiRewrite";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 
 /** A labelled model choice that can always go back to the app's own pick. */
-function ModelField({
+export function ModelField({
   label,
   automatic,
   value,

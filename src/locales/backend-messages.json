@@ -344,5 +344,9 @@
   "Describe the shot's action first.",
   "Name the entry first.",
   "Add at least one image to combine first.",
-  "Say what you want done with the scenario."
+  "Say what you want done with the scenario.",
+  "This model did not return a usable score. Choose another text model and try again.",
+  "This model placed no music in the film. Try another text model or revise the script.",
+  "Break your script into shots before composing its music.",
+  "Choose the shots this cue plays under first."
 ]

@@ -38,6 +38,8 @@ import {
   humanizeModelId,
   isSeedanceModel,
   modelsOfType,
+  musicCapabilities,
+  musicModels,
   requiresOpeningFrame,
   videoDirection,
 } from "../catalog";
@@ -116,6 +118,17 @@ export interface CompileInput {
   aspectRatio?: string;
   /** Lay a generated score under the film. */
   withScore?: boolean;
+  /**
+   * The score's cues, already written and timed by the project (ADR-0067).
+   * Absent, a film gets one piece named after it, as it always did.
+   */
+  score?: ReadonlyArray<{
+    id: string;
+    title: string;
+    prompt: string;
+    durationSeconds?: number;
+    lyrics?: string;
+  }>;
   /** Stop for approval after the shots, before the film is cut together. */
   gateBeforeAssemble?: boolean;
 }
@@ -581,7 +594,8 @@ export function pickMusicModel(
   catalog: MediaCatalog,
   preferredId?: string,
 ): MediaModel | undefined {
-  const models = modelsOfType(catalog, "music");
+  // Sound-effect engines share the music endpoint and are not scores.
+  const models = musicModels(catalog);
   const chosen = preferredId ? models.find((model) => model.id === preferredId) : undefined;
   if (chosen) return chosen;
   return [...models].sort((left, right) => longestDuration(right) - longestDuration(left))[0];
@@ -809,7 +823,47 @@ export function compileShotList(input: CompileInput): CompileResult {
   // never heard - which is exactly what happened before this edge existed.
   for (const ttsId of ttsIds) edges.push(edge(ttsId, assembleId, "dialogue"));
 
-  if (input.withScore) {
+  if (input.withScore && input.score) {
+    const music = pickMusicModel(input.catalog, input.musicModelId);
+    const caps = music ? musicCapabilities(music.id) : undefined;
+    if (!music || !caps) {
+      notes.push(t("No music model on this account, so the film has no score."));
+    } else if (caps.lyrics === "required" && input.score.some((cue) => !cue.lyrics?.trim())) {
+      return {
+        estimateCredits: 0,
+        notes,
+        warnings,
+        refusal: t("{model} sings words: add lyrics to every cue, or choose another music model.", {
+          model: music.name,
+        }),
+      };
+    } else {
+      for (const [index, cue] of input.score.entries()) {
+        const musicId = `score-${cue.id}`;
+        const lyrics = caps.lyrics !== "none" ? cue.lyrics?.trim() : undefined;
+        nodes.push(
+          node(
+            musicId,
+            "music",
+            t("Music: {title}", { title: cue.title }),
+            finalLevel - 1,
+            index + 1,
+            {
+              model: music.id,
+              prompt: cue.prompt,
+              ...(cue.durationSeconds !== undefined
+                ? { durationSeconds: cue.durationSeconds }
+                : {}),
+              ...(lyrics ? { lyrics } : {}),
+              // Only a model that could sing is told not to.
+              instrumental: !lyrics && caps.instrumental && caps.lyrics !== "none",
+            },
+          ),
+        );
+        edges.push(edge(musicId, assembleId, "music"));
+      }
+    }
+  } else if (input.withScore) {
     const music = pickMusicModel(input.catalog, input.musicModelId);
     if (music) {
       const musicId = "score";
@@ -844,7 +898,9 @@ export function compileShotList(input: CompileInput): CompileResult {
     const modelId = typeof entry.params.model === "string" ? entry.params.model : "";
     const model = modelId ? byId.get(modelId) : undefined;
     if (!model) return sum;
-    const durationSeconds = Number.parseFloat(String(entry.params.duration ?? "")) || undefined;
+    const durationSeconds =
+      Number.parseFloat(String(entry.params.duration ?? entry.params.durationSeconds ?? "")) ||
+      undefined;
     const price = estimateCostCredits(model, {
       durationSeconds,
       multiplier: input.catalog.priceMultiplier,

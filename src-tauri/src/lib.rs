@@ -89,6 +89,7 @@ pub mod updates;
 // Writing a timeline bundle to disk: plain file work, so it builds everywhere
 // even though only the desktop offers a folder picker to reach it.
 pub mod bible;
+pub mod score;
 pub mod shotlist;
 pub mod studio_actions;
 pub mod studio_ai;
@@ -437,6 +438,7 @@ pub fn run() {
             note_ai::cancel_note_rewrite,
             studio_ai::studio_rewrite,
             studio_ai::cancel_studio_rewrite,
+            score::score_propose,
             council::council_plan,
             council::council_convene,
             council::council_cycle,
@@ -735,6 +737,7 @@ pub fn run() {
         note_ai::cancel_note_rewrite,
         studio_ai::studio_rewrite,
         studio_ai::cancel_studio_rewrite,
+        score::score_propose,
         timeline::export_timeline_bundle,
         bible::list_bible_entries,
         bible::save_bible_entry,

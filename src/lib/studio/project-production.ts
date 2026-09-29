@@ -1,13 +1,28 @@
 import { t } from "../i18n";
 import { carpeDiemGetCredits } from "../tauri";
-import { defaultEditModel, imageEditModels } from "./catalog";
+import { defaultEditModel, imageEditModels, musicCapabilities, videoDirection } from "./catalog";
 import type { MediaCatalog } from "./types";
 import type { ProjectDocument, ProjectShot } from "./projects";
 import { bibleNameInUse, referencePromptOf, sheetSource } from "./projects";
 import { pickPortraitModel, portraitPrompt } from "./bible/portrait";
 import type { BibleRole } from "./bible/types";
 import type { ProjectBibleEntry } from "./projects";
-import { compileShotList } from "./workflow/compile";
+import {
+  compileShotList,
+  familyStem,
+  pickMusicModel,
+  resolveShotDuration,
+  routeModels,
+} from "./workflow/compile";
+import {
+  cueNodeId,
+  cuePrompt,
+  cueSeconds,
+  cueShots,
+  musicLength,
+  projectScore,
+  type ProjectCue,
+} from "./score";
 import {
   estimateWorkflowCost,
   fetchVideoQuotes,
@@ -52,6 +67,7 @@ export function compileProjectWithNotes(
     catalog,
     ...document.settings,
     withScore: onlyShotId ? false : document.settings.withScore,
+    score: onlyShotId ? undefined : scoreCues(document, catalog),
   });
   if (!result.workflow)
     throw new Error(result.refusal ?? t("Check your shot settings before generating."));
@@ -102,6 +118,79 @@ export function compileProjectWithNotes(
   return { workflow: compiled, notes: [...result.warnings, ...result.notes] };
 }
 
+/** The score's cues as the compiler takes them: written, timed, placed. */
+export function scoreCues(document: ProjectDocument, catalog: MediaCatalog) {
+  // A project that only ticked "generate a musical score" before cues existed
+  // keeps the single piece named after the film that it always got.
+  if (!document.score) return undefined;
+  const score = projectScore(document);
+  if (!score) return undefined;
+  return score.cues
+    .filter((cue) => cueShots(document.shots, cue).length > 0)
+    .map((cue) => ({
+      id: cue.id,
+      title: cue.title,
+      prompt: cuePrompt(score, cue),
+      durationSeconds: cueLength(document, catalog, cue).seconds,
+      lyrics: cue.lyrics,
+    }));
+}
+
+/** How long a cue must run, and what its music model will be asked for. */
+export function cueLength(document: ProjectDocument, catalog: MediaCatalog, cue: ProjectCue) {
+  const wanted = cueSeconds(document.shots, cue, (shot) => shotSeconds(shot, document, catalog));
+  const music = pickMusicModel(catalog, document.settings.musicModelId);
+  return { wanted, model: music, ...musicLength(music, wanted) };
+}
+
+/** One cue of the score, on its own, for a new take of it. */
+export function compileCue(
+  name: string,
+  document: ProjectDocument,
+  catalog: MediaCatalog,
+  cueId: string,
+): Workflow {
+  const score = projectScore(document);
+  const cue = score?.cues.find((candidate) => candidate.id === cueId);
+  if (!score || !cue) throw new Error(t("This cue no longer exists."));
+  if (!cueShots(document.shots, cue).length)
+    throw new Error(t("Choose the shots this cue plays under first."));
+  const prompt = cuePrompt(score, cue);
+  if (!prompt) throw new Error(t("Describe this cue before composing it."));
+  const { model, seconds } = cueLength(document, catalog, cue);
+  if (!model) throw new Error(t("No music model on this account, so the film has no score."));
+  const caps = musicCapabilities(model.id);
+  const lyrics = caps.lyrics !== "none" ? cue.lyrics?.trim() : undefined;
+  if (caps.lyrics === "required" && !lyrics)
+    throw new Error(
+      t("{model} sings words: add lyrics to every cue, or choose another music model.", {
+        model: model.name,
+      }),
+    );
+  return {
+    id: crypto.randomUUID(),
+    name,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    edges: [],
+    nodes: [
+      {
+        id: cueNodeId(cue),
+        type: "music",
+        label: t("Music: {title}", { title: cue.title }),
+        position: { x: 0, y: 0 },
+        params: {
+          model: model.id,
+          prompt,
+          ...(seconds !== undefined ? { durationSeconds: seconds } : {}),
+          ...(lyrics ? { lyrics } : {}),
+          instrumental: !lyrics && caps.instrumental && caps.lyrics !== "none",
+        },
+      },
+    ],
+  };
+}
+
 export function compileProject(
   name: string,
   document: ProjectDocument,
@@ -109,6 +198,48 @@ export function compileProject(
   onlyShotId?: string,
 ): Workflow {
   return compileProjectWithNotes(name, document, catalog, onlyShotId).workflow;
+}
+
+/** The video model a shot renders with: its own choice among the models that
+ * fit its mode, else the project's routing (the cheapest of the project's
+ * family). The same answer the shot editor shows and the score times with. */
+export function shotVideoModel(
+  shot: ProjectShot | undefined,
+  document: Pick<ProjectDocument, "settings">,
+  catalog: MediaCatalog,
+) {
+  const mode = shot?.mode ?? "text";
+  const direction = mode === "continuation" ? "image" : mode;
+  const candidates = catalog.models.filter(
+    (model) =>
+      !model.offline &&
+      ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType) &&
+      videoDirection(model) === direction,
+  );
+  const preferredId = document.settings.videoModelId;
+  const routing = routeModels(catalog, preferredId);
+  const routed =
+    mode === "reference"
+      ? routing.reference
+      : mode === "image" || mode === "continuation"
+        ? routing.fromImage
+        : routing.text;
+  return shot?.modelId
+    ? candidates.find((candidate) => candidate.id === shot.modelId)
+    : candidates.find(
+        (candidate) =>
+          candidate.id === routed?.id &&
+          (!preferredId || familyStem(candidate.id) === familyStem(preferredId)),
+      );
+}
+
+/** How long a shot's take runs, as the compiler will ask for it. */
+export function shotSeconds(
+  shot: ProjectShot,
+  document: Pick<ProjectDocument, "settings">,
+  catalog: MediaCatalog,
+): number {
+  return resolveShotDuration(shot, shotVideoModel(shot, document, catalog)).seconds;
 }
 
 /** The edit model an opening image is composed with: the shot's choice while
