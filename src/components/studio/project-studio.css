@@ -742,3 +742,107 @@
   flex: 1 1 160px;
   min-width: 0;
 }
+/* Production in progress, shown where each result will land. */
+.project-monitor > .darkroom {
+  width: 100%;
+  height: 100%;
+}
+.project-monitor .darkroom-frame {
+  max-width: none;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+/* The shot list's thumbnail while its take is made: the same seeded light as
+ * the monitor's chamber, small enough to need no words. */
+.project-shot-developing {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      circle at 30% 35%,
+      color-mix(in oklch, oklch(66% 0.13 var(--darkroom-hue-a, 0)) 62%, var(--brand)),
+      transparent 60%
+    ),
+    radial-gradient(
+      circle at 75% 70%,
+      color-mix(in oklch, oklch(66% 0.13 var(--darkroom-hue-b, 120)) 62%, var(--brand)),
+      transparent 60%
+    ),
+    oklch(15.5% 0.02 var(--darkroom-hue-a, 0));
+  background-size: 180% 180%;
+  animation: project-developing 3.2s var(--ease-in-out) infinite alternate;
+}
+@keyframes project-developing {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 100%;
+  }
+}
+.project-take[data-pending="true"] {
+  border-style: dashed;
+  color: var(--muted-foreground);
+}
+.project-reference-developing {
+  width: 184px;
+  max-width: 184px;
+}
+.project-reference-developing .darkroom {
+  --darkroom-ceiling: 160px;
+}
+.project-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: var(--sp-3);
+  vertical-align: middle;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  animation: project-live-dot 1.6s var(--ease-in-out) infinite alternate;
+}
+@keyframes project-live-dot {
+  from {
+    opacity: 0.35;
+  }
+}
+/* A result arrives once: it settles into the place its wait held. */
+.project-reveal {
+  animation: project-reveal var(--t-slow) var(--ease-out) both;
+}
+@keyframes project-reveal {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+.project-run-status {
+  position: relative;
+  overflow: hidden;
+}
+.project-run-bar {
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.project-run-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--brand);
+  transform: scaleX(var(--run-done, 0));
+  transform-origin: left;
+  transition: transform 900ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-shot-developing,
+  .project-live-dot,
+  .project-reveal {
+    animation: none;
+  }
+  .project-run-bar::after {
+    transition: none;
+  }
+}

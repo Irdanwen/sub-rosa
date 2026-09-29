@@ -35,6 +35,9 @@ import { AiRewrite } from "./AiRewrite";
 import { GalleryPicker } from "./GalleryPicker";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 import { MediaViewer } from "./MediaViewer";
+import { Darkroom } from "./Darkroom";
+import type { LiveRender } from "../../lib/studio/project-activity";
+import { estimateRenderMs } from "../../lib/studio/render-eta";
 
 export function ProjectBible({
   entries,
@@ -45,6 +48,9 @@ export function ProjectBible({
   onGenerate,
   writingModelId,
   busy,
+  live = [],
+  now = Date.now(),
+  fresh,
 }: {
   entries: ProjectBibleEntry[];
   onChange: (entries: ProjectBibleEntry[]) => void;
@@ -55,6 +61,11 @@ export function ProjectBible({
   /** The text model the AI rewrites write with. The app's when absent. */
   writingModelId?: string;
   busy: boolean;
+  /** What is being made right now, for the waits shown where it will land. */
+  live?: readonly LiveRender[];
+  now?: number;
+  /** Files that just arrived, revealed once. */
+  fresh?: ReadonlySet<string>;
 }) {
   const [selected, setSelected] = useState(entries[0]?.id);
   const [global, setGlobal] = useState<ProjectBibleEntry[]>([]);
@@ -71,6 +82,13 @@ export function ProjectBible({
       .catch(() => undefined);
   }, []);
   const entry = entries.find((item) => item.id === selected) ?? entries[0];
+  const waitsOf = (entryId: string | undefined) =>
+    live.flatMap((item) =>
+      item.target.kind === "bible" && item.target.entryId === entryId
+        ? [{ ...item, role: item.target.role }]
+        : [],
+    );
+  const waits = waitsOf(entry?.id);
   // The entry's pictures, in the order the video models read them.
   const viewable = (entry?.refs ?? []).flatMap((ref) => {
     const artifact = artifacts.find((item) => item.id === ref.artifactId);
@@ -231,7 +249,12 @@ export function ProjectBible({
               setRole(ROLES_BY_KIND[item.kind][0]);
             }}
           >
-            <strong>{item.name}</strong>
+            <strong>
+              {item.name}
+              {waitsOf(item.id).length ? (
+                <span className="project-live-dot" role="img" aria-label={t("In production")} />
+              ) : null}
+            </strong>
             <span>{BIBLE_KIND_LABELS[item.kind]}</span>
           </button>
         ))}
@@ -318,7 +341,11 @@ export function ProjectBible({
                           setViewing(viewable.findIndex((item) => item.refId === ref.id))
                         }
                       >
-                        <img src={artifactSrc(artifact)} alt={ref.label} />
+                        <img
+                          className={fresh?.has(artifact.id) ? "project-reveal" : undefined}
+                          src={artifactSrc(artifact)}
+                          alt={ref.label}
+                        />
                       </button>
                     ) : artifact ? (
                       // biome-ignore lint/a11y/useMediaCaption: voice references have no caption track
@@ -372,6 +399,21 @@ export function ProjectBible({
                   </div>
                 );
               })}
+              {waits.map((wait) => (
+                <div key={wait.nodeId} className="project-reference project-reference-developing">
+                  <Darkroom
+                    compact
+                    seed={`${entry.id}${wait.role}`}
+                    phase={wait.phase}
+                    elapsedMs={now - wait.startedAt}
+                    estimateMs={estimateRenderMs(wait.etaKey)}
+                    progress={wait.progress}
+                    aspectRatio={wait.aspectRatio ?? "1:1"}
+                    label={wait.phase === "queued" ? undefined : t("Drawing")}
+                  />
+                  <span>{BIBLE_ROLE_LABELS[wait.role]}</span>
+                </div>
+              ))}
             </div>
             <label className="project-field">
               {t("Reference role")}
@@ -476,7 +518,7 @@ export function ProjectBible({
               {t("Remove from project")}
             </button>
           </fieldset>
-          {busy ? <p role="status">{t("Generating reference...")}</p> : null}
+          {busy && !waits.length ? <p role="status">{t("Generating reference...")}</p> : null}
         </section>
       ) : (
         <div className="project-empty">

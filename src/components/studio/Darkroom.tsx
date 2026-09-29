@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode, useMemo } from "react";
+import { t } from "../../lib/i18n";
 import { formatElapsed } from "../../lib/studio/async-job";
 import {
   darkroomAspect,
@@ -51,10 +52,17 @@ export interface DarkroomProps {
   className?: string;
 }
 
+// Getters, so each word is read in the language chosen when it is shown.
 const PHASE_LABEL: Record<DarkroomProps["phase"], string> = {
-  queueing: "Submitting",
-  queued: "Queued, waiting for a slot",
-  processing: "Rendering",
+  get queueing() {
+    return t("Submitting");
+  },
+  get queued() {
+    return t("Queued, waiting for a slot");
+  },
+  get processing() {
+    return t("Rendering");
+  },
 };
 
 export function Darkroom({

@@ -13,6 +13,11 @@ import {
   type ProjectShot,
 } from "../../lib/studio/projects";
 import { rewriteTargetModel } from "../../lib/studio/studio-rewrite";
+import { formatElapsed } from "../../lib/studio/async-job";
+import { darkroomSeed, darkroomVars } from "../../lib/studio/darkroom";
+import type { LiveRender } from "../../lib/studio/project-activity";
+import { estimateRenderMs } from "../../lib/studio/render-eta";
+import { Darkroom } from "./Darkroom";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { AiRewrite } from "./AiRewrite";
 import { GalleryPicker } from "./GalleryPicker";
@@ -36,6 +41,9 @@ export function ProjectShots({
   onBible,
   writingModelId,
   busy,
+  live = [],
+  now = Date.now(),
+  fresh,
 }: {
   document: ProjectDocument;
   onChange: (shots: ProjectShot[]) => void;
@@ -47,6 +55,11 @@ export function ProjectShots({
   /** The text model the AI rewrites write with. The app's when absent. */
   writingModelId?: string;
   busy: boolean;
+  /** What is being made right now, for the waits shown where it will land. */
+  live?: readonly LiveRender[];
+  now?: number;
+  /** Files that just arrived, revealed once. */
+  fresh?: ReadonlySet<string>;
 }) {
   const [selected, setSelected] = useState(document.shots[0]?.id);
   const [picker, setPicker] = useState<
@@ -85,6 +98,11 @@ export function ProjectShots({
     [shots[index], shots[index + offset]] = [shots[index + offset], shots[index]];
     onChange(shots);
   };
+  /** The take being made for a shot, else its opening image being composed. */
+  const waitFor = (shotId: string | undefined) =>
+    live.find((item) => item.target.kind === "take" && item.target.shotId === shotId) ??
+    live.find((item) => item.target.kind === "opening" && item.target.shotId === shotId);
+  const wait = waitFor(shot?.id);
   const mode = shot?.mode ?? "text";
   const models = catalog.models.filter(
     (model) =>
@@ -172,6 +190,7 @@ export function ProjectShots({
         </div>
         {document.shots.map((item, number) => {
           const thumbnail = artifacts.find((artifact) => artifact.id === item.openingArtifactId);
+          const rowWait = waitFor(item.id);
           return (
             <button
               key={item.id}
@@ -184,7 +203,12 @@ export function ProjectShots({
               }}
             >
               <span className="project-shot-number">{number + 1}</span>
-              {thumbnail ? (
+              {rowWait ? (
+                <span
+                  className="project-shot-placeholder project-shot-developing"
+                  style={darkroomVars(darkroomSeed(`${item.id}${item.prompt ?? item.action}`))}
+                />
+              ) : thumbnail ? (
                 <img src={artifactSrc(thumbnail)} alt="" />
               ) : (
                 <span className="project-shot-placeholder" />
@@ -192,10 +216,15 @@ export function ProjectShots({
               <span>
                 <strong>{item.title}</strong>
                 <small>
-                  {item.duration || t("Default duration")} ·{" "}
-                  {item.takeIds.length
-                    ? t("{count} takes", { count: item.takeIds.length })
-                    : t("Not generated")}
+                  {rowWait
+                    ? rowWait.phase === "queued"
+                      ? t("Queued · {time}", { time: formatElapsed(now - rowWait.startedAt) })
+                      : t("Rendering · {time}", { time: formatElapsed(now - rowWait.startedAt) })
+                    : `${item.duration || t("Default duration")} · ${
+                        item.takeIds.length
+                          ? t("{count} takes", { count: item.takeIds.length })
+                          : t("Not generated")
+                      }`}
                 </small>
               </span>
             </button>
@@ -264,13 +293,36 @@ export function ProjectShots({
             </div>
             <div
               className="project-monitor"
-              data-empty={!preview}
-              style={{ "--monitor-ratio": monitorRatio } as CSSProperties}
+              data-empty={!preview && !wait}
+              style={
+                {
+                  "--monitor-ratio": wait
+                    ? (ratioOf(document.settings.aspectRatio) ?? 16 / 9)
+                    : monitorRatio,
+                } as CSSProperties
+              }
             >
-              {preview?.kind === "video" ? (
+              {wait ? (
+                <Darkroom
+                  seed={`${shot.id}${shot.prompt ?? shot.action}`}
+                  phase={wait.phase}
+                  elapsedMs={now - wait.startedAt}
+                  estimateMs={estimateRenderMs(wait.etaKey)}
+                  progress={wait.progress}
+                  aspectRatio={document.settings.aspectRatio}
+                  label={
+                    wait.phase === "queued"
+                      ? undefined
+                      : wait.target.kind === "take"
+                        ? t("Rendering take {number}", { number: shot.takeIds.length + 1 })
+                        : t("Composing the opening image")
+                  }
+                />
+              ) : preview?.kind === "video" ? (
                 // biome-ignore lint/a11y/useMediaCaption: generated takes have no caption track
                 <video
                   key={preview.id}
+                  className={fresh?.has(preview.id) ? "project-reveal" : undefined}
                   controls
                   preload="metadata"
                   src={artifactSrc(preview)}
@@ -282,6 +334,8 @@ export function ProjectShots({
                 />
               ) : preview ? (
                 <img
+                  key={preview.id}
+                  className={fresh?.has(preview.id) ? "project-reveal" : undefined}
                   src={artifactSrc(preview)}
                   alt={shot.title}
                   onLoad={(event) => {
@@ -299,7 +353,7 @@ export function ProjectShots({
                   </p>
                 </div>
               )}
-              {preview ? (
+              {preview && !wait ? (
                 <button
                   type="button"
                   className="project-monitor-expand"
@@ -456,6 +510,12 @@ export function ProjectShots({
                   </button>
                 );
               })}
+              {wait?.target.kind === "take" ? (
+                <div className="project-take" data-pending="true" aria-busy="true">
+                  {t("Take {number}", { number: shot.takeIds.length + 1 })}
+                  <small>{wait.phase === "queued" ? t("Queued") : t("Rendering")}</small>
+                </div>
+              ) : null}
             </div>
           </section>
           <aside className="project-inspector project-panel">
