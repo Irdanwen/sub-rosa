@@ -293,7 +293,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         ),
         artifactIds: [...new Set([...document.artifactIds, artifactId])],
         bible: document.bible.map((entry) => {
-          const match = /^bible-(.+)-(portrait|profile|wide|medium|detail)$/.exec(result.nodeId);
+          const match = /^bible-(.+)-(portrait|profile|sheet|wide|medium|detail)$/.exec(
+            result.nodeId,
+          );
           if (
             !match ||
             match[1] !== entry.id ||

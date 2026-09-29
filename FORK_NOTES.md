@@ -1304,6 +1304,31 @@ l'adresse du VPS).
   la feuille Importer dessus. Même traitement pour `subrosa://import?url=`
   (prévisualisation d'abord).
 
+## La planche personnage 3×3 (2026-09-29, ADR-0066)
+
+Un rôle de référence `sheet` pour les personnages : neuf vues d'une même personne
+dans une grille fixe. Elle sert à composer les premières images et donne un
+portrait et un profil à découper. Elle n'est **jamais** envoyée à un modèle vidéo.
+
+| Fichier | Rôle |
+| --- | --- |
+| `src/lib/studio/bible/sheet.ts` | le découpage : `gridBounds` retire la marge unie que le modèle dessine autour de la grille, `sheetCell` coupe en tiers avec un retrait (5 %), `cutSheet` sort le portrait (case 3) et le profil (case 5) en PNG depuis une data URI (canvas jamais « tainted ») |
+| `src/lib/studio/bible/{types,portrait}.ts` | le rôle `sheet` (personnages seulement), `SHEET_LAYOUT` : le gabarit que le découpeur lit |
+| `src/lib/studio/project-production.ts` | `compileBibleReference` : une planche part du portrait via un modèle d'édition (`imageEdit` + nœud `asset`) quand il y en a un, sinon du texte, en 1:1 |
+| `src/lib/studio/projects.ts` | `imagePrompts` par rôle (l'ancien `imagePrompt` vaut pour tous les rôles sauf la planche), `editModelId`, `referencePromptOf`, `sheetSource` |
+| `src/components/studio/ProjectBible.tsx` | note explicative, choix du modèle d'édition, bouton « Découper le portrait et le profil » sur une planche |
+| `src-tauri/src/bible.rs` | `ROLES` accepte `sheet`, pour que la bibliothèque globale ne refuse pas une planche copiée |
+
+Pièges :
+
+- **Trois endroits décrivent la même grille** : `SHEET_LAYOUT`, `SHEET_CUTS` et
+  `studio_ai::prompts::SHEET_RULE`. Qui en change un change les trois.
+- **Le découpage est positionnel.** Testé sur une vraie planche : la grille est
+  respectée, mais il y a une marge autour. Sans `gridBounds`, les tiers
+  tombaient sur les bordures.
+- `referenceStack` n'énumère pas `sheet` : c'est ce qui la tient hors de la
+  vidéo. Ne pas l'ajouter « parce que c'est la meilleure ancre ».
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

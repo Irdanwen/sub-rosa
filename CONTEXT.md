@@ -559,6 +559,14 @@ a pointer at a gallery artifact standing in for part of an entry, in a **role**:
 the file. Their **order** is load bearing: the first image is what a
 reference-to-video model treats as the identity to hold.
 
+**Character sheet**:
+the `sheet` reference of a character - one square image holding nine views of
+them in a fixed 3 by 3 grid. It is drawn from the character's portrait when
+there is one, composes opening images, and is cut into a `portrait` and a
+`profile`. It is **never** part of the reference stack sent to a video model,
+which would film the grid ([ADR-0066](docs/adr/0066-a-character-sheet-composes-frames-and-never-reaches-video.md)).
+_Avoid_: turnaround, model sheet, planche (in code and docs).
+
 **Voice donor**:
 the `voice` reference of a character - a speech artifact that rides as
 `reference_audio_urls` so a generated line keeps the same timbre. Chosen by

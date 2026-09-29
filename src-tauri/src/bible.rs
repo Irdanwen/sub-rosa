@@ -27,8 +27,12 @@ pub const KINDS: [&str; 4] = ["character", "location", "prop", "look"];
 /// The five image roles are the ordered stack a reference-to-video model wants:
 /// the identity anchor first, then the angles, then the place it happens in.
 /// `voice` is the odd one out - it points at an audio artifact and rides as a
-/// voice donor rather than as a picture.
-pub const ROLES: [&str; 6] = ["portrait", "profile", "wide", "medium", "detail", "voice"];
+/// voice donor rather than as a picture. `sheet` is a character sheet: one
+/// image holding nine views of a character, used to compose frames and never
+/// sent to a video model (ADR-0066).
+pub const ROLES: [&str; 7] = [
+    "portrait", "profile", "sheet", "wide", "medium", "detail", "voice",
+];
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -178,6 +182,13 @@ mod tests {
         let error = validated("charcter", &KINDS, "kind").unwrap_err();
         assert!(error.message.contains("character"));
         assert!(validated("", &ROLES, "role").is_err());
+    }
+
+    #[test]
+    fn a_character_sheet_is_a_role() {
+        // The webview's BIBLE_ROLES and this list must agree, or a sheet saved
+        // to the library would be refused on the way in.
+        assert_eq!(validated("sheet", &ROLES, "role").unwrap(), "sheet");
     }
 
     #[test]

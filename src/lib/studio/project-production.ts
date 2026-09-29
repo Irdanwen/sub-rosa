@@ -1,8 +1,9 @@
 import { t } from "../i18n";
 import { carpeDiemGetCredits } from "../tauri";
+import { defaultEditModel, imageEditModels } from "./catalog";
 import type { MediaCatalog } from "./types";
 import type { ProjectDocument, ProjectShot } from "./projects";
-import { bibleNameInUse } from "./projects";
+import { bibleNameInUse, referencePromptOf, sheetSource } from "./projects";
 import { pickPortraitModel, portraitPrompt } from "./bible/portrait";
 import type { BibleRole } from "./bible/types";
 import type { ProjectBibleEntry } from "./projects";
@@ -155,13 +156,50 @@ export function compileBibleReference(
   name: string,
 ): Workflow {
   if (role === "voice") throw new Error(t("Choose an image reference role."));
+  const prompt = referencePromptOf(entry, role)?.trim() || portraitPrompt(entry, role);
+  const target = `bible-${entry.id}-${role}`;
+  const base = { id: crypto.randomUUID(), name, createdAt: Date.now(), updatedAt: Date.now() };
+  // A sheet drawn from the portrait keeps the face the person already chose;
+  // one drawn from text would be a new face that happens to match the traits.
+  const portrait = role === "sheet" ? sheetSource(entry) : undefined;
+  if (portrait) {
+    const editModel =
+      imageEditModels(catalog).find((candidate) => candidate.id === entry.editModelId) ??
+      defaultEditModel(catalog);
+    if (!editModel) throw new Error(t("Choose an available image model for this reference."));
+    const source = `${target}-source`;
+    return {
+      ...base,
+      nodes: [
+        {
+          id: source,
+          type: "asset",
+          label: "",
+          position: { x: 0, y: 0 },
+          params: { artifactId: portrait },
+        },
+        {
+          id: target,
+          type: "imageEdit",
+          label: entry.name,
+          position: { x: 300, y: 0 },
+          params: {
+            model: editModel.id,
+            prompt: `Keep the identity of the person in image 1 exactly: the same face, hair, build and outfit. ${prompt}`,
+            bibleEntryId: entry.id,
+            bibleRole: role,
+          },
+        },
+      ],
+      edges: [{ id: `${source}-${target}`, source, target, targetPort: "images" }],
+    };
+  }
   const modelId = entry.imageModelId || pickPortraitModel(catalog)?.id;
   const model = catalog.models.find(
     (candidate) =>
       candidate.id === modelId && candidate.mediaType === "image" && !candidate.offline,
   );
   if (!model) throw new Error(t("Choose an available image model for this reference."));
-  const prompt = entry.imagePrompt?.trim() || portraitPrompt(entry, role);
   const ratio = entry.kind === "location" ? "16:9" : "1:1";
   const ratios = model.constraints?.aspectRatios ?? model.constraints?.aspect_ratios;
   const params = {
@@ -172,20 +210,9 @@ export function compileBibleReference(
     bibleRole: role,
   };
   return {
-    id: crypto.randomUUID(),
-    name,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    ...base,
     edges: [],
-    nodes: [
-      {
-        id: `bible-${entry.id}-${role}`,
-        type: "image",
-        label: entry.name,
-        position: { x: 0, y: 0 },
-        params,
-      },
-    ],
+    nodes: [{ id: target, type: "image", label: entry.name, position: { x: 0, y: 0 }, params }],
   };
 }
 

@@ -7,12 +7,23 @@ export type BibleKind = (typeof BIBLE_KINDS)[number];
 /**
  * The roles a reference can play.
  *
- * The five image roles are the ordered stack a reference-to-video model wants:
+ * Five image roles are the ordered stack a reference-to-video model wants:
  * the identity anchor first, then the other angles, then the place it happens
  * in. `voice` is the odd one out - it points at an audio artifact and rides as
- * a voice donor rather than as a picture.
+ * a voice donor rather than as a picture. `sheet` is a character sheet, nine
+ * views of one character in a 3 by 3 grid: it feeds image composition and is
+ * cut into a portrait and a profile, but never rides to a video model, which
+ * would film the grid (ADR-0066).
  */
-export const BIBLE_ROLES = ["portrait", "profile", "wide", "medium", "detail", "voice"] as const;
+export const BIBLE_ROLES = [
+  "portrait",
+  "profile",
+  "sheet",
+  "wide",
+  "medium",
+  "detail",
+  "voice",
+] as const;
 export type BibleRole = (typeof BIBLE_ROLES)[number];
 
 export const BIBLE_KIND_LABELS: Record<BibleKind, string> = {
@@ -37,6 +48,9 @@ export const BIBLE_ROLE_LABELS: Record<BibleRole, string> = {
   get profile() {
     return t("Profile");
   },
+  get sheet() {
+    return t("Character sheet 3×3");
+  },
   get wide() {
     return t("Wide");
   },
@@ -53,7 +67,7 @@ export const BIBLE_ROLE_LABELS: Record<BibleRole, string> = {
 
 /** Which roles make sense for a kind, in the order a surface should offer them. */
 export const ROLES_BY_KIND: Record<BibleKind, readonly BibleRole[]> = {
-  character: ["portrait", "profile", "detail", "voice"],
+  character: ["portrait", "profile", "sheet", "detail", "voice"],
   location: ["wide", "medium", "detail"],
   prop: ["detail", "portrait"],
   look: ["wide", "medium", "detail"],
