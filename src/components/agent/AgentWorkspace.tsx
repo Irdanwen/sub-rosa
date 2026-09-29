@@ -1,6 +1,7 @@
-import { openAssistants } from "../assistants/AssistantLauncher";
+import { registerAssistantsPanelHost } from "../assistants/AssistantLauncher";
+import { type AgentAssistantsTab, AgentAssistantsPanel } from "./AgentAssistantsPanel";
 import "../../styles/chat-reading.css";
-import { PortableConversationsDialog } from "./PortableConversationsDialog";
+import { useSidePanelResize } from "./side-panel";
 import {
   accountConversationPrepare,
   accountConversationBind,
@@ -23,6 +24,7 @@ import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconArrowsRepeat } from "central-icons/IconArrowsRepeat";
 import { IconBolt } from "central-icons/IconBolt";
+import { IconBubbleSparkle } from "central-icons/IconBubbleSparkle";
 import { IconBranchSimple } from "central-icons/IconBranchSimple";
 import { IconCirclesThree } from "central-icons/IconCirclesThree";
 import { IconBubble3 } from "central-icons/IconBubble3";
@@ -87,7 +89,6 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type FormEvent,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
   memo,
@@ -763,6 +764,9 @@ type ComposerDraftSnapshot = {
 /** The right-hand file viewer: a list of every file surfaced in the
  * conversation, or one file opened for reading. */
 type AgentArtifactPanelState = { view: "list" } | { view: "file"; artifact: AgentArtifact };
+/** The Assistants panel shares the Files panel's slot, one at a time.
+ * `request` remounts it when asked to open one conversation. */
+type AgentAssistantsPanelState = { tab: AgentAssistantsTab; taskId?: string; request: number };
 
 type TauriFileDropPayload = {
   paths?: string[];
@@ -1248,7 +1252,6 @@ export function AgentWorkspace({
   const [continuity] = useState(() => sessionContinuity);
   const [tasks, setTasks] = useState<AgentTaskDto[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
-  const [portableConversationsOpen, setPortableConversationsOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<AgentPanel>("chat");
   const [draft, setDraft] = useState("");
   // The message's single category tag, mirrored from the composer's chip. Null
@@ -1539,6 +1542,8 @@ export function AgentWorkspace({
   );
   const [filesystemLoading, setFilesystemLoading] = useState(false);
   const [artifactPanel, setArtifactPanel] = useState<AgentArtifactPanelState | null>(null);
+  const [assistantsPanel, setAssistantsPanel] = useState<AgentAssistantsPanelState | null>(null);
+  const assistantsPanelRequest = useRef(0);
   // The session whose usage/cost panel is open, or null. Self-contained for
   // feature 09; feature 11's activity drawer will later host the same panel.
   const [usagePanelSessionId, setUsagePanelSessionId] = useState<string | null>(null);
@@ -2067,6 +2072,51 @@ export function AgentWorkspace({
     setArtifactPanel(null);
     setDevArtifacts([]);
   }, [selectedHermesSessionId, selectedTaskId]);
+
+  // One right-hand slot: opening the files takes it from the assistants. (The
+  // other direction is in the handlers that open the assistants.)
+  useEffect(() => {
+    if (artifactPanel) setAssistantsPanel(null);
+  }, [artifactPanel]);
+
+  // While the chat is on screen, "open my assistants" (deep links, the toggle)
+  // lands in this panel beside the conversation rather than over it.
+  useEffect(
+    () =>
+      registerAssistantsPanelHost((taskId) => {
+        setArtifactPanel(null);
+        assistantsPanelRequest.current += 1;
+        setAssistantsPanel({
+          tab: "assistants",
+          taskId,
+          request: assistantsPanelRequest.current,
+        });
+      }),
+    [],
+  );
+  const toggleAssistantsPanel = () => {
+    if (assistantsPanel) {
+      setAssistantsPanel(null);
+      return;
+    }
+    setArtifactPanel(null);
+    assistantsPanelRequest.current += 1;
+    setAssistantsPanel({ tab: "assistants", request: assistantsPanelRequest.current });
+  };
+
+  // Esc closes the assistants panel, like the file viewer below. A modal
+  // opened over it (the assistant editor) claims Escape first.
+  const assistantsPanelOpen = assistantsPanel !== null;
+  useEffect(() => {
+    if (!assistantsPanelOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        setAssistantsPanel(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [assistantsPanelOpen]);
 
   // Esc dismisses the file viewer. The card slides away from the toggle pill
   // when the panel opens, so the keyboard is the close affordance that never
@@ -7988,26 +8038,35 @@ export function AgentWorkspace({
     <section
       className="agent-workspace"
       aria-label={t("Session")}
-      data-artifact-panel={artifactPanel ? "open" : undefined}
+      data-side-panel={artifactPanel || assistantsPanel ? "open" : undefined}
       data-hero={heroMode ? "true" : undefined}
     >
-      <div className="portable-entry">
-        <button type="button" className="btn btn-secondary" onClick={() => openAssistants()}>
-          {t("My assistants")}
-        </button>
+      <div className="agent-side-entry">
         <button
           type="button"
-          className="btn btn-secondary"
-          onClick={() => setPortableConversationsOpen(true)}
+          className="agent-session-files agent-assistants-toggle"
+          aria-pressed={assistantsPanel !== null}
+          onClick={toggleAssistantsPanel}
         >
-          {t("Conversations from your devices")}
+          <IconBubbleSparkle size={14} ariaHidden />
+          <span>{t("My assistants")}</span>
         </button>
       </div>
-      <PortableConversationsDialog
-        open={portableConversationsOpen}
-        onClose={() => setPortableConversationsOpen(false)}
-        onContinue={continuePortableConversation}
-      />
+      {/* Portaled into .app-shell for the same reason as the Files panel
+          below, and outside the hero branch so it opens from a new session. */}
+      {assistantsPanel
+        ? createPortal(
+            <AgentAssistantsPanel
+              key={assistantsPanel.request}
+              tab={assistantsPanel.tab}
+              initialTaskId={assistantsPanel.taskId}
+              onTab={(tab) => setAssistantsPanel((open) => (open ? { ...open, tab } : open))}
+              onContinue={continuePortableConversation}
+              onClose={() => setAssistantsPanel(null)}
+            />,
+            document.querySelector(".app-shell") ?? document.body,
+          )
+        : null}
       {/* Feature 11: the Agent activity drawer and its toggle. One top-level
           surface so it shows every session's live activity, not
           just the selected one. The toggle is hidden while the drawer is open
@@ -12067,21 +12126,6 @@ type AgentArtifactPreview =
   | { kind: "text"; text: string }
   | { kind: "none" };
 
-// Files panel width — user-resizable between these bounds (and never past
-// roughly half the window), remembered across sessions. The live value is
-// the --agent-files-w custom property on .app-shell, which the panel, the
-// main card's margin, and the composer all share.
-const AGENT_FILES_WIDTH_KEY = "june:agent:files-panel-width";
-const FILES_PANEL_MIN_W = 300;
-const FILES_PANEL_MAX_W = 600;
-
-function clampFilesPanelWidth(width: number) {
-  const viewportCap =
-    typeof window === "undefined" ? FILES_PANEL_MAX_W : Math.round(window.innerWidth * 0.48);
-  const max = Math.max(FILES_PANEL_MIN_W, Math.min(FILES_PANEL_MAX_W, viewportCap));
-  return Math.min(Math.max(Math.round(width), FILES_PANEL_MIN_W), max);
-}
-
 function AgentArtifactPanel({
   artifacts,
   state,
@@ -12117,44 +12161,7 @@ function AgentArtifactPanel({
   const [entered, setEntered] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
 
-  // Restore the remembered width once per panel mount. The property lives on
-  // .app-shell (not this element) because the main card's slide-over margin
-  // and the composer's right inset consume it too.
-  useEffect(() => {
-    const shell = panelRef.current?.closest(".app-shell");
-    if (!(shell instanceof HTMLElement)) return;
-    const stored = Number.parseInt(window.localStorage.getItem(AGENT_FILES_WIDTH_KEY) ?? "", 10);
-    if (Number.isFinite(stored)) {
-      shell.style.setProperty("--agent-files-w", `${clampFilesPanelWidth(stored)}px`);
-    }
-  }, []);
-
-  // Drag-resize from the panel's left edge, mirroring the sidebar handle:
-  // the var tracks the cursor with transitions suppressed (the
-  // data-files-resizing attribute), and the final width persists on release.
-  const startResize = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    const shell = event.currentTarget.closest(".app-shell");
-    const startWidth = panelRef.current?.offsetWidth;
-    if (!(shell instanceof HTMLElement) || !startWidth) return;
-    shell.setAttribute("data-files-resizing", "true");
-    const startX = event.clientX;
-    const onMove = (move: PointerEvent) => {
-      const next = clampFilesPanelWidth(startWidth + (startX - move.clientX));
-      shell.style.setProperty("--agent-files-w", `${next}px`);
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      shell.removeAttribute("data-files-resizing");
-      const finalWidth = panelRef.current?.offsetWidth;
-      if (finalWidth) {
-        window.localStorage.setItem(AGENT_FILES_WIDTH_KEY, `${finalWidth}`);
-      }
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
-  }, []);
+  const startResize = useSidePanelResize(panelRef);
 
   const artifactPath = artifact?.path;
   useEffect(() => {
