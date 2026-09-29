@@ -1366,6 +1366,8 @@ ou un cue sheet. Chaque cue est ancré sur des plans et a ses prises.
 | `src-tauri/src/score/` | `score_propose` : une complétion transitoire, `SCORE_PROMPT_VERSION`, réponse en numéros de plans, bornée, triée, sans chevauchement |
 | `src-tauri/src/studio_ai/` | `kind: musicPrompt` + `MUSIC_PROMPT_TASK` + `music_family_guide` |
 | `src/components/studio/ProjectMusic.tsx` | l'onglet : frise des plans et des cues, éditeur de cue, prises audio, chambre noire audio |
+| `src/lib/studio/score-montage.ts` | `placeScore` : « Placer la musique » pose la prise active de chaque cue au début du clip de son premier plan (quelle que soit la prise utilisée), jusqu'à la fin de son dernier plan + 2 s, coupée si plus longue, fondus 0,5 s / 1,5 s ; remplace son propre placement précédent, jamais la musique posée à la main |
+| `src/lib/studio/editor/duck.ts` | `dialogueDuck` : la piste musique (et toute piste audio qui le demande, `duckUnderDialogue`) baisse de 6 dB sous les clips de la piste dialogue, avec les constantes de `mix.ts` ; appliqué dans `EditorAudio.start`, donc aperçu = export |
 
 Pièges :
 
@@ -1375,6 +1377,8 @@ Pièges :
   unique : `scoreCues` renvoie `undefined` pour lui.
 - `score_propose` est une commande partagée : présente dans les **deux** listes
   `generate_handler!`.
+- Le ducking du montage ne passe pas dans l'export FCPXML/xmeml (ADR-0031) :
+  suivi à faire, en images-clés de volume.
 
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 

@@ -11,6 +11,7 @@ import {
   sourceFrame,
   valueAt,
 } from "./document";
+import { dialogueDuck } from "./duck";
 
 // Serve the pinned package as a same-origin module. Do not weaken script-src
 // to blob: just to let the library construct its fallback worklet dynamically.
@@ -139,6 +140,7 @@ export class EditorAudio {
       ...(await Promise.all([...this.sounds.values()].map((sound) => sound.node.latency()))),
     );
     const start = this.context.currentTime + latency + 0.1;
+    const duck = dialogueDuck(doc);
     for (const clip of doc.clips) {
       const sound = this.sounds.get(clip.id),
         track = doc.tracks.find((track) => track.id === clip.trackId);
@@ -156,7 +158,7 @@ export class EditorAudio {
           formantCompensation: true,
           formantBaseHz: 0,
         });
-        sound.gain.gain.linearRampToValueAtTime(point.gain, output);
+        sound.gain.gain.linearRampToValueAtTime(point.gain * duck(clip, point.frame), output);
       }
       const stop = start + (clip.start + clip.duration - frame) / fps(doc);
       void sound.node.schedule({ active: false, output: stop });
