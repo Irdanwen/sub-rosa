@@ -1052,6 +1052,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       artifacts={media}
       projects={projects}
       projectId={project?.id}
+      document={project?.document}
       readOnly={busy || mediaSaving || exporting}
       onMetadata={async (artifact, title, projectIds) => {
         if (busy) throw new Error(t("Wait for production to finish before editing media."));

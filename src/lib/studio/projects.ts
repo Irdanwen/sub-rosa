@@ -3,6 +3,7 @@ import { t } from "../i18n";
 import { messageFromError } from "../errors";
 import { getNote, listFilms, shotList } from "../tauri";
 import { listBibleEntries, type BibleEntry, type BibleRole } from "./bible";
+import { BIBLE_ROLE_LABELS } from "./bible/types";
 import type { Workflow, WorkflowNode } from "./workflow/schema";
 import type { WorkflowRunSummary } from "./workflow-run";
 import type { StudioArtifact } from "./types";
@@ -210,6 +211,32 @@ export function montageArtifacts(
   return artifacts.filter(
     (artifact) => artifact.projectIds?.includes(project.id) || referenced.has(artifact.id),
   );
+}
+/**
+ * What a file is to this project, in words: "Shot 3: The corridor, take 2"
+ * rather than the UUID it was saved under. Undefined when the project does not
+ * know the file, so the caller falls back to the file's own title.
+ */
+export function artifactLabel(document: ProjectDocument, artifactId: string): string | undefined {
+  for (const [index, shot] of document.shots.entries()) {
+    const take = shot.takeIds.indexOf(artifactId);
+    const number = index + 1;
+    if (take !== -1)
+      return t("Shot {number}: {title}, take {take}", {
+        number,
+        title: shot.title,
+        take: take + 1,
+      });
+    if (shot.openingArtifactId === artifactId || shot.imageCandidates.includes(artifactId))
+      return t("Shot {number}: {title}, opening image", { number, title: shot.title });
+    if (shot.endingArtifactId === artifactId)
+      return t("Shot {number}: {title}, ending image", { number, title: shot.title });
+  }
+  for (const entry of document.bible) {
+    const ref = entry.refs.find((candidate) => candidate.artifactId === artifactId);
+    if (ref) return t("{name}: {role}", { name: entry.name, role: BIBLE_ROLE_LABELS[ref.role] });
+  }
+  return undefined;
 }
 export function shotSignature(
   shot: ProjectShot,

@@ -34,6 +34,7 @@ import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { AiRewrite } from "./AiRewrite";
 import { GalleryPicker } from "./GalleryPicker";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
+import { MediaViewer } from "./MediaViewer";
 
 export function ProjectBible({
   entries,
@@ -63,12 +64,29 @@ export function ProjectBible({
   const [nameDraft, setNameDraft] = useState<{ entryId: string; value: string }>();
   const [cutting, setCutting] = useState<string>();
   const [cutError, setCutError] = useState("");
+  const [viewing, setViewing] = useState<number>();
   useEffect(() => {
     void listBibleEntries()
       .then(setGlobal)
       .catch(() => undefined);
   }, []);
   const entry = entries.find((item) => item.id === selected) ?? entries[0];
+  // The entry's pictures, in the order the video models read them.
+  const viewable = (entry?.refs ?? []).flatMap((ref) => {
+    const artifact = artifacts.find((item) => item.id === ref.artifactId);
+    return artifact?.kind === "image"
+      ? [
+          {
+            artifact,
+            refId: ref.id,
+            title: t("{name}: {role}", {
+              name: entry?.name ?? "",
+              role: BIBLE_ROLE_LABELS[ref.role],
+            }),
+          },
+        ]
+      : [];
+  });
   const activeRole =
     entry && !ROLES_BY_KIND[entry.kind].includes(role) ? ROLES_BY_KIND[entry.kind][0] : role;
   const models = modelsOfType(catalog, "image");
@@ -290,7 +308,18 @@ export function ProjectBible({
                 return (
                   <div key={ref.id} className="project-reference">
                     {artifact?.kind === "image" ? (
-                      <img src={artifactSrc(artifact)} alt={ref.label} />
+                      <button
+                        type="button"
+                        className="project-reference-open"
+                        aria-label={t("Enlarge {name}", {
+                          name: BIBLE_ROLE_LABELS[ref.role],
+                        })}
+                        onClick={() =>
+                          setViewing(viewable.findIndex((item) => item.refId === ref.id))
+                        }
+                      >
+                        <img src={artifactSrc(artifact)} alt={ref.label} />
+                      </button>
                     ) : artifact ? (
                       // biome-ignore lint/a11y/useMediaCaption: voice references have no caption track
                       <audio
@@ -457,6 +486,14 @@ export function ProjectBible({
           </p>
         </div>
       )}
+      {viewing !== undefined && viewable[viewing] ? (
+        <MediaViewer
+          items={viewable}
+          index={viewing}
+          onIndex={setViewing}
+          onClose={() => setViewing(undefined)}
+        />
+      ) : null}
       {picker && entry ? (
         <GalleryPicker
           title={

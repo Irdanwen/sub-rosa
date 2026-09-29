@@ -2,12 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../../lib/i18n";
 import { artifactSrc, exportArtifact } from "../../lib/studio/artifacts";
 import type { StudioArtifact } from "../../lib/studio/types";
-import { artifactError, type ProjectSummary } from "../../lib/studio/projects";
+import {
+  artifactError,
+  artifactLabel,
+  type ProjectDocument,
+  type ProjectSummary,
+} from "../../lib/studio/projects";
+import { MediaViewer } from "./MediaViewer";
 
 export function ProjectMedia({
   artifacts,
   projects,
   projectId,
+  document,
   onMetadata,
   onAttach,
   readOnly = false,
@@ -15,6 +22,8 @@ export function ProjectMedia({
   artifacts: StudioArtifact[];
   projects: ProjectSummary[];
   projectId?: string;
+  /** The open project, so a file reads as the shot or the reference it is. */
+  document?: ProjectDocument;
   onMetadata: (artifact: StudioArtifact, title: string, projectIds: string[]) => Promise<void>;
   onAttach?: (artifact: StudioArtifact) => void;
   readOnly?: boolean;
@@ -31,15 +40,20 @@ export function ProjectMedia({
   useEffect(() => {
     if (editing?.id) renameInput.current?.focus();
   }, [editing?.id]);
+  /** A name the person gave wins, then what the file is to this project. */
+  const nameOf = (artifact: StudioArtifact) =>
+    artifact.title ||
+    (document ? artifactLabel(document, artifact.id) : undefined) ||
+    artifact.fileName;
   const visible = artifacts.filter(
     (artifact) =>
       (all || artifact.projectIds?.includes(projectId ?? "")) &&
       (!kind || artifact.kind === kind) &&
-      `${artifact.title ?? ""} ${artifact.fileName} ${artifact.prompt} ${artifact.model}`
+      `${nameOf(artifact)} ${artifact.fileName} ${artifact.prompt} ${artifact.model}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
-  const preview = artifacts.find((artifact) => artifact.id === selected);
+  const previewIndex = visible.findIndex((artifact) => artifact.id === selected);
   const save = async (artifact: StudioArtifact, title: string, projectIds: string[]) => {
     if (readOnly) return false;
     setError("");
@@ -100,25 +114,23 @@ export function ProjectMedia({
           {error}
         </p>
       ) : null}
-      {preview ? (
-        <div className="project-media-preview">
-          <button type="button" className="btn btn-ghost" onClick={() => setSelected(undefined)}>
-            {t("Close preview")}
-          </button>
-          {preview.kind === "image" ? (
-            <img src={artifactSrc(preview)} alt={preview.title || preview.prompt} />
-          ) : preview.kind === "video" ? (
-            // biome-ignore lint/a11y/useMediaCaption: generated gallery videos have no caption track
-            <video controls autoPlay src={artifactSrc(preview)} />
-          ) : (
-            // biome-ignore lint/a11y/useMediaCaption: generated gallery audio has no caption track
-            <audio
-              controls
-              src={artifactSrc(preview)}
-              aria-label={t("Preview {name}", { name: preview.title || preview.fileName })}
-            />
+      {previewIndex !== -1 ? (
+        <MediaViewer
+          items={visible.map((artifact) => ({ artifact, title: nameOf(artifact) }))}
+          index={previewIndex}
+          onIndex={(index) => setSelected(visible[index]?.id)}
+          onClose={() => setSelected(undefined)}
+          actions={(artifact) => (
+            <button
+              type="button"
+              onClick={() =>
+                void exportArtifact(artifact).catch((cause) => setError(artifactError(cause)))
+              }
+            >
+              {t("Export")}
+            </button>
           )}
-        </div>
+        />
       ) : null}
       {visible.length ? (
         <div className={`project-media-${layout}`}>
@@ -128,14 +140,14 @@ export function ProjectMedia({
                 type="button"
                 className="project-media-thumb"
                 onClick={() => setSelected(artifact.id)}
-                aria-label={t("Preview {name}", { name: artifact.title || artifact.fileName })}
+                aria-label={t("Preview {name}", { name: nameOf(artifact) })}
               >
                 {artifact.kind === "image" ? (
                   <img src={artifactSrc(artifact)} alt="" loading="lazy" />
                 ) : artifact.kind === "video" ? (
                   <video src={artifactSrc(artifact)} preload="metadata" muted />
                 ) : (
-                  <span>{t("Audio")}</span>
+                  <span>{artifact.kind === "music" ? t("Music") : t("Audio")}</span>
                 )}
               </button>
               <div className="project-media-caption">
@@ -167,11 +179,9 @@ export function ProjectMedia({
                     className="project-media-name"
                     disabled={saving || readOnly}
                     title={t("Rename")}
-                    onClick={() =>
-                      setEditing({ id: artifact.id, title: artifact.title || artifact.fileName })
-                    }
+                    onClick={() => setEditing({ id: artifact.id, title: nameOf(artifact) })}
                   >
-                    {artifact.title || artifact.fileName}
+                    {nameOf(artifact)}
                   </button>
                 )}
                 <small>{artifact.model || t("Model unavailable")}</small>
