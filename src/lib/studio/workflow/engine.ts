@@ -630,8 +630,11 @@ async function executeNode(
       const sources = imagesOn(ports, "images").map(imageDataUri);
       if (sources.length > 3) throw new Error(t("Choose at most three reference images."));
       if (sources.length === 0) throw new Error("Connect at least one image to edit.");
+      // A format goes through multi-edit even for one image: see composeImages.
+      const aspectRatio = stringParam(params, "aspectRatio") || undefined;
+      const multi = sources.length > 1 || aspectRatio !== undefined;
       if (context.durableMedia && storage) {
-        const base = sources.length > 1 ? "/image/multi-edit" : "/image/edit";
+        const base = multi ? "/image/multi-edit" : "/image/edit";
         const saved = await context.durableMedia(
           node.id,
           {
@@ -646,7 +649,8 @@ async function executeNode(
               model,
               prompt,
               safe_mode: false,
-              ...(sources.length > 1 ? { images: sources } : { image: sources[0] }),
+              ...(multi ? { images: sources } : { image: sources[0] }),
+              ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
             },
             costCredits: context.costCredits,
           },
@@ -662,7 +666,7 @@ async function executeNode(
         };
       }
       // One image edits, several compose; heavy models queue on their own.
-      const edited = await composeImages(model, prompt, sources);
+      const edited = await composeImages(model, prompt, sources, { aspectRatio });
       const saved = storage
         ? await storage.save({ base64: edited }, "png", {
             kind: "image",

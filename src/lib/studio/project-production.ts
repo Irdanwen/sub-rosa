@@ -111,8 +111,23 @@ export function compileProject(
   return compileProjectWithNotes(name, document, catalog, onlyShotId).workflow;
 }
 
-export function compileOpeningImage(shot: ProjectShot, name: string): Workflow {
-  if (!shot.imageModelId || !shot.imagePrompt.trim())
+/** The edit model an opening image is composed with: the shot's choice while
+ * it is still offered, the app's automatic pick otherwise. */
+export function openingImageModel(shot: ProjectShot, catalog: MediaCatalog) {
+  return (
+    imageEditModels(catalog).find((candidate) => candidate.id === shot.imageModelId) ??
+    defaultEditModel(catalog)
+  );
+}
+
+export function compileOpeningImage(
+  shot: ProjectShot,
+  name: string,
+  catalog: MediaCatalog,
+  aspectRatio?: string,
+): Workflow {
+  const model = openingImageModel(shot, catalog);
+  if (!model || !shot.imagePrompt.trim())
     throw new Error(t("Choose an image model and describe your opening image."));
   if (!shot.imageReferenceIds.length || shot.imageReferenceIds.length > 3)
     throw new Error(t("Choose one to three reference images."));
@@ -129,7 +144,8 @@ export function compileOpeningImage(shot: ProjectShot, name: string): Workflow {
     type: "imageEdit",
     label: shot.title,
     position: { x: 300, y: 0 },
-    params: { model: shot.imageModelId, prompt: shot.imagePrompt },
+    // The frame opens the shot, so it comes out in the project's format.
+    params: { model: model.id, prompt: shot.imagePrompt, aspectRatio: aspectRatio ?? "" },
   });
   return {
     id: crypto.randomUUID(),

@@ -778,6 +778,36 @@ describe("image edit node", () => {
     ]);
     expect(results.get("out")?.output).toMatchObject({ kind: "image", base64: "SRC-composed" });
   });
+
+  it("sends a format through multi-edit, even for one image", async () => {
+    const storage = imageAssetStorage();
+    const durableMedia = vi.fn(async () => ({ artifactId: "framed", src: "image.png" }));
+    await runWorkflow(
+      workflow(
+        [
+          node("a", "asset", { assetKind: "image", artifactId: "subject" }),
+          node("edit", "imageEdit", {
+            model: "nano-banana-2-edit",
+            prompt: "frame it",
+            aspectRatio: "16:9",
+          }),
+          node("out", "output"),
+        ],
+        [edge("a", "edit", "images"), edge("edit", "out")],
+      ),
+      { storage, durableMedia },
+    );
+    const request = vi.mocked(durableMedia).mock.calls[0] as unknown as [
+      string,
+      { queuePath: string; queueBody: Record<string, unknown> },
+    ];
+    expect(request[1].queuePath).toBe("/image/multi-edit/queue");
+    expect(request[1].queueBody).toMatchObject({
+      images: ["data:image/png;base64,SRC-subject"],
+      aspect_ratio: "16:9",
+    });
+    expect(request[1].queueBody.image).toBeUndefined();
+  });
 });
 
 describe("approval gate", () => {
