@@ -176,6 +176,36 @@ export function nearestOption(options: readonly string[] | undefined, wanted: nu
   return scored[0].option;
 }
 
+/**
+ * How long a shot renders with this model, in the one place that decides it:
+ * the shot's own duration when it chose one, otherwise the pace its motion asks
+ * for, snapped to what the model publishes. The compiler sends `duration`; the
+ * prompt rewrite paces the action over `seconds`, so the two never disagree.
+ */
+export function resolveShotDuration(
+  shot: Pick<Shot, "duration" | "motion">,
+  model: MediaModel | undefined,
+): { duration: string; seconds: number; automatic: boolean; supported: boolean } {
+  const durations = model ? effectiveVideoConstraints(model).durations : undefined;
+  const automatic = shot.duration === undefined;
+  const wanted = automatic
+    ? (SECONDS_BY_MOTION[shot.motion] ?? SECONDS_BY_MOTION.medium)
+    : Number.parseFloat(String(shot.duration));
+  const duration =
+    !automatic && durations === undefined
+      ? String(shot.duration)
+      : nearestOption(durations, wanted);
+  const supported =
+    automatic ||
+    (Number.isFinite(wanted) &&
+      wanted > 0 &&
+      (!durations || Number.parseFloat(duration) === wanted));
+  const parsed = Number.parseFloat(duration);
+  const seconds =
+    Number.isFinite(parsed) && parsed > 0 ? parsed : automatic ? wanted : DEFAULT_SHOT_SECONDS;
+  return { duration, seconds, automatic, supported };
+}
+
 interface Routing {
   /** Text-to-video: nothing to start from. */
   text?: MediaModel;
@@ -465,20 +495,8 @@ export function planShots(
     }
 
     const constraints = effectiveVideoConstraints(model);
-    const wanted =
-      shot.duration === undefined
-        ? (SECONDS_BY_MOTION[shot.motion] ?? SECONDS_BY_MOTION.medium)
-        : Number.parseFloat(String(shot.duration));
-    const duration =
-      shot.duration !== undefined && constraints.durations === undefined
-        ? String(shot.duration)
-        : nearestOption(constraints.durations, wanted);
-    if (
-      shot.duration !== undefined &&
-      (!Number.isFinite(wanted) ||
-        wanted <= 0 ||
-        (constraints.durations && Number.parseFloat(duration) !== wanted))
-    ) {
+    const { duration, supported } = resolveShotDuration(shot, model);
+    if (!supported) {
       refuse(t("Choose a duration supported by this model."));
       return;
     }
