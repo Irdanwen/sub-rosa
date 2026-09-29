@@ -44,13 +44,9 @@ export function AgentAssistantsPanel({
   ];
   return (
     <>
-      <div
-        className="agent-files-resize-handle"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t("Resize assistants panel")}
-        onPointerDown={startResize}
-      />
+      {/* A pointer-only affordance: it takes no focus and has no keyboard
+          action, so it is not announced as an operable separator. */}
+      <div className="agent-files-resize-handle" aria-hidden="true" onPointerDown={startResize} />
       <aside
         ref={panelRef}
         className="agent-artifact-panel agent-assistants-panel"
