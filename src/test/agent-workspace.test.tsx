@@ -25,6 +25,19 @@ import { classifyHermesEvent } from "../lib/hermes-control-plane";
 import { hermesArtifactStore } from "../lib/hermes-artifact-store";
 import { hermesTraceBuffer } from "../lib/hermes-trace-buffer";
 import { pendingActionStore } from "../lib/hermes-pending-actions";
+import { openAssistants } from "../components/assistants/AssistantLauncher";
+
+// The panel's bodies have suites of their own (assistants, portable
+// conversations); here they only need to say which one is showing.
+vi.mock("../components/assistants/AssistantsDialog", () => ({
+  AssistantsDialog: () => null,
+  AssistantsPanelView: ({ initialTaskId }: { initialTaskId?: string }) => (
+    <p>Assistant library {initialTaskId ?? "home"}</p>
+  ),
+}));
+vi.mock("../components/agent/PortableConversations", () => ({
+  PortableConversations: () => <p>Synced conversations</p>,
+}));
 
 // The hero greeting cycles per visit, so tests match any entry in the pool.
 const HERO_GREETING = new RegExp(
@@ -6046,6 +6059,92 @@ describe("AgentWorkspace", () => {
     expect(within(panel).queryByRole("searchbox")).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("complementary", { name: "Files" })).not.toBeInTheDocument();
+  });
+
+  it("opens my assistants in the right-hand panel, from a new session too", async () => {
+    const user = userEvent.setup();
+    render(<AgentWorkspace />);
+
+    const toggle = await screen.findByRole("button", { name: "My assistants" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await user.click(toggle);
+
+    const panel = await screen.findByRole("complementary", { name: "My assistants" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(within(panel).getByRole("tab", { name: "Assistants" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(panel).getByText("Assistant library home")).toBeVisible();
+
+    // Your devices is the second tab; the library stays mounted behind it.
+    await user.click(within(panel).getByRole("tab", { name: "Your devices" }));
+    expect(within(panel).getByText("Synced conversations")).toBeVisible();
+    expect(within(panel).getByText("Assistant library home")).not.toBeVisible();
+
+    // Not modal: Escape closes it, as does the toggle.
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("complementary", { name: "My assistants" })).not.toBeInTheDocument();
+    await user.click(toggle);
+    expect(await screen.findByRole("complementary", { name: "My assistants" })).toBeInTheDocument();
+    await user.click(toggle);
+    expect(screen.queryByRole("complementary", { name: "My assistants" })).not.toBeInTheDocument();
+  });
+
+  it("lands an assistant conversation link in the panel while the chat is shown", async () => {
+    render(<AgentWorkspace />);
+    await screen.findByRole("button", { name: "My assistants" });
+
+    act(() => openAssistants("assistant-task"));
+
+    const panel = await screen.findByRole("complementary", { name: "My assistants" });
+    expect(within(panel).getByText("Assistant library assistant-task")).toBeInTheDocument();
+  });
+
+  it("shares one right-hand slot between the files and the assistants", async () => {
+    const user = userEvent.setup();
+    const workspaceRoot =
+      "/Users/alex/Library/Application Support/co.opensoftware.june/hermes/workspace";
+    mocks.hermesBridgeFilesystemSnapshot.mockResolvedValue({
+      roots: [
+        {
+          id: "workspace",
+          label: "Workspace",
+          path: workspaceRoot,
+          description: "Hermes scratch files and generated outputs.",
+          entries: [
+            {
+              name: "report.md",
+              path: `${workspaceRoot}/report.md`,
+              kind: "file",
+              size: 1768,
+              modifiedAt: "2026-06-04T18:39:00Z",
+            },
+          ],
+        },
+      ],
+    });
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      {
+        id: "message-1",
+        role: "assistant",
+        content: "Saved `report.md`.",
+        timestamp: "2026-06-04T18:39:00Z",
+      },
+    ]);
+
+    render(<AgentWorkspace />);
+
+    await user.click(await screen.findByRole("button", { name: "View files (1)" }));
+    expect(await screen.findByRole("complementary", { name: "Files" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "My assistants" }));
+    expect(await screen.findByRole("complementary", { name: "My assistants" })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Files" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "View files (1)" }));
+    expect(await screen.findByRole("complementary", { name: "Files" })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "My assistants" })).not.toBeInTheDocument();
   });
 
   it("does not surface files only mentioned inside tool output", async () => {

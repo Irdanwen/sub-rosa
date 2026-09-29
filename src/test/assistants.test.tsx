@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AssistantsDialog } from "../components/assistants/AssistantsDialog";
+import { AssistantsDialog, AssistantsPanelView } from "../components/assistants/AssistantsDialog";
+import * as launcherStore from "../components/assistants/launcher-store";
 import { AssistantChat } from "../components/assistants/AssistantChat";
 import type { AgentTaskDto } from "../lib/tauri";
 import { emptyAssistant, assistantMediaIds } from "../lib/assistants";
@@ -88,6 +89,29 @@ beforeEach(() => {
   });
 });
 describe("custom assistants", () => {
+  it("keeps the panel to the library and a conversation, and sends editing to the full surface", async () => {
+    const user = userEvent.setup();
+    const openEditor = vi.spyOn(launcherStore, "openAssistantEditor").mockImplementation(() => {});
+    render(<AssistantsPanelView />);
+    // The panel's tabs name the library; it has no dialog of its own.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const card = (await screen.findByRole("heading", { name: "Research partner" })).closest(
+      "article",
+    ) as HTMLElement;
+    await user.click(within(card).getByRole("button", { name: "Edit" }));
+    expect(openEditor).toHaveBeenCalledWith({ editId: "a" });
+    await user.click(screen.getByRole("button", { name: "Create an assistant" }));
+    expect(openEditor).toHaveBeenCalledWith({ create: "" });
+    expect(screen.queryByLabelText("Your idea")).toBeNull();
+    // A conversation opens in place, with a way back to the library.
+    await user.click(within(card).getByRole("button", { name: "Chat" }));
+    expect(await screen.findByRole("button", { name: "My assistants" })).toBeInTheDocument();
+    openEditor.mockRestore();
+  });
+  it("opens straight on an assistant's editor when asked to", async () => {
+    render(<AssistantsDialog open initialEditId="a" onClose={vi.fn()} />);
+    expect(await screen.findByDisplayValue("Research partner")).toBeInTheDocument();
+  });
   it("deduplicates only complete valid media fences actually rendered as cards", () => {
     const valid =
       '```subrosa:media\n{"v":1,"proposalId":"123e4567-e89b-12d3-a456-426614174000"}\n```';
