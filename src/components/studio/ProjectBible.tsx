@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { friendlyErrorMessage } from "../../lib/errors";
 import { intlLocale, t } from "../../lib/i18n";
 import {
   BIBLE_KIND_LABELS,
@@ -9,9 +10,25 @@ import {
   type BibleRole,
 } from "../../lib/studio/bible";
 import { pickPortraitModel, portraitPrompt } from "../../lib/studio/bible/portrait";
-import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
-import { artifactSrc } from "../../lib/studio/artifacts";
-import { bibleNameInUse, uniqueBibleName, type ProjectBibleEntry } from "../../lib/studio/projects";
+import {
+  defaultEditModel,
+  estimateCostCredits,
+  imageEditModels,
+  modelsOfType,
+} from "../../lib/studio/catalog";
+import {
+  artifactSrc,
+  readArtifactBase64,
+  saveArtifactFromBase64,
+} from "../../lib/studio/artifacts";
+import { cutSheet } from "../../lib/studio/bible/sheet";
+import {
+  bibleNameInUse,
+  referencePromptOf,
+  sheetSource,
+  uniqueBibleName,
+  type ProjectBibleEntry,
+} from "../../lib/studio/projects";
 import { rewriteTargetModel } from "../../lib/studio/studio-rewrite";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { AiRewrite } from "./AiRewrite";
@@ -44,6 +61,8 @@ export function ProjectBible({
   const [role, setRole] = useState<BibleRole>("portrait");
   const [nameError, setNameError] = useState("");
   const [nameDraft, setNameDraft] = useState<{ entryId: string; value: string }>();
+  const [cutting, setCutting] = useState<string>();
+  const [cutError, setCutError] = useState("");
   useEffect(() => {
     void listBibleEntries()
       .then(setGlobal)
@@ -58,9 +77,57 @@ export function ProjectBible({
   const model = entry?.imageModelId
     ? models.find((item) => item.id === entry.imageModelId)
     : pickPortraitModel(catalog);
-  const cost = model
-    ? estimateCostCredits(model, { multiplier: catalog.priceMultiplier })
+  // A sheet starts from the portrait when there is one, through an edit model,
+  // so the face it repeats nine times is the face already chosen.
+  const fromPortrait = entry && activeRole === "sheet" ? sheetSource(entry) : undefined;
+  const editModels = imageEditModels(catalog);
+  const editModel = fromPortrait
+    ? (editModels.find((item) => item.id === entry?.editModelId) ?? defaultEditModel(catalog))
     : undefined;
+  const drawingModel = fromPortrait ? editModel : model;
+  const cost = drawingModel
+    ? estimateCostCredits(drawingModel, { multiplier: catalog.priceMultiplier })
+    : undefined;
+  const prompt = entry
+    ? (referencePromptOf(entry, activeRole) ?? portraitPrompt(entry, activeRole))
+    : "";
+  const setPrompt = (value: string) =>
+    entry && update({ imagePrompts: { ...entry.imagePrompts, [activeRole]: value } });
+  /** Cut the sheet's portrait and profile out as references of their own. */
+  const cutViews = async (sheetArtifactId: string) => {
+    const sheet = artifacts.find((item) => item.id === sheetArtifactId);
+    if (!entry || !sheet) return;
+    setCutting(sheetArtifactId);
+    setCutError("");
+    try {
+      const extension = sheet.fileName.split(".").pop()?.toLowerCase() || "png";
+      const mime = extension === "jpg" ? "jpeg" : extension;
+      const cuts = await cutSheet(`data:image/${mime};base64,${await readArtifactBase64(sheet)}`);
+      const refs = [...entry.refs];
+      for (const cut of cuts) {
+        const saved = await saveArtifactFromBase64(cut.base64, "png", {
+          kind: "image",
+          model: sheet.model ?? "",
+          prompt: t("{name}, cut from the character sheet", { name: entry.name }),
+          sourceArtifactId: sheet.id,
+        });
+        onArtifact(saved.id);
+        refs.push({
+          id: crypto.randomUUID(),
+          entryId: entry.id,
+          artifactId: saved.id,
+          role: cut.role,
+          label: BIBLE_ROLE_LABELS[cut.role],
+          ordinal: refs.length,
+        });
+      }
+      update({ refs });
+    } catch (cause) {
+      setCutError(friendlyErrorMessage(cause, t("The character sheet could not be read.")));
+    } finally {
+      setCutting(undefined);
+    }
+  };
   const update = (patch: Partial<ProjectBibleEntry>) => {
     if (patch.name !== undefined && entry) {
       if (bibleNameInUse(entries, patch.name, entry.id)) {
@@ -236,6 +303,18 @@ export function ProjectBible({
                       <span>{t("Missing file")}</span>
                     )}
                     <span>{BIBLE_ROLE_LABELS[ref.role]}</span>
+                    {ref.role === "sheet" && artifact?.kind === "image" ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={busy || cutting !== undefined}
+                        onClick={() => void cutViews(ref.artifactId)}
+                      >
+                        {cutting === ref.artifactId
+                          ? t("Cutting...")
+                          : t("Cut out the portrait and profile")}
+                      </button>
+                    ) : null}
                     <div className="project-actions">
                       <button
                         type="button"
@@ -281,37 +360,62 @@ export function ProjectBible({
             <button type="button" className="btn btn-secondary" onClick={() => setPicker(true)}>
               {t("From gallery")}
             </button>
+            {cutError ? (
+              <p role="alert" className="project-error">
+                {cutError}
+              </p>
+            ) : null}
             {activeRole !== "voice" ? (
               <>
-                <MediaModelPicker
-                  value={entry.imageModelId || model?.id || ""}
-                  options={models.map(mediaModelOption)}
-                  onChange={(imageModelId) => update({ imageModelId })}
-                  ariaLabel={t("Reference image model")}
-                />
+                {activeRole === "sheet" ? (
+                  <p className="project-muted">
+                    {fromPortrait
+                      ? t(
+                          "Drawn from this entry's portrait, so the face stays the same. It composes opening images and gives you a portrait and a profile to cut out. It is never sent to a video model.",
+                        )
+                      : t(
+                          "Add or generate a portrait first to keep the same face. Without one, the sheet is drawn from the text.",
+                        )}
+                  </p>
+                ) : null}
+                {fromPortrait ? (
+                  <MediaModelPicker
+                    value={editModel?.id ?? ""}
+                    options={editModels.map(mediaModelOption)}
+                    onChange={(editModelId) => update({ editModelId })}
+                    ariaLabel={t("Character sheet model")}
+                  />
+                ) : (
+                  <MediaModelPicker
+                    value={entry.imageModelId || model?.id || ""}
+                    options={models.map(mediaModelOption)}
+                    onChange={(imageModelId) => update({ imageModelId })}
+                    ariaLabel={t("Reference image model")}
+                  />
+                )}
                 <label className="project-field">
                   {t("Image prompt")}
                   <textarea
                     aria-label={t("Image prompt")}
                     rows={4}
-                    value={entry.imagePrompt ?? portraitPrompt(entry, activeRole)}
-                    onChange={(event) => update({ imagePrompt: event.target.value })}
+                    value={prompt}
+                    onChange={(event) => setPrompt(event.target.value)}
                   />
                 </label>
                 <AiRewrite
                   label={t("Image prompt")}
-                  value={entry.imagePrompt ?? portraitPrompt(entry, activeRole)}
+                  value={prompt}
                   disabled={busy}
-                  onAccept={(imagePrompt) => update({ imagePrompt })}
+                  onAccept={setPrompt}
                   hint={t("Written in English, the language these image models follow best.")}
                   request={() =>
                     entry.name.trim()
                       ? {
                           kind: "imagePrompt",
-                          text: entry.imagePrompt ?? portraitPrompt(entry, activeRole),
+                          text: prompt,
                           modelId: writingModelId,
                           context: {
-                            targetModel: rewriteTargetModel(model),
+                            targetModel: rewriteTargetModel(drawingModel),
                             entry: { name: entry.name, kind: entry.kind, traits: entry.traits },
                             role: activeRole,
                           },

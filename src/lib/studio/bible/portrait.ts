@@ -31,9 +31,21 @@ import type { BibleEntry, BibleKind, BibleRole } from "./types";
  * two "portraits" of the same person at different framings are two angles, and
  * two identical ones are one reference wasted.
  */
+/**
+ * A character sheet: nine views of one person in one image.
+ *
+ * The layout is fixed because the app cuts it: `bible/sheet.ts` takes the
+ * middle row's first and last cells as the portrait and the profile. Keep the
+ * two in step, and keep `studio_ai::prompts::SHEET_RULE` describing the same
+ * grid, or an AI-improved prompt would move the cells the cutter reads.
+ */
+export const SHEET_LAYOUT =
+  "A character reference sheet: one square image divided into a three by three grid of nine equal panels with thin even gutters, on one plain light grey background, the same person with the same face, hair, build and outfit in every panel. Top row: full body from the front, full body in three-quarter view, full body from the back. Middle row: head and shoulders from the front with a neutral expression, head and shoulders in three-quarter view, head and shoulders in profile. Bottom row: three close-ups of the face, smiling, surprised, tense. Consistent studio lighting in every panel, no labels, no numbers.";
+
 const ROLE_FRAMING: Record<BibleRole, string> = {
   portrait: "Head and shoulders, facing the camera, neutral expression, even light.",
   profile: "Head and shoulders in profile, the same person, the same light.",
+  sheet: SHEET_LAYOUT,
   wide: "Wide establishing shot of the whole place, no people.",
   medium: "Medium shot of the place at eye level, no people.",
   detail: "Close detail of one telling part of it.",

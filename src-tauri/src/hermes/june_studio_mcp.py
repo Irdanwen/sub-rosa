@@ -41,8 +41,9 @@ TOOLS: list[dict[str, Any]] = [
             "The persistent identities of a production: characters, locations, props, "
             "the look. Actions: list, save (name + kind + traits, id to update), "
             "delete (id), attach (entryId + artifactId + role), detach (id). "
-            "Roles: portrait, profile, wide, medium, detail, voice. Their order "
-            "matters - the first image is the identity the model holds."
+            "Roles: portrait, profile, sheet, wide, medium, detail, voice. Their order "
+            "matters - the first image is the identity the model holds. A sheet is a "
+            "3x3 grid of one character, for composing frames, never sent to video."
         ),
         "inputSchema": {
             "type": "object",

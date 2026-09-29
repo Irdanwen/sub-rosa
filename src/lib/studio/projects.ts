@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { t } from "../i18n";
 import { messageFromError } from "../errors";
 import { getNote, listFilms, shotList } from "../tauri";
-import { listBibleEntries, type BibleEntry } from "./bible";
+import { listBibleEntries, type BibleEntry, type BibleRole } from "./bible";
 import type { Workflow, WorkflowNode } from "./workflow/schema";
 import type { WorkflowRunSummary } from "./workflow-run";
 import type { StudioArtifact } from "./types";
@@ -27,7 +27,23 @@ export interface ProjectShot extends Shot {
 export interface ProjectBibleEntry extends BibleEntry {
   originId?: string;
   imageModelId?: string;
+  /** Before prompts were kept per role: applies to every role but the sheet. */
   imagePrompt?: string;
+  /** The prompt each role is drawn from, once the person has edited it. */
+  imagePrompts?: Partial<Record<BibleRole, string>>;
+  /** The edit model a sheet is drawn with when it starts from the portrait. */
+  editModelId?: string;
+}
+/** The prompt a role was given by hand, if any. A sheet never inherits the
+ * old single prompt: it was written for a single view, not a grid. */
+export function referencePromptOf(entry: ProjectBibleEntry, role: BibleRole): string | undefined {
+  return entry.imagePrompts?.[role] ?? (role === "sheet" ? undefined : entry.imagePrompt);
+}
+/** The portrait a sheet is drawn from, so the face stays the one already chosen. */
+export function sheetSource(entry: ProjectBibleEntry): string | undefined {
+  return [...entry.refs]
+    .filter((ref) => ref.role === "portrait")
+    .sort((left, right) => left.ordinal - right.ordinal)[0]?.artifactId;
 }
 export function bibleNameInUse(
   entries: readonly ProjectBibleEntry[],
