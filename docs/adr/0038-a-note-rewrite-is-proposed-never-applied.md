@@ -140,3 +140,33 @@ that it quietly rewrites more than it was asked to.
 - **The prompts are the product here.** They carry a version so a revision made
   by an older one can be told apart, and they are the thing to change when a
   rewrite disappoints — not the plumbing around them.
+
+## Addendum (2026-09-29): Studio's rewrites follow the same rule
+
+Studio now offers "Improve with AI" under the film project's scenario, a
+shot's video prompt and a bible entry's image prompt (and, later, an opening
+frame's composition prompt). They are rewrites in exactly this ADR's sense and
+keep every decision above: the model returns text, the text is a proposal
+under the field, only Accept writes it into the project document, the run is
+transient and cancellable, and an empty reply is an error.
+
+Two things are new.
+
+- **The run is shared, not copied.** The registry, the stream, the
+  cancellation and the reply checks moved from `note_ai` into
+  `src-tauri/src/rewrite_stream.rs`, parameterised by a `Channel` (event and
+  error constructors). `note_ai` keeps its prompts, its validation and its
+  codes; `studio_ai` has its own prompts and `STUDIO_AI_PROMPT_VERSION`.
+- **A generation prompt is written in English and to the target model.** A
+  scenario stays in the writer's language, because a person reads it and the
+  shot-list reader follows it. A prompt sent to an image or video model is
+  written in English whatever the project's language, because that is what
+  these models were trained to follow, and it is written to what the frontend
+  knows about the model: its published character limit, the Seedance families'
+  sixty words, how it mentions references, and whether an opening frame
+  already carries the look (in which case the prompt spends its words on
+  motion). The per-family guidance lives in `studio_ai/prompts.rs` and falls
+  back to general rules for a model it does not recognise. The field says the
+  proposal is in English, and a shot records which model its prompt was
+  written for so a later model change is visible.
+

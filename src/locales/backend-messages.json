@@ -339,5 +339,10 @@
   "Your connection could not be verified.",
   "Your system credential store is unavailable.",
   "Your script changed. Start the breakdown again to use the latest version.",
-  "yt-dlp is not installed on this machine. Install it, or download the audio yourself and drop the file in."
+  "yt-dlp is not installed on this machine. Install it, or download the audio yourself and drop the file in.",
+  "Write your idea or your scenario first.",
+  "Describe the shot's action first.",
+  "Name the entry first.",
+  "Add at least one image to combine first.",
+  "Say what you want done with the scenario."
 ]

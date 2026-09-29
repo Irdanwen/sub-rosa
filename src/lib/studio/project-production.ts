@@ -3,7 +3,7 @@ import { carpeDiemGetCredits } from "../tauri";
 import type { MediaCatalog } from "./types";
 import type { ProjectDocument, ProjectShot } from "./projects";
 import { bibleNameInUse } from "./projects";
-import { portraitPrompt } from "./bible/portrait";
+import { pickPortraitModel, portraitPrompt } from "./bible/portrait";
 import type { BibleRole } from "./bible/types";
 import type { ProjectBibleEntry } from "./projects";
 import { compileShotList } from "./workflow/compile";
@@ -155,9 +155,10 @@ export function compileBibleReference(
   name: string,
 ): Workflow {
   if (role === "voice") throw new Error(t("Choose an image reference role."));
+  const modelId = entry.imageModelId || pickPortraitModel(catalog)?.id;
   const model = catalog.models.find(
     (candidate) =>
-      candidate.id === entry.imageModelId && candidate.mediaType === "image" && !candidate.offline,
+      candidate.id === modelId && candidate.mediaType === "image" && !candidate.offline,
   );
   if (!model) throw new Error(t("Choose an available image model for this reference."));
   const prompt = entry.imagePrompt?.trim() || portraitPrompt(entry, role);

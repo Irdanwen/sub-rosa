@@ -20,6 +20,9 @@ export interface ProjectShot extends Shot {
   takeIds: string[];
   activeTakeId?: string;
   renderedSignature?: string;
+  /** The video model the prompt was last written for with AI. A label, not
+   * an input: changing it never makes a take stale. */
+  promptOptimizedFor?: string;
 }
 export interface ProjectBibleEntry extends BibleEntry {
   originId?: string;
@@ -202,6 +205,7 @@ export function shotSignature(
     activeTakeId: _active,
     renderedSignature: _signature,
     imageCandidates: _images,
+    promptOptimizedFor: _optimizedFor,
     ...input
   } = shot;
   const previous =

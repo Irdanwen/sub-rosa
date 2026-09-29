@@ -76,6 +76,7 @@ import {
   runAndSaveWorkflow,
 } from "../../lib/studio/workflow-run";
 import { Dialog } from "../ui/Dialog";
+import { AiRewrite } from "./AiRewrite";
 import { NotePicker } from "./NotePicker";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 import { ProjectBible } from "./ProjectBible";
@@ -1029,6 +1030,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       ]),
     ],
   }));
+  // The rewrites write with the model chosen for reading the script, when it
+  // is still offered; otherwise the app's text model.
+  const chosenReadingModel = project?.document.settings.readingModelId;
+  const writingModelId =
+    chosenReadingModel && readingModels.some((model) => model.id === chosenReadingModel)
+      ? chosenReadingModel
+      : undefined;
   const mediaEditor = (
     <ProjectMedia
       artifacts={media}
@@ -1375,6 +1383,40 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   }
                   placeholder={t("Describe your film, its characters and what happens.")}
                 />
+                <AiRewrite
+                  label={t("Script")}
+                  value={project.document.script}
+                  disabled={busy || reading}
+                  onAccept={(script) => editDocument((document) => ({ ...document, script }))}
+                  intents={[
+                    { value: "filmable", label: t("Make it filmable") },
+                    { value: "develop", label: t("Develop an idea") },
+                    { value: "tighten", label: t("Tighten") },
+                    { value: "custom", label: t("Your own instruction") },
+                  ]}
+                  hint={t(
+                    "Scenes, visible actions and the same names throughout: that is what Break into shots reads best.",
+                  )}
+                  request={(intent, instruction) =>
+                    project.document.script.trim()
+                      ? {
+                          kind: "scenario",
+                          text: project.document.script,
+                          intent,
+                          instruction,
+                          modelId: writingModelId,
+                          context: {
+                            aspectRatio: project.document.settings.aspectRatio,
+                            entries: project.document.bible.map((entry) => ({
+                              name: entry.name,
+                              kind: entry.kind,
+                              traits: entry.traits,
+                            })),
+                          },
+                        }
+                      : undefined
+                  }
+                />
                 <div className="project-actions">
                   <button
                     type="button"
@@ -1581,6 +1623,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               onGenerate={(id) => void prepare(id)}
               onImage={(id) => void prepare(id, true)}
               onBible={() => setSection("bible")}
+              writingModelId={writingModelId}
               busy={busy || exporting}
             />
           ) : null}
@@ -1615,6 +1658,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               catalog={catalog}
               onArtifact={addArtifact}
               onGenerate={(id, role) => void prepareBible(id, role)}
+              writingModelId={writingModelId}
               busy={busy || exporting}
             />
           ) : null}
