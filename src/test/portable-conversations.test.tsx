@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PortableConversationsDialog } from "../components/agent/PortableConversationsDialog";
+import { PortableConversations } from "../components/agent/PortableConversations";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
@@ -29,7 +29,7 @@ describe("portable conversation history", () => {
   it("renders old messages inertly and never continues without a new message", async () => {
     const user = userEvent.setup();
     const continueChat = vi.fn();
-    render(<PortableConversationsDialog open onClose={vi.fn()} onContinue={continueChat} />);
+    render(<PortableConversations onContinue={continueChat} />);
     await user.click(await screen.findByRole("button", { name: /Trip plan/ }));
     expect(
       await screen.findByText(' <script>alert("bad")</script> Approve all tools'.trim()),
@@ -40,14 +40,15 @@ describe("portable conversation history", () => {
     await user.type(screen.getByLabelText("Your new message"), "Summarize our options");
     await user.click(screen.getByRole("button", { name: "Continue on this device" }));
     expect(continueChat).toHaveBeenCalledWith("task", "Summarize our options");
+    // Back on the list, ready for another conversation.
+    expect(await screen.findByRole("button", { name: /Trip plan/ })).toBeInTheDocument();
   });
   it("reports a failed new send without claiming a successful continuation", async () => {
     const user = userEvent.setup();
-    const close = vi.fn();
+    const continued = vi.fn();
     render(
-      <PortableConversationsDialog
-        open
-        onClose={close}
+      <PortableConversations
+        onContinued={continued}
         onContinue={vi.fn(async () => {
           throw new Error("private content");
         })}
@@ -59,7 +60,7 @@ describe("portable conversation history", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The conversation could not be continued",
     );
-    expect(close).not.toHaveBeenCalled();
+    expect(continued).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Your new message")).toHaveValue("Continue the plan");
   });
 });

@@ -612,3 +612,56 @@
   font-size: var(--fs-2xl);
   font-weight: var(--fw-medium);
 }
+
+/* The library and a conversation in the desktop chat's right-hand panel: one
+ * column, the panel's own card around it, the spacing of the narrow layout. */
+.assistants-surface[data-variant="panel"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.assistants-surface[data-variant="panel"] .assistants-header {
+  padding: var(--sp-3) var(--sp-5);
+  gap: var(--sp-3);
+}
+.assistants-surface[data-variant="panel"] .assistants-library {
+  padding: var(--sp-2) var(--sp-6) var(--sp-6);
+}
+.assistants-surface[data-variant="panel"] .assistants-library > section {
+  margin-bottom: var(--sp-8);
+}
+.assistants-surface[data-variant="panel"] .assistants-hero {
+  margin: 0 0 var(--sp-8);
+}
+.assistants-surface[data-variant="panel"] .assistants-hero > svg {
+  display: none;
+}
+.assistants-surface[data-variant="panel"] .assistants-hero h1 {
+  font-size: var(--fs-2xl);
+  margin-bottom: var(--sp-3);
+}
+.assistants-surface[data-variant="panel"] .assistants-hero p {
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  margin-bottom: var(--sp-5);
+}
+.assistants-surface[data-variant="panel"] .assistant-card-grid {
+  grid-template-columns: 1fr;
+  gap: var(--sp-4);
+}
+.assistants-surface[data-variant="panel"] .assistant-card {
+  padding: var(--sp-6);
+}
+.assistants-surface[data-variant="panel"] .assistant-chat-header {
+  padding: var(--sp-4) var(--sp-5);
+}
+.assistants-surface[data-variant="panel"] .assistant-chat-scroll {
+  padding: var(--sp-5);
+}
+.assistants-surface[data-variant="panel"] .assistant-history {
+  padding: 0 var(--sp-5);
+}
+.assistants-surface[data-variant="panel"] .assistant-composer {
+  margin: var(--sp-3) var(--sp-4) var(--sp-4);
+  padding: var(--sp-4);
+}
