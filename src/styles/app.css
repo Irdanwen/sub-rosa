@@ -2667,7 +2667,7 @@ input:focus-visible,
 
 /* The files panel slides over from the window edge; only the card hands it
  * room so the titlebar tab strip still spans the full window top. */
-.app-shell:has(.agent-workspace[data-artifact-panel="open"]) .main-panel {
+.app-shell:has(.agent-workspace[data-side-panel="open"]) .main-panel {
   margin-right: calc(var(--agent-files-w) + var(--sp-3));
 }
 
@@ -2720,7 +2720,8 @@ input:focus-visible,
 /* While the panel is out, the fixed composer hands its right side over to
  * the panel instead of spanning the whole window: window inset + panel +
  * card gap + the card's own content gutter. */
-.agent-workspace[data-artifact-panel="open"] .agent-composer {
+/* The hero composer sits inline, not docked, so it keeps its own box. */
+.agent-workspace[data-side-panel="open"] .agent-composer:not([data-hero="true"]) {
   right: calc(2 * var(--sp-3) + var(--agent-files-w) + var(--sp-8));
   transition: right var(--t-slow) var(--ease-spring);
 }
@@ -2730,7 +2731,7 @@ input:focus-visible,
  * specificity to the composer rule above, so it must stay after it in the
  * cascade. */
 .app-shell[data-files-resizing="true"] .main-panel,
-.app-shell[data-files-resizing="true"] .agent-composer,
+.app-shell[data-files-resizing="true"] .agent-composer:not([data-hero="true"]),
 .app-shell[data-files-resizing="true"] .agent-artifact-panel {
   transition: none;
 }
@@ -2969,6 +2970,76 @@ input:focus-visible,
 .agent-artifact-row-meta {
   color: var(--muted-foreground);
   font-size: var(--fs-xs);
+}
+
+/* The Assistants toggle above the chat, shaped like the files toggle. It sits
+ * above the session bar so it is there on a new session too. */
+.agent-side-entry {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-3) var(--sp-6);
+  flex-shrink: 0;
+}
+
+/* The Assistants panel reuses the Files panel's card and slot; only its
+ * header (two tabs and a close button) and its body are its own. */
+.agent-assistants-panel-bar {
+  justify-content: space-between;
+  padding-bottom: var(--sp-3);
+}
+
+.agent-assistants-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.agent-assistants-tabs button {
+  min-height: var(--control-md);
+  border: 0;
+  border-radius: var(--r-md);
+  padding: 0 var(--sp-3);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.agent-assistants-tabs button[aria-selected="true"] {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .agent-assistants-tabs button:hover {
+    color: var(--foreground);
+  }
+}
+
+.agent-assistants-panel-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.agent-assistants-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.agent-assistants-pane[hidden],
+.agent-assistants-devices[hidden] {
+  display: none;
+}
+
+.agent-assistants-devices {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-2) var(--sp-6) var(--sp-6);
 }
 
 /* Session bar files toggle — sized and shaped like the safety badge beside
