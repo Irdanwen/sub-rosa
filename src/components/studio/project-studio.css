@@ -167,6 +167,40 @@
 .project-field > select {
   width: 100%;
 }
+.project-field-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.project-field-reset {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.project-field-hint {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.project-field-inline {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.project-settings > section + section {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--border);
+}
+.project-settings h3 {
+  margin: 0 0 var(--sp-5);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
 .project-two-columns,
 .project-script {
   display: grid;
@@ -521,22 +555,128 @@
 .ai-rewrite {
   display: grid;
   gap: var(--sp-4);
-  margin: calc(var(--sp-3) * -1) 0 var(--sp-6);
 }
-.ai-rewrite-controls {
+/* The field and its AI bar are one control: one border, one focus ring. */
+.ai-field {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--background);
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+.ai-field:focus-within {
+  border-color: var(--ring);
+}
+.ai-field[data-disabled="true"] {
+  opacity: 0.6;
+}
+.project-studio .ai-field > textarea {
+  border: 0;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  background: transparent;
+}
+.project-studio .ai-field > textarea:focus-visible {
+  outline: none;
+}
+.ai-field-bar,
+.ai-field-ask {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  border-top: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
 }
-.ai-rewrite-controls > input {
+.ai-field-ask {
+  justify-content: flex-start;
+}
+.project-studio .ai-field-ask > input,
+.project-studio .ai-field-idea {
   flex: 1 1 220px;
   min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+}
+.ai-field-status {
+  display: flex;
+  flex: 1 1 200px;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+.ai-field-stale {
+  color: var(--warning);
+  line-height: 1.4;
+}
+.ai-field-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-left: auto;
+}
+.ai-split {
+  position: relative;
+  display: inline-flex;
 }
 .ai-rewrite-start {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
+}
+.ai-split > .ai-rewrite-start:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.ai-split-more {
+  display: grid;
+  place-items: center;
+  padding-inline: var(--sp-3);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+.ai-split-menu {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  right: 0;
+  z-index: 50;
+  display: grid;
+  min-width: 220px;
+  padding: var(--sp-1);
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-md);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-md);
+  transform-origin: top right;
+  animation: ai-split-menu-in var(--t-fast) var(--ease-out);
+}
+.ai-split-menu button {
+  min-height: 30px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: var(--fs-md);
+}
+.ai-split-menu button:focus-visible,
+.ai-split-menu button:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--muted) 70%, transparent);
+  outline: none;
+}
+@keyframes ai-split-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-split-menu {
+    animation: none;
+  }
 }
 .ai-rewrite-proposal {
   display: grid;

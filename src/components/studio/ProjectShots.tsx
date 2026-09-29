@@ -353,72 +353,79 @@ export function ProjectShots({
                   />
                 </label>
               </details>
-              <label className="project-field">
-                {t("Video prompt")}
-                <textarea
-                  aria-label={t("Video prompt")}
-                  rows={5}
-                  value={shot.prompt ?? shot.action}
-                  onChange={(event) => update({ prompt: event.target.value })}
-                  placeholder={t("Describe the action and camera movement")}
+              <div className="project-field">
+                <span className="project-field-heading">{t("Video prompt")}</span>
+                <AiRewrite
+                  label={t("Video prompt")}
+                  value={shot.prompt ?? ""}
+                  disabled={busy}
+                  field={
+                    <textarea
+                      aria-label={t("Video prompt")}
+                      rows={5}
+                      value={shot.prompt ?? shot.action}
+                      onChange={(event) => update({ prompt: event.target.value })}
+                      placeholder={t("Describe the action and camera movement")}
+                    />
+                  }
+                  status={
+                    shot.promptOptimizedFor ? (
+                      shot.promptOptimizedFor === model?.id ? (
+                        <span className="project-badge">
+                          {t("Optimized for {model}", { model: model.name })}
+                        </span>
+                      ) : (
+                        <span className="ai-field-stale">
+                          {t(
+                            "This prompt was written for {previous}. Improve it again for {model}.",
+                            {
+                              previous:
+                                catalog.models.find((item) => item.id === shot.promptOptimizedFor)
+                                  ?.name ?? shot.promptOptimizedFor,
+                              model: model?.name ?? t("the selected model"),
+                            },
+                          )}
+                        </span>
+                      )
+                    ) : null
+                  }
+                  onAccept={(prompt) =>
+                    update({ prompt, promptOptimizedFor: prompt ? model?.id : undefined })
+                  }
+                  hint={t("Written in English, the language these video models follow best.")}
+                  request={() =>
+                    shot.prompt?.trim() || shot.action.trim() || shot.title.trim()
+                      ? {
+                          kind: "shotPrompt",
+                          text: shot.prompt ?? "",
+                          modelId: writingModelId,
+                          context: {
+                            targetModel: rewriteTargetModel(model),
+                            mode,
+                            title: shot.title,
+                            action: shot.action,
+                            camera: shot.camera,
+                            speaker: shot.speaker,
+                            dialogue: shot.dialogue,
+                            duration: shot.duration ? String(shot.duration) : undefined,
+                            aspectRatio: document.settings.aspectRatio,
+                            entries: document.bible
+                              .filter((entry) =>
+                                entry.kind === "location"
+                                  ? entry.name === shot.location
+                                  : shot.characters.includes(entry.name),
+                              )
+                              .map((entry) => ({
+                                name: entry.name,
+                                kind: entry.kind,
+                                traits: entry.traits,
+                              })),
+                          },
+                        }
+                      : undefined
+                  }
                 />
-              </label>
-              {shot.promptOptimizedFor ? (
-                shot.promptOptimizedFor === model?.id ? (
-                  <p className="project-badge">
-                    {t("Optimized for {model}", { model: model.name })}
-                  </p>
-                ) : (
-                  <p className="project-warning">
-                    {t("This prompt was written for {previous}. Improve it again for {model}.", {
-                      previous:
-                        catalog.models.find((item) => item.id === shot.promptOptimizedFor)?.name ??
-                        shot.promptOptimizedFor,
-                      model: model?.name ?? t("the selected model"),
-                    })}
-                  </p>
-                )
-              ) : null}
-              <AiRewrite
-                label={t("Video prompt")}
-                value={shot.prompt ?? ""}
-                disabled={busy}
-                onAccept={(prompt) =>
-                  update({ prompt, promptOptimizedFor: prompt ? model?.id : undefined })
-                }
-                hint={t("Written in English, the language these video models follow best.")}
-                request={() =>
-                  shot.prompt?.trim() || shot.action.trim() || shot.title.trim()
-                    ? {
-                        kind: "shotPrompt",
-                        text: shot.prompt ?? "",
-                        modelId: writingModelId,
-                        context: {
-                          targetModel: rewriteTargetModel(model),
-                          mode,
-                          title: shot.title,
-                          action: shot.action,
-                          camera: shot.camera,
-                          speaker: shot.speaker,
-                          dialogue: shot.dialogue,
-                          duration: shot.duration ? String(shot.duration) : undefined,
-                          aspectRatio: document.settings.aspectRatio,
-                          entries: document.bible
-                            .filter((entry) =>
-                              entry.kind === "location"
-                                ? entry.name === shot.location
-                                : shot.characters.includes(entry.name),
-                            )
-                            .map((entry) => ({
-                              name: entry.name,
-                              kind: entry.kind,
-                              traits: entry.traits,
-                            })),
-                        },
-                      }
-                    : undefined
-                }
-              />
+              </div>
             </fieldset>
             <div className="project-actions">
               <h3>{t("Takes")}</h3>
