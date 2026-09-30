@@ -1791,3 +1791,35 @@ le **tri de pertinence** des recherches.
 | `src-tauri/src/db/migrations.rs` | Migration 035 | Réappliquer |
 | `src/lib/tauri.ts` | `memoryExtract(messages, turns?)` | Réappliquer |
 
+
+## La clé née du compte, et les crédits par carte (2026-09-30, ADR-0069, v1.79.0)
+
+- **Clé d'appareil** (`carpe_diem/issued.rs`, `account/carpe_diem_link.rs`) : une
+  paire P-256 par tentative, en mémoire seulement ; le service de comptes signe une
+  assertion de 120 s liée à son empreinte (`POST /api/v1/carpe-diem/assertion`,
+  session native récente) ; l'app la présente à Carpe Diem avec une preuve DPoP et
+  reçoit la clé sur cette connexion. Stockée avec `origin: issued` + `key_id`, jamais
+  partagée au coffre, révoquée à la déconnexion, à la révocation de l'appareil et à
+  la suppression du compte (outbox côté service, migration cloud 0009).
+- **Contrat** : `docs/carpe-diem-partner-contract.md` (copie de
+  `docs/partner-integration.md` chez Carpe Diem : modifier les deux ou aucun).
+  Tests live croisés : `carpe_diem/issued_live_tests.rs`.
+- **Recharge par carte** (`carpe_diem/billing.rs`, `AddCreditsDialog.tsx`) : Carpe
+  Diem est le marchand ; ticket, page `/pay` dans le navigateur, sondage du solde.
+  Le lien n'apparaît que via `lib/store-policy.ts` (boutique × `blockedCountries`) :
+  **aucun bouton d'achat sur iPhone** tant que Carpe Diem ne vend pas aux États-Unis.
+  `storefront.rs` : vitrine StoreKit (iOS), installateur (Android, `SubRosaPlugin.kt`).
+- Tout ce qui est nouveau se cache tant que `/partner/capabilities` ne l'annonce pas.
+  Le site du compte garde l'onglet Recharger en USDC tant que la build n'a pas
+  `VITE_CARD_TOPUP=1`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | 9 commandes × 2 listes, `mod storefront` | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | `replay` tolère un `ADD COLUMN` déjà appliqué (course au démarrage) | Réappliquer |
+| `src-tauri/Cargo.toml` | `p256` (features `ecdsa`, `jwk`) | Réappliquer |
+| `src/app/App.tsx` | `handleTopUp` ouvre la feuille « Ajouter des crédits » | Réappliquer |
+| `src/components/note-editor/NoteEditor.tsx`, `NoteFailureBanner.tsx` | Recharge passée par la politique de boutique | Réappliquer |
+| `src/components/onboarding/steps/KeyStep.tsx` | « Créer mon compte avec mon email » d'abord | Réappliquer |
