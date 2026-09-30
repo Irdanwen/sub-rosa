@@ -29,6 +29,13 @@
 //!    `{"account_base","operator_base":"…/v1","devices":[{"access_token","device_id"}]}`.
 use super::*;
 
+/// Built like every other client in the app (the egress test holds that).
+fn http() -> reqwest::Client {
+    crate::http_client::anonymous(Duration::from_secs(20))
+        .build()
+        .unwrap()
+}
+
 struct Fixture {
     account: String,
     base: String,
@@ -66,7 +73,7 @@ fn fixture() -> Fixture {
 }
 
 async fn assertion(f: &Fixture, token: &str, jkt: &str) -> Redacted<String> {
-    let response = reqwest::Client::new()
+    let response = http()
         .post(format!("{}/api/v1/carpe-diem/assertion", f.account))
         .bearer_auth(token)
         .json(&json!({ "jkt": jkt }))
@@ -82,7 +89,7 @@ async fn assertion(f: &Fixture, token: &str, jkt: &str) -> Redacted<String> {
 /// key and reads only the ledger, so it answers on a local operator that has
 /// no chain to read balances from (where `/v1/credits` answers 503).
 async fn credits_status(f: &Fixture, key: &Redacted<String>) -> u16 {
-    reqwest::Client::new()
+    http()
         .get(format!("{}/v1/billing/purchases", partner_root(&f.base)))
         .bearer_auth(key.expose_str())
         .send()
@@ -159,7 +166,7 @@ async fn a_device_revoked_from_the_account_loses_its_key() {
     assert_eq!(credits_status(&f, &key).await, 200);
 
     // Revoked from another device of the same account.
-    let response = reqwest::Client::new()
+    let response = http()
         .delete(format!("{}/api/v1/devices/{}", f.account, f.device_ids[2]))
         .bearer_auth(&f.devices[0])
         .send()
@@ -178,7 +185,7 @@ async fn a_device_revoked_from_the_account_loses_its_key() {
 }
 
 async fn operator_post(f: &Fixture, path: &str, body: Value) -> (u16, Value) {
-    let response = reqwest::Client::new()
+    let response = http()
         .post(format!("{}{path}", partner_root(&f.base)))
         .json(&body)
         .send()
