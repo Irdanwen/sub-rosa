@@ -1,5 +1,5 @@
-// Persistent gallery for one artifact kind. Images render as a grid with a
-// fullscreen lightbox; video and audio render as inline players. Files live
+// Persistent gallery for one artifact kind. Images render as a grid that
+// opens the media viewer; video and audio render as inline players. Files live
 // on disk (see lib/studio/artifacts.ts) so everything here survives restarts.
 
 import { t } from "../../lib/i18n";
@@ -30,6 +30,7 @@ import {
 } from "../../lib/studio/projects";
 import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
 import { Dialog } from "../ui/Dialog";
+import { MediaViewer } from "./MediaViewer";
 
 /** How long the "saved to the gallery" line stays up. Long enough to read
  * without hunting for it, short enough not to become furniture. */
@@ -340,17 +341,34 @@ export function GalleryStrip({
             </figure>
           ))}
         </div>
-        {lightbox ? (
-          <Dialog
-            open
+        {lightbox && visible.some((artifact) => artifact.id === lightbox.id) ? (
+          <MediaViewer
+            items={visible.map((artifact) => ({
+              artifact,
+              title: artifact.title || artifact.prompt || t("Image preview"),
+            }))}
+            index={visible.findIndex((artifact) => artifact.id === lightbox.id)}
+            onIndex={(index) => setLightbox(visible[index])}
             onClose={() => setLightbox(undefined)}
-            title={lightbox.title || t("Image preview")}
-            width="min(90vw, 1200px)"
-          >
-            <div className="studio-lightbox-image">
-              <img src={artifactSrc(lightbox)} alt={lightbox.prompt || t("Generated image")} />
-            </div>
-          </Dialog>
+            actions={(artifact) => (
+              <>
+                {onSendToEdit ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLightbox(undefined);
+                      onSendToEdit(artifact);
+                    }}
+                  >
+                    {t("Send to edit")}
+                  </button>
+                ) : null}
+                <button type="button" onClick={() => void onExport(artifact)}>
+                  {t("Save a copy")}
+                </button>
+              </>
+            )}
+          />
         ) : null}
       </>
     );

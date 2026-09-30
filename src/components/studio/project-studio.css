@@ -237,21 +237,64 @@
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
 }
+/* The monitor takes the shape of what it shows (the take once it is measured,
+ * the project's aspect ratio before), as large as the column allows without
+ * pushing the prompt off screen. A fixed height across a wide column made a
+ * strip that letterboxed every take in grey. */
 .project-monitor {
-  height: clamp(200px, 32dvh, 360px);
+  --monitor-max-height: min(58dvh, 620px);
+  position: relative;
   display: grid;
   place-items: center;
-  background: var(--muted);
-  border: 1px solid var(--border);
+  aspect-ratio: var(--monitor-ratio, 1.7778);
+  width: min(100%, calc(var(--monitor-max-height) * var(--monitor-ratio, 1.7778)));
+  margin: var(--sp-5) auto var(--sp-6);
+  background: var(--screen);
   border-radius: var(--r-lg);
   overflow: hidden;
-  margin: var(--sp-5) 0 var(--sp-6);
+}
+/* Nothing to show yet: hold the shape, not the whole column. */
+.project-monitor[data-empty="true"] {
+  --monitor-max-height: min(30dvh, 280px);
+  background: var(--muted);
+  border: 1px solid var(--border);
 }
 .project-monitor > video,
 .project-monitor > img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.project-monitor > img {
+  cursor: zoom-in;
+}
+.project-monitor-expand {
+  position: absolute;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklch, var(--screen) 64%, transparent);
+  color: var(--screen-foreground);
+  opacity: 0.72;
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+.project-monitor-expand:focus-visible {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .project-monitor:hover .project-monitor-expand {
+    opacity: 1;
+  }
+}
+.project-monitor-expand:active {
+  transform: scale(0.96);
 }
 .project-empty {
   padding: var(--sp-10);
@@ -274,6 +317,7 @@
   border-radius: var(--r-md);
   overflow: hidden;
   max-width: 140px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   padding: var(--sp-2);
@@ -286,6 +330,24 @@
   height: 95px;
   object-fit: cover;
   border-radius: var(--r-xs);
+}
+/* A bible reference is the identity every shot restates: large enough to
+ * judge a face, and one click from full size. */
+.project-bible-editor .project-reference {
+  max-width: 184px;
+  width: 184px;
+}
+.project-reference-open {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: var(--r-xs);
+}
+.project-bible-editor .project-reference img {
+  height: auto;
+  aspect-ratio: 1;
 }
 .project-reference button,
 .project-reference span {
@@ -392,15 +454,19 @@
   padding: var(--sp-5);
   min-width: 0;
 }
+/* Two lines: "Shot 3: The corridor, take 2" must keep its take number. */
 .project-media-name {
   background: transparent;
   color: inherit;
   text-align: left;
   border: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   padding: 0;
+  line-height: 1.35;
 }
 .project-media-list {
   display: grid;
@@ -410,16 +476,6 @@
 .project-media-list .project-media-card {
   display: grid;
   grid-template-columns: 120px 1fr;
-}
-.project-media-preview {
-  max-width: 760px;
-  margin: var(--sp-6) auto;
-}
-.project-media-preview video,
-.project-media-preview img {
-  width: 100%;
-  max-height: 420px;
-  object-fit: contain;
 }
 .project-quote-row {
   display: flex;

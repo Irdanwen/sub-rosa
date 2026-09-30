@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { IconExpandSimple } from "central-icons/IconExpandSimple";
+import { type CSSProperties, useState } from "react";
 import { t } from "../../lib/i18n";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import { requiresOpeningFrame, videoDirection } from "../../lib/studio/catalog";
@@ -17,6 +18,13 @@ import { AiRewrite } from "./AiRewrite";
 import { GalleryPicker } from "./GalleryPicker";
 import { OpeningComposer } from "./OpeningComposer";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
+import { MediaViewer } from "./MediaViewer";
+
+/** "16:9" as a number, or undefined for anything that is not a ratio. */
+export function ratioOf(value: string | undefined): number | undefined {
+  const [width, height] = (value ?? "").split(":").map(Number);
+  return width > 0 && height > 0 ? width / height : undefined;
+}
 
 export function ProjectShots({
   document,
@@ -46,6 +54,10 @@ export function ProjectShots({
   >(null);
   const [referenceError, setReferenceError] = useState("");
   const [removed, setRemoved] = useState<{ shot: ProjectShot; index: number }>();
+  const [viewing, setViewing] = useState<number>();
+  // The take's own shape once it is known: a clip rendered at another ratio
+  // than the project's must not be letterboxed inside a frame of the wrong one.
+  const [measured, setMeasured] = useState<{ id: string; ratio: number }>();
   const shot = document.shots.find((item) => item.id === selected) ?? document.shots[0];
   const index = document.shots.findIndex((item) => item.id === shot?.id);
   const update = (patch: Partial<ProjectShot>) => {
@@ -112,6 +124,28 @@ export function ProjectShots({
   const preview = artifacts.find(
     (item) => item.id === (shot?.activeTakeId || shot?.openingArtifactId),
   );
+  // Every take of the shot, then its opening image, in the order they were made.
+  const viewable = [...(shot?.takeIds ?? []), shot?.openingArtifactId]
+    .map((id) => artifacts.find((item) => item.id === id))
+    .filter((item): item is StudioArtifact => !!item)
+    .map((artifact) => ({
+      artifact,
+      title:
+        artifact.id === shot?.openingArtifactId && !shot.takeIds.includes(artifact.id)
+          ? t("{title}: opening image", { title: shot.title })
+          : t("{title}: take {number}", {
+              title: shot?.title ?? "",
+              number: (shot?.takeIds.indexOf(artifact.id) ?? 0) + 1,
+            }),
+    }));
+  const monitorRatio =
+    (preview && measured?.id === preview.id ? measured.ratio : undefined) ??
+    ratioOf(document.settings.aspectRatio) ??
+    16 / 9;
+  const openViewer = () => {
+    const at = viewable.findIndex((item) => item.artifact.id === preview?.id);
+    if (at !== -1) setViewing(at);
+  };
   const imagePreview = (id: string, onRemove: () => void) => {
     const artifact = artifacts.find((item) => item.id === id);
     return (
@@ -228,12 +262,35 @@ export function ProjectShots({
                 {t("Remove")}
               </button>
             </div>
-            <div className="project-monitor">
+            <div
+              className="project-monitor"
+              data-empty={!preview}
+              style={{ "--monitor-ratio": monitorRatio } as CSSProperties}
+            >
               {preview?.kind === "video" ? (
                 // biome-ignore lint/a11y/useMediaCaption: generated takes have no caption track
-                <video key={preview.id} controls preload="metadata" src={artifactSrc(preview)} />
+                <video
+                  key={preview.id}
+                  controls
+                  preload="metadata"
+                  src={artifactSrc(preview)}
+                  onLoadedMetadata={(event) => {
+                    const { videoWidth, videoHeight } = event.currentTarget;
+                    if (videoWidth && videoHeight)
+                      setMeasured({ id: preview.id, ratio: videoWidth / videoHeight });
+                  }}
+                />
               ) : preview ? (
-                <img src={artifactSrc(preview)} alt={shot.title} />
+                <img
+                  src={artifactSrc(preview)}
+                  alt={shot.title}
+                  onLoad={(event) => {
+                    const { naturalWidth, naturalHeight } = event.currentTarget;
+                    if (naturalWidth && naturalHeight)
+                      setMeasured({ id: preview.id, ratio: naturalWidth / naturalHeight });
+                  }}
+                  onDoubleClick={openViewer}
+                />
               ) : (
                 <div className="project-empty">
                   <h3>{t("Your shot starts here")}</h3>
@@ -242,6 +299,17 @@ export function ProjectShots({
                   </p>
                 </div>
               )}
+              {preview ? (
+                <button
+                  type="button"
+                  className="project-monitor-expand"
+                  aria-label={t("Enlarge")}
+                  title={t("Enlarge")}
+                  onClick={openViewer}
+                >
+                  <IconExpandSimple size={16} />
+                </button>
+              ) : null}
             </div>
             {shot.renderedSignature && shot.renderedSignature !== shotSignature(shot, document) ? (
               <p className="project-warning">
@@ -639,6 +707,25 @@ export function ProjectShots({
           </button>
         </div>
       )}
+      {viewing !== undefined && viewable.length ? (
+        <MediaViewer
+          items={viewable}
+          index={viewing}
+          onIndex={setViewing}
+          onClose={() => setViewing(undefined)}
+          actions={(artifact) =>
+            shot?.takeIds.includes(artifact.id) ? (
+              <button
+                type="button"
+                disabled={busy || shot.activeTakeId === artifact.id}
+                onClick={() => update({ activeTakeId: artifact.id })}
+              >
+                {shot.activeTakeId === artifact.id ? t("Selected") : t("Select this take")}
+              </button>
+            ) : null
+          }
+        />
+      ) : null}
       {picker && shot ? (
         <GalleryPicker
           resolveData={false}
