@@ -1,4 +1,4 @@
-# ADR-0067: The website localizes public paths without changing account callbacks
+# ADR-0068: The website localizes public paths without changing account callbacks
 
 Date: 2026-09-29. Status: accepted.
 
