@@ -1,0 +1,214 @@
+/* The media viewer: a screening room over the app. Its bars are as short as
+ * they can be, so the file gets every pixel the window can spare. */
+.media-viewer {
+  position: fixed;
+  inset: 0;
+  /* Above dialogs: the viewer opens from inside them (a picker, a quote). */
+  z-index: 113;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--screen-scrim);
+  color: var(--screen-foreground);
+  outline: none;
+  animation: media-viewer-in var(--t-med) var(--ease-out);
+}
+.media-viewer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-6);
+  padding: var(--sp-5) var(--sp-7);
+  min-width: 0;
+}
+.media-viewer-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+.media-viewer-heading h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-viewer-count,
+.media-viewer-meta {
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.media-viewer-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklch, var(--screen-foreground) 10%, transparent);
+  color: var(--screen-foreground);
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+@media (hover: hover) {
+  .media-viewer-icon:hover {
+    background: color-mix(in oklch, var(--screen-foreground) 20%, transparent);
+  }
+}
+.media-viewer-icon:active {
+  transform: scale(0.96);
+}
+.media-viewer :focus-visible {
+  outline: 2px solid var(--screen-foreground);
+  outline-offset: 2px;
+}
+.media-viewer-stage {
+  --stage-gutter: var(--sp-12);
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+/* The media is laid inside the stage's box, not sized by its content: a
+ * percentage height inside an auto-sized grid row has nothing to resolve
+ * against, and a tall image would keep its own pixels and be cropped. */
+.media-viewer-zoom,
+.media-viewer-stage > video,
+.media-viewer-stage > audio {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--stage-gutter);
+  right: var(--stage-gutter);
+}
+.media-viewer-stage > video {
+  width: calc(100% - 2 * var(--stage-gutter));
+  height: 100%;
+  object-fit: contain;
+  background: var(--screen);
+  border-radius: var(--r-md);
+}
+.media-viewer-stage > audio {
+  top: 50%;
+  bottom: auto;
+  width: min(560px, calc(100% - 2 * var(--stage-gutter)));
+  margin: 0 auto;
+  transform: translateY(-50%);
+}
+.media-viewer-zoom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+.media-viewer-zoom > img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--r-md);
+}
+/* Actual size: the image keeps its own pixels and the stage scrolls, which is
+ * how a 3x3 sheet's faces become readable. */
+.media-viewer-stage[data-actual-size="true"] {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.media-viewer-stage[data-actual-size="true"] .media-viewer-zoom {
+  position: static;
+  display: block;
+  width: max-content;
+  margin: 0 auto;
+  cursor: zoom-out;
+}
+.media-viewer-stage[data-actual-size="true"] .media-viewer-zoom > img {
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+}
+.media-viewer-step {
+  position: absolute;
+  /* Above the media, which is laid in the same box. */
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+.media-viewer-step:active {
+  transform: translateY(-50%) scale(0.96);
+}
+.media-viewer-step[data-side="previous"] {
+  left: var(--sp-5);
+}
+.media-viewer-step[data-side="next"] {
+  right: var(--sp-5);
+}
+.media-viewer-details {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.media-viewer-meta {
+  display: flex;
+  gap: var(--sp-5);
+  margin: 0;
+}
+.media-viewer-prompt {
+  flex: 1 1 320px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+.media-viewer-prompt summary {
+  cursor: pointer;
+  color: var(--screen-muted);
+}
+.media-viewer-prompt p {
+  max-height: 22dvh;
+  overflow-y: auto;
+  margin: var(--sp-3) 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.media-viewer-text-button,
+.media-viewer-actions button {
+  border: 1px solid color-mix(in oklch, var(--screen-foreground) 24%, transparent);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--screen-foreground);
+  padding: var(--sp-2) var(--sp-5);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.media-viewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+@keyframes media-viewer-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .media-viewer {
+    animation-name: fade-in;
+  }
+}
+@media (max-width: 720px) {
+  .media-viewer-stage {
+    --stage-gutter: var(--sp-4);
+  }
+  .media-viewer-bar {
+    padding: var(--sp-4);
+  }
+}

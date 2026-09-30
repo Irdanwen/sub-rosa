@@ -25,7 +25,7 @@
 
 /// Bump when a prompt below changes in a way that would produce a different
 /// rewrite.
-pub const STUDIO_AI_PROMPT_VERSION: &str = "studio-rewrite-v1";
+pub const STUDIO_AI_PROMPT_VERSION: &str = "studio-rewrite-v2";
 
 pub const MATERIAL_OPEN: &str = "<material>";
 pub const MATERIAL_CLOSE: &str = "</material>";
@@ -133,6 +133,41 @@ pub fn image_family_guide(model_id: &str) -> &'static str {
     }
 }
 
+/// Whether a family reads time ranges written into the prompt as the pacing
+/// of one generation. Veo 3.1 and Seedance 2 document it (`[00:00-00:02]`
+/// segments inside one prompt). Kling's own notation (`shot 1, 3s`) cuts to a
+/// new shot at each segment, which is the opposite of one continuous take, so
+/// Kling and every family that documents nothing get their pacing in words.
+pub fn reads_timecodes(model_id: &str) -> bool {
+    let id = model_id.to_ascii_lowercase();
+    id.contains("veo") || id.contains("seedance-2")
+}
+
+/// A time range written the way the timecode families read it.
+pub fn timecode(from: u32, to: u32) -> String {
+    format!(
+        "[{:02}:{:02}-{:02}:{:02}]",
+        from / 60,
+        from % 60,
+        to / 60,
+        to % 60
+    )
+}
+
+/// How the prompt spends the shot's seconds. The app hands over the ranges,
+/// already computed: the model fills them and never picks a time of its own,
+/// for the reason ADR-0027 gives about chapters - the app owns the clock.
+pub fn pacing_rule(seconds: u32, beats: usize, timecodes: bool) -> String {
+    if beats <= 1 {
+        return format!("Pacing: the shot lasts {seconds} seconds. Describe one action that fills it at a pace that fits, not a sequence of events, and do not write any time.");
+    }
+    if timecodes {
+        format!("Pacing: the shot lasts {seconds} seconds and is split into {beats} beats, one per time range listed in the context. After a first sentence that sets what holds for the whole shot (who is there, where, the light), write one short segment per beat, in order, each opening with its time range exactly as listed, then the one visible action that happens in it and what the camera does. The beats are one continuous take: no cut between them unless the material asks for one. Keep the whole prompt within the length limits: the segments share them.")
+    } else {
+        format!("Pacing: the shot lasts {seconds} seconds and its action is split into {beats} beats, one per time range listed in the context. Write the beats as consecutive sentences in that order, each saying in plain words when it happens (\"in the first seconds\", \"then\", \"in the final second\"), with the one visible action that fills it and the speed it happens at. Never write the ranges as numbers or brackets: this model reads a bracketed time as text or as a cut. The beats are one continuous take, and together they fill the whole duration, no more and no less.")
+    }
+}
+
 /// The per-mode rule for a video prompt: what the model already has, and so
 /// what the prompt must not spend words on.
 pub fn video_mode_rule(mode: &str) -> &'static str {
@@ -151,7 +186,7 @@ Build it from the shot's action, camera and dialogue in the context, and from th
 - One shot, one moment: do not describe what happens before or after it.
 - When the shot has dialogue, show the speaker speaking (who, to whom, how), but never quote the line: the voice is generated separately.
 - Respect the length limits in the context. They are hard limits: a prompt past them is cut by the model, and it will not cut the clause you would choose.
-- The aspect ratio, the duration and the resolution are settings sent alongside the prompt. Never write them in it.
+- The aspect ratio, the resolution and the shot's total duration are settings sent alongside the prompt. Never write them in it. The only times you may write are the beat ranges the pacing rule below gives you, and only in the form it asks for.
 - Mention reference images only when the context says how to mention them.
 - No text overlays, no subtitles, no watermark, unless the material asks for them.";
 
@@ -172,6 +207,35 @@ pub const COMPOSITION_TASK: &str = "Write the prompt that will be sent to an ima
 - Ask for one single photographic frame with unified light and perspective, in the aspect ratio given in the context, with no text, no borders, no panels and no watermark.
 - Keep what the material, the person's current draft, asks for unless it contradicts these rules.
 - Respect the length limit in the context.";
+
+pub const MUSIC_PROMPT_TASK: &str = "Write the prompt that will be sent to a music model to compose this one cue of the film's score.
+
+Build it from the cue's mood, intensity and what is on screen under it in the context, and from the material between the delimiters, the person's current draft (it may be empty). Keep what the draft asks for unless it contradicts the rules below.
+
+- Write in English, forty to eighty words.
+- Say what this cue adds to the score's identity: its lead instruments, its dynamics and how it moves. Do not restate the identity itself: it is sent with every cue.
+- Give the cue a shape that fits its length: how it enters, where it builds, how it ends. A cue that ends on a cut resolves; one that leads into silence fades out.
+- The music sits under dialogue and picture: leave room, no busy lead line over a scene where people talk.
+- Never write a duration or a time (a tempo in BPM is fine), the film's title or a character's name.
+- Instrumental unless the context says the model sings words.";
+
+/// How a music family wants to be spoken to.
+pub fn music_family_guide(model_id: &str) -> &'static str {
+    let id = model_id.to_ascii_lowercase();
+    if id.contains("stable-audio") {
+        "This is Stable Audio. It reads comma-separated descriptors best: genre, sub-genre, instruments, mood, tempo in BPM, then production qualities (\"warm analog, wide stereo\")."
+    } else if id.contains("elevenlabs") {
+        "This is an ElevenLabs music model. Describe the piece in natural sentences, as you would brief a composer: style, instrumentation, how the energy moves from start to end."
+    } else if id.contains("lyria") {
+        "This is Lyria. Name the genre and the instruments first, then the mood, the tempo and how the arrangement evolves. It follows musical vocabulary (ostinato, swell, pizzicato) precisely."
+    } else if id.contains("ace-step") {
+        "This is ACE-Step. It reads tags: genre, instruments, mood, tempo, separated by commas, then one sentence on the structure."
+    } else if id.contains("minimax") {
+        "This is a MiniMax music model, which sings: describe the style and the arrangement; the words are sent separately."
+    } else {
+        "Genre and instruments first, then mood, tempo and how the piece develops, in plain descriptive language."
+    }
+}
 
 /// The user message: the task, the context, the instruction if any, then the
 /// material, kept apart from everything that tells the model what to do.

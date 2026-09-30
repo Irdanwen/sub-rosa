@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { errorCode } from "../../lib/errors";
 import { intlLocale, t } from "../../lib/i18n";
 import {
@@ -22,6 +22,8 @@ import {
   type BibleKind,
   type BibleRole,
 } from "../../lib/studio/bible";
+import { foldLiveRender, nodeTarget, type LiveRender } from "../../lib/studio/project-activity";
+import { rememberRenderMs } from "../../lib/studio/render-eta";
 import {
   createEditorClip,
   fps,
@@ -30,14 +32,25 @@ import {
 } from "../../lib/studio/editor/document";
 import { mediaSeconds } from "../../lib/studio/reference-media";
 import { artifactSrc } from "../../lib/studio/artifacts";
-import { modelsOfType } from "../../lib/studio/catalog";
 import {
+  compileCue,
   compileOpeningImage,
   compileBibleReference,
   compileProjectWithNotes,
   productionBudget,
   quoteProject,
+  shotSeconds,
 } from "../../lib/studio/project-production";
+import {
+  acceptProposal,
+  emptyScore,
+  projectScore,
+  proposeScore,
+  type ScoreProposal,
+} from "../../lib/studio/score";
+import { musicCapabilities } from "../../lib/studio/catalog";
+import { placeScore } from "../../lib/studio/score-montage";
+import { pickMusicModel } from "../../lib/studio/workflow/compile";
 import {
   getProject,
   deleteProject,
@@ -76,18 +89,19 @@ import {
   runAndSaveWorkflow,
 } from "../../lib/studio/workflow-run";
 import { Dialog } from "../ui/Dialog";
-import { AiRewrite } from "./AiRewrite";
 import { NotePicker } from "./NotePicker";
-import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 import { ProjectBible } from "./ProjectBible";
 import { ProjectMedia } from "./ProjectMedia";
+import { ProjectMusic } from "./ProjectMusic";
+import { ProjectQuoteDialog } from "./ProjectQuoteDialog";
+import { ProjectScript } from "./ProjectScript";
 import { ProjectShots } from "./ProjectShots";
 import { ProjectTimeline } from "./ProjectTimeline";
 import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
 import { STUDIO_FILM_NOTE_KEY } from "./studio-keys";
 import "./project-studio.css";
 
-type Section = "script" | "shots" | "bible" | "media" | "montage";
+type Section = "script" | "shots" | "bible" | "music" | "media" | "montage";
 const LAST_PROJECT = "os-june:studio-project";
 type ReadyQuote = {
   projectId: string;
@@ -102,9 +116,6 @@ type ReadyQuote = {
   notes?: string[];
   signatures: Record<string, string>;
 };
-
-const quoteCredits = (credits: number) =>
-  credits.toLocaleString(intlLocale(), { maximumFractionDigits: 2 });
 
 export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -135,6 +146,23 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [quote, setQuote] = useState<ReadyQuote>();
   const [runStates, setRunStates] = useState<Record<string, string>>({});
   const [progress, setProgress] = useState<Record<string, NodeRunResult>>({});
+  // What is being made right now, and where its wait is shown. A ref as well
+  // as state: the fold files a finished render's time exactly once.
+  const liveRef = useRef<Record<string, LiveRender>>({});
+  const [live, setLive] = useState<Record<string, LiveRender>>({});
+  const [now, setNow] = useState(() => Date.now());
+  const producing = useRef<Workflow>();
+  // Files that arrived during this session, revealed once where they land.
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
+  // A proposed score waits for Accept (ADR-0038), with the shots it was read
+  // against, so its shot numbers still land where they were meant to.
+  const [scoreProposal, setScoreProposal] = useState<{
+    projectId: string;
+    proposal: ScoreProposal;
+    shotIds: string[];
+  }>();
+  const [proposing, setProposing] = useState(false);
+  const [musicNotice, setMusicNotice] = useState("");
   const abort = useRef<AbortController>();
   const resultWrites = useRef<Promise<void>>(Promise.resolve());
   const finishingReadings = useRef(new Set<string>());
@@ -146,6 +174,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setErrorState(message);
   };
   const report = (cause: unknown) => setError(projectError(cause));
+  const hasLive = Object.keys(live).length > 0;
+  useEffect(() => {
+    if (!hasLive) return;
+    // A clock for the waits on screen, not a poll: nothing is fetched.
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasLive]);
+  const clearLive = () => {
+    liveRef.current = {};
+    setLive({});
+  };
   const loadReadingModels = useCallback(async () => {
     try {
       const [models, settings] = await Promise.all([
@@ -228,6 +268,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setError("");
     setLibrary(false);
     setProgress({});
+    clearLive();
+    setScoreProposal(undefined);
     setRunStates({});
     setReading(false);
     window.localStorage.setItem(LAST_PROJECT, value.id);
@@ -261,9 +303,30 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const applyResult = (run: ProjectRun, result: NodeRunResult, projectId: string) => {
     if (current.current?.id !== projectId) return;
     setProgress((previous) => ({ ...previous, [result.nodeId]: result }));
+    const folded = foldLiveRender(
+      liveRef.current,
+      result,
+      producing.current?.nodes.find((node) => node.id === result.nodeId),
+      Date.now(),
+    );
+    liveRef.current = folded.live;
+    setLive(folded.live);
+    if (folded.finished) rememberRenderMs(folded.finished.etaKey, folded.finished.elapsedMs);
     const output = result.output;
     if (result.status !== "done" || !output || output.kind === "text" || !output.artifactId) return;
     const artifactId = output.artifactId;
+    if (folded.finished) {
+      setFresh((previous) => new Set([...previous, artifactId]));
+      window.setTimeout(
+        () =>
+          setFresh((previous) => {
+            const next = new Set(previous);
+            next.delete(artifactId);
+            return next;
+          }),
+        2000,
+      );
+    }
     const alreadyApplied = current.current.document.runs
       .find((savedRun) => savedRun.id === run.id)
       ?.appliedNodeIds?.includes(result.nodeId);
@@ -292,17 +355,16 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             : savedRun,
         ),
         artifactIds: [...new Set([...document.artifactIds, artifactId])],
+        score: attachCueTake(document, result.nodeId, artifactId),
         bible: document.bible.map((entry) => {
-          const match = /^bible-(.+)-(portrait|profile|sheet|wide|medium|detail)$/.exec(
-            result.nodeId,
-          );
+          const target = nodeTarget(result.nodeId);
           if (
-            !match ||
-            match[1] !== entry.id ||
+            target?.kind !== "bible" ||
+            target.entryId !== entry.id ||
             entry.refs.some((ref) => ref.artifactId === artifactId)
           )
             return entry;
-          const role = match[2] as BibleRole;
+          const role = target.role;
           return {
             ...entry,
             refs: [
@@ -356,6 +418,24 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         });
       })
       .catch(report);
+  };
+  /** A cue's new take joins its takes and becomes the one heard. */
+  const attachCueTake = (document: ProjectDocument, nodeId: string, artifactId: string) => {
+    const target = nodeTarget(nodeId);
+    const score = document.score;
+    if (target?.kind !== "cue" || !score) return score;
+    return {
+      ...score,
+      cues: score.cues.map((cue) =>
+        cue.id === target.cueId
+          ? {
+              ...cue,
+              takeIds: [...new Set([...cue.takeIds, artifactId])],
+              activeTakeId: artifactId,
+            }
+          : cue,
+      ),
+    };
   };
   const restoreRun = async (
     run: ProjectRun,
@@ -535,6 +615,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           },
         }));
         setSection("shots");
+        // Music was asked for: read it from the same script, as a proposal.
+        if (current.current?.document.settings.withScore && !current.current.document.score)
+          void composeScore(current.current.document.settings.readingModelId || undefined);
       } catch (cause) {
         report(cause);
         return;
@@ -705,6 +788,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     productionBusy.current = true;
     setError("");
     setProgress({});
+    clearLive();
+    producing.current = ready.workflow;
     const controller = new AbortController();
     abort.current = controller;
     let run: ProjectRun = ready.resumeRun ?? { id: "", shotSignatures: ready.signatures };
@@ -764,6 +849,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     } finally {
       if (abort.current === controller) abort.current = undefined;
       productionBusy.current = false;
+      producing.current = undefined;
+      clearLive();
       setBusy(false);
       await refreshArtifacts().catch(report);
     }
@@ -784,6 +871,70 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           t("The project changed while quoting. Review its settings and quote again."),
         );
       setQuote({ projectId: target.id, version, workflow, estimate, signatures: {} });
+    } catch (cause) {
+      report(cause);
+    } finally {
+      setBusy(false);
+    }
+  };
+  /** Read the film's music out of its script; the proposal waits for Accept. */
+  const composeScore = async (modelId?: string) => {
+    const origin = current.current;
+    if (!origin?.document.shots.length) return;
+    setProposing(true);
+    setError("");
+    try {
+      const document = origin.document;
+      const music = pickMusicModel(catalog, document.settings.musicModelId);
+      const proposal = await proposeScore({
+        script: document.script,
+        shots: document.shots.map((shot) => ({
+          title: shot.title,
+          action: shot.action,
+          seconds: shotSeconds(shot, document, catalog),
+          dialogue: Boolean(shot.dialogue.trim()),
+        })),
+        single: (projectScore(document) ?? emptyScore()).mode === "single",
+        lyrics: music ? musicCapabilities(music.id).lyrics === "required" : false,
+        modelId,
+      });
+      if (current.current?.id !== origin.id) return;
+      setScoreProposal({
+        projectId: origin.id,
+        proposal,
+        shotIds: document.shots.map((shot) => shot.id),
+      });
+    } catch (cause) {
+      report(cause);
+    } finally {
+      setProposing(false);
+    }
+  };
+  const prepareCue = async (cueId: string) => {
+    const target = current.current;
+    if (!target) return;
+    setBusy(true);
+    setError("");
+    try {
+      // A single score is repaired on the fly; save it first so the take
+      // lands on the cue the project keeps.
+      const repaired = projectScore(target.document);
+      if (repaired && !target.document.score?.cues.some((cue) => cue.id === cueId))
+        await edit((previous) => ({
+          ...previous,
+          document: { ...previous.document, score: repaired },
+        }));
+      await writer.current?.flush();
+      const snapshot = current.current;
+      if (!snapshot) return;
+      const version = epoch.current;
+      const workflow = compileCue(snapshot.name, snapshot.document, catalog, cueId);
+      const estimate = await quoteProject(workflow, catalog);
+      if (current.current?.id !== snapshot.id || epoch.current !== version)
+        throw new Error(
+          t("The project changed while quoting. Review its settings and quote again."),
+        );
+      setQuote({ projectId: snapshot.id, version, workflow, estimate, signatures: {} });
     } catch (cause) {
       report(cause);
     } finally {
@@ -982,6 +1133,44 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       setBusy(false);
     }
   };
+  /** Lay the chosen cue takes under their shots in the montage. */
+  const placeMusic = async () => {
+    const target = current.current;
+    const score = target ? projectScore(target.document) : undefined;
+    if (!target || !score) return;
+    setBusy(true);
+    setMusicNotice("");
+    try {
+      const seconds = new Map<string, number>();
+      for (const cue of score.cues) {
+        const take = artifacts.find((artifact) => artifact.id === cue.activeTakeId);
+        if (take) seconds.set(take.id, await mediaSeconds(artifactSrc(take), "audio"));
+      }
+      if (current.current?.id !== target.id) return;
+      let outcome: ReturnType<typeof placeScore> | undefined;
+      await edit((previous) => {
+        outcome = placeScore(previous.document.timeline, previous.document.shots, score, (id) =>
+          seconds.get(id),
+        );
+        return { ...previous, document: { ...previous.document, timeline: outcome.timeline } };
+      });
+      if (!outcome) return;
+      setMusicNotice(
+        outcome.unplaced.length
+          ? t("{count} cues placed. Not placed, their first shot is not in the montage: {names}.", {
+              count: outcome.placed,
+              names: outcome.unplaced.join(", "),
+            })
+          : t("{count} cues placed under their shots. The music dips under the dialogue.", {
+              count: outcome.placed,
+            }),
+      );
+    } catch (cause) {
+      report(cause);
+    } finally {
+      setBusy(false);
+    }
+  };
   const readScript = async () => {
     const origin = current.current;
     if (!origin) return;
@@ -1052,6 +1241,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       artifacts={media}
       projects={projects}
       projectId={project?.id}
+      document={project?.document}
       readOnly={busy || mediaSaving || exporting}
       onMetadata={async (artifact, title, projectIds) => {
         if (busy) throw new Error(t("Wait for production to finish before editing media."));
@@ -1094,6 +1284,10 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     />
   );
   const timelineEpoch = epoch.current;
+  const stepsDone = Object.values(progress).filter((result) => result.status === "done").length;
+  // Every step a run records counts, the free ones included, so the bar and
+  // the count above it agree.
+  const stepsTotal = producing.current?.nodes.length ?? 0;
   return (
     <div className="project-studio">
       {error ? (
@@ -1327,6 +1521,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 ["script", t("Script")],
                 ["shots", t("Shots")],
                 ["bible", t("Bible")],
+                ["music", t("Music")],
                 ["media", t("Media")],
                 ["montage", t("Montage")],
               ] as const
@@ -1339,6 +1534,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 onClick={() => setSection(key)}
               >
                 {label}
+                {key === "music" && scoreProposal?.projectId === project.id ? (
+                  <span
+                    className="project-live-dot"
+                    role="img"
+                    aria-label={t("A score is proposed")}
+                  />
+                ) : null}
               </button>
             ))}
           </nav>
@@ -1347,10 +1549,16 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               <span>{t("Production in progress")}</span>
               <span>
                 {t("{count} steps completed", {
-                  count: Object.values(progress).filter((result) => result.status === "done")
-                    .length,
+                  count: stepsDone,
                 })}
               </span>
+              {stepsTotal ? (
+                <span
+                  className="project-run-bar"
+                  aria-hidden
+                  style={{ "--run-done": stepsDone / stepsTotal } as CSSProperties}
+                />
+              ) : null}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -1380,223 +1588,20 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               </div>
             ))}
           {section === "script" ? (
-            <div className="project-script">
-              <section className="project-panel">
-                <h2>{t("Script")}</h2>
-                <textarea
-                  aria-label={t("Film script")}
-                  rows={18}
-                  value={project.document.script}
-                  disabled={busy || reading}
-                  onChange={(event) =>
-                    editDocument((document) => ({ ...document, script: event.target.value }))
-                  }
-                  placeholder={t("Describe your film, its characters and what happens.")}
-                />
-                <AiRewrite
-                  label={t("Script")}
-                  value={project.document.script}
-                  disabled={busy || reading}
-                  onAccept={(script) => editDocument((document) => ({ ...document, script }))}
-                  intents={[
-                    { value: "filmable", label: t("Make it filmable") },
-                    { value: "develop", label: t("Develop an idea") },
-                    { value: "tighten", label: t("Tighten") },
-                    { value: "custom", label: t("Your own instruction") },
-                  ]}
-                  hint={t(
-                    "Scenes, visible actions and the same names throughout: that is what Break into shots reads best.",
-                  )}
-                  request={(intent, instruction) =>
-                    project.document.script.trim()
-                      ? {
-                          kind: "scenario",
-                          text: project.document.script,
-                          intent,
-                          instruction,
-                          modelId: writingModelId,
-                          context: {
-                            aspectRatio: project.document.settings.aspectRatio,
-                            entries: project.document.bible.map((entry) => ({
-                              name: entry.name,
-                              kind: entry.kind,
-                              traits: entry.traits,
-                            })),
-                          },
-                        }
-                      : undefined
-                  }
-                />
-                <div className="project-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    disabled={busy || reading}
-                    onClick={() => setNotePicker(true)}
-                  >
-                    {t("From your notes")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={
-                      busy ||
-                      reading ||
-                      !project.document.script.trim() ||
-                      project.document.shots.length > 0
-                    }
-                    onClick={() => void readScript()}
-                  >
-                    {reading ? t("Reading your script...") : t("Break into shots")}
-                  </button>
-                </div>
-                {project.document.readingNoteId && !reading ? (
-                  <p className="project-muted">
-                    {t(
-                      "Your script and completed reading steps are saved. You can try again with another model.",
-                    )}
-                  </p>
-                ) : null}
-                {project.document.shots.length ? (
-                  <p className="project-muted">
-                    {t(
-                      "Your shot list is editable in Shots. Script changes do not overwrite your work.",
-                    )}
-                  </p>
-                ) : null}
-              </section>
-              <aside className="project-panel">
-                <h2>{t("Project settings")}</h2>
-                <label className="project-field">
-                  {t("Script breakdown model")}
-                  <select
-                    aria-label={t("Script breakdown model")}
-                    value={project.document.settings.readingModelId ?? ""}
-                    disabled={reading || busy}
-                    onChange={(event) =>
-                      editDocument((document) => ({
-                        ...document,
-                        settings: { ...document.settings, readingModelId: event.target.value },
-                      }))
-                    }
-                  >
-                    <option value="">
-                      {t("App text model: {model}", { model: defaultReadingModel || t("Default") })}
-                    </option>
-                    {project.document.settings.readingModelId &&
-                    !readingModels.some(
-                      (model) => model.id === project.document.settings.readingModelId,
-                    ) ? (
-                      <option value={project.document.settings.readingModelId}>
-                        {t("Unavailable model: {model}", {
-                          model: project.document.settings.readingModelId,
-                        })}
-                      </option>
-                    ) : null}
-                    {readingModels.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {readingModelsError ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => void loadReadingModels()}
-                  >
-                    {t("Retry loading text models")}
-                  </button>
-                ) : null}
-                <label className="project-field">
-                  {t("Aspect ratio")}
-                  <select
-                    value={project.document.settings.aspectRatio}
-                    onChange={(event) =>
-                      editDocument((document) => ({
-                        ...document,
-                        settings: { ...document.settings, aspectRatio: event.target.value },
-                      }))
-                    }
-                  >
-                    {["16:9", "9:16", "1:1", "4:3", "21:9"].map((ratio) => (
-                      <option key={ratio}>{ratio}</option>
-                    ))}
-                  </select>
-                </label>
-                <MediaModelPicker
-                  value={project.document.settings.videoModelId}
-                  options={catalog.models
-                    .filter(
-                      (model) =>
-                        !model.offline &&
-                        ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType),
-                    )
-                    .map(mediaModelOption)}
-                  ariaLabel={t("Default video model")}
-                  onChange={(videoModelId) =>
-                    editDocument((document) => ({
-                      ...document,
-                      settings: { ...document.settings, videoModelId },
-                    }))
-                  }
-                />
-                <MediaModelPicker
-                  value={project.document.settings.ttsModelId}
-                  options={modelsOfType(catalog, "tts").map(mediaModelOption)}
-                  ariaLabel={t("Dialogue model")}
-                  onChange={(ttsModelId) =>
-                    editDocument((document) => ({
-                      ...document,
-                      settings: { ...document.settings, ttsModelId },
-                    }))
-                  }
-                />
-                <label className="project-field">
-                  {t("Spend ceiling")}
-                  <input
-                    type="number"
-                    min={0}
-                    value={project.document.settings.budget}
-                    onChange={(event) => {
-                      const budget = Number(event.target.value);
-                      if (Number.isFinite(budget))
-                        editDocument((document) => ({
-                          ...document,
-                          settings: { ...document.settings, budget },
-                        }));
-                    }}
-                  />
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={project.document.settings.withScore}
-                    onChange={(event) =>
-                      editDocument((document) => ({
-                        ...document,
-                        settings: { ...document.settings, withScore: event.target.checked },
-                      }))
-                    }
-                  />
-                  {t("Generate a musical score")}
-                </label>
-                {project.document.settings.withScore ? (
-                  <MediaModelPicker
-                    value={project.document.settings.musicModelId}
-                    options={modelsOfType(catalog, "music").map(mediaModelOption)}
-                    ariaLabel={t("Music model")}
-                    onChange={(musicModelId) =>
-                      editDocument((document) => ({
-                        ...document,
-                        settings: { ...document.settings, musicModelId },
-                      }))
-                    }
-                  />
-                ) : null}
-              </aside>
-            </div>
+            <ProjectScript
+              project={project}
+              catalog={catalog}
+              busy={busy}
+              reading={reading}
+              writingModelId={writingModelId}
+              readingModels={readingModels}
+              defaultReadingModel={defaultReadingModel}
+              readingModelsError={readingModelsError}
+              onRetryModels={() => void loadReadingModels()}
+              editDocument={editDocument}
+              onPickNotes={() => setNotePicker(true)}
+              onRead={() => void readScript()}
+            />
           ) : null}
           {section === "shots" ? (
             <ProjectShots
@@ -1635,6 +1640,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               onBible={() => setSection("bible")}
               writingModelId={writingModelId}
               busy={busy || exporting}
+              live={Object.values(live)}
+              now={now}
+              fresh={fresh}
             />
           ) : null}
           {section === "bible" ? (
@@ -1670,6 +1678,50 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               onGenerate={(id, role) => void prepareBible(id, role)}
               writingModelId={writingModelId}
               busy={busy || exporting}
+              live={Object.values(live)}
+              now={now}
+              fresh={fresh}
+            />
+          ) : null}
+          {section === "music" ? (
+            <ProjectMusic
+              document={project.document}
+              catalog={catalog}
+              artifacts={media}
+              onScore={(score) => editDocument((document) => ({ ...document, score }))}
+              onSettings={(patch) =>
+                editDocument((document) => ({
+                  ...document,
+                  settings: { ...document.settings, ...patch },
+                }))
+              }
+              onGenerate={(cueId) => void prepareCue(cueId)}
+              onCompose={() => void composeScore(writingModelId)}
+              proposal={
+                scoreProposal?.projectId === project.id ? scoreProposal.proposal : undefined
+              }
+              proposing={proposing}
+              onAcceptProposal={() => {
+                if (!scoreProposal || scoreProposal.projectId !== project.id) return;
+                editDocument((document) => ({
+                  ...document,
+                  score: acceptProposal(
+                    scoreProposal.proposal,
+                    scoreProposal.shotIds.map((id) =>
+                      document.shots.find((shot) => shot.id === id),
+                    ),
+                    (projectScore(document) ?? emptyScore()).mode,
+                    document.score,
+                  ),
+                }));
+                setScoreProposal(undefined);
+              }}
+              onDiscardProposal={() => setScoreProposal(undefined)}
+              writingModelId={writingModelId}
+              busy={busy || exporting}
+              live={Object.values(live)}
+              now={now}
+              fresh={fresh}
             />
           ) : null}
           {section === "media" ? mediaEditor : null}
@@ -1686,8 +1738,21 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 >
                   {t("Append selected takes")}
                 </button>
-                <span className="project-muted">
-                  {t("Existing montage clips stay unchanged when you select another take.")}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={
+                    busy ||
+                    exporting ||
+                    !projectScore(project.document)?.cues.some((cue) => cue.activeTakeId)
+                  }
+                  onClick={() => void placeMusic()}
+                >
+                  {t("Place the music")}
+                </button>
+                <span className="project-muted" role="status">
+                  {musicNotice ||
+                    t("Existing montage clips stay unchanged when you select another take.")}
                 </span>
               </div>
               <ProjectTimeline
@@ -1867,77 +1932,12 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         </Dialog>
       ) : null}
       {quote ? (
-        <Dialog
-          open
+        <ProjectQuoteDialog
+          quote={quote}
+          budget={project?.document.settings.budget ?? 0}
           onClose={() => setQuote(undefined)}
-          title={t("Review generation costs")}
-          description={t(
-            "Only the steps listed here will be generated. Your existing takes remain available.",
-          )}
-          footer={
-            <>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setQuote(undefined)}
-              >
-                {t("Cancel")}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={
-                  quote.estimate.metered > 0 ||
-                  quote.estimate.credits + (quote.priorSpend ?? 0) >
-                    (project?.document.settings.budget ?? 0)
-                }
-                onClick={() => void produce(quote)}
-              >
-                {t("Generate · {credits} credits", {
-                  credits: quoteCredits(quote.estimate.credits),
-                })}
-              </button>
-            </>
-          }
-        >
-          <div className="dialog-body">
-            {quote.notes?.map((note) => (
-              <p className="project-warning" key={note}>
-                {note}
-              </p>
-            ))}
-            {quote.uncertainRetry ? (
-              <p className="project-warning">
-                {t(
-                  "A previous request may already have been charged. Check your provider history before confirming this new quote.",
-                )}
-              </p>
-            ) : null}
-            {quote.estimate.nodes
-              .filter((node) => node.kind !== "free")
-              .map((node) => (
-                <div className="project-quote-row" key={node.nodeId}>
-                  <span>{node.label}</span>
-                  <strong>
-                    {node.credits === undefined
-                      ? t("Price unavailable")
-                      : t("{credits} credits", { credits: quoteCredits(node.credits) })}
-                  </strong>
-                </div>
-              ))}
-            {quote.estimate.metered > 0 ? (
-              <p className="project-warning">
-                {t(
-                  "Some prices are unavailable. Choose another model or try quoting again before generating.",
-                )}
-              </p>
-            ) : null}
-            {quote.estimate.credits + (quote.priorSpend ?? 0) >
-            (project?.document.settings.budget ?? 0) ? (
-              <p className="project-error">{t("This generation exceeds the spend ceiling.")}</p>
-            ) : null}
-          </div>
-        </Dialog>
+          onConfirm={() => void produce(quote)}
+        />
       ) : null}
       {reopenConfirm ? (
         <Dialog

@@ -40,9 +40,11 @@ beforeEach(() => {
 function Harness({
   initial,
   request,
+  withDevelop = false,
 }: {
   initial: string;
   request?: (intent?: string, instruction?: string) => StudioRewriteInput | undefined;
+  withDevelop?: boolean;
 }) {
   const [value, setValue] = useState(initial);
   return (
@@ -52,8 +54,16 @@ function Harness({
         label="Script"
         value={value}
         onAccept={setValue}
+        field={
+          <textarea
+            aria-label="Script"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+        }
         intents={[
           { value: "filmable", label: "Make it filmable" },
+          ...(withDevelop ? [{ value: "develop" as const, label: "Develop an idea" }] : []),
           { value: "custom", label: "Your own instruction" },
         ]}
         request={
@@ -111,20 +121,71 @@ describe("AiRewrite", () => {
     expect(screen.getByTestId("saved").textContent).toBe("mine");
   });
 
-  it("asks for the instruction before a custom rewrite", async () => {
+  it("asks for the instruction before a custom rewrite, from the other ways to rewrite", async () => {
     const user = userEvent.setup();
     render(<Harness initial="mine" />);
-    await user.selectOptions(screen.getByRole("combobox", { name: "What to do" }), "custom");
-    const start = screen.getByRole("button", { name: /Improve with AI/ });
-    expect((start as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Other ways to rewrite" }));
+    await user.click(screen.getByRole("menuitem", { name: "Your own instruction" }));
+    const send = screen.getByRole("button", { name: "Rewrite" });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
     await user.type(screen.getByRole("textbox", { name: "Your instruction" }), "darker");
-    expect((start as HTMLButtonElement).disabled).toBe(false);
+    expect((send as HTMLButtonElement).disabled).toBe(false);
     backend.reply = () => Promise.resolve({ text: "Darker." });
-    await user.click(start);
+    await user.click(send);
     await waitFor(() =>
       expect(backend.calls[0]?.args.request).toMatchObject({
         intent: "custom",
         instruction: "darker",
+      }),
+    );
+  });
+
+  it("runs another intent straight from the menu, and the arrows walk it", async () => {
+    backend.reply = () => Promise.resolve({ text: "Shorter." });
+    const user = userEvent.setup();
+    render(<Harness initial="mine" withDevelop />);
+    await user.click(screen.getByRole("button", { name: "Other ways to rewrite" }));
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Make it filmable" }));
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Develop an idea" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Other ways to rewrite" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Other ways to rewrite" }));
+    await user.click(screen.getByRole("menuitem", { name: "Develop an idea" }));
+    await waitFor(() =>
+      expect(backend.calls[0]?.args.request).toMatchObject({ intent: "develop" }),
+    );
+  });
+
+  it("writes an empty scenario from a one-sentence idea", async () => {
+    backend.reply = () => Promise.resolve({ text: "Scene 1." });
+    const user = userEvent.setup();
+    render(
+      <Harness
+        initial=""
+        withDevelop
+        request={(intent, instruction) =>
+          intent === "develop" && instruction
+            ? { kind: "scenario", text: "", intent: "develop", instruction }
+            : undefined
+        }
+      />,
+    );
+    const write = screen.getByRole("button", { name: /Write with AI/ });
+    expect((write as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Other ways to rewrite" })).toBeNull();
+    await user.type(
+      screen.getByRole("textbox", { name: "Your idea in one sentence" }),
+      "A night guard hears the paintings talk",
+    );
+    await user.click(write);
+    await waitFor(() =>
+      expect(backend.calls[0]?.args.request).toMatchObject({
+        intent: "develop",
+        instruction: "A night guard hears the paintings talk",
       }),
     );
   });

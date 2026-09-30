@@ -34,6 +34,10 @@ import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { AiRewrite } from "./AiRewrite";
 import { GalleryPicker } from "./GalleryPicker";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
+import { MediaViewer } from "./MediaViewer";
+import { Darkroom } from "./Darkroom";
+import type { LiveRender } from "../../lib/studio/project-activity";
+import { estimateRenderMs } from "../../lib/studio/render-eta";
 
 export function ProjectBible({
   entries,
@@ -44,6 +48,9 @@ export function ProjectBible({
   onGenerate,
   writingModelId,
   busy,
+  live = [],
+  now = Date.now(),
+  fresh,
 }: {
   entries: ProjectBibleEntry[];
   onChange: (entries: ProjectBibleEntry[]) => void;
@@ -54,6 +61,11 @@ export function ProjectBible({
   /** The text model the AI rewrites write with. The app's when absent. */
   writingModelId?: string;
   busy: boolean;
+  /** What is being made right now, for the waits shown where it will land. */
+  live?: readonly LiveRender[];
+  now?: number;
+  /** Files that just arrived, revealed once. */
+  fresh?: ReadonlySet<string>;
 }) {
   const [selected, setSelected] = useState(entries[0]?.id);
   const [global, setGlobal] = useState<ProjectBibleEntry[]>([]);
@@ -63,12 +75,36 @@ export function ProjectBible({
   const [nameDraft, setNameDraft] = useState<{ entryId: string; value: string }>();
   const [cutting, setCutting] = useState<string>();
   const [cutError, setCutError] = useState("");
+  const [viewing, setViewing] = useState<number>();
   useEffect(() => {
     void listBibleEntries()
       .then(setGlobal)
       .catch(() => undefined);
   }, []);
   const entry = entries.find((item) => item.id === selected) ?? entries[0];
+  const waitsOf = (entryId: string | undefined) =>
+    live.flatMap((item) =>
+      item.target.kind === "bible" && item.target.entryId === entryId
+        ? [{ ...item, role: item.target.role }]
+        : [],
+    );
+  const waits = waitsOf(entry?.id);
+  // The entry's pictures, in the order the video models read them.
+  const viewable = (entry?.refs ?? []).flatMap((ref) => {
+    const artifact = artifacts.find((item) => item.id === ref.artifactId);
+    return artifact?.kind === "image"
+      ? [
+          {
+            artifact,
+            refId: ref.id,
+            title: t("{name}: {role}", {
+              name: entry?.name ?? "",
+              role: BIBLE_ROLE_LABELS[ref.role],
+            }),
+          },
+        ]
+      : [];
+  });
   const activeRole =
     entry && !ROLES_BY_KIND[entry.kind].includes(role) ? ROLES_BY_KIND[entry.kind][0] : role;
   const models = modelsOfType(catalog, "image");
@@ -213,7 +249,12 @@ export function ProjectBible({
               setRole(ROLES_BY_KIND[item.kind][0]);
             }}
           >
-            <strong>{item.name}</strong>
+            <strong>
+              {item.name}
+              {waitsOf(item.id).length ? (
+                <span className="project-live-dot" role="img" aria-label={t("In production")} />
+              ) : null}
+            </strong>
             <span>{BIBLE_KIND_LABELS[item.kind]}</span>
           </button>
         ))}
@@ -290,7 +331,22 @@ export function ProjectBible({
                 return (
                   <div key={ref.id} className="project-reference">
                     {artifact?.kind === "image" ? (
-                      <img src={artifactSrc(artifact)} alt={ref.label} />
+                      <button
+                        type="button"
+                        className="project-reference-open"
+                        aria-label={t("Enlarge {name}", {
+                          name: BIBLE_ROLE_LABELS[ref.role],
+                        })}
+                        onClick={() =>
+                          setViewing(viewable.findIndex((item) => item.refId === ref.id))
+                        }
+                      >
+                        <img
+                          className={fresh?.has(artifact.id) ? "project-reveal" : undefined}
+                          src={artifactSrc(artifact)}
+                          alt={ref.label}
+                        />
+                      </button>
                     ) : artifact ? (
                       // biome-ignore lint/a11y/useMediaCaption: voice references have no caption track
                       <audio
@@ -343,6 +399,21 @@ export function ProjectBible({
                   </div>
                 );
               })}
+              {waits.map((wait) => (
+                <div key={wait.nodeId} className="project-reference project-reference-developing">
+                  <Darkroom
+                    compact
+                    seed={`${entry.id}${wait.role}`}
+                    phase={wait.phase}
+                    elapsedMs={now - wait.startedAt}
+                    estimateMs={estimateRenderMs(wait.etaKey)}
+                    progress={wait.progress}
+                    aspectRatio={wait.aspectRatio ?? "1:1"}
+                    label={wait.phase === "queued" ? undefined : t("Drawing")}
+                  />
+                  <span>{BIBLE_ROLE_LABELS[wait.role]}</span>
+                </div>
+              ))}
             </div>
             <label className="project-field">
               {t("Reference role")}
@@ -393,36 +464,38 @@ export function ProjectBible({
                     ariaLabel={t("Reference image model")}
                   />
                 )}
-                <label className="project-field">
-                  {t("Image prompt")}
-                  <textarea
-                    aria-label={t("Image prompt")}
-                    rows={4}
+                <div className="project-field">
+                  <span className="project-field-heading">{t("Image prompt")}</span>
+                  <AiRewrite
+                    label={t("Image prompt")}
                     value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
+                    disabled={busy}
+                    field={
+                      <textarea
+                        aria-label={t("Image prompt")}
+                        rows={4}
+                        value={prompt}
+                        onChange={(event) => setPrompt(event.target.value)}
+                      />
+                    }
+                    onAccept={setPrompt}
+                    hint={t("Written in English, the language these image models follow best.")}
+                    request={() =>
+                      entry.name.trim()
+                        ? {
+                            kind: "imagePrompt",
+                            text: prompt,
+                            modelId: writingModelId,
+                            context: {
+                              targetModel: rewriteTargetModel(drawingModel),
+                              entry: { name: entry.name, kind: entry.kind, traits: entry.traits },
+                              role: activeRole,
+                            },
+                          }
+                        : undefined
+                    }
                   />
-                </label>
-                <AiRewrite
-                  label={t("Image prompt")}
-                  value={prompt}
-                  disabled={busy}
-                  onAccept={setPrompt}
-                  hint={t("Written in English, the language these image models follow best.")}
-                  request={() =>
-                    entry.name.trim()
-                      ? {
-                          kind: "imagePrompt",
-                          text: prompt,
-                          modelId: writingModelId,
-                          context: {
-                            targetModel: rewriteTargetModel(drawingModel),
-                            entry: { name: entry.name, kind: entry.kind, traits: entry.traits },
-                            role: activeRole,
-                          },
-                        }
-                      : undefined
-                  }
-                />
+                </div>
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -445,7 +518,7 @@ export function ProjectBible({
               {t("Remove from project")}
             </button>
           </fieldset>
-          {busy ? <p role="status">{t("Generating reference...")}</p> : null}
+          {busy && !waits.length ? <p role="status">{t("Generating reference...")}</p> : null}
         </section>
       ) : (
         <div className="project-empty">
@@ -457,6 +530,14 @@ export function ProjectBible({
           </p>
         </div>
       )}
+      {viewing !== undefined && viewable[viewing] ? (
+        <MediaViewer
+          items={viewable}
+          index={viewing}
+          onIndex={setViewing}
+          onClose={() => setViewing(undefined)}
+        />
+      ) : null}
       {picker && entry ? (
         <GalleryPicker
           title={

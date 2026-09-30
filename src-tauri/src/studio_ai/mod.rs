@@ -63,6 +63,8 @@ pub enum StudioRewriteKind {
     ShotPrompt,
     ImagePrompt,
     Composition,
+    /// A cue of the film's score, written for a music model.
+    MusicPrompt,
 }
 
 /// The model a generation prompt is written for.
@@ -117,6 +119,12 @@ pub struct StudioRewriteContext {
     pub entry: Option<ContextEntry>,
     pub role: Option<String>,
     pub slots: Vec<CompositionSlot>,
+    /// A score's shared identity: genre, instruments, tempo, colour.
+    pub identity: Option<String>,
+    pub mood: Option<String>,
+    pub intensity: Option<String>,
+    /// What happens on screen under a cue, shot by shot.
+    pub scenes: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,6 +189,12 @@ fn validate(request: &StudioRewriteRequest) -> Result<(), AppError> {
                     .is_some_and(|entry| !entry.name.trim().is_empty())
         }
         StudioRewriteKind::Composition => !context.slots.is_empty(),
+        StudioRewriteKind::MusicPrompt => {
+            !text.is_empty()
+                || present(&context.mood).is_some()
+                || present(&context.title).is_some()
+                || !context.scenes.is_empty()
+        }
     };
     if !has_material {
         // Literal sentences, one call each, so the French catalog collects them.
@@ -198,6 +212,10 @@ fn validate(request: &StudioRewriteRequest) -> Result<(), AppError> {
             StudioRewriteKind::Composition => AppError::new(
                 "studio_rewrite_empty",
                 "Add at least one image to combine first.",
+            ),
+            StudioRewriteKind::MusicPrompt => AppError::new(
+                "studio_rewrite_empty",
+                "Choose the shots this cue plays under first.",
             ),
         });
     }
@@ -278,6 +296,34 @@ fn model_lines(out: &mut Vec<String>, model: Option<&TargetModel>, with_referenc
     }
 }
 
+/// The shot's length in whole seconds, from the duration the app resolved
+/// ("5", "5s", "8 s"). Nothing usable means no pacing, never a guess.
+fn shot_seconds(duration: Option<&str>) -> Option<u32> {
+    let digits: String = duration?
+        .trim()
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    let seconds = digits.parse::<f32>().ok()?.round();
+    (1.0..=600.0).contains(&seconds).then_some(seconds as u32)
+}
+
+/// A beat every two and a half seconds or so, at most five: enough to pace a
+/// long take, few enough that each beat still gets a whole clause within the
+/// family's word budget. Whole-second boundaries, the only ones the timecode
+/// families read.
+pub(crate) fn beat_ranges(seconds: u32) -> Vec<(u32, u32)> {
+    let count = ((seconds as f32 / 2.5).round() as u32)
+        .clamp(1, 5)
+        .min(seconds);
+    (0..count)
+        .map(|index| {
+            let edge = |at: u32| ((at * seconds) as f32 / count as f32).round() as u32;
+            (edge(index), edge(index + 1))
+        })
+        .collect()
+}
+
 /// The system prompt, the user message, the output budget and the
 /// temperature of one rewrite.
 fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
@@ -338,12 +384,27 @@ fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
                 "Dialogue (do not quote it)",
                 present(&context.dialogue),
             );
-            // Pacing, not text: how much action fits the shot.
-            push_line(
-                &mut lines,
-                "Duration (fit the action to it, do not write it)",
-                present(&context.duration),
-            );
+            // The app owns the clock: it resolves the shot's seconds and cuts
+            // them into beats, and the model only fills them.
+            let seconds = shot_seconds(context.duration.as_deref());
+            let ranges = seconds.map(beat_ranges).unwrap_or_default();
+            let timecodes = prompts::reads_timecodes(target_id);
+            if let Some(seconds) = seconds {
+                lines.push(format!("Duration: {seconds} seconds (do not write it)."));
+            }
+            if ranges.len() > 1 {
+                let listed: Vec<String> = ranges
+                    .iter()
+                    .map(|&(from, to)| {
+                        if timecodes {
+                            prompts::timecode(from, to)
+                        } else {
+                            format!("from {from} to {to} seconds")
+                        }
+                    })
+                    .collect();
+                lines.push(format!("Beats: {}", listed.join(", ")));
+            }
             if let Some(block) = entries_block(&context.entries) {
                 // With an opening frame the look is already on screen; the
                 // traits are there so nothing contradicts them, not to be
@@ -355,11 +416,15 @@ fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
                 };
                 lines.push(format!("{header}\n{block}"));
             }
+            let pacing = seconds
+                .map(|seconds| prompts::pacing_rule(seconds, ranges.len(), timecodes))
+                .unwrap_or_default();
             let task = format!(
-                "{}\n\n{}\n\n{}",
+                "{}\n\n{}\n\n{}\n\n{}",
                 prompts::SHOT_PROMPT_TASK,
                 prompts::video_mode_rule(mode),
-                prompts::video_family_guide(target_id)
+                prompts::video_family_guide(target_id),
+                pacing
             );
             let user = prompts::user_message(
                 &task,
@@ -439,6 +504,45 @@ fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
                 text,
             );
             (prompts::SHARED_RULES.to_string(), user, 2_048, 0.4)
+        }
+        StudioRewriteKind::MusicPrompt => {
+            model_lines(&mut lines, context.target_model.as_ref(), false);
+            push_line(
+                &mut lines,
+                "The score's identity (every cue shares it, do not restate it)",
+                present(&context.identity),
+            );
+            push_line(&mut lines, "Cue", present(&context.title));
+            push_line(&mut lines, "Mood", present(&context.mood));
+            push_line(&mut lines, "Intensity", present(&context.intensity));
+            if let Some(seconds) = shot_seconds(context.duration.as_deref()) {
+                lines.push(format!("Length: {seconds} seconds (do not write it)."));
+            }
+            let scenes: Vec<String> = context
+                .scenes
+                .iter()
+                .take(MAX_CONTEXT_ENTRIES)
+                .map(|scene| format!("- {}", clip(scene)))
+                .filter(|line| line.len() > 2)
+                .collect();
+            if !scenes.is_empty() {
+                lines.push(format!(
+                    "On screen under it, in order:\n{}",
+                    scenes.join("\n")
+                ));
+            }
+            let task = format!(
+                "{}\n\n{}",
+                prompts::MUSIC_PROMPT_TASK,
+                prompts::music_family_guide(target_id)
+            );
+            let user = prompts::user_message(
+                &task,
+                &lines.join("\n"),
+                request.instruction.as_deref(),
+                text,
+            );
+            (prompts::SHARED_RULES.to_string(), user, 1_024, 0.5)
         }
     }
 }
@@ -602,6 +706,85 @@ mod tests {
         assert!(user.find("<context>").unwrap() < material);
         assert!(user.contains("Marie (character): red coat"));
         assert!(user.ends_with(prompts::MATERIAL_CLOSE));
+    }
+
+    #[test]
+    fn a_cue_prompt_knows_its_length_its_scenes_and_its_family() {
+        let mut req = request(StudioRewriteKind::MusicPrompt, "");
+        assert!(validate(&req).is_err());
+        req.context.mood = Some("tense, hushed".into());
+        req.context.identity = Some("Solo cello and felt piano.".into());
+        req.context.duration = Some("23".into());
+        req.context.scenes = vec!["Henri locks the door.".into(), "The corridor, dark.".into()];
+        req.context.target_model = Some(TargetModel {
+            id: "stable-audio-2-5".into(),
+            ..TargetModel::default()
+        });
+        assert!(validate(&req).is_ok());
+        let (_, user, _, _) = compose(&req);
+        assert!(user.contains("Length: 23 seconds"));
+        assert!(user.contains("- Henri locks the door."));
+        assert!(user.contains("do not restate it): Solo cello"));
+        assert!(user.contains("Stable Audio"));
+    }
+
+    #[test]
+    fn beats_are_cut_by_the_app_on_whole_seconds() {
+        assert_eq!(beat_ranges(3), vec![(0, 3)]);
+        assert_eq!(beat_ranges(5), vec![(0, 3), (3, 5)]);
+        assert_eq!(beat_ranges(10), vec![(0, 3), (3, 5), (5, 8), (8, 10)]);
+        assert_eq!(beat_ranges(15).len(), 5);
+        assert_eq!(beat_ranges(15).last(), Some(&(12, 15)));
+        assert_eq!(shot_seconds(Some("8s")), Some(8));
+        assert_eq!(shot_seconds(Some(" 5 ")), Some(5));
+        assert_eq!(shot_seconds(Some("auto")), None);
+        assert_eq!(shot_seconds(None), None);
+    }
+
+    #[test]
+    fn a_timed_shot_gets_timecodes_where_the_family_reads_them() {
+        let mut req = request(StudioRewriteKind::ShotPrompt, "");
+        req.context.action = Some("Henri locks the door, turns, walks away.".into());
+        req.context.duration = Some("8".into());
+        req.context.target_model = Some(TargetModel {
+            id: "veo-3-1-text-to-video".into(),
+            name: None,
+            char_limit: None,
+            word_limit: None,
+            reference_mention: None,
+        });
+        let (_, user, _, _) = compose(&req);
+        assert!(user.contains("Duration: 8 seconds"));
+        assert!(user.contains("Beats: [00:00-00:03], [00:03-00:05], [00:05-00:08]"));
+        assert!(user.contains("opening with its time range exactly as listed"));
+    }
+
+    #[test]
+    fn a_timed_shot_is_paced_in_words_for_kling() {
+        let mut req = request(StudioRewriteKind::ShotPrompt, "");
+        req.context.action = Some("Henri locks the door.".into());
+        req.context.duration = Some("10".into());
+        req.context.target_model = Some(TargetModel {
+            id: "kling-v3-4k-text-to-video".into(),
+            name: Some("Kling V3 4K".into()),
+            char_limit: None,
+            word_limit: None,
+            reference_mention: None,
+        });
+        let (_, user, _, _) = compose(&req);
+        assert!(user.contains("Beats: from 0 to 3 seconds, from 3 to 5 seconds"));
+        assert!(user.contains("Never write the ranges as numbers or brackets"));
+        assert!(!user.contains("[00:00"));
+    }
+
+    #[test]
+    fn a_short_shot_is_one_action() {
+        let mut req = request(StudioRewriteKind::ShotPrompt, "");
+        req.context.action = Some("Henri nods.".into());
+        req.context.duration = Some("3".into());
+        let (_, user, _, _) = compose(&req);
+        assert!(!user.contains("Beats:"));
+        assert!(user.contains("Describe one action that fills it"));
     }
 
     #[test]

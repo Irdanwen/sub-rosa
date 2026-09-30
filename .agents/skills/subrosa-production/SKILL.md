@@ -79,6 +79,16 @@ Adjacent beats in one place go in **one** generation separated by
 `Lens switch.` - one render holds the lighting and the geography across them in
 a way two renders cannot, however carefully the second one is prompted.
 
+Pace the action over the seconds the take will actually run, which the app
+resolves (`resolveShotDuration`: the shot's own duration, or its motion snapped
+to the model's list). A beat every two and a half seconds or so, at most five,
+on whole seconds: 5 s is two beats (0-3, 3-5), 10 s is four. Veo and Seedance 2
+read the ranges written as `[00:00-00:03]` segments after one sentence of setup;
+every other family, Kling included, gets the beats as ordered sentences with
+the pace in words, because a bracketed time reads there as text or, in Kling's
+own `shot 1, 3s` notation, as a cut. "Improve with AI" does this for you and
+marks the prompt stale when the duration changes.
+
 ## What costs money, and what does not
 
 Free: the bible, planning, compiling, changing your mind, and the timeline

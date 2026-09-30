@@ -3,11 +3,13 @@ import { t } from "../i18n";
 import { messageFromError } from "../errors";
 import { getNote, listFilms, shotList } from "../tauri";
 import { listBibleEntries, type BibleEntry, type BibleRole } from "./bible";
+import { BIBLE_ROLE_LABELS } from "./bible/types";
 import type { Workflow, WorkflowNode } from "./workflow/schema";
 import type { WorkflowRunSummary } from "./workflow-run";
 import type { StudioArtifact } from "./types";
 import type { Shot } from "./workflow/compile";
 import { createEditorDocument, type EditorDocument } from "./editor/document";
+import type { ProjectScore } from "./score";
 
 export interface ProjectShot extends Shot {
   id: string;
@@ -23,6 +25,9 @@ export interface ProjectShot extends Shot {
   /** The video model the prompt was last written for with AI. A label, not
    * an input: changing it never makes a take stale. */
   promptOptimizedFor?: string;
+  /** The seconds that prompt was paced for. Also a label: a new duration
+   * asks for a new rewrite, it does not invalidate a take. */
+  promptSeconds?: number;
 }
 export interface ProjectBibleEntry extends BibleEntry {
   originId?: string;
@@ -93,6 +98,8 @@ export interface ProjectDocument {
     readingModelId?: string;
   };
   timeline: EditorDocument;
+  /** The film's music, when it has been composed (ADR-0067). */
+  score?: ProjectScore;
 }
 export interface ProjectSummary {
   id: string;
@@ -211,6 +218,36 @@ export function montageArtifacts(
     (artifact) => artifact.projectIds?.includes(project.id) || referenced.has(artifact.id),
   );
 }
+/**
+ * What a file is to this project, in words: "Shot 3: The corridor, take 2"
+ * rather than the UUID it was saved under. Undefined when the project does not
+ * know the file, so the caller falls back to the file's own title.
+ */
+export function artifactLabel(document: ProjectDocument, artifactId: string): string | undefined {
+  for (const [index, shot] of document.shots.entries()) {
+    const take = shot.takeIds.indexOf(artifactId);
+    const number = index + 1;
+    if (take !== -1)
+      return t("Shot {number}: {title}, take {take}", {
+        number,
+        title: shot.title,
+        take: take + 1,
+      });
+    if (shot.openingArtifactId === artifactId || shot.imageCandidates.includes(artifactId))
+      return t("Shot {number}: {title}, opening image", { number, title: shot.title });
+    if (shot.endingArtifactId === artifactId)
+      return t("Shot {number}: {title}, ending image", { number, title: shot.title });
+  }
+  for (const entry of document.bible) {
+    const ref = entry.refs.find((candidate) => candidate.artifactId === artifactId);
+    if (ref) return t("{name}: {role}", { name: entry.name, role: BIBLE_ROLE_LABELS[ref.role] });
+  }
+  for (const cue of document.score?.cues ?? []) {
+    const take = cue.takeIds.indexOf(artifactId);
+    if (take !== -1) return t("Music: {title}, take {take}", { title: cue.title, take: take + 1 });
+  }
+  return undefined;
+}
 export function shotSignature(
   shot: ProjectShot,
   project: ProjectDocument,
@@ -222,6 +259,7 @@ export function shotSignature(
     renderedSignature: _signature,
     imageCandidates: _images,
     promptOptimizedFor: _optimizedFor,
+    promptSeconds: _pacedFor,
     ...input
   } = shot;
   const previous =

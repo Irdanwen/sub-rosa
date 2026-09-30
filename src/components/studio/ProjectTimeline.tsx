@@ -35,6 +35,7 @@ import {
   interchangeProblems,
 } from "../../lib/studio/editor/interchange";
 import { parseCube } from "../../lib/studio/editor/lut";
+import { ducksUnderDialogue } from "../../lib/studio/editor/duck";
 import { writeTimelineBundle } from "../../lib/studio/timeline/bundle";
 import type { TimelineFormat } from "../../lib/studio/timeline/types";
 import type { StudioArtifact } from "../../lib/studio/types";
@@ -988,6 +989,19 @@ export function ProjectTimeline({
                   >
                     {track.muted ? t("Unmute") : t("Mute")}
                   </button>
+                  {track.kind === "audio" && track.id !== "dialogue" && (
+                    <button
+                      type="button"
+                      aria-pressed={ducksUnderDialogue(track)}
+                      disabled={busy}
+                      title={t("Lower this track while someone speaks on the dialogue track")}
+                      onClick={() =>
+                        updateTrack({ ...track, duckUnderDialogue: !ducksUnderDialogue(track) })
+                      }
+                    >
+                      {t("Duck under dialogue")}
+                    </button>
+                  )}
                   {track.kind === "video" && (
                     <button
                       type="button"

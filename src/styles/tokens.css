@@ -320,6 +320,13 @@
    * foreground tint; in dark mode the rule below switches to a darkening
    * black wash so the backdrop actually dims what's behind it. */
   --scrim: color-mix(in oklch, var(--foreground) 12%, transparent);
+  /* A screening room, in either theme: the media viewer and the shot monitor
+   * sit on near-black so a frame's own blacks read as black, and letterbox
+   * bars disappear into the surround instead of framing it in grey. */
+  --screen: oklch(14% 0.004 84.59);
+  --screen-scrim: oklch(10% 0.004 84.59 / 97%);
+  --screen-foreground: oklch(96% 0.004 84.59);
+  --screen-muted: oklch(76% 0.008 84.59);
 
   /* Motion -----------------------------------------------------------
    * The names are the app's; the curves are the charter's. --ease-spring was

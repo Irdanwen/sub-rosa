@@ -1,10 +1,12 @@
-import { useState } from "react";
-import { t } from "../../lib/i18n";
+import { IconExpandSimple } from "central-icons/IconExpandSimple";
+import { type CSSProperties, useState } from "react";
+import { intlLocale, t } from "../../lib/i18n";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import { requiresOpeningFrame, videoDirection } from "../../lib/studio/catalog";
 import { maxVideoReferences } from "../../lib/studio/seedance";
 import { effectiveVideoConstraints } from "../../lib/studio/model-constraints";
-import { familyStem, routeModels } from "../../lib/studio/workflow/compile";
+import { resolveShotDuration } from "../../lib/studio/workflow/compile";
+import { shotVideoModel } from "../../lib/studio/project-production";
 import {
   newShot,
   shotSignature,
@@ -12,11 +14,23 @@ import {
   type ProjectShot,
 } from "../../lib/studio/projects";
 import { rewriteTargetModel } from "../../lib/studio/studio-rewrite";
+import { formatElapsed } from "../../lib/studio/async-job";
+import { darkroomSeed, darkroomVars } from "../../lib/studio/darkroom";
+import type { LiveRender } from "../../lib/studio/project-activity";
+import { estimateRenderMs } from "../../lib/studio/render-eta";
+import { Darkroom } from "./Darkroom";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { AiRewrite } from "./AiRewrite";
 import { GalleryPicker } from "./GalleryPicker";
 import { OpeningComposer } from "./OpeningComposer";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
+import { MediaViewer } from "./MediaViewer";
+
+/** "16:9" as a number, or undefined for anything that is not a ratio. */
+export function ratioOf(value: string | undefined): number | undefined {
+  const [width, height] = (value ?? "").split(":").map(Number);
+  return width > 0 && height > 0 ? width / height : undefined;
+}
 
 export function ProjectShots({
   document,
@@ -28,6 +42,9 @@ export function ProjectShots({
   onBible,
   writingModelId,
   busy,
+  live = [],
+  now = Date.now(),
+  fresh,
 }: {
   document: ProjectDocument;
   onChange: (shots: ProjectShot[]) => void;
@@ -39,6 +56,11 @@ export function ProjectShots({
   /** The text model the AI rewrites write with. The app's when absent. */
   writingModelId?: string;
   busy: boolean;
+  /** What is being made right now, for the waits shown where it will land. */
+  live?: readonly LiveRender[];
+  now?: number;
+  /** Files that just arrived, revealed once. */
+  fresh?: ReadonlySet<string>;
 }) {
   const [selected, setSelected] = useState(document.shots[0]?.id);
   const [picker, setPicker] = useState<
@@ -46,6 +68,10 @@ export function ProjectShots({
   >(null);
   const [referenceError, setReferenceError] = useState("");
   const [removed, setRemoved] = useState<{ shot: ProjectShot; index: number }>();
+  const [viewing, setViewing] = useState<number>();
+  // The take's own shape once it is known: a clip rendered at another ratio
+  // than the project's must not be letterboxed inside a frame of the wrong one.
+  const [measured, setMeasured] = useState<{ id: string; ratio: number }>();
   const shot = document.shots.find((item) => item.id === selected) ?? document.shots[0];
   const index = document.shots.findIndex((item) => item.id === shot?.id);
   const update = (patch: Partial<ProjectShot>) => {
@@ -73,28 +99,26 @@ export function ProjectShots({
     [shots[index], shots[index + offset]] = [shots[index + offset], shots[index]];
     onChange(shots);
   };
+  /** The take being made for a shot, else its opening image being composed. */
+  const waitFor = (shotId: string | undefined) =>
+    live.find((item) => item.target.kind === "take" && item.target.shotId === shotId) ??
+    live.find((item) => item.target.kind === "opening" && item.target.shotId === shotId);
+  const wait = waitFor(shot?.id);
   const mode = shot?.mode ?? "text";
-  const models = catalog.models.filter(
-    (model) =>
-      !model.offline &&
-      ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType) &&
-      videoDirection(model) === (mode === "continuation" ? "image" : mode),
-  );
-  const preferredId = document.settings.videoModelId;
-  const routing = routeModels(catalog, preferredId);
-  const routed =
-    mode === "reference"
-      ? routing.reference
-      : mode === "image" || mode === "continuation"
-        ? routing.fromImage
-        : routing.text;
-  const model = shot?.modelId
-    ? models.find((item) => item.id === shot.modelId)
-    : models.find(
-        (item) =>
-          item.id === routed?.id &&
-          (!preferredId || familyStem(item.id) === familyStem(preferredId)),
-      );
+  const modelsFor = (itemMode: ProjectShot["mode"]) =>
+    catalog.models.filter(
+      (model) =>
+        !model.offline &&
+        ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType) &&
+        videoDirection(model) === (itemMode === "continuation" ? "image" : itemMode),
+    );
+  const modelOf = (item: ProjectShot | undefined) => shotVideoModel(item, document, catalog);
+  const models = modelsFor(mode);
+  const model = modelOf(shot);
+  const timing = shot ? resolveShotDuration(shot, model) : undefined;
+  /** "5 s", said the way a person reads it. */
+  const secondsLabel = (seconds: number) =>
+    t("{seconds} s", { seconds: seconds.toLocaleString(intlLocale()) });
   const constraints = model ? effectiveVideoConstraints(model) : undefined;
   const referenceLimit = maxVideoReferences(model);
   const addReference = (field: "imageReferenceIds" | "referenceArtifactIds", id: string) => {
@@ -112,6 +136,28 @@ export function ProjectShots({
   const preview = artifacts.find(
     (item) => item.id === (shot?.activeTakeId || shot?.openingArtifactId),
   );
+  // Every take of the shot, then its opening image, in the order they were made.
+  const viewable = [...(shot?.takeIds ?? []), shot?.openingArtifactId]
+    .map((id) => artifacts.find((item) => item.id === id))
+    .filter((item): item is StudioArtifact => !!item)
+    .map((artifact) => ({
+      artifact,
+      title:
+        artifact.id === shot?.openingArtifactId && !shot.takeIds.includes(artifact.id)
+          ? t("{title}: opening image", { title: shot.title })
+          : t("{title}: take {number}", {
+              title: shot?.title ?? "",
+              number: (shot?.takeIds.indexOf(artifact.id) ?? 0) + 1,
+            }),
+    }));
+  const monitorRatio =
+    (preview && measured?.id === preview.id ? measured.ratio : undefined) ??
+    ratioOf(document.settings.aspectRatio) ??
+    16 / 9;
+  const openViewer = () => {
+    const at = viewable.findIndex((item) => item.artifact.id === preview?.id);
+    if (at !== -1) setViewing(at);
+  };
   const imagePreview = (id: string, onRemove: () => void) => {
     const artifact = artifacts.find((item) => item.id === id);
     return (
@@ -138,6 +184,8 @@ export function ProjectShots({
         </div>
         {document.shots.map((item, number) => {
           const thumbnail = artifacts.find((artifact) => artifact.id === item.openingArtifactId);
+          const rowWait = waitFor(item.id);
+          const rowTiming = resolveShotDuration(item, modelOf(item));
           return (
             <button
               key={item.id}
@@ -150,7 +198,12 @@ export function ProjectShots({
               }}
             >
               <span className="project-shot-number">{number + 1}</span>
-              {thumbnail ? (
+              {rowWait ? (
+                <span
+                  className="project-shot-placeholder project-shot-developing"
+                  style={darkroomVars(darkroomSeed(`${item.id}${item.prompt ?? item.action}`))}
+                />
+              ) : thumbnail ? (
                 <img src={artifactSrc(thumbnail)} alt="" />
               ) : (
                 <span className="project-shot-placeholder" />
@@ -158,10 +211,17 @@ export function ProjectShots({
               <span>
                 <strong>{item.title}</strong>
                 <small>
-                  {item.duration || t("Default duration")} ·{" "}
-                  {item.takeIds.length
-                    ? t("{count} takes", { count: item.takeIds.length })
-                    : t("Not generated")}
+                  {rowWait
+                    ? rowWait.phase === "queued"
+                      ? t("Queued · {time}", { time: formatElapsed(now - rowWait.startedAt) })
+                      : t("Rendering · {time}", { time: formatElapsed(now - rowWait.startedAt) })
+                    : `${rowTiming.automatic ? t("{duration}, automatic", { duration: secondsLabel(rowTiming.seconds) }) : secondsLabel(rowTiming.seconds)} · ${
+                        item.takeIds.length
+                          ? item.takeIds.length === 1
+                            ? t("1 take")
+                            : t("{count} takes", { count: item.takeIds.length })
+                          : t("Not generated")
+                      }`}
                 </small>
               </span>
             </button>
@@ -228,12 +288,60 @@ export function ProjectShots({
                 {t("Remove")}
               </button>
             </div>
-            <div className="project-monitor">
-              {preview?.kind === "video" ? (
+            <div
+              className="project-monitor"
+              data-empty={!preview && !wait}
+              style={
+                {
+                  "--monitor-ratio": wait
+                    ? (ratioOf(document.settings.aspectRatio) ?? 16 / 9)
+                    : monitorRatio,
+                } as CSSProperties
+              }
+            >
+              {wait ? (
+                <Darkroom
+                  seed={`${shot.id}${shot.prompt ?? shot.action}`}
+                  phase={wait.phase}
+                  elapsedMs={now - wait.startedAt}
+                  estimateMs={estimateRenderMs(wait.etaKey)}
+                  progress={wait.progress}
+                  aspectRatio={document.settings.aspectRatio}
+                  label={
+                    wait.phase === "queued"
+                      ? undefined
+                      : wait.target.kind === "take"
+                        ? t("Rendering take {number}", { number: shot.takeIds.length + 1 })
+                        : t("Composing the opening image")
+                  }
+                />
+              ) : preview?.kind === "video" ? (
                 // biome-ignore lint/a11y/useMediaCaption: generated takes have no caption track
-                <video key={preview.id} controls preload="metadata" src={artifactSrc(preview)} />
+                <video
+                  key={preview.id}
+                  className={fresh?.has(preview.id) ? "project-reveal" : undefined}
+                  controls
+                  preload="metadata"
+                  src={artifactSrc(preview)}
+                  onLoadedMetadata={(event) => {
+                    const { videoWidth, videoHeight } = event.currentTarget;
+                    if (videoWidth && videoHeight)
+                      setMeasured({ id: preview.id, ratio: videoWidth / videoHeight });
+                  }}
+                />
               ) : preview ? (
-                <img src={artifactSrc(preview)} alt={shot.title} />
+                <img
+                  key={preview.id}
+                  className={fresh?.has(preview.id) ? "project-reveal" : undefined}
+                  src={artifactSrc(preview)}
+                  alt={shot.title}
+                  onLoad={(event) => {
+                    const { naturalWidth, naturalHeight } = event.currentTarget;
+                    if (naturalWidth && naturalHeight)
+                      setMeasured({ id: preview.id, ratio: naturalWidth / naturalHeight });
+                  }}
+                  onDoubleClick={openViewer}
+                />
               ) : (
                 <div className="project-empty">
                   <h3>{t("Your shot starts here")}</h3>
@@ -242,6 +350,17 @@ export function ProjectShots({
                   </p>
                 </div>
               )}
+              {preview && !wait ? (
+                <button
+                  type="button"
+                  className="project-monitor-expand"
+                  aria-label={t("Enlarge")}
+                  title={t("Enlarge")}
+                  onClick={openViewer}
+                >
+                  <IconExpandSimple size={16} />
+                </button>
+              ) : null}
             </div>
             {shot.renderedSignature && shot.renderedSignature !== shotSignature(shot, document) ? (
               <p className="project-warning">
@@ -285,72 +404,104 @@ export function ProjectShots({
                   />
                 </label>
               </details>
-              <label className="project-field">
-                {t("Video prompt")}
-                <textarea
-                  aria-label={t("Video prompt")}
-                  rows={5}
-                  value={shot.prompt ?? shot.action}
-                  onChange={(event) => update({ prompt: event.target.value })}
-                  placeholder={t("Describe the action and camera movement")}
+              <div className="project-field">
+                <span className="project-field-heading">{t("Video prompt")}</span>
+                <AiRewrite
+                  label={t("Video prompt")}
+                  value={shot.prompt ?? ""}
+                  disabled={busy}
+                  field={
+                    <textarea
+                      aria-label={t("Video prompt")}
+                      rows={5}
+                      value={shot.prompt ?? shot.action}
+                      onChange={(event) => update({ prompt: event.target.value })}
+                      placeholder={t("Describe the action and camera movement")}
+                    />
+                  }
+                  status={
+                    shot.promptOptimizedFor ? (
+                      shot.promptOptimizedFor === model?.id ? (
+                        shot.promptSeconds !== undefined &&
+                        timing &&
+                        shot.promptSeconds !== timing.seconds ? (
+                          <span className="ai-field-stale">
+                            {t(
+                              "This prompt was paced for {previous}. Improve it again for {seconds}.",
+                              {
+                                previous: secondsLabel(shot.promptSeconds),
+                                seconds: secondsLabel(timing.seconds),
+                              },
+                            )}
+                          </span>
+                        ) : (
+                          <span className="project-badge">
+                            {shot.promptSeconds !== undefined
+                              ? t("Optimized for {model}, paced for {seconds}", {
+                                  model: model.name,
+                                  seconds: secondsLabel(shot.promptSeconds),
+                                })
+                              : t("Optimized for {model}", { model: model.name })}
+                          </span>
+                        )
+                      ) : (
+                        <span className="ai-field-stale">
+                          {t(
+                            "This prompt was written for {previous}. Improve it again for {model}.",
+                            {
+                              previous:
+                                catalog.models.find((item) => item.id === shot.promptOptimizedFor)
+                                  ?.name ?? shot.promptOptimizedFor,
+                              model: model?.name ?? t("the selected model"),
+                            },
+                          )}
+                        </span>
+                      )
+                    ) : null
+                  }
+                  onAccept={(prompt) =>
+                    update({
+                      prompt,
+                      promptOptimizedFor: prompt ? model?.id : undefined,
+                      promptSeconds: prompt ? timing?.seconds : undefined,
+                    })
+                  }
+                  hint={t("Written in English, the language these video models follow best.")}
+                  request={() =>
+                    shot.prompt?.trim() || shot.action.trim() || shot.title.trim()
+                      ? {
+                          kind: "shotPrompt",
+                          text: shot.prompt ?? "",
+                          modelId: writingModelId,
+                          context: {
+                            targetModel: rewriteTargetModel(model),
+                            mode,
+                            title: shot.title,
+                            action: shot.action,
+                            camera: shot.camera,
+                            speaker: shot.speaker,
+                            dialogue: shot.dialogue,
+                            // Always the seconds the take will run, even when the shot
+                            // leaves the choice to the model and its motion.
+                            duration: timing ? String(timing.seconds) : undefined,
+                            aspectRatio: document.settings.aspectRatio,
+                            entries: document.bible
+                              .filter((entry) =>
+                                entry.kind === "location"
+                                  ? entry.name === shot.location
+                                  : shot.characters.includes(entry.name),
+                              )
+                              .map((entry) => ({
+                                name: entry.name,
+                                kind: entry.kind,
+                                traits: entry.traits,
+                              })),
+                          },
+                        }
+                      : undefined
+                  }
                 />
-              </label>
-              {shot.promptOptimizedFor ? (
-                shot.promptOptimizedFor === model?.id ? (
-                  <p className="project-badge">
-                    {t("Optimized for {model}", { model: model.name })}
-                  </p>
-                ) : (
-                  <p className="project-warning">
-                    {t("This prompt was written for {previous}. Improve it again for {model}.", {
-                      previous:
-                        catalog.models.find((item) => item.id === shot.promptOptimizedFor)?.name ??
-                        shot.promptOptimizedFor,
-                      model: model?.name ?? t("the selected model"),
-                    })}
-                  </p>
-                )
-              ) : null}
-              <AiRewrite
-                label={t("Video prompt")}
-                value={shot.prompt ?? ""}
-                disabled={busy}
-                onAccept={(prompt) =>
-                  update({ prompt, promptOptimizedFor: prompt ? model?.id : undefined })
-                }
-                hint={t("Written in English, the language these video models follow best.")}
-                request={() =>
-                  shot.prompt?.trim() || shot.action.trim() || shot.title.trim()
-                    ? {
-                        kind: "shotPrompt",
-                        text: shot.prompt ?? "",
-                        modelId: writingModelId,
-                        context: {
-                          targetModel: rewriteTargetModel(model),
-                          mode,
-                          title: shot.title,
-                          action: shot.action,
-                          camera: shot.camera,
-                          speaker: shot.speaker,
-                          dialogue: shot.dialogue,
-                          duration: shot.duration ? String(shot.duration) : undefined,
-                          aspectRatio: document.settings.aspectRatio,
-                          entries: document.bible
-                            .filter((entry) =>
-                              entry.kind === "location"
-                                ? entry.name === shot.location
-                                : shot.characters.includes(entry.name),
-                            )
-                            .map((entry) => ({
-                              name: entry.name,
-                              kind: entry.kind,
-                              traits: entry.traits,
-                            })),
-                        },
-                      }
-                    : undefined
-                }
-              />
+              </div>
             </fieldset>
             <div className="project-actions">
               <h3>{t("Takes")}</h3>
@@ -381,6 +532,12 @@ export function ProjectShots({
                   </button>
                 );
               })}
+              {wait?.target.kind === "take" ? (
+                <div className="project-take" data-pending="true" aria-busy="true">
+                  {t("Take {number}", { number: shot.takeIds.length + 1 })}
+                  <small>{wait.phase === "queued" ? t("Queued") : t("Rendering")}</small>
+                </div>
+              ) : null}
             </div>
           </section>
           <aside className="project-inspector project-panel">
@@ -435,7 +592,13 @@ export function ProjectShots({
                   value={shot.duration ?? ""}
                   onChange={(event) => update({ duration: event.target.value || undefined })}
                 >
-                  <option value="">{t("Model default")}</option>
+                  <option value="">
+                    {t("Automatic: {duration}", {
+                      duration: secondsLabel(
+                        resolveShotDuration({ ...shot, duration: undefined }, model).seconds,
+                      ),
+                    })}
+                  </option>
                   {shot.duration !== undefined &&
                   !constraints?.durations?.includes(String(shot.duration)) ? (
                     <option value={shot.duration}>{shot.duration}</option>
@@ -639,6 +802,25 @@ export function ProjectShots({
           </button>
         </div>
       )}
+      {viewing !== undefined && viewable.length ? (
+        <MediaViewer
+          items={viewable}
+          index={viewing}
+          onIndex={setViewing}
+          onClose={() => setViewing(undefined)}
+          actions={(artifact) =>
+            shot?.takeIds.includes(artifact.id) ? (
+              <button
+                type="button"
+                disabled={busy || shot.activeTakeId === artifact.id}
+                onClick={() => update({ activeTakeId: artifact.id })}
+              >
+                {shot.activeTakeId === artifact.id ? t("Selected") : t("Select this take")}
+              </button>
+            ) : null
+          }
+        />
+      ) : null}
       {picker && shot ? (
         <GalleryPicker
           resolveData={false}
