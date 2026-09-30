@@ -24,7 +24,12 @@ export const STUDIO_REWRITE_EVENT = "june://studio-rewrite";
  * before it costs a round trip. */
 export const MAX_STUDIO_REWRITE_CHARS = 24_000;
 
-export type StudioRewriteKind = "scenario" | "shotPrompt" | "imagePrompt" | "composition";
+export type StudioRewriteKind =
+  | "scenario"
+  | "shotPrompt"
+  | "imagePrompt"
+  | "composition"
+  | "musicPrompt";
 export type ScenarioIntent = "filmable" | "develop" | "tighten" | "custom";
 
 export interface RewriteTargetModel {
@@ -62,6 +67,12 @@ export interface StudioRewriteContext {
   entry?: RewriteContextEntry;
   role?: string;
   slots?: CompositionSlot[];
+  /** A score's shared identity, for a cue's prompt. */
+  identity?: string;
+  mood?: string;
+  intensity?: string;
+  /** What is on screen under a cue, shot by shot. */
+  scenes?: string[];
 }
 
 export interface StudioRewriteInput {

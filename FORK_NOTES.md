@@ -1351,6 +1351,31 @@ Pièges :
 - `seedream-v5-lite-edit` refuse le chemin synchrone (`409 MODEL_REQUIRES_ASYNC`) :
   la composition passe toujours par la file, ce que `nativeQueuedImage` fait déjà.
 
+## La musique du film (2026-09-29, ADR-0067)
+
+Un onglet « Musique » entre Bible et Médias. La musique est lue dans le scénario
+comme la Bible, puis produite comme les plans : un seul morceau sous tout le film,
+ou un cue sheet. Chaque cue est ancré sur des plans et a ses prises.
+
+| Fichier | Rôle |
+| --- | --- |
+| `src/lib/studio/score.ts` | le modèle (`ProjectScore`, `ProjectCue`), `cueShots`/`cueSeconds` (somme des plans + 2 s), `musicLength` (accroché à la plage du modèle), `projectScore` (répare un morceau unique, id stable `whole-film`), `acceptProposal` |
+| `src/lib/studio/project-production.ts` | `shotVideoModel`/`shotSeconds` (le routage du plan, partagé avec l'éditeur), `scoreCues`, `cueLength`, `compileCue` |
+| `src/lib/studio/workflow/compile.ts` | `CompileInput.score` : un nœud `score-<cue>` par cue ; `pickMusicModel` exclut les bruitages ; `resolveShotDuration` |
+| `src/lib/studio/workflow/engine.ts` | le nœud musique suit `musicCapabilities` : paroles et `force_instrumental` seulement pour un modèle qui chante |
+| `src-tauri/src/score/` | `score_propose` : une complétion transitoire, `SCORE_PROMPT_VERSION`, réponse en numéros de plans, bornée, triée, sans chevauchement |
+| `src-tauri/src/studio_ai/` | `kind: musicPrompt` + `MUSIC_PROMPT_TASK` + `music_family_guide` |
+| `src/components/studio/ProjectMusic.tsx` | l'onglet : frise des plans et des cues, éditeur de cue, prises audio, chambre noire audio |
+
+Pièges :
+
+- **Un cue ne connaît pas de secondes.** Ne pas stocker de durée : elle vient
+  des plans, résolue au moment d'en avoir besoin.
+- Un projet ancien qui n'a que `withScore` (sans `score`) garde l'ancien morceau
+  unique : `scoreCues` renvoie `undefined` pour lui.
+- `score_propose` est une commande partagée : présente dans les **deux** listes
+  `generate_handler!`.
+
 ## Procédure de synchronisation upstream (voir aussi `.github/workflows/upstream-sync.yml`)
 
 > **Remplacée le 2026-09-02 par [ADR-0040](docs/adr/0040-upstream-is-a-source-of-patches-not-a-merge-base.md).**

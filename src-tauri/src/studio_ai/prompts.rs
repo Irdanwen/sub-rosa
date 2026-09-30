@@ -208,6 +208,35 @@ pub const COMPOSITION_TASK: &str = "Write the prompt that will be sent to an ima
 - Keep what the material, the person's current draft, asks for unless it contradicts these rules.
 - Respect the length limit in the context.";
 
+pub const MUSIC_PROMPT_TASK: &str = "Write the prompt that will be sent to a music model to compose this one cue of the film's score.
+
+Build it from the cue's mood, intensity and what is on screen under it in the context, and from the material between the delimiters, the person's current draft (it may be empty). Keep what the draft asks for unless it contradicts the rules below.
+
+- Write in English, forty to eighty words.
+- Say what this cue adds to the score's identity: its lead instruments, its dynamics and how it moves. Do not restate the identity itself: it is sent with every cue.
+- Give the cue a shape that fits its length: how it enters, where it builds, how it ends. A cue that ends on a cut resolves; one that leads into silence fades out.
+- The music sits under dialogue and picture: leave room, no busy lead line over a scene where people talk.
+- Never write a duration or a time (a tempo in BPM is fine), the film's title or a character's name.
+- Instrumental unless the context says the model sings words.";
+
+/// How a music family wants to be spoken to.
+pub fn music_family_guide(model_id: &str) -> &'static str {
+    let id = model_id.to_ascii_lowercase();
+    if id.contains("stable-audio") {
+        "This is Stable Audio. It reads comma-separated descriptors best: genre, sub-genre, instruments, mood, tempo in BPM, then production qualities (\"warm analog, wide stereo\")."
+    } else if id.contains("elevenlabs") {
+        "This is an ElevenLabs music model. Describe the piece in natural sentences, as you would brief a composer: style, instrumentation, how the energy moves from start to end."
+    } else if id.contains("lyria") {
+        "This is Lyria. Name the genre and the instruments first, then the mood, the tempo and how the arrangement evolves. It follows musical vocabulary (ostinato, swell, pizzicato) precisely."
+    } else if id.contains("ace-step") {
+        "This is ACE-Step. It reads tags: genre, instruments, mood, tempo, separated by commas, then one sentence on the structure."
+    } else if id.contains("minimax") {
+        "This is a MiniMax music model, which sings: describe the style and the arrangement; the words are sent separately."
+    } else {
+        "Genre and instruments first, then mood, tempo and how the piece develops, in plain descriptive language."
+    }
+}
+
 /// The user message: the task, the context, the instruction if any, then the
 /// material, kept apart from everything that tells the model what to do.
 pub fn user_message(

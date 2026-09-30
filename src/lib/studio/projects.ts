@@ -9,6 +9,7 @@ import type { WorkflowRunSummary } from "./workflow-run";
 import type { StudioArtifact } from "./types";
 import type { Shot } from "./workflow/compile";
 import { createEditorDocument, type EditorDocument } from "./editor/document";
+import type { ProjectScore } from "./score";
 
 export interface ProjectShot extends Shot {
   id: string;
@@ -97,6 +98,8 @@ export interface ProjectDocument {
     readingModelId?: string;
   };
   timeline: EditorDocument;
+  /** The film's music, when it has been composed (ADR-0067). */
+  score?: ProjectScore;
 }
 export interface ProjectSummary {
   id: string;
@@ -238,6 +241,10 @@ export function artifactLabel(document: ProjectDocument, artifactId: string): st
   for (const entry of document.bible) {
     const ref = entry.refs.find((candidate) => candidate.artifactId === artifactId);
     if (ref) return t("{name}: {role}", { name: entry.name, role: BIBLE_ROLE_LABELS[ref.role] });
+  }
+  for (const cue of document.score?.cues ?? []) {
+    const take = cue.takeIds.indexOf(artifactId);
+    if (take !== -1) return t("Music: {title}, take {take}", { title: cue.title, take: take + 1 });
   }
   return undefined;
 }

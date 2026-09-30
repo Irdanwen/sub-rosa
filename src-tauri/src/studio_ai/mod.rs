@@ -63,6 +63,8 @@ pub enum StudioRewriteKind {
     ShotPrompt,
     ImagePrompt,
     Composition,
+    /// A cue of the film's score, written for a music model.
+    MusicPrompt,
 }
 
 /// The model a generation prompt is written for.
@@ -117,6 +119,12 @@ pub struct StudioRewriteContext {
     pub entry: Option<ContextEntry>,
     pub role: Option<String>,
     pub slots: Vec<CompositionSlot>,
+    /// A score's shared identity: genre, instruments, tempo, colour.
+    pub identity: Option<String>,
+    pub mood: Option<String>,
+    pub intensity: Option<String>,
+    /// What happens on screen under a cue, shot by shot.
+    pub scenes: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,6 +189,12 @@ fn validate(request: &StudioRewriteRequest) -> Result<(), AppError> {
                     .is_some_and(|entry| !entry.name.trim().is_empty())
         }
         StudioRewriteKind::Composition => !context.slots.is_empty(),
+        StudioRewriteKind::MusicPrompt => {
+            !text.is_empty()
+                || present(&context.mood).is_some()
+                || present(&context.title).is_some()
+                || !context.scenes.is_empty()
+        }
     };
     if !has_material {
         // Literal sentences, one call each, so the French catalog collects them.
@@ -198,6 +212,10 @@ fn validate(request: &StudioRewriteRequest) -> Result<(), AppError> {
             StudioRewriteKind::Composition => AppError::new(
                 "studio_rewrite_empty",
                 "Add at least one image to combine first.",
+            ),
+            StudioRewriteKind::MusicPrompt => AppError::new(
+                "studio_rewrite_empty",
+                "Choose the shots this cue plays under first.",
             ),
         });
     }
@@ -487,6 +505,45 @@ fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
             );
             (prompts::SHARED_RULES.to_string(), user, 2_048, 0.4)
         }
+        StudioRewriteKind::MusicPrompt => {
+            model_lines(&mut lines, context.target_model.as_ref(), false);
+            push_line(
+                &mut lines,
+                "The score's identity (every cue shares it, do not restate it)",
+                present(&context.identity),
+            );
+            push_line(&mut lines, "Cue", present(&context.title));
+            push_line(&mut lines, "Mood", present(&context.mood));
+            push_line(&mut lines, "Intensity", present(&context.intensity));
+            if let Some(seconds) = shot_seconds(context.duration.as_deref()) {
+                lines.push(format!("Length: {seconds} seconds (do not write it)."));
+            }
+            let scenes: Vec<String> = context
+                .scenes
+                .iter()
+                .take(MAX_CONTEXT_ENTRIES)
+                .map(|scene| format!("- {}", clip(scene)))
+                .filter(|line| line.len() > 2)
+                .collect();
+            if !scenes.is_empty() {
+                lines.push(format!(
+                    "On screen under it, in order:\n{}",
+                    scenes.join("\n")
+                ));
+            }
+            let task = format!(
+                "{}\n\n{}",
+                prompts::MUSIC_PROMPT_TASK,
+                prompts::music_family_guide(target_id)
+            );
+            let user = prompts::user_message(
+                &task,
+                &lines.join("\n"),
+                request.instruction.as_deref(),
+                text,
+            );
+            (prompts::SHARED_RULES.to_string(), user, 1_024, 0.5)
+        }
     }
 }
 
@@ -649,6 +706,26 @@ mod tests {
         assert!(user.find("<context>").unwrap() < material);
         assert!(user.contains("Marie (character): red coat"));
         assert!(user.ends_with(prompts::MATERIAL_CLOSE));
+    }
+
+    #[test]
+    fn a_cue_prompt_knows_its_length_its_scenes_and_its_family() {
+        let mut req = request(StudioRewriteKind::MusicPrompt, "");
+        assert!(validate(&req).is_err());
+        req.context.mood = Some("tense, hushed".into());
+        req.context.identity = Some("Solo cello and felt piano.".into());
+        req.context.duration = Some("23".into());
+        req.context.scenes = vec!["Henri locks the door.".into(), "The corridor, dark.".into()];
+        req.context.target_model = Some(TargetModel {
+            id: "stable-audio-2-5".into(),
+            ..TargetModel::default()
+        });
+        assert!(validate(&req).is_ok());
+        let (_, user, _, _) = compose(&req);
+        assert!(user.contains("Length: 23 seconds"));
+        assert!(user.contains("- Henri locks the door."));
+        assert!(user.contains("do not restate it): Solo cello"));
+        assert!(user.contains("Stable Audio"));
     }
 
     #[test]

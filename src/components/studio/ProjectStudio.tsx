@@ -33,12 +33,23 @@ import {
 import { mediaSeconds } from "../../lib/studio/reference-media";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import {
+  compileCue,
   compileOpeningImage,
   compileBibleReference,
   compileProjectWithNotes,
   productionBudget,
   quoteProject,
+  shotSeconds,
 } from "../../lib/studio/project-production";
+import {
+  acceptProposal,
+  emptyScore,
+  projectScore,
+  proposeScore,
+  type ScoreProposal,
+} from "../../lib/studio/score";
+import { musicCapabilities } from "../../lib/studio/catalog";
+import { pickMusicModel } from "../../lib/studio/workflow/compile";
 import {
   getProject,
   deleteProject,
@@ -80,6 +91,8 @@ import { Dialog } from "../ui/Dialog";
 import { NotePicker } from "./NotePicker";
 import { ProjectBible } from "./ProjectBible";
 import { ProjectMedia } from "./ProjectMedia";
+import { ProjectMusic } from "./ProjectMusic";
+import { ProjectQuoteDialog } from "./ProjectQuoteDialog";
 import { ProjectScript } from "./ProjectScript";
 import { ProjectShots } from "./ProjectShots";
 import { ProjectTimeline } from "./ProjectTimeline";
@@ -87,7 +100,7 @@ import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recover
 import { STUDIO_FILM_NOTE_KEY } from "./studio-keys";
 import "./project-studio.css";
 
-type Section = "script" | "shots" | "bible" | "media" | "montage";
+type Section = "script" | "shots" | "bible" | "music" | "media" | "montage";
 const LAST_PROJECT = "os-june:studio-project";
 type ReadyQuote = {
   projectId: string;
@@ -102,9 +115,6 @@ type ReadyQuote = {
   notes?: string[];
   signatures: Record<string, string>;
 };
-
-const quoteCredits = (credits: number) =>
-  credits.toLocaleString(intlLocale(), { maximumFractionDigits: 2 });
 
 export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -143,6 +153,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const producing = useRef<Workflow>();
   // Files that arrived during this session, revealed once where they land.
   const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
+  // A proposed score waits for Accept (ADR-0038), with the shots it was read
+  // against, so its shot numbers still land where they were meant to.
+  const [scoreProposal, setScoreProposal] = useState<{
+    projectId: string;
+    proposal: ScoreProposal;
+    shotIds: string[];
+  }>();
+  const [proposing, setProposing] = useState(false);
   const abort = useRef<AbortController>();
   const resultWrites = useRef<Promise<void>>(Promise.resolve());
   const finishingReadings = useRef(new Set<string>());
@@ -249,6 +267,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setLibrary(false);
     setProgress({});
     clearLive();
+    setScoreProposal(undefined);
     setRunStates({});
     setReading(false);
     window.localStorage.setItem(LAST_PROJECT, value.id);
@@ -334,6 +353,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
             : savedRun,
         ),
         artifactIds: [...new Set([...document.artifactIds, artifactId])],
+        score: attachCueTake(document, result.nodeId, artifactId),
         bible: document.bible.map((entry) => {
           const target = nodeTarget(result.nodeId);
           if (
@@ -396,6 +416,24 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         });
       })
       .catch(report);
+  };
+  /** A cue's new take joins its takes and becomes the one heard. */
+  const attachCueTake = (document: ProjectDocument, nodeId: string, artifactId: string) => {
+    const target = nodeTarget(nodeId);
+    const score = document.score;
+    if (target?.kind !== "cue" || !score) return score;
+    return {
+      ...score,
+      cues: score.cues.map((cue) =>
+        cue.id === target.cueId
+          ? {
+              ...cue,
+              takeIds: [...new Set([...cue.takeIds, artifactId])],
+              activeTakeId: artifactId,
+            }
+          : cue,
+      ),
+    };
   };
   const restoreRun = async (
     run: ProjectRun,
@@ -575,6 +613,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           },
         }));
         setSection("shots");
+        // Music was asked for: read it from the same script, as a proposal.
+        if (current.current?.document.settings.withScore && !current.current.document.score)
+          void composeScore(current.current.document.settings.readingModelId || undefined);
       } catch (cause) {
         report(cause);
         return;
@@ -828,6 +869,70 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           t("The project changed while quoting. Review its settings and quote again."),
         );
       setQuote({ projectId: target.id, version, workflow, estimate, signatures: {} });
+    } catch (cause) {
+      report(cause);
+    } finally {
+      setBusy(false);
+    }
+  };
+  /** Read the film's music out of its script; the proposal waits for Accept. */
+  const composeScore = async (modelId?: string) => {
+    const origin = current.current;
+    if (!origin?.document.shots.length) return;
+    setProposing(true);
+    setError("");
+    try {
+      const document = origin.document;
+      const music = pickMusicModel(catalog, document.settings.musicModelId);
+      const proposal = await proposeScore({
+        script: document.script,
+        shots: document.shots.map((shot) => ({
+          title: shot.title,
+          action: shot.action,
+          seconds: shotSeconds(shot, document, catalog),
+          dialogue: Boolean(shot.dialogue.trim()),
+        })),
+        single: (projectScore(document) ?? emptyScore()).mode === "single",
+        lyrics: music ? musicCapabilities(music.id).lyrics === "required" : false,
+        modelId,
+      });
+      if (current.current?.id !== origin.id) return;
+      setScoreProposal({
+        projectId: origin.id,
+        proposal,
+        shotIds: document.shots.map((shot) => shot.id),
+      });
+    } catch (cause) {
+      report(cause);
+    } finally {
+      setProposing(false);
+    }
+  };
+  const prepareCue = async (cueId: string) => {
+    const target = current.current;
+    if (!target) return;
+    setBusy(true);
+    setError("");
+    try {
+      // A single score is repaired on the fly; save it first so the take
+      // lands on the cue the project keeps.
+      const repaired = projectScore(target.document);
+      if (repaired && !target.document.score?.cues.some((cue) => cue.id === cueId))
+        await edit((previous) => ({
+          ...previous,
+          document: { ...previous.document, score: repaired },
+        }));
+      await writer.current?.flush();
+      const snapshot = current.current;
+      if (!snapshot) return;
+      const version = epoch.current;
+      const workflow = compileCue(snapshot.name, snapshot.document, catalog, cueId);
+      const estimate = await quoteProject(workflow, catalog);
+      if (current.current?.id !== snapshot.id || epoch.current !== version)
+        throw new Error(
+          t("The project changed while quoting. Review its settings and quote again."),
+        );
+      setQuote({ projectId: snapshot.id, version, workflow, estimate, signatures: {} });
     } catch (cause) {
       report(cause);
     } finally {
@@ -1376,6 +1481,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 ["script", t("Script")],
                 ["shots", t("Shots")],
                 ["bible", t("Bible")],
+                ["music", t("Music")],
                 ["media", t("Media")],
                 ["montage", t("Montage")],
               ] as const
@@ -1388,6 +1494,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 onClick={() => setSection(key)}
               >
                 {label}
+                {key === "music" && scoreProposal?.projectId === project.id ? (
+                  <span
+                    className="project-live-dot"
+                    role="img"
+                    aria-label={t("A score is proposed")}
+                  />
+                ) : null}
               </button>
             ))}
           </nav>
@@ -1523,6 +1636,47 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               catalog={catalog}
               onArtifact={addArtifact}
               onGenerate={(id, role) => void prepareBible(id, role)}
+              writingModelId={writingModelId}
+              busy={busy || exporting}
+              live={Object.values(live)}
+              now={now}
+              fresh={fresh}
+            />
+          ) : null}
+          {section === "music" ? (
+            <ProjectMusic
+              document={project.document}
+              catalog={catalog}
+              artifacts={media}
+              onScore={(score) => editDocument((document) => ({ ...document, score }))}
+              onSettings={(patch) =>
+                editDocument((document) => ({
+                  ...document,
+                  settings: { ...document.settings, ...patch },
+                }))
+              }
+              onGenerate={(cueId) => void prepareCue(cueId)}
+              onCompose={() => void composeScore(writingModelId)}
+              proposal={
+                scoreProposal?.projectId === project.id ? scoreProposal.proposal : undefined
+              }
+              proposing={proposing}
+              onAcceptProposal={() => {
+                if (!scoreProposal || scoreProposal.projectId !== project.id) return;
+                editDocument((document) => ({
+                  ...document,
+                  score: acceptProposal(
+                    scoreProposal.proposal,
+                    scoreProposal.shotIds.map((id) =>
+                      document.shots.find((shot) => shot.id === id),
+                    ),
+                    (projectScore(document) ?? emptyScore()).mode,
+                    document.score,
+                  ),
+                }));
+                setScoreProposal(undefined);
+              }}
+              onDiscardProposal={() => setScoreProposal(undefined)}
               writingModelId={writingModelId}
               busy={busy || exporting}
               live={Object.values(live)}
@@ -1725,77 +1879,12 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         </Dialog>
       ) : null}
       {quote ? (
-        <Dialog
-          open
+        <ProjectQuoteDialog
+          quote={quote}
+          budget={project?.document.settings.budget ?? 0}
           onClose={() => setQuote(undefined)}
-          title={t("Review generation costs")}
-          description={t(
-            "Only the steps listed here will be generated. Your existing takes remain available.",
-          )}
-          footer={
-            <>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setQuote(undefined)}
-              >
-                {t("Cancel")}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={
-                  quote.estimate.metered > 0 ||
-                  quote.estimate.credits + (quote.priorSpend ?? 0) >
-                    (project?.document.settings.budget ?? 0)
-                }
-                onClick={() => void produce(quote)}
-              >
-                {t("Generate · {credits} credits", {
-                  credits: quoteCredits(quote.estimate.credits),
-                })}
-              </button>
-            </>
-          }
-        >
-          <div className="dialog-body">
-            {quote.notes?.map((note) => (
-              <p className="project-warning" key={note}>
-                {note}
-              </p>
-            ))}
-            {quote.uncertainRetry ? (
-              <p className="project-warning">
-                {t(
-                  "A previous request may already have been charged. Check your provider history before confirming this new quote.",
-                )}
-              </p>
-            ) : null}
-            {quote.estimate.nodes
-              .filter((node) => node.kind !== "free")
-              .map((node) => (
-                <div className="project-quote-row" key={node.nodeId}>
-                  <span>{node.label}</span>
-                  <strong>
-                    {node.credits === undefined
-                      ? t("Price unavailable")
-                      : t("{credits} credits", { credits: quoteCredits(node.credits) })}
-                  </strong>
-                </div>
-              ))}
-            {quote.estimate.metered > 0 ? (
-              <p className="project-warning">
-                {t(
-                  "Some prices are unavailable. Choose another model or try quoting again before generating.",
-                )}
-              </p>
-            ) : null}
-            {quote.estimate.credits + (quote.priorSpend ?? 0) >
-            (project?.document.settings.budget ?? 0) ? (
-              <p className="project-error">{t("This generation exceeds the spend ceiling.")}</p>
-            ) : null}
-          </div>
-        </Dialog>
+          onConfirm={() => void produce(quote)}
+        />
       ) : null}
       {reopenConfirm ? (
         <Dialog

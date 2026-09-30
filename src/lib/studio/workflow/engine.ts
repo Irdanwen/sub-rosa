@@ -16,7 +16,7 @@ import { DIALOGUE_GAP_SECONDS } from "../mix";
 import { MediaError } from "../client";
 import { judge, type JudgeVerdict, verdictLine } from "../judge";
 import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
-import { fetchMediaCatalog } from "../catalog";
+import { fetchMediaCatalog, musicCapabilities } from "../catalog";
 import { mediaBinary, mediaJson } from "../client";
 import { composeImages } from "../edit-image";
 import { generateImages } from "../generate-image";
@@ -729,12 +729,17 @@ async function executeNode(
         model,
         prompt,
       };
+      // The measured rules (model-input-rules.json), as the music studio
+      // applies them: a model that takes no lyrics is sent none and is never
+      // told to be instrumental, which some of them refuse as an unknown field.
+      const caps = musicCapabilities(model);
+      const instrumental = booleanParam(params, "instrumental") === true;
       const lyrics = stringParam(params, "lyrics");
-      if (lyrics) body.lyrics_prompt = lyrics;
+      if (lyrics && caps.lyrics !== "none" && !instrumental) body.lyrics_prompt = lyrics;
       const durationSeconds = numberParam(params, "durationSeconds");
       if (durationSeconds !== undefined) body.duration_seconds = durationSeconds;
-      const instrumental = booleanParam(params, "instrumental");
-      if (instrumental !== undefined) body.force_instrumental = instrumental;
+      if (instrumental && caps.instrumental && caps.lyrics !== "none")
+        body.force_instrumental = true;
       // Music lives under /audio/music/* on Carpe Diem but /audio/* on
       // Venice; the (cached) catalog knows which backend the key targets.
       const { backend } = await fetchMediaCatalog();

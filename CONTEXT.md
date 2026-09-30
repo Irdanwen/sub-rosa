@@ -470,7 +470,7 @@ parses, and the studio merely quoted its prices in it.
 
 **Film (the surface)**:
 The Studio workspace where a film project is written, prepared, generated and
-edited. Its project sections are Script, Shots, Bible, Media and Montage.
+edited. Its project sections are Script, Shots, Bible, Music, Media and Montage.
 _Avoid_: wizard.
 
 **Film project**:
@@ -531,6 +531,23 @@ The credit envelope a production may not exceed. A graph over it is *refused at
 compile time*, with the figure - in front of the confirmation handshake, not
 instead of it. _Avoid_: budget ceiling (that was the remote studio's, and it
 guarded an enqueue rather than the work).
+
+**Score**:
+A film's music: one piece under the whole film, or a **cue sheet**, with a
+**musical identity** every cue shares
+([ADR-0067](docs/adr/0067-a-film-score-is-a-cue-sheet-anchored-on-shots.md)).
+_Avoid_: soundtrack (that includes the dialogue), track (a montage lane),
+source (an audio lane of a recording).
+
+**Cue**:
+One piece of the score, anchored on the first and last shot it plays under,
+never on seconds: the app times it from those shots. Has takes, like a shot.
+_Avoid_: segment, section, song.
+
+**Musical identity**:
+What every cue of a score shares, written once: genre, instruments, tempo range,
+colour. Sent ahead of each cue's own prompt.
+_Avoid_: style (the bible's `look` is the visual style).
 
 ### The bible (fork)
 

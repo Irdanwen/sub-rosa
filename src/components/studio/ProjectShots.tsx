@@ -5,7 +5,8 @@ import { artifactSrc } from "../../lib/studio/artifacts";
 import { requiresOpeningFrame, videoDirection } from "../../lib/studio/catalog";
 import { maxVideoReferences } from "../../lib/studio/seedance";
 import { effectiveVideoConstraints } from "../../lib/studio/model-constraints";
-import { familyStem, resolveShotDuration, routeModels } from "../../lib/studio/workflow/compile";
+import { resolveShotDuration } from "../../lib/studio/workflow/compile";
+import { shotVideoModel } from "../../lib/studio/project-production";
 import {
   newShot,
   shotSignature,
@@ -104,8 +105,6 @@ export function ProjectShots({
     live.find((item) => item.target.kind === "opening" && item.target.shotId === shotId);
   const wait = waitFor(shot?.id);
   const mode = shot?.mode ?? "text";
-  const preferredId = document.settings.videoModelId;
-  const routing = routeModels(catalog, preferredId);
   const modelsFor = (itemMode: ProjectShot["mode"]) =>
     catalog.models.filter(
       (model) =>
@@ -113,24 +112,7 @@ export function ProjectShots({
         ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType) &&
         videoDirection(model) === (itemMode === "continuation" ? "image" : itemMode),
     );
-  /** The model a shot renders with: its own, else the project's routing. */
-  const modelOf = (item: ProjectShot | undefined) => {
-    const itemMode = item?.mode ?? "text";
-    const candidates = modelsFor(itemMode);
-    const routed =
-      itemMode === "reference"
-        ? routing.reference
-        : itemMode === "image" || itemMode === "continuation"
-          ? routing.fromImage
-          : routing.text;
-    return item?.modelId
-      ? candidates.find((candidate) => candidate.id === item.modelId)
-      : candidates.find(
-          (candidate) =>
-            candidate.id === routed?.id &&
-            (!preferredId || familyStem(candidate.id) === familyStem(preferredId)),
-        );
-  };
+  const modelOf = (item: ProjectShot | undefined) => shotVideoModel(item, document, catalog);
   const models = modelsFor(mode);
   const model = modelOf(shot);
   const timing = shot ? resolveShotDuration(shot, model) : undefined;
@@ -235,7 +217,9 @@ export function ProjectShots({
                       : t("Rendering · {time}", { time: formatElapsed(now - rowWait.startedAt) })
                     : `${rowTiming.automatic ? t("{duration}, automatic", { duration: secondsLabel(rowTiming.seconds) }) : secondsLabel(rowTiming.seconds)} · ${
                         item.takeIds.length
-                          ? t("{count} takes", { count: item.takeIds.length })
+                          ? item.takeIds.length === 1
+                            ? t("1 take")
+                            : t("{count} takes", { count: item.takeIds.length })
                           : t("Not generated")
                       }`}
                 </small>
