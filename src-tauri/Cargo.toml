@@ -62,6 +62,11 @@ hound = "3.5"
 # in for a dependency tauri already resolves.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff"] }
 rand = "0.9"
+# The ephemeral key that proves this device is the one a Carpe Diem device key
+# is handed to (ADR-0069, `carpe_diem::issued`). Already in the lockfile through
+# the backend's own dependencies, so no new crate is fetched; only ECDSA is
+# enabled, no PEM or JWK parsing.
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
 quick-xml = "0.41"

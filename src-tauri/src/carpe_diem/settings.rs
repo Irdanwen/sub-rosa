@@ -73,6 +73,12 @@ pub struct CarpeDiemSettingsDto {
     pub router_base_url: String,
     pub v1_base_url: String,
     pub has_api_key: bool,
+    /// `"issued"` when the stored key was created by Carpe Diem for this
+    /// device on the strength of the Sub Rosa account (ADR-0069), `None` for a
+    /// key the person pasted or restored from the vault. The key itself never
+    /// crosses; only where it came from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_origin: Option<&'static str>,
 }
 
 /// Result of the "Test connection" button — success plus an actionable message.
@@ -303,7 +309,9 @@ pub fn carpe_diem_set_base_url(
     {
         let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         if let Some((_, key)) = active_credential()? {
-            store_active_credential(&base_url, &key)?;
+            // Switching rail keeps the key's provenance: an issued key stays
+            // one, and sign-out still knows to revoke it.
+            store_active_credential_with(&base_url, &key, issued_meta().as_ref())?;
         }
         persist(
             &state.config_path,
@@ -956,6 +964,7 @@ fn dto() -> CarpeDiemSettingsDto {
         router_base_url: format!("{root}/router"),
         v1_base_url: format!("{root}/v1"),
         has_api_key: api_key().is_some(),
+        key_origin: issued_meta().map(|_| "issued"),
     }
 }
 
@@ -1141,9 +1150,50 @@ fn active_credential() -> Result<Option<Credential>, AppError> {
     )
 }
 fn store_active_credential(base: &str, key: &Redacted<String>) -> Result<(), AppError> {
-    let value = zeroize::Zeroizing::new(
-        serde_json::json!({"base_url":base,"api_key":key.expose_str()}).to_string(),
-    );
+    store_active_credential_with(base, key, None)
+}
+
+/// Where a stored key came from, kept next to it in the same atomic keychain
+/// value so the two cannot disagree. Only issued keys carry one: every other
+/// write (a paste, a vault restore, a clear) drops it, which is right, because
+/// the key it described is gone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct IssuedMeta {
+    /// Carpe Diem's id for the key, for support and for revocation by id.
+    pub key_id: String,
+}
+
+fn decode_issued_meta(raw: &str) -> Option<IssuedMeta> {
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    if value["origin"].as_str() != Some("issued") || value["api_key"].as_str()?.is_empty() {
+        return None;
+    }
+    let key_id = value["key_id"].as_str()?;
+    (!key_id.is_empty() && key_id.len() <= 100).then(|| IssuedMeta {
+        key_id: key_id.to_string(),
+    })
+}
+
+/// The provenance of the stored key, when Carpe Diem issued it for this device.
+pub(crate) fn issued_meta() -> Option<IssuedMeta> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, ACTIVE_CREDENTIAL)
+        .and_then(|entry| entry.get_password())
+        .ok()
+        .map(zeroize::Zeroizing::new)
+        .and_then(|raw| decode_issued_meta(&raw))
+}
+
+fn store_active_credential_with(
+    base: &str,
+    key: &Redacted<String>,
+    meta: Option<&IssuedMeta>,
+) -> Result<(), AppError> {
+    let mut json = serde_json::json!({"base_url":base,"api_key":key.expose_str()});
+    if let Some(meta) = meta {
+        json["origin"] = serde_json::json!("issued");
+        json["key_id"] = serde_json::json!(meta.key_id);
+    }
+    let value = zeroize::Zeroizing::new(json.to_string());
     keyring::Entry::new(KEYCHAIN_SERVICE, ACTIVE_CREDENTIAL)
         .and_then(|entry| entry.set_password(&value))
         .map_err(|_| {
@@ -1160,6 +1210,20 @@ pub(crate) async fn restore_account_credential(
     app: &AppHandle,
     base: &str,
     key: &str,
+) -> Result<(), AppError> {
+    activate_verified_credential(app, base, key, None).await
+}
+
+/// The one way a key that did not come from the person's own typing becomes
+/// the active one: it must answer an authenticated `/credits` first, then the
+/// URL, the key and its provenance are written as one keychain value, then the
+/// engine restarts on it. Vault restores and issued device keys share it, so
+/// neither can skip the check the other makes.
+pub(crate) async fn activate_verified_credential(
+    app: &AppHandle,
+    base: &str,
+    key: &str,
+    meta: Option<&IssuedMeta>,
 ) -> Result<(), AppError> {
     let base_url = validate_base_url(base)?;
     let key = Redacted::new(normalize_api_key(key)?);
@@ -1223,7 +1287,7 @@ pub(crate) async fn restore_account_credential(
     }
     {
         let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        store_active_credential(&base_url, &key)?;
+        store_active_credential_with(&base_url, &key, meta)?;
         replace_mirror(CarpeDiemSettings { base_url });
     }
     super::sidecar::on_settings_changed(app);
@@ -1232,6 +1296,32 @@ pub(crate) async fn restore_account_credential(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_an_issued_credential_carries_provenance() {
+        let issued = r#"{"base_url":"https://x.test/v1","api_key":"cdm_a","origin":"issued","key_id":"k-1"}"#;
+        assert_eq!(
+            super::decode_issued_meta(issued),
+            Some(super::IssuedMeta {
+                key_id: "k-1".into()
+            })
+        );
+        // A pasted key, a cleared tombstone, and a malformed id carry none.
+        for other in [
+            r#"{"base_url":"https://x.test/v1","api_key":"cdm_a"}"#,
+            r#"{"base_url":"https://x.test/v1","api_key":"","origin":"issued","key_id":"k-1"}"#,
+            r#"{"base_url":"https://x.test/v1","api_key":"cdm_a","origin":"issued","key_id":""}"#,
+            r#"{"base_url":"https://x.test/v1","api_key":"cdm_a","origin":"pasted","key_id":"k"}"#,
+        ] {
+            assert_eq!(super::decode_issued_meta(other), None, "{other}");
+        }
+        // The provenance rides along without breaking the existing decoder.
+        let decoded = super::decode_active_credential(Ok(issued.to_string()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(decoded.0, "https://x.test/v1");
+        assert_eq!(decoded.1.expose_str(), "cdm_a");
+    }
+
     #[test]
     fn top_up_lands_on_the_account_sites_top_up_tab() {
         assert_eq!(
