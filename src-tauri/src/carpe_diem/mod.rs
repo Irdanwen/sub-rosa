@@ -10,6 +10,7 @@
 //! the tracker a user's report reaches ([`issue_reports`]).
 
 mod artifact_format;
+pub mod billing;
 pub mod branding;
 pub mod cache_stats;
 pub mod issue_reports;

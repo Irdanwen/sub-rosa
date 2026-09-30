@@ -778,8 +778,9 @@ pub fn carpe_diem_open_dashboard() -> Result<(), AppError> {
 }
 
 /// Opens the "Top up" tab of the Sub Rosa account site. It explains what the
-/// credits are and hands over to Carpe Diem's deposit page, where credits are
-/// bought with a wallet; the app itself sells nothing.
+/// credits are and hands over to Carpe Diem's card payment page (or its USDC
+/// deposit for a wallet key); the app itself sells nothing. The app's own
+/// path is the Add credits sheet (`carpe_diem::billing`).
 #[tauri::command]
 pub async fn carpe_diem_open_top_up(app: tauri::AppHandle) -> Result<(), AppError> {
     let origin = crate::account::site_origin(&app).await;
