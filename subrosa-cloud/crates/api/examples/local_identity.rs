@@ -41,6 +41,11 @@ struct Settings {
     carpe_diem_audience: Option<String>,
     #[serde(default)]
     carpe_diem_key_file: Option<String>,
+    /// Where revocations are delivered (`SUBROSA_TEST_CARPE_DIEM_OPERATOR_URL`).
+    /// Set, the fixture also runs the maintenance loop every few seconds, so a
+    /// device revoked here reaches the local operator.
+    #[serde(default)]
+    carpe_diem_operator_url: Option<String>,
     #[serde(default = "local_kid")]
     carpe_diem_kid: String,
 }
@@ -136,6 +141,16 @@ async fn token(
     let token=encode(&header,&json!({"iss":"http://127.0.0.1:8788","sub":"local-qa-user","aud":"test-client","email":"qa@example.test","email_verified":true,"nonce":auth.nonce,"iat":now,"exp":now+300,"auth_time":now}),&s.signing.encoding_key).map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({"id_token":token,"token_type":"Bearer"})))
 }
+/// The production loop runs every minute; the fixture is impatient.
+fn deliver_revocations(worker: Service) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3));
+        loop {
+            tick.tick().await;
+            let _ = worker.maintenance().await;
+        }
+    });
+}
 #[tokio::main]
 async fn main() -> Result<()> {
     let settings: Settings = Figment::from(Serialized::defaults(Settings {
@@ -143,6 +158,7 @@ async fn main() -> Result<()> {
         public_url: "http://localhost:1430".into(),
         carpe_diem_audience: None,
         carpe_diem_key_file: None,
+        carpe_diem_operator_url: None,
         carpe_diem_kid: local_kid(),
     }))
     .merge(Env::prefixed("SUBROSA_TEST_"))
@@ -209,7 +225,7 @@ async fn main() -> Result<()> {
         carpe_diem: match (settings.carpe_diem_audience, settings.carpe_diem_key_file) {
             (Some(audience), Some(file)) => Some(subrosa_config::CarpeDiem {
                 audience,
-                operator_url: None,
+                operator_url: settings.carpe_diem_operator_url.clone(),
                 kid: settings.carpe_diem_kid,
                 signing_key: Secret(std::fs::read_to_string(file)?),
             }),
@@ -223,6 +239,9 @@ async fn main() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("the Carpe Diem partner key does not sign"))?
         .map(|value| Arc::new(value) as Arc<dyn subrosa_domain::CarpeDiemPartner>);
     let service = Service::new(config, repo, provider, storage).with_carpe_diem(carpe_diem);
+    if settings.carpe_diem_operator_url.is_some() {
+        deliver_revocations(service.clone());
+    }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8088").await?;
     axum::serve(
         listener,
