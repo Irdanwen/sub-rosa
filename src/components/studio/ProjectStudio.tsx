@@ -49,6 +49,7 @@ import {
   type ScoreProposal,
 } from "../../lib/studio/score";
 import { musicCapabilities } from "../../lib/studio/catalog";
+import { placeScore } from "../../lib/studio/score-montage";
 import { pickMusicModel } from "../../lib/studio/workflow/compile";
 import {
   getProject,
@@ -161,6 +162,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     shotIds: string[];
   }>();
   const [proposing, setProposing] = useState(false);
+  const [musicNotice, setMusicNotice] = useState("");
   const abort = useRef<AbortController>();
   const resultWrites = useRef<Promise<void>>(Promise.resolve());
   const finishingReadings = useRef(new Set<string>());
@@ -1131,6 +1133,44 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
       setBusy(false);
     }
   };
+  /** Lay the chosen cue takes under their shots in the montage. */
+  const placeMusic = async () => {
+    const target = current.current;
+    const score = target ? projectScore(target.document) : undefined;
+    if (!target || !score) return;
+    setBusy(true);
+    setMusicNotice("");
+    try {
+      const seconds = new Map<string, number>();
+      for (const cue of score.cues) {
+        const take = artifacts.find((artifact) => artifact.id === cue.activeTakeId);
+        if (take) seconds.set(take.id, await mediaSeconds(artifactSrc(take), "audio"));
+      }
+      if (current.current?.id !== target.id) return;
+      let outcome: ReturnType<typeof placeScore> | undefined;
+      await edit((previous) => {
+        outcome = placeScore(previous.document.timeline, previous.document.shots, score, (id) =>
+          seconds.get(id),
+        );
+        return { ...previous, document: { ...previous.document, timeline: outcome.timeline } };
+      });
+      if (!outcome) return;
+      setMusicNotice(
+        outcome.unplaced.length
+          ? t("{count} cues placed. Not placed, their first shot is not in the montage: {names}.", {
+              count: outcome.placed,
+              names: outcome.unplaced.join(", "),
+            })
+          : t("{count} cues placed under their shots. The music dips under the dialogue.", {
+              count: outcome.placed,
+            }),
+      );
+    } catch (cause) {
+      report(cause);
+    } finally {
+      setBusy(false);
+    }
+  };
   const readScript = async () => {
     const origin = current.current;
     if (!origin) return;
@@ -1698,8 +1738,21 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                 >
                   {t("Append selected takes")}
                 </button>
-                <span className="project-muted">
-                  {t("Existing montage clips stay unchanged when you select another take.")}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={
+                    busy ||
+                    exporting ||
+                    !projectScore(project.document)?.cues.some((cue) => cue.activeTakeId)
+                  }
+                  onClick={() => void placeMusic()}
+                >
+                  {t("Place the music")}
+                </button>
+                <span className="project-muted" role="status">
+                  {musicNotice ||
+                    t("Existing montage clips stay unchanged when you select another take.")}
                 </span>
               </div>
               <ProjectTimeline

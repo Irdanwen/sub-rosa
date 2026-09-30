@@ -52,6 +52,8 @@ export interface EditorTrack {
   locked: boolean;
   muted: boolean;
   hidden: boolean;
+  /** Dip under the dialogue track. Absent means yes for the music track. */
+  duckUnderDialogue?: boolean;
 }
 export interface EditorDocument {
   version: 1;
