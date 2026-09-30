@@ -368,6 +368,10 @@ async fn callback(
 #[derive(Deserialize)]
 struct NativeStartQuery {
     request: String,
+    /// `signup` opens the identity provider on its registration form, as the
+    /// browser flow's `intent` does. The destination stays the constant one.
+    #[serde(default)]
+    intent: Option<String>,
 }
 /// The link the app opens. It carries a handle, never a destination: the page
 /// this returns to is a constant in the service.
@@ -375,7 +379,14 @@ async fn native_start(
     State(s): State<Arc<Service>>,
     Query(q): Query<NativeStartQuery>,
 ) -> Result<Response> {
-    let (url, browser) = s.native_login(&q.request).await?;
+    if q.intent
+        .as_ref()
+        .is_some_and(|i| i != "signin" && i != "signup")
+    {
+        return Err(Error::Invalid.into());
+    }
+    let register = q.intent.as_deref() == Some("signup");
+    let (url, browser) = s.native_login(&q.request, register).await?;
     let mut r = Redirect::to(&url).into_response();
     set_cookie(
         &mut r,

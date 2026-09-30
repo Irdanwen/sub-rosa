@@ -1585,6 +1585,44 @@ async fn a_native_sign_in_comes_back_to_the_app_and_leaves_the_browser_nothing()
     Ok(())
 }
 
+/// "Create my account" in the app sends `intent=signup` on the native start
+/// link. It is accepted like the browser flow's intent (the registration
+/// rewrite itself is unit tested in the providers crate: this fixture's
+/// identity provider publishes `/authorize`, which is left alone), and any other
+/// intent is refused rather than silently ignored.
+#[tokio::test]
+async fn a_native_start_accepts_the_signup_intent_and_nothing_else() -> Result<()> {
+    let f = Fixture::new().await?;
+    let (_, start) = f
+        .public(
+            "/api/v1/device-login",
+            native_start(&"s".repeat(43), "New phone"),
+        )
+        .await?;
+    let url = Url::parse(start["data"]["start_url"].as_str().context("start_url")?)?;
+    let base = format!("{}?{}", url.path(), url.query().context("start query")?);
+    for intent in ["signup", "signin"] {
+        let r = f
+            .call(
+                Request::builder()
+                    .uri(format!("{base}&intent={intent}"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(r.status(), StatusCode::SEE_OTHER, "{intent}");
+        assert!(r.headers().get(header::SET_COOKIE).is_some());
+    }
+    let r = f
+        .call(
+            Request::builder()
+                .uri(format!("{base}&intent=admin"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
 /// The attack the eight character code used to stop, and the one a scheme
 /// squatter would try. Each attacker holds one half and finishes nothing.
 #[tokio::test]

@@ -328,7 +328,7 @@ impl Service {
     /// Turns a start link into an authorization redirect. It creates an attempt
     /// and nothing else: no session, no approval, and no return code until the
     /// person has actually authenticated.
-    pub async fn native_login(&self, handle: &str) -> Result<(String, Secret)> {
+    pub async fn native_login(&self, handle: &str, register: bool) -> Result<(String, Secret)> {
         if handle.len() != 43 {
             return Err(Error::Invalid);
         }
@@ -348,7 +348,7 @@ impl Service {
         };
         let url = self
             .identity
-            .authorization_url(&attempt, state.expose(), false)?;
+            .authorization_url(&attempt, state.expose(), register)?;
         self.repository.save_attempt(&attempt).await?;
         Ok((url, browser))
     }
