@@ -48,6 +48,15 @@ it never holds, sees or spends a key.
    deleting the account writes a revocation into a durable outbox in the same
    transaction, and the maintenance loop delivers it to Carpe Diem until Carpe
    Diem acknowledges. Account deletion also asks Carpe Diem to forget the link.
+   Sanitising a restored database, which marks every device revoked, writes a
+   revocation for each device that was live before it, and an explicit
+   revocation is written every time, even for a device already marked
+   revoked. Otherwise a restore would leave keys nobody can revoke any more: a
+   device stolen before it would keep its key for good, and every device
+   signing in again would get a new id and a new key while the old ones stayed
+   active, until the account reached Carpe Diem's cap on active keys and could
+   obtain none. Carpe Diem treats a repeated revocation as a no-op, so asking
+   twice is always safe.
 4. **Carpe Diem draws the bound, and holds it in its TEE.** It pins this
    service's public keys (never fetched), refuses to link an email account that
    already existed there without a confirmation the person gives at Carpe Diem

@@ -142,7 +142,7 @@ impl Service {
             subject: session.account.id,
             email: session.account.email.clone(),
             device_id,
-            device_name: name.chars().take(64).collect(),
+            device_name: device_name(&name),
             jkt: jkt.into(),
         })
     }
@@ -654,6 +654,12 @@ fn normalize_code(code: &str) -> String {
         .flat_map(char::to_uppercase)
         .collect()
 }
+/// At most 64 Unicode scalar values, the unit Carpe Diem counts in too. A name
+/// is a label, so cutting it mid-grapheme costs a stray half of an emoji at
+/// worst, never a rejected assertion.
+fn device_name(name: &str) -> String {
+    name.chars().take(64).collect()
+}
 /// An RFC 7638 SHA-256 thumbprint, base64url without padding: 43 characters
 /// that decode to exactly 32 bytes. Anything else is refused before signing.
 fn valid_thumbprint(jkt: &str) -> bool {
@@ -701,7 +707,26 @@ pub async fn maintain(
 
 #[cfg(test)]
 mod tests {
-    use super::{RETURN_TO, valid_thumbprint};
+    use super::{RETURN_TO, device_name, valid_thumbprint};
+
+    /// Emoji, accents and CJK are several bytes each; the limit is in code
+    /// points, and nothing longer than 64 of them ever leaves the service.
+    #[test]
+    fn a_device_name_never_exceeds_sixty_four_code_points() {
+        for name in [
+            "📱".repeat(80),
+            "é".repeat(100),
+            "東京のノートパソコン".repeat(10),
+            "👩\u{200d}💻 Morgan's MacBook ".repeat(8),
+            "a".repeat(64),
+        ] {
+            let cut = device_name(&name);
+            assert!(cut.chars().count() <= 64, "{name}");
+            assert!(name.starts_with(&cut), "a prefix, not a rewrite");
+        }
+        assert_eq!(device_name("Phone 📱"), "Phone 📱");
+        assert_eq!(device_name(&"📱".repeat(80)).chars().count(), 64);
+    }
 
     #[test]
     fn a_thumbprint_is_exactly_a_base64url_sha256() {

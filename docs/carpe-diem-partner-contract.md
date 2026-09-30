@@ -60,7 +60,7 @@ Claims:
   "email": "<account email as last asserted by the identity provider, lowercase>",
   "email_verified": true,
   "device_id": "<device uuid>",
-  "device_name": "<the device's name in this service, first 64 characters>",
+  "device_name": "<the device's name in this service, at most 64 Unicode code points>",
   "scope": "key:issue",
   "cnf": {"jkt": "<jkt>"},
   "jti": "<uuid v4>",
@@ -183,17 +183,30 @@ is configured; `401 ASSERTION_INVALID`; `401 PROOF_INVALID`; `409 ASSERTION_REPL
 The account service enqueues a row in its durable outbox
 (`partner_revocations`) inside the same transaction as:
 
-- `DELETE /api/v1/devices/{id}` → `reason: "device_revoked"`, only the first
-  time a live device is revoked (revoking a revoked device enqueues nothing);
+- `DELETE /api/v1/devices/{id}` → `reason: "device_revoked"`, on every
+  explicit revocation, including of a device already marked revoked;
 - `POST /api/v1/session/renounce` (the app signing itself out) →
   `reason: "signed_out"`;
 - `DELETE /api/v1/me` → `device_id: null`, `reason: "account_deleted"`. The
   row lives in the deletion transaction, so `reapply_deletion` replays it when
   a restored backup still holds the account.
 
-A browser `POST /auth/logout` has no device and enqueues nothing. Restoring a
-database (`restore-sanitize`, which revokes every device) enqueues nothing
-either: re-issuing a key for the same device already revokes the previous one.
+- `restore-sanitize` (`invalidate_restored_sessions`, which marks every device
+  of a restored database revoked) → one `reason: "device_revoked"` row per
+  device that was live before it, inserted in the same transaction before the
+  update.
+
+A browser `POST /auth/logout` has no device and enqueues nothing.
+
+Why the restore path and the repeat both enqueue: a restore revokes every
+device without anyone asking Carpe Diem. If it enqueued nothing, a device
+stolen before the restore would keep a key that could never be revoked again
+(revoking it later would find it already revoked), and every device signing
+in again gets a new device id and so a new key, while the old keys stay
+active until the link hits Carpe Diem's five-active-keys cap and every further
+issuance answers `429 ISSUANCE_LIMITED`. A revocation Carpe Diem already
+applied costs it nothing, so asking twice is always safe and asking never is
+not.
 
 The 60 s maintenance loop leases up to 50 due rows, delivers them in the order
 they were written, marks a row done on any `2xx` (the body is not read) and

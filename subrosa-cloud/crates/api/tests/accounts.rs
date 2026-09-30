@@ -2396,7 +2396,9 @@ async fn revoking_a_device_revokes_its_carpe_diem_key_until_carpe_diem_answers()
         "a revocation is not bound to a device key"
     );
 
-    // Revoking the same device again asks nothing more of Carpe Diem.
+    // Revoking the same device again asks Carpe Diem again: a restored
+    // database can mark a device revoked without anyone having asked, and
+    // Carpe Diem treats a repeat as a no-op.
     let other = app_device(&f, "frank", "Frank phone").await?;
     let (status, _) = bearer(
         &p.app,
@@ -2407,7 +2409,18 @@ async fn revoking_a_device_revokes_its_carpe_diem_key_until_carpe_diem_answers()
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(outbox(&f).await?.len(), 1);
+    let rows = outbox(&f).await?;
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows[1],
+        (
+            subject,
+            Some(device_uuid),
+            "device_revoked".into(),
+            0,
+            false
+        )
+    );
     Ok(())
 }
 
@@ -2489,13 +2502,87 @@ async fn signing_out_and_deleting_the_account_each_leave_a_revocation() -> Resul
 }
 
 #[tokio::test]
-async fn restoring_a_database_revokes_no_carpe_diem_key_by_itself() -> Result<()> {
+async fn restoring_a_database_revokes_the_key_of_every_device_it_revokes() -> Result<()> {
     let f = Fixture::new().await?;
-    let _token = app_device(&f, "heidi", "Heidi laptop").await?;
+    let laptop = app_device(&f, "heidi", "Heidi laptop").await?;
+    let phone = app_device(&f, "heidi", "Heidi phone").await?;
+    let tablet = app_device(&f, "ivan", "Ivan tablet").await?;
+    // One device already signed itself out before the backup was taken.
+    let (status, _) = f
+        .public(
+            "/api/v1/session/renounce",
+            json!({"device_id":tablet["device_id"],"device_secret":tablet["device_secret"]}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(outbox(&f).await?.len(), 1);
+
     f.service.repository.invalidate_restored_sessions().await?;
-    assert!(
-        outbox(&f).await?.is_empty(),
-        "re-issuing on the same device already rotates its key"
+    let rows = outbox(&f).await?;
+    let restored: Vec<_> = rows[1..]
+        .iter()
+        .map(|row| (row.1, row.2.as_str()))
+        .collect();
+    let id = |token: &Value| -> Result<Option<Uuid>> {
+        Ok(Some(Uuid::parse_str(
+            token["device_id"].as_str().context("device")?,
+        )?))
+    };
+    assert_eq!(
+        restored.len(),
+        2,
+        "one row per device live before the restore"
     );
+    for device in [&laptop, &phone] {
+        assert!(restored.contains(&(id(device)?, "device_revoked")));
+    }
+
+    // Revoking a device the restore already marked revoked still asks Carpe
+    // Diem, so an explicit revocation is never silently a no-op.
+    let again = app_device(&f, "heidi", "Heidi new laptop").await?;
+    let (status, _) = bearer(
+        &subrosa_api::router(f.service.clone()),
+        "DELETE",
+        &format!(
+            "/api/v1/devices/{}",
+            laptop["device_id"].as_str().context("device")?
+        ),
+        &again["access_token"],
+        json!({}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let rows = outbox(&f).await?;
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[3].1, id(&laptop)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_assertion_never_names_a_device_in_more_than_sixty_four_code_points() -> Result<()> {
+    let f = Fixture::new().await?;
+    let p = Partner::arm(&f).await?;
+    let token = app_device(&f, "judy", "Judy phone").await?;
+    let name = "📱".repeat(80);
+    let (status, _) = bearer(
+        &p.app,
+        "POST",
+        &format!(
+            "/api/v1/devices/{}/name",
+            token["device_id"].as_str().context("device")?
+        ),
+        &token["access_token"],
+        json!({"name": name}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = p
+        .assertion(&token["access_token"], json!({"jkt": JKT}))
+        .await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let claims = p.claims(body["data"]["assertion"].as_str().context("assertion")?)?;
+    let sent = claims["device_name"].as_str().context("name")?;
+    assert_eq!(sent.chars().count(), 64);
+    assert!(name.starts_with(sent));
     Ok(())
 }

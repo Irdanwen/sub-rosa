@@ -349,24 +349,18 @@ impl Repository {
         reason: RevocationReason,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
-        let was_live: bool = sqlx::query_scalar(
-            "SELECT revoked_at IS NULL FROM devices WHERE account_id=$1 AND id=$2 FOR UPDATE",
-        )
-        .bind(owner)
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(db)?
-        .ok_or(Error::NotFound)?;
         // Clearing the secret is the point: revoking a device that could renew
         // itself without a browser would otherwise only pause it.
-        sqlx::query("UPDATE devices SET revoked_at=COALESCE(revoked_at,now()),secret_hash=NULL WHERE account_id=$1 AND id=$2").bind(owner).bind(id).execute(&mut *tx).await.map_err(db)?;
-        // The Carpe Diem key the device may hold dies with it. Written in this
-        // transaction so a crash can lose neither half, and only the first time:
-        // revoking a revoked device asks nothing of anybody.
-        if was_live {
-            enqueue_revocation(&mut tx, owner, Some(id), reason).await?;
+        let count=sqlx::query("UPDATE devices SET revoked_at=COALESCE(revoked_at,now()),secret_hash=NULL WHERE account_id=$1 AND id=$2").bind(owner).bind(id).execute(&mut *tx).await.map_err(db)?.rows_affected();
+        if count == 0 {
+            return Err(Error::NotFound);
         }
+        // The Carpe Diem key the device may hold dies with it, written in this
+        // transaction so a crash can lose neither half. On every explicit
+        // revocation, even of a device already marked revoked: a restored
+        // database marks devices revoked without anyone asking Carpe Diem, and
+        // Carpe Diem treats a repeated revocation as a no-op.
+        enqueue_revocation(&mut tx, owner, Some(id), reason).await?;
         sqlx::query("DELETE FROM sessions WHERE account_id=$1 AND device_id=$2")
             .bind(owner)
             .bind(id)
@@ -912,6 +906,15 @@ impl Repository {
     /// Run on an isolated restored database before admitting traffic. Never on ordinary boot.
     pub async fn invalidate_restored_sessions(&self) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
+        // Every device about to lose its sessions loses its Carpe Diem key too,
+        // read before the update below marks them all revoked. Without this a
+        // device stolen before the restore keeps a key nobody can revoke any
+        // more, and each re-admitted device mints another, until the account
+        // hits Carpe Diem's cap on active keys.
+        sqlx::query("INSERT INTO partner_revocations(id,subject,device_id,reason) SELECT gen_random_uuid(),account_id,id,'device_revoked' FROM devices WHERE revoked_at IS NULL")
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
         for query in [
             "DELETE FROM pairing_requests",
             "DELETE FROM sessions",
@@ -1174,9 +1177,10 @@ impl Repository {
     /// Leases up to `limit` due revocations for five minutes, so a slow
     /// delivery is not picked up twice by the next tick.
     pub async fn claim_revocations(&self, limit: i64) -> Result<Vec<PendingRevocation>> {
-        // Delivered in the order they were written (ids are UUIDv7), so a
-        // device revocation never arrives after the deletion that followed it.
-        let rows = sqlx::query("WITH due AS (SELECT id FROM partner_revocations WHERE done_at IS NULL AND next_attempt_at<=now() ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED), claimed AS (UPDATE partner_revocations p SET next_attempt_at=now()+interval '5 minutes' FROM due WHERE p.id=due.id RETURNING p.id,p.subject,p.device_id,p.reason,p.attempts) SELECT * FROM claimed ORDER BY id")
+        // Delivered in the order they were written, so a device revocation
+        // never arrives after the deletion that followed it. `created_at` is
+        // the transaction time; the id breaks ties inside one transaction.
+        let rows = sqlx::query("WITH due AS (SELECT id FROM partner_revocations WHERE done_at IS NULL AND next_attempt_at<=now() ORDER BY created_at,id LIMIT $1 FOR UPDATE SKIP LOCKED), claimed AS (UPDATE partner_revocations p SET next_attempt_at=now()+interval '5 minutes' FROM due WHERE p.id=due.id RETURNING p.id,p.subject,p.device_id,p.reason,p.attempts,p.created_at) SELECT * FROM claimed ORDER BY created_at,id")
             .bind(limit)
             .fetch_all(&self.pool)
             .await
