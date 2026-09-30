@@ -7,6 +7,8 @@ import { BrandGradientMark } from "../../components/brand/Marks";
 import { CarpeDiemGate } from "../../components/carpe-diem/CarpeDiemGate";
 import { RailSwitchBanner } from "../../components/carpe-diem/RailSwitchBanner";
 import { ReflexNotice } from "../../components/carpe-diem/ReflexNotice";
+import { AddCreditsHost } from "../../components/carpe-diem/AddCreditsDialog";
+import { notifyCreditsChanged } from "../../lib/credits-events";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../../lib/chat-blocks-nav";
@@ -507,6 +509,10 @@ export function MobileApp() {
       case "account":
         nav.switchTab("settings");
         nav.push({ view: "settings-section", section: "account" });
+        break;
+      // Back from Carpe Diem's pay page: look at the balance again now.
+      case "credits":
+        notifyCreditsChanged();
         break;
       // Shared through the share sheet: the extension left a manifest in
       // the app group inbox; Rust reads it and makes the note or starts the
@@ -1074,6 +1080,7 @@ export function MobileApp() {
       <MobileErrorBanner error={error} onDismiss={() => setError(null)} />
       <RailSwitchBanner compact />
       <ReflexNotice compact />
+      <AddCreditsHost />
       {calendarAmbiguity ? (
         <MeetingAmbiguityPrompt
           noteId={calendarAmbiguity.noteId}

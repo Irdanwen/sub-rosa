@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { artifactDataUrl, evictArtifactDataUrl } from "../../../lib/artifact-media";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { hapticNotify } from "../../../lib/haptics";
-import { openTopUp } from "../../../lib/top-up";
+import { requestAddCredits } from "../../../lib/credits-events";
+import { usePayPolicy } from "../../../lib/credits-purchase";
 import { deleteArtifact, listArtifacts } from "../../../lib/studio/artifacts";
 import {
   dismissStandaloneImageFailure,
@@ -55,6 +56,7 @@ export function StudioScreen() {
     return () => window.removeEventListener(STUDIO_IMAGE_FAILED_EVENT, refresh);
   }, []);
   const credits = useCarpeDiemCredits();
+  const payLinkAllowed = usePayPolicy()?.linkAllowed === true;
   const [catalog, setCatalog] = useState<MediaCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [mode, setMode] = useState<StudioMode>("image");
@@ -290,9 +292,7 @@ export function StudioScreen() {
         <ActionSheet
           title={formatCredits(credits.availableCredits)}
           subtitle={rateSentence(credits.priceMultiplier)}
-          actions={[
-            { label: t("Top up"), onAction: () => void openTopUp().catch(() => undefined) },
-          ]}
+          actions={payLinkAllowed ? [{ label: t("Top up"), onAction: requestAddCredits }] : []}
           closeLabel={t("OK")}
           onClose={() => setRateOpen(false)}
         />

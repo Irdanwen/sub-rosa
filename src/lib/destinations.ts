@@ -56,7 +56,10 @@ export type Destination =
   /** The end of a sign-in that started in the app. The Rust side spends the
    * return code the link carries; what reaches here is only "show them their
    * account", deliberately without the query. */
-  | { kind: "account" };
+  | { kind: "account" }
+  /** Back from Carpe Diem's pay page. The payment itself is confirmed by the
+   * balance, never by this link: it only says "look again now". */
+  | { kind: "credits" };
 
 /** App-generated ids (notes, sessions) are opaque tokens, never paths. */
 const ID_RE = /^[\w-]{1,64}$/;
@@ -119,6 +122,8 @@ export function parseDestination(raw: string): Destination | null {
     // is dropped here rather than carried and ignored later.
     case "auth":
       return segment === "callback" ? { kind: "account" } : null;
+    case "credits":
+      return segment === "return" ? { kind: "credits" } : null;
     case "import": {
       const target = url.searchParams.get("url")?.trim();
       // Only web links, and only ones short enough to be real. The Rust side
@@ -152,6 +157,8 @@ export function destinationUrl(destination: Destination): string {
       const query = destination.query ? `?q=${encodeURIComponent(destination.query)}` : "";
       return `${DESTINATION_SCHEME}${path}${query}`;
     }
+    case "credits":
+      return `${DESTINATION_SCHEME}credits/return`;
     default:
       return `${DESTINATION_SCHEME}${destination.kind}`;
   }

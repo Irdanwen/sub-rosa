@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { carpeDiemGetCredits } from "./tauri";
 import type { CarpeDiemCreditsDto } from "./tauri";
+import { onCreditsChanged } from "./credits-events";
 
 // Credits drain with every AI call, so attention-refresh alone would show a
 // stale balance during an active session; a slow poll keeps it honest without
@@ -26,7 +27,12 @@ export function useCarpeDiemCredits(): CarpeDiemCreditsDto | null {
   useEffect(() => {
     void refresh();
     const id = window.setInterval(() => void refresh(), POLL_INTERVAL_MS);
-    return () => window.clearInterval(id);
+    // A payment that landed, or the pay page sending the person back.
+    const stop = onCreditsChanged(() => void refresh());
+    return () => {
+      window.clearInterval(id);
+      stop();
+    };
   }, [refresh]);
 
   // Same attention-refresh pattern as useAccountStatus: `focus` and

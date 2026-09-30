@@ -31,6 +31,8 @@ import { MeetingAmbiguityPrompt } from "../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../lib/calendar-link";
 import type { CalendarEventDto } from "../lib/tauri";
 import { type Destination, subscribeToDestinations } from "../lib/destinations";
+import { notifyCreditsChanged, requestAddCredits } from "../lib/credits-events";
+import { AddCreditsHost } from "../components/carpe-diem/AddCreditsDialog";
 import {
   AGENT_DELETE_SESSION_EVENT,
   AGENT_NEW_SESSION_EVENT,
@@ -85,7 +87,6 @@ import {
   listNotes,
   listSessionFolders,
   openPrivacySettings,
-  carpeDiemOpenDashboard,
   pauseRecording,
   removeNoteFromFolder,
   removeSessionFromFolder,
@@ -451,11 +452,11 @@ export function App() {
   }, []);
   // Sessions with a finishRecording call in flight; guards stop double-clicks.
   const finishingSessionsRef = useRef<Set<string>>(new Set());
-  // Credits are bought on Carpe Diem, so every depleted-balance affordance
-  // opens their dashboard. Upstream June started an OS Accounts checkout here.
+  // Every depleted-balance affordance opens the Add credits sheet: Carpe Diem
+  // sells the credits, by card or USDC, and the sheet watches them land.
   const topUpLabel = "Add credits";
   const handleTopUp = useCallback(() => {
-    void carpeDiemOpenDashboard().catch((err: unknown) => setError(messageFromError(err)));
+    requestAddCredits();
   }, []);
   const [onboardingDone, setOnboardingDone] = useState(() => {
     applyOnboardingReplayFlag();
@@ -1528,6 +1529,9 @@ export function App() {
       case "account":
         setSettingsTab("account");
         openSettings();
+        break;
+      case "credits":
+        notifyCreditsChanged();
         break;
     }
   };
@@ -2783,6 +2787,7 @@ export function App() {
       }
     >
       <AssistantLauncher />
+      <AddCreditsHost />
       <div
         className="titlebar-drag"
         aria-hidden

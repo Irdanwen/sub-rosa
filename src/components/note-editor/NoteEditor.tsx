@@ -81,7 +81,7 @@ type NoteEditorProps = {
   onResumeRecording: (sessionId: string) => void;
   onFinishRecording: (sessionId: string) => void;
   onRetry: () => void | Promise<void>;
-  onTopUp: () => void;
+  onTopUp?: () => void;
   topUpLabel?: string;
   onRecoverRecording: (sessionId: string) => void;
   onDiscardRecording: (sessionId: string) => void;
