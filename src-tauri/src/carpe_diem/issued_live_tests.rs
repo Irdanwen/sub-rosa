@@ -164,6 +164,9 @@ async fn a_device_revoked_from_the_account_loses_its_key() {
     let assertion_lost = assertion(&f, &f.devices[2], &lost.jkt()).await;
     let key = issued(post_keys(&f.base, &lost, &assertion_lost).await.unwrap());
     assert_eq!(credits_status(&f, &key).await, 200);
+    // What a thief holding the device would keep aside while it is signed in.
+    let hoarded_key = Ephemeral::generate();
+    let hoarded = assertion(&f, &f.devices[2], &hoarded_key.jkt()).await;
 
     // Revoked from another device of the same account.
     let response = http()
@@ -182,6 +185,9 @@ async fn a_device_revoked_from_the_account_loses_its_key() {
         assert!(Instant::now() < deadline, "the key outlived its device");
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+    // The hoarded, still unexpired assertion buys nothing once the device is
+    // revoked: Carpe Diem remembers the device, not just its last key.
+    assert!(post_keys(&f.base, &hoarded_key, &hoarded).await.is_err());
 }
 
 async fn operator_post(f: &Fixture, path: &str, body: Value) -> (u16, Value) {
