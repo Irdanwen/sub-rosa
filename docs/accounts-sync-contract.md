@@ -8,14 +8,14 @@ JSON field names are snake_case. Successful JSON responses are `{ "data": T }`; 
 
 | Method and route | Contract |
 | --- | --- |
-| `GET /auth/login?intent=signin\|signup&return_to=/account` | Starts external OIDC. Allowed return paths: `/account`, `/account/`, `/account/devices`, `/account/library`, `/account/provider`, `/account/security`, `/account/usage`, and `/account/devices/verify?code=XXXXXXXX` with a valid device code. No external return URLs. `signin` and `signup` share the configured identity provider; account creation/passkey UX belongs to it. |
+| `GET /auth/login?intent=signin\|signup&return_to=/account` | Starts external OIDC. Allowed return paths: `/account`, `/account/`, `/account/devices`, `/account/library`, `/account/provider`, `/account/security`, `/account/top-up`, `/account/usage`, and `/account/devices/verify?code=XXXXXXXX` with a valid device code. No external return URLs. `signin` and `signup` share the configured identity provider; account creation/passkey UX belongs to it. |
 | `GET /auth/callback?state=...&code=...` | Consumes a ten-minute login attempt bound to its browser cookie; verifies code, S256 PKCE, signed ID token, exact issuer/audience, nonce, verified email and fresh `auth_time`. Maps `(issuer, subject)` to an internal UUID, never merges by email. Returns a 303 redirect with browser cookies. |
 | `POST /auth/logout` | Invalidates the current session. Native logout also revokes its refresh family. Clears browser cookies when present. |
 | `GET /api/v1/me` | `{ id, email, created_at }`. Dates are RFC3339. |
 | `DELETE /api/v1/me` | Requires authentication within five minutes. Persists independent signed deletion intent before deleting account rows, authorizations, sessions and encrypted-data references. Blob removal is a durable retry queue. Returns `{ deleted: true }` only after database erasure commits. |
 | `GET /api/v1/devices` | Array of `{ id, name, created_at, last_seen_at, revoked_at }`. This list contains native device authorizations. |
 | `POST /api/v1/devices/{id}/name` | Renames a device you own. A browser session and CSRF, but no step-up: a label change alters nothing the device may do, and a name you cannot correct is how the list became unreadable. `{ name }`, at most 80 characters, no control characters. |
-| `DELETE /api/v1/devices/{id}` | Requires authentication within five minutes. Revokes the device's sessions/refresh families and pairing requests. Returns `{ revoked: true }`. Past downloaded data and provider credentials cannot be remotely erased. |
+| `DELETE /api/v1/devices/{id}` | Requires authentication within five minutes. Revokes the device's sessions/refresh families and pairing requests, and queues the revocation of any Carpe Diem device key it obtained (ADR-0069). Returns `{ revoked: true }`. Past downloaded data and a provider key the person pasted cannot be remotely erased. |
 
 The server uses confidential-client OIDC, exact registered callback, `client_secret_basic`, `openid email`, PKCE S256 and `max_age=0`. ID tokens must use RS256 or ES256 with a matching trusted discovery JWKS key. The OIDC client secret exists only at the service. Existing identity-provider passkeys remain valid for its OIDC sign-in; new Sub Rosa passkeys belong to the account origin and must be enrolled separately. Neither decrypts the vault.
 
@@ -203,6 +203,16 @@ Expired and revoked shares are released by maintenance: their storage keys join
 the durable deletion queue, their rows are removed, and their bytes are returned
 to the account quota. A share's blobs are exclusive to it, so a share of a file
 stores a second copy of that file rather than pointing at the library's.
+
+## Carpe Diem device keys (30 September 2026)
+
+The service can vouch to Carpe Diem for a device so that the device obtains its own `cdm_` key, and it asks Carpe Diem to revoke that key when the device goes. It never sees the key. The full wire contract, shared with Carpe Diem, is [`carpe-diem-partner-contract.md`](carpe-diem-partner-contract.md); the decision and its bound are [ADR-0069](adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md).
+
+| Method and route | Contract |
+| --- | --- |
+| `POST /api/v1/carpe-diem/assertion` | `404 not_found` when the deployment has no Carpe Diem partner, before any session is read. Otherwise a native bearer session on a live device (`403 device_required` for a browser), authenticated within five minutes (`403 recent_auth_required`), 5 per minute per account. Body `{ jkt }`, the 43-character RFC 7638 thumbprint of the app's ephemeral P-256 key. Returns `{ assertion, expires_at }`: an ES256 JWS, `typ` `partner-assertion+jwt`, valid 120 seconds, which the app carries to Carpe Diem with a proof from the same key. |
+
+Revocations are durable rows (`partner_revocations`) written in the transaction of a device revocation (`device_revoked`), a native sign-out through `/api/v1/session/renounce` (`signed_out`) or an account deletion (`account_deleted`, every device, and Carpe Diem forgets the link). The maintenance loop delivers them in order until Carpe Diem answers `2xx`, backing off from one minute to six hours. Restoring a database enqueues none. This is the service's only outbound call besides OIDC and object storage.
 
 ## Errors, operational boundaries and verification
 

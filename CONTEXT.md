@@ -1049,8 +1049,9 @@ _Avoid:_ "locale" in copy (the person picks a language, not a locale).
 ## Account and synchronisation vocabulary
 
 These terms describe the optional account implementation, not a production launch.
-See [ADR-0049](docs/adr/0049-accounts-synchronise-ciphertext-without-hosting-inference.md)
-and [ADR-0050](docs/adr/0050-vault-admission-uses-an-out-of-band-secret.md).
+See [ADR-0049](docs/adr/0049-accounts-synchronise-ciphertext-without-hosting-inference.md),
+[ADR-0050](docs/adr/0050-vault-admission-uses-an-out-of-band-secret.md)
+and [ADR-0069](docs/adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md).
 
 **Sub Rosa account**: the identity shared by the website and the apps.
 Distinct from the user's Carpe Diem account, credits, API key, and local sidecar session.
@@ -1097,6 +1098,33 @@ instruction rather than a record.
 _Avoid:_ "job" or "task" (those are Studio's and the agent's, and both are
 records of work already done), "remote import" (nothing is remote: the import
 happens on your own machine), "queue" (an errand is addressed, not taken).
+
+**Device key** (French copy: *clé d'appareil*): a `cdm_` key that one device
+obtained from Carpe Diem because its Sub Rosa account vouched for it
+([ADR-0069](docs/adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md)).
+It lives in that device's keychain only, is never shared into the vault, and
+is revoked with the device. Every device key of an account draws on the same
+Carpe Diem balance. Distinct from a **pasted key**, which the person created at
+Carpe Diem themselves and which travels between devices through the vault.
+_Avoid:_ "account key" (the account holds no key), "generated key" (Carpe Diem
+creates every key; what differs is who asked), "shared key".
+
+**Carpe Diem link**: Carpe Diem's record that a Sub Rosa account is one of its
+accounts. Created on the first device key when Carpe Diem had no account for
+that address, or confirmed by the person at Carpe Diem, with a code shown in
+the app, when it already had one. Deleting the Sub Rosa account removes the
+link, never the Carpe Diem account or its balance.
+_Avoid:_ "Carpe Diem account" for the link itself (the account can exist
+without it), "binding" (that word already names the account binding of the
+local corpus).
+
+**Top-up** (French copy: *recharge*, the button *Recharger*): buying Carpe
+Diem credits, by card through Carpe Diem's payment page or in USDC at Carpe
+Diem. Sub Rosa never takes the payment; it opens Carpe Diem's page and waits
+for the balance to change. Distinct from **Carpe Diem credits**, which is what
+a top-up adds to.
+_Avoid:_ "purchase in Sub Rosa", "subscription" (nothing renews), "deposit"
+(that is the on-chain USDC path only).
 
 **Web reader**: the account website showing your own notes, read only, decrypted
 in that tab. Same page and same decryptor as the share viewer, different door.

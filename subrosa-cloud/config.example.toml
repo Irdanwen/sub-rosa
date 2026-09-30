@@ -33,3 +33,11 @@ v1 = "REPLACE_WITH_BASE64URL_OF_32_RANDOM_BYTES_GENERATED_LOCALLY"
 kind = "s3"
 bucket = "REPLACE_WITH_SEPARATE_DELETION_LEDGER_BUCKET"
 region = "eu-west-3"
+
+# Optional (ADR-0069): lets a device obtain its own Carpe Diem key. Leave the
+# section out to keep the assertion route at 404. The key is a PKCS#8 P-256 PEM
+# that deploy/vps/bootstrap.py generates; Carpe Diem pins its public half.
+# [carpe_diem]
+# audience = "https://carpe-diem.example.invalid/api/operator"
+# kid = "sr-REPLACE_WITH_RENDERED_KID"
+# signing_key = "REPLACE_WITH_SECRET_MANAGER_VALUE"

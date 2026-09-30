@@ -77,6 +77,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0066](adr/0066-a-character-sheet-composes-frames-and-never-reaches-video.md) — a `sheet` reference holds nine views of a character in a fixed 3 by 3 grid, drawn from the portrait through an edit model when there is one; it composes opening images and is cut into a portrait and a profile by position, and it never rides in the reference stack sent to a video model
 - [adr/0067](adr/0067-a-film-score-is-a-cue-sheet-anchored-on-shots.md) — a film's music is a mode (one piece or a cue sheet), a shared musical identity and cues anchored on shot ids; the app times each cue from its shots and snaps it to the music model's range, the script reading answers in shot numbers and is proposed, never applied
 - [adr/0068](adr/0068-the-website-localizes-public-paths-without-changing-account-callbacks.md) — English and French public URLs are prerendered separately while account, share and native callback paths keep their existing wire contracts
+- [adr/0069](adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md) — a signed-in device obtains its own Carpe Diem key: the account service vouches with a 120 second assertion bound to an ephemeral key, Carpe Diem mints the key in its TEE and hands it to the device, and revoking the device revokes the key; supersedes the "no spending authority" clauses of 0049/0050 and states the bound
 
 ## Enforceable rules (spec/)
 
@@ -153,6 +154,7 @@ tasks / contracts / checklists`.
 
 - [plan-comptes-synchronisation-site-2026-09-14.md](plan-comptes-synchronisation-site-2026-09-14.md) — conception initiale : compte Sub Rosa, coffre chiffré, continuité entre appareils et site ; premier plan noté 7/10 puis cible 10/10. Voir les ADR et le contrat pour les décisions effectivement implémentées.
 - [accounts-sync-contract.md](accounts-sync-contract.md) — identity, sessions, encrypted sync and pairing wire contract.
+- [carpe-diem-partner-contract.md](carpe-diem-partner-contract.md) — wire contract shared with Carpe Diem: the issuance assertion, the proof of possession, device-key issuance and revocation, card top-ups (tickets, grants, refunds).
 - [accounts-delivery-2026-09-14.md](accounts-delivery-2026-09-14.md) — implementation, local evidence and remaining public-launch gates.
 - [vps-site-delivery-2026-09-15.md](vps-site-delivery-2026-09-15.md) — public English website on the VPS, HTTPS/browser evidence, rollback and outstanding registration dependencies.
 - [vps-account-stack.md](vps-account-stack.md) — isolated account-service deployment preparation, identity, database privileges, secret handling and activation prerequisites.
