@@ -199,43 +199,49 @@ export function OpeningComposer({
         onChange={(imageModelId) => update({ imageModelId })}
         ariaLabel={t("Image composition model")}
       />
-      <label className="project-field">
-        {t("Opening image prompt")}
-        <textarea
-          aria-label={t("Opening image prompt")}
-          rows={4}
+      <div className="project-field">
+        <span className="project-field-heading">{t("Opening image prompt")}</span>
+        <AiRewrite
+          label={t("Opening image prompt")}
           value={shot.imagePrompt}
-          placeholder={t("Say where each image goes and what is happening")}
-          onChange={(event) => update({ imagePrompt: event.target.value })}
+          disabled={busy}
+          field={
+            <textarea
+              aria-label={t("Opening image prompt")}
+              rows={4}
+              value={shot.imagePrompt}
+              placeholder={t("Say where each image goes and what is happening")}
+              onChange={(event) => update({ imagePrompt: event.target.value })}
+            />
+          }
+          onAccept={(imagePrompt) => update({ imagePrompt })}
+          hint={t("Written in English, the language these image models follow best.")}
+          request={() =>
+            inputs.length
+              ? {
+                  kind: "composition",
+                  text: shot.imagePrompt,
+                  modelId: writingModelId,
+                  context: {
+                    targetModel: rewriteTargetModel(model),
+                    title: shot.title,
+                    action: shot.action,
+                    camera: shot.camera,
+                    aspectRatio: document.settings.aspectRatio,
+                    slots: slots.map(({ label, kind, role }) => ({ label, kind, role })),
+                    entries: document.bible
+                      .filter((entry) => slots.some((slot) => slot.label === entry.name))
+                      .map((entry) => ({
+                        name: entry.name,
+                        kind: entry.kind,
+                        traits: entry.traits,
+                      })),
+                  },
+                }
+              : undefined
+          }
         />
-      </label>
-      <AiRewrite
-        label={t("Opening image prompt")}
-        value={shot.imagePrompt}
-        disabled={busy}
-        onAccept={(imagePrompt) => update({ imagePrompt })}
-        hint={t("Written in English, the language these image models follow best.")}
-        request={() =>
-          inputs.length
-            ? {
-                kind: "composition",
-                text: shot.imagePrompt,
-                modelId: writingModelId,
-                context: {
-                  targetModel: rewriteTargetModel(model),
-                  title: shot.title,
-                  action: shot.action,
-                  camera: shot.camera,
-                  aspectRatio: document.settings.aspectRatio,
-                  slots: slots.map(({ label, kind, role }) => ({ label, kind, role })),
-                  entries: document.bible
-                    .filter((entry) => slots.some((slot) => slot.label === entry.name))
-                    .map((entry) => ({ name: entry.name, kind: entry.kind, traits: entry.traits })),
-                },
-              }
-            : undefined
-        }
-      />
+      </div>
       <button
         type="button"
         className="btn btn-primary"

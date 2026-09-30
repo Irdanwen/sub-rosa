@@ -422,36 +422,38 @@ export function ProjectBible({
                     ariaLabel={t("Reference image model")}
                   />
                 )}
-                <label className="project-field">
-                  {t("Image prompt")}
-                  <textarea
-                    aria-label={t("Image prompt")}
-                    rows={4}
+                <div className="project-field">
+                  <span className="project-field-heading">{t("Image prompt")}</span>
+                  <AiRewrite
+                    label={t("Image prompt")}
                     value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
+                    disabled={busy}
+                    field={
+                      <textarea
+                        aria-label={t("Image prompt")}
+                        rows={4}
+                        value={prompt}
+                        onChange={(event) => setPrompt(event.target.value)}
+                      />
+                    }
+                    onAccept={setPrompt}
+                    hint={t("Written in English, the language these image models follow best.")}
+                    request={() =>
+                      entry.name.trim()
+                        ? {
+                            kind: "imagePrompt",
+                            text: prompt,
+                            modelId: writingModelId,
+                            context: {
+                              targetModel: rewriteTargetModel(drawingModel),
+                              entry: { name: entry.name, kind: entry.kind, traits: entry.traits },
+                              role: activeRole,
+                            },
+                          }
+                        : undefined
+                    }
                   />
-                </label>
-                <AiRewrite
-                  label={t("Image prompt")}
-                  value={prompt}
-                  disabled={busy}
-                  onAccept={setPrompt}
-                  hint={t("Written in English, the language these image models follow best.")}
-                  request={() =>
-                    entry.name.trim()
-                      ? {
-                          kind: "imagePrompt",
-                          text: prompt,
-                          modelId: writingModelId,
-                          context: {
-                            targetModel: rewriteTargetModel(drawingModel),
-                            entry: { name: entry.name, kind: entry.kind, traits: entry.traits },
-                            role: activeRole,
-                          },
-                        }
-                      : undefined
-                  }
-                />
+                </div>
                 <button
                   type="button"
                   className="btn btn-primary"

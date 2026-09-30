@@ -30,7 +30,6 @@ import {
 } from "../../lib/studio/editor/document";
 import { mediaSeconds } from "../../lib/studio/reference-media";
 import { artifactSrc } from "../../lib/studio/artifacts";
-import { modelsOfType } from "../../lib/studio/catalog";
 import {
   compileOpeningImage,
   compileBibleReference,
@@ -76,11 +75,10 @@ import {
   runAndSaveWorkflow,
 } from "../../lib/studio/workflow-run";
 import { Dialog } from "../ui/Dialog";
-import { AiRewrite } from "./AiRewrite";
 import { NotePicker } from "./NotePicker";
-import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 import { ProjectBible } from "./ProjectBible";
 import { ProjectMedia } from "./ProjectMedia";
+import { ProjectScript } from "./ProjectScript";
 import { ProjectShots } from "./ProjectShots";
 import { ProjectTimeline } from "./ProjectTimeline";
 import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
@@ -1381,223 +1379,20 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               </div>
             ))}
           {section === "script" ? (
-            <div className="project-script">
-              <section className="project-panel">
-                <h2>{t("Script")}</h2>
-                <textarea
-                  aria-label={t("Film script")}
-                  rows={18}
-                  value={project.document.script}
-                  disabled={busy || reading}
-                  onChange={(event) =>
-                    editDocument((document) => ({ ...document, script: event.target.value }))
-                  }
-                  placeholder={t("Describe your film, its characters and what happens.")}
-                />
-                <AiRewrite
-                  label={t("Script")}
-                  value={project.document.script}
-                  disabled={busy || reading}
-                  onAccept={(script) => editDocument((document) => ({ ...document, script }))}
-                  intents={[
-                    { value: "filmable", label: t("Make it filmable") },
-                    { value: "develop", label: t("Develop an idea") },
-                    { value: "tighten", label: t("Tighten") },
-                    { value: "custom", label: t("Your own instruction") },
-                  ]}
-                  hint={t(
-                    "Scenes, visible actions and the same names throughout: that is what Break into shots reads best.",
-                  )}
-                  request={(intent, instruction) =>
-                    project.document.script.trim()
-                      ? {
-                          kind: "scenario",
-                          text: project.document.script,
-                          intent,
-                          instruction,
-                          modelId: writingModelId,
-                          context: {
-                            aspectRatio: project.document.settings.aspectRatio,
-                            entries: project.document.bible.map((entry) => ({
-                              name: entry.name,
-                              kind: entry.kind,
-                              traits: entry.traits,
-                            })),
-                          },
-                        }
-                      : undefined
-                  }
-                />
-                <div className="project-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    disabled={busy || reading}
-                    onClick={() => setNotePicker(true)}
-                  >
-                    {t("From your notes")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={
-                      busy ||
-                      reading ||
-                      !project.document.script.trim() ||
-                      project.document.shots.length > 0
-                    }
-                    onClick={() => void readScript()}
-                  >
-                    {reading ? t("Reading your script...") : t("Break into shots")}
-                  </button>
-                </div>
-                {project.document.readingNoteId && !reading ? (
-                  <p className="project-muted">
-                    {t(
-                      "Your script and completed reading steps are saved. You can try again with another model.",
-                    )}
-                  </p>
-                ) : null}
-                {project.document.shots.length ? (
-                  <p className="project-muted">
-                    {t(
-                      "Your shot list is editable in Shots. Script changes do not overwrite your work.",
-                    )}
-                  </p>
-                ) : null}
-              </section>
-              <aside className="project-panel">
-                <h2>{t("Project settings")}</h2>
-                <label className="project-field">
-                  {t("Script breakdown model")}
-                  <select
-                    aria-label={t("Script breakdown model")}
-                    value={project.document.settings.readingModelId ?? ""}
-                    disabled={reading || busy}
-                    onChange={(event) =>
-                      editDocument((document) => ({
-                        ...document,
-                        settings: { ...document.settings, readingModelId: event.target.value },
-                      }))
-                    }
-                  >
-                    <option value="">
-                      {t("App text model: {model}", { model: defaultReadingModel || t("Default") })}
-                    </option>
-                    {project.document.settings.readingModelId &&
-                    !readingModels.some(
-                      (model) => model.id === project.document.settings.readingModelId,
-                    ) ? (
-                      <option value={project.document.settings.readingModelId}>
-                        {t("Unavailable model: {model}", {
-                          model: project.document.settings.readingModelId,
-                        })}
-                      </option>
-                    ) : null}
-                    {readingModels.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {readingModelsError ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => void loadReadingModels()}
-                  >
-                    {t("Retry loading text models")}
-                  </button>
-                ) : null}
-                <label className="project-field">
-                  {t("Aspect ratio")}
-                  <select
-                    value={project.document.settings.aspectRatio}
-                    onChange={(event) =>
-                      editDocument((document) => ({
-                        ...document,
-                        settings: { ...document.settings, aspectRatio: event.target.value },
-                      }))
-                    }
-                  >
-                    {["16:9", "9:16", "1:1", "4:3", "21:9"].map((ratio) => (
-                      <option key={ratio}>{ratio}</option>
-                    ))}
-                  </select>
-                </label>
-                <MediaModelPicker
-                  value={project.document.settings.videoModelId}
-                  options={catalog.models
-                    .filter(
-                      (model) =>
-                        !model.offline &&
-                        ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType),
-                    )
-                    .map(mediaModelOption)}
-                  ariaLabel={t("Default video model")}
-                  onChange={(videoModelId) =>
-                    editDocument((document) => ({
-                      ...document,
-                      settings: { ...document.settings, videoModelId },
-                    }))
-                  }
-                />
-                <MediaModelPicker
-                  value={project.document.settings.ttsModelId}
-                  options={modelsOfType(catalog, "tts").map(mediaModelOption)}
-                  ariaLabel={t("Dialogue model")}
-                  onChange={(ttsModelId) =>
-                    editDocument((document) => ({
-                      ...document,
-                      settings: { ...document.settings, ttsModelId },
-                    }))
-                  }
-                />
-                <label className="project-field">
-                  {t("Spend ceiling")}
-                  <input
-                    type="number"
-                    min={0}
-                    value={project.document.settings.budget}
-                    onChange={(event) => {
-                      const budget = Number(event.target.value);
-                      if (Number.isFinite(budget))
-                        editDocument((document) => ({
-                          ...document,
-                          settings: { ...document.settings, budget },
-                        }));
-                    }}
-                  />
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={project.document.settings.withScore}
-                    onChange={(event) =>
-                      editDocument((document) => ({
-                        ...document,
-                        settings: { ...document.settings, withScore: event.target.checked },
-                      }))
-                    }
-                  />
-                  {t("Generate a musical score")}
-                </label>
-                {project.document.settings.withScore ? (
-                  <MediaModelPicker
-                    value={project.document.settings.musicModelId}
-                    options={modelsOfType(catalog, "music").map(mediaModelOption)}
-                    ariaLabel={t("Music model")}
-                    onChange={(musicModelId) =>
-                      editDocument((document) => ({
-                        ...document,
-                        settings: { ...document.settings, musicModelId },
-                      }))
-                    }
-                  />
-                ) : null}
-              </aside>
-            </div>
+            <ProjectScript
+              project={project}
+              catalog={catalog}
+              busy={busy}
+              reading={reading}
+              writingModelId={writingModelId}
+              readingModels={readingModels}
+              defaultReadingModel={defaultReadingModel}
+              readingModelsError={readingModelsError}
+              onRetryModels={() => void loadReadingModels()}
+              editDocument={editDocument}
+              onPickNotes={() => setNotePicker(true)}
+              onRead={() => void readScript()}
+            />
           ) : null}
           {section === "shots" ? (
             <ProjectShots
