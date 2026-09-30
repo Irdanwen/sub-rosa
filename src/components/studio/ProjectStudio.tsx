@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { errorCode } from "../../lib/errors";
 import { intlLocale, t } from "../../lib/i18n";
 import {
@@ -22,6 +22,8 @@ import {
   type BibleKind,
   type BibleRole,
 } from "../../lib/studio/bible";
+import { foldLiveRender, nodeTarget, type LiveRender } from "../../lib/studio/project-activity";
+import { rememberRenderMs } from "../../lib/studio/render-eta";
 import {
   createEditorClip,
   fps,
@@ -133,6 +135,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const [quote, setQuote] = useState<ReadyQuote>();
   const [runStates, setRunStates] = useState<Record<string, string>>({});
   const [progress, setProgress] = useState<Record<string, NodeRunResult>>({});
+  // What is being made right now, and where its wait is shown. A ref as well
+  // as state: the fold files a finished render's time exactly once.
+  const liveRef = useRef<Record<string, LiveRender>>({});
+  const [live, setLive] = useState<Record<string, LiveRender>>({});
+  const [now, setNow] = useState(() => Date.now());
+  const producing = useRef<Workflow>();
+  // Files that arrived during this session, revealed once where they land.
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
   const abort = useRef<AbortController>();
   const resultWrites = useRef<Promise<void>>(Promise.resolve());
   const finishingReadings = useRef(new Set<string>());
@@ -144,6 +154,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setErrorState(message);
   };
   const report = (cause: unknown) => setError(projectError(cause));
+  const hasLive = Object.keys(live).length > 0;
+  useEffect(() => {
+    if (!hasLive) return;
+    // A clock for the waits on screen, not a poll: nothing is fetched.
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasLive]);
+  const clearLive = () => {
+    liveRef.current = {};
+    setLive({});
+  };
   const loadReadingModels = useCallback(async () => {
     try {
       const [models, settings] = await Promise.all([
@@ -226,6 +248,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     setError("");
     setLibrary(false);
     setProgress({});
+    clearLive();
     setRunStates({});
     setReading(false);
     window.localStorage.setItem(LAST_PROJECT, value.id);
@@ -259,9 +282,30 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   const applyResult = (run: ProjectRun, result: NodeRunResult, projectId: string) => {
     if (current.current?.id !== projectId) return;
     setProgress((previous) => ({ ...previous, [result.nodeId]: result }));
+    const folded = foldLiveRender(
+      liveRef.current,
+      result,
+      producing.current?.nodes.find((node) => node.id === result.nodeId),
+      Date.now(),
+    );
+    liveRef.current = folded.live;
+    setLive(folded.live);
+    if (folded.finished) rememberRenderMs(folded.finished.etaKey, folded.finished.elapsedMs);
     const output = result.output;
     if (result.status !== "done" || !output || output.kind === "text" || !output.artifactId) return;
     const artifactId = output.artifactId;
+    if (folded.finished) {
+      setFresh((previous) => new Set([...previous, artifactId]));
+      window.setTimeout(
+        () =>
+          setFresh((previous) => {
+            const next = new Set(previous);
+            next.delete(artifactId);
+            return next;
+          }),
+        2000,
+      );
+    }
     const alreadyApplied = current.current.document.runs
       .find((savedRun) => savedRun.id === run.id)
       ?.appliedNodeIds?.includes(result.nodeId);
@@ -291,16 +335,14 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         ),
         artifactIds: [...new Set([...document.artifactIds, artifactId])],
         bible: document.bible.map((entry) => {
-          const match = /^bible-(.+)-(portrait|profile|sheet|wide|medium|detail)$/.exec(
-            result.nodeId,
-          );
+          const target = nodeTarget(result.nodeId);
           if (
-            !match ||
-            match[1] !== entry.id ||
+            target?.kind !== "bible" ||
+            target.entryId !== entry.id ||
             entry.refs.some((ref) => ref.artifactId === artifactId)
           )
             return entry;
-          const role = match[2] as BibleRole;
+          const role = target.role;
           return {
             ...entry,
             refs: [
@@ -703,6 +745,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     productionBusy.current = true;
     setError("");
     setProgress({});
+    clearLive();
+    producing.current = ready.workflow;
     const controller = new AbortController();
     abort.current = controller;
     let run: ProjectRun = ready.resumeRun ?? { id: "", shotSignatures: ready.signatures };
@@ -762,6 +806,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     } finally {
       if (abort.current === controller) abort.current = undefined;
       productionBusy.current = false;
+      producing.current = undefined;
+      clearLive();
       setBusy(false);
       await refreshArtifacts().catch(report);
     }
@@ -1093,6 +1139,10 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     />
   );
   const timelineEpoch = epoch.current;
+  const stepsDone = Object.values(progress).filter((result) => result.status === "done").length;
+  // Every step a run records counts, the free ones included, so the bar and
+  // the count above it agree.
+  const stepsTotal = producing.current?.nodes.length ?? 0;
   return (
     <div className="project-studio">
       {error ? (
@@ -1346,10 +1396,16 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               <span>{t("Production in progress")}</span>
               <span>
                 {t("{count} steps completed", {
-                  count: Object.values(progress).filter((result) => result.status === "done")
-                    .length,
+                  count: stepsDone,
                 })}
               </span>
+              {stepsTotal ? (
+                <span
+                  className="project-run-bar"
+                  aria-hidden
+                  style={{ "--run-done": stepsDone / stepsTotal } as CSSProperties}
+                />
+              ) : null}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -1431,6 +1487,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               onBible={() => setSection("bible")}
               writingModelId={writingModelId}
               busy={busy || exporting}
+              live={Object.values(live)}
+              now={now}
+              fresh={fresh}
             />
           ) : null}
           {section === "bible" ? (
@@ -1466,6 +1525,9 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               onGenerate={(id, role) => void prepareBible(id, role)}
               writingModelId={writingModelId}
               busy={busy || exporting}
+              live={Object.values(live)}
+              now={now}
+              fresh={fresh}
             />
           ) : null}
           {section === "media" ? mediaEditor : null}
