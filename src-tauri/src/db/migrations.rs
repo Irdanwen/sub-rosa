@@ -73,9 +73,40 @@ async fn replay_statements(
         return Ok(());
     }
     for statement in statements {
-        query(&statement).execute(pool).await?;
+        match query(&statement).execute(pool).await {
+            Ok(_) => {}
+            // Two runners can both find a file not yet applied (the app and a
+            // helper opening the same database at launch). The loser of an
+            // `ADD COLUMN` then finds the column already there: that is the
+            // file's effect, not a failure, exactly as `ensure_column` treats it.
+            Err(error)
+                if added_column(&statement)
+                    .is_some_and(|column| is_duplicate_column_error(&error, column)) => {}
+            Err(error) => return Err(error),
+        }
     }
     record_applied(pool, name, &sum).await
+}
+
+/// The column an `ALTER TABLE <table> ADD [COLUMN] <name> …` statement adds.
+fn added_column(statement: &str) -> Option<&str> {
+    let mut words = statement.split_whitespace();
+    let is =
+        |word: Option<&str>, expected: &str| word.is_some_and(|w| w.eq_ignore_ascii_case(expected));
+    if !is(words.next(), "ALTER") || !is(words.next(), "TABLE") {
+        return None;
+    }
+    words.next()?;
+    if !is(words.next(), "ADD") {
+        return None;
+    }
+    let next = words.next()?;
+    let column = if next.eq_ignore_ascii_case("COLUMN") {
+        words.next()?
+    } else {
+        next
+    };
+    Some(column.trim_matches(|c| c == '"' || c == '`' || c == '[' || c == ']'))
 }
 
 /// The files the runner knows, for the ledger test and the diagnostics.
@@ -618,5 +649,21 @@ mod split_tests {
             .iter()
             .filter(|s| s.starts_with("CREATE TRIGGER"))
             .all(|s| s.trim_end().ends_with("END")));
+    }
+}
+
+#[cfg(test)]
+mod added_column_tests {
+    use super::added_column;
+
+    #[test]
+    fn the_added_column_is_read_from_an_alter_statement() {
+        assert_eq!(
+            added_column("ALTER TABLE shot_lists ADD COLUMN script_hash TEXT"),
+            Some("script_hash")
+        );
+        assert_eq!(added_column("alter table t add \"c\" INTEGER"), Some("c"));
+        assert_eq!(added_column("ALTER TABLE t RENAME TO u"), None);
+        assert_eq!(added_column("CREATE TABLE t (c TEXT)"), None);
     }
 }
