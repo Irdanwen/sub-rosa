@@ -9,6 +9,8 @@ import {
 import { AccountPage } from "./pages/account";
 import { ReturnToApp } from "./pages/return";
 import { Downloads, Information } from "./pages/public";
+import { Documentation, documentationPath } from "./pages/docs";
+import { guideBySlug, read } from "./pages/docs-content";
 import { SharePage } from "./pages/share";
 import "./style.css";
 import { registerAccountNavigation } from "./lib/webmcp";
@@ -381,11 +383,13 @@ export function App({ initialPath }: { initialPath?: string }) {
       ? `${t("Shared with you", "Partagé avec vous")} · Sub Rosa`
       : accountPath
         ? `${t("Your account", "Votre compte")} · Sub Rosa`
-        : pathname === "/downloads"
-          ? `${t("Download", "Télécharger")} · Sub Rosa`
-          : pathname === "/"
-            ? "Sub Rosa"
-            : `${t("Information", "Informations")} · Sub Rosa`;
+        : documentationPath(pathname) || pathname === "/help"
+          ? `${pathname.startsWith("/docs/") ? read(guideBySlug(pathname.slice(6))?.title ?? ["Documentation", "Documentation"]) : t("Documentation", "Documentation")} · Sub Rosa`
+          : pathname === "/downloads"
+            ? `${t("Download", "Télécharger")} · Sub Rosa`
+            : pathname === "/"
+              ? "Sub Rosa"
+              : `${t("Information", "Informations")} · Sub Rosa`;
   }, [locale, accountPath, sharePath, pathname]);
   const changeLocale = (next: SiteLocale) => {
     rememberWebsiteLocale(next);
@@ -416,6 +420,9 @@ export function App({ initialPath }: { initialPath?: string }) {
           </a>
           <nav className="header-nav" aria-label={t("Main navigation", "Navigation principale")}>
             <a href={href("/downloads")}>{t("Download", "Télécharger")}</a>
+            <a className="header-secondary docs-header-link" href={href("/docs")}>
+              {t("Guides", "Guides")}
+            </a>
             <a className="header-secondary" href={href("/privacy")}>
               {t("Our approach", "Notre approche")}
             </a>
@@ -469,6 +476,8 @@ export function App({ initialPath }: { initialPath?: string }) {
           </section>
         ) : accountPath ? (
           <AccountPage path={path} />
+        ) : documentationPath(pathname) || pathname === "/help" ? (
+          <Documentation path={pathname === "/help" ? "/docs" : pathname} locale={locale} />
         ) : pathname === "/downloads" ? (
           <Downloads />
         ) : pathname !== "/" ? (
@@ -491,7 +500,7 @@ export function App({ initialPath }: { initialPath?: string }) {
             </p>
           </div>
           <div className="footer-links">
-            <a href={href("/help")}>{t("Help", "Aide")}</a>
+            <a href={href("/docs")}>{t("Documentation", "Documentation")}</a>
             <a href={href("/privacy")}>{t("Privacy", "Confidentialité")}</a>
             <a href={href("/security")}>{t("Security", "Sécurité")}</a>
             <a href="https://github.com/Irdanwen/sub-rosa-releases/releases">

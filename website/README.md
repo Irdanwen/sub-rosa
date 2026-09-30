@@ -9,6 +9,17 @@ The native apps keep their own language settings.
 No external font requests, analytics, browser session recording or third-party
 executable scripts.
 
+## User documentation
+
+The public guide center lives at `/docs` and `/fr/docs`, with one prerendered
+page per guide. `/help` and `/fr/help` remain working entry points. Article
+copy and search data are kept together in `src/pages/docs-content.ts`; every
+visible sentence is supplied in English and French. The search runs in the
+browser without a network request. Add a guide to the registry and the build
+creates both language URLs, alternate-language metadata, and prefixed asset
+links automatically. Screenshots under `public/docs/` are QA fixture captures
+without private user data; update them when the pictured controls change.
+
 ## Visual identity
 
 The website follows CarpeDiem's Roman Editorial Luxe system from
