@@ -21,7 +21,10 @@
 //!    `SUBROSA_TEST_CARPE_DIEM_AUDIENCE` and
 //!    `SUBROSA_TEST_CARPE_DIEM_OPERATOR_URL` set to the operator, and
 //!    `SUBROSA_TEST_CARPE_DIEM_KEY_FILE` to the key.
-//! 4. Three native sign-ins through `/api/v1/device-login` (native), the
+//! 4. For the consent test, first create a Carpe Diem email account for the
+//!    fixture identity (`/auth/email/start` then `/auth/email/verify`) and add
+//!    `"operator_log"` (the operator writes unsent mails there).
+//! 5. Three native sign-ins through `/api/v1/device-login` (native), the
 //!    fixture's identity page and `/device-login/exchange`, written as
 //!    `{"account_base","operator_base":"…/v1","devices":[{"access_token","device_id"}]}`.
 use super::*;
@@ -29,6 +32,8 @@ use super::*;
 struct Fixture {
     account: String,
     base: String,
+    /// The local operator's log, where it writes the mails it cannot send.
+    operator_log: Option<String>,
     devices: Vec<String>,
     device_ids: Vec<String>,
 }
@@ -44,6 +49,7 @@ fn fixture() -> Fixture {
     Fixture {
         account: value["account_base"].as_str().unwrap().into(),
         base: value["operator_base"].as_str().unwrap().into(),
+        operator_log: value["operator_log"].as_str().map(str::to_string),
         devices: value["devices"]
             .as_array()
             .unwrap()
@@ -169,4 +175,97 @@ async fn a_device_revoked_from_the_account_loses_its_key() {
         assert!(Instant::now() < deadline, "the key outlived its device");
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+}
+
+async fn operator_post(f: &Fixture, path: &str, body: Value) -> (u16, Value) {
+    let response = reqwest::Client::new()
+        .post(format!("{}{path}", partner_root(&f.base)))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = response.status().as_u16();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+/// The consent token of the last link mail the local operator "sent".
+fn last_consent_token(f: &Fixture) -> String {
+    let log = std::fs::read_to_string(f.operator_log.as_ref().expect("operator_log")).unwrap();
+    let at = log.rfind("/link?r=").expect("a consent mail");
+    log[at + "/link?r=".len()..]
+        .chars()
+        .take_while(char::is_ascii_hexdigit)
+        .collect()
+}
+
+/// An email that already has a Carpe Diem account (made there, not through
+/// Sub Rosa) is never linked on the account service's word alone: the person
+/// confirms by mail, typing the code this device shows, and only the device
+/// holding the attempt's key receives the key.
+#[tokio::test]
+#[ignore = "requires a local Carpe Diem operator (with a pre-existing email account for the fixture identity) and account service; set SUBROSA_TEST_PARTNER_FIXTURE"]
+async fn an_existing_carpe_diem_account_is_linked_only_with_consent() {
+    let f = fixture();
+    let device = Ephemeral::generate();
+    let signed = assertion(&f, &f.devices[0], &device.jkt()).await;
+    let Answer::Confirm {
+        link_request_id,
+        code,
+        expires_at,
+        email_hint,
+    } = post_keys(&f.base, &device, &signed).await.unwrap()
+    else {
+        panic!("an existing account must ask for consent");
+    };
+    let pending = Pending {
+        base: f.base.clone(),
+        ephemeral: device,
+        link_request_id: link_request_id.clone(),
+        code: code.clone(),
+        expires_at: expires_at.clone(),
+        email_hint: email_hint.clone(),
+    };
+    assert_eq!(post_poll(&f.base, &pending).await.unwrap(), Answer::Pending);
+
+    // Someone who learned the request id but holds another key gets nothing.
+    let intruder = Pending {
+        base: f.base.clone(),
+        ephemeral: Ephemeral::generate(),
+        link_request_id: link_request_id.clone(),
+        code: code.clone(),
+        expires_at,
+        email_hint,
+    };
+    assert!(post_poll(&f.base, &intruder).await.is_err());
+
+    let token = last_consent_token(&f);
+    assert_eq!(token.len(), 64);
+    let (status, described) =
+        operator_post(&f, "/partner/link/describe", json!({"token": token})).await;
+    assert_eq!(status, 200);
+    assert_eq!(described["partner"], "Sub Rosa");
+    let wrong = if code == "AAAAAA" { "BBBBBB" } else { "AAAAAA" };
+    let (status, _) = operator_post(
+        &f,
+        "/partner/link/confirm",
+        json!({"token": token, "code": wrong}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(post_poll(&f.base, &pending).await.unwrap(), Answer::Pending);
+    let (status, _) = operator_post(
+        &f,
+        "/partner/link/confirm",
+        json!({"token": token, "code": code}),
+    )
+    .await;
+    assert_eq!(status, 200);
+
+    let key = issued(post_poll(&f.base, &pending).await.unwrap());
+    assert_eq!(credits_status(&f, &key).await, 200);
+    // The attempt is spent: polling again issues nothing more.
+    assert!(!matches!(
+        post_poll(&f.base, &pending).await,
+        Ok(Answer::Issued { .. })
+    ));
 }
