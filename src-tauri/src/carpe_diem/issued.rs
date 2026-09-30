@@ -798,3 +798,7 @@ mod tests {
         assert_eq!(json, r#"{"status":"issued"}"#);
     }
 }
+
+#[cfg(test)]
+#[path = "issued_live_tests.rs"]
+mod live_tests;
