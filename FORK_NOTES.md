@@ -1351,7 +1351,7 @@ Pièges :
 - `seedream-v5-lite-edit` refuse le chemin synchrone (`409 MODEL_REQUIRES_ASYNC`) :
   la composition passe toujours par la file, ce que `nativeQueuedImage` fait déjà.
 
-## La musique du film (2026-09-29, ADR-0067)
+## La musique du film (2026-09-29, ADR-0067, v1.78.0)
 
 Un onglet « Musique » entre Bible et Médias. La musique est lue dans le scénario
 comme la Bible, puis produite comme les plans : un seul morceau sous tout le film,
