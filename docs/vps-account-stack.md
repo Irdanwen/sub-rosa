@@ -81,6 +81,21 @@ Nginx reste géré séparément. Terminaison HTTPS publique, aucun port Docker a
 
 Le proxy remplace les en-têtes `X-Forwarded-*`, filtre Host et limite requêtes par client réel. `PROXY_TRUSTED_ADDRESSES` doit correspondre à l’adresse effective du proxy/bridge, jamais `0.0.0.0/0`. Le [guide reverse proxy Keycloak](https://www.keycloak.org/server/reverseproxy) décrit cette frontière. Le port management 9000 reste non publié ; le healthcheck utilise uniquement le réseau interne du container. Ne pas journaliser query strings OIDC, cookies, Authorization ou corps des requêtes.
 
+## Clé de partenaire Carpe Diem (ADR 0069)
+
+Le service peut attester à Carpe Diem qu’un appareil récemment connecté d’un compte vérifié a le droit d’obtenir **sa propre** clé `cdm_`, et demander la révocation des clés d’un appareil révoqué ou d’un compte supprimé. Il ne voit jamais ces clés et ne dépense rien. Contrat exact : [`carpe-diem-partner-contract.md`](carpe-diem-partner-contract.md).
+
+Tant que `operator.json` ne contient pas `"carpe_diem": {"audience": "https://carpe-diem.xyz/api/operator"}`, rien n’est généré, la route `/api/v1/carpe-diem/assertion` répond 404 et les révocations attendent dans la table `partner_revocations`.
+
+1. Sur le poste de préparation (celui qui détient `private/`), renseigner l’audience puis lancer `render`. Au premier passage, `render` génère `private/carpe-diem-partner.pem` (P-256, PKCS#8, 0600) avec `openssl` et ne le remplace plus jamais ensuite. Générer la clé ici plutôt que sur le VPS, pour que l’exemplaire de référence reste avec les autres secrets et qu’une copie vers le VPS ne l’écrase pas.
+2. `render` écrit aussi `carpe-diem-partner.public.json` à côté de `private/` : **uniquement la partie publique**, déjà au format d’une entrée de `PARTNERS_JSON` (`id`, `issuer`, `audience`, `keys[].kid`, `keys[].jwk`). C’est le seul fichier à transmettre à l’opérateur Carpe Diem, qui l’épingle dans son environnement scellé. Le `kid` est dérivé de l’empreinte RFC 7638 de la clé publique.
+3. Copier `private/` vers le VPS comme d’habitude, puis `stack.py start`. La section `[carpe_diem]` est rendue dans `runtime.toml` et `migration.toml`. Au démarrage, le service refuse de servir si la clé ne signe pas.
+4. Vérifier : sans session, `POST /api/v1/carpe-diem/assertion` doit répondre 401 (et non plus 404).
+
+Rotation : générer une nouvelle clé, transmettre la nouvelle entrée à Carpe Diem, attendre qu’il épingle les **deux** `kid`, remplacer ensuite la clé ici, puis demander à Carpe Diem de retirer l’ancien `kid`. Ne jamais supprimer l’ancienne clé avant que Carpe Diem accepte la nouvelle : les assertions en vol et les révocations en attente seraient refusées.
+
+Nouvelle sortie réseau : l’API appelle `{audience}/partner/keys/revoke` depuis sa boucle de maintenance (60 s, reprise progressive de 1 minute à 6 heures, sans abandon). C’est sa première sortie autre que l’OIDC et le stockage objet. Le réseau `outbound` de Compose la permet déjà ; une future liste d’autorisation de sortie devra inclure l’hôte Carpe Diem.
+
 ## Stockage et sauvegardes : portes encore fermées
 
 Le fichier [`storage-policies.example.json`](../subrosa-cloud/deploy/vps/storage-policies.example.json) fournit deux politiques de rôle à adapter chez le fournisseur. Ciphertexts : get/put/delete, bucket privé. Registre : list/get/create conditionnel, **aucun delete**, pas de changement de lifecycle/versioning/rétention par le runtime. Les [conditions S3 de création](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes-enforce.html) doivent être testées chez le fournisseur compatible. Ce n’est pas une configuration universelle interchangeable entre prestataires.

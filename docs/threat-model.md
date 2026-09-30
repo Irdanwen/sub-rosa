@@ -8,7 +8,10 @@ In local mode, **everything you write, say, and record stays on your machine,
 except model requests to the endpoint you configured.** If you explicitly enable
 account synchronisation, encrypted copies also leave for your configured account
 service. That service sees identity and transport metadata, not plaintext notes
-or the provider key. The limits below apply to both modes.
+or the provider key. If you let your account create your Carpe Diem key, the
+account service vouches for your device to Carpe Diem and Carpe Diem delivers
+the key to the device directly; the service never sees it (ADR-0069). The
+limits below apply to both modes.
 
 ## Assets
 
@@ -23,6 +26,7 @@ or the provider key. The limits below apply to both modes.
 | Account sessions and vault key | Native keyring; an unlocked browser tab holds its key only in memory | Account access or decryption of synced content |
 | Recovery kit | The user's chosen secure storage; only its encrypted envelope is on the service | Loss can prevent recovery; theft enables decryption after account access |
 | Synced content | Encrypted revisions in PostgreSQL and encrypted file chunks in object storage | Metadata exposure; content stays encrypted without the client key |
+| The account service's Carpe Diem partner key | The service's private configuration, never in the repo; Carpe Diem pins its public half | Someone mints device keys for accounts created by or linked to Sub Rosa, and burns their credits (bounded in ADR-0069) |
 
 ## Boundaries
 
@@ -98,10 +102,19 @@ Named, because a threat model that claims everything protects nothing.
 - **Compromised account website code.** A malicious web deployment can steal a
   key as it is entered or unlocked. No third-party scripts, a strict CSP and
   deployment controls reduce the risk; they cannot eliminate it.
+- **A compromised account service minting device keys.** With the service's
+  partner key and database, an attacker can obtain Carpe Diem keys for
+  accounts that Sub Rosa created or that their owner linked to it, and spend
+  their credits. They cannot withdraw them, reach an account never linked to
+  Sub Rosa, exceed Carpe Diem's issuance limits unnoticed, or do it silently:
+  Carpe Diem announces every new key by email. See
+  [ADR-0069](adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md).
 - **Cryptographic isolation after device revocation.** Revocation blocks the
   device's sessions immediately at the service. It does not rotate the vault
   root or erase past copies. A revoked device obtaining ciphertext through
-  another leak can still decrypt it. Replace a lost provider key at Carpe Diem.
+  another leak can still decrypt it. A key the account created for that device
+  is revoked at Carpe Diem through the service's outbox; replace a key you
+  pasted yourself at Carpe Diem.
   See [ADR-0050](adr/0050-vault-admission-uses-an-out-of-band-secret.md).
 - **A dishonest sync service withholding or replaying history.** Authenticated
   encryption rejects content and metadata tampering. It does not prove global

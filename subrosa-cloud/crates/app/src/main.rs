@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use std::{net::SocketAddr, sync::Arc};
 use subrosa_config::Config;
 use subrosa_persistence::Repository;
-use subrosa_providers::{LedgerProvider, OidcProvider, StorageProvider};
+use subrosa_providers::{CarpeDiemPartnerProvider, LedgerProvider, OidcProvider, StorageProvider};
 use subrosa_services::Service;
 #[derive(Parser)]
 struct Cli {
@@ -51,8 +51,15 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     let identity = Arc::new(OidcProvider::discover(config.clone()).await?);
+    // Built only for serving: the boot replay above must stay usable without
+    // Carpe Diem, and a Carpe Diem outage must never keep the account shut.
+    let carpe_diem = CarpeDiemPartnerProvider::new(&config)
+        .map_err(|_| anyhow::anyhow!("the Carpe Diem partner key does not sign"))?
+        .map(|value| Arc::new(value) as Arc<dyn subrosa_domain::CarpeDiemPartner>);
     let addr: SocketAddr = config.bind.parse().context("parse bind address")?;
-    let service = Service::new(config, repo, identity, storage).with_deletion_ledger(ledger);
+    let service = Service::new(config, repo, identity, storage)
+        .with_deletion_ledger(ledger)
+        .with_carpe_diem(carpe_diem);
     let worker = service.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_mins(1));

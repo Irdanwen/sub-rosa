@@ -309,6 +309,8 @@ impl BlobStore for StorageProvider {
 
 mod ledger;
 pub use ledger::LedgerProvider;
+mod partner;
+pub use partner::{ASSERTION_TYPE, CarpeDiemPartnerProvider};
 
 /// The discovery document only advertises the sign-in endpoint. Its sign-up
 /// sibling differs by the last path segment, so rewrite that and nothing else.

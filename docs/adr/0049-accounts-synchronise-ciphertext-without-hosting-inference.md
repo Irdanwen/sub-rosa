@@ -57,3 +57,13 @@ crypto/outbox tests and browser/native shared fixture define interoperability.
 Actual deployment, issuer registration, protected storage, restore drills and an
 independent security review remain release gates. A successful local test is not
 evidence of those external properties.
+
+## Addendum 2026-09-30: the service vouches for device keys
+
+[ADR-0069](0069-the-account-gives-birth-to-a-carpe-diem-device-key.md)
+supersedes one clause of this decision: "does not … acquire provider spending
+authority". The service can now vouch to Carpe Diem that a recently
+authenticated device of a verified account may obtain its own key, and it asks
+Carpe Diem to revoke that key with the device. It still never sees a key, a
+balance or a prompt, and still runs nothing. Its PostgreSQL data still contains
+no Carpe Diem key: only an outbox of revocations to deliver.

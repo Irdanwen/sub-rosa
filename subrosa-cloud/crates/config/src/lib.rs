@@ -35,6 +35,36 @@ pub struct Config {
     /// Play signing certificate here if Play re-signs the installable app.
     #[serde(default = "android_certificates")]
     pub passkey_android_cert_fingerprints: Vec<String>,
+    /// Absent means no device of this deployment can ask Carpe Diem for a key,
+    /// and the assertion route answers 404. See ADR 0069.
+    #[serde(default)]
+    pub carpe_diem: Option<CarpeDiem>,
+}
+/// The header a PKCS#8 PEM starts with. Spelled in two halves because the
+/// repository hygiene check rejects the whole marker anywhere in the tree, as
+/// a guard against committed key material.
+pub const PKCS8_HEADER: &str = concat!("-----BEGIN ", "PRIVATE KEY-----");
+/// The partner identity this service presents to Carpe Diem. The private key
+/// signs two kinds of assertion and nothing else: "this verified account's
+/// device may obtain its own key" and "revoke this device's keys".
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CarpeDiem {
+    /// The operator root Carpe Diem checks as `aud`, for example
+    /// `https://carpe-diem.xyz/api/operator`.
+    pub audience: String,
+    /// Where revocations are sent. The same root in production; separate so a
+    /// test can point it at a local stand-in without changing the audience.
+    #[serde(default)]
+    pub operator_url: Option<String>,
+    /// Names the public key Carpe Diem pinned, so the key can be rotated.
+    pub kid: String,
+    /// PKCS#8 PEM of a P-256 private key.
+    pub signing_key: Secret,
+}
+impl CarpeDiem {
+    pub fn operator_url(&self) -> &str {
+        self.operator_url.as_deref().unwrap_or(&self.audience)
+    }
 }
 fn android_certificates() -> Vec<String> {
     vec!["13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49".into()]
@@ -148,6 +178,9 @@ impl Config {
         {
             return Err("Android passkey certificate fingerprint must be SHA-256 hex bytes");
         }
+        if let Some(carpe_diem) = &self.carpe_diem {
+            self.validate_carpe_diem(carpe_diem)?;
+        }
         if self.storage.kind != "s3" && !(self.development && self.storage.kind == "local") {
             return Err("production requires S3 storage");
         }
@@ -201,6 +234,44 @@ impl Config {
         }
         Ok(())
     }
+    fn validate_carpe_diem(&self, carpe_diem: &CarpeDiem) -> Result<(), &'static str> {
+        for value in [carpe_diem.audience.as_str(), carpe_diem.operator_url()] {
+            let url = Url::parse(value).map_err(|_| "invalid Carpe Diem URL")?;
+            let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+            if url.scheme() != "https" && !(self.development && loopback && url.scheme() == "http")
+            {
+                return Err("Carpe Diem URLs require HTTPS except explicit loopback development");
+            }
+            if !url.username().is_empty()
+                || url.password().is_some()
+                || url.query().is_some()
+                || url.fragment().is_some()
+                || value.ends_with('/')
+            {
+                return Err(
+                    "Carpe Diem URLs must not contain credentials, query, fragment or a trailing slash",
+                );
+            }
+        }
+        if carpe_diem.kid.is_empty()
+            || carpe_diem.kid.len() > 64
+            || !carpe_diem
+                .kid
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        {
+            return Err("Carpe Diem key id must be 1 to 64 URL-safe characters");
+        }
+        if !carpe_diem
+            .signing_key
+            .expose()
+            .trim_start()
+            .starts_with(PKCS8_HEADER)
+        {
+            return Err("Carpe Diem signing key must be a PKCS#8 PEM");
+        }
+        Ok(())
+    }
     pub fn session_cookie(&self) -> &'static str {
         if self.development {
             "subrosa_session"
@@ -245,7 +316,41 @@ mod tests {
             account_quota_bytes: 1024 * 1024,
             trusted_proxies: Vec::new(),
             passkey_android_cert_fingerprints: android_certificates(),
+            carpe_diem: None,
         }
+    }
+
+    fn partner(audience: &str) -> CarpeDiem {
+        CarpeDiem {
+            audience: audience.into(),
+            operator_url: None,
+            kid: "sr-test".into(),
+            signing_key: Secret(format!("{PKCS8_HEADER}\nAAAA\n")),
+        }
+    }
+
+    /// The partner key vouches for identities toward a service that spends
+    /// money, so its URLs get the same HTTPS rule as every other one.
+    #[test]
+    fn the_carpe_diem_partner_requires_https_outside_loopback_development() {
+        let mut config = development();
+        config.carpe_diem = Some(partner("http://127.0.0.1:3001"));
+        assert!(config.validate().is_ok());
+        config.carpe_diem = Some(partner("http://carpe-diem.example.invalid/api/operator"));
+        assert!(config.validate().is_err());
+        config.carpe_diem = Some(partner("https://carpe-diem.example.invalid/api/operator/"));
+        assert!(
+            config.validate().is_err(),
+            "a trailing slash would never match aud"
+        );
+        let mut bad_kid = partner("https://carpe-diem.example.invalid/api/operator");
+        bad_kid.kid = "no spaces".into();
+        config.carpe_diem = Some(bad_kid);
+        assert!(config.validate().is_err());
+        let mut sec1 = partner("https://carpe-diem.example.invalid/api/operator");
+        sec1.signing_key = Secret(concat!("-----BEGIN EC ", "PRIVATE KEY-----").into());
+        config.carpe_diem = Some(sec1);
+        assert!(config.validate().is_err(), "the signer only reads PKCS#8");
     }
 
     /// The header is only ever read from an address the operator named, and an

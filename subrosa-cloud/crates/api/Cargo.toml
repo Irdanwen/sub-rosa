@@ -28,6 +28,7 @@ webauthn-rs.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
 figment.workspace = true
 jsonwebtoken.workspace = true
 rand.workspace = true

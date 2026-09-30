@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Generate local deployment material, never contact a server or print secrets."""
 import argparse
+import base64
+import hashlib
 import json
 import os
 import re
@@ -12,6 +14,12 @@ import sys
 from urllib.parse import quote, urlsplit
 
 SIGNATURE_ALGORITHMS = ["ES256", "RS256"]
+PARTNER_KEY = "carpe-diem-partner.pem"
+PARTNER_PUBLIC = "carpe-diem-partner.public.json"
+# DER prefix of a P-256 SubjectPublicKeyInfo; the 65 bytes after it are 04 || x || y.
+# Split so the repository hygiene check, which rejects the whole marker, stays meaningful.
+PKCS8_HEADER = "-----BEGIN " + "PRIVATE KEY-----"
+P256_SPKI_PREFIX = bytes.fromhex("3059301306072a8648ce3d020106082a8648ce3d030107034200")
 
 
 def write(path, text):
@@ -35,6 +43,42 @@ def read_private(path):
     if path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o600:
         raise ValueError("Private input must be a regular mode 0600 file")
     return path.read_text()
+
+
+def b64url(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def carpe_diem_partner(directory, account_origin, audience):
+    """The P-256 key this service signs Carpe Diem assertions with (ADR 0069).
+
+    Generated once, on the first render that names an audience, and never
+    replaced: rotating it is a deliberate act done with Carpe Diem, because
+    Carpe Diem pins the public half. What is written next to the private
+    directory is public material only, shaped as the entry Carpe Diem puts in
+    its PARTNERS_JSON."""
+    origin(audience, True)
+    private = directory / "private"
+    key = private / PARTNER_KEY
+    if not key.exists():
+        pem = subprocess.run(["openssl", "genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"],
+                             check=True, capture_output=True).stdout.decode()
+        write(key, pem)
+    pem = read_private(key)
+    if not pem.startswith(PKCS8_HEADER):
+        raise ValueError("The Carpe Diem partner key must be PKCS#8")
+    der = subprocess.run(["openssl", "pkey", "-pubout", "-outform", "DER"], input=pem.encode(),
+                         check=True, capture_output=True).stdout
+    if len(der) != 91 or not der.startswith(P256_SPKI_PREFIX) or der[26] != 4:
+        raise ValueError("The Carpe Diem partner key must be P-256")
+    x, y = der[27:59], der[59:91]
+    jwk = {"crv": "P-256", "kty": "EC", "x": b64url(x), "y": b64url(y)}
+    canonical = json.dumps(jwk, separators=(",", ":"), sort_keys=True).encode()
+    kid = "sr-" + b64url(hashlib.sha256(canonical).digest())[:16]
+    public = {"id": "subrosa", "issuer": account_origin, "audience": audience,
+              "keys": [{"kid": kid, "jwk": jwk}]}
+    write(directory / PARTNER_PUBLIC, json.dumps(public, indent=2) + "\n")
+    return kid, pem
 
 
 def init(directory, account_origin, identity_base):
@@ -64,6 +108,8 @@ def init(directory, account_origin, identity_base):
         "backup_destination": "",
         "restore_rehearsal_at": "",
         "smtp": {"host": "", "port": "587", "from": "", "user": "", "password": "", "starttls": "true", "ssl": "false", "auth": "true"},
+        # Empty until Carpe Diem is ready to pin this service's key (ADR 0069).
+        "carpe_diem": {"audience": ""},
     }
     write(directory / "operator.json", json.dumps(operator, indent=2) + "\n")
     write(directory / "stack.env", "\n".join([
@@ -167,6 +213,10 @@ ALTER SCHEMA public OWNER TO keycloak;
             raise ValueError("SMTP must require TLS")
         realm["smtpServer"] = smtp
     write(private / "subrosa-realm.json", json.dumps(realm, indent=2) + "\n")
+    partner = None
+    audience = (op.get("carpe_diem") or {}).get("audience") or ""
+    if audience:
+        partner = carpe_diem_partner(directory, s["account_origin"], audience)
     for role, prefix in [("subrosa_runtime", "runtime"), ("subrosa_migrator", "migration")]:
         db = f"postgresql://{role}:{quote(value(prefix + '-password'), safe='')}@postgres:5432/subrosa?sslmode=verify-full&sslrootcert=/run/private/postgres-ca.crt"
         q = json.dumps
@@ -179,6 +229,9 @@ ALTER SCHEMA public OWNER TO keycloak;
                 lines.append(f"{field} = {q(storage.get(field) or ('https://unconfigured.invalid' if field == 'endpoint' else 'UNCONFIGURED'))}")
             if not section.startswith("deletion") and storage.get("conditional_writes") is False:
                 lines.append("conditional_writes = false")
+        if partner:
+            kid, pem = partner
+            lines += ["", "[carpe_diem]", f"audience = {q(audience)}", f"kid = {q(kid)}", f"signing_key = {q(pem)}"]
         write(private / (prefix + ".toml"), "\n".join(lines) + "\n")
 
 

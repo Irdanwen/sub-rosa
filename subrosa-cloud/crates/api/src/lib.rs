@@ -12,7 +12,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
-use subrosa_domain::{Error, Operation, Session};
+use subrosa_domain::{Error, Operation, RevocationReason, Session};
 use subrosa_services::{Service, hash};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -44,6 +44,7 @@ impl IntoResponse for ApiError {
             Error::Pending => (428, "authorization_pending"),
             Error::RecentAuth => (403, "recent_auth_required"),
             Error::Unavailable => (503, "unavailable"),
+            Error::DeviceRequired => (403, "device_required"),
         };
         let mut response = (
             StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
@@ -59,6 +60,7 @@ impl IntoResponse for ApiError {
     }
 }
 type Result<T> = std::result::Result<T, ApiError>;
+mod carpe_diem;
 mod pairing;
 mod passkeys;
 
@@ -67,6 +69,7 @@ pub fn router(service: Service) -> Router {
     let api = Router::new()
         .merge(pairing::routes())
         .merge(passkeys::routes())
+        .merge(carpe_diem::routes())
         .route("/api/v1/me", get(me).delete(delete_me))
         .route("/api/v1/session/refresh", post(refresh_session))
         .route("/api/v1/session/renew", post(renew_session))
@@ -365,6 +368,10 @@ async fn callback(
 #[derive(Deserialize)]
 struct NativeStartQuery {
     request: String,
+    /// `signup` opens the identity provider on its registration form, as the
+    /// browser flow's `intent` does. The destination stays the constant one.
+    #[serde(default)]
+    intent: Option<String>,
 }
 /// The link the app opens. It carries a handle, never a destination: the page
 /// this returns to is a constant in the service.
@@ -372,7 +379,14 @@ async fn native_start(
     State(s): State<Arc<Service>>,
     Query(q): Query<NativeStartQuery>,
 ) -> Result<Response> {
-    let (url, browser) = s.native_login(&q.request).await?;
+    if q.intent
+        .as_ref()
+        .is_some_and(|i| i != "signin" && i != "signup")
+    {
+        return Err(Error::Invalid.into());
+    }
+    let register = q.intent.as_deref() == Some("signup");
+    let (url, browser) = s.native_login(&q.request, register).await?;
     let mut r = Redirect::to(&url).into_response();
     set_cookie(
         &mut r,
@@ -414,7 +428,9 @@ async fn revoke_device(
 ) -> Result<Response> {
     let a = session(&s, &h, true).await?;
     Service::recent(&a)?;
-    s.repository.revoke_device(a.account.id, id).await?;
+    s.repository
+        .revoke_device(a.account.id, id, RevocationReason::DeviceRevoked)
+        .await?;
     Ok(ok(json!({"revoked":true})).into_response())
 }
 #[derive(Deserialize)]

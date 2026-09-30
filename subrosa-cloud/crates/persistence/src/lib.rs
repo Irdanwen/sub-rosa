@@ -4,7 +4,8 @@ use futures_util::TryStreamExt;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use subrosa_domain::{
     Account, Change, Device, DeviceRequest, Error, Identity, JournalPage, LoginAttempt, Operation,
-    OperationResult, Result, Secret, Session, Share, SharePreview, Vault,
+    OperationResult, PendingRevocation, Result, RevocationReason, Secret, Session, Share,
+    SharePreview, Vault,
 };
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -341,7 +342,12 @@ impl Repository {
             Ok(())
         }
     }
-    pub async fn revoke_device(&self, owner: Uuid, id: Uuid) -> Result<()> {
+    pub async fn revoke_device(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+        reason: RevocationReason,
+    ) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
         // Clearing the secret is the point: revoking a device that could renew
         // itself without a browser would otherwise only pause it.
@@ -349,6 +355,12 @@ impl Repository {
         if count == 0 {
             return Err(Error::NotFound);
         }
+        // The Carpe Diem key the device may hold dies with it, written in this
+        // transaction so a crash can lose neither half. On every explicit
+        // revocation, even of a device already marked revoked: a restored
+        // database marks devices revoked without anyone asking Carpe Diem, and
+        // Carpe Diem treats a repeated revocation as a no-op.
+        enqueue_revocation(&mut tx, owner, Some(id), reason).await?;
         sqlx::query("DELETE FROM sessions WHERE account_id=$1 AND device_id=$2")
             .bind(owner)
             .bind(id)
@@ -640,7 +652,8 @@ impl Repository {
             .map_err(db)?
             .ok_or(Error::NotFound)?;
         self.device_for_secret(id, secret_hash).await?;
-        self.revoke_device(owner, id).await
+        self.revoke_device(owner, id, RevocationReason::SignedOut)
+            .await
     }
     pub async fn changes(&self, p: PageParams<'_>) -> Result<JournalPage> {
         let mut tx = self.pool.begin().await.map_err(db)?;
@@ -885,11 +898,23 @@ impl Repository {
             .execute(&mut *tx)
             .await
             .map_err(db)?;
+        // Every device key of the account, and the link itself. Replayed by
+        // `reapply_deletion` after a restore, because it lives in this function.
+        enqueue_revocation(&mut tx, owner, None, RevocationReason::AccountDeleted).await?;
         tx.commit().await.map_err(db)
     }
     /// Run on an isolated restored database before admitting traffic. Never on ordinary boot.
     pub async fn invalidate_restored_sessions(&self) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
+        // Every device about to lose its sessions loses its Carpe Diem key too,
+        // read before the update below marks them all revoked. Without this a
+        // device stolen before the restore keeps a key nobody can revoke any
+        // more, and each re-admitted device mints another, until the account
+        // hits Carpe Diem's cap on active keys.
+        sqlx::query("INSERT INTO partner_revocations(id,subject,device_id,reason) SELECT gen_random_uuid(),account_id,id,'device_revoked' FROM devices WHERE revoked_at IS NULL")
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
         for query in [
             "DELETE FROM pairing_requests",
             "DELETE FROM sessions",
@@ -1136,8 +1161,64 @@ impl Repository {
             tx.commit().await.map_err(db)?;
         }
     }
+    /// The live device's name, which the assertion carries so the person can
+    /// tell their keys apart at Carpe Diem.
+    pub async fn live_device_name(&self, owner: Uuid, id: Uuid) -> Result<String> {
+        sqlx::query_scalar(
+            "SELECT name FROM devices WHERE account_id=$1 AND id=$2 AND revoked_at IS NULL",
+        )
+        .bind(owner)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?
+        .ok_or(Error::Unauthorized)
+    }
+    /// Leases up to `limit` due revocations for five minutes, so a slow
+    /// delivery is not picked up twice by the next tick.
+    pub async fn claim_revocations(&self, limit: i64) -> Result<Vec<PendingRevocation>> {
+        // Delivered in the order they were written, so a device revocation
+        // never arrives after the deletion that followed it. `created_at` is
+        // the transaction time; the id breaks ties inside one transaction.
+        let rows = sqlx::query("WITH due AS (SELECT id FROM partner_revocations WHERE done_at IS NULL AND next_attempt_at<=now() ORDER BY created_at,id LIMIT $1 FOR UPDATE SKIP LOCKED), claimed AS (UPDATE partner_revocations p SET next_attempt_at=now()+interval '5 minutes' FROM due WHERE p.id=due.id RETURNING p.id,p.subject,p.device_id,p.reason,p.attempts,p.created_at) SELECT * FROM claimed ORDER BY created_at,id")
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        rows.iter()
+            .map(|r| {
+                Ok(PendingRevocation {
+                    id: r.get("id"),
+                    subject: r.get("subject"),
+                    device_id: r.get("device_id"),
+                    reason: RevocationReason::parse(r.get("reason")).ok_or(Error::Unavailable)?,
+                    attempts: r.get("attempts"),
+                })
+            })
+            .collect()
+    }
+    pub async fn revocation_delivered(&self, id: Uuid) -> Result<()> {
+        sqlx::query("UPDATE partner_revocations SET done_at=now(),last_error=NULL WHERE id=$1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
+    /// Backs off exponentially from one minute to six hours and never gives
+    /// up: a key that should be dead is worth asking about forever.
+    pub async fn revocation_failed(&self, id: Uuid, error: &str) -> Result<()> {
+        sqlx::query("UPDATE partner_revocations SET attempts=attempts+1, next_attempt_at=now()+make_interval(mins => LEAST(360, power(2, LEAST(attempts, 9))::int)), last_error=$2 WHERE id=$1")
+            .bind(id)
+            .bind(error)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
     pub async fn prune_auth(&self) -> Result<()> {
         for q in [
+            "DELETE FROM partner_revocations WHERE done_at<now()-interval '30 days'",
             "DELETE FROM pairing_requests WHERE expires_at<now()",
             "DELETE FROM session_families WHERE expires_at<now()",
             "DELETE FROM login_attempts WHERE expires_at<now()",
@@ -1149,6 +1230,22 @@ impl Repository {
         }
         Ok(())
     }
+}
+async fn enqueue_revocation(
+    tx: &mut Transaction<'_, Postgres>,
+    subject: Uuid,
+    device_id: Option<Uuid>,
+    reason: RevocationReason,
+) -> Result<()> {
+    sqlx::query("INSERT INTO partner_revocations(id,subject,device_id,reason) VALUES($1,$2,$3,$4)")
+        .bind(Uuid::now_v7())
+        .bind(subject)
+        .bind(device_id)
+        .bind(reason.as_str())
+        .execute(&mut **tx)
+        .await
+        .map_err(db)?;
+    Ok(())
 }
 async fn lock_account(tx: &mut Transaction<'_, Postgres>, owner: Uuid) -> Result<()> {
     sqlx::query("SELECT id FROM accounts WHERE id=$1 FOR UPDATE")

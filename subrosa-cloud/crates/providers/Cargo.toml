@@ -29,3 +29,7 @@ uuid.workspace = true
 hmac.workspace = true
 futures-util.workspace = true
 zeroize.workspace = true
+
+[dev-dependencies]
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+rand.workspace = true

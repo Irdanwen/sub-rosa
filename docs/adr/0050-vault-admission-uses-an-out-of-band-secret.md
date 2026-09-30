@@ -72,3 +72,14 @@ the device holds no key of its own. A device that already has a key is never
 overwritten this way: replacing one stays the explicit, confirmed action in
 Settings. The guided steps now bring the key down before asking about sync.
 Signing in alone still grants nothing.
+
+## Addendum 2026-09-30: a key born with the account is not in the vault
+
+[ADR-0069](0069-the-account-gives-birth-to-a-carpe-diem-device-key.md) adds a
+second kind of Carpe Diem key. A key the person pasted keeps every rule above:
+it reaches another device only through the vault, after the out-of-band
+admission, and replacing a lost one still happens at Carpe Diem. A key born
+with the account belongs to one device, is obtained by that device from Carpe
+Diem after a recent sign-in, is never shared into the vault, and **is** revoked
+when the device is revoked. "Signing in alone still grants nothing" remains
+true of the vault; it is no longer true of a device key, by design.

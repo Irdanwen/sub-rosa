@@ -130,6 +130,50 @@ class BootstrapTest(unittest.TestCase):
             bootstrap.write(op_path, old_op)
             bootstrap.render(self.directory)
 
+    def test_the_carpe_diem_partner_key_is_made_once_and_only_its_public_half_leaves(self):
+        op_path = self.directory / "operator.json"
+        old_op = op_path.read_text()
+        private = self.directory / "private"
+        try:
+            bootstrap.render(self.directory)
+            self.assertNotIn("[carpe_diem]", (private / "runtime.toml").read_text())
+            self.assertFalse((private / bootstrap.PARTNER_KEY).exists(), "no audience, no key")
+
+            op = json.loads(old_op)
+            op["carpe_diem"] = {"audience": "https://carpe-diem.example.com/api/operator"}
+            bootstrap.write(op_path, json.dumps(op))
+            bootstrap.render(self.directory)
+            key = private / bootstrap.PARTNER_KEY
+            self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o600)
+            pem = key.read_text()
+            public = json.loads((self.directory / bootstrap.PARTNER_PUBLIC).read_text())
+            self.assertEqual(public["issuer"], "https://accounts.example.com")
+            self.assertEqual(public["audience"], "https://carpe-diem.example.com/api/operator")
+            [entry] = public["keys"]
+            self.assertEqual(sorted(entry["jwk"]), ["crv", "kty", "x", "y"], "public members only")
+            self.assertEqual(len(entry["jwk"]["x"]), 43)
+            self.assertTrue(entry["kid"].startswith("sr-"))
+            self.assertNotIn("PRIVATE", json.dumps(public))
+            for name in ("runtime.toml", "migration.toml"):
+                rendered = (private / name).read_text()
+                self.assertIn("[carpe_diem]", rendered)
+                self.assertIn(f'kid = "{entry["kid"]}"', rendered)
+
+            # A second render keeps the key Carpe Diem pinned.
+            bootstrap.render(self.directory)
+            self.assertEqual(pem, key.read_text())
+            self.assertEqual(public, json.loads((self.directory / bootstrap.PARTNER_PUBLIC).read_text()))
+
+            op["carpe_diem"] = {"audience": "http://carpe-diem.example.com/api/operator"}
+            bootstrap.write(op_path, json.dumps(op))
+            with self.assertRaises(ValueError):
+                bootstrap.render(self.directory)
+        finally:
+            bootstrap.write(op_path, old_op)
+            for leftover in (private / bootstrap.PARTNER_KEY, self.directory / bootstrap.PARTNER_PUBLIC):
+                leftover.unlink(missing_ok=True)
+            bootstrap.render(self.directory)
+
     def test_tls_certificate_matches_only_private_database_host(self):
         private = self.directory / "private"
         good = subprocess.run(["openssl", "verify", "-CAfile", str(private / "postgres-ca.crt"), "-verify_hostname", "postgres", str(private / "postgres.crt")], capture_output=True)
