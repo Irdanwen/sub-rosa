@@ -76,6 +76,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0065](adr/0065-memory-keeps-itself-current-with-a-journal-and-an-undo.md) — a reflex gates extraction turn by turn and sets each new fact against its closest stored ones; above 0.8 a replacement rewrites the memory in place and a repeat is left out, each recorded in a local journal with a compare-and-set undo; the phone injects the core plus the memories this turn is about once memory outgrows the static block
 - [adr/0066](adr/0066-a-character-sheet-composes-frames-and-never-reaches-video.md) — a `sheet` reference holds nine views of a character in a fixed 3 by 3 grid, drawn from the portrait through an edit model when there is one; it composes opening images and is cut into a portrait and a profile by position, and it never rides in the reference stack sent to a video model
 - [adr/0067](adr/0067-a-film-score-is-a-cue-sheet-anchored-on-shots.md) — a film's music is a mode (one piece or a cue sheet), a shared musical identity and cues anchored on shot ids; the app times each cue from its shots and snaps it to the music model's range, the script reading answers in shot numbers and is proposed, never applied
+- [adr/0068](adr/0068-the-website-localizes-public-paths-without-changing-account-callbacks.md) — English and French public URLs are prerendered separately while account, share and native callback paths keep their existing wire contracts
 
 ## Enforceable rules (spec/)
 
