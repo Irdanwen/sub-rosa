@@ -21,6 +21,8 @@ import { AskNoteOverlay } from "../../ask/AskNoteOverlay";
 import { ActionSheet } from "../ActionSheet";
 import { FolderPickerSheet } from "../FolderPickerSheet";
 import { StackHeader } from "../StackHeader";
+import { requestAddCredits } from "../../../lib/credits-events";
+import { usePayPolicy } from "../../../lib/credits-purchase";
 
 type NoteDetailScreenProps = {
   note?: NoteDto;
@@ -93,6 +95,7 @@ export function NoteDetailScreen({
   // needs somewhere to put the ciphertext.
   const [sharing, setSharing] = useState(false);
   const canShare = useCanShare();
+  const payLinkAllowed = usePayPolicy()?.linkAllowed === true;
   // Export and delete live behind one button. A bin in the header, next to
   // the question button and a thumb's width from the back button, was one
   // mistaken tap from a confirmation nobody wanted to see.
@@ -201,7 +204,7 @@ export function NoteDetailScreen({
             onResumeRecording={onResumeRecording}
             onFinishRecording={onFinishRecording}
             onRetry={onRetry}
-            onTopUp={() => undefined}
+            onTopUp={payLinkAllowed ? requestAddCredits : undefined}
             recovery={recovery}
             onRecoverRecording={onRecoverRecording}
             onDiscardRecording={onDiscardRecording}

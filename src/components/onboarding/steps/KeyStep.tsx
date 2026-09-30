@@ -32,7 +32,7 @@ export function KeyStep({
       )}
       wide
     >
-      {ready ? null : <NewAccountKeyOffer />}
+      <NewAccountKeyOffer ready={ready} />
       <CarpeDiemSettings compact />
       <AccountSetupOffer />
       <p className="welcome-terms" aria-live="polite">

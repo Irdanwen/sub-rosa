@@ -11,6 +11,7 @@ import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../lib/branding";
 import { isMobilePlatform } from "../../lib/mobile";
 import { carpeDiemRestartSidecar } from "../../lib/tauri";
 import { useIssuanceStatus } from "../../lib/carpe-diem-issue";
+import { markFirstPurchasePending, usePayPolicy } from "../../lib/credits-purchase";
 import { NewAccountKeyOffer } from "./NewAccountKeyOffer";
 
 /**
@@ -144,6 +145,7 @@ function PhoneWelcome() {
   const [path, setPath] = useState<WelcomePath>("choose");
   const issuance = useIssuanceStatus();
   const canIssue = issuance?.keyIssuance === true;
+  const payLinkAllowed = usePayPolicy()?.linkAllowed === true;
   const root = useRef<HTMLDivElement>(null);
   // Each path is a new screen: it starts at its top, not wherever the last
   // one was scrolled to.
@@ -247,7 +249,15 @@ function PhoneWelcome() {
               "Your email address is all it takes. Carpe Diem then makes a key for this phone, kept in its secure storage.",
             )}
           </p>
-          <AccountSettingsSection mode="create" onUseKey={() => setPath("key")} />
+          <AccountSettingsSection
+            mode="create"
+            onUseKey={() => setPath("key")}
+            // A new key starts at zero: the shell offers the first credits
+            // once it mounts, where a purchase may be offered at all.
+            onKeyIssued={() => {
+              if (payLinkAllowed) markFirstPurchasePending();
+            }}
+          />
         </div>
       </div>
     );

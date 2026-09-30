@@ -9,7 +9,9 @@ type Props = {
   errorMessage?: string;
   audioPreserved: boolean;
   onRetry: () => void | Promise<void>;
-  onTopUp: () => void;
+  /** Absent where no purchase may be offered: the banner then names the
+   * problem and the retry, and nothing else. */
+  onTopUp?: () => void;
   topUpLabel?: string;
 };
 
@@ -110,18 +112,24 @@ export function NoteFailureBanner({
     <aside className="note-failure-banner" role="alert" data-kind={kind}>
       <p className="note-failure-message">
         {isBalanceIssue
-          ? audioPreserved
-            ? t("Your balance ran out. Your recording is saved locally, so {action} and retry.", {
-                action: topUpAction,
-              })
-            : t("Your balance is too low. {action} to continue.", { action: topUpLabel })
+          ? !onTopUp
+            ? audioPreserved
+              ? t(
+                  "Your balance ran out. Your recording is saved locally, so you can retry once there are credits on your account.",
+                )
+              : t("Your balance is too low to continue.")
+            : audioPreserved
+              ? t("Your balance ran out. Your recording is saved locally, so {action} and retry.", {
+                  action: topUpAction,
+                })
+              : t("Your balance is too low. {action} to continue.", { action: topUpLabel })
           : (displayMessage ?? t("Sub Rosa couldn't finish processing this note."))}
         {!isBalanceIssue && audioPreserved
           ? t(" Your recording is saved locally, so you can retry.")
           : null}
       </p>
       <div className="note-failure-actions">
-        {isBalanceIssue ? (
+        {isBalanceIssue && onTopUp ? (
           <button type="button" className="btn btn-secondary" onClick={onTopUp} disabled={retrying}>
             {topUpLabel}
           </button>

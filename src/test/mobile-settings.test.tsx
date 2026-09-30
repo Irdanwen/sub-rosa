@@ -34,8 +34,15 @@ const tauriMocks = vi.hoisted(() => ({
   carpeDiemRestartSidecar: vi.fn(),
 }));
 
-const topUp = vi.hoisted(() => ({ openTopUp: vi.fn(async () => undefined) }));
-vi.mock("../lib/top-up", () => topUp);
+const purchase = vi.hoisted(() => ({
+  requestAddCredits: vi.fn(),
+  policy: { linkAllowed: false, fiat: true } as { linkAllowed: boolean; fiat: boolean } | null,
+}));
+vi.mock("../lib/credits-events", () => ({
+  requestAddCredits: purchase.requestAddCredits,
+  onCreditsChanged: () => () => {},
+}));
+vi.mock("../lib/credits-purchase", () => ({ usePayPolicy: () => purchase.policy }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: () => Promise.resolve("1.30.0") }));
 vi.mock("../lib/haptics", () => ({
@@ -109,17 +116,21 @@ describe("mobile settings root", () => {
     await waitFor(() => expect(screen.getByText("Off")).toBeInTheDocument());
   });
 
-  it("makes the balance open the account site's Top up tab", async () => {
+  it("offers a top up where the store and the country allow one", async () => {
+    purchase.policy = { linkAllowed: true, fiat: true };
     render(<SettingsScreen onOpen={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: /balance/i }));
-    expect(topUp.openTopUp).toHaveBeenCalled();
+    const card = screen.getByRole("button", { name: /balance, opens Add credits/i });
+    expect(card).toHaveTextContent("Top up");
+    await userEvent.click(card);
+    expect(purchase.requestAddCredits).toHaveBeenCalled();
   });
 
-  it("says so when the Top up page cannot be opened", async () => {
-    topUp.openTopUp.mockRejectedValueOnce(new Error("The link could not be opened yet."));
+  it("shows the balance with no call to buy where none may be offered", async () => {
+    purchase.policy = { linkAllowed: false, fiat: true };
     render(<SettingsScreen onOpen={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: /balance/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("could not be opened");
+    const card = screen.getByRole("button", { name: /balance, opens its details/i });
+    expect(card).not.toHaveTextContent("Top up");
+    expect(card).toHaveTextContent("Details");
   });
 
   it("explains a shortcut instead of copying it silently", async () => {

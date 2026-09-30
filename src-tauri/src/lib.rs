@@ -80,6 +80,7 @@ pub mod share_inbox;
 pub mod share_ios;
 pub mod spotlight;
 pub mod sse_lines;
+pub mod storefront;
 #[cfg(desktop)]
 pub mod stream_relay;
 #[cfg(desktop)]
@@ -582,6 +583,10 @@ pub fn run() {
             carpe_diem::issued::carpe_diem_issue_poll,
             carpe_diem::issued::carpe_diem_issue_cancel,
             carpe_diem::issued::carpe_diem_revoke_issued_key,
+            carpe_diem::billing::carpe_diem_credit_tiers,
+            carpe_diem::billing::carpe_diem_open_checkout,
+            carpe_diem::billing::carpe_diem_purchases,
+            storefront::store_context,
             chat_titles::rename_agent_task,
             carpe_diem::cache_stats::carpe_diem_cache_stats,
             carpe_diem::sidecar::carpe_diem_sidecar_status,
@@ -854,6 +859,10 @@ pub fn run() {
         carpe_diem::issued::carpe_diem_issue_poll,
         carpe_diem::issued::carpe_diem_issue_cancel,
         carpe_diem::issued::carpe_diem_revoke_issued_key,
+        carpe_diem::billing::carpe_diem_credit_tiers,
+        carpe_diem::billing::carpe_diem_open_checkout,
+        carpe_diem::billing::carpe_diem_purchases,
+        storefront::store_context,
         chat_titles::rename_agent_task,
         carpe_diem::cache_stats::carpe_diem_cache_stats,
         carpe_diem::sidecar::carpe_diem_sidecar_status,

@@ -406,10 +406,20 @@ export function AccountPage({ path }: { path: string }) {
  * here, so the page says what happens next before sending anyone elsewhere.
  * No vault needed: nothing here is personal. */
 const CARPE_DIEM_DEPOSIT_URL = "https://carpe-diem.xyz/dashboard/buyer";
+const CARPE_DIEM_PAY_URL = "https://carpe-diem.xyz/pay";
 
-export function TopUp() {
+/** Card payments exist only once Carpe Diem ships its pay page. Until then
+ * the build keeps the USDC deposit path: a primary button to a page that
+ * answers 404 would be worse than the path that works. */
+const CARD_TOPUP = import.meta.env.VITE_CARD_TOPUP === "1";
+
+export function TopUp({ card = CARD_TOPUP }: { card?: boolean } = {}) {
+  return card ? <CardTopUp /> : <DepositTopUp />;
+}
+
+function DepositTopUp() {
   return (
-    <article className="card">
+    <article className="panel">
       <h2>{t("Top up your credits", "Recharger vos crédits")}</h2>
       <p>
         {t(
@@ -450,6 +460,58 @@ export function TopUp() {
           "Sub Rosa never sees your wallet or your payment. The deposit is between you and Carpe Diem.",
           "Sub Rosa ne voit jamais votre portefeuille ni votre paiement. Le dépôt se fait entre vous et Carpe Diem.",
         )}
+      </p>
+    </article>
+  );
+}
+
+function CardTopUp() {
+  return (
+    <article className="card">
+      <h2>{t("Top up your credits", "Recharger vos crédits")}</h2>
+      <p>
+        {t(
+          "Sub Rosa sells nothing. Carpe Diem runs the models and sells the credits, by card in dollars. They land on the account your Sub Rosa devices draw on.",
+          "Sub Rosa ne vend rien. Carpe Diem fait tourner les modèles et vend les crédits, par carte et en dollars. Ils arrivent sur le compte où puisent vos appareils Sub Rosa.",
+        )}
+      </p>
+      <ol className="steps">
+        <li>
+          {t(
+            "Open Carpe Diem's payment page and sign in with the email address of your Sub Rosa account.",
+            "Ouvrez la page de paiement de Carpe Diem et connectez-vous avec l’adresse e-mail de votre compte Sub Rosa.",
+          )}
+        </li>
+        <li>
+          {t("Choose an amount and pay by card.", "Choisissez un montant et payez par carte.")}
+        </li>
+        <li>
+          {t(
+            "Come back to Sub Rosa: the new balance shows within a minute.",
+            "Revenez dans Sub Rosa : le nouveau solde s’affiche en moins d’une minute.",
+          )}
+        </li>
+      </ol>
+      <div className="actions">
+        <a className="button primary" href={CARPE_DIEM_PAY_URL} target="_blank" rel="noreferrer">
+          {t("Pay by card on Carpe Diem", "Payer par carte sur Carpe Diem")} ↗
+        </a>
+        <a className="button" href="subrosa://">
+          {t("Back to Sub Rosa", "Revenir à Sub Rosa")}
+        </a>
+      </div>
+      <p className="quiet">
+        {t(
+          "Sub Rosa never sees your card or your payment. Carpe Diem does not sell credits in a few countries, including the United States; its page says so before you pay.",
+          "Sub Rosa ne voit jamais votre carte ni votre paiement. Carpe Diem ne vend pas de crédits dans quelques pays, dont les États-Unis ; sa page le dit avant tout paiement.",
+        )}
+      </p>
+      <p className="quiet">
+        {t("Your key belongs to a wallet?", "Votre clé appartient à un portefeuille ?")}{" "}
+        <a href={CARPE_DIEM_DEPOSIT_URL} target="_blank" rel="noreferrer">
+          {t("Deposit USDC instead", "Déposer des USDC à la place")}
+        </a>
+        .
       </p>
     </article>
   );

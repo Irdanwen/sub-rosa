@@ -8,7 +8,8 @@ import { type Automation, AUTOMATION_ADDRESSES } from "../../../lib/automations"
 import { messageFromError } from "../../../lib/errors";
 import { openShortcutsApp } from "../../../lib/intents";
 import { isIosPlatform } from "../../../lib/mobile";
-import { openTopUp } from "../../../lib/top-up";
+import { requestAddCredits } from "../../../lib/credits-events";
+import { usePayPolicy } from "../../../lib/credits-purchase";
 import { hapticSelection } from "../../../lib/haptics";
 import { formatCredits } from "../../../lib/studio/catalog";
 import {
@@ -130,7 +131,8 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
   // "Top up" did nothing on an iPhone: the link went to a process launcher
   // iOS does not have. It now opens the account site's Top up tab, and says
   // so when it cannot.
-  const [topUpError, setTopUpError] = useState<string | null>(null);
+  // A purchase control only where the store and the country allow one.
+  const payLinkAllowed = usePayPolicy()?.linkAllowed === true;
 
   const [spotlight, setSpotlight] = useState<SpotlightSettingsDto | null>(null);
   useEffect(() => {
@@ -165,16 +167,20 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
       <StackHeader title={t("Settings")} large />
       <div className="mobile-settings-scroll">
         {credits ? (
-          // Tappable: the balance is the number people come here to check, and
-          // the only useful thing to do with it is top it up.
+          // Tappable: the balance is the number people come here to check. It
+          // opens the credits sheet, which offers a top up only where one may
+          // be offered and otherwise shows the balance and its history.
           <button
             type="button"
             className="mobile-credits-card"
-            aria-label={t("Carpe Diem balance, opens the Top up page")}
+            aria-label={
+              payLinkAllowed
+                ? t("Carpe Diem balance, opens Add credits")
+                : t("Carpe Diem balance, opens its details")
+            }
             onClick={() => {
               hapticSelection();
-              setTopUpError(null);
-              void openTopUp().catch((err) => setTopUpError(messageFromError(err)));
+              requestAddCredits();
             }}
           >
             <span className="mobile-credits-main">
@@ -185,13 +191,10 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
                 {credits.rail === "prepaid" ? t("prepaid balance") : t("credits available")}
               </span>
             </span>
-            <span className="mobile-credits-action">{t("Top up")}</span>
+            <span className="mobile-credits-action">
+              {payLinkAllowed ? t("Top up") : t("Details")}
+            </span>
           </button>
-        ) : null}
-        {topUpError ? (
-          <p className="mobile-settings-result" data-ok="false" role="alert">
-            {topUpError}
-          </p>
         ) : null}
 
         <SettingsGroup title={t("Account")}>

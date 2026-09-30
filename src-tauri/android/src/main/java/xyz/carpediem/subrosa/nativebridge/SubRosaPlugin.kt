@@ -112,6 +112,29 @@ class SubRosaPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /**
+     * Which store installed the app, for the pay-link policy: Google Play
+     * decides whether an app may point to a purchase elsewhere. Null for a
+     * sideloaded APK.
+     */
+    @Command
+    fun installSource(invoke: Invoke) {
+        val installer = try {
+            val packageName = activity.packageName
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                activity.packageManager.getInstallSourceInfo(packageName).installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                activity.packageManager.getInstallerPackageName(packageName)
+            }
+        } catch (_: Exception) {
+            null
+        }
+        val result = JSObject()
+        result.put("installer", installer)
+        invoke.resolve(result)
+    }
+
     @Command
     fun microphonePermission(invoke: Invoke) {
         val state = when (getPermissionState("microphone")) {
