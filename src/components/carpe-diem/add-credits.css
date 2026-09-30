@@ -72,5 +72,10 @@
   font-variant-numeric: tabular-nums;
 }
 .add-credits-history li span:first-child {
+  flex: none;
+  white-space: nowrap;
   color: var(--muted-foreground);
+}
+.add-credits-history li span:last-child {
+  text-align: end;
 }
