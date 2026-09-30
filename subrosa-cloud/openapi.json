@@ -3718,6 +3718,19 @@
               "type": "string"
             },
             "description": "The single-use handle the start response carried. Not a destination."
+          },
+          {
+            "name": "intent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "signin",
+                "signup"
+              ]
+            },
+            "description": "`signup` opens the identity provider on its registration form. The destination does not change."
           }
         ],
         "responses": {
@@ -3726,6 +3739,9 @@
           },
           "404": {
             "description": "Unknown, consumed or expired handle"
+          },
+          "400": {
+            "description": "Unknown intent"
           }
         }
       }
