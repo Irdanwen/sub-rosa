@@ -11,6 +11,7 @@ import {
   pickMusicModel,
   pickTtsModel,
   planShots,
+  resolveShotDuration,
   retargetShotModel,
   routeModels,
   videoFamilies,
@@ -713,5 +714,41 @@ describe("editable project shots", () => {
       shots: [shot()],
     });
     expect(result.unknownPriceNodeIds).toContain("shot-1");
+  });
+});
+
+describe("resolveShotDuration", () => {
+  const kling = model("kling-v3-standard-text-to-video", "video");
+
+  it("paces an automatic shot by its motion, snapped to what the model publishes", () => {
+    expect(resolveShotDuration({ motion: "medium" }, kling)).toEqual({
+      duration: "5s",
+      seconds: 5,
+      automatic: true,
+      supported: true,
+    });
+    expect(resolveShotDuration({ motion: "low" }, kling)).toMatchObject({ seconds: 3 });
+    expect(resolveShotDuration({ motion: "high" }, kling)).toMatchObject({ seconds: 8 });
+  });
+
+  it("keeps a chosen duration, and says when the model does not offer it", () => {
+    expect(resolveShotDuration({ motion: "low", duration: "8s" }, kling)).toMatchObject({
+      seconds: 8,
+      automatic: false,
+      supported: true,
+    });
+    expect(resolveShotDuration({ motion: "low", duration: "7s" }, kling).supported).toBe(false);
+  });
+
+  it("falls back to the default length when the model publishes nothing", () => {
+    const bare = model("mystery-video", "video", { constraints: undefined });
+    expect(resolveShotDuration({ motion: "medium" }, bare)).toMatchObject({
+      duration: "",
+      seconds: 5,
+    });
+    expect(resolveShotDuration({ motion: "medium", duration: 12 }, bare)).toMatchObject({
+      duration: "12",
+      seconds: 12,
+    });
   });
 });

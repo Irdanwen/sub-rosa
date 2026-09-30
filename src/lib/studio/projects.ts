@@ -24,6 +24,9 @@ export interface ProjectShot extends Shot {
   /** The video model the prompt was last written for with AI. A label, not
    * an input: changing it never makes a take stale. */
   promptOptimizedFor?: string;
+  /** The seconds that prompt was paced for. Also a label: a new duration
+   * asks for a new rewrite, it does not invalidate a take. */
+  promptSeconds?: number;
 }
 export interface ProjectBibleEntry extends BibleEntry {
   originId?: string;
@@ -249,6 +252,7 @@ export function shotSignature(
     renderedSignature: _signature,
     imageCandidates: _images,
     promptOptimizedFor: _optimizedFor,
+    promptSeconds: _pacedFor,
     ...input
   } = shot;
   const previous =

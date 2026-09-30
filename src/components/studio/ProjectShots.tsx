@@ -1,11 +1,11 @@
 import { IconExpandSimple } from "central-icons/IconExpandSimple";
 import { type CSSProperties, useState } from "react";
-import { t } from "../../lib/i18n";
+import { intlLocale, t } from "../../lib/i18n";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import { requiresOpeningFrame, videoDirection } from "../../lib/studio/catalog";
 import { maxVideoReferences } from "../../lib/studio/seedance";
 import { effectiveVideoConstraints } from "../../lib/studio/model-constraints";
-import { familyStem, routeModels } from "../../lib/studio/workflow/compile";
+import { familyStem, resolveShotDuration, routeModels } from "../../lib/studio/workflow/compile";
 import {
   newShot,
   shotSignature,
@@ -104,27 +104,39 @@ export function ProjectShots({
     live.find((item) => item.target.kind === "opening" && item.target.shotId === shotId);
   const wait = waitFor(shot?.id);
   const mode = shot?.mode ?? "text";
-  const models = catalog.models.filter(
-    (model) =>
-      !model.offline &&
-      ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType) &&
-      videoDirection(model) === (mode === "continuation" ? "image" : mode),
-  );
   const preferredId = document.settings.videoModelId;
   const routing = routeModels(catalog, preferredId);
-  const routed =
-    mode === "reference"
-      ? routing.reference
-      : mode === "image" || mode === "continuation"
-        ? routing.fromImage
-        : routing.text;
-  const model = shot?.modelId
-    ? models.find((item) => item.id === shot.modelId)
-    : models.find(
-        (item) =>
-          item.id === routed?.id &&
-          (!preferredId || familyStem(item.id) === familyStem(preferredId)),
-      );
+  const modelsFor = (itemMode: ProjectShot["mode"]) =>
+    catalog.models.filter(
+      (model) =>
+        !model.offline &&
+        ["video", "imageToVideo", "referenceToVideo"].includes(model.mediaType) &&
+        videoDirection(model) === (itemMode === "continuation" ? "image" : itemMode),
+    );
+  /** The model a shot renders with: its own, else the project's routing. */
+  const modelOf = (item: ProjectShot | undefined) => {
+    const itemMode = item?.mode ?? "text";
+    const candidates = modelsFor(itemMode);
+    const routed =
+      itemMode === "reference"
+        ? routing.reference
+        : itemMode === "image" || itemMode === "continuation"
+          ? routing.fromImage
+          : routing.text;
+    return item?.modelId
+      ? candidates.find((candidate) => candidate.id === item.modelId)
+      : candidates.find(
+          (candidate) =>
+            candidate.id === routed?.id &&
+            (!preferredId || familyStem(candidate.id) === familyStem(preferredId)),
+        );
+  };
+  const models = modelsFor(mode);
+  const model = modelOf(shot);
+  const timing = shot ? resolveShotDuration(shot, model) : undefined;
+  /** "5 s", said the way a person reads it. */
+  const secondsLabel = (seconds: number) =>
+    t("{seconds} s", { seconds: seconds.toLocaleString(intlLocale()) });
   const constraints = model ? effectiveVideoConstraints(model) : undefined;
   const referenceLimit = maxVideoReferences(model);
   const addReference = (field: "imageReferenceIds" | "referenceArtifactIds", id: string) => {
@@ -191,6 +203,7 @@ export function ProjectShots({
         {document.shots.map((item, number) => {
           const thumbnail = artifacts.find((artifact) => artifact.id === item.openingArtifactId);
           const rowWait = waitFor(item.id);
+          const rowTiming = resolveShotDuration(item, modelOf(item));
           return (
             <button
               key={item.id}
@@ -220,7 +233,7 @@ export function ProjectShots({
                     ? rowWait.phase === "queued"
                       ? t("Queued · {time}", { time: formatElapsed(now - rowWait.startedAt) })
                       : t("Rendering · {time}", { time: formatElapsed(now - rowWait.startedAt) })
-                    : `${item.duration || t("Default duration")} · ${
+                    : `${rowTiming.automatic ? t("{duration}, automatic", { duration: secondsLabel(rowTiming.seconds) }) : secondsLabel(rowTiming.seconds)} · ${
                         item.takeIds.length
                           ? t("{count} takes", { count: item.takeIds.length })
                           : t("Not generated")
@@ -425,9 +438,28 @@ export function ProjectShots({
                   status={
                     shot.promptOptimizedFor ? (
                       shot.promptOptimizedFor === model?.id ? (
-                        <span className="project-badge">
-                          {t("Optimized for {model}", { model: model.name })}
-                        </span>
+                        shot.promptSeconds !== undefined &&
+                        timing &&
+                        shot.promptSeconds !== timing.seconds ? (
+                          <span className="ai-field-stale">
+                            {t(
+                              "This prompt was paced for {previous}. Improve it again for {seconds}.",
+                              {
+                                previous: secondsLabel(shot.promptSeconds),
+                                seconds: secondsLabel(timing.seconds),
+                              },
+                            )}
+                          </span>
+                        ) : (
+                          <span className="project-badge">
+                            {shot.promptSeconds !== undefined
+                              ? t("Optimized for {model}, paced for {seconds}", {
+                                  model: model.name,
+                                  seconds: secondsLabel(shot.promptSeconds),
+                                })
+                              : t("Optimized for {model}", { model: model.name })}
+                          </span>
+                        )
                       ) : (
                         <span className="ai-field-stale">
                           {t(
@@ -444,7 +476,11 @@ export function ProjectShots({
                     ) : null
                   }
                   onAccept={(prompt) =>
-                    update({ prompt, promptOptimizedFor: prompt ? model?.id : undefined })
+                    update({
+                      prompt,
+                      promptOptimizedFor: prompt ? model?.id : undefined,
+                      promptSeconds: prompt ? timing?.seconds : undefined,
+                    })
                   }
                   hint={t("Written in English, the language these video models follow best.")}
                   request={() =>
@@ -461,7 +497,9 @@ export function ProjectShots({
                             camera: shot.camera,
                             speaker: shot.speaker,
                             dialogue: shot.dialogue,
-                            duration: shot.duration ? String(shot.duration) : undefined,
+                            // Always the seconds the take will run, even when the shot
+                            // leaves the choice to the model and its motion.
+                            duration: timing ? String(timing.seconds) : undefined,
                             aspectRatio: document.settings.aspectRatio,
                             entries: document.bible
                               .filter((entry) =>
@@ -570,7 +608,13 @@ export function ProjectShots({
                   value={shot.duration ?? ""}
                   onChange={(event) => update({ duration: event.target.value || undefined })}
                 >
-                  <option value="">{t("Model default")}</option>
+                  <option value="">
+                    {t("Automatic: {duration}", {
+                      duration: secondsLabel(
+                        resolveShotDuration({ ...shot, duration: undefined }, model).seconds,
+                      ),
+                    })}
+                  </option>
                   {shot.duration !== undefined &&
                   !constraints?.durations?.includes(String(shot.duration)) ? (
                     <option value={shot.duration}>{shot.duration}</option>
