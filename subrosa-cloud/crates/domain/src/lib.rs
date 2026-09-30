@@ -42,6 +42,8 @@ pub enum Error {
     RecentAuth,
     #[error("The service is temporarily unavailable.")]
     Unavailable,
+    #[error("Sign in from the app on this device.")]
+    DeviceRequired,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -268,4 +270,69 @@ pub struct DeletionPage {
 pub trait DeletionLedger: Send + Sync {
     async fn record(&self, record: &DeletionRecord) -> Result<()>;
     async fn page(&self, after: Option<&str>) -> Result<DeletionPage>;
+}
+
+/// Why a Carpe Diem device key has to die. The wire names are the contract
+/// (`docs/carpe-diem-partner-contract.md`, section 4), so they are spelled once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RevocationReason {
+    /// The owner revoked the device from another one, or from the website.
+    DeviceRevoked,
+    /// The device signed itself out.
+    SignedOut,
+    /// The whole account was deleted. Carpe Diem also forgets the link.
+    AccountDeleted,
+}
+impl RevocationReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DeviceRevoked => "device_revoked",
+            Self::SignedOut => "signed_out",
+            Self::AccountDeleted => "account_deleted",
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "device_revoked" => Some(Self::DeviceRevoked),
+            "signed_out" => Some(Self::SignedOut),
+            "account_deleted" => Some(Self::AccountDeleted),
+            _ => None,
+        }
+    }
+}
+
+/// What the service vouches for when a device asks Carpe Diem for a key: who
+/// the account is, that its address was verified, which device is asking, and
+/// which ephemeral key the answer must be bound to. Nothing here lets the
+/// service see or spend the key it helps create (ADR 0069).
+#[derive(Clone, Debug)]
+pub struct IssuanceClaims {
+    pub subject: Uuid,
+    pub email: String,
+    pub device_id: Uuid,
+    pub device_name: String,
+    /// RFC 7638 thumbprint of the app's ephemeral P-256 key, base64url.
+    pub jkt: String,
+}
+#[derive(Debug, Serialize)]
+pub struct IssuanceAssertion {
+    pub assertion: Secret,
+    pub expires_at: DateTime<Utc>,
+}
+/// One durable row of the revocation outbox.
+#[derive(Clone, Debug)]
+pub struct PendingRevocation {
+    pub id: Uuid,
+    pub subject: Uuid,
+    pub device_id: Option<Uuid>,
+    pub reason: RevocationReason,
+    pub attempts: i32,
+}
+/// The only two things the service may ask of Carpe Diem: vouch for an
+/// identity so a device can obtain its own key, and ask for keys to be
+/// revoked. There is deliberately no way to read a key, a balance or to spend.
+#[async_trait]
+pub trait CarpeDiemPartner: Send + Sync {
+    fn issuance_assertion(&self, claims: &IssuanceClaims) -> Result<IssuanceAssertion>;
+    async fn revoke(&self, revocation: &PendingRevocation) -> Result<()>;
 }

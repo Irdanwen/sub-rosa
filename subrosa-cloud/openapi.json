@@ -4815,6 +4815,122 @@
           }
         ]
       }
+    },
+    "/api/v1/carpe-diem/assertion": {
+      "post": {
+        "summary": "Vouch to Carpe Diem that this recently authenticated app device may obtain its own key bound to jkt (ADR 0069). The Carpe Diem key is never returned here",
+        "description": "See docs/carpe-diem-partner-contract.md section 1. The assertion is an ES256 JWS, typ partner-assertion+jwt, valid 120 seconds, carried by the app to the Carpe Diem operator with a DPoP proof from the same ephemeral key.",
+        "security": [
+          {
+            "nativeSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "jkt": {
+                    "type": "string",
+                    "description": "RFC 7638 SHA-256 thumbprint of the app's ephemeral P-256 key, base64url without padding",
+                    "minLength": 43,
+                    "maxLength": 43
+                  }
+                },
+                "required": [
+                  "jkt"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "assertion": {
+                          "type": "string"
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "assertion",
+                        "expires_at"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid thumbprint or unknown field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "device_required for a browser session, recent_auth_required when the session is older than 300 seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "This deployment has no Carpe Diem partner configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "More than 5 assertions per minute for this account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

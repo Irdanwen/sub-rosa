@@ -106,6 +106,7 @@ impl Fixture {
             passkey_android_cert_fingerprints: vec![
                 "13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49".into(),
             ],
+            carpe_diem: None,
         };
         config.validate().map_err(anyhow::Error::msg)?;
         let provider = Arc::new(OidcProvider::discover(config.clone()).await?);
@@ -2040,4 +2041,423 @@ async fn bearer_delete(f: &Fixture, token: &Value, device: &Value) -> Result<Sta
     )
     .await?
     .status())
+}
+
+// ---------------------------------------------------------------------------
+// Carpe Diem device keys (ADR 0069, docs/carpe-diem-partner-contract.md).
+// A wiremock server stands in for the Carpe Diem operator.
+// ---------------------------------------------------------------------------
+
+const JKT: &str = "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I";
+
+struct Partner {
+    app: Router,
+    service: Service,
+    operator: MockServer,
+    public: jsonwebtoken::DecodingKey,
+}
+impl Partner {
+    async fn arm(f: &Fixture) -> Result<Self> {
+        use p256::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
+        let operator = MockServer::start().await;
+        let secret = p256::SecretKey::random(&mut rand::rngs::OsRng);
+        let pem = secret.to_pkcs8_pem(LineEnding::LF)?.to_string();
+        let public = secret.public_key().to_public_key_pem(LineEnding::LF)?;
+        let mut config = (*f.service.config).clone();
+        config.carpe_diem = Some(subrosa_config::CarpeDiem {
+            audience: "http://127.0.0.1:3001".into(),
+            operator_url: Some(operator.uri()),
+            kid: "sr-test".into(),
+            signing_key: Secret(pem),
+        });
+        config.validate().map_err(anyhow::Error::msg)?;
+        let partner = subrosa_providers::CarpeDiemPartnerProvider::new(&config)?
+            .context("partner configured")?;
+        let service = f.service.clone().with_carpe_diem(Some(Arc::new(partner)));
+        Ok(Self {
+            app: subrosa_api::router(service.clone()),
+            service,
+            operator,
+            public: jsonwebtoken::DecodingKey::from_ec_pem(public.as_bytes())?,
+        })
+    }
+    async fn assertion(&self, token: &Value, body: Value) -> Result<(StatusCode, Value)> {
+        bearer(
+            &self.app,
+            "POST",
+            "/api/v1/carpe-diem/assertion",
+            token,
+            body,
+        )
+        .await
+    }
+    fn claims(&self, jws: &str) -> Result<Value> {
+        let header = jsonwebtoken::decode_header(jws)?;
+        assert_eq!(header.alg, Algorithm::ES256);
+        assert_eq!(header.typ.as_deref(), Some("partner-assertion+jwt"));
+        assert_eq!(header.kid.as_deref(), Some("sr-test"));
+        let mut validation = jsonwebtoken::Validation::new(Algorithm::ES256);
+        validation.set_audience(&["http://127.0.0.1:3001"]);
+        validation.set_issuer(&["http://localhost:8787"]);
+        Ok(jsonwebtoken::decode::<Value>(jws, &self.public, &validation)?.claims)
+    }
+}
+async fn bearer(
+    app: &Router,
+    method: &str,
+    path: &str,
+    token: &Value,
+    body: Value,
+) -> Result<(StatusCode, Value)> {
+    decode_response(
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .header(
+                        header::AUTHORIZATION,
+                        format!("Bearer {}", token.as_str().context("access")?),
+                    )
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(serde_json::to_vec(&body)?))?,
+            )
+            .await?,
+    )
+    .await
+}
+/// Signs a device in natively and hands back its token bundle.
+async fn app_device(f: &Fixture, subject: &str, name: &str) -> Result<Value> {
+    let verifier = format!("{}{}", subject, "q".repeat(43 - subject.len()));
+    let (_, start) = f
+        .public("/api/v1/device-login", native_start(&verifier, name))
+        .await?;
+    let returned = f.native_sign_in(subject, start["data"].clone()).await?;
+    let (status, token) = f
+        .public(
+            "/api/v1/device-login/exchange",
+            json!({"request_id":start["data"]["request_id"],"verifier":verifier,"return_code":returned.return_code}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    Ok(token["data"].clone())
+}
+async fn outbox(f: &Fixture) -> Result<Vec<(Uuid, Option<Uuid>, String, i32, bool)>> {
+    Ok(sqlx::query_as(
+        "SELECT subject,device_id,reason,attempts,done_at IS NOT NULL FROM partner_revocations ORDER BY created_at",
+    )
+    .fetch_all(&f.pool)
+    .await?)
+}
+
+#[tokio::test]
+async fn a_recent_app_session_gets_an_assertion_bound_to_its_own_key() -> Result<()> {
+    let f = Fixture::new().await?;
+    let p = Partner::arm(&f).await?;
+    let token = app_device(&f, "alice", "Alice laptop").await?;
+    let (status, body) = p
+        .assertion(&token["access_token"], json!({"jkt": JKT}))
+        .await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let claims = p.claims(body["data"]["assertion"].as_str().context("assertion")?)?;
+    assert_eq!(claims["sub"], token["account"]["id"]);
+    assert_eq!(claims["email"], "alice@example.test");
+    assert_eq!(claims["email_verified"], true);
+    assert_eq!(claims["device_id"], token["device_id"]);
+    assert_eq!(claims["device_name"], "Alice laptop");
+    assert_eq!(claims["scope"], "key:issue");
+    assert_eq!(claims["cnf"]["jkt"], JKT);
+    assert_eq!(
+        claims["exp"].as_i64().context("exp")? - claims["iat"].as_i64().context("iat")?,
+        120
+    );
+    assert!(body["data"]["expires_at"].is_string());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_assertion_needs_a_recent_app_session_and_a_real_thumbprint() -> Result<()> {
+    let f = Fixture::new().await?;
+    let p = Partner::arm(&f).await?;
+
+    // A browser has no device to bind a key to.
+    let browser = f.login("carol").await?;
+    let r = p
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/carpe-diem/assertion")
+                .header(header::COOKIE, &browser.cookie)
+                .header(header::ORIGIN, "http://localhost:8787")
+                .header("x-csrf-token", &browser.csrf)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(&json!({"jkt": JKT}))?))?,
+        )
+        .await?;
+    let (status, body) = decode_response(r).await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "device_required");
+
+    // No session at all.
+    let (status, _) = decode_response(
+        p.app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/carpe-diem/assertion")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(serde_json::to_vec(&json!({"jkt": JKT}))?))?,
+            )
+            .await?,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let token = app_device(&f, "dave", "Dave phone").await?;
+    for bad in [
+        json!({"jkt": "short"}),
+        json!({"jkt": format!("{JKT}=")}),
+        json!({"jkt": JKT, "sub": "someone else"}),
+        json!({}),
+    ] {
+        let (status, body) = p.assertion(&token["access_token"], bad.clone()).await?;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad} -> {body}");
+    }
+
+    // A session that is not recent, like one renewed by the device secret,
+    // keeps the device signed in but cannot mint it a key.
+    sqlx::query("UPDATE sessions SET authenticated_at=now()-interval '1 hour'")
+        .execute(&f.pool)
+        .await?;
+    let (status, body) = p
+        .assertion(&token["access_token"], json!({"jkt": JKT}))
+        .await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "recent_auth_required");
+    Ok(())
+}
+
+#[tokio::test]
+async fn assertions_are_rate_limited_per_account() -> Result<()> {
+    let f = Fixture::new().await?;
+    let p = Partner::arm(&f).await?;
+    let token = app_device(&f, "erin", "Erin laptop").await?;
+    for _ in 0..5 {
+        let (status, _) = p
+            .assertion(&token["access_token"], json!({"jkt": JKT}))
+            .await?;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, body) = p
+        .assertion(&token["access_token"], json!({"jkt": JKT}))
+        .await?;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_deployment_without_a_partner_answers_not_found_before_asking_for_a_session() -> Result<()>
+{
+    let f = Fixture::new().await?;
+    let (status, body) = f
+        .public("/api/v1/carpe-diem/assertion", json!({"jkt": JKT}))
+        .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "not_found");
+    Ok(())
+}
+
+#[tokio::test]
+async fn revoking_a_device_revokes_its_carpe_diem_key_until_carpe_diem_answers() -> Result<()> {
+    let f = Fixture::new().await?;
+    let p = Partner::arm(&f).await?;
+    let token = app_device(&f, "frank", "Frank laptop").await?;
+    let device = token["device_id"].clone();
+    let subject = Uuid::parse_str(token["account"]["id"].as_str().context("account")?)?;
+
+    // Carpe Diem is down the first time.
+    Mock::given(method("POST"))
+        .and(path("/partner/keys/revoke"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&p.operator)
+        .await;
+    let (status, _) = bearer(
+        &p.app,
+        "DELETE",
+        &format!("/api/v1/devices/{}", device.as_str().context("device")?),
+        &token["access_token"],
+        json!({}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let device_uuid = Uuid::parse_str(device.as_str().context("device")?)?;
+    assert_eq!(
+        outbox(&f).await?,
+        vec![(
+            subject,
+            Some(device_uuid),
+            "device_revoked".into(),
+            0,
+            false
+        )]
+    );
+
+    p.service.maintenance().await?;
+    let rows = outbox(&f).await?;
+    assert_eq!(rows[0].3, 1, "the failure is counted");
+    assert!(!rows[0].4, "and the row stays pending");
+    let backed_off: bool = sqlx::query_scalar(
+        "SELECT next_attempt_at > now() + interval '30 seconds' FROM partner_revocations",
+    )
+    .fetch_one(&f.pool)
+    .await?;
+    assert!(backed_off, "the next attempt waits");
+    // A tick before the backoff elapses does not call again.
+    p.service.maintenance().await?;
+    assert_eq!(
+        p.operator
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .len(),
+        1
+    );
+
+    // Carpe Diem is back and the backoff has elapsed.
+    p.operator.reset().await;
+    Mock::given(method("POST"))
+        .and(path("/partner/keys/revoke"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok":true,"revoked":1})))
+        .mount(&p.operator)
+        .await;
+    sqlx::query("UPDATE partner_revocations SET next_attempt_at=now()-interval '1 second'")
+        .execute(&f.pool)
+        .await?;
+    p.service.maintenance().await?;
+    assert!(outbox(&f).await?[0].4, "delivered");
+    let requests = p.operator.received_requests().await.unwrap_or_default();
+    assert_eq!(requests.len(), 1);
+    let authorization = requests[0]
+        .headers
+        .get("authorization")
+        .context("authorization")?
+        .to_str()?;
+    let jws = authorization
+        .strip_prefix("PartnerAssertion ")
+        .context("partner scheme")?;
+    let claims = p.claims(jws)?;
+    assert_eq!(claims["sub"], subject.to_string());
+    assert_eq!(claims["scope"], "key:revoke");
+    assert_eq!(claims["device_id"], device);
+    assert_eq!(claims["reason"], "device_revoked");
+    assert!(
+        claims.get("cnf").is_none(),
+        "a revocation is not bound to a device key"
+    );
+
+    // Revoking the same device again asks nothing more of Carpe Diem.
+    let other = app_device(&f, "frank", "Frank phone").await?;
+    let (status, _) = bearer(
+        &p.app,
+        "DELETE",
+        &format!("/api/v1/devices/{}", device.as_str().context("device")?),
+        &other["access_token"],
+        json!({}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(outbox(&f).await?.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn signing_out_and_deleting_the_account_each_leave_a_revocation() -> Result<()> {
+    let f = Fixture::new().await?;
+    let p = Partner::arm(&f).await?;
+    Mock::given(method("POST"))
+        .and(path("/partner/keys/revoke"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok":true,"revoked":0})))
+        .mount(&p.operator)
+        .await;
+    let token = app_device(&f, "grace", "Grace laptop").await?;
+    let subject = Uuid::parse_str(token["account"]["id"].as_str().context("account")?)?;
+    let (status, _) = f
+        .public(
+            "/api/v1/session/renounce",
+            json!({"device_id":token["device_id"],"device_secret":token["device_secret"]}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(outbox(&f).await?[0].2, "signed_out");
+
+    let phone = app_device(&f, "grace", "Grace phone").await?;
+    let (status, _) = bearer(
+        &p.app,
+        "DELETE",
+        "/api/v1/me",
+        &phone["access_token"],
+        json!({}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let rows = outbox(&f).await?;
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1], (subject, None, "account_deleted".into(), 0, false));
+
+    // A restored backup that still holds the account replays the deletion, and
+    // with it the revocation: the deletion path is the one that writes it.
+    sqlx::query(
+        "INSERT INTO accounts(id,issuer,subject,email) VALUES($1,$2,'grace','grace@example.test')",
+    )
+    .bind(subject)
+    .bind(f.idp.uri())
+    .execute(&f.pool)
+    .await?;
+    p.service.repository.reapply_deletion(subject).await?;
+    let replayed = outbox(&f).await?;
+    assert_eq!(replayed.len(), 3);
+    assert_eq!(replayed[2].2, "account_deleted");
+
+    p.service.maintenance().await?;
+    assert!(outbox(&f).await?.iter().all(|row| row.4), "all delivered");
+    let reasons: Vec<String> = p
+        .operator
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|r| {
+            let jws = r.headers.get("authorization")?.to_str().ok()?;
+            let claims = p.claims(jws.strip_prefix("PartnerAssertion ")?).ok()?;
+            Some(format!(
+                "{}:{}",
+                claims["reason"].as_str()?,
+                claims["device_id"].is_null()
+            ))
+        })
+        .collect();
+    assert_eq!(
+        reasons,
+        [
+            "signed_out:false",
+            "account_deleted:true",
+            "account_deleted:true"
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn restoring_a_database_revokes_no_carpe_diem_key_by_itself() -> Result<()> {
+    let f = Fixture::new().await?;
+    let _token = app_device(&f, "heidi", "Heidi laptop").await?;
+    f.service.repository.invalidate_restored_sessions().await?;
+    assert!(
+        outbox(&f).await?.is_empty(),
+        "re-issuing on the same device already rotates its key"
+    );
+    Ok(())
 }

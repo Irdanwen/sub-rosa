@@ -12,7 +12,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
-use subrosa_domain::{Error, Operation, Session};
+use subrosa_domain::{Error, Operation, RevocationReason, Session};
 use subrosa_services::{Service, hash};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -44,6 +44,7 @@ impl IntoResponse for ApiError {
             Error::Pending => (428, "authorization_pending"),
             Error::RecentAuth => (403, "recent_auth_required"),
             Error::Unavailable => (503, "unavailable"),
+            Error::DeviceRequired => (403, "device_required"),
         };
         let mut response = (
             StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
@@ -59,6 +60,7 @@ impl IntoResponse for ApiError {
     }
 }
 type Result<T> = std::result::Result<T, ApiError>;
+mod carpe_diem;
 mod pairing;
 mod passkeys;
 
@@ -67,6 +69,7 @@ pub fn router(service: Service) -> Router {
     let api = Router::new()
         .merge(pairing::routes())
         .merge(passkeys::routes())
+        .merge(carpe_diem::routes())
         .route("/api/v1/me", get(me).delete(delete_me))
         .route("/api/v1/session/refresh", post(refresh_session))
         .route("/api/v1/session/renew", post(renew_session))
@@ -414,7 +417,9 @@ async fn revoke_device(
 ) -> Result<Response> {
     let a = session(&s, &h, true).await?;
     Service::recent(&a)?;
-    s.repository.revoke_device(a.account.id, id).await?;
+    s.repository
+        .revoke_device(a.account.id, id, RevocationReason::DeviceRevoked)
+        .await?;
     Ok(ok(json!({"revoked":true})).into_response())
 }
 #[derive(Deserialize)]

@@ -6,9 +6,9 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use subrosa_config::Config;
 use subrosa_domain::{
-    BlobStore, DeviceLogin, DeviceRequest, Error, IdentityProvider, KINDS, Landing, LoginAttempt,
-    NativeLogin, Operation, OperationResult, Result, Secret, Session, Share, StartedDevice,
-    TokenResponse,
+    BlobStore, CarpeDiemPartner, DeviceLogin, DeviceRequest, Error, IdentityProvider,
+    IssuanceAssertion, IssuanceClaims, KINDS, Landing, LoginAttempt, NativeLogin, Operation,
+    OperationResult, Result, Secret, Session, Share, StartedDevice, TokenResponse,
 };
 use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
@@ -19,6 +19,7 @@ pub struct Service {
     identity: Arc<dyn IdentityProvider>,
     storage: Arc<dyn BlobStore>,
     ledger: Option<Arc<dyn subrosa_domain::DeletionLedger>>,
+    carpe_diem: Option<Arc<dyn CarpeDiemPartner>>,
 }
 /// Where sign-in may send the browser back to. An allowlist rather than a shape
 /// test, because the parameter is attacker-supplied and an open redirect on the
@@ -35,8 +36,15 @@ const RETURN_TO: &[&str] = &[
     "/account/library",
     "/account/provider",
     "/account/security",
+    "/account/top-up",
     "/account/usage",
 ];
+
+/// How many issuance assertions one account may ask for per minute. A person
+/// signs in and asks once per device; anything faster is grinding.
+const ASSERTIONS_PER_MINUTE: i32 = 5;
+/// How many revocations one maintenance tick delivers.
+const REVOCATIONS_PER_TICK: i64 = 50;
 
 /// How many shares one account may have answering at once. A bound on the
 /// public surface, not a product limit anybody should reach: the links expire.
@@ -85,7 +93,84 @@ impl Service {
             identity,
             storage,
             ledger: None,
+            carpe_diem: None,
         }
+    }
+    /// Arms the Carpe Diem partner (ADR 0069). Without it the assertion route
+    /// answers 404 and revocations wait in the outbox.
+    #[must_use]
+    pub fn with_carpe_diem(mut self, partner: Option<Arc<dyn CarpeDiemPartner>>) -> Self {
+        self.carpe_diem = partner;
+        self
+    }
+    pub fn carpe_diem_enabled(&self) -> bool {
+        self.carpe_diem.is_some()
+    }
+    /// Vouches, to Carpe Diem, that this recently authenticated device of a
+    /// verified account may obtain its own key bound to `jkt`. The key itself
+    /// is created and delivered by Carpe Diem to the app; it never passes here.
+    ///
+    /// Only an app's session on a live device qualifies: a browser has no
+    /// device to bind the key to, and a session renewed by the device secret
+    /// is not recent (ADR 0056), so a stolen secret can keep a device signed in
+    /// but can never mint it a key.
+    pub async fn carpe_diem_assertion(
+        &self,
+        session: &Session,
+        jkt: &str,
+    ) -> Result<IssuanceAssertion> {
+        let partner = self.carpe_diem.as_ref().ok_or(Error::NotFound)?;
+        let device_id = match session.device_id {
+            Some(id) if !session.browser => id,
+            _ => return Err(Error::DeviceRequired),
+        };
+        Self::recent(session)?;
+        self.repository
+            .rate_limit(
+                &hash(format!("carpe-diem-assertion:{}", session.account.id)),
+                ASSERTIONS_PER_MINUTE,
+            )
+            .await?;
+        if !valid_thumbprint(jkt) {
+            return Err(Error::Invalid);
+        }
+        let name = self
+            .repository
+            .live_device_name(session.account.id, device_id)
+            .await?;
+        partner.issuance_assertion(&IssuanceClaims {
+            subject: session.account.id,
+            email: session.account.email.clone(),
+            device_id,
+            device_name: name.chars().take(64).collect(),
+            jkt: jkt.into(),
+        })
+    }
+    /// Delivers due revocations. A failure stays in the outbox with its
+    /// backoff; nothing here can block the rest of maintenance.
+    async fn deliver_revocations(&self) -> Result<()> {
+        let Some(partner) = &self.carpe_diem else {
+            return Ok(());
+        };
+        for revocation in self
+            .repository
+            .claim_revocations(REVOCATIONS_PER_TICK)
+            .await?
+        {
+            match partner.revoke(&revocation).await {
+                Ok(()) => self.repository.revocation_delivered(revocation.id).await?,
+                Err(error) => {
+                    tracing::warn!(
+                        attempts = revocation.attempts + 1,
+                        "Carpe Diem revocation will be retried"
+                    );
+                    self.repository
+                        .revocation_failed(revocation.id, &error.to_string())
+                        .await?;
+                }
+            }
+        }
+        Ok(())
     }
     #[must_use]
     pub fn with_deletion_ledger(
@@ -548,13 +633,19 @@ impl Service {
         }
         self.repository.delete_account(session.account.id).await
     }
+    /// The periodic loop. Deletion replay runs first because a restored account
+    /// must be erased before anything else; revocations are delivered even when
+    /// replay failed, since a dead link to the ledger is no reason to keep a
+    /// Carpe Diem key alive.
     pub async fn maintenance(&self) -> Result<()> {
-        maintain(
+        let replay = maintain(
             &self.repository,
             self.storage.as_ref(),
             self.ledger.as_deref(),
         )
-        .await
+        .await;
+        let delivery = self.deliver_revocations().await;
+        replay.and(delivery)
     }
 }
 fn normalize_code(code: &str) -> String {
@@ -562,6 +653,14 @@ fn normalize_code(code: &str) -> String {
         .filter(|c| !c.is_whitespace() && *c != '-')
         .flat_map(char::to_uppercase)
         .collect()
+}
+/// An RFC 7638 SHA-256 thumbprint, base64url without padding: 43 characters
+/// that decode to exactly 32 bytes. Anything else is refused before signing.
+fn valid_thumbprint(jkt: &str) -> bool {
+    jkt.len() == 43
+        && URL_SAFE_NO_PAD
+            .decode(jkt)
+            .is_ok_and(|bytes| bytes.len() == 32)
 }
 fn valid_code(code: &str) -> bool {
     code.len() == 8
@@ -598,4 +697,32 @@ pub async fn maintain(
         repository.cleaned_key(&key).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RETURN_TO, valid_thumbprint};
+
+    #[test]
+    fn a_thumbprint_is_exactly_a_base64url_sha256() {
+        assert!(valid_thumbprint(
+            "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"
+        ));
+        for bad in [
+            "",
+            "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4",
+            "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I=",
+            "0ZcOCORZNYy+DWpqq30jZyJGHTN0d2HglBV3uiguA4I",
+            "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I0",
+        ] {
+            assert!(!valid_thumbprint(bad), "{bad}");
+        }
+    }
+
+    /// The app opens the top-up page and the page offers "sign in" from it.
+    /// Without this entry that link answered `invalid_request`.
+    #[test]
+    fn the_top_up_page_can_be_returned_to_after_sign_in() {
+        assert!(RETURN_TO.contains(&"/account/top-up"));
+    }
 }
