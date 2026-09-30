@@ -4308,6 +4308,7 @@ dependencies = [
  "objc2-core-spotlight",
  "objc2-event-kit",
  "objc2-foundation",
+ "p256",
  "pdf-extract",
  "quick-xml",
  "rand 0.9.5",

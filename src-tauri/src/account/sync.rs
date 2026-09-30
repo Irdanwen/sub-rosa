@@ -1634,6 +1634,15 @@ pub async fn share_credential(app: &AppHandle) -> Result<(), AppError> {
     let pool = pool(app).await?;
     let s = session(&pool).await?;
     let key = vault_key(&s)?;
+    // A device key belongs to this device (ADR-0069): every other device gets
+    // its own from the account, and revoking one must not leave a copy alive
+    // in the vault.
+    if crate::carpe_diem::settings::issued_meta().is_some() {
+        return Err(AppError::new(
+            "carpe_diem_issued_not_shared",
+            "This device's key was created for it alone. Your other devices get their own when they sign in.",
+        ));
+    }
     let (provider_base, provider) =
         crate::carpe_diem::settings::credentials().ok_or_else(|| error("carpe_diem_no_api_key"))?;
     let mut tx = pool.begin().await?;

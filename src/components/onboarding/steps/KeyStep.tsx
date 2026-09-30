@@ -3,6 +3,7 @@ import { t } from "../../../lib/i18n";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../../lib/branding";
 import { CarpeDiemSettings } from "../../settings/CarpeDiemSettings";
 import { StepActions, StepCard } from "../StepChrome";
+import { NewAccountKeyOffer } from "../../carpe-diem/NewAccountKeyOffer";
 
 /**
  * The key, as a step of the first run rather than a gate in front of it.
@@ -31,6 +32,7 @@ export function KeyStep({
       )}
       wide
     >
+      {ready ? null : <NewAccountKeyOffer />}
       <CarpeDiemSettings compact />
       <AccountSetupOffer />
       <p className="welcome-terms" aria-live="polite">

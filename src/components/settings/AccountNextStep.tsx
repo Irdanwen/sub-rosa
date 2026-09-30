@@ -1,5 +1,6 @@
 import { t } from "../../lib/i18n";
 import type { AccountStep } from "../../lib/account-next-step";
+import { DeviceKeyIssue } from "../carpe-diem/DeviceKeyIssue";
 
 /**
  * The account panel is a page of controls. This says which one matters now, so
@@ -47,6 +48,12 @@ export function AccountNextStep({
       title: t("Bring your Carpe Diem key to this device"),
       detail: t("It is restored from your vault; nothing is typed again."),
     },
+    "issue-key": {
+      title: t("Create this device's Carpe Diem key"),
+      detail: t(
+        "Carpe Diem creates it from your account. It stays on this device and draws on your account's credits.",
+      ),
+    },
   };
   const { title, detail } = copy[step.id];
 
@@ -64,6 +71,7 @@ export function AccountNextStep({
           </button>
         </div>
       ) : null}
+      {step.id === "issue-key" ? <DeviceKeyIssue /> : null}
     </div>
   );
 }

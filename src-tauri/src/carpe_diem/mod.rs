@@ -13,6 +13,7 @@ mod artifact_format;
 pub mod branding;
 pub mod cache_stats;
 pub mod issue_reports;
+pub mod issued;
 pub mod jobs;
 pub mod local_session;
 pub mod media;

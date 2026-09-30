@@ -23,6 +23,8 @@ import { type CacheUsage, hasMeasuredTurns, parseCacheUsage } from "../../lib/ca
 import { messageFromError } from "../../lib/errors";
 import { CARPE_DIEM_DASHBOARD_URL, CARPE_DIEM_KEY_PREFIX } from "../../lib/branding";
 import { SegmentedControl } from "../ui/SegmentedControl";
+import { keyOrigin } from "../../lib/carpe-diem-issue";
+import { IssuedKeyRow } from "../carpe-diem/IssuedKeyRow";
 
 /** The two Carpe Diem endpoint rails the user chooses between. */
 type EndpointChoice = "v1" | "router";
@@ -381,6 +383,7 @@ export function CarpeDiemSettings({
 
   const hasApiKey = settings?.hasApiKey ?? false;
   const canSaveKey = keyDraft.trim().length > 0;
+  const issued = hasApiKey && keyOrigin(settings) === "issued";
 
   const endpointRow = (
     <div className="settings-row">
@@ -416,6 +419,15 @@ export function CarpeDiemSettings({
       <div className="settings-card">
         <div className="settings-rows">
           {firstRun ? null : endpointRow}
+
+          {issued ? (
+            <IssuedKeyRow
+              onChanged={async () => {
+                setTest({ kind: "idle" });
+                await refresh();
+              }}
+            />
+          ) : null}
 
           {/* API key */}
           <div className="settings-row settings-row-venice-key">

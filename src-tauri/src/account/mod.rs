@@ -1,5 +1,6 @@
 //! Optional account service. Identity tokens and decryption keys never cross
 //! the webview boundary. Signing out leaves local work intact.
+pub(crate) mod carpe_diem_link;
 pub mod conversations;
 pub mod crypto;
 mod files;
@@ -832,6 +833,7 @@ pub async fn account_revoke_device(app: AppHandle, device_id: String) -> Result<
             .await?;
         let _refresh_guard = REFRESH_LOCK.lock().await;
         clear_all_secrets(|kind| remove_secret(&s.base, &s.account.id, kind))?;
+        forget_issued_key(&app).await;
     }
     Ok(())
 }
@@ -898,9 +900,18 @@ pub async fn account_logout(app: AppHandle) -> Result<AccountStatus, AppError> {
             _ => {}
         }
         cleanup?;
+        forget_issued_key(&app).await;
     }
     drop(refresh_guard);
     account_status(app).await
+}
+/// A device key is the account's, handed to this device (ADR-0069). When the
+/// device leaves the account it goes too, here at once and at Carpe Diem
+/// through the service's own revocation. A pasted key is untouched.
+async fn forget_issued_key(app: &AppHandle) {
+    if let Err(failure) = crate::carpe_diem::issued::forget_issued_key(app).await {
+        tracing::warn!(code = %failure.code, "issued key not cleared locally");
+    }
 }
 fn clear_all_secrets(mut remove: impl FnMut(&str) -> Result<(), AppError>) -> Result<(), AppError> {
     let mut first = None;
@@ -933,6 +944,7 @@ pub async fn account_delete(app: AppHandle) -> Result<(), AppError> {
         .await?;
     let _refresh_guard = REFRESH_LOCK.lock().await;
     clear_all_secrets(|kind| remove_secret(&s.base, &s.account.id, kind))?;
+    forget_issued_key(&app).await;
     Ok(())
 }
 #[tauri::command]
