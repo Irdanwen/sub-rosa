@@ -97,11 +97,12 @@ describe("the phone's welcome", () => {
     expect(screen.queryByText("Create a Sub Rosa account or sign in")).toBeNull();
   });
 
-  it("takes a new person to the key, with the endpoint folded away, and back", () => {
+  it("takes a new person to the key, with the endpoint folded away, and back", async () => {
     render(<CarpeDiemGate reason="no-key" />);
     fireEvent.click(screen.getByRole("button", { name: /I am new here/ }));
 
-    expect(screen.getByRole("heading", { name: "Start with your key" })).toBeInTheDocument();
+    // Carpe Diem cannot make keys in this test, so "new" still means a key.
+    expect(await screen.findByRole("heading", { name: "Start with your key" })).toBeInTheDocument();
     expect(screen.getByTestId("settings")).toHaveAttribute("data-first-run", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));

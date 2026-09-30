@@ -10,6 +10,8 @@ import { BrandPrimaryButton } from "../ui/BrandPrimaryButton";
 import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../lib/branding";
 import { isMobilePlatform } from "../../lib/mobile";
 import { carpeDiemRestartSidecar } from "../../lib/tauri";
+import { useIssuanceStatus } from "../../lib/carpe-diem-issue";
+import { NewAccountKeyOffer } from "./NewAccountKeyOffer";
 
 /**
  * First-run gate: shown until a Carpe Diem API key is configured and the
@@ -78,6 +80,7 @@ export function CarpeDiemGate({
                 )}
         </p>
 
+        {failed ? null : <NewAccountKeyOffer />}
         <AccountSetupOffer />
         <CarpeDiemSettings compact />
 
@@ -123,7 +126,7 @@ export function CarpeDiemGate({
   );
 }
 
-type WelcomePath = "choose" | "returning" | "key";
+type WelcomePath = "choose" | "returning" | "key" | "new";
 
 /**
  * The phone's first screen asks one question before it shows any control:
@@ -132,9 +135,15 @@ type WelcomePath = "choose" | "returning" | "key";
  * new one pastes a key. Showing both at once, with the account panel folded
  * above the key form, left a returning person scrolling through settings they
  * did not need to find the one that let them in.
+ *
+ * When Carpe Diem can make a key from the account (ADR-0069), "I am new here"
+ * means an email address and nothing else, and pasting a key becomes the
+ * third answer for someone who already has one.
  */
 function PhoneWelcome() {
   const [path, setPath] = useState<WelcomePath>("choose");
+  const issuance = useIssuanceStatus();
+  const canIssue = issuance?.keyIssuance === true;
   const root = useRef<HTMLDivElement>(null);
   // Each path is a new screen: it starts at its top, not wherever the last
   // one was scrolled to.
@@ -174,15 +183,30 @@ function PhoneWelcome() {
               </span>
               <IconChevronRightSmall size={16} aria-hidden />
             </button>
-            <button type="button" className="welcome-path" onClick={() => setPath("key")}>
+            {/* Which way "new" goes is decided when it is taken, not when the
+                list is drawn: the answer from Carpe Diem may still be on its way. */}
+            <button type="button" className="welcome-path" onClick={() => setPath("new")}>
               <span className="welcome-path-text">
                 <strong>{t("I am new here")}</strong>
-                <span>{t("Paste your Carpe Diem key to start.")}</span>
+                <span>
+                  {canIssue
+                    ? t("Create your account with your email. Your key is made for you.")
+                    : t("Paste your Carpe Diem key to start.")}
+                </span>
               </span>
               <IconChevronRightSmall size={16} aria-hidden />
             </button>
+            {canIssue ? (
+              <button type="button" className="welcome-path" onClick={() => setPath("key")}>
+                <span className="welcome-path-text">
+                  <strong>{t("I have a Carpe Diem key")}</strong>
+                  <span>{t("Paste it to start, without an account.")}</span>
+                </span>
+                <IconChevronRightSmall size={16} aria-hidden />
+              </button>
+            ) : null}
           </div>
-          {footer}
+          {canIssue ? null : footer}
         </div>
       </div>
     );
@@ -199,6 +223,36 @@ function PhoneWelcome() {
     </button>
   );
 
+  if (path === "new" && issuance === null) {
+    return (
+      <div ref={root} className="welcome-screen welcome-screen-phone">
+        <div className="welcome-card welcome-card-wide">
+          {back}
+          <p role="status" className="welcome-subtitle">
+            {t("Checking Carpe Diem…")}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (path === "new" && canIssue) {
+    return (
+      <div ref={root} className="welcome-screen welcome-screen-phone">
+        <div className="welcome-card welcome-card-wide">
+          {back}
+          <h1 className="welcome-title">{t("Create your account")}</h1>
+          <p className="welcome-subtitle">
+            {t(
+              "Your email address is all it takes. Carpe Diem then makes a key for this phone, kept in its secure storage.",
+            )}
+          </p>
+          <AccountSettingsSection mode="create" onUseKey={() => setPath("key")} />
+        </div>
+      </div>
+    );
+  }
+
   if (path === "returning") {
     return (
       <div ref={root} className="welcome-screen welcome-screen-phone">
@@ -206,9 +260,13 @@ function PhoneWelcome() {
           {back}
           <h1 className="welcome-title">{t("Welcome back")}</h1>
           <p className="welcome-subtitle">
-            {t(
-              "Sign in, then open your vault from a device that is already open or with your recovery key. Your Carpe Diem key comes back by itself.",
-            )}
+            {canIssue
+              ? t(
+                  "Sign in, and your Carpe Diem key follows: from your vault if you keep one, or made for this phone from your account.",
+                )
+              : t(
+                  "Sign in, then open your vault from a device that is already open or with your recovery key. Your Carpe Diem key comes back by itself.",
+                )}
           </p>
           <AccountSettingsSection mode="restore" onUseKey={() => setPath("key")} />
         </div>

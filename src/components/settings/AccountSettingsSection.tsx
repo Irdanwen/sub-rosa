@@ -44,6 +44,8 @@ import {
   openExternalUrl,
 } from "../../lib/tauri";
 import { SIDECAR_STATUS_EVENT } from "./CarpeDiemSettings";
+import { keyOrigin, useIssuanceStatus, withSignupIntent } from "../../lib/carpe-diem-issue";
+import { DeviceKeyIssue } from "../carpe-diem/DeviceKeyIssue";
 import { InlineNotice } from "../ui/InlineNotice";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import "./account-settings.css";
@@ -57,16 +59,27 @@ type KeyRestore = "idle" | "restoring" | "restored" | "missing" | "failed";
  * `mode="restore"` is the phone's "I already use Sub Rosa" path at the key
  * gate: sign in, open the vault, and the Carpe Diem key comes back by itself.
  * Everything that only matters once the app runs (sync, devices, sharing,
- * deletion) waits for Settings, so the way out is never below the fold. */
+ * deletion) waits for Settings, so the way out is never below the fold.
+ *
+ * `mode="create"` is the new person's path (ADR-0069): the account page opens
+ * on its registration form, and once they are back the device's Carpe Diem key
+ * is created from the account. No vault, no key to paste. */
 export function AccountSettingsSection({
   mode = "settings",
   onUseKey,
+  onKeyIssued,
 }: {
-  mode?: "settings" | "restore";
-  /** Restore mode: leave for the paste-a-key path. */
+  mode?: "settings" | "restore" | "create";
+  /** Restore and create modes: leave for the paste-a-key path. */
   onUseKey?: () => void;
+  /** A device key was just created for this device. */
+  onKeyIssued?: () => void;
 } = {}) {
-  const restoring = mode === "restore";
+  const creating = mode === "create";
+  const restoring = mode === "restore" || creating;
+  const issuance = useIssuanceStatus();
+  const canIssue = issuance?.keyIssuance === true;
+  const [issuedKey, setIssuedKey] = useState(false);
   const [status, setStatus] = useState<AccountStatus | null>(null);
   // `null` until the keychain answers: an unknown key must not trigger a
   // restore that would replace one.
@@ -254,13 +267,20 @@ export function AccountSettingsSection({
   // is followed afterwards, because a key restored or pasted elsewhere on the
   // screen changes the answer.
   useEffect(() => {
-    carpeDiemGetSettings()
-      .then((settings) => {
-        if (mounted.current) setHasLocalKey(settings.hasApiKey);
-      })
-      .catch(() => undefined);
+    const read = () =>
+      carpeDiemGetSettings()
+        .then((settings) => {
+          if (!mounted.current) return;
+          setHasLocalKey(settings.hasApiKey);
+          setIssuedKey(keyOrigin(settings) === "issued");
+        })
+        .catch(() => undefined);
+    void read();
     const unlisten = listen<CarpeDiemSidecarStatusDto>(SIDECAR_STATUS_EVENT, (event) => {
-      if (mounted.current) setHasLocalKey(event.payload.hasApiKey);
+      if (!mounted.current) return;
+      setHasLocalKey(event.payload.hasApiKey);
+      // Where the key came from is not in the event; ask again.
+      void read();
     }).catch(() => () => {});
     return () => {
       void unlisten.then((stop) => stop()).catch(() => {});
@@ -300,10 +320,12 @@ export function AccountSettingsSection({
   const nativePasskey =
     serverUrl.trim() === "https://subrosa.furetier.com" && supportsNativePasskeys();
 
-  /** The ordinary way in: the real page opens, and it hands the app back. */
-  async function startLogin() {
+  /** The ordinary way in: the real page opens, and it hands the app back.
+   * `signup` opens it on the registration form instead. */
+  async function startLogin(signup = false) {
     await accountConfigure(serverUrl.trim());
-    const next = await accountLoginOpen(chosenDeviceName());
+    const opened_ = await accountLoginOpen(chosenDeviceName());
+    const next = signup ? { ...opened_, start_url: withSignupIntent(opened_.start_url) } : opened_;
     if (mounted.current) setNative(next);
     const opened = await openExternalUrl(next.start_url);
     if (!opened && mounted.current) {
@@ -436,24 +458,98 @@ export function AccountSettingsSection({
    * follows. Only what that needs is here; the rest waits for Settings. */
   function renderRestore(current: AccountStatus) {
     const email = current.account?.email;
+    const header = (
+      <div className="settings-card account-card">
+        <div className="account-heading-row">
+          <IconShieldCheck size={20} />
+          <strong>{email}</strong>
+        </div>
+        <div className="account-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy || keyRestore === "restoring"}
+            onClick={() => setConfirmation({ kind: "logout" })}
+          >
+            {t("Use another account")}
+          </button>
+        </div>
+      </div>
+    );
+    const keyFromAccount = (lead: string) => (
+      <>
+        {header}
+        <AccountCard title={t("Your Carpe Diem key")}>
+          <p className="settings-row-description">{lead}</p>
+          <DeviceKeyIssue autoStart onUseKey={onUseKey} onIssued={onKeyIssued} />
+        </AccountCard>
+      </>
+    );
+    if (creating) {
+      // Only a device with no key at all gets one without being asked: a key
+      // that is already here is never replaced behind the person's back.
+      if (canIssue && hasLocalKey === false) {
+        return keyFromAccount(
+          t(
+            "Carpe Diem creates a key for this device from your account. Nothing to copy, nothing to paste.",
+          ),
+        );
+      }
+      return (
+        <>
+          {header}
+          {hasLocalKey ? (
+            <AccountCard title={t("Your Carpe Diem key")}>
+              <p role="status" className="settings-row-description">
+                {issuedKey
+                  ? t("This device has its own key now. It draws on your account's credits.")
+                  : t("This device already has a Carpe Diem key. It stays as it is.")}
+              </p>
+            </AccountCard>
+          ) : issuance === null || hasLocalKey === null ? (
+            <p role="status" className="settings-row-description">
+              {t("Checking Carpe Diem…")}
+            </p>
+          ) : (
+            <AccountCard title={t("Your Carpe Diem key")}>
+              <InlineNotice
+                body={t(
+                  "Creating a key from your account is not available yet. Paste a Carpe Diem key instead.",
+                )}
+              />
+              {onUseKey ? (
+                <div className="account-actions">
+                  <button type="button" className="primary-action primary-solid" onClick={onUseKey}>
+                    {t("Paste a key instead")}
+                  </button>
+                </div>
+              ) : null}
+            </AccountCard>
+          )}
+        </>
+      );
+    }
+    // A vault may hold the key this person already paid into, so it comes
+    // first when there is one. A device key from the account is the answer
+    // when there is none, or when the vault turns out to be empty.
+    if (canIssue && hasLocalKey === false && current.vault_unlocked && keyRestore === "missing") {
+      return keyFromAccount(
+        t("Your vault holds no key, so this device gets its own from your account."),
+      );
+    }
+    if (
+      canIssue &&
+      hasLocalKey === false &&
+      current.vault_exists === false &&
+      !current.vault_unlocked
+    ) {
+      return keyFromAccount(
+        t("This device gets its own key from your account. It draws on your account's credits."),
+      );
+    }
     return (
       <>
-        <div className="settings-card account-card">
-          <div className="account-heading-row">
-            <IconShieldCheck size={20} />
-            <strong>{email}</strong>
-          </div>
-          <div className="account-actions">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy || keyRestore === "restoring"}
-              onClick={() => setConfirmation({ kind: "logout" })}
-            >
-              {t("Use another account")}
-            </button>
-          </div>
-        </div>
+        {header}
         {current.vault_unlocked ? (
           <AccountCard title={t("Your Carpe Diem key")}>
             {keyRestore === "missing" ? (
@@ -511,6 +607,21 @@ export function AccountSettingsSection({
               )}
             </p>
             {renderVaultUnlock(current)}
+            {canIssue ? (
+              <details className="account-advanced">
+                <summary>{t("Or create a new key for this device")}</summary>
+                <p className="settings-row-description">
+                  {t(
+                    "Opening your vault brings back the key you used before, with its credits. A new key draws on your account's credits instead.",
+                  )}
+                </p>
+                <DeviceKeyIssue
+                  onUseKey={onUseKey}
+                  onIssued={onKeyIssued}
+                  actionLabel={t("Create a new key")}
+                />
+              </details>
+            ) : null}
           </AccountCard>
         )}
       </>
@@ -555,13 +666,21 @@ export function AccountSettingsSection({
         </button>
       ) : !status.account ? (
         <div className="settings-card account-card">
-          <h3 className="settings-row-title">{t("Sign in to Sub Rosa")}</h3>
+          <h3 className="settings-row-title">
+            {creating ? t("Create your account") : t("Sign in to Sub Rosa")}
+          </h3>
           <p className="settings-row-description">
-            {nativePasskey
-              ? t("Use a passkey on this device, or continue in your browser to create an account.")
-              : t(
-                  "The page opens in your browser. Enter your address and password there, and it brings you straight back here.",
-                )}
+            {creating
+              ? t(
+                  "The page opens in your browser. Enter your email address and choose a password, confirm the address, and it brings you back here with your Carpe Diem key ready.",
+                )
+              : nativePasskey
+                ? t(
+                    "Use a passkey on this device, or continue in your browser to create an account.",
+                  )
+                : t(
+                    "The page opens in your browser. Enter your address and password there, and it brings you straight back here.",
+                  )}
           </p>
           {native ? (
             <div className="account-form">
@@ -595,10 +714,10 @@ export function AccountSettingsSection({
               className="account-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                void run(startLogin);
+                void run(() => startLogin(creating));
               }}
             >
-              {nativePasskey && (
+              {nativePasskey && !creating && (
                 <button
                   type="button"
                   className="primary-action primary-solid"
@@ -610,11 +729,27 @@ export function AccountSettingsSection({
               )}
               <button
                 type="submit"
-                className={nativePasskey ? "btn btn-secondary" : "primary-action primary-solid"}
+                className={
+                  nativePasskey && !creating ? "btn btn-secondary" : "primary-action primary-solid"
+                }
                 disabled={busy || !serverUrl.trim()}
               >
-                {busy ? t("Opening…") : t("Sign in or create an account")}
+                {busy
+                  ? t("Opening…")
+                  : creating
+                    ? t("Create my account")
+                    : t("Sign in or create an account")}
               </button>
+              {creating ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={busy || !serverUrl.trim()}
+                  onClick={() => void run(() => startLogin(false))}
+                >
+                  {t("I already have an account")}
+                </button>
+              ) : null}
               <p className="settings-row-description">
                 {t("Continue securely at {address}.", { address: serverUrl })}
               </p>
@@ -715,6 +850,7 @@ export function AccountSettingsSection({
               recoveryConfirmed: status.recovery_confirmed,
               syncEnabled: status.sync_enabled,
               hasLocalKey: hasLocalKey ?? false,
+              keyIssuance: canIssue,
             })}
             busy={busy}
             onRestoreKey={() => setConfirmation({ kind: "restore-key" })}
@@ -936,29 +1072,35 @@ export function AccountSettingsSection({
 
           <AccountCard title={t("Carpe Diem on your devices")}>
             <p className="settings-row-description">
-              {t(
-                "Share the key already saved on this device through your encrypted vault, or use the key you saved from another device.",
-              )}
+              {issuedKey
+                ? t(
+                    "This device's key was created for it from your account, and stays on it. Your other devices get their own when they sign in.",
+                  )
+                : t(
+                    "Share the key already saved on this device through your encrypted vault, or use the key you saved from another device.",
+                  )}
             </p>
             <div className="account-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={
-                  busy ||
-                  !status.vault_unlocked ||
-                  !status.recovery_confirmed ||
-                  Boolean(newRecoveryKey)
-                }
-                onClick={() =>
-                  void run(
-                    accountVaultShareCarpeDiem,
-                    t("Your saved Carpe Diem key has been shared through your vault."),
-                  )
-                }
-              >
-                {t("Share this device's key")}
-              </button>
+              {issuedKey ? null : (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={
+                    busy ||
+                    !status.vault_unlocked ||
+                    !status.recovery_confirmed ||
+                    Boolean(newRecoveryKey)
+                  }
+                  onClick={() =>
+                    void run(
+                      accountVaultShareCarpeDiem,
+                      t("Your saved Carpe Diem key has been shared through your vault."),
+                    )
+                  }
+                >
+                  {t("Share this device's key")}
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -1088,6 +1230,17 @@ export function AccountSettingsSection({
                     : t(
                         "Your local notes stay on this device. Your account session and access to encrypted sync will be removed.",
                       )}
+            {issuedKey &&
+            (confirmation?.kind === "logout" ||
+              confirmation?.kind === "delete" ||
+              (confirmation?.kind === "revoke" && confirmation.device.id === status?.device_id)) ? (
+              <>
+                <br />
+                {t(
+                  "This device's Carpe Diem key stops working too. Your credits stay on your account; signing in again creates a new key.",
+                )}
+              </>
+            ) : null}
           </>
         }
         confirmLabel={

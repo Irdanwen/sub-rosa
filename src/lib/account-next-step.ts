@@ -5,6 +5,9 @@
  * Connecting an app is five moves: sign in, open or create the vault, confirm
  * recovery when creating it, bring the Carpe Diem key to a device that needs
  * it, then consent to sync. Existing devices skip completed moves.
+ *
+ * When Carpe Diem can create a key from the account (ADR-0069), the key moves
+ * up to second: it needs no vault, and a device without one cannot run at all.
  */
 export type AccountStepId =
   | "sign-in"
@@ -13,6 +16,7 @@ export type AccountStepId =
   | "confirm-recovery"
   | "enable-sync"
   | "restore-key"
+  | "issue-key"
   | "done";
 
 export type AccountStep = {
@@ -33,6 +37,8 @@ export function accountNextStep(state: {
   syncEnabled: boolean;
   /** Whether this device already holds a Carpe Diem key of its own. */
   hasLocalKey: boolean;
+  /** Carpe Diem can create this device's key from the account. */
+  keyIssuance?: boolean;
 }): AccountStep {
   const step = (id: AccountStepId, index: number): AccountStep => ({
     id,
@@ -40,6 +46,14 @@ export function accountNextStep(state: {
     total: ACCOUNT_STEP_TOTAL,
   });
   if (!state.signedIn) return step("sign-in", 1);
+  if (state.keyIssuance) {
+    if (!state.hasLocalKey) return step("issue-key", 2);
+    if (state.vaultExists !== true) return step("create-vault", 3);
+    if (!state.vaultUnlocked) return step("open-vault", 3);
+    if (!state.recoveryConfirmed) return step("confirm-recovery", 4);
+    if (!state.syncEnabled) return step("enable-sync", 5);
+    return step("done", ACCOUNT_STEP_TOTAL);
+  }
   if (state.vaultExists !== true) return step("create-vault", 2);
   if (!state.vaultUnlocked) return step("open-vault", 2);
   if (!state.recoveryConfirmed) return step("confirm-recovery", 3);

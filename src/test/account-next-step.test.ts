@@ -95,3 +95,54 @@ describe("the next account step", () => {
     expect(seen.every((n) => n <= ACCOUNT_STEP_TOTAL)).toBe(true);
   });
 });
+
+describe("the next account step when Carpe Diem can make the key", () => {
+  const fresh = {
+    signedIn: true,
+    vaultExists: false,
+    vaultUnlocked: false,
+    recoveryConfirmed: false,
+    syncEnabled: false,
+    hasLocalKey: false,
+    keyIssuance: true,
+  };
+
+  it("makes the key right after signing in, before any vault", () => {
+    const step = accountNextStep(fresh);
+    expect(step).toEqual({ id: "issue-key", index: 2, total: ACCOUNT_STEP_TOTAL });
+  });
+
+  it("then walks the vault and sync steps, numbered after the key", () => {
+    expect(accountNextStep({ ...fresh, hasLocalKey: true })).toEqual({
+      id: "create-vault",
+      index: 3,
+      total: ACCOUNT_STEP_TOTAL,
+    });
+    expect(
+      accountNextStep({ ...fresh, hasLocalKey: true, vaultExists: true, vaultUnlocked: true }).id,
+    ).toBe("confirm-recovery");
+    expect(
+      accountNextStep({
+        ...fresh,
+        hasLocalKey: true,
+        vaultExists: true,
+        vaultUnlocked: true,
+        recoveryConfirmed: true,
+      }).id,
+    ).toBe("enable-sync");
+  });
+
+  it("never asks to restore a key from the vault", () => {
+    const step = accountNextStep({
+      ...fresh,
+      vaultExists: true,
+      vaultUnlocked: true,
+      recoveryConfirmed: true,
+    });
+    expect(step.id).toBe("issue-key");
+  });
+
+  it("still starts with signing in", () => {
+    expect(accountNextStep({ ...fresh, signedIn: false }).id).toBe("sign-in");
+  });
+});
