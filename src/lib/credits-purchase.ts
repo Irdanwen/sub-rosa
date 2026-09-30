@@ -26,8 +26,10 @@ export const carpeDiemPurchases = () => invoke<Purchase[]>("carpe_diem_purchases
 export const storeContext = () => invoke<StoreContext>("store_context");
 
 export {
+  markFirstPurchasePending,
   notifyCreditsChanged,
   onAddCreditsRequested,
+  takeFirstPurchasePending,
   onCreditsChanged,
   requestAddCredits,
 } from "./credits-events";

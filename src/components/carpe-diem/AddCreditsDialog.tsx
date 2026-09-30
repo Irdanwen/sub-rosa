@@ -8,6 +8,7 @@ import {
   carpeDiemPurchases,
   formatUsdCents,
   onAddCreditsRequested,
+  takeFirstPurchasePending,
   usePayPolicy,
   watchForPayment,
 } from "../../lib/credits-purchase";
@@ -215,7 +216,7 @@ function formatPurchaseDate(value: string) {
  * `requestAddCredits()`; the shell does not have to thread a callback down.
  */
 export function AddCreditsHost() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => takeFirstPurchasePending());
   useEffect(() => onAddCreditsRequested(() => setOpen(true)), []);
   // Mounted only while open, so its balance poll runs only while it is seen.
   return open ? <AddCreditsDialog open onClose={() => setOpen(false)} /> : null;

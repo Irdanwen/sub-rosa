@@ -1,7 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddCreditsDialog, AddCreditsHost } from "../components/carpe-diem/AddCreditsDialog";
-import { onCreditsChanged, requestAddCredits } from "../lib/credits-events";
+import {
+  markFirstPurchasePending,
+  onCreditsChanged,
+  requestAddCredits,
+} from "../lib/credits-events";
 import {
   FAST_POLL_MS,
   FAST_POLL_WINDOW_MS,
@@ -210,6 +214,17 @@ describe("the Add credits sheet", () => {
     );
     expect(mocks.openDashboard).toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: /\$10/ })).toBeNull();
+  });
+
+  it("opens once by itself after a key was just made from the account", async () => {
+    markFirstPurchasePending();
+    const { unmount } = render(<AddCreditsHost />);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    unmount();
+    // Taken once: the next mount of the shell does not open it again.
+    render(<AddCreditsHost />);
+    await act(async () => undefined);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("opens from anywhere through one request", async () => {
