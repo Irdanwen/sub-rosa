@@ -408,7 +408,64 @@ export function AccountPage({ path }: { path: string }) {
 const CARPE_DIEM_DEPOSIT_URL = "https://carpe-diem.xyz/dashboard/buyer";
 const CARPE_DIEM_PAY_URL = "https://carpe-diem.xyz/pay";
 
-export function TopUp() {
+/** Card payments exist only once Carpe Diem ships its pay page. Until then
+ * the build keeps the USDC deposit path: a primary button to a page that
+ * answers 404 would be worse than the path that works. */
+const CARD_TOPUP = import.meta.env.VITE_CARD_TOPUP === "1";
+
+export function TopUp({ card = CARD_TOPUP }: { card?: boolean } = {}) {
+  return card ? <CardTopUp /> : <DepositTopUp />;
+}
+
+function DepositTopUp() {
+  return (
+    <article className="panel">
+      <h2>{t("Top up your credits", "Recharger vos crédits")}</h2>
+      <p>
+        {t(
+          "Sub Rosa sells nothing. The models run at Carpe Diem, and your credits are bought there, in USDC, from the wallet that owns your key.",
+          "Sub Rosa ne vend rien. Les modèles tournent chez Carpe Diem, et vos crédits s’achètent là-bas, en USDC, depuis le portefeuille qui possède votre clé.",
+        )}
+      </p>
+      <ol className="steps">
+        <li>{t("Open Carpe Diem's deposit page.", "Ouvrez la page de dépôt de Carpe Diem.")}</li>
+        <li>
+          {t(
+            "Connect the wallet that owns your key and choose an amount.",
+            "Connectez le portefeuille qui possède votre clé et choisissez un montant.",
+          )}
+        </li>
+        <li>
+          {t(
+            "Come back to Sub Rosa: the new balance shows within a minute.",
+            "Revenez dans Sub Rosa : le nouveau solde s’affiche en moins d’une minute.",
+          )}
+        </li>
+      </ol>
+      <div className="actions">
+        <a
+          className="button primary"
+          href={CARPE_DIEM_DEPOSIT_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t("Top up on Carpe Diem", "Recharger sur Carpe Diem")} ↗
+        </a>
+        <a className="button" href="subrosa://">
+          {t("Back to Sub Rosa", "Revenir à Sub Rosa")}
+        </a>
+      </div>
+      <p className="quiet">
+        {t(
+          "Sub Rosa never sees your wallet or your payment. The deposit is between you and Carpe Diem.",
+          "Sub Rosa ne voit jamais votre portefeuille ni votre paiement. Le dépôt se fait entre vous et Carpe Diem.",
+        )}
+      </p>
+    </article>
+  );
+}
+
+function CardTopUp() {
   return (
     <article className="card">
       <h2>{t("Top up your credits", "Recharger vos crédits")}</h2>
