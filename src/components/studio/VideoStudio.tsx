@@ -43,6 +43,7 @@ import {
   takesReferenceAudio,
   takesReferenceClips,
 } from "../../lib/studio/seedance";
+import { takesKlingReferences } from "../../lib/studio/kling";
 import {
   dataUriSeconds,
   mediaSeconds,
@@ -437,6 +438,12 @@ export function VideoStudio({
         openingFrame: effectiveSurface === "shot" ? openingFrame : undefined,
         endFrame: effectiveSurface === "shot" ? endFrame : undefined,
         references: effectiveSurface === "shot" ? outgoingReferences : undefined,
+        // The chain's anchor is the look of the previous clip, a stage rather
+        // than an identity: kling takes it as a scene image, after the
+        // person's own photos have taken the elements.
+        referenceRoles: anchoring
+          ? [...references.map(() => undefined), { scene: true }]
+          : undefined,
         referenceVideos:
           effectiveSurface === "shot" ? referenceClips.map((clip) => clip.dataUri) : undefined,
         referenceVideoSeconds:
@@ -457,6 +464,8 @@ export function VideoStudio({
       openingFrame,
       endFrame,
       outgoingReferences,
+      anchoring,
+      references,
       referenceClips,
       referenceAudio,
       sourceVideo,
@@ -774,7 +783,7 @@ export function VideoStudio({
   }, [queueBody]);
   const canSubmit =
     Boolean(queueBody()) && (!needsConsent || consent) && missingFields.length === 0 && !oversize;
-  /** This family wants the frame the clip starts from, on top of the photos.
+  /** This variant wants the frame the clip starts from, on top of the photos.
    * The body refuses to build without it, so the button is already disabled;
    * this is what says why. */
   const needsOpeningFrame = Boolean(
@@ -1018,10 +1027,11 @@ export function VideoStudio({
                 {references.map((reference, index) => (
                   <div key={`${index}-${reference.slice(-24)}`} className="studio-edit-source">
                     <img src={reference} alt={t("Reference {count}", { count: index + 1 })} />
-                    {references.length > 1 ? (
+                    {references.length > 1 || takesKlingReferences(family?.referenceModel) ? (
                       // The label is the name the prompt must use, so a
                       // seedance render reads "<Image 2>" here rather than a
-                      // count the model would not recognise.
+                      // count the model would not recognise, and a kling one
+                      // "@Element1" even when it is the only photo.
                       <span className="studio-edit-source-index">
                         {referenceMention(family?.referenceModel, "image", index + 1)}
                       </span>
@@ -1051,6 +1061,18 @@ export function VideoStudio({
                   const recipe = seedanceWorkflowsFor(family.referenceModel).find(
                     (entry) => entry.id === "reference",
                   );
+                  // Kling reads its photos as elements and scene images, each
+                  // with its own tag, so the tags are worth saying too.
+                  if (takesKlingReferences(family.referenceModel)) {
+                    return (
+                      <p className="studio-hint">
+                        {t(
+                          "These photos steer style and subject. Name them in the prompt as {mentions}.",
+                          { mentions: mentions.join(", ") },
+                        )}
+                      </p>
+                    );
+                  }
                   if (!isSeedanceModel(family.referenceModel.id)) return null;
                   return (
                     <>

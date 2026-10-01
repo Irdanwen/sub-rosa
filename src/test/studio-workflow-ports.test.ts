@@ -90,7 +90,7 @@ describe("openInputPorts on a video node", () => {
     expect(portIds({ model: "kling-2.5-turbo-pro-text-to-video" })).toEqual(["prompt"]);
   });
 
-  it("opens the start frame only for reference variants that require one", () => {
+  it("opens the start frame only for reference variants that take one", () => {
     expect(portIds({ model: "kling-o3-pro-reference-to-video" })).toEqual([
       "prompt",
       "openingFrame",

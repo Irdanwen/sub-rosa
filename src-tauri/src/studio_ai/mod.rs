@@ -101,6 +101,21 @@ pub struct CompositionSlot {
     pub role: Option<String>,
 }
 
+/// One subject or scene a shot's reference images show, named the way the
+/// target model reads it. Images sharing a mention (a kling element's angles)
+/// arrive as one entry.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ContextReference {
+    /// Exactly what the prompt writes: `@Element1`, `<Image 2>`, `image 3`.
+    pub mention: String,
+    /// The bible entry it shows; empty for a picked image no entry holds.
+    pub name: String,
+    pub kind: Option<String>,
+    /// The bible roles of its images (portrait, profile, wide...).
+    pub roles: Vec<String>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct StudioRewriteContext {
@@ -125,6 +140,8 @@ pub struct StudioRewriteContext {
     pub intensity: Option<String>,
     /// What happens on screen under a cue, shot by shot.
     pub scenes: Vec<String>,
+    /// A reference shot's images, as the render receives them.
+    pub references: Vec<ContextReference>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -240,6 +257,46 @@ fn push_line(out: &mut Vec<String>, label: &str, value: Option<String>) {
     if let Some(value) = value {
         out.push(format!("{label}: {value}"));
     }
+}
+
+/// The shot's reference images, one line per mention, so the rewrite names
+/// each one the way the target model reads it and ties it to what it shows,
+/// instead of guessing which image is which from the order of the bible.
+fn references_block(references: &[ContextReference]) -> Option<String> {
+    let lines: Vec<String> = references
+        .iter()
+        .filter(|reference| !reference.mention.trim().is_empty())
+        .take(MAX_CONTEXT_ENTRIES)
+        .map(|reference| {
+            let name = clip(&reference.name);
+            let shows = if name.is_empty() {
+                "an image the person picked, with no bible entry".to_string()
+            } else {
+                match reference.kind.as_deref().map(str::trim) {
+                    Some(kind) if !kind.is_empty() => format!("{name} ({kind})"),
+                    _ => name,
+                }
+            };
+            let roles: Vec<&str> = reference
+                .roles
+                .iter()
+                .map(|role| role.trim())
+                .filter(|role| !role.is_empty())
+                .collect();
+            let views = match roles.len() {
+                0 => String::new(),
+                1 => format!(", {} view", roles[0]),
+                count => format!(", {count} views of it: {}", roles.join(", ")),
+            };
+            format!("- {}: {shows}{views}", reference.mention.trim())
+        })
+        .collect();
+    (!lines.is_empty()).then(|| {
+        format!(
+            "Reference images, as the model receives them. Write each mention exactly as shown, only these, and tie it to what it shows (for example the subject's mention where it acts, the place's mention where the action happens):\n{}",
+            lines.join("\n")
+        )
+    })
 }
 
 fn entries_block(entries: &[ContextEntry]) -> Option<String> {
@@ -370,11 +427,22 @@ fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
         }
         StudioRewriteKind::ShotPrompt => {
             let mode = context.mode.as_deref().unwrap_or("text");
+            // The explicit list wins over the family's generic syntax: it
+            // says which image is which, and a kling element's angles share
+            // one mention, which no "first, second" line can express.
+            let listed = if mode == "reference" {
+                references_block(&context.references)
+            } else {
+                None
+            };
             model_lines(
                 &mut lines,
                 context.target_model.as_ref(),
-                mode == "reference",
+                mode == "reference" && listed.is_none(),
             );
+            if let Some(block) = listed {
+                lines.push(block);
+            }
             push_line(&mut lines, "Shot", present(&context.title));
             push_line(&mut lines, "Action", present(&context.action));
             push_line(&mut lines, "Camera", present(&context.camera));
@@ -811,6 +879,52 @@ mod tests {
         req.context.mode = Some("reference".into());
         let (_, user, _, _) = compose(&req);
         assert!(user.contains("<Image 1> (the first one)"));
+    }
+
+    #[test]
+    fn a_reference_shot_names_each_image_the_way_the_model_reads_it() {
+        let mut req = request(StudioRewriteKind::ShotPrompt, "");
+        req.context.action = Some("Nera crosses the harbour.".into());
+        req.context.mode = Some("reference".into());
+        req.context.target_model = Some(TargetModel {
+            id: "kling-o3-pro-reference-to-video".into(),
+            name: Some("Kling O3 Pro".into()),
+            char_limit: None,
+            word_limit: None,
+            reference_mention: Some("@Element{n}".into()),
+        });
+        req.context.references = vec![
+            ContextReference {
+                mention: "@Element1".into(),
+                name: "Nera".into(),
+                kind: Some("character".into()),
+                roles: vec!["portrait".into(), "profile".into()],
+            },
+            ContextReference {
+                mention: "@Image1".into(),
+                name: "Harbour".into(),
+                kind: Some("location".into()),
+                roles: vec!["wide".into()],
+            },
+            ContextReference {
+                mention: "@Element2".into(),
+                name: String::new(),
+                kind: None,
+                roles: Vec::new(),
+            },
+        ];
+        let (_, user, _, _) = compose(&req);
+        assert!(user.contains("- @Element1: Nera (character), 2 views of it: portrait, profile"));
+        assert!(user.contains("- @Image1: Harbour (location), wide view"));
+        assert!(user.contains("- @Element2: an image the person picked, with no bible entry"));
+        assert!(
+            !user.contains("(the first one)"),
+            "the explicit list replaces the generic positional line"
+        );
+        // Outside reference mode the list is noise: nothing is sent.
+        req.context.mode = Some("image".into());
+        let (_, user, _, _) = compose(&req);
+        assert!(!user.contains("@Element1"));
     }
 
     #[test]

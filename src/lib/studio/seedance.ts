@@ -16,6 +16,14 @@
  */
 
 import { isReferenceToVideoModel, isSeedanceModel } from "./catalog";
+import {
+  KLING_MAX_ELEMENTS,
+  KLING_MAX_SCENE_IMAGES,
+  klingMention,
+  klingMentions,
+  type ReferenceRole,
+  takesKlingReferences,
+} from "./kling";
 import type { MediaModel } from "./types";
 
 /** The kinds of media a seedance prompt can address. */
@@ -23,19 +31,44 @@ export type ReferenceKind = "image" | "video" | "audio";
 
 /** How many reference photos a model's contract accepts.
  *
- * Not one number: seedance 2.0 takes 9 and 2.5 takes 30, while every other
- * family in the catalog is happy with a handful. The default stays low on
+ * Not one number: seedance 2.0 takes 9 and 2.5 takes 30, kling 4 elements and
+ * 4 scene images, while every other family in the catalog is happy with a
+ * handful. The default stays low on
  * purpose — each reference inflates the request and their influence thins
  * out — but a family that documents more should not be capped at our default.
  */
 export function maxVideoReferences(model: Pick<MediaModel, "id"> | undefined): number {
   const id = model?.id.toLowerCase() ?? "";
+  if (takesKlingReferences(model)) return KLING_MAX_ELEMENTS + KLING_MAX_SCENE_IMAGES;
+  const measured = MEASURED_REFERENCE_CAPS.find(([stem]) => id.startsWith(stem));
+  if (measured) return measured[1];
   if (!id.includes("seedance")) return 4;
   if (id.includes("seedance-2-5")) return 30;
   if (id.includes("seedance-2-0")) return 9;
   // Older seedance (1.5) publishes no figure; keep the conservative default.
   return 4;
 }
+
+/**
+ * Reference photo caps the catalog does not publish, measured 2026-10-01:
+ * sent one photo too many, the API refuses with the model's own figure
+ * ("reference_image_urls must have at most 3 images"), at no cost. Most sit
+ * above the default, and one sits below it - gemini omni flash takes three,
+ * so a fourth photo used to fail the render. Longest stem first where one
+ * prefixes another.
+ */
+const MEASURED_REFERENCE_CAPS: ReadonlyArray<readonly [string, number]> = [
+  ["gemini-omni-flash-1-1-", 10],
+  ["gemini-omni-flash-", 3],
+  ["grok-imagine-", 7],
+  ["happyhorse-1-0-", 5],
+  ["happyhorse-1-1-", 9],
+  ["minimax-h3-", 9],
+  ["pixverse-c1-", 7],
+  // Counted together with reference clips, which this family takes none of.
+  ["wan-2-7-", 5],
+  ["wan-3-0-", 10],
+];
 
 /** A model reference media is decided for: the id is always needed, the
  * published constraints are used when the caller has them. */
@@ -121,10 +154,10 @@ export function maxReferenceVideoSeconds(model: Pick<MediaModel, "id"> | undefin
 /**
  * How to name a reference inside a prompt.
  *
- * Seedance wants `<Image 1>`; everything else has no documented syntax at all,
- * so plain positional prose ("image 1") is the honest fallback — it reads
- * naturally to any instruction-following model without pretending a contract
- * exists. Indexes are 1-based, matching what the numbering shows on screen.
+ * Seedance wants `<Image 1>` and kling `@Element1` (see `klingMention`);
+ * everything else has no documented syntax at all, so plain positional prose
+ * ("image 1") is the honest fallback — it reads naturally to any
+ * instruction-following model without pretending a contract exists. Indexes are 1-based, matching what the numbering shows on screen.
  */
 export function referenceMention(
   model: Pick<MediaModel, "id"> | undefined,
@@ -132,11 +165,35 @@ export function referenceMention(
   index: number,
 ): string {
   const position = Math.max(1, Math.trunc(index));
+  if (kind === "image" && takesKlingReferences(model)) return klingMention(position);
   if (!model || !isSeedanceModel(model.id)) {
     return `${kind} ${position}`;
   }
   const label = kind === "image" ? "Image" : kind === "video" ? "Video" : "Audio";
   return `<${label} ${position}>`;
+}
+
+/**
+ * How each of a request's reference photos is named in its prompt, in the
+ * order they are sent.
+ *
+ * Positional for every family but kling, whose mention depends on what each
+ * photo shows: two angles of one character share `@Element1`, a place is an
+ * `@Image`. `roles` says what each one shows when the surface knows; without
+ * it kling falls back to its positional rule too. Undefined marks a photo the
+ * request will not carry, past the model's cap.
+ */
+export function referenceMentions(
+  model: Pick<MediaModel, "id"> | undefined,
+  count: number,
+  roles?: readonly (ReferenceRole | undefined)[],
+): (string | undefined)[] {
+  if (takesKlingReferences(model)) return klingMentions(count, roles);
+  // Past the model's cap the request drops the photo, so it has no name.
+  const cap = maxVideoReferences(model);
+  return Array.from({ length: count }, (_, index) =>
+    index < cap ? referenceMention(model, "image", index + 1) : undefined,
+  );
 }
 
 /**

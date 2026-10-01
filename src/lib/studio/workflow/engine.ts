@@ -22,7 +22,8 @@ import { composeImages } from "../edit-image";
 import { generateImages } from "../generate-image";
 import { extractFrameAt, extractHandoffFrame, loadVideoElement } from "../frames";
 import { musicPaths, retrieveBody } from "../paths";
-import { maxVideoReferences, requestSizeProblem } from "../seedance";
+import type { ReferenceRole } from "../kling";
+import { requestSizeProblem } from "../seedance";
 import type { ArtifactKind, MediaModel } from "../types";
 import { videoRequestBody } from "../video-request";
 import {
@@ -370,6 +371,27 @@ function imagesOn(ports: Map<string, NodeOutput[]>, portId: string) {
   return (ports.get(portId) ?? []).filter(
     (output): output is Extract<NodeOutput, { kind: "image" }> => output.kind === "image",
   );
+}
+
+/**
+ * What each reference image shows, from the video node's `referenceRoles`
+ * param (keyed by gallery artifact, written by the film compiler). An image
+ * the param does not know - a canvas edit, a generated frame - is undescribed.
+ */
+function referenceRolesOf(
+  params: Record<string, unknown>,
+  images: readonly Extract<NodeOutput, { kind: "image" }>[],
+): (ReferenceRole | undefined)[] | undefined {
+  const known = params.referenceRoles;
+  if (!known || typeof known !== "object" || Array.isArray(known)) return undefined;
+  const roles = known as Record<string, unknown>;
+  return images.map((image) => {
+    const role = image.artifactId ? roles[image.artifactId] : undefined;
+    if (!role || typeof role !== "object") return undefined;
+    const { subject, scene } = role as Record<string, unknown>;
+    if (scene === true) return { scene: true };
+    return typeof subject === "string" && subject.trim() ? { subject } : undefined;
+  });
 }
 
 function imageDataUri(image: Extract<NodeOutput, { kind: "image" }>): string {
@@ -841,7 +863,10 @@ async function executeNode(
         prompt,
         openingFrame: opening ? imageDataUri(opening) : undefined,
         endFrame: end ? imageDataUri(end) : undefined,
-        references: references.slice(0, maxVideoReferences({ id: model })).map(imageDataUri),
+        // Capped by the request builder, which knows each family's layout:
+        // kling groups a character's angles, so a flat count would cut short.
+        references: references.map(imageDataUri),
+        referenceRoles: referenceRolesOf(params, references),
         referenceVideos,
         referenceVideoSeconds,
         duration: stringParam(params, "duration"),

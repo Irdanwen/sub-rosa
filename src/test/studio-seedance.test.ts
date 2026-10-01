@@ -31,7 +31,7 @@ describe("reference caps per family", () => {
     expect(maxVideoReferences(model("seedance-2-5-reference-to-video"))).toBe(30);
     // 1.5 publishes no figure, and everything else keeps the low default.
     expect(maxVideoReferences(model("seedance-1-5-pro-reference-to-video"))).toBe(4);
-    expect(maxVideoReferences(model("kling-2.5-turbo-pro-reference-to-video"))).toBe(4);
+    expect(maxVideoReferences(model("acme-reference-to-video"))).toBe(4);
     expect(maxVideoReferences(undefined)).toBe(4);
   });
 
@@ -115,10 +115,29 @@ describe("referenceMention", () => {
     expect(referenceMention(seedance, "image", 1)).toBe("<Image 1>");
     expect(referenceMention(seedance, "video", 2)).toBe("<Video 2>");
     expect(referenceMention(seedance, "audio", 3)).toBe("<Audio 3>");
-    expect(referenceMention(model("kling-2.5-turbo-pro-reference-to-video"), "image", 2)).toBe(
+    expect(referenceMention(model("grok-imagine-reference-to-video-private"), "image", 2)).toBe(
       "image 2",
     );
     expect(referenceMention(undefined, "image", 1)).toBe("image 1");
+  });
+
+  it("uses the caps the API itself refused over, above and below the default", () => {
+    // Measured 2026-10-01 from each model's own "at most N images" refusal.
+    expect(maxVideoReferences(model("gemini-omni-flash-reference-to-video"))).toBe(3);
+    expect(maxVideoReferences(model("gemini-omni-flash-1-1-reference-to-video"))).toBe(10);
+    expect(maxVideoReferences(model("grok-imagine-1-5-reference-to-video-private"))).toBe(7);
+    expect(maxVideoReferences(model("happyhorse-1-0-reference-to-video"))).toBe(5);
+    expect(maxVideoReferences(model("minimax-h3-max-reference-to-video"))).toBe(9);
+    expect(maxVideoReferences(model("wan-2-7-reference-to-video"))).toBe(5);
+    expect(maxVideoReferences(model("wan-3-0-prime-pro-reference-to-video"))).toBe(10);
+  });
+
+  it("names kling references as elements, then scene images", () => {
+    const kling = model("kling-o3-standard-reference-to-video");
+    expect(referenceMention(kling, "image", 1)).toBe("@Element1");
+    expect(referenceMention(kling, "image", 4)).toBe("@Element4");
+    expect(referenceMention(kling, "image", 5)).toBe("@Image1");
+    expect(maxVideoReferences(kling)).toBe(8);
   });
 
   it("keeps indexes 1-based whatever it is handed", () => {

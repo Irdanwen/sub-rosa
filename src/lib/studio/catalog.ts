@@ -206,42 +206,49 @@ export function isReferenceToVideoModel(modelId: string): boolean {
 }
 
 /**
- * Reference-to-video families that refuse a render built from reference photos
- * alone: they want the frame the clip starts from as well.
+ * The kling reference variants (o3 standard/pro/4k, v3 4k).
  *
- * Measured against the live API on 2026-08-28, not published: the catalog says
- * nothing about it, and neither does the failure. Carpe Diem accepts the
- * request, answers 202 with a queue id and files the job; the provider rejects
- * it while rendering, with "Invalid request parameters" and no field named. Six
- * renders differing only in this field failed that way; the one carrying an
- * opening frame rendered.
- *
- * Matched by family stem rather than by full id: the four kling reference
- * variants share one provider contract, and being wrong the careful way costs
- * a user one extra picked image, while being wrong the other way costs them a
- * render they paid for.
- *
- * Seedance is the counter-example this list exists for. Its reference contract
- * runs on references alone, which is what the whole shot chain is built on.
+ * They read references as `elements` and `scene_image_urls` rather than the
+ * flat `reference_image_urls` (see `./kling`), and they also take an opening
+ * frame (`image_url`) and an end frame alongside them. Matched by family stem:
+ * the four variants share one provider contract.
  */
-const OPENING_FRAME_REQUIRED = ["kling-"];
+export function isKlingReferenceModel(modelId: string | undefined): boolean {
+  const id = modelId?.toLowerCase() ?? "";
+  return id.startsWith("kling-") && isReferenceToVideoModel(id);
+}
 
 /**
- * Whether this model refuses to start from reference photos alone.
+ * Whether this reference model refuses to start without an opening frame.
  *
- * The check that keeps a doomed render from being queued and billed: the
- * refusal arrives too late and too vaguely to act on, so it is answered here,
- * before the request leaves.
+ * Kling V3's reference variant does, whatever else it is given: "image_url is
+ * required for this model (a start frame image must be provided)", even with
+ * elements and scene images in the body (measured 2026-10-01). The O3 variants
+ * do not - they run on elements alone. The refusal arrives at render time,
+ * after a 202, so it is answered here, before the request leaves.
  */
 export function requiresOpeningFrame(modelId: string | undefined): boolean {
   const id = modelId?.toLowerCase() ?? "";
-  if (!isReferenceToVideoModel(id)) return false;
-  return OPENING_FRAME_REQUIRED.some((stem) => id.startsWith(stem));
+  return id.startsWith("kling-v3-") && isReferenceToVideoModel(id);
+}
+
+/**
+ * Whether this reference model also takes the frame the clip starts from.
+ *
+ * Optional on kling O3, which runs on its references alone once they travel
+ * as elements; required on kling V3 (see `requiresOpeningFrame`). It was once
+ * held required for the whole family - a misread of kling refusing the flat
+ * reference field, which left the frame as the only visual input the request
+ * carried (see `./kling`). The reference families that take no frame quietly
+ * ignore one, so the port stays closed on them.
+ */
+export function acceptsOpeningFrameWithReferences(modelId: string | undefined): boolean {
+  return isKlingReferenceModel(modelId);
 }
 
 /** True for a model whose contract opens on a supplied frame (`image_url`,
  * and `end_image_url` where the family takes one). Reference-to-video ids do
- * not match: they carry `reference_image_urls` and are told apart above. */
+ * not match: they carry their references and are told apart above. */
 export function isImageToVideoModel(modelId: string): boolean {
   return modelId.toLowerCase().includes("image-to-video");
 }

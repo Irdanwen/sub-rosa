@@ -25,9 +25,10 @@
  * two renders cannot.
  */
 
-import { referenceMention } from "../seedance";
+import type { ReferenceRole } from "../kling";
+import { referenceMentions } from "../seedance";
 import type { MediaModel } from "../types";
-import type { BibleEntry, BibleRef } from "./types";
+import type { BibleEntry, BibleKind, BibleRef } from "./types";
 
 /** Where these families start dropping clauses of their own accord. */
 export const SEEDANCE_WORD_LIMIT = 60;
@@ -43,7 +44,50 @@ export interface StackedReference {
   artifactId: string;
   /** The entry it came from, for the label a surface shows. */
   entryName: string;
-  role: BibleRef["role"];
+  /** Its role in that entry; absent for an image no entry holds. */
+  role?: BibleRef["role"];
+  /** What kind of entry that is; `blocking` for the generated blocking plate. */
+  kind?: BibleKind | "blocking";
+}
+
+/**
+ * What a stacked reference shows, in the terms a request is laid out by: a
+ * character or a prop is a subject, its images grouped by entry; a place, a
+ * look or the blocking plate is the stage. A reference whose kind nobody
+ * recorded stays undescribed, and falls to the positional rule.
+ */
+export function referenceRoleOf(reference: StackedReference): ReferenceRole | undefined {
+  switch (reference.kind) {
+    case "character":
+    case "prop":
+      return { subject: reference.entryName };
+    case "location":
+    case "look":
+    case "blocking":
+      return { scene: true };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Gallery images described by the bible entry that holds them, in the order
+ * given. An image no entry holds is described by nothing: it still rides, it
+ * just carries no name and no kind.
+ */
+export function describeReferences(
+  artifactIds: readonly string[],
+  bible: readonly BibleEntry[],
+): StackedReference[] {
+  return artifactIds.map((artifactId) => {
+    for (const entry of bible) {
+      const reference = entry.refs.find((candidate) => candidate.artifactId === artifactId);
+      if (reference) {
+        return { artifactId, entryName: entry.name, role: reference.role, kind: entry.kind };
+      }
+    }
+    return { artifactId, entryName: "" };
+  });
 }
 
 function refsInRoleOrder(entry: BibleEntry, roles: readonly BibleRef["role"][]): BibleRef[] {
@@ -83,7 +127,12 @@ export function referenceStack(input: StackInput): StackedReference[] {
   const push = (entry: BibleEntry, reference: BibleRef) => {
     if (stack.length >= max) return;
     if (stack.some((existing) => existing.artifactId === reference.artifactId)) return;
-    stack.push({ artifactId: reference.artifactId, entryName: entry.name, role: reference.role });
+    stack.push({
+      artifactId: reference.artifactId,
+      entryName: entry.name,
+      role: reference.role,
+      kind: entry.kind,
+    });
   };
 
   const [lead, ...others] = input.characters ?? [];
@@ -95,6 +144,7 @@ export function referenceStack(input: StackInput): StackedReference[] {
       artifactId: input.blockingPlateArtifactId,
       entryName: "the blocking",
       role: "medium",
+      kind: "blocking",
     });
   }
 
@@ -179,12 +229,10 @@ export interface ShotPrompt {
  */
 export function shotPrompt(input: ShotPromptInput): ShotPrompt {
   const limit = input.wordLimit ?? SEEDANCE_WORD_LIMIT;
-  const mentions = (input.stack ?? []).map((reference, index) => ({
-    reference,
-    mention: referenceMention(input.model, "image", index + 1),
-  }));
-  const lead = mentions[0];
-  const opening = lead ? `Refer to ${lead.mention} for ${lead.reference.entryName}.` : "";
+  const stack = input.stack ?? [];
+  const named = referenceMentions(input.model, stack.length, stack.map(referenceRoleOf));
+  const lead = stack.findIndex((reference, index) => reference.entryName && named[index]);
+  const opening = lead >= 0 ? `Refer to ${named[lead]} for ${stack[lead].entryName}.` : "";
 
   const invariants = [...(input.invariants ?? [])].filter(Boolean);
   const parts: Array<{ text: string; droppable: number }> = [
