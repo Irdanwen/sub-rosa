@@ -1792,7 +1792,7 @@ le **tri de pertinence** des recherches.
 | `src/lib/tauri.ts` | `memoryExtract(messages, turns?)` | Réappliquer |
 
 
-## La clé née du compte, et les crédits par carte (2026-09-30, ADR-0069, v1.79.0)
+## La clé née du compte, et les crédits par carte (2026-09-30, ADR-0069, v1.79.0, correctif v1.79.2)
 
 - **Clé d'appareil** (`carpe_diem/issued.rs`, `account/carpe_diem_link.rs`) : une
   paire P-256 par tentative, en mémoire seulement ; le service de comptes signe une
@@ -1812,6 +1812,10 @@ le **tri de pertinence** des recherches.
 - Tout ce qui est nouveau se cache tant que `/partner/capabilities` ne l'annonce pas.
   Le site du compte garde l'onglet Recharger en USDC tant que la build n'a pas
   `VITE_CARD_TOPUP=1`.
+- **Tout lien vers un achat** (tableau de bord Carpe Diem compris, où une clé se
+  finance) passe par `usePurchaseLinksAllowed()` : accueil du téléphone, porte de
+  clé, « Obtenir une clé », « Ajoutez des fonds » (v1.79.2). Un nouveau lien
+  d'achat qui ne la consulte pas est un refus App Store en puissance.
 
 ### Fichiers upstream modifiés
 
