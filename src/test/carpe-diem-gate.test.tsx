@@ -46,7 +46,9 @@ describe("the Carpe Diem gate", () => {
       unmount();
       render(<CarpeDiemGate reason="failed" />);
       expect(screen.queryByRole("link", { name: /Carpe Diem dashboard/ })).toBeNull();
-      expect(screen.getByText("Still stuck? Check that the key still has credits.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Still stuck? Check that the key still has credits."),
+      ).toBeInTheDocument();
     } finally {
       links.allowed = true;
     }
