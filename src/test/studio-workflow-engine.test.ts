@@ -407,6 +407,57 @@ describe("named ports", () => {
     expect(queueBody.reference_image_urls).toEqual(["data:image/png;base64,REF-hero-1"]);
   });
 
+  it("groups a kling character's angles into one element and sends places as scenes", async () => {
+    mockVideoRender();
+    const storage = fakeStorage({
+      loadAsset: vi.fn(async (artifactId: string) => ({
+        kind: "image" as const,
+        src: `data:image/png;base64,REF-${artifactId}`,
+        base64: `REF-${artifactId}`,
+        mimeType: "image/png",
+        artifactId,
+      })),
+    });
+
+    await runWorkflow(
+      workflow(
+        [
+          node("prompt", "textInput", { text: "@Element1 crosses @Image1" }),
+          node("front", "asset", { assetKind: "image", artifactId: "nera-front" }),
+          node("side", "asset", { assetKind: "image", artifactId: "nera-side" }),
+          node("place", "asset", { assetKind: "image", artifactId: "harbour" }),
+          node("clip", "video", {
+            model: "kling-o3-pro-reference-to-video",
+            referenceRoles: {
+              "nera-front": { subject: "Nera" },
+              "nera-side": { subject: "Nera" },
+              harbour: { scene: true },
+            },
+          }),
+          node("out", "output"),
+        ],
+        [
+          edge("prompt", "clip", "prompt"),
+          edge("front", "clip", "references"),
+          edge("side", "clip", "references"),
+          edge("place", "clip", "references"),
+          edge("clip", "out"),
+        ],
+      ),
+      { storage },
+    );
+
+    const queueBody = callsTo("/video/queue")[0]?.[1] as Record<string, unknown>;
+    expect(queueBody.elements).toEqual([
+      {
+        frontal_image_url: "data:image/png;base64,REF-nera-front",
+        reference_image_urls: ["data:image/png;base64,REF-nera-side"],
+      },
+    ]);
+    expect(queueBody.scene_image_urls).toEqual(["data:image/png;base64,REF-harbour"]);
+    expect(queueBody).not.toHaveProperty("reference_image_urls");
+  });
+
   it("keeps a portless image edge behaving as the start frame", async () => {
     mockVideoRender();
     const storage = fakeStorage({

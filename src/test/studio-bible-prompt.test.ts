@@ -139,6 +139,21 @@ describe("the shot prompt", () => {
     expect(built.prompt.startsWith("Refer to image 1 for Nera.")).toBe(true);
   });
 
+  it("names a kling stack by what each image shows", () => {
+    // A place first in the stack must not take the element slot from the
+    // character, nor the lead's mention.
+    const built = shotPrompt({
+      subject: "The alley.",
+      action: "Nera turns.",
+      model: { id: "kling-o3-standard-reference-to-video" },
+      stack: [
+        { artifactId: "alley.png", entryName: "Alley", role: "wide", kind: "location" },
+        { artifactId: "nera.png", entryName: "Nera", role: "portrait", kind: "character" },
+      ],
+    });
+    expect(built.prompt.startsWith("Refer to @Image1 for Alley.")).toBe(true);
+  });
+
   it("drops in a stated order as the pressure rises, and says what went", () => {
     // Asserted as an order rather than against tuned numbers: what matters is
     // that constraints go before style, style before a secondary character's

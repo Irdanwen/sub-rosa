@@ -15,7 +15,11 @@
 // refuse connections, and make any edge still landing on one an error. See
 // `openInputPorts`, which every surface must read instead of `schema.inputs`.
 
-import { requiresOpeningFrame, videoDirectionFromId, type VideoDirection } from "../catalog";
+import {
+  acceptsOpeningFrameWithReferences,
+  videoDirectionFromId,
+  type VideoDirection,
+} from "../catalog";
 import { maxReferenceVideos, maxVideoReferences } from "../seedance";
 
 export type WorkflowNodeType =
@@ -217,8 +221,8 @@ function videoDirectionOf(params: Record<string, unknown>): VideoDirection | und
  * a workflow node pins one model, so its ports are that model's contract and
  * nothing else. The frames are the image-to-video contract: the operator
  * documents `image_url` as image-to-video only, and a reference-to-video
- * render steers from `reference_image_urls` instead. Kling reference variants
- * require an opening image too, so only those expose that additional port.
+ * render steers from its references instead. Kling reference variants also
+ * take an optional opening image, so only those expose that additional port.
  *
  * Not settled by probing, and deliberately so: the operator's pre-flight
  * (`VIDEO_PARAM_REJECTED`) enumerates every rejected *value* but says nothing
@@ -236,7 +240,9 @@ function videoFrameCapacity(params: Record<string, unknown>): number | undefined
 }
 
 function videoOpeningFrameCapacity(params: Record<string, unknown>): number | undefined {
-  return requiresOpeningFrame(modelIdOf(params)) ? undefined : videoFrameCapacity(params);
+  return acceptsOpeningFrameWithReferences(modelIdOf(params))
+    ? undefined
+    : videoFrameCapacity(params);
 }
 
 /** Reference clips, once a model is in hand. Before that the port stays open

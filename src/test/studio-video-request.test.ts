@@ -21,25 +21,40 @@ beforeEach(() => {
   forgetLearnedConstraints();
 });
 
-describe("families that will not start from references alone", () => {
+describe("kling reference renders", () => {
   const KLING = m("kling-o3-pro-reference-to-video");
+  const refs = (count: number) =>
+    Array.from({ length: count }, (_, index) => `data:image/jpeg;base64,R${index + 1}`);
 
-  it("refuses to build a kling reference render with no opening frame", () => {
-    // Measured 2026-08-28: this provider takes the queue call, answers 202
-    // with a queue id, then fails the render with "Invalid request
-    // parameters" and no field named. Six renders differing only in this
-    // field failed that way. The user had already been billed by then, so the
-    // request must not leave without the frame.
-    expect(
-      videoRequestBody({
-        target: KLING,
-        prompt: "she walks through the fog",
-        references: [REF_A],
-      }),
-    ).toBeUndefined();
+  it("runs on references alone, sent as elements", () => {
+    // Kling reads no `reference_image_urls`: handed only that field it saw no
+    // visual input and refused the render ("At least one visual input is
+    // required: image_url, elements, or scene_image_urls", measured
+    // 2026-10-01). That refusal was once read as "needs an opening frame".
+    const body = videoRequestBody({
+      target: KLING,
+      prompt: "@Element1 walks through the fog",
+      references: [REF_A],
+    });
+    expect(body?.elements).toEqual([{ frontal_image_url: REF_A }]);
+    expect(body).not.toHaveProperty("reference_image_urls");
+    expect(body).not.toHaveProperty("scene_image_urls");
+    expect(body).not.toHaveProperty("image_url");
   });
 
-  it("builds it once the frame is there, references included", () => {
+  it("puts the first four in elements and the next four in scene images", () => {
+    const body = videoRequestBody({ target: KLING, prompt: "a scene", references: refs(6) });
+    expect(body?.elements).toEqual(refs(4).map((frontal) => ({ frontal_image_url: frontal })));
+    expect(body?.scene_image_urls).toEqual(refs(6).slice(4));
+  });
+
+  it("drops what neither cap can carry", () => {
+    const body = videoRequestBody({ target: KLING, prompt: "a scene", references: refs(10) });
+    expect(body?.elements).toHaveLength(4);
+    expect(body?.scene_image_urls).toEqual(refs(8).slice(4));
+  });
+
+  it("still takes an opening frame next to the references", () => {
     const body = videoRequestBody({
       target: KLING,
       prompt: "she walks through the fog",
@@ -47,19 +62,76 @@ describe("families that will not start from references alone", () => {
       references: [REF_A],
     });
     expect(body?.image_url).toBe(FRAME);
-    expect(body?.reference_image_urls).toEqual([REF_A]);
+    expect(body?.elements).toEqual([{ frontal_image_url: REF_A }]);
   });
 
-  it("leaves seedance able to run on references alone", () => {
-    // The counter-example the rule exists for: the shot chain is built on
-    // seedance rendering from a character sheet with no frame at all.
+  it("measures the images nested in elements", () => {
+    const body = videoRequestBody({ target: KLING, prompt: "a scene", references: refs(5) });
+    expect(body && [...inlineMediaInputs(body)].sort()).toEqual(refs(5));
+  });
+
+  it("groups a subject's angles into one element and sends scenes as scene images", () => {
+    const body = videoRequestBody({
+      target: KLING,
+      prompt: "@Element1 crosses @Image1",
+      references: refs(4),
+      referenceRoles: [
+        { subject: "Nera" },
+        { subject: "Nera" },
+        { scene: true },
+        { subject: "Ivo" },
+      ],
+    });
+    expect(body?.elements).toEqual([
+      { frontal_image_url: refs(1)[0], reference_image_urls: [refs(2)[1]] },
+      { frontal_image_url: refs(4)[3] },
+    ]);
+    expect(body?.scene_image_urls).toEqual([refs(3)[2]]);
+  });
+
+  it("ignores the roles on every other family", () => {
+    const body = videoRequestBody({
+      target: REF2V,
+      prompt: "a scene",
+      references: [REF_A, REF_B],
+      referenceRoles: [{ subject: "Nera" }, { scene: true }],
+    });
+    expect(body?.reference_image_urls).toEqual([REF_A, REF_B]);
+  });
+
+  it("still refuses a kling V3 reference render with no opening frame", () => {
+    // Measured 2026-10-01: V3 wants "image_url" whatever else it is given.
+    const v3 = m("kling-v3-4k-reference-to-video");
     expect(
-      videoRequestBody({
-        target: REF2V,
-        prompt: "she walks through the fog",
-        references: [REF_A],
-      }),
-    ).toBeDefined();
+      videoRequestBody({ target: v3, prompt: "a scene", references: [REF_A] }),
+    ).toBeUndefined();
+    const body = videoRequestBody({
+      target: v3,
+      prompt: "a scene",
+      openingFrame: FRAME,
+      references: [REF_A],
+    });
+    expect(body?.image_url).toBe(FRAME);
+    expect(body?.elements).toEqual([{ frontal_image_url: REF_A }]);
+  });
+
+  it("sends gemini omni flash no more than the three photos it takes", () => {
+    const body = videoRequestBody({
+      target: m("gemini-omni-flash-reference-to-video"),
+      prompt: "a scene",
+      references: refs(4),
+    });
+    expect(body?.reference_image_urls).toEqual(refs(3));
+  });
+
+  it("leaves seedance on the flat reference field", () => {
+    const body = videoRequestBody({
+      target: REF2V,
+      prompt: "she walks through the fog",
+      references: [REF_A],
+    });
+    expect(body?.reference_image_urls).toEqual([REF_A]);
+    expect(body).not.toHaveProperty("elements");
   });
 });
 

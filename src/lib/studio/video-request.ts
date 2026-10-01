@@ -22,6 +22,7 @@ import {
   requiresOpeningFrame,
 } from "./catalog";
 import { withSeedanceConsent } from "./consent";
+import { klingReferenceFields, type ReferenceRole, takesKlingReferences } from "./kling";
 import { effectiveVideoConstraints } from "./model-constraints";
 import { maxReferenceAudio, maxReferenceVideos, maxVideoReferences } from "./seedance";
 import type { MediaModel } from "./types";
@@ -44,6 +45,12 @@ export interface VideoRequestInputs {
   endFrame?: string;
   /** Style/subject photos, the chain's anchor frame included. */
   references?: string[];
+  /**
+   * What each reference shows, in the same order, when the surface knows (the
+   * film's bible does; the free studio does not). Only kling reads it, to
+   * group a character's angles into one element and send places as scenes.
+   */
+  referenceRoles?: readonly (ReferenceRole | undefined)[];
   /**
    * Reference *clips* — what the seedance edit, extend and stitch workflows
    * work from. Data URIs like every other media input here; the prompt names
@@ -78,6 +85,7 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
     openingFrame,
     endFrame,
     references = [],
+    referenceRoles,
     referenceVideos = [],
     referenceVideoSeconds = [],
     referenceAudio = [],
@@ -128,7 +136,11 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
   if (openingFrame) body.image_url = openingFrame;
   if (endFrame) body.end_image_url = endFrame;
   if (takesReferences && references.length > 0) {
-    body.reference_image_urls = references.slice(0, maxVideoReferences(target));
+    // Kling reads its references as elements and scene images; handed the
+    // flat field it sees no visual input at all and refuses the render.
+    if (takesKlingReferences(target)) {
+      Object.assign(body, klingReferenceFields(references, referenceRoles));
+    } else body.reference_image_urls = references.slice(0, maxVideoReferences(target));
   }
 
   // Reference clips and audio, capped at what this model publishes: both caps
@@ -158,10 +170,10 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
   const hasVisualInput =
     Boolean(openingFrame) || (takesReferences && references.length > 0) || clips.length > 0;
   if (!hasVisualInput && (takesReferences || isImageToVideoModel(target.id))) return undefined;
-  // Some reference families want the opening frame on top of the references,
-  // and say so only by failing a render that has already been queued and
-  // billed. Refusing to build the body is what turns that into a disabled
-  // button (`canSubmit` reads this on both shells).
+  // Kling V3's reference variant wants the opening frame on top of the
+  // references, and says so only by failing a render already queued.
+  // Refusing to build the body is what turns that into a disabled button
+  // (`canSubmit` reads this on both shells).
   if (requiresOpeningFrame(target.id) && !openingFrame) return undefined;
 
   // Only the seedance targets carry the face-media attestation, and only for a
@@ -179,6 +191,7 @@ const INLINE_MEDIA_FIELDS = [
   "reference_image_urls",
   "reference_video_urls",
   "reference_audio_urls",
+  "scene_image_urls",
 ] as const;
 
 /**
@@ -198,6 +211,20 @@ export function inlineMediaInputs(body: Record<string, unknown>): string[] {
     if (typeof value === "string") inputs.push(value);
     else if (Array.isArray(value)) {
       for (const entry of value) if (typeof entry === "string") inputs.push(entry);
+    }
+  }
+  // Kling's elements nest their images one level down.
+  if (Array.isArray(body.elements)) {
+    for (const element of body.elements) {
+      if (!element || typeof element !== "object") continue;
+      const { frontal_image_url: frontal, reference_image_urls: angles } = element as Record<
+        string,
+        unknown
+      >;
+      if (typeof frontal === "string") inputs.push(frontal);
+      if (Array.isArray(angles)) {
+        for (const angle of angles) if (typeof angle === "string") inputs.push(angle);
+      }
     }
   }
   return inputs;

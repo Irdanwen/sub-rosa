@@ -28,11 +28,15 @@ import { t } from "../../i18n";
 
 import {
   type BibleEntry,
+  describeReferences,
   invariantLine,
+  referenceRoleOf,
   referenceStack,
   shotPrompt,
+  type StackedReference,
   voiceReference,
 } from "../bible";
+import type { ReferenceRole } from "../kling";
 import {
   estimateCostCredits,
   humanizeModelId,
@@ -40,6 +44,7 @@ import {
   modelsOfType,
   musicCapabilities,
   musicModels,
+  acceptsOpeningFrameWithReferences,
   requiresOpeningFrame,
   videoDirection,
 } from "../catalog";
@@ -406,6 +411,42 @@ export function routeModels(catalog: MediaCatalog, preferredId?: string): Routin
   };
 }
 
+/**
+ * The references a shot in reference mode sends, described, in the order
+ * sent: the ones the person picked when they picked any, otherwise the stack
+ * the bible builds from the shot's characters and place. What the compiler
+ * plans and what the shot's AI rewrite is told are this one list, so the
+ * prompt names the images the render actually receives.
+ */
+export function shotReferences(
+  shot: Pick<Shot, "characters" | "location" | "referenceArtifactIds">,
+  bible: readonly BibleEntry[],
+): StackedReference[] {
+  if (shot.referenceArtifactIds) return describeReferences(shot.referenceArtifactIds, bible);
+  const byName = new Map(bible.map((entry) => [entry.name.trim().toLowerCase(), entry]));
+  const characters = shot.characters
+    .map((name) => byName.get(name.trim().toLowerCase()))
+    .filter((entry): entry is BibleEntry => entry !== undefined);
+  const location = byName.get(shot.location.trim().toLowerCase());
+  return referenceStack({ characters, location });
+}
+
+/**
+ * The video node's `referenceRoles` param: what each reference shows, keyed by
+ * its gallery artifact so it survives the references being reordered on the
+ * canvas. Left out when nothing is known, which leaves the positional rule.
+ */
+export function referenceRolesParam(
+  artifactIds: readonly string[],
+  roles: readonly (ReferenceRole | undefined)[],
+): { referenceRoles?: Record<string, ReferenceRole> } {
+  const known = artifactIds.flatMap((artifactId, index) => {
+    const role = roles[index];
+    return role ? [[artifactId, role] as const] : [];
+  });
+  return known.length > 0 ? { referenceRoles: Object.fromEntries(known) } : {};
+}
+
 interface PlannedShot {
   shot: Shot;
   model: MediaModel;
@@ -413,6 +454,8 @@ interface PlannedShot {
   chained: boolean;
   /** Gallery artifact ids to send as references. */
   references: string[];
+  /** What each reference shows, in the same order (see `referenceRoleOf`). */
+  referenceRoles: (ReferenceRole | undefined)[];
   prompt: string;
   duration: string;
   aspectRatio: string;
@@ -486,10 +529,8 @@ export function planShots(
       refuse(t("Select an opening image before generating video."));
       return;
     }
-    const references =
-      mode === "reference"
-        ? (shot.referenceArtifactIds ?? stack.map((reference) => reference.artifactId))
-        : [];
+    const described = mode === "reference" ? shotReferences(shot, bible) : [];
+    const references = described.map((reference) => reference.artifactId);
     if (explicit && mode === "reference" && references.length === 0) {
       refuse(t("Select at least one reference image."));
       return;
@@ -546,6 +587,7 @@ export function planShots(
       model,
       chained,
       references,
+      referenceRoles: described.map(referenceRoleOf),
       prompt:
         shot.prompt?.trim() ||
         shotPrompt({
@@ -553,7 +595,7 @@ export function planShots(
           action: shot.action,
           camera: shot.camera,
           invariants,
-          stack: mode === "reference" ? stack : [],
+          stack: described,
           model,
         }).prompt,
       duration,
@@ -726,7 +768,7 @@ export function compileShotList(input: CompileInput): CompileResult {
     if (
       !entry.chained &&
       entry.shot.openingArtifactId &&
-      (entry.shot.mode === "image" || requiresOpeningFrame(entry.model.id))
+      (entry.shot.mode === "image" || acceptsOpeningFrameWithReferences(entry.model.id))
     ) {
       edges.push(edge(assetNode(entry.shot.openingArtifactId, index), videoId, "openingFrame"));
     }
@@ -752,6 +794,7 @@ export function compileShotList(input: CompileInput): CompileResult {
           prompt: entry.prompt,
           duration: entry.duration,
           aspectRatio: entry.aspectRatio,
+          ...referenceRolesParam(entry.references, entry.referenceRoles),
         },
       ),
     );

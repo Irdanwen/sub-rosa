@@ -186,8 +186,9 @@ TOOLS: list[dict[str, Any]] = [
                         "Absolute path of a local image. With an image-to-video "
                         "model it is the opening frame to animate; with a "
                         "reference-to-video model it steers style and subject "
-                        "while the prompt drives the action. Requires a model of "
-                        "one of those two types."
+                        "while the prompt drives the action (a kling reference "
+                        "model takes it as a character: name it @Element1 in the "
+                        "prompt). Requires a model of one of those two types."
                     ),
                 },
             },
@@ -533,7 +534,15 @@ def generate_video(base_url: str, token: str, arguments: dict[str, Any]) -> dict
         data_uri = local_image_data_uri(image_path)
         # Reference-to-video models take the photo as a style/subject reference
         # (a list), image-to-video as the opening frame.
-        if "reference-to-video" in model.lower():
+        lowered = model.lower()
+        if lowered.startswith("kling-") and "reference-to-video" in lowered:
+            # Kling ignores the flat reference field and refuses a render
+            # with no visual input; it reads references as elements. Its V3
+            # variant also refuses to start without an opening frame.
+            body["elements"] = [{"frontal_image_url": data_uri}]
+            if lowered.startswith("kling-v3-"):
+                body["image_url"] = data_uri
+        elif "reference-to-video" in lowered:
             body["reference_image_urls"] = [data_uri]
         else:
             body["image_url"] = data_uri

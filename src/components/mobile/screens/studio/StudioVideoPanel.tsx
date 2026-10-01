@@ -50,6 +50,7 @@ import {
   takesReferenceAudio,
   takesReferenceClips,
 } from "../../../../lib/studio/seedance";
+import { takesKlingReferences } from "../../../../lib/studio/kling";
 import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types";
 import { inlineMediaInputs, videoRequestBody } from "../../../../lib/studio/video-request";
 import { Darkroom } from "../../../studio/Darkroom";
@@ -530,8 +531,10 @@ export function VideoPanel({
             hint={
               references.length > 0
                 ? // Seedance routes its workflow from the prompt and only reads
-                  // its own mention syntax, so naming them is part of the input.
-                  isSeedanceModel(family.referenceModel.id)
+                  // its own mention syntax, and kling tags each photo by what
+                  // it is, so for both naming them is part of the input.
+                  isSeedanceModel(family.referenceModel.id) ||
+                  takesKlingReferences(family.referenceModel)
                   ? t(
                       "These photos steer style and subject. Name them in the prompt as {mentions}.",
                       {

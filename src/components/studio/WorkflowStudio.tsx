@@ -39,7 +39,8 @@ import {
   explainConstraintError,
   rememberConstraintError,
 } from "../../lib/studio/model-constraints";
-import { referenceMention } from "../../lib/studio/seedance";
+import type { ReferenceRole } from "../../lib/studio/kling";
+import { referenceMentions } from "../../lib/studio/seedance";
 import type { ArtifactKind, MediaCatalog } from "../../lib/studio/types";
 import { Darkroom } from "./Darkroom";
 import {
@@ -108,6 +109,8 @@ interface PortSourceEntry {
   label: string;
   /** A small preview when the source has produced an image this run. */
   image?: string;
+  /** The gallery artifact a source asset node holds. */
+  artifactId?: string;
 }
 
 /** The editor's one gallery listing, shared by every node that shows an
@@ -785,8 +788,22 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           const mentionable =
             port.kind === "image" && schema.params.some((param) => param.name === "prompt");
           const modelId = typeof wfNode.params.model === "string" ? wfNode.params.model : "";
-          const mentionFor = (index: number) =>
-            referenceMention(modelId ? { id: modelId } : undefined, "image", index + 1);
+          // Kling names a reference by what it shows (a character's angles
+          // share `@Element1`, a place is an `@Image`), which the film
+          // compiler recorded per artifact; every other family counts.
+          const knownRoles = wfNode.params.referenceRoles as
+            | Record<string, ReferenceRole | undefined>
+            | undefined;
+          const mentions = referenceMentions(
+            modelId ? { id: modelId } : undefined,
+            sources.length,
+            sources.map((source) =>
+              source.artifactId && knownRoles && typeof knownRoles === "object"
+                ? knownRoles[source.artifactId]
+                : undefined,
+            ),
+          );
+          const mentionFor = (index: number) => mentions[index] ?? "";
           return (
             <div key={port.id} className="studio-port-order nodrag">
               <span className="studio-port-order-head">
@@ -804,9 +821,9 @@ function StudioNode({ data }: NodeProps<StudioFlowNode>) {
                     <button
                       type="button"
                       className="studio-port-order-entry"
-                      disabled={!mentionable}
+                      disabled={!mentionable || !mentionFor(index)}
                       title={
-                        mentionable
+                        mentionable && mentionFor(index)
                           ? t('Add "{name}" to the prompt', { name: mentionFor(index) })
                           : undefined
                       }
@@ -1206,6 +1223,11 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           typeof artifactId === "string" ? artifacts.byId.get(artifactId) : undefined;
         return artifact?.kind === "image" ? artifactSrc(artifact) : undefined;
       };
+      const artifactOf = (nodeId: string): string | undefined => {
+        const source = nodes.find((entry) => entry.id === nodeId)?.data.wfNode;
+        const artifactId = source?.type === "asset" ? source.params.artifactId : undefined;
+        return typeof artifactId === "string" ? artifactId : undefined;
+      };
       return nodes.map((node) => {
         const wfNode = node.data.wfNode;
         const schema = maybeNodeSchema(wfNode.type);
@@ -1220,6 +1242,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
             sourceId: edge.source,
             label: labelOf.get(edge.source) ?? edge.source,
             image: imageOf(edge.source),
+            artifactId: artifactOf(edge.source),
           }));
         }
         return {

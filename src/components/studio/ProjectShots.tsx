@@ -2,10 +2,10 @@ import { IconExpandSimple } from "central-icons/IconExpandSimple";
 import { type CSSProperties, useState } from "react";
 import { intlLocale, t } from "../../lib/i18n";
 import { artifactSrc } from "../../lib/studio/artifacts";
-import { requiresOpeningFrame, videoDirection } from "../../lib/studio/catalog";
+import { acceptsOpeningFrameWithReferences, videoDirection } from "../../lib/studio/catalog";
 import { maxVideoReferences } from "../../lib/studio/seedance";
 import { effectiveVideoConstraints } from "../../lib/studio/model-constraints";
-import { resolveShotDuration } from "../../lib/studio/workflow/compile";
+import { resolveShotDuration, shotReferences } from "../../lib/studio/workflow/compile";
 import { shotVideoModel } from "../../lib/studio/project-production";
 import {
   newShot,
@@ -13,7 +13,7 @@ import {
   type ProjectDocument,
   type ProjectShot,
 } from "../../lib/studio/projects";
-import { rewriteTargetModel } from "../../lib/studio/studio-rewrite";
+import { rewriteReferences, rewriteTargetModel } from "../../lib/studio/studio-rewrite";
 import { formatElapsed } from "../../lib/studio/async-job";
 import { darkroomSeed, darkroomVars } from "../../lib/studio/darkroom";
 import type { LiveRender } from "../../lib/studio/project-activity";
@@ -496,6 +496,13 @@ export function ProjectShots({
                                 kind: entry.kind,
                                 traits: entry.traits,
                               })),
+                            // The images this take will actually receive, so
+                            // the prompt names each one the way the model
+                            // reads it rather than guessing from the order.
+                            references:
+                              mode === "reference"
+                                ? rewriteReferences(model, shotReferences(shot, document.bible))
+                                : undefined,
                           },
                         }
                       : undefined
@@ -657,7 +664,7 @@ export function ProjectShots({
               ) : null}
               {mode === "reference" ? (
                 <>
-                  {requiresOpeningFrame(model?.id) ? (
+                  {acceptsOpeningFrameWithReferences(model?.id) ? (
                     <>
                       <h3>{t("Opening image")}</h3>
                       {shot.openingArtifactId
@@ -717,7 +724,8 @@ export function ProjectShots({
                   catalog={catalog}
                   mode={mode}
                   opensFromFrame={
-                    mode === "image" || (mode === "reference" && requiresOpeningFrame(model?.id))
+                    mode === "image" ||
+                    (mode === "reference" && acceptsOpeningFrameWithReferences(model?.id))
                   }
                   writingModelId={writingModelId}
                   busy={busy}

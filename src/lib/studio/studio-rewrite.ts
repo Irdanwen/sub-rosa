@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { errorCode, friendlyErrorMessage } from "../errors";
 import { t } from "../i18n";
 import { isSeedanceModel } from "./catalog";
-import { referenceMention } from "./seedance";
-import { SEEDANCE_WORD_LIMIT } from "./bible/prompt";
+import { referenceMention, referenceMentions } from "./seedance";
+import { referenceRoleOf, SEEDANCE_WORD_LIMIT, type StackedReference } from "./bible/prompt";
 import type { MediaModel } from "./types";
 
 /**
@@ -41,6 +41,17 @@ export interface RewriteTargetModel {
   referenceMention?: string;
 }
 
+/** One subject or scene the shot's references show, and how to name it. */
+export interface RewriteReference {
+  /** Exactly what the prompt writes for it: `@Element1`, `<Image 2>`, `image 3`. */
+  mention: string;
+  /** The bible entry it shows; empty for a picked image no entry holds. */
+  name: string;
+  kind?: string;
+  /** The roles of its images (portrait, profile, wide...), in order. */
+  roles: string[];
+}
+
 export interface RewriteContextEntry {
   name: string;
   kind: string;
@@ -73,6 +84,9 @@ export interface StudioRewriteContext {
   intensity?: string;
   /** What is on screen under a cue, shot by shot. */
   scenes?: string[];
+  /** The shot's reference images as the render receives them, one line per
+   * mention, so the rewrite names each the way the target model reads it. */
+  references?: RewriteReference[];
 }
 
 export interface StudioRewriteInput {
@@ -115,6 +129,35 @@ export function rewriteTargetModel(model: MediaModel | undefined): RewriteTarget
     wordLimit: isSeedanceModel(model.id) ? SEEDANCE_WORD_LIMIT : undefined,
     referenceMention: referenceMention(model, "image", 1).replace("1", "{n}"),
   };
+}
+
+/**
+ * The references a shot sends, as the rewrite should name them: one entry per
+ * mention, in the order sent. Images that share a mention (a kling element's
+ * angles) are one entry; an image the request will not carry is left out.
+ */
+export function rewriteReferences(
+  model: Pick<MediaModel, "id"> | undefined,
+  references: readonly StackedReference[],
+): RewriteReference[] {
+  const mentions = referenceMentions(model, references.length, references.map(referenceRoleOf));
+  const byMention = new Map<string, RewriteReference>();
+  references.forEach((reference, index) => {
+    const mention = mentions[index];
+    if (!mention) return;
+    const existing = byMention.get(mention);
+    if (existing) {
+      if (reference.role) existing.roles.push(reference.role);
+      return;
+    }
+    byMention.set(mention, {
+      mention,
+      name: reference.entryName,
+      kind: reference.kind,
+      roles: reference.role ? [reference.role] : [],
+    });
+  });
+  return [...byMention.values()];
 }
 
 export interface StudioRewriteRun {

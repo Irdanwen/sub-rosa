@@ -61,8 +61,8 @@ describe("seedance 2.5 reference-to-video is reachable", () => {
   it("offers the 30 reference photos the 2.5 contract documents", () => {
     expect(maxVideoReferences(family("seedance 2.5").referenceModel)).toBe(30);
     expect(maxVideoReferences(family("seedance 2.0").referenceModel)).toBe(9);
-    // A family with no published figure keeps the conservative default.
-    expect(maxVideoReferences(family("kling o3 4k").referenceModel)).toBe(4);
+    // Kling's figure is its two caps together: 4 elements and 4 scene images.
+    expect(maxVideoReferences(family("kling o3 4k").referenceModel)).toBe(8);
   });
 });
 

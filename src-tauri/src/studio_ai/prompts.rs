@@ -25,7 +25,7 @@
 
 /// Bump when a prompt below changes in a way that would produce a different
 /// rewrite.
-pub const STUDIO_AI_PROMPT_VERSION: &str = "studio-rewrite-v2";
+pub const STUDIO_AI_PROMPT_VERSION: &str = "studio-rewrite-v3";
 
 pub const MATERIAL_OPEN: &str = "<material>";
 pub const MATERIAL_CLOSE: &str = "</material>";

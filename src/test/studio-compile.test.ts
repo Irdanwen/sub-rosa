@@ -620,7 +620,7 @@ describe("editable project shots", () => {
     }
   });
 
-  it("requires and connects an opening frame for Kling reference video", () => {
+  it("runs Kling reference video on references alone, and connects an optional opening frame", () => {
     const kling = model("kling-o3-pro-reference-to-video", "referenceToVideo");
     const input = {
       name: "Film",
@@ -634,7 +634,13 @@ describe("editable project shots", () => {
         }),
       ],
     };
-    expect(compileShotList(input).refusal).toContain("opening image");
+    const alone = compileShotList(input);
+    expect(alone.refusal).toBeUndefined();
+    expect(
+      alone.workflow?.edges
+        .filter((edge) => edge.target === "shot-rtv")
+        .map((edge) => edge.targetPort),
+    ).toEqual(["references"]);
     const result = compileShotList({
       ...input,
       shots: [{ ...input.shots[0], openingArtifactId: "opening.png" }],
@@ -648,7 +654,7 @@ describe("editable project shots", () => {
     ).toEqual(["openingFrame", "references"]);
   });
 
-  it("refuses an automatically routed Kling reference shot without its required frame", () => {
+  it("compiles an automatically routed Kling reference shot with no frame", () => {
     const kling = model("kling-o3-pro-reference-to-video", "referenceToVideo");
     const result = compileShotList({
       name: "Film",
@@ -656,8 +662,55 @@ describe("editable project shots", () => {
       bible: [nera],
       shots: [shot({ characters: ["Nera"] })],
     });
+    expect(result.refusal).toBeUndefined();
+    expect(result.workflow && validateWorkflow(result.workflow).ok).toBe(true);
+  });
+
+  it("refuses a Kling V3 reference shot without its required frame", () => {
+    const v3 = model("kling-v3-4k-reference-to-video", "referenceToVideo");
+    const result = compileShotList({
+      name: "Film",
+      catalog: { ...catalog, models: [v3] },
+      bible: [nera],
+      shots: [shot({ characters: ["Nera"] })],
+    });
     expect(result.workflow).toBeUndefined();
     expect(result.refusal).toContain("opening image");
+  });
+
+  it("tells a Kling reference shot what each image shows, and names them its way", () => {
+    const kling = model("kling-o3-pro-reference-to-video", "referenceToVideo");
+    const alley: BibleEntry = {
+      ...nera,
+      id: "e2",
+      kind: "location",
+      name: "Alley",
+      traits: "wet cobbles",
+      refs: [
+        { id: "r3", entryId: "e2", artifactId: "alley.png", role: "wide", label: "", ordinal: 0 },
+      ],
+    };
+    const profile = {
+      id: "r4",
+      entryId: "e1",
+      artifactId: "nera-side.png",
+      role: "profile" as const,
+      label: "",
+      ordinal: 2,
+    };
+    const result = compileShotList({
+      name: "Film",
+      catalog: { ...catalog, models: [kling] },
+      bible: [{ ...nera, refs: [...nera.refs, profile] }, alley],
+      shots: [shot({ id: "a", characters: ["Nera"], location: "Alley" })],
+    });
+    const video = result.workflow?.nodes.find((node) => node.type === "video");
+    expect(video?.params.referenceRoles).toEqual({
+      "nera.png": { subject: "Nera" },
+      "nera-side.png": { subject: "Nera" },
+      "alley.png": { scene: true },
+    });
+    expect(String(video?.params.prompt).startsWith("Refer to @Element1 for Nera.")).toBe(true);
   });
 
   it("routes an inherited Kling text default to its reference arm", () => {
@@ -669,11 +722,7 @@ describe("editable project shots", () => {
       videoModelId: text.id,
       shots: [shot({ mode: "reference" as const, referenceArtifactIds: ["person.png"] })],
     };
-    expect(compileShotList(input).refusal).toContain("opening image");
-    const result = compileShotList({
-      ...input,
-      shots: [{ ...input.shots[0], openingArtifactId: "opening.png" }],
-    });
+    const result = compileShotList(input);
     expect(result.refusal).toBeUndefined();
     expect(result.workflow?.nodes.find((node) => node.type === "video")?.params.model).toBe(
       reference.id,
