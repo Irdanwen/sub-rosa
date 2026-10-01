@@ -1,15 +1,15 @@
 # Reste à faire : compte par email, clé Carpe Diem et crédits par carte
 
-*État au 1er octobre 2026. Côté Sub Rosa, tout est livré. Ce qui reste dépend de Stripe, d'une relecture juridique, puis de Carpe Diem, **dans cet ordre**.*
+*État au 1er octobre 2026 au soir. Côté Sub Rosa, tout est livré. Ce qui reste dépend de Stripe, d'une relecture juridique, puis de Carpe Diem, **dans cet ordre**.*
 
 ## Où on en est
 
-- **Apps** : 1.79.0 publiée sur desktop (macOS, Windows), TestFlight et Android. Les correctifs de l'audit (aucun lien d'achat là où la boutique l'interdit) sont fusionnés et partent en **1.79.2**, juste après la 1.79.1 d'une autre session.
+- **Apps** : **1.79.2** publiée (1er octobre) sur desktop (macOS arm64 et Intel, Windows ; l'updater l'annonce), TestFlight et Android (build 213031634). Elle contient les correctifs de l'audit : aucun lien d'achat là où la boutique l'interdit.
 - **Service de comptes** (`subrosa.furetier.com`) en production :
   - migration 0009 appliquée, clé de partenaire armée ;
   - la route d'assertion répond 401 sans session ;
   - le `bootstrap.py` corrigé est en place sur le VPS.
-- **Sites** redéployés, onglet Recharger en USDC.
+- **Sites** redéployés avec les téléchargements 1.79.2, onglet Recharger en USDC.
 - **Pour les utilisateurs, rien ne change** tant que Carpe Diem n'a pas tout armé. L'app masque les nouveaux parcours, et Carpe Diem refuse d'émettre des clés tant que la carte n'est pas ouverte : impossible de distribuer des comptes coincés à zéro crédit.
 
 ## Ordre des étapes (et pourquoi)
@@ -158,5 +158,5 @@ Si `keyIssuance` reste à `false`, c'est voulu tant qu'il manque le mailer, la c
 - **Exploitation du serveur de comptes** : `docs/vps-account-stack.md`, section « Clé de partenaire Carpe Diem ».
 - **Tests live croisés** : `src-tauri/src/carpe_diem/issued_live_tests.rs` (recette en tête de fichier).
 - **PR** :
-  - Sub Rosa : #226 à #229, #235 (fusionnées), #231 (release 1.79.0), #232 (téléchargements) ;
+  - Sub Rosa : #226 à #229, #235 (fusionnées), #231 et #237 (releases 1.79.0 et 1.79.2), #232 et #239 (téléchargements), #236 (cette note) ;
   - Carpe Diem : #397 et #398 (ouvertes).
