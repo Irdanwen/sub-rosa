@@ -1,34 +1,34 @@
 {
-  "version": "v1.79.1",
-  "published_at": "2026-10-01T15:22:33Z",
-  "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/v1.79.1",
+  "version": "v1.79.2",
+  "published_at": "2026-10-01T17:00:22Z",
+  "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/v1.79.2",
   "assets": [
     {
       "platform": "mac-arm",
-      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.79.1/darwin-aarch64-Sub.Rosa_1.79.1_aarch64.dmg",
-      "bytes": 155517140,
-      "sha256": "179524907ad96f050189225381c430b0fb071474f6ab508d677ecbf88e8266c2"
+      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.79.2/darwin-aarch64-Sub.Rosa_1.79.2_aarch64.dmg",
+      "bytes": 155516928,
+      "sha256": "016f5205a708f954b5a03eba3b43b72870c87268d98410a35fc011908b879124"
     },
     {
       "platform": "mac-intel",
-      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.79.1/darwin-x86_64-Sub.Rosa_1.79.1_x64.dmg",
-      "bytes": 158109138,
-      "sha256": "7ed5745bb9bff46450cf69a289c2d1012da0079ab6cec11b5d67609677f97efd"
+      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.79.2/darwin-x86_64-Sub.Rosa_1.79.2_x64.dmg",
+      "bytes": 158110894,
+      "sha256": "1df93e7490e0fbc377f44b4e95f6461a97cf3b1018a0b1975d7a9ef8938b0f4d"
     },
     {
       "platform": "windows",
-      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.79.1/windows-x86_64-Sub.Rosa_1.79.1_x64-setup.exe",
-      "bytes": 109525621,
-      "sha256": "aa50b5e5fe7fda347d97af2d66ed03b472b1895e4f3490e24faea239cf611246"
+      "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/v1.79.2/windows-x86_64-Sub.Rosa_1.79.2_x64-setup.exe",
+      "bytes": 109467230,
+      "sha256": "1aa970d7ee8ad796e88f028bcddd0bff377eb29de4425491538825baf2948c31"
     }
   ],
   "android": {
-    "version": "v1.79.1",
-    "build": 213005754,
-    "published_at": "2026-10-01T08:34:34Z",
-    "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/android-v1.79.1-213005754",
-    "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/android-v1.79.1-213005754/subrosa-1.79.1-213005754-arm64.apk",
-    "bytes": 65231503,
-    "sha256": "2d3ffb944e55f5a6d5d1e917f521771cd5a0f61dcfaeb56c77823052666c650b"
+    "version": "v1.79.2",
+    "build": 213031634,
+    "published_at": "2026-10-01T15:45:41Z",
+    "release_url": "https://github.com/Irdanwen/sub-rosa-releases/releases/tag/android-v1.79.2-213031634",
+    "url": "https://github.com/Irdanwen/sub-rosa-releases/releases/download/android-v1.79.2-213031634/subrosa-1.79.2-213031634-arm64.apk",
+    "bytes": 65227579,
+    "sha256": "ebd83d5adbdb74153890ed97d56cd337d0b030ce05cb72c65f042813439381f3"
   }
 }
