@@ -75,7 +75,10 @@ def carpe_diem_partner(directory, account_origin, audience):
     jwk = {"crv": "P-256", "kty": "EC", "x": b64url(x), "y": b64url(y)}
     canonical = json.dumps(jwk, separators=(",", ":"), sort_keys=True).encode()
     kid = "sr-" + b64url(hashlib.sha256(canonical).digest())[:16]
-    public = {"id": "subrosa", "issuer": account_origin, "audience": audience,
+    # `name` is what Carpe Diem shows: key names ("Sub Rosa - iPhone") and the
+    # mails that announce a key or ask for consent. Without it Carpe Diem falls
+    # back to the id, and the person reads "subrosa".
+    public = {"id": "subrosa", "name": "Sub Rosa", "issuer": account_origin, "audience": audience,
               "keys": [{"kid": kid, "jwk": jwk}]}
     write(directory / PARTNER_PUBLIC, json.dumps(public, indent=2) + "\n")
     return kid, pem

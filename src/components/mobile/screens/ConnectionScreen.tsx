@@ -23,6 +23,7 @@ import {
 import { CarpeDiemStatusPill, useCarpeDiem } from "../../settings/CarpeDiemSettings";
 import { SettingsActionRow, SettingsGroup, SettingsRow } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
+import { usePurchaseLinksAllowed } from "../../../lib/credits-purchase";
 
 type EndpointChoice = "v1" | "router";
 
@@ -42,6 +43,7 @@ function railLabel(rail: CarpeDiemRail): string {
  * every description into half the width.
  */
 export function ConnectionScreen({ onBack }: { onBack: () => void }) {
+  const purchaseLinks = usePurchaseLinksAllowed();
   const { settings, status, refresh, setSettings } = useCarpeDiem();
   const [keyDraft, setKeyDraft] = useState("");
   const [notice, setNotice] = useState<string>();
@@ -169,7 +171,12 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
               </button>
             </form>
           </SettingsRow>
-          <SettingsActionRow label={t("Get a key")} onClick={() => void carpeDiemOpenDashboard()} />
+          {purchaseLinks ? (
+            <SettingsActionRow
+              label={t("Get a key")}
+              onClick={() => void carpeDiemOpenDashboard()}
+            />
+          ) : null}
           {hasApiKey ? (
             <SettingsActionRow
               label={t("Remove key")}
@@ -238,6 +245,7 @@ export function ConnectionScreen({ onBack }: { onBack: () => void }) {
  * rail can be empty while the other holds funds, so the balances and the
  * switch belong together. Renders nothing for Venice keys (no rails). */
 function PaymentGroup({ hasApiKey }: { hasApiKey: boolean }) {
+  const purchaseLinks = usePurchaseLinksAllowed();
   const [billing, setBilling] = useState<CarpeDiemBillingDto | null>(null);
   const [busy, setBusy] = useState<CarpeDiemRail | null>(null);
   const [error, setError] = useState<string>();
@@ -287,9 +295,11 @@ function PaymentGroup({ hasApiKey }: { hasApiKey: boolean }) {
                   "Your active rail is out of funds, so requests will fail. Your prepaid account still has {balance}, so switch rails above.",
                   { balance: formatUsd(view.otherBalanceUsdc) },
                 )
-            : t(
-                "Your active rail is out of funds, so requests will fail. Add funds on the Carpe Diem site.",
-              )
+            : purchaseLinks
+              ? t(
+                  "Your active rail is out of funds, so requests will fail. Add funds on the Carpe Diem site.",
+                )
+              : t("Your active rail is out of funds, so requests will fail.")
           : t(
               "Carpe Diem bills one rail at a time. Your prepaid account and credits are separate balances, and the active rail is what actually pays.",
             )

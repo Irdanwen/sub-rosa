@@ -148,6 +148,7 @@ class BootstrapTest(unittest.TestCase):
             pem = key.read_text()
             public = json.loads((self.directory / bootstrap.PARTNER_PUBLIC).read_text())
             self.assertEqual(public["issuer"], "https://accounts.example.com")
+            self.assertEqual(public["name"], "Sub Rosa")
             self.assertEqual(public["audience"], "https://carpe-diem.example.com/api/operator")
             [entry] = public["keys"]
             self.assertEqual(sorted(entry["jwk"]), ["crv", "kty", "x", "y"], "public members only")

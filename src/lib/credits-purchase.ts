@@ -137,6 +137,17 @@ export function usePayPolicy(): PayPolicy | null {
   return policy;
 }
 
+/**
+ * Whether this copy of the app may point anywhere a purchase happens, Carpe
+ * Diem's own site included: getting a key there means funding it. False while
+ * the answer is on its way, and on a store that forbids pointing outside it.
+ * Every link or sentence that sends someone to buy goes through this, not only
+ * the Add credits sheet.
+ */
+export function usePurchaseLinksAllowed(): boolean {
+  return usePayPolicy()?.linkAllowed === true;
+}
+
 /** "$10", "$2.50": whole dollars without cents. */
 export function formatUsdCents(cents: number, locale?: string) {
   return new Intl.NumberFormat(locale, {

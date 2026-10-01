@@ -42,7 +42,10 @@ vi.mock("../lib/credits-events", () => ({
   requestAddCredits: purchase.requestAddCredits,
   onCreditsChanged: () => () => {},
 }));
-vi.mock("../lib/credits-purchase", () => ({ usePayPolicy: () => purchase.policy }));
+vi.mock("../lib/credits-purchase", () => ({
+  usePayPolicy: () => purchase.policy,
+  usePurchaseLinksAllowed: () => purchase.policy?.linkAllowed === true,
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: () => Promise.resolve("1.30.0") }));
 vi.mock("../lib/haptics", () => ({
@@ -186,6 +189,17 @@ describe("mobile memory screen", () => {
 });
 
 describe("mobile connection screen", () => {
+  it("points to Carpe Diem for a key only where the store allows it", async () => {
+    purchase.policy = { linkAllowed: false, fiat: false };
+    const { unmount } = render(<ConnectionScreen onBack={vi.fn()} />);
+    expect(await screen.findByLabelText("Carpe Diem API key")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Get a key" })).toBeNull();
+    unmount();
+    purchase.policy = { linkAllowed: true, fiat: false };
+    render(<ConnectionScreen onBack={vi.fn()} />);
+    expect(await screen.findByRole("button", { name: "Get a key" })).toBeInTheDocument();
+  });
+
   it("saves a pasted key and offers to remove the stored one", async () => {
     tauriMocks.carpeDiemSetApiKey.mockResolvedValue({ ...SETTINGS, hasApiKey: true });
     render(<ConnectionScreen onBack={vi.fn()} />);
