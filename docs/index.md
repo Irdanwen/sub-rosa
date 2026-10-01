@@ -155,6 +155,7 @@ tasks / contracts / checklists`.
 - [plan-comptes-synchronisation-site-2026-09-14.md](plan-comptes-synchronisation-site-2026-09-14.md) — conception initiale : compte Sub Rosa, coffre chiffré, continuité entre appareils et site ; premier plan noté 7/10 puis cible 10/10. Voir les ADR et le contrat pour les décisions effectivement implémentées.
 - [accounts-sync-contract.md](accounts-sync-contract.md) — identity, sessions, encrypted sync and pairing wire contract.
 - [carpe-diem-partner-contract.md](carpe-diem-partner-contract.md) — wire contract shared with Carpe Diem: the issuance assertion, the proof of possession, device-key issuance and revocation, card top-ups (tickets, grants, refunds).
+- [reste-a-faire-compte-et-carte.md](reste-a-faire-compte-et-carte.md) — what remains before email accounts and card top-ups reach users: Stripe, legal and treasury, Carpe Diem deployment (exact settings), then the Sub Rosa follow-ups and a real-user test (French).
 - [accounts-delivery-2026-09-14.md](accounts-delivery-2026-09-14.md) — implementation, local evidence and remaining public-launch gates.
 - [vps-site-delivery-2026-09-15.md](vps-site-delivery-2026-09-15.md) — public English website on the VPS, HTTPS/browser evidence, rollback and outstanding registration dependencies.
 - [vps-account-stack.md](vps-account-stack.md) — isolated account-service deployment preparation, identity, database privileges, secret handling and activation prerequisites.
