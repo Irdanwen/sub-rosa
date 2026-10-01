@@ -1823,3 +1823,22 @@ le **tri de pertinence** des recherches.
 | `src/app/App.tsx` | `handleTopUp` ouvre la feuille « Ajouter des crédits » | Réappliquer |
 | `src/components/note-editor/NoteEditor.tsx`, `NoteFailureBanner.tsx` | Recharge passée par la politique de boutique | Réappliquer |
 | `src/components/onboarding/steps/KeyStep.tsx` | « Créer mon compte avec mon email » d'abord | Réappliquer |
+
+## Les références vidéo dans le contrat de chaque modèle (2026-10-01, v1.79.1)
+
+- **Kling R2V** (`src/lib/studio/kling.ts`) : ne lit jamais `reference_image_urls`.
+  Les références partent en `elements` (`@Element1`, angles d'un même sujet
+  regroupés) et `scene_image_urls` (`@Image1`) selon `klingLayout`. Une liste sans
+  rôle (Studio libre) remplit les 4 éléments puis les 4 scènes. Le compilateur de
+  films écrit les rôles par artefact dans le paramètre `referenceRoles` du nœud
+  vidéo. Kling V3 R2V exige en plus `image_url` (`requiresOpeningFrame`).
+- **Mentions** : `referenceMentions` (seedance.ts) est la seule source pour le
+  prompt automatique, les puces du canevas et la réécriture IA, qui reçoit
+  `context.references` (prompt `studio-rewrite-v3`).
+- **Plafonds mesurés** : `MEASURED_REFERENCE_CAPS` (gemini-omni-flash 3, etc.).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/hermes/june_media_mcp.py` | Image Kling R2V envoyée en élément (+ `image_url` sur V3) | Réappliquer |
