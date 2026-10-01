@@ -11,7 +11,11 @@ import { CARPE_DIEM_DASHBOARD_URL, PRODUCT_NAME } from "../../lib/branding";
 import { isMobilePlatform } from "../../lib/mobile";
 import { carpeDiemRestartSidecar } from "../../lib/tauri";
 import { useIssuanceStatus } from "../../lib/carpe-diem-issue";
-import { markFirstPurchasePending, usePayPolicy } from "../../lib/credits-purchase";
+import {
+  markFirstPurchasePending,
+  usePayPolicy,
+  usePurchaseLinksAllowed,
+} from "../../lib/credits-purchase";
 import { NewAccountKeyOffer } from "./NewAccountKeyOffer";
 
 /**
@@ -39,6 +43,8 @@ export function CarpeDiemGate({
 }) {
   const mobile = isMobilePlatform();
   const failed = reason === "failed";
+  // The dashboard is where a key is funded: not a link a phone store allows.
+  const purchaseLinks = usePurchaseLinksAllowed();
   // The engine can be asked to start again from here. It used to require a
   // trip to Settings, or a relaunch, for a failure that is often a network
   // blip at boot.
@@ -103,25 +109,29 @@ export function CarpeDiemGate({
           </p>
         ) : null}
 
-        <p className="welcome-terms">
-          {failed ? (
-            <>
-              {t("Still stuck? Check that the key has credits in the")}{" "}
-              <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
-                {t("Carpe Diem dashboard")}
-              </a>
-              .
-            </>
-          ) : (
-            <>
-              {t("Need a key?")}{" "}
-              <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
-                {t("Create one and add credits")}
-              </a>{" "}
-              {t("in the Carpe Diem dashboard, then paste it above.")}
-            </>
-          )}
-        </p>
+        {purchaseLinks ? (
+          <p className="welcome-terms">
+            {failed ? (
+              <>
+                {t("Still stuck? Check that the key has credits in the")}{" "}
+                <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
+                  {t("Carpe Diem dashboard")}
+                </a>
+                .
+              </>
+            ) : (
+              <>
+                {t("Need a key?")}{" "}
+                <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
+                  {t("Create one and add credits")}
+                </a>{" "}
+                {t("in the Carpe Diem dashboard, then paste it above.")}
+              </>
+            )}
+          </p>
+        ) : failed ? (
+          <p className="welcome-terms">{t("Still stuck? Check that the key still has credits.")}</p>
+        ) : null}
       </div>
     </div>
   );
@@ -154,7 +164,7 @@ function PhoneWelcome() {
     if (path && scroller) scroller.scrollTop = 0;
   }, [path]);
 
-  const footer = (
+  const footer = payLinkAllowed ? (
     <p className="welcome-terms">
       {t("No key yet?")}{" "}
       <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
@@ -162,7 +172,7 @@ function PhoneWelcome() {
       </a>{" "}
       {t("in the Carpe Diem dashboard.")}
     </p>
-  );
+  ) : null;
 
   if (path === "choose") {
     return (

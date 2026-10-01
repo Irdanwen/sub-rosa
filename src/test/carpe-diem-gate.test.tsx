@@ -12,7 +12,12 @@ import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
  * trusted.
  */
 
+const links = vi.hoisted(() => ({ allowed: true }));
 vi.mock("../lib/mobile", () => ({ isMobilePlatform: () => false }));
+vi.mock("../lib/credits-purchase", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/credits-purchase")>()),
+  usePurchaseLinksAllowed: () => links.allowed,
+}));
 vi.mock("../lib/tauri", () => ({
   carpeDiemRestartSidecar: vi.fn(() => Promise.resolve()),
 }));
@@ -31,6 +36,20 @@ describe("the Carpe Diem gate", () => {
     expect(screen.getByText(/Need a key\?/)).toBeInTheDocument();
     expect(screen.getByText("Create a Sub Rosa account or sign in")).toBeInTheDocument();
     expect(screen.getByTestId("settings")).toBeInTheDocument();
+  });
+
+  it("never points to the dashboard where a store forbids it", () => {
+    links.allowed = false;
+    try {
+      const { unmount } = render(<CarpeDiemGate reason="no-key" />);
+      expect(screen.queryByRole("link", { name: /Create one and add credits/ })).toBeNull();
+      unmount();
+      render(<CarpeDiemGate reason="failed" />);
+      expect(screen.queryByRole("link", { name: /Carpe Diem dashboard/ })).toBeNull();
+      expect(screen.getByText("Still stuck? Check that the key still has credits.")).toBeInTheDocument();
+    } finally {
+      links.allowed = true;
+    }
   });
 
   it("says what happened when the engine failed", () => {

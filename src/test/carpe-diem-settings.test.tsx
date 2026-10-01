@@ -15,6 +15,11 @@ const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
 }));
 
+const links = vi.hoisted(() => ({ allowed: true }));
+vi.mock("../lib/credits-purchase", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/credits-purchase")>()),
+  usePurchaseLinksAllowed: () => links.allowed,
+}));
 vi.mock("../lib/tauri", () => ({
   carpeDiemGetSettings: mocks.carpeDiemGetSettings,
   carpeDiemSidecarStatus: mocks.carpeDiemSidecarStatus,
@@ -78,6 +83,17 @@ describe("CarpeDiemSettings", () => {
     expect(screen.getByRole("button", { name: "V1 (private)" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /get a key/i })).toBeInTheDocument();
     expect(screen.getByText(/Not connected/i)).toBeInTheDocument();
+  });
+
+  it("offers no link to get a key where a store forbids pointing to a purchase", async () => {
+    links.allowed = false;
+    try {
+      render(<CarpeDiemSettings />);
+      expect(await screen.findByLabelText("Carpe Diem API key")).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /get a key/i })).toBeNull();
+    } finally {
+      links.allowed = true;
+    }
   });
 
   it("switches the endpoint to V1 via the backend command", async () => {

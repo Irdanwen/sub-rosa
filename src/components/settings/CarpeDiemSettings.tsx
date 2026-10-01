@@ -25,6 +25,7 @@ import { CARPE_DIEM_DASHBOARD_URL, CARPE_DIEM_KEY_PREFIX } from "../../lib/brand
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { keyOrigin } from "../../lib/carpe-diem-issue";
 import { IssuedKeyRow } from "../carpe-diem/IssuedKeyRow";
+import { usePurchaseLinksAllowed } from "../../lib/credits-purchase";
 
 /** The two Carpe Diem endpoint rails the user chooses between. */
 type EndpointChoice = "v1" | "router";
@@ -104,6 +105,7 @@ const RAIL_LABELS: Record<CarpeDiemRail, string> = {
  * lets the user switch rails. Renders nothing for Venice keys (no rails) or
  * before the first successful fetch. */
 function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
+  const purchaseLinks = usePurchaseLinksAllowed();
   const [billing, setBilling] = useState<CarpeDiemBillingDto | null>(null);
   const [supported, setSupported] = useState(true);
   const [busy, setBusy] = useState<CarpeDiemRail | null>(null);
@@ -166,7 +168,9 @@ function CarpeDiemPayment({ hasApiKey }: { hasApiKey: boolean }) {
                     : t("Your prepaid account still has {amount}. Switch rails below.", {
                         amount: formatUsd(view.otherBalanceUsdc),
                       })
-                  : t("Add funds on the Carpe Diem site.")}
+                  : purchaseLinks
+                    ? t("Add funds on the Carpe Diem site.")
+                    : null}
               </p>
             ) : null}
           </div>
@@ -308,6 +312,7 @@ export function CarpeDiemSettings({
   firstRun?: boolean;
 }) {
   const { settings, status, refresh, setSettings } = useCarpeDiem();
+  const purchaseLinks = usePurchaseLinksAllowed();
   const [keyDraft, setKeyDraft] = useState("");
   const [notice, setNotice] = useState<string>();
   const [test, setTest] = useState<TestState>({ kind: "idle" });
@@ -437,11 +442,16 @@ export function CarpeDiemSettings({
                 {t(
                   "Your Carpe Diem key ({prefix}…). Stored in your system keychain, never on disk in plain text.",
                   { prefix: CARPE_DIEM_KEY_PREFIX },
-                )}{" "}
-                <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
-                  {t("Get a key")}
-                </a>
-                .
+                )}
+                {purchaseLinks ? (
+                  <>
+                    {" "}
+                    <a href={CARPE_DIEM_DASHBOARD_URL} target="_blank" rel="noreferrer">
+                      {t("Get a key")}
+                    </a>
+                    .
+                  </>
+                ) : null}
               </p>
               <CarpeDiemStatusPill status={status} />
             </div>
