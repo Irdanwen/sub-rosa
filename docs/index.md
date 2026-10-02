@@ -78,6 +78,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0067](adr/0067-a-film-score-is-a-cue-sheet-anchored-on-shots.md) — a film's music is a mode (one piece or a cue sheet), a shared musical identity and cues anchored on shot ids; the app times each cue from its shots and snaps it to the music model's range, the script reading answers in shot numbers and is proposed, never applied
 - [adr/0068](adr/0068-the-website-localizes-public-paths-without-changing-account-callbacks.md) — English and French public URLs are prerendered separately while account, share and native callback paths keep their existing wire contracts
 - [adr/0069](adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md) — a signed-in device obtains its own Carpe Diem key: the account service vouches with a 120 second assertion bound to an ephemeral key, Carpe Diem mints the key in its TEE and hands it to the device, and revoking the device revokes the key; supersedes the "no spending authority" clauses of 0049/0050 and states the bound
+- [adr/0070](adr/0070-a-retouch-is-a-lineage-of-artifacts-and-its-zone-merge-is-native.md) — a retouch's versions are gallery images carrying their lineage (`edit.of`/`root`), the paid job carries that lineage back through `media_jobs.client_context`, and a zone result is merged into its source natively at delivery, before it is saved; measured operator facts (multi-edit only, three inputs, retrieve-time validation)
 
 ## Enforceable rules (spec/)
 

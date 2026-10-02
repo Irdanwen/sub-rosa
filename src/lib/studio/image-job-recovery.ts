@@ -9,6 +9,7 @@ import { isQueuedImageJobClaimed, registerDownloadedArtifactDurably } from "./ar
 import { addBibleRef, listBibleEntries } from "./bible";
 import { BIBLE_ROLES, type BibleRole } from "./bible/types";
 import type { MediaJob } from "./async-job";
+import { recoverRetouchJob, retouchRootOf } from "./retouch/jobs";
 
 export const STUDIO_IMAGE_RECOVERED_EVENT = "subrosa:studio-image-recovered";
 export const STUDIO_IMAGE_FAILED_EVENT = "subrosa:studio-image-failed";
@@ -69,6 +70,13 @@ function bibleTarget(source?: string): { entryId: string; role: BibleRole } | un
 }
 
 export async function recoverStandaloneImageJob(job: MediaJob): Promise<void> {
+  // A retouch carries its version lineage and files itself into its session.
+  if (retouchRootOf(job.source)) {
+    const filed = job.status === "completed";
+    await recoverRetouchJob(job);
+    if (filed) window.dispatchEvent(new Event(STUDIO_IMAGE_RECOVERED_EVENT));
+    return;
+  }
   if (
     job.kind !== "image" ||
     (job.status !== "completed" && job.status !== "failed") ||

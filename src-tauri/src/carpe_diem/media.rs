@@ -654,6 +654,17 @@ pub(super) async fn save_base64(
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(payload.as_bytes())
         .map_err(|error| AppError::new("media_artifact_invalid", error.to_string()))?;
+    save_bytes(app, bytes, &extension).await
+}
+
+/// Write decoded bytes into the gallery under a fresh name, with the extension
+/// their signature says rather than the one requested.
+pub(super) async fn save_bytes(
+    app: &AppHandle,
+    bytes: Vec<u8>,
+    extension: &str,
+) -> Result<ArtifactDto, AppError> {
+    let extension = validate_extension(extension)?;
     if bytes.is_empty() {
         return Err(AppError::new(
             "media_artifact_invalid",

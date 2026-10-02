@@ -7,7 +7,8 @@
 //! that turns runtime settings into a locally spawned backend, the media
 //! proxy ([`media`]) behind the Studio views, the durable runner
 //! ([`jobs`]) that carries asynchronous generations through a suspension, and
-//! the tracker a user's report reaches ([`issue_reports`]).
+//! the tracker a user's report reaches ([`issue_reports`]), and the native
+//! merge of a zone retouch back into its source ([`zone`]).
 
 mod artifact_format;
 pub mod billing;
@@ -22,3 +23,4 @@ pub mod settings;
 pub mod sidecar;
 pub mod stream_usage;
 pub mod workflow_runs;
+pub mod zone;

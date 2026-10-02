@@ -156,4 +156,7 @@ export interface RetouchLineage {
   region?: { crop: [number, number, number, number] };
   /** Variants: which try of a batch this is. */
   variant?: { group: string; index: number; of: number };
+  /** A zone result that could not be merged back (its source was gone), so
+   * the version is the edited crop alone. */
+  unmerged?: boolean;
 }

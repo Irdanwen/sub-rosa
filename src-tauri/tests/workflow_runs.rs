@@ -199,3 +199,50 @@ async fn media_jobs_carry_their_source() {
     let listed = repos.list_media_jobs().await.expect("list");
     assert_eq!(listed.len(), 1);
 }
+
+#[tokio::test]
+async fn a_retouch_job_hands_its_context_back_and_drops_its_mask_once_merged() {
+    let repos = repos().await;
+    for id in ["merged", "unmerged"] {
+        sqlx::query::query(
+            "INSERT INTO media_jobs (id, kind, model, prompt, extension, retrieve_path,
+               retrieve_body, url_fields, status, source, client_context, composite,
+               created_at, updated_at)
+             VALUES (?, 'image', 'm', 'p', 'png', '/image/multi-edit/retrieve', '{}', '[]',
+               'queued', 'retouch:root.png', ?, ?, '', '')",
+        )
+        .bind(id)
+        .bind(r#"{"v":1,"edit":{"of":"root.png","root":"root.png","op":"zone","n":1}}"#)
+        .bind(r#"{"parentFileName":"root.png","crop":[0,0,4,4],"maskPngBase64":"AAAA"}"#)
+        .execute(&repos.pool)
+        .await
+        .expect("insert");
+    }
+    use os_june_lib::carpe_diem::jobs::{client_context, composite_of, settle_composite};
+    assert!(composite_of(&repos.pool, "merged")
+        .await
+        .expect("read")
+        .is_some());
+    settle_composite(&repos.pool, "merged", false)
+        .await
+        .expect("settle");
+    settle_composite(&repos.pool, "unmerged", true)
+        .await
+        .expect("settle");
+    for id in ["merged", "unmerged"] {
+        assert!(composite_of(&repos.pool, id).await.expect("read").is_none());
+    }
+    let merged = client_context(&repos.pool, "merged")
+        .await
+        .expect("read")
+        .expect("context");
+    assert_eq!(merged["edit"]["op"], "zone");
+    assert!(merged.get("compositeFailed").is_none());
+    let unmerged = client_context(&repos.pool, "unmerged")
+        .await
+        .expect("read")
+        .expect("context");
+    assert_eq!(unmerged["compositeFailed"], true);
+    // The mask is never part of what the webview reads back.
+    assert!(!unmerged.to_string().contains("maskPngBase64"));
+}

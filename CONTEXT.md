@@ -689,6 +689,42 @@ worth keeping is written into it rather than held in a form's state. See
 _Avoid_: library, assets, media pool, uploads (nothing is uploaded); "the
 gallery" is the word in the code, the desktop UI, and the mobile sheet alike.
 
+### Retouch (fork)
+
+**Retouch**:
+Editing one image by instruction, in place, one step after another: the image
+fills the surface, the instruction is typed under it, and the result replaces
+it. Also the name of the Studio tab. A retouch session is the tree of
+**versions** grown from one original. See
+[ADR-0070](docs/adr/0070-a-retouch-is-a-lineage-of-artifacts-and-its-zone-merge-is-native.md).
+_Avoid_: edit (the older one-shot Edit mode of the Image tab), inpaint,
+filter, "Edit 3" (a version is numbered, not an edit).
+
+**Version**:
+One image of a retouch session: the original (number 0) or a result, which
+records the version it was made from. Versions are gallery images like any
+other; the tree is read back from their lineage, never stored as a list.
+Retouching an older version starts a **branch**. Undo and redo move between
+versions and never cost anything.
+_Avoid_: history entry, layer, revision (that is a note rewrite), step.
+
+**Zone**:
+The part of a version a retouch is limited to, drawn by the person. Only the
+rectangle around it is sent; the result is merged back through a feathered
+mask, natively, so every pixel outside the zone is the parent's own.
+_Avoid_: mask (the mask is how a zone is merged, not what the person draws),
+selection, region.
+
+**Variants**:
+Several tries of the same instruction on the same version, rendered in
+parallel and shown together so the person picks one to continue from. Each
+try is a version; the ones not picked stay in the gallery.
+_Avoid_: batch, candidates (that is a shot's opening images).
+
+While a retouch renders, the version being retouched stays on screen under the
+darkroom's grain: it is the image being worked on, not a preview of the
+result, so the darkroom's rule against previews holds.
+
 ### Studio workflows (fork)
 
 **Port (workflow input)**:

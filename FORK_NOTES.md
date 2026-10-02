@@ -1846,3 +1846,36 @@ le **tri de pertinence** des recherches.
 | Fichier | Changement | Re-merge |
 |---|---|---|
 | `src-tauri/src/hermes/june_media_mcp.py` | Image Kling R2V envoyée en élément (+ `image_url` sur V3) | Réappliquer |
+
+## La retouche : un éditeur d'image plein cadre (2026-10-02, ADR-0070)
+
+- **Onglet Studio « Retouche »** (`src/components/studio/retouch/`), écran
+  téléphone poussé sur l'onglet Studio (`RetouchScreen`, route `studio-retouch`).
+  Les deux coquilles partagent `RetouchWorkspace` et le moteur
+  `src/lib/studio/retouch/` (requête, lignée, zone, file, session).
+- **Toujours `/image/multi-edit`** : seul à accepter `resolution` et `quality`.
+  Le plafond `MULTI_EDIT_OPERATOR_CAP = 3` (source comprise) est celui de
+  l'opérateur, pas du catalogue : le relever quand Carpe Diem suivra.
+- **Lignée** : champ `edit` sur `StudioArtifact`, jamais `parentId`
+  (`chain.ts`). Le job porte la lignée dans `media_jobs.client_context`, rendu
+  au webview par `MediaJobView` (jobs.rs) sans toucher `MediaJobDto`.
+- **Zone** : recadrage + masque PNG dans `media_jobs.composite`, recollés par
+  `carpe_diem/zone.rs` dans `deliver()` avant l'enregistrement.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/db/migrations.rs` | Colonnes `media_jobs.client_context` et `composite` | Réappliquer |
+| `src/app/mobile/MobileApp.tsx` | Route `studio-retouch`, écoute `OPEN_RETOUCH_EVENT`, bord gauche laissé aux surfaces `data-no-edge-swipe` | Réappliquer |
+| `src/lib/platform.ts` | `isPrimaryShiftShortcut` (rétablir) | Réappliquer |
+| `src/styles/tokens.css` | `--retouch-stage-h` | Réappliquer |
+
+### Pièges
+
+- Les erreurs de valeur (ratio, résolution) arrivent au **retrieve**, pas à la
+  mise en file : n'envoyer que ce que le catalogue liste.
+- `repositories.rs` est au plafond du cliquet de taille : la lignée passe par
+  `jobs::client_context`, pas par le mapping de ligne.
+- Le banc `retouch-lab.html` + `src/dev/retouch-lab.tsx` (exclus via
+  `.git/info/exclude`) charge `studio.css` lui-même, comme `main.tsx`.

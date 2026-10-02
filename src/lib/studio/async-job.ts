@@ -204,6 +204,9 @@ export interface MediaJob {
    * "workflow" for a durable run's renders. The Studio surfaces leave
    * workflow jobs alone — the run files and dismisses them itself. */
   source?: string;
+  /** What the queuing surface asked to get back with the result (a
+   * retouch's version lineage). A failed zone merge sets `compositeFailed`. */
+  clientContext?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
