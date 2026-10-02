@@ -25,6 +25,7 @@
 
 use crate::domain::types::{AppError, MediaJobDto, MediaJobStatus};
 use crate::ios_background::BackgroundTask;
+use base64::Engine as _;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -190,7 +191,16 @@ pub struct QueueMediaJobRequest {
     pub parent_handoff_seconds: Option<f64>,
     pub cost_credits: Option<f64>,
     pub source: Option<String>,
+    /// Handed back with the result, untouched (a retouch's version lineage).
+    #[serde(default)]
+    pub client_context: Option<serde_json::Value>,
+    /// A zone retouch: where to merge the result back before it is saved.
+    #[serde(default)]
+    pub composite: Option<super::zone::CompositeSpec>,
 }
+
+/// Bound on the context a job carries back: lineage, not payloads.
+const MAX_CLIENT_CONTEXT_BYTES: usize = 64 * 1024;
 
 #[tauri::command]
 pub async fn media_job_queue(
@@ -216,21 +226,60 @@ pub async fn media_job_queue(
             "Choose a model and enter a prompt before generating.",
         ));
     }
+    let client_context = request
+        .client_context
+        .as_ref()
+        .map(serde_json::Value::to_string)
+        .filter(|raw| raw.len() <= MAX_CLIENT_CONTEXT_BYTES);
+    if request.client_context.is_some() && client_context.is_none() {
+        return Err(AppError::new(
+            "media_job_invalid",
+            "The retouch details are too large to keep with the job.",
+        ));
+    }
+    if let Some(spec) = &request.composite {
+        if let Err(reason) = spec.validate() {
+            eprintln!("media job {}: zone refused: {reason}", request.job_id);
+            return Err(AppError::new(
+                "media_job_invalid",
+                "The zone could not be prepared. Draw it again.",
+            ));
+        }
+    }
+    let composite = request
+        .composite
+        .as_ref()
+        .and_then(|spec| serde_json::to_string(spec).ok());
     let repos = crate::commands::repositories(&app).await?;
     let now = chrono::Utc::now().to_rfc3339();
     let uncertain = "The submission was interrupted. Check your provider history before starting another generation.";
     // The unique local id is also the submission claim. Concurrent invocations
     // with the same id return the existing record instead of paying twice.
-    let inserted = sqlx::query::query("INSERT OR IGNORE INTO media_jobs
+    let inserted = sqlx::query::query(
+        "INSERT OR IGNORE INTO media_jobs
       (id, kind, model, prompt, extension, retrieve_path, retrieve_body, url_fields,
-       status, error, parent_artifact_id, parent_handoff_seconds, cost_credits, source, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, '{}', ?, 'failed', ?, ?, ?, ?, ?, ?, ?)")
-        .bind(&request.job_id).bind(&request.kind).bind(&request.model).bind(&request.prompt)
-        .bind(&request.extension).bind(&request.retrieve_path)
-        .bind(serde_json::json!(request.url_fields).to_string()).bind(uncertain)
-        .bind(&request.parent_artifact_id).bind(request.parent_handoff_seconds)
-        .bind(request.cost_credits).bind(&request.source).bind(&now).bind(&now)
-        .execute(&repos.pool).await?;
+       status, error, parent_artifact_id, parent_handoff_seconds, cost_credits, source,
+       client_context, composite, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, '{}', ?, 'failed', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&request.job_id)
+    .bind(&request.kind)
+    .bind(&request.model)
+    .bind(&request.prompt)
+    .bind(&request.extension)
+    .bind(&request.retrieve_path)
+    .bind(serde_json::json!(request.url_fields).to_string())
+    .bind(uncertain)
+    .bind(&request.parent_artifact_id)
+    .bind(request.parent_handoff_seconds)
+    .bind(request.cost_credits)
+    .bind(&request.source)
+    .bind(&client_context)
+    .bind(&composite)
+    .bind(&now)
+    .bind(&now)
+    .execute(&repos.pool)
+    .await?;
     if inserted.rows_affected() == 0 {
         return repos
             .get_media_job(&request.job_id)
@@ -280,13 +329,50 @@ pub async fn media_job_queue(
     Ok(stored)
 }
 
+/// A job as the webview sees it: the row, plus whatever the queuing surface
+/// asked to get back with the result (a retouch's version lineage). Opaque to
+/// Rust, except that a zone merge that failed says so (`compositeFailed`).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaJobView {
+    #[serde(flatten)]
+    pub job: MediaJobDto,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_context: Option<serde_json::Value>,
+}
+
+/// A row's client context, as stored: JSON text, or nothing.
+pub async fn client_context(
+    pool: &sqlx_sqlite::SqlitePool,
+    id: &str,
+) -> Result<Option<serde_json::Value>, sqlx::error::Error> {
+    use sqlx::row::Row;
+    let row = sqlx::query::query("SELECT client_context FROM media_jobs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row
+        .and_then(|row| row.get::<Option<String>, _>("client_context"))
+        .and_then(|raw| serde_json::from_str(&raw).ok()))
+}
+
+async fn view(pool: &sqlx_sqlite::SqlitePool, job: MediaJobDto) -> MediaJobView {
+    let client_context = client_context(pool, &job.id).await.ok().flatten();
+    MediaJobView {
+        job,
+        client_context,
+    }
+}
+
 /// Every job the UI has not acknowledged yet, running or finished.
 #[tauri::command]
-pub async fn media_job_list(app: AppHandle) -> Result<Vec<MediaJobDto>, AppError> {
-    Ok(crate::commands::repositories(&app)
-        .await?
-        .list_media_jobs()
-        .await?)
+pub async fn media_job_list(app: AppHandle) -> Result<Vec<MediaJobView>, AppError> {
+    let repos = crate::commands::repositories(&app).await?;
+    let mut views = Vec::new();
+    for job in repos.list_media_jobs().await? {
+        views.push(view(&repos.pool, job).await);
+    }
+    Ok(views)
 }
 
 /// Stop polling one job without abandoning it. The backend keeps rendering
@@ -486,9 +572,30 @@ enum Payload {
 /// Write the finished file into the gallery, settle the row, tell the user.
 /// Returns whether the artifact actually landed.
 async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
-    let artifact = match payload {
-        Payload::Url(url) => super::media::download(app, &url, &job.extension).await,
-        Payload::Base64(base64) => super::media::save_base64(app, &base64, &job.extension).await,
+    let composite = pending_composite(app, &job.id).await;
+    let artifact = match (payload, composite) {
+        (Payload::Base64(base64), Some(spec)) => merge_and_save(app, job, &base64, &spec).await,
+        (Payload::Url(url), Some(spec)) => {
+            // Bytes are what a merge reads: fetch, merge, keep only the merge.
+            match super::media::download(app, &url, &job.extension).await {
+                Ok(raw) => match tokio::fs::read(&raw.path).await {
+                    Ok(bytes) => {
+                        let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+                        let merged = merge_and_save(app, job, &base64, &spec).await;
+                        if merged.as_ref().is_ok_and(|merged| merged.path != raw.path) {
+                            let _ = tokio::fs::remove_file(&raw.path).await;
+                        }
+                        merged
+                    }
+                    Err(_) => Ok(raw),
+                },
+                Err(error) => Err(error),
+            }
+        }
+        (Payload::Url(url), None) => super::media::download(app, &url, &job.extension).await,
+        (Payload::Base64(base64), None) => {
+            super::media::save_base64(app, &base64, &job.extension).await
+        }
     };
     match artifact {
         Ok(artifact) => {
@@ -502,7 +609,7 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
                     )
                     .await
                 {
-                    emit(app, &updated);
+                    emit(app, &repos.pool, updated).await;
                 }
             }
             notify(app, job, true);
@@ -521,10 +628,96 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
     }
 }
 
+async fn pending_composite(app: &AppHandle, id: &str) -> Option<super::zone::CompositeSpec> {
+    let repos = crate::commands::repositories(app).await.ok()?;
+    let raw = composite_of(&repos.pool, id).await.ok()??;
+    serde_json::from_str(&raw).ok()
+}
+
+/// The zone a job's result is to be merged into, while it waits for its merge.
+pub async fn composite_of(
+    pool: &sqlx_sqlite::SqlitePool,
+    id: &str,
+) -> Result<Option<String>, sqlx::error::Error> {
+    use sqlx::row::Row;
+    let row = sqlx::query::query("SELECT composite FROM media_jobs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.and_then(|row| row.get::<Option<String>, _>("composite")))
+}
+
+/// Settle a zone merge: the mask is dropped either way, and a merge that
+/// failed is written into the context the webview reads back.
+pub async fn settle_composite(
+    pool: &sqlx_sqlite::SqlitePool,
+    id: &str,
+    failed: bool,
+) -> Result<(), sqlx::error::Error> {
+    let sql = if failed {
+        "UPDATE media_jobs SET composite = NULL,
+             client_context = json_set(COALESCE(client_context, '{}'), '$.compositeFailed', json('true'))
+         WHERE id = ?"
+    } else {
+        "UPDATE media_jobs SET composite = NULL WHERE id = ?"
+    };
+    sqlx::query::query(sql).bind(id).execute(pool).await?;
+    Ok(())
+}
+
+/// Merge a zone result into its source and save the merge. A merge that cannot
+/// happen (the source was deleted meanwhile) still saves the paid result as it
+/// came back, and says so on the row, rather than losing it.
+async fn merge_and_save(
+    app: &AppHandle,
+    job: &MediaJobDto,
+    base64: &str,
+    spec: &super::zone::CompositeSpec,
+) -> Result<super::media::ArtifactDto, AppError> {
+    let merged = async {
+        let result = base64::engine::general_purpose::STANDARD
+            .decode(base64.as_bytes())
+            .map_err(|error| error.to_string())?;
+        let mask = base64::engine::general_purpose::STANDARD
+            .decode(spec.mask_png_base64.as_bytes())
+            .map_err(|error| error.to_string())?;
+        let dir = super::media::artifacts_dir(app).map_err(|error| error.message)?;
+        let parent = tokio::fs::read(dir.join(&spec.parent_file_name))
+            .await
+            .map_err(|error| format!("parent: {error}"))?;
+        let crop = spec.crop;
+        tauri::async_runtime::spawn_blocking(move || {
+            super::zone::composite(&parent, &result, crop, &mask)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    }
+    .await;
+    let repos = crate::commands::repositories(app).await.ok();
+    match merged {
+        Ok(bytes) => {
+            let saved = super::media::save_bytes(app, bytes, "png").await;
+            if saved.is_ok() {
+                if let Some(repos) = &repos {
+                    let _ = settle_composite(&repos.pool, &job.id, false).await;
+                }
+            }
+            saved
+        }
+        Err(reason) => {
+            eprintln!("media job {}: zone merge failed: {reason}", job.id);
+            if let Some(repos) = &repos {
+                let _ = settle_composite(&repos.pool, &job.id, true).await;
+            }
+            super::media::save_base64(app, base64, &job.extension).await
+        }
+    }
+}
+
 async fn mark(app: &AppHandle, id: &str, status: MediaJobStatus) {
     if let Ok(repos) = crate::commands::repositories(app).await {
         if let Ok(Some(job)) = repos.set_media_job_status(id, status, None, None).await {
-            emit(app, &job);
+            emit(app, &repos.pool, job.clone()).await;
         }
     }
 }
@@ -544,14 +737,14 @@ async fn fail(app: &AppHandle, id: &str, reason: &str, status: Option<u16>) {
             )
             .await
         {
-            emit(app, &job);
+            emit(app, &repos.pool, job.clone()).await;
             notify(app, &job, false);
         }
     }
 }
 
-fn emit(app: &AppHandle, job: &MediaJobDto) {
-    let _ = app.emit(MEDIA_JOB_EVENT, job);
+async fn emit(app: &AppHandle, pool: &sqlx_sqlite::SqlitePool, job: MediaJobDto) {
+    let _ = app.emit(MEDIA_JOB_EVENT, view(pool, job).await);
 }
 
 /// The point of the whole exercise: a render that lands while the user is in
@@ -669,6 +862,44 @@ mod tests {
         for status in [408, 499, 500, 502, 503, 504] {
             assert!(!definite_queue_rejection(status), "{status}");
         }
+    }
+
+    #[test]
+    fn reads_a_retouch_exactly_as_the_webview_sends_it() {
+        // The shape `submitRetouch` (src/lib/studio/retouch/jobs.ts) sends.
+        let request: QueueMediaJobRequest = serde_json::from_value(serde_json::json!({
+            "jobId": "job-1",
+            "kind": "image",
+            "model": "ideogram-v4-5-edit",
+            "prompt": "A knitted cushion",
+            "extension": "png",
+            "queuePath": "/image/multi-edit/queue",
+            "queueBody": { "model": "ideogram-v4-5-edit", "images": ["data:image/png;base64,AA"] },
+            "retrievePath": "/image/multi-edit/retrieve",
+            "urlFields": ["image_url", "url"],
+            "source": "retouch:root.png",
+            "costCredits": 10.76,
+            "clientContext": { "v": 1, "edit": { "of": "root.png", "root": "root.png", "op": "zone", "n": 1 } },
+            "composite": { "parentFileName": "root.png", "crop": [310, 470, 450, 300], "maskPngBase64": "AAAA" }
+        }))
+        .expect("the webview's request deserializes");
+        assert_eq!(request.source.as_deref(), Some("retouch:root.png"));
+        assert_eq!(
+            request.client_context.expect("context")["edit"]["op"],
+            "zone"
+        );
+        let composite = request.composite.expect("composite");
+        assert_eq!(composite.crop, [310, 470, 450, 300]);
+        assert!(composite.validate().is_ok());
+        // An older webview sends neither, and the job is unchanged.
+        let plain: QueueMediaJobRequest = serde_json::from_value(serde_json::json!({
+            "jobId": "job-2", "kind": "image", "model": "m", "prompt": "p", "extension": "png",
+            "queuePath": "/image/edit/queue", "queueBody": {}, "retrievePath": "/image/edit/retrieve",
+            "urlFields": [], "parentArtifactId": null, "parentHandoffSeconds": null,
+            "costCredits": null, "source": "studio"
+        }))
+        .expect("an older request deserializes");
+        assert!(plain.client_context.is_none() && plain.composite.is_none());
     }
 
     #[test]

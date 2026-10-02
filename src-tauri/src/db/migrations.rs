@@ -281,6 +281,13 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     // workflow run's renders say "workflow" so the Studio surfaces do not
     // file and dismiss a row the run is still waiting on (ADR-0021).
     ensure_column(_pool, "media_jobs", "source", "TEXT").await?;
+    // What the queuing surface needs back with the result, opaque here: a
+    // retouch keeps its version lineage on the row so a version that lands
+    // while the app is closed still joins its session (ADR-0070). `composite`
+    // is the zone to merge the result back into, consumed at delivery and
+    // never sent to the webview.
+    ensure_column(_pool, "media_jobs", "client_context", "TEXT").await?;
+    ensure_column(_pool, "media_jobs", "composite", "TEXT").await?;
     // Calendar context lands ON the note, as columns — deliberately not a
     // `meetings` table. The product specs forbid a meeting object and a
     // calendar surface; a table would be exactly that second noun. These
