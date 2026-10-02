@@ -9,13 +9,14 @@
  * sweep there). Before this, that note showed a spinner that turned forever,
  * which is precisely the "is it stuck?" nobody could answer.
  *
- * Resuming reuses the retry path, which keeps every turn already transcribed:
- * what was paid for is not paid for twice.
+ * Resuming reuses the retry path, which keeps every turn and every part
+ * already transcribed: what was paid for is not paid for twice (ADR-0071).
  */
 
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { useState } from "react";
 import { t } from "../../lib/i18n";
+import { isMobilePlatform } from "../../lib/mobile";
 import { InlineNotice } from "../ui/InlineNotice";
 
 export function ProcessingResumeNotice({
@@ -42,10 +43,15 @@ export function ProcessingResumeNotice({
     }
   }
 
+  // On a phone a stalled note is one the system paused in the background,
+  // and the resume sweep picks it back up when the app returns, from its
+  // saved parts. "Closed" would describe something that did not happen.
   const body =
     reason === "stopped"
       ? t("You stopped processing this note.")
-      : t("Processing stopped when the app closed.");
+      : isMobilePlatform()
+        ? t("Processing paused while the app was in the background.")
+        : t("Processing stopped when the app closed.");
   const saved = audioPreserved
     ? t("The recording is saved, so you can pick it up where it left off.")
     : t("The recording could not be found, so there is nothing to resume.");
