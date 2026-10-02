@@ -201,18 +201,15 @@ fn run(task: *mut AnyObject, note_id: String) {
         std::mem::forget(expiration);
     }
     tauri::async_runtime::spawn(async move {
+        use crate::domain::processing_progress::{standing, Standing};
         while !handle.is_completed() {
-            match crate::domain::processing_progress::snapshot(&note_id) {
-                Some(progress) => handle.report(
-                    crate::domain::processing_progress::overall_fraction(&progress, PROGRESS_UNITS),
-                ),
-                None if !crate::domain::processing::is_processing(&note_id)
-                    && !crate::domain::processing_queue::is_enqueued(&note_id) =>
-                {
+            match standing(&note_id, PROGRESS_UNITS) {
+                Standing::Running(done) => handle.report(done),
+                Standing::Waiting => {}
+                Standing::Settled => {
                     handle.report(PROGRESS_UNITS);
                     handle.complete(true);
                 }
-                None => {}
             }
             tokio::time::sleep(REPORT_EVERY).await;
         }

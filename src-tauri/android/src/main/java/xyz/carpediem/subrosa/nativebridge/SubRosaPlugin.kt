@@ -29,6 +29,13 @@ class CredentialArgs {
 }
 
 @InvokeArg
+class ProcessingArgs {
+    lateinit var noteId: String
+    var title: String? = null
+    var done: Int = 0
+}
+
+@InvokeArg
 class PasskeyArgs {
     lateinit var options: String
 }
@@ -175,6 +182,41 @@ class SubRosaPlugin(private val activity: Activity) : Plugin(activity) {
     fun stopRecording(invoke: Invoke) {
         recordings = (recordings - 1).coerceAtLeast(0)
         if (recordings == 0) activity.stopService(Intent(activity, RecordingService::class.java))
+        invoke.resolve()
+    }
+
+    /** A note transcription has begun and will take a while (ADR-0071). */
+    @Command
+    fun startProcessing(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ProcessingArgs::class.java)
+            ProcessingService.start(activity, args.noteId, args.title)
+            invoke.resolve()
+        } catch (_: Exception) {
+            // Android refuses a foreground service started from the background.
+            // The note keeps its saved chunks and resumes when the app returns.
+            invoke.reject("Keep Sub Rosa open to finish this transcription.", "processing_start_failed")
+        }
+    }
+
+    @Command
+    fun updateProcessing(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ProcessingArgs::class.java)
+            ProcessingService.update(activity, args.noteId, args.done)
+        } catch (_: Exception) {
+            // A missed frame of a progress bar is not worth an error.
+        }
+        invoke.resolve()
+    }
+
+    @Command
+    fun stopProcessing(invoke: Invoke) {
+        try {
+            ProcessingService.stop(activity, invoke.parseArgs(ProcessingArgs::class.java).noteId)
+        } catch (_: Exception) {
+            // Nothing to stop.
+        }
         invoke.resolve()
     }
 

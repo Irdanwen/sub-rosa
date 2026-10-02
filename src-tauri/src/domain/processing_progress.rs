@@ -97,6 +97,32 @@ pub fn overall_fraction(progress: &ProcessingProgressDto, units: i64) -> i64 {
     permille * units / 1_000
 }
 
+/// Where a note's run stands, for a system surface that mirrors it while the
+/// app is out of sight (iOS's continued-processing activity, Android's
+/// processing notification).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    /// A pipeline is on it, this far along, in the units asked for.
+    Running(i64),
+    /// Queued, or between claims: nothing to report, but not over either.
+    Waiting,
+    /// Nothing in this process holds the note any more.
+    Settled,
+}
+
+pub fn standing(note_id: &str, units: i64) -> Standing {
+    if let Some(progress) = snapshot(note_id) {
+        return Standing::Running(overall_fraction(&progress, units));
+    }
+    if crate::domain::processing::is_processing(note_id)
+        || crate::domain::processing_queue::is_enqueued(note_id)
+    {
+        Standing::Waiting
+    } else {
+        Standing::Settled
+    }
+}
+
 /// Fill in what only this process knows about a note: how far its pipeline
 /// has got, and how many recordings are stacked behind it. Neither is stored,
 /// so every command that hands a `NoteDto` to a screen has to ask.

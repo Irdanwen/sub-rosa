@@ -50,15 +50,19 @@ impl Drop for BackgroundTask {
     }
 }
 
-/// Ask iOS 26 to keep transcribing this note after the user leaves the app,
-/// and to show how far it has got (ADR-0071). Called once a transcription is
-/// known to span several chunks: a recording short enough for one chunk fits
-/// in the grace window, and does not deserve a system activity on the lock
-/// screen. `title` is the note's, shown under the bar. A no-op elsewhere.
+/// Ask the system to keep transcribing this note after the user leaves the
+/// app, and to show how far it has got (ADR-0071): a continued-processing
+/// task on iOS 26, a foreground service on Android. Called once a
+/// transcription is known to span several chunks: a recording short enough
+/// for one chunk fits in the grace window, and does not deserve a system
+/// activity on the lock screen. `title` is the note's, shown under the bar.
+/// A no-op on the desktop.
 pub fn continue_note(note_id: &str, title: &str) {
     #[cfg(target_os = "ios")]
     continued::start(note_id, title);
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(target_os = "android")]
+    crate::android::keep_processing(note_id, title);
+    #[cfg(desktop)]
     let _ = (note_id, title);
 }
 
