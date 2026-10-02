@@ -182,7 +182,9 @@ export function RetouchComposer({
         </fieldset>
       ) : null}
       <div className="retouch-bar">
-        <div className="retouch-bar-tools">
+        {/* The attach menu opens above its button, so it lives outside the
+         * tools strip: on a phone that strip scrolls sideways and would clip it. */}
+        <div className="retouch-bar-lead">
           <div className="retouch-attach" ref={attachRef}>
             <button
               type="button"
@@ -240,40 +242,42 @@ export function RetouchComposer({
               }}
             />
           </div>
-          <button
-            type="button"
-            className="retouch-icon"
-            aria-label={t("Retouch settings")}
-            aria-expanded={settingsOpen}
-            aria-haspopup="dialog"
-            onClick={onOpenSettings}
-          >
-            <IconSettingsSliderHor size={18} aria-hidden />
-          </button>
-          {compact ? (
-            onDictate ? (
-              <button
-                type="button"
-                className="retouch-icon"
-                data-active={dictating ? "true" : undefined}
-                aria-pressed={Boolean(dictating)}
-                aria-label={dictating ? t("Stop dictation") : t("Dictate")}
-                onClick={onDictate}
-              >
-                <IconMicrophone size={18} aria-hidden />
-              </button>
-            ) : null
-          ) : (
-            <>
-              <button type="button" className="retouch-chip" onClick={onOpenSettings}>
-                {aspectLabel}
-              </button>
-              <RetouchModelControl models={models} model={model} onModel={onModel} />
-              {!zoneActive ? (
-                <RetouchTriesControl variants={variants} onVariants={onVariants} />
-              ) : null}
-            </>
-          )}
+          <div className="retouch-bar-tools">
+            <button
+              type="button"
+              className="retouch-icon"
+              aria-label={t("Retouch settings")}
+              aria-expanded={settingsOpen}
+              aria-haspopup="dialog"
+              onClick={onOpenSettings}
+            >
+              <IconSettingsSliderHor size={18} aria-hidden />
+            </button>
+            {compact ? (
+              onDictate ? (
+                <button
+                  type="button"
+                  className="retouch-icon"
+                  data-active={dictating ? "true" : undefined}
+                  aria-pressed={Boolean(dictating)}
+                  aria-label={dictating ? t("Stop dictation") : t("Dictate")}
+                  onClick={onDictate}
+                >
+                  <IconMicrophone size={18} aria-hidden />
+                </button>
+              ) : null
+            ) : (
+              <>
+                <button type="button" className="retouch-chip" onClick={onOpenSettings}>
+                  {aspectLabel}
+                </button>
+                <RetouchModelControl models={models} model={model} onModel={onModel} />
+                {!zoneActive ? (
+                  <RetouchTriesControl variants={variants} onVariants={onVariants} />
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
         <div className="retouch-bar-send">
           {cost !== undefined ? <span className="retouch-cost">~{formatCredits(cost)}</span> : null}
