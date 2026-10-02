@@ -9,10 +9,11 @@ import {
   rememberQueuedImage,
 } from "./artifacts";
 import { isAsyncRetrySignal, MediaError, mediaRaw } from "./client";
+import { MULTI_EDIT_OPERATOR_CAP } from "./retouch/request";
 import type { MediaProxyResponse } from "./types";
 
 /** Carpe Diem's multi-edit endpoint composes 1 to 3 source images. */
-export const MAX_COMPOSE_IMAGES = 3;
+export const MAX_COMPOSE_IMAGES = MULTI_EDIT_OPERATOR_CAP;
 
 /** Models whose edits exceed the sync edge cap: queue from the start. */
 const HEAVY_EDIT_MODELS = ["gpt-image", "nano-banana-pro"];

@@ -29,6 +29,13 @@ export interface ImageConstraints {
   defaultResolution?: string;
   steps?: { default: number; max: number };
   widthHeightDivisor?: number;
+  /** Edit models: whether several images can be sent at once, and how many.
+   * The operator may cap lower than this (see `MULTI_EDIT_OPERATOR_CAP`). */
+  combineImages?: boolean;
+  maxInputImages?: number;
+  singleImageAspectRatio?: boolean;
+  qualities?: string[];
+  defaultQuality?: string;
 }
 
 /** Venice video-model constraints (verbatim from the public catalog). */
@@ -119,4 +126,34 @@ export interface StudioArtifact {
   /** What this render was quoted at, in credits. An estimate the backend
    * priced before rendering, not a receipt. */
   costCredits?: number;
+  /** Retouch lineage: this image is a version of another one. Its own field,
+   * never `parentId` (which `chain.ts` walks for video shots). */
+  edit?: RetouchLineage;
+}
+
+/** How a retouch version was made. */
+export type RetouchOperation = "prompt" | "zone" | "variant" | "upscale" | "extend";
+
+/** The lineage a retouch version carries, stored with its generation metadata
+ * so the version tree survives a restart without a table of its own. */
+export interface RetouchLineage {
+  /** The version this one was made from. */
+  of: string;
+  /** The original image of the session. Keeps a branch attached when a
+   * version in the middle is deleted. */
+  root: string;
+  op: RetouchOperation;
+  /** Version number in the session; the original is 0. */
+  n: number;
+  /** The durable job that produced it, so recovery never files it twice. */
+  jobId?: string;
+  /** How long the edit took, measured from submission to delivery. */
+  elapsedMs?: number;
+  /** Gallery ids of the extra images sent with the prompt. */
+  refs?: string[];
+  settings?: { resolution?: string; quality?: string; aspectRatio?: string; scale?: number };
+  /** Zone edits: the rectangle that was sent, in the parent's pixels. */
+  region?: { crop: [number, number, number, number] };
+  /** Variants: which try of a batch this is. */
+  variant?: { group: string; index: number; of: number };
 }
