@@ -87,6 +87,12 @@ pub async fn settle_run(
     }
 }
 
+/// How long after its last change an interrupted note is still resumed on its
+/// own. Past that the user has had the Resume button in front of them and left
+/// it, and paying for a transcription they walked away from would be a
+/// surprise on their balance.
+const AUTOMATIC_RESUME_WINDOW: chrono::Duration = chrono::Duration::hours(24);
+
 /// The notes a resume sweep should restart: the ones whose request died in
 /// transit, and the ones parked mid-pipeline by a process that was killed.
 ///
@@ -95,13 +101,33 @@ pub async fn settle_run(
 /// one already waiting its turn in the queue, is left alone. Without the queue
 /// check, a second sweep landing between a retry being queued and its pipeline
 /// claiming the note queued the same note again, and it was transcribed twice.
+///
+/// Only recent notes come back by themselves. The sweep never ran before
+/// ADR-0071 fixed its query, so a phone can hold notes stuck since the summer.
+/// They keep their Resume button.
 pub async fn notes_to_resume(repos: &Repositories) -> Result<Vec<String>, AppError> {
-    let mut note_ids = repos.list_notes_failed_in_transit().await?;
-    note_ids.extend(repos.list_notes_stuck_in_processing().await?);
-    note_ids.retain(|note_id| {
+    notes_to_resume_since(repos, chrono::Utc::now() - AUTOMATIC_RESUME_WINDOW).await
+}
+
+async fn notes_to_resume_since(
+    repos: &Repositories,
+    since: chrono::DateTime<chrono::Utc>,
+) -> Result<Vec<String>, AppError> {
+    let mut candidates = repos.list_notes_failed_in_transit().await?;
+    candidates.extend(repos.list_notes_stuck_in_processing().await?);
+    candidates.retain(|note_id| {
         !crate::domain::processing::is_processing(note_id)
             && !processing_queue::is_enqueued(note_id)
     });
+    let mut note_ids = Vec::with_capacity(candidates.len());
+    for note_id in candidates {
+        let note = repos.get_note(&note_id).await?;
+        let recent = chrono::DateTime::parse_from_rfc3339(&note.updated_at)
+            .is_ok_and(|changed| changed >= since);
+        if recent {
+            note_ids.push(note_id);
+        }
+    }
     Ok(note_ids)
 }
 
@@ -148,5 +174,13 @@ mod tests {
         drop(ticket);
         drop(claim);
         assert_eq!(notes_to_resume(&repos).await.unwrap().len(), 2);
+
+        // Seen from a day later, both were left alone too long: they keep
+        // their Resume button and are not paid for behind the user's back.
+        let a_day_later = chrono::Utc::now() + chrono::Duration::hours(1);
+        assert!(notes_to_resume_since(&repos, a_day_later)
+            .await
+            .unwrap()
+            .is_empty());
     }
 }
