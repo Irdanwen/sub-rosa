@@ -41,6 +41,7 @@
 	<array>
 		<string>xyz.carpediem.subrosa.refresh</string>
 		<string>xyz.carpediem.subrosa.processing</string>
+		<string>xyz.carpediem.subrosa.transcribe.*</string>
 	</array>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Sub Rosa saves images and videos you generate in Studio to your photo library.</string>

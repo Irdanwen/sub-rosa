@@ -208,7 +208,10 @@ pub(super) async fn transcribe_chunks(
         request_language.as_deref(),
     );
     let mut cached = match &request.checkpoint {
-        Some(checkpoint) => checkpoint.load(&fingerprint).await,
+        Some(checkpoint) => {
+            crate::ios_background::continue_note(&checkpoint.note_id, &request.title);
+            checkpoint.load(&fingerprint).await
+        }
         None => HashMap::new(),
     };
     if !cached.is_empty() {

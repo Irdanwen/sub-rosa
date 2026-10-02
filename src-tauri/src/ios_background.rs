@@ -50,6 +50,18 @@ impl Drop for BackgroundTask {
     }
 }
 
+/// Ask iOS 26 to keep transcribing this note after the user leaves the app,
+/// and to show how far it has got (ADR-0071). Called once a transcription is
+/// known to span several chunks: a recording short enough for one chunk fits
+/// in the grace window, and does not deserve a system activity on the lock
+/// screen. `title` is the note's, shown under the bar. A no-op elsewhere.
+pub fn continue_note(note_id: &str, title: &str) {
+    #[cfg(target_os = "ios")]
+    continued::start(note_id, title);
+    #[cfg(not(target_os = "ios"))]
+    let _ = (note_id, title);
+}
+
 /// Whether any [`BackgroundTask`] guard is currently held — that is, whether
 /// some request, transcription or tool loop is mid-flight right now.
 pub fn work_in_flight() -> bool {
@@ -110,6 +122,10 @@ pub fn setup(app: &tauri::AppHandle) {
     #[cfg(target_os = "ios")]
     ios::setup(app);
 }
+
+#[cfg(target_os = "ios")]
+#[path = "ios_continued.rs"]
+mod continued;
 
 #[cfg(target_os = "ios")]
 mod ios {
@@ -245,7 +261,7 @@ mod ios {
         install_lifecycle_observers();
     }
 
-    fn shared_scheduler() -> Option<*mut AnyObject> {
+    pub(super) fn shared_scheduler() -> Option<*mut AnyObject> {
         let class = AnyClass::get(c"BGTaskScheduler")?;
         let scheduler: *mut AnyObject = unsafe { msg_send![class, sharedScheduler] };
         (!scheduler.is_null()).then_some(scheduler)

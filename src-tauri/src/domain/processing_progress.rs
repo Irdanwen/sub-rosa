@@ -78,6 +78,25 @@ pub fn snapshot(note_id: &str) -> Option<ProcessingProgressDto> {
     })
 }
 
+/// How far the whole run has got, in `units`, for a surface that draws one
+/// bar rather than a step and a count (iOS's continued-processing activity).
+///
+/// Transcription is where the time goes, so it owns most of the bar. The
+/// steps around it get a fixed slice each: they are short, and a bar that
+/// waited on them would read as stalled.
+pub fn overall_fraction(progress: &ProcessingProgressDto, units: i64) -> i64 {
+    let permille = match progress.phase {
+        ProcessingPhase::Preparing => 0,
+        ProcessingPhase::DetectingTurns => 30,
+        ProcessingPhase::Transcribing => match progress.total {
+            Some(total) if total > 0 => 50 + 880 * progress.done.clamp(0, total) / total,
+            _ => 50,
+        },
+        ProcessingPhase::Composing => 950,
+    };
+    permille * units / 1_000
+}
+
 /// Fill in what only this process knows about a note: how far its pipeline
 /// has got, and how many recordings are stacked behind it. Neither is stored,
 /// so every command that hands a `NoteDto` to a screen has to ask.
@@ -424,6 +443,40 @@ mod tests {
             .await
             .expect("a stop requested before anyone waited still resolves the wait");
         drop(claim);
+    }
+
+    #[test]
+    fn the_whole_run_fills_one_bar_in_order() {
+        let at = |phase, done, total| ProcessingProgressDto {
+            phase,
+            done,
+            total,
+            started_at: String::new(),
+            phase_started_at: String::new(),
+            resumed: 0,
+        };
+        let samples = [
+            at(ProcessingPhase::Preparing, 0, None),
+            at(ProcessingPhase::DetectingTurns, 0, None),
+            at(ProcessingPhase::Transcribing, 0, Some(20)),
+            at(ProcessingPhase::Transcribing, 7, Some(20)),
+            at(ProcessingPhase::Transcribing, 20, Some(20)),
+            at(ProcessingPhase::Composing, 0, None),
+        ];
+        let filled = samples
+            .iter()
+            .map(|sample| overall_fraction(sample, 1_000))
+            .collect::<Vec<_>>();
+        assert!(
+            filled.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{filled:?}"
+        );
+        assert!(filled.iter().all(|value| (0..1_000).contains(value)));
+        assert_eq!(
+            overall_fraction(&at(ProcessingPhase::Transcribing, 99, Some(20)), 1_000),
+            930,
+            "a count past its total does not pass the transcription slice"
+        );
     }
 
     #[test]

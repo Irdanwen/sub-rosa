@@ -86,6 +86,9 @@ targets:
         BGTaskSchedulerPermittedIdentifiers:
           - xyz.carpediem.subrosa.refresh
           - xyz.carpediem.subrosa.processing
+          # iOS 26 continued processing for a note transcription
+          # (crate::ios_continued). The wildcard is the documented form.
+          - xyz.carpediem.subrosa.transcribe.*
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
