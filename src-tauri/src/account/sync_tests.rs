@@ -859,3 +859,461 @@ async fn an_identical_sibling_resolves_itself_and_a_different_one_waits() {
         serde_json::from_str(&outbound.get::<String, _>("resolved_revisions")).unwrap();
     assert_eq!(acknowledged, vec![revisions[0].clone()]);
 }
+
+// --- Remote deletions (ADR-0072) -------------------------------------------
+
+/// A tombstone sealed the way another device seals its own delete: the
+/// snapshot of the row it removed, with `deleted` set.
+fn tombstone(
+    s: &Session,
+    key: &[u8; 32],
+    table_name: &str,
+    kind: &str,
+    id: &str,
+    parent: Option<String>,
+    row: Value,
+) -> Change {
+    let op = uuid::Uuid::new_v4().to_string();
+    let body = json!({"v":1,"operation_id":op,"parent_revision":parent,"deleted":true,"table":table_name,"row":row});
+    Change {
+        sequence: 1,
+        resolved_revisions: Vec::new(),
+        object_id: id.into(),
+        revision: uuid::Uuid::now_v7().to_string(),
+        parent_revision: parent,
+        kind: kind.into(),
+        ciphertext: crypto::seal(key, &aad(s, kind, id), &serde_json::to_vec(&body).unwrap())
+            .unwrap(),
+        deleted: true,
+        operation_id: Some(op),
+    }
+}
+async fn set_head(pool: &SqlitePool, id: &str, revision: &str, kind: &str) {
+    query("INSERT INTO account_sync_heads(object_id,revision,kind) VALUES(?,?,?) ON CONFLICT(object_id) DO UPDATE SET revision=excluded.revision")
+        .bind(id).bind(revision).bind(kind).execute(pool).await.unwrap();
+}
+async fn count(pool: &SqlitePool, sql: &str, id: &str) -> i64 {
+    query(sql)
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .get::<i64, _>("n")
+}
+async fn insert_note_with_recording(pool: &SqlitePool, id: &str) -> (String, String) {
+    let mut conn = pool.acquire().await.unwrap();
+    insert_note(&mut conn, id, "Deleted elsewhere").await;
+    drop(conn);
+    let session = uuid::Uuid::new_v4().to_string();
+    let artifact = uuid::Uuid::new_v4().to_string();
+    query("INSERT INTO recording_sessions(id,note_id,status,started_at) VALUES(?,?,'completed','now')")
+        .bind(&session).bind(id).execute(pool).await.unwrap();
+    query("INSERT INTO audio_artifacts(id,note_id,recording_session_id,path,format,duration_ms,size_bytes,checksum,created_at) VALUES(?,?,?,'synced/take.audio','wav',1000,10,'sum','now')")
+        .bind(&artifact).bind(id).bind(&session).execute(pool).await.unwrap();
+    query("INSERT INTO transcripts(id,note_id,audio_artifact_id,text,provider,status,created_at,updated_at) VALUES(?,?,?,'Words','test','completed','now','now')")
+        .bind(uuid::Uuid::new_v4().to_string()).bind(id).bind(&artifact).execute(pool).await.unwrap();
+    query("DELETE FROM account_sync_outbox")
+        .execute(pool)
+        .await
+        .unwrap();
+    (session, artifact)
+}
+#[tokio::test]
+async fn a_clean_remote_deletion_removes_the_note_and_its_children_without_a_card() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let id = uuid::Uuid::new_v4().to_string();
+    let (_session, artifact) = insert_note_with_recording(&pool, &id).await;
+    let head = uuid::Uuid::now_v7().to_string();
+    set_head(&pool, &id, &head, "note").await;
+    set_head(
+        &pool,
+        &artifact,
+        &uuid::Uuid::now_v7().to_string(),
+        "artifact",
+    )
+    .await;
+    let c = tombstone(&s, &key, "notes", "note", &id, Some(head), json!({"id":id}));
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, &c, &verify(&s, &key, &c).unwrap())
+        .await
+        .unwrap());
+    head_and_applied(&mut tx, &c).await.unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        count(&pool, "SELECT count(*) AS n FROM notes WHERE id=?", &id).await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM transcripts WHERE note_id=?",
+            &id
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM audio_artifacts WHERE note_id=?",
+            &id
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=?",
+            &id
+        )
+        .await,
+        0
+    );
+    // The apply ran under `applying=1`: nothing echoes back to the service.
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_outbox WHERE object_id=?",
+            &id
+        )
+        .await,
+        0
+    );
+    // The recording file is left for the lane that knows the directories.
+    assert_eq!(count(&pool, "SELECT count(*) AS n FROM account_sync_removed_files WHERE lane='recording' AND path=?", "synced/take.audio").await, 1);
+    let head: String = query("SELECT revision FROM account_sync_heads WHERE object_id=?")
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("revision");
+    assert_eq!(head, c.revision);
+}
+#[tokio::test]
+async fn a_remote_deletion_over_a_child_revised_since_is_kept_for_review() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let id = uuid::Uuid::new_v4().to_string();
+    let (_session, artifact) = insert_note_with_recording(&pool, &id).await;
+    let head = uuid::Uuid::now_v7().to_string();
+    set_head(&pool, &id, &head, "note").await;
+    let c = tombstone(&s, &key, "notes", "note", &id, Some(head), json!({"id":id}));
+    // A third device revised the recording after the deletion was decided.
+    set_head(
+        &pool,
+        &artifact,
+        &uuid::Uuid::now_v7().to_string(),
+        "artifact",
+    )
+    .await;
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, &c, &verify(&s, &key, &c).unwrap())
+        .await
+        .unwrap());
+    tx.commit().await.unwrap();
+    assert_eq!(
+        count(&pool, "SELECT count(*) AS n FROM notes WHERE id=?", &id).await,
+        1
+    );
+    assert_eq!(count(&pool, "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=? AND deleted=1 AND resolved=0", &id).await, 1);
+}
+#[tokio::test]
+async fn a_remote_deletion_over_an_unsent_child_edit_is_kept_for_review() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let id = uuid::Uuid::new_v4().to_string();
+    let _ = insert_note_with_recording(&pool, &id).await;
+    let head = uuid::Uuid::now_v7().to_string();
+    set_head(&pool, &id, &head, "note").await;
+    // Editing the transcript here queues it; the sync triggers are live.
+    query("UPDATE transcripts SET text='Corrected here' WHERE note_id=?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let c = tombstone(&s, &key, "notes", "note", &id, Some(head), json!({"id":id}));
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, &c, &verify(&s, &key, &c).unwrap())
+        .await
+        .unwrap());
+    tx.commit().await.unwrap();
+    assert_eq!(
+        count(&pool, "SELECT count(*) AS n FROM notes WHERE id=?", &id).await,
+        1
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=? AND deleted=1",
+            &id
+        )
+        .await,
+        1
+    );
+}
+#[tokio::test]
+async fn a_tombstone_for_an_object_this_device_never_held_leaves_no_card() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let id = uuid::Uuid::new_v4().to_string();
+    let c = tombstone(&s, &key, "memories", "memory", &id, None, json!({"id":id}));
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, &c, &verify(&s, &key, &c).unwrap())
+        .await
+        .unwrap());
+    head_and_applied(&mut tx, &c).await.unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=?",
+            &id
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_heads WHERE object_id=?",
+            &id
+        )
+        .await,
+        1
+    );
+}
+#[tokio::test]
+async fn a_tombstone_for_a_transcript_whose_note_is_already_gone_still_applies() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let id = uuid::Uuid::new_v4().to_string();
+    let note = uuid::Uuid::new_v4().to_string();
+    let c = tombstone(
+        &s,
+        &key,
+        "transcripts",
+        "transcript",
+        &id,
+        None,
+        json!({"id":id,"note_id":note}),
+    );
+    let mut tx = pool.begin().await.unwrap();
+    // Before, the missing parent note parked this row in the inbox forever.
+    assert!(apply(&mut tx, &c, &verify(&s, &key, &c).unwrap())
+        .await
+        .unwrap());
+    tx.commit().await.unwrap();
+}
+/// A card for a deletion whose tombstone is already this device's head: the
+/// shape every card took before ADR-0072, and the shape a full replay after a
+/// reconnection leaves behind (upsert, then tombstone, both applied).
+async fn card_with_tombstone_as_head(
+    pool: &SqlitePool,
+    s: &Session,
+    key: &[u8; 32],
+    id: &str,
+) -> Change {
+    let mut conn = pool.acquire().await.unwrap();
+    insert_note(&mut conn, id, "Resurrected by a replay").await;
+    drop(conn);
+    query("DELETE FROM account_sync_outbox")
+        .execute(pool)
+        .await
+        .unwrap();
+    let parent = uuid::Uuid::now_v7().to_string();
+    let c = tombstone(s, key, "notes", "note", id, Some(parent), json!({"id":id}));
+    let mut tx = pool.begin().await.unwrap();
+    preserve(&mut tx, &c).await.unwrap();
+    head_and_applied(&mut tx, &c).await.unwrap();
+    tx.commit().await.unwrap();
+    c
+}
+#[tokio::test]
+async fn accepting_a_deletion_whose_tombstone_is_head_removes_locally_and_sends_nothing() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let id = uuid::Uuid::new_v4().to_string();
+    let c = card_with_tombstone_as_head(&pool, &s, &key, &id).await;
+    resolve_in_store(&pool, &s, &key, &c.revision, "use_remote")
+        .await
+        .unwrap();
+    assert_eq!(
+        count(&pool, "SELECT count(*) AS n FROM notes WHERE id=?", &id).await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=? AND resolved=0",
+            &id
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_outbox WHERE object_id=?",
+            &id
+        )
+        .await,
+        0
+    );
+}
+#[tokio::test]
+async fn keeping_a_local_version_that_no_longer_exists_sends_nothing_either() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let id = uuid::Uuid::new_v4().to_string();
+    let c = card_with_tombstone_as_head(&pool, &s, &key, &id).await;
+    query("UPDATE account_sync_control SET applying=1 WHERE id=1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    query("DELETE FROM notes WHERE id=?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    query("UPDATE account_sync_control SET applying=0 WHERE id=1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    resolve_in_store(&pool, &s, &key, &c.revision, "keep_local")
+        .await
+        .unwrap();
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=? AND resolved=0",
+            &id
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_outbox WHERE object_id=?",
+            &id
+        )
+        .await,
+        0
+    );
+}
+#[tokio::test]
+async fn keeping_a_local_version_that_exists_still_restores_it_everywhere() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let id = uuid::Uuid::new_v4().to_string();
+    let c = card_with_tombstone_as_head(&pool, &s, &key, &id).await;
+    resolve_in_store(&pool, &s, &key, &c.revision, "keep_local")
+        .await
+        .unwrap();
+    assert_eq!(
+        count(&pool, "SELECT count(*) AS n FROM notes WHERE id=?", &id).await,
+        1
+    );
+    let outbound = next_outbox(&pool, None).await.unwrap().unwrap();
+    assert_eq!(outbound.get::<i64, _>("deleted"), 0);
+    assert_eq!(
+        outbound.get::<Option<String>, _>("parent_revision"),
+        Some(c.revision)
+    );
+}
+#[tokio::test]
+async fn settling_clean_deletion_cards_removes_rows_and_sends_nothing() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let clean = uuid::Uuid::new_v4().to_string();
+    let divergent = uuid::Uuid::new_v4().to_string();
+    let _ = card_with_tombstone_as_head(&pool, &s, &key, &clean).await;
+    let c = card_with_tombstone_as_head(&pool, &s, &key, &divergent).await;
+    // A live local head is a real disagreement, and stays for a person.
+    set_head(&pool, &divergent, &uuid::Uuid::now_v7().to_string(), "note").await;
+    settle_clean_deletions(&pool, &s, &key).await.unwrap();
+    assert_eq!(
+        count(&pool, "SELECT count(*) AS n FROM notes WHERE id=?", &clean).await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=? AND resolved=0",
+            &clean
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM notes WHERE id=?",
+            &divergent
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=? AND resolved=0",
+            &divergent
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_outbox WHERE object_id=?",
+            &c.object_id
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_outbox WHERE object_id=?",
+            &clean
+        )
+        .await,
+        0
+    );
+}
+#[tokio::test]
+async fn a_chunk_the_service_would_not_serve_steps_aside_and_comes_back_later() {
+    let pool = database().await;
+    assert!(isolatable_file_error("sync_storage_limited"));
+    assert!(isolatable_file_error("sync_blob_missing"));
+    assert!(isolatable_file_error("account_network"));
+    assert!(!isolatable_file_error("vault_locked"));
+    let manifest = uuid::Uuid::new_v4().to_string();
+    record_issue(&pool, "download", &manifest, "sync_storage_limited")
+        .await
+        .unwrap();
+    query("INSERT INTO account_file_manifests(id,artifact_id,bytes,format,chunks_json,created_at) VALUES(?,?,1,'wav','[]','now')")
+        .bind(&manifest).bind(uuid::Uuid::new_v4().to_string()).execute(&pool).await.unwrap();
+    reconcile_issues(&pool).await.unwrap();
+    assert_eq!(issue_count(&pool).await.unwrap(), 1);
+    query("UPDATE account_sync_issues SET created_at=? WHERE item_id=?")
+        .bind((chrono::Utc::now() - chrono::Duration::minutes(11)).to_rfc3339())
+        .bind(&manifest)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reconcile_issues(&pool).await.unwrap();
+    assert_eq!(issue_count(&pool).await.unwrap(), 0);
+}

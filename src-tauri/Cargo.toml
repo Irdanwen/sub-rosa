@@ -103,7 +103,7 @@ thiserror = "2.0"
 tokio = { version = "1.42", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
 urlencoding = "2"
-uuid = { version = "1.11", features = ["serde", "v4"] }
+uuid = { version = "1.11", features = ["serde", "v4", "v7"] }
 zeroize = { version = "1", features = ["derive"] }
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-haptics = "2.3.2"

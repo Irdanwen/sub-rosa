@@ -62,20 +62,28 @@ async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, 
     };
     let mut response = req.send().await.map_err(|_| error("account_network"))?;
     let status = response.status();
-    if !status.is_success() {
-        return Err(error("sync_blob_request_failed"));
-    }
     let mut output = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| error("account_network"))?
-    {
-        if output.len() + chunk.len() > 2 * CHUNK_BYTES {
-            return Err(error("sync_blob_invalid"));
+    let mut body_error = None;
+    if status.is_success() {
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => {
+                    if output.len() + chunk.len() > 2 * CHUNK_BYTES {
+                        body_error = Some(error("sync_blob_invalid"));
+                        break;
+                    }
+                    output.extend_from_slice(&chunk);
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    body_error = Some(error("account_network"));
+                    break;
+                }
+            }
         }
-        output.extend_from_slice(&chunk);
     }
+    // Ledgered before the status is judged: a refused chunk is the one entry
+    // a person diagnosing a stalled file lane needs to see.
     crate::egress_ledger::record(crate::egress_ledger::EgressEntry {
         at: chrono::Utc::now().to_rfc3339(),
         host: reqwest::Url::parse(&s.base)
@@ -91,7 +99,24 @@ async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, 
         model: None,
         note_id: None,
     });
+    if let Some(failure) = body_error {
+        return Err(failure);
+    }
+    if !status.is_success() {
+        return Err(error(blob_failure_code(status.as_u16())));
+    }
     Ok(output)
+}
+/// What a refused chunk means to the lane. The service answers 404 when it has
+/// no record of the blob, and 503 when object storage would not serve it,
+/// which in practice is a storage allowance spent for the day; 429 and 403
+/// are the same message from a proxy in front of it.
+fn blob_failure_code(status: u16) -> &'static str {
+    match status {
+        404 => "sync_blob_missing",
+        403 | 429 | 503 => "sync_storage_limited",
+        _ => "sync_blob_request_failed",
+    }
 }
 pub(super) async fn step(
     app: &AppHandle,
@@ -101,6 +126,7 @@ pub(super) async fn step(
 ) -> Result<(), AppError> {
     let root = app_data_dir(app).map_err(|_| file_error())?;
     let paths = AppPaths::from_data_dir(root.clone()).map_err(|_| file_error())?;
+    sync::reconcile_issues(pool).await?;
     query("DELETE FROM account_file_uploads WHERE source_kind='audio' AND NOT EXISTS(SELECT 1 FROM audio_artifacts a WHERE a.id=artifact_id)").execute(pool).await?;
     // Existing remote metadata has an empty path. A local valid artifact is an
     // immutable finalized recording, never the file currently being recorded.
@@ -129,6 +155,7 @@ pub(super) async fn step(
     // remainder across an iOS suspension without trusting a JavaScript future.
     let gallery = crate::carpe_diem::media::artifacts_dir(app)?;
     let references = crate::assistants::references_dir(app)?;
+    remove_queued_files(pool, &paths, &gallery, &references).await?;
     stage_assistant_files(pool, &references).await?;
     let inventory = super::studio::inventory(app, pool, &gallery).await;
     if let Some(row) = next_upload(pool).await? {
@@ -152,6 +179,58 @@ pub(super) async fn step(
         }
     }
     inventory?;
+    Ok(())
+}
+/// Files a remote deletion orphaned (ADR-0072). The apply path only knows
+/// table rows; this lane knows where recordings, the gallery and assistant
+/// references live, and resolves those roots afresh on every pass because iOS
+/// moves its container on reinstall. A file already gone is done; one that
+/// cannot be removed right now stays queued for the next pass.
+async fn remove_queued_files(
+    pool: &SqlitePool,
+    paths: &AppPaths,
+    gallery: &std::path::Path,
+    references: &std::path::Path,
+) -> Result<(), AppError> {
+    let rows = query("SELECT id,lane,path FROM account_sync_removed_files ORDER BY id LIMIT 50")
+        .fetch_all(pool)
+        .await?;
+    for row in rows {
+        let id: i64 = row.get("id");
+        let lane: String = row.get("lane");
+        let path: String = row.get("path");
+        let result = match lane.as_str() {
+            "recording" => paths.remove_recording_file(&path),
+            "studio" => {
+                let name = std::path::Path::new(&path);
+                if name.components().count() != 1 {
+                    Ok(())
+                } else {
+                    let target = gallery.join(name);
+                    ensure_contained(gallery, &target)
+                        .map_err(|_| std::io::Error::other("outside gallery"))
+                        .and_then(|_| std::fs::remove_file(&target))
+                }
+            }
+            "assistant" => match crate::assistants::reference_file(references, &path) {
+                Ok(target) => std::fs::remove_file(target),
+                Err(_) => Ok(()),
+            },
+            _ => Ok(()),
+        };
+        match result {
+            Ok(()) => {}
+            Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {}
+            Err(failure) => {
+                tracing::debug!(lane, error=%failure, "orphaned file removal deferred");
+                continue;
+            }
+        }
+        query("DELETE FROM account_sync_removed_files WHERE id=?")
+            .bind(id)
+            .execute(pool)
+            .await?;
+    }
     Ok(())
 }
 // Keep the scan budget independent of the upload budget: remote metadata can

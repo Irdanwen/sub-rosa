@@ -4394,44 +4394,46 @@ fn media_job_from_row(row: sqlx_sqlite::SqliteRow) -> MediaJobDto {
     }
 }
 
-async fn delete_note_records(
-    tx: &mut sqlx::transaction::Transaction<'_, sqlx_sqlite::Sqlite>,
+/// Every row a note owns, in dependency order. Shared with the account sync
+/// apply path, which removes a note another device deleted the same way.
+pub(crate) async fn delete_note_records(
+    tx: &mut sqlx_sqlite::SqliteConnection,
     note_id: &str,
 ) -> Result<(), sqlx::error::Error> {
     query("DELETE FROM note_generation_blocks WHERE note_id = ?")
         .bind(note_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
     query("DELETE FROM generation_results WHERE note_id = ?")
         .bind(note_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
     query("DELETE FROM transcripts WHERE note_id = ?")
         .bind(note_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
     query("DELETE FROM audio_artifacts WHERE note_id = ?")
         .bind(note_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
     query(
         "DELETE FROM recording_checkpoints
          WHERE recording_session_id IN (SELECT id FROM recording_sessions WHERE note_id = ?)",
     )
     .bind(note_id)
-    .execute(&mut **tx)
+    .execute(&mut *tx)
     .await?;
     query("DELETE FROM recording_sessions WHERE note_id = ?")
         .bind(note_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
     query("DELETE FROM note_folders WHERE note_id = ?")
         .bind(note_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
     query("DELETE FROM notes WHERE id = ?")
         .bind(note_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
     Ok(())
 }

@@ -33,6 +33,9 @@ pub(super) async fn issues(pool: &SqlitePool) -> Result<Vec<SyncIssue>, AppError
             "upload" => query("SELECT file_name AS label FROM account_studio_files WHERE id=?")
                 .bind(&item_id).fetch_optional(pool).await?
                 .map(|row| row.get::<String, _>("label")),
+            "download" => query("SELECT COALESCE(s.file_name,n.title,r.file_name) AS label FROM account_file_manifests m LEFT JOIN account_studio_files s ON s.id=m.artifact_id LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN notes n ON n.id=a.note_id LEFT JOIN assistant_references r ON r.id=m.artifact_id WHERE m.id=?")
+                .bind(&item_id).fetch_optional(pool).await?
+                .and_then(|row| row.get::<Option<String>, _>("label")),
             _ => None,
         };
         items.push(SyncIssue {
@@ -54,8 +57,18 @@ pub(super) async fn issue_count(pool: &SqlitePool) -> Result<i64, AppError> {
         .get("n"))
 }
 
-async fn reconcile_issues(pool: &SqlitePool) -> Result<(), AppError> {
+/// Minutes a chunk the service could not serve waits before the lane tries it
+/// again. Long enough that a storage allowance exhausted for the day is not
+/// hammered every five seconds, short enough that a raised allowance or a
+/// recovered network is noticed within a coffee break.
+const TRANSIENT_FILE_RETRY_MINUTES: f64 = 10.0;
+
+pub(super) async fn reconcile_issues(pool: &SqlitePool) -> Result<(), AppError> {
     query("DELETE FROM account_sync_issues WHERE (lane='outbox' AND NOT EXISTS(SELECT 1 FROM account_sync_outbox o WHERE o.operation_id=item_id)) OR (lane='upload' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=item_id AND u.completed=0) AND NOT EXISTS(SELECT 1 FROM audio_artifacts a WHERE a.id=item_id AND a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id))) OR (lane='download' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.id=item_id))")
+        .execute(pool)
+        .await?;
+    query("DELETE FROM account_sync_issues WHERE lane IN ('upload','download') AND code IN ('sync_storage_limited','sync_blob_missing','sync_blob_request_failed','account_network') AND julianday(created_at) < julianday('now') - ?/1440.0")
+        .bind(TRANSIENT_FILE_RETRY_MINUTES)
         .execute(pool)
         .await?;
     Ok(())
@@ -107,6 +120,20 @@ pub(super) fn isolatable_file_error(code: &str) -> bool {
             | "sync_file_too_large"
             | "sync_file_type_unsupported"
             | "sync_blob_invalid"
+    ) || transient_file_error(code)
+}
+
+/// A chunk the service could not serve right now: storage over its daily
+/// allowance, a blob that is not there yet, a network that dropped. The
+/// manifest steps aside so the files behind it keep moving, and
+/// `reconcile_issues` lets it back in the queue after a while.
+pub(super) fn transient_file_error(code: &str) -> bool {
+    matches!(
+        code,
+        "sync_storage_limited"
+            | "sync_blob_missing"
+            | "sync_blob_request_failed"
+            | "account_network"
     )
 }
 struct Table {
@@ -768,6 +795,7 @@ pub(super) async fn synchronize(
         }
     }
     replay_pending(pool, s, key).await?;
+    settle_clean_deletions(pool, s, key).await?;
     auto_merge_note_conflicts(pool, s, key).await;
     auto_resolve_identical_conflicts(pool, s, key).await;
     Ok(())
@@ -1086,6 +1114,186 @@ async fn preserve(conn: &mut SqliteConnection, c: &Change) -> Result<(), AppErro
     query("INSERT OR IGNORE INTO account_sync_conflicts(id,object_id,kind,ciphertext,parent_revision,operation_id,deleted,created_at,resolved_revisions) VALUES(?,?,?,?,?,?,?,?,?)").bind(&c.revision).bind(&c.object_id).bind(&c.kind).bind(&c.ciphertext).bind(&c.parent_revision).bind(&c.operation_id).bind(c.deleted).bind(chrono::Utc::now().to_rfc3339()).bind(json!(c.resolved_revisions).to_string()).execute(conn).await?;
     Ok(())
 }
+/// Whether a remote deletion can be applied here without losing work another
+/// device never saw (ADR-0072). The object itself is already known to be
+/// clean when this runs: its parent is the local head and nothing of it waits
+/// in the outbox. What remains is its children, because deleting a note takes
+/// its sessions, recordings and transcripts with it. A child with an unsent
+/// local change, or a child revised after the deletion (its head revision
+/// sorts after the tombstone, both being time-ordered UUIDs the service
+/// minted), means the deleting device decided on stale knowledge, and that is
+/// a disagreement for a person. Objects without children are always clean.
+async fn deletion_is_clean(
+    conn: &mut SqliteConnection,
+    table: &str,
+    c: &Change,
+) -> Result<bool, AppError> {
+    let children: &[(&str, &str)] = match table {
+        "notes" => &[
+            ("recording_sessions", "note_id"),
+            ("audio_artifacts", "note_id"),
+            ("transcripts", "note_id"),
+        ],
+        "agent_tasks" => &[("agent_messages", "task_id")],
+        _ => &[],
+    };
+    for (child, column) in children {
+        let newer = query(&format!("SELECT 1 FROM {child} ch WHERE ch.{column}=? AND (EXISTS(SELECT 1 FROM account_sync_outbox o WHERE o.object_id=ch.id) OR EXISTS(SELECT 1 FROM account_sync_heads h WHERE h.object_id=ch.id AND h.revision>?)) LIMIT 1"))
+            .bind(&c.object_id)
+            .bind(&c.revision)
+            .fetch_optional(&mut *conn)
+            .await?;
+        if newer.is_some() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+/// Removes an object another device deleted, the way this device's own delete
+/// would. Callers hold `applying=1`, so no outbox row echoes the deletion. A
+/// database connection knows nothing of the app's directories, so files the
+/// rows pointed at are queued for the file lane rather than removed here.
+pub(super) async fn delete_locally(
+    conn: &mut SqliteConnection,
+    table: &str,
+    id: &str,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    match table {
+        "notes" => {
+            let paths = query("SELECT path FROM audio_artifacts WHERE note_id=? AND path<>''")
+                .bind(id)
+                .fetch_all(&mut *conn)
+                .await?;
+            for row in paths {
+                queue_removed_file(conn, "recording", row.get("path"), &now).await?;
+            }
+            crate::db::repositories::delete_note_records(conn, id).await?;
+            crate::spotlight::forget(std::slice::from_ref(&id.to_string()));
+        }
+        "agent_tasks" => {
+            for sql in [
+                "DELETE FROM agent_tool_events WHERE task_id=?",
+                "DELETE FROM agent_messages WHERE task_id=?",
+                "DELETE FROM session_folders WHERE session_id=?",
+                "DELETE FROM assistant_conversations WHERE task_id=?",
+                "DELETE FROM agent_tasks WHERE id=?",
+            ] {
+                query(sql).bind(id).execute(&mut *conn).await?;
+            }
+        }
+        "audio_artifacts" => {
+            let path: Option<String> = query("SELECT path FROM audio_artifacts WHERE id=?")
+                .bind(id)
+                .fetch_optional(&mut *conn)
+                .await?
+                .map(|row| row.get("path"));
+            if let Some(path) = path.filter(|p| !p.is_empty()) {
+                queue_removed_file(conn, "recording", path, &now).await?;
+            }
+            query("DELETE FROM audio_artifacts WHERE id=?")
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+        }
+        "account_studio_files" | "assistant_references" => {
+            let lane = if table == "account_studio_files" {
+                "studio"
+            } else {
+                "assistant"
+            };
+            let name: Option<String> = query(&format!("SELECT file_name FROM {table} WHERE id=?"))
+                .bind(id)
+                .fetch_optional(&mut *conn)
+                .await?
+                .map(|row| row.get("file_name"));
+            if let Some(name) = name.filter(|n| !n.is_empty()) {
+                queue_removed_file(conn, lane, name, &now).await?;
+            }
+            query(&format!("DELETE FROM {table} WHERE id=?"))
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+        }
+        "account_note_folders" => {
+            query("DELETE FROM note_folders WHERE (note_id,folder_id) IN (SELECT note_id,folder_id FROM account_note_folders WHERE id=?)")
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+            query("DELETE FROM account_note_folders WHERE id=?")
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+        }
+        _ => {
+            let t = self::table(table)?;
+            query(&format!("DELETE FROM {} WHERE id=?", t.name))
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+        }
+    }
+    Ok(())
+}
+async fn queue_removed_file(
+    conn: &mut SqliteConnection,
+    lane: &str,
+    path: String,
+    now: &str,
+) -> Result<(), AppError> {
+    query("INSERT INTO account_sync_removed_files(lane,path,created_at) VALUES(?,?,?)")
+        .bind(lane)
+        .bind(path)
+        .bind(now)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+/// Cards written for deletions that would apply themselves today. Before
+/// ADR-0072 every tombstone became a card, including one whose parent was the
+/// local head: the service holds that deletion as the object's only head and
+/// this device has nothing unsent, so the card asks a question with one
+/// answer. Settling it sends nothing, because there is no sibling to
+/// acknowledge; a divergent card (a live local head) is left for a person.
+pub(super) async fn settle_clean_deletions(
+    pool: &SqlitePool,
+    s: &Session,
+    key: &[u8; 32],
+) -> Result<(), AppError> {
+    let rows = query("SELECT c.* FROM account_sync_conflicts c JOIN account_sync_heads h ON h.object_id=c.object_id AND h.revision=c.id WHERE c.resolved=0 AND c.deleted=1 AND NOT EXISTS(SELECT 1 FROM account_sync_outbox o WHERE o.object_id=c.object_id) ORDER BY c.created_at LIMIT 200")
+        .fetch_all(pool)
+        .await?;
+    for row in rows {
+        let c = conflict_change(&row)?;
+        let Ok(body) = verify(s, key, &c) else {
+            continue;
+        };
+        let Some(name) = body["table"].as_str() else {
+            continue;
+        };
+        if name == "carpe_diem_settings" {
+            continue;
+        }
+        let table = table(name)?.name;
+        let mut tx = pool.begin().await?;
+        if !deletion_is_clean(&mut tx, table, &c).await? {
+            continue;
+        }
+        query("UPDATE account_sync_control SET applying=1 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        delete_locally(&mut tx, table, &c.object_id).await?;
+        query("UPDATE account_sync_control SET applying=0 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        query("UPDATE account_sync_conflicts SET resolved=1 WHERE id=?")
+            .bind(&c.revision)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+    }
+    Ok(())
+}
 async fn mark_applied(conn: &mut SqliteConnection, revision: &str) -> Result<(), AppError> {
     query("UPDATE account_sync_inbox SET applied=1 WHERE revision=?")
         .bind(revision)
@@ -1126,6 +1334,23 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
         .ok_or_else(|| error("sync_format_invalid"))?;
     if row.keys().any(|k| !t.columns.contains(&k.as_str())) {
         return Err(error("sync_format_invalid"));
+    }
+    if c.deleted {
+        // A deletion has no dependencies to wait for and nothing to coerce.
+        // Clean, it is applied like this device's own delete (ADR-0072);
+        // over work the deleting device never saw, it is kept for review.
+        query("UPDATE account_sync_control SET applying=1 WHERE id=1")
+            .execute(&mut *conn)
+            .await?;
+        if deletion_is_clean(conn, t.name, c).await? {
+            delete_locally(conn, t.name, &c.object_id).await?;
+        } else {
+            preserve(conn, c).await?;
+        }
+        query("UPDATE account_sync_control SET applying=0 WHERE id=1")
+            .execute(conn)
+            .await?;
+        return Ok(true);
     }
     if t.name == "notes"
         && body.get("summary").is_some()
@@ -1209,11 +1434,7 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
     query("UPDATE account_sync_control SET applying=1 WHERE id=1")
         .execute(&mut *conn)
         .await?;
-    if c.deleted {
-        // Remote deletions are preserved for explicit review. Cascading a note
-        // delete could erase newer children which the deleting device never saw.
-        preserve(conn, c).await?;
-    } else {
+    {
         if t.name == "audio_artifacts" {
             row.insert("path".into(), json!(""));
         }
@@ -1556,11 +1777,7 @@ pub(super) async fn resolve_in_store(
                 .execute(&mut *tx)
                 .await?;
         } else {
-            let t = table(name)?;
-            query(&format!("DELETE FROM {} WHERE id=?", t.name))
-                .bind(&c.object_id)
-                .execute(&mut *tx)
-                .await?;
+            delete_locally(&mut tx, table(name)?.name, &c.object_id).await?;
         }
         query("UPDATE account_sync_control SET applying=0 WHERE id=1")
             .execute(&mut *tx)
@@ -1568,7 +1785,19 @@ pub(super) async fn resolve_in_store(
     } else if !apply(&mut tx, &c, &chosen).await? {
         return Err(error("sync_dependencies_pending"));
     }
-    let resolved = if parent.as_deref() == Some(&c.revision) {
+    let tombstone_is_head = parent.as_deref() == Some(&c.revision);
+    if deleted && c.deleted && tombstone_is_head {
+        // The service already holds this deletion as the object's only head.
+        // Answering it with a second tombstone would retire nothing there and
+        // hand every other device a fresh card to answer in turn (ADR-0072).
+        query("UPDATE account_sync_conflicts SET resolved=1 WHERE id=?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+    let resolved = if tombstone_is_head {
         Vec::new()
     } else {
         vec![c.revision.clone()]
