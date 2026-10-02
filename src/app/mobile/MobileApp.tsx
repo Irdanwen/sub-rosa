@@ -22,6 +22,8 @@ import type { IntentRequest } from "../../lib/intents";
 import { importSharedItem } from "../../lib/share-inbox";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { observeStandaloneImageJobs } from "../../lib/studio/image-job-recovery";
+import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
+import { RetouchScreen } from "../../components/mobile/screens/studio/RetouchScreen";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
 import { FolderScreen } from "../../components/mobile/screens/FoldersScreen";
@@ -144,6 +146,19 @@ export function MobileApp() {
   const [liveTranscriptEvents, setLiveTranscriptEvents] = useState<LiveTranscriptEventDto[]>([]);
   const [sourceReadiness, setSourceReadiness] = useState<RecordingSourceReadinessDto | undefined>();
   const nav = useMobileNav();
+  // A picture opened for retouch anywhere in the Studio lands on its session,
+  // pushed over the Studio tab.
+  const { tab: navTab, switchTab, push } = nav;
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const artifactId = (event as CustomEvent<string>).detail;
+      if (typeof artifactId !== "string" || !artifactId) return;
+      if (navTab !== "studio") switchTab("studio");
+      push({ view: "studio-retouch", artifactId });
+    };
+    window.addEventListener(OPEN_RETOUCH_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_RETOUCH_EVENT, onOpen);
+  }, [navTab, switchTab, push]);
   useAccountLibrarySync(dispatch, nav.top?.view === "note" ? nav.top.noteId : undefined);
   // The Chat tab roots on a conversation, not the history list. The active
   // session id lives here rather than in the screen because navigation
@@ -208,7 +223,11 @@ export function MobileApp() {
   const onShellTouchStart = useCallback(
     (event: React.TouchEvent) => {
       const touch = event.touches[0];
-      if (!canPop || touch.clientX > 24) {
+      // A surface that draws with the finger (a retouch zone, a split handle)
+      // keeps the edge for itself.
+      const drawing =
+        event.target instanceof Element && event.target.closest("[data-no-edge-swipe]");
+      if (!canPop || touch.clientX > 24 || drawing) {
         edgeSwipe.current = null;
         return;
       }
@@ -953,6 +972,8 @@ export function MobileApp() {
         }}
       />
     );
+  } else if (top?.view === "studio-retouch") {
+    screen = <RetouchScreen artifactId={top.artifactId} onBack={nav.pop} />;
   } else if (top?.view === "dictation") {
     screen = <DictationScreen onBack={nav.pop} autoStart={top.autoStart} />;
   } else if (top?.view === "settings-section") {

@@ -234,6 +234,7 @@ function SplitHandle({ value, onChange }: { value: number; onChange: (value: num
     <div
       ref={ref}
       className="retouch-split"
+      data-no-edge-swipe
       style={{ left: `${value * 100}%` } as CSSProperties}
       role="slider"
       tabIndex={0}
@@ -376,6 +377,7 @@ function ZoneLayer({
       ref={canvasRef}
       className="retouch-zone-layer"
       data-tool={zone.tool}
+      data-no-edge-swipe
       aria-label={t("Draw the zone to retouch")}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);

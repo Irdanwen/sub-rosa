@@ -16,6 +16,8 @@ import { EmptyState } from "../../../ui/EmptyState";
 import { Spinner } from "../../../ui/Spinner";
 import { formatNoteTime } from "../NoteRow";
 import { markMediaPlayback } from "./StudioControls";
+import { requestRetouch } from "../../../../lib/studio/retouch/jobs";
+import { sessionsIn } from "../../../../lib/studio/retouch/lineage";
 
 /** What each gallery bucket is called, in the one place both the picker and
  * the tiles read it from. */
@@ -130,6 +132,10 @@ export function Library({
     return [...buckets.entries()];
   }, [filtered]);
 
+  // Retouch sessions to pick up, newest first: the way back into a picture
+  // you were working on, without hunting for its latest version.
+  const retouches = useMemo(() => sessionsIn(items).slice(0, 6), [items]);
+
   if (items.length === 0) {
     return (
       <EmptyState
@@ -178,6 +184,20 @@ export function Library({
             </button>
           ))}
         </div>
+      ) : null}
+      {retouches.length > 0 && !selecting && !query.trim() && filter !== "video" ? (
+        <section className="mobile-library-day">
+          <h3 className="mobile-library-day-title">{t("Pick up a retouch")}</h3>
+          <div className="mobile-studio-grid mobile-library-grid">
+            {retouches.map((session) => (
+              <GalleryCell
+                key={session.rootId}
+                artifact={session.latest}
+                onOpen={() => requestRetouch(session.latest.id)}
+              />
+            ))}
+          </div>
+        </section>
       ) : null}
       {filtered.length === 0 ? (
         <p className="mobile-studio-empty-hint">{t("Nothing matches that search.")}</p>

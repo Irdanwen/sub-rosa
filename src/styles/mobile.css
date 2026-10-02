@@ -1930,6 +1930,14 @@
   border-color: var(--destructive);
 }
 
+/* The way into a retouch: the one action on a picture that opens a whole
+ * workspace, so it reads first. */
+.mobile-studio-preview-actions .mobile-chip-button[data-tone="primary"] {
+  background: var(--screen);
+  color: var(--screen-foreground);
+  border-color: transparent;
+}
+
 /* --- Swipe rows ---------------------------------------------------------------- */
 
 .swipe-row {
@@ -3900,4 +3908,23 @@
   content: "";
   position: absolute;
   inset: -11px -8px;
+}
+
+/* --- Retouch: the screen that hosts a session (styles in retouch.css) ---- */
+
+.mobile-retouch-screen {
+  height: 100%;
+  min-height: 100dvh;
+  background: var(--screen);
+  color: var(--screen-foreground);
+}
+
+.mobile-retouch-screen .retouch-workspace {
+  height: 100dvh;
+}
+
+.mobile-retouch-loading {
+  display: grid;
+  place-items: center;
+  height: 100dvh;
 }

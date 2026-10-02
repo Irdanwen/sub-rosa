@@ -31,7 +31,9 @@ export type MobileRoute =
   | { view: "agent-history" }
   /** `autoStart` listens on arrival (a Shortcuts action, never a notification). */
   | { view: "dictation"; autoStart?: boolean }
-  | { view: "settings-section"; section: SettingsSection };
+  | { view: "settings-section"; section: SettingsSection }
+  /** A retouch session, opened on the image that was picked. */
+  | { view: "studio-retouch"; artifactId: string };
 
 export type MobileNav = {
   tab: MobileTab;
