@@ -220,3 +220,11 @@ function writeFailures(failures: RetouchFailure[]): void {
     // A failure notice is a convenience; the row is already settled.
   }
 }
+
+/** Ask the Studio to open an image in the Retouch tab, from any surface that
+ * shows one. Detail: the artifact id. */
+export const OPEN_RETOUCH_EVENT = "subrosa:open-retouch";
+
+export function requestRetouch(artifactId: string): void {
+  window.dispatchEvent(new CustomEvent(OPEN_RETOUCH_EVENT, { detail: artifactId }));
+}

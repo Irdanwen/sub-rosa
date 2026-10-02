@@ -124,3 +124,29 @@ export function sessionsIn(artifacts: StudioArtifact[]): RetouchSessionSummary[]
   }
   return [...byRoot.values()].sort((a, b) => b.latest.createdAt - a.latest.createdAt);
 }
+
+export interface FilmstripRow {
+  version: StudioArtifact;
+  /** How many branches deep: 0 on the main line. */
+  depth: number;
+  /** The first version of a branch. */
+  branchStart: boolean;
+}
+
+/** The tree flattened for a filmstrip: depth first, each version followed by
+ * its first child on the same line, later children opening branches below. */
+export function filmstripRows(session: RetouchSession): FilmstripRow[] {
+  const rows: FilmstripRow[] = [];
+  const seen = new Set<string>();
+  const visit = (version: StudioArtifact, depth: number, branchStart: boolean) => {
+    if (seen.has(version.id)) return;
+    seen.add(version.id);
+    rows.push({ version, depth, branchStart });
+    const children = childrenOf(session, version.id);
+    children.forEach((child, index) => {
+      visit(child, index === 0 ? depth : depth + 1, index > 0);
+    });
+  };
+  visit(session.root, 0, false);
+  return rows;
+}

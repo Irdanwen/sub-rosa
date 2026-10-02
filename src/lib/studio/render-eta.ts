@@ -18,6 +18,7 @@
  * contract: a wiped store just means indeterminate bars again.
  */
 
+import { t } from "../i18n";
 const STORAGE_KEY = "os-june:studio-render-eta";
 /** Keep the recent past only - a provider that got slower this week should
  * show up in the estimate this week. */
@@ -131,8 +132,9 @@ export function describeRemaining(
 ): string | undefined {
   if (!estimateMs || estimateMs <= 0) return undefined;
   const left = estimateMs - elapsedMs;
-  if (left <= 0) return "any moment now";
-  if (left < 15_000) return "nearly there";
-  if (left < 90_000) return `about ${Math.round(left / 10_000) * 10}s left`;
-  return `about ${Math.round(left / 60_000)} min left`;
+  // The same sentences as a note's progress, so they share their French.
+  if (left <= 0) return t("Any moment now");
+  if (left < 15_000) return t("Nearly there");
+  if (left < 90_000) return t("About {seconds}s left", { seconds: Math.round(left / 10_000) * 10 });
+  return t("About {minutes} min left", { minutes: Math.round(left / 60_000) });
 }

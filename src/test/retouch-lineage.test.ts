@@ -134,3 +134,20 @@ describe("sessions in the gallery", () => {
     expect(rootIdOf(root)).toBe("root.png");
   });
 });
+
+describe("the filmstrip", () => {
+  it("keeps the main line flat and opens a branch for each later child", async () => {
+    const { filmstripRows } = await import("../lib/studio/retouch/lineage");
+    const { all } = tree();
+    const session = sessionOf(all, "root.png");
+    if (!session) throw new Error("no session");
+    expect(
+      filmstripRows(session).map((row) => [row.version.id, row.depth, row.branchStart]),
+    ).toEqual([
+      ["root.png", 0, false],
+      ["v1.png", 0, false],
+      ["v2.png", 0, false],
+      ["v3.png", 1, true],
+    ]);
+  });
+});

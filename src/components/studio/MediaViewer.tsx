@@ -13,6 +13,7 @@ import { useModalFocus } from "../../lib/modal-focus";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import type { StudioArtifact } from "../../lib/studio/types";
 import "./media-viewer.css";
+import { requestRetouch } from "../../lib/studio/retouch/jobs";
 
 export interface MediaViewerItem {
   artifact: StudioArtifact;
@@ -185,7 +186,22 @@ export function MediaViewer({
             </button>
           </details>
         ) : null}
-        {actions ? <div className="media-viewer-actions">{actions(artifact)}</div> : null}
+        {artifact.kind === "image" || actions ? (
+          <div className="media-viewer-actions">
+            {artifact.kind === "image" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  requestRetouch(artifact.id);
+                }}
+              >
+                {t("Retouch this image")}
+              </button>
+            ) : null}
+            {actions?.(artifact)}
+          </div>
+        ) : null}
       </footer>
     </div>,
     document.body,

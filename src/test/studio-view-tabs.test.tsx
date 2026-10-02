@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StudioView } from "../components/studio/StudioView";
 
@@ -25,6 +25,11 @@ vi.mock("../components/studio/BibleStudio", () => ({
     <button type="button" onClick={onMakeAFilm}>
       make a film
     </button>
+  ),
+}));
+vi.mock("../components/studio/retouch/RetouchStudio", () => ({
+  RetouchStudio: ({ pendingArtifactId }: { pendingArtifactId?: string }) => (
+    <p>{pendingArtifactId ? `retouching ${pendingArtifactId}` : "retouch tab"}</p>
   ),
 }));
 vi.mock("../components/studio/WorkflowStudio", () => ({
@@ -70,5 +75,19 @@ describe("the studio's tabs", () => {
     window.localStorage.setItem("os-june:studio-tab", "music");
     render(<StudioView />);
     await waitFor(() => expect(screen.getByText("audio tab")).toBeInTheDocument());
+  });
+
+  it("remembers the retouch tab", async () => {
+    window.localStorage.setItem("os-june:studio-tab", "retouch");
+    render(<StudioView />);
+    await waitFor(() => expect(screen.getByText("retouch tab")).toBeInTheDocument());
+  });
+
+  it("opens an image handed over from anywhere in the studio in the retouch tab", async () => {
+    render(<StudioView />);
+    const { requestRetouch } = await import("../lib/studio/retouch/jobs");
+    act(() => requestRetouch("photo.png"));
+    await waitFor(() => expect(screen.getByText("retouching photo.png")).toBeInTheDocument());
+    expect(window.localStorage.getItem("os-june:studio-tab")).toBe("retouch");
   });
 });
