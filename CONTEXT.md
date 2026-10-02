@@ -99,6 +99,17 @@ Preparing a source WAV for transcription: downmix to mono, resample to 16 kHz,
 apply bounded gain toward a target peak.
 _Avoid_: conversion, resampling (that is one step of it).
 
+**Transcription chunk**:
+A fixed-length slice of one prepared recording (30 seconds, ten minutes for a
+decoded import), transcribed in order with the earlier chunks' text as
+context. Each finished chunk is kept in `transcription_chunks` until the note
+is ready, so an interrupted transcription resumes at its first unfinished
+chunk (see [ADR-0071](docs/adr/0071-a-transcription-is-kept-chunk-by-chunk-and-a-long-one-asks-the-system-to-continue.md)).
+On screen it is a "part". It has no meaning to the reader: it is cut by the
+clock, not by who spoke.
+_Avoid_: turn (detected speech, on one source), segment (a live-preview
+chunk), chapter (a heading of the long-form summary).
+
 **Live transcript preview**:
 Optional, ephemeral chunked transcription shown while recording. Revisable,
 never written to `transcripts`, never the note's source of truth (see

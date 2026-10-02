@@ -134,3 +134,17 @@ silently replace an image or a text file with its filename. Full attachment
 resumption needs durable payloads bound to the individual user message, written
 before the turn becomes eligible for the sweep, with explicit cleanup after
 completion or deletion. It is not supplied by the readable message markers.
+
+## Addendum 2026-10-02: notes did not keep this promise
+
+Two things kept the note queue from meeting "locking the phone costs time,
+never a result". The query that finds notes parked mid-pipeline filtered on a
+`notes.deleted_at` column that does not exist, so it failed every time and its
+error aborted the whole note sweep: no note was ever resumed automatically.
+And a resumed note started its transcription again at chunk zero, because the
+chunks' text lived only in memory. Both are fixed by
+[ADR-0071](0071-a-transcription-is-kept-chunk-by-chunk-and-a-long-one-asks-the-system-to-continue.md),
+which also adds iOS 26's continued-processing task as a fourth lever next to
+the three listed here. It keeps the process running for work the user just
+started, with its progress on the lock screen. It is sanctioned for exactly
+this, unlike silent audio, which stays rejected.
