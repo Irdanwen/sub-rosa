@@ -4285,7 +4285,7 @@ dependencies = [
 
 [[package]]
 name = "os-june"
-version = "1.81.0"
+version = "1.82.0"
 dependencies = [
  "aes-gcm",
  "age",
