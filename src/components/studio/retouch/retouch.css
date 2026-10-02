@@ -727,16 +727,20 @@
   min-width: 0;
 }
 
+.retouch-bar-lead,
 .retouch-bar-tools {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
   min-width: 0;
-  flex-wrap: wrap;
   color: var(--screen-muted);
 }
 
-.retouch-bar-tools .retouch-icon {
+.retouch-bar-tools {
+  flex-wrap: wrap;
+}
+
+.retouch-bar-lead .retouch-icon {
   color: var(--screen-muted);
 }
 
@@ -1182,6 +1186,12 @@
   flex-wrap: nowrap;
 }
 
+.retouch-composer[data-compact="true"] .retouch-bar-lead {
+  flex: 1;
+}
+
+/* Only the tools scroll: the attach button sits outside them, so its menu
+ * is not clipped by this strip (overflow-x makes overflow-y clip too). */
 .retouch-composer[data-compact="true"] .retouch-bar-tools {
   flex: 1;
   flex-wrap: nowrap;
