@@ -1847,7 +1847,7 @@ le **tri de pertinence** des recherches.
 |---|---|---|
 | `src-tauri/src/hermes/june_media_mcp.py` | Image Kling R2V envoyée en élément (+ `image_url` sur V3) | Réappliquer |
 
-## La retouche : un éditeur d'image plein cadre (2026-10-02, ADR-0070)
+## La retouche : un éditeur d'image plein cadre (2026-10-02, ADR-0070, v1.80.0)
 
 - **Onglet Studio « Retouche »** (`src/components/studio/retouch/`), écran
   téléphone poussé sur l'onglet Studio (`RetouchScreen`, route `studio-retouch`).
