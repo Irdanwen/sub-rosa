@@ -1895,7 +1895,7 @@ l'orientation EXIF du parent (photo d'appareil).
 - Le banc `retouch-lab.html` + `src/dev/retouch-lab.tsx` (exclus via
   `.git/info/exclude`) charge `studio.css` lui-même, comme `main.tsx`.
 
-## Une transcription survit au verrouillage (2026-10-02, ADR-0071)
+## Une transcription survit au verrouillage (2026-10-02, ADR-0071, v1.81.0)
 
 Signalé sur iPhone : « si l'écran se verrouille ou si je change d'app, la
 retranscription s'arrête et repart à 0 ». Quatre causes, toutes corrigées :
