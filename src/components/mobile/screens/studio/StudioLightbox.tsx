@@ -25,6 +25,7 @@ import { Spinner } from "../../../ui/Spinner";
 import { ActionSheet } from "../../ActionSheet";
 import { GalleryCell } from "./StudioLibrary";
 import { markMediaPlayback } from "./StudioControls";
+import { requestRetouch } from "../../../../lib/studio/retouch/jobs";
 
 /**
  * Looking at one artifact, and choosing one.
@@ -200,6 +201,17 @@ export function Lightbox({
           ) : null}
           {artifact.kind === "image" ? (
             <>
+              <button
+                type="button"
+                className="mobile-chip-button"
+                data-tone="primary"
+                onClick={() => {
+                  onClose();
+                  requestRetouch(artifact.id);
+                }}
+              >
+                {t("Retouch this image")}
+              </button>
               <button
                 type="button"
                 className="mobile-chip-button"
