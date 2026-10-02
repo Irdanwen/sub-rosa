@@ -1908,7 +1908,9 @@ retranscription s'arrête et repart à 0 ». Quatre causes, toutes corrigées :
 - **Le balayage de reprise des notes ne tournait jamais.**
   `list_notes_stuck_in_processing` filtrait sur `notes.deleted_at`, une colonne
   qui n'existe pas. Sa sélection vit maintenant dans
-  `note_processing::notes_to_resume`, qui saute aussi les notes en file.
+  `note_processing::notes_to_resume`, qui saute aussi les notes en file et ne
+  reprend seule qu'une note modifiée depuis moins de 24 h (les vieilles notes
+  bloquées gardent leur bouton Reprendre, pour ne pas facturer d'office).
 - **Une requête coupée par la suspension est redemandée** : l'époque de cycle
   de vie (`ios_background::lifecycle_epoch`) bouge à l'entrée en arrière-plan
   et à `Resumed`.

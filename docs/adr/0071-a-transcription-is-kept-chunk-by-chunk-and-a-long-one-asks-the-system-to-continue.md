@@ -54,7 +54,11 @@ transcription asks the system to keep running.**
   `processing`.
 - The sweep's query is fixed, and its selection
   (`note_processing::notes_to_resume`) also skips notes waiting in the
-  processing queue, so a second sweep cannot queue a note twice.
+  processing queue, so a second sweep cannot queue a note twice. Only notes
+  changed within the last day come back by themselves: since the sweep never
+  ran, a phone can hold notes stuck for months, and resuming them all on the
+  first launch would bill transcriptions the user walked away from. Older
+  notes keep their Resume button.
 - A lifecycle epoch moves on iOS's did-enter-background and on `Resumed`. A
   request that fails after the epoch moved is asked again, at most twice,
   without counting against the transient attempts. The same failure with no
