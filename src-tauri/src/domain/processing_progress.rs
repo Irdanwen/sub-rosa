@@ -39,6 +39,8 @@ struct Run {
     done: i64,
     /// Units the current phase will do, when that is known before it starts.
     total: Option<i64>,
+    /// Units of the current phase an earlier run already finished.
+    resumed: i64,
     started_at: String,
     phase_started_at: String,
     /// Ref count, not a flag: the imported-audio path delegates to the
@@ -72,6 +74,7 @@ pub fn snapshot(note_id: &str) -> Option<ProcessingProgressDto> {
         total: run.total,
         started_at: run.started_at.clone(),
         phase_started_at: run.phase_started_at.clone(),
+        resumed: run.resumed,
     })
 }
 
@@ -119,6 +122,7 @@ impl ProgressClaim {
                 phase: ProcessingPhase::Preparing,
                 done: 0,
                 total: None,
+                resumed: 0,
                 started_at: stamp.clone(),
                 phase_started_at: stamp,
                 claims: 1,
@@ -176,6 +180,7 @@ impl Progress {
         run.phase = phase;
         run.done = 0;
         run.total = None;
+        run.resumed = 0;
         run.phase_started_at = stamp;
     }
 
@@ -198,6 +203,17 @@ impl Progress {
             return;
         };
         run.done = clamp_done(run.done.max(done), run.total);
+    }
+
+    /// Declare that the first `resumed` units of this phase come from an
+    /// earlier run that was interrupted, so the screen can say it picked up
+    /// where it stopped instead of appearing to race through them.
+    pub fn resumed(&self, resumed: i64) {
+        let mut runs = runs();
+        let Some(run) = runs.get_mut(&self.0) else {
+            return;
+        };
+        run.resumed = clamp_done(resumed.max(0), run.total);
     }
 
     /// Whether the user asked this run to stop.
