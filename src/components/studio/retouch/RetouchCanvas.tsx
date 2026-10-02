@@ -20,6 +20,7 @@ import { t } from "../../../lib/i18n";
 import { formatElapsed } from "../../../lib/studio/async-job";
 import { darkroomSeed, darkroomVars } from "../../../lib/studio/darkroom";
 import { describeRemaining, waitProgress } from "../../../lib/studio/render-eta";
+import { FIT, panBy, toggleZoom, type View, zoomAt } from "../../../lib/studio/retouch/view";
 import type { Point, ZoneStroke } from "../../../lib/studio/retouch/zone";
 
 export type CompareMode = "off" | "hold" | "split";
@@ -109,7 +110,7 @@ export function RetouchCanvas({
   children,
   className,
 }: RetouchCanvasProps) {
-  const [roomRef, room] = useElementSize<HTMLDivElement>();
+  const [roomRef, room] = useElementSize<HTMLElement>();
   const [natural, setNatural] = useState<Size | undefined>(undefined);
   const [split, setSplit] = useState(0.5);
   // The wipe starts once the new picture is decoded, never over a blank.
@@ -135,40 +136,176 @@ export function RetouchCanvas({
   }, [knownWidth, knownHeight, onPixelSize]);
 
   const showBefore = Boolean(beforeSrc) && compare !== "off" && !zone;
+
+  // --- Looking closer: pinch, drag, double tap, ctrl+wheel ----------------
+  const [view, setView] = useState<View>(FIT);
+  const [gesturing, setGesturing] = useState(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const gesture = useRef({ pinching: false });
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ dist: number; mid: { x: number; y: number }; view: View } | undefined>(
+    undefined,
+  );
+  const drag = useRef<{ x: number; y: number; moved: boolean } | undefined>(undefined);
+  const lastTap = useRef<{ at: number; x: number; y: number } | undefined>(undefined);
+  const frameWidth = frame?.width;
+  const frameHeight = frame?.height;
+  // A picture of another size starts at fit; versions of the same size keep
+  // the view, so a detail can be compared across them.
+  useEffect(() => {
+    if (frameWidth && frameHeight) setView(FIT);
+  }, [frameWidth, frameHeight]);
+
   const holdTimer = useRef<number | undefined>(undefined);
+  const holdAllowed = Boolean(onHoldChange && beforeSrc && !zone && compare !== "split");
   const endHold = () => {
     window.clearTimeout(holdTimer.current);
     holdTimer.current = undefined;
     onHoldChange?.(false);
   };
-  // A long press, not a click: a click on the picture must stay free.
-  const holdHandlers =
-    onHoldChange && beforeSrc && !zone && compare !== "split"
-      ? {
-          onPointerDown: () => {
-            window.clearTimeout(holdTimer.current);
-            holdTimer.current = window.setTimeout(() => onHoldChange(true), 280);
-          },
-          onPointerUp: endHold,
-          onPointerLeave: endHold,
-          onPointerCancel: endHold,
-          onContextMenu: (event: { preventDefault: () => void }) => event.preventDefault(),
-        }
-      : {};
+  const centre = () => {
+    const box = roomRef.current?.getBoundingClientRect();
+    return box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : { x: 0, y: 0 };
+  };
+  const spread = () => {
+    const [a, b] = [...pointers.current.values()];
+    return {
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+    };
+  };
+  const onControl = (target: EventTarget | null) =>
+    target instanceof Element && Boolean(target.closest(".retouch-split, button"));
+
+  const gestureHandlers = {
+    onPointerDownCapture: (event: ReactPointerEvent) => {
+      pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pointers.current.size === 2 && frame) {
+        pinch.current = { ...spread(), view: viewRef.current };
+        gesture.current.pinching = true;
+        drag.current = undefined;
+        setGesturing(true);
+        endHold();
+        return;
+      }
+      if (pointers.current.size !== 1 || onControl(event.target)) return;
+      drag.current = { x: event.clientX, y: event.clientY, moved: false };
+      if (holdAllowed) {
+        window.clearTimeout(holdTimer.current);
+        holdTimer.current = window.setTimeout(() => onHoldChange?.(true), 280);
+      }
+    },
+    onPointerMoveCapture: (event: ReactPointerEvent) => {
+      if (!pointers.current.has(event.pointerId)) return;
+      pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const start = pinch.current;
+      if (start && pointers.current.size >= 2 && frame) {
+        const { dist, mid } = spread();
+        const c = centre();
+        const zoomed = zoomAt(
+          start.view,
+          dist / Math.max(1, start.dist),
+          { x: start.mid.x - c.x, y: start.mid.y - c.y },
+          frame,
+        );
+        setView(panBy(zoomed, mid.x - start.mid.x, mid.y - start.mid.y, frame));
+        return;
+      }
+      const moving = drag.current;
+      if (!moving) return;
+      const dx = event.clientX - moving.x;
+      const dy = event.clientY - moving.y;
+      if (!moving.moved && Math.hypot(dx, dy) > 6) {
+        moving.moved = true;
+        endHold();
+      }
+      if (moving.moved && !zone && viewRef.current.scale > 1 && frame) {
+        setGesturing(true);
+        setView((current) => panBy(current, dx, dy, frame));
+        moving.x = event.clientX;
+        moving.y = event.clientY;
+      }
+    },
+    onPointerUpCapture: (event: ReactPointerEvent) => release(event, true),
+    onPointerCancelCapture: (event: ReactPointerEvent) => release(event, false),
+  };
+  const release = (event: ReactPointerEvent, tapped: boolean) => {
+    pointers.current.delete(event.pointerId);
+    if (pointers.current.size < 2) pinch.current = undefined;
+    if (pointers.current.size > 0) return;
+    const wasPinch = gesture.current.pinching;
+    gesture.current.pinching = false;
+    setGesturing(false);
+    endHold();
+    const moving = drag.current;
+    drag.current = undefined;
+    if (!tapped || wasPinch || !moving || moving.moved || zone || !frame) return;
+    const now = Date.now();
+    const last = lastTap.current;
+    if (
+      last &&
+      now - last.at < 320 &&
+      Math.hypot(event.clientX - last.x, event.clientY - last.y) < 24
+    ) {
+      const c = centre();
+      setView((current) =>
+        toggleZoom(current, { x: event.clientX - c.x, y: event.clientY - c.y }, frame),
+      );
+      lastTap.current = undefined;
+      return;
+    }
+    lastTap.current = { at: now, x: event.clientX, y: event.clientY };
+  };
+
+  // Trackpad pinch and ctrl+wheel zoom; a plain wheel pans once zoomed in.
+  useEffect(() => {
+    const room = roomRef.current;
+    if (!room || !frame) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey) {
+        event.preventDefault();
+        const box = room.getBoundingClientRect();
+        const point = {
+          x: event.clientX - (box.left + box.width / 2),
+          y: event.clientY - (box.top + box.height / 2),
+        };
+        setView((current) => zoomAt(current, Math.exp(-event.deltaY * 0.01), point, frame));
+      } else if (viewRef.current.scale > 1) {
+        event.preventDefault();
+        setView((current) => panBy(current, -event.deltaX, -event.deltaY, frame));
+      }
+    };
+    room.addEventListener("wheel", onWheel, { passive: false });
+    return () => room.removeEventListener("wheel", onWheel);
+  }, [roomRef, frame]);
 
   return (
     <div
       className={["retouch-canvas", className].filter(Boolean).join(" ")}
       data-zone={zone ? "true" : undefined}
     >
-      <div className="retouch-room" ref={roomRef}>
+      <section
+        className="retouch-room"
+        ref={roomRef}
+        aria-label={t("Picture, pinch or double tap to zoom")}
+        {...gestureHandlers}
+        onContextMenu={holdAllowed ? (event) => event.preventDefault() : undefined}
+      >
         {src ? (
           <div
             className="retouch-frame"
-            {...holdHandlers}
+            data-gesturing={gesturing ? "true" : undefined}
             style={
               frame
-                ? ({ width: frame.width, height: frame.height } as CSSProperties)
+                ? ({
+                    width: frame.width,
+                    height: frame.height,
+                    transform:
+                      view.scale > 1
+                        ? `translate(${view.x}px, ${view.y}px) scale(${view.scale})`
+                        : undefined,
+                  } as CSSProperties)
                 : { visibility: "hidden" }
             }
           >
@@ -212,10 +349,20 @@ export function RetouchCanvas({
               <span className="retouch-before-tag">{t("Before")}</span>
             ) : null}
             {wait ? <Veil wait={wait} /> : null}
-            {zone && frame ? <ZoneLayer zone={zone} frame={frame} /> : null}
+            {zone && frame ? <ZoneLayer zone={zone} frame={frame} gesture={gesture} /> : null}
           </div>
         ) : null}
-      </div>
+        {view.scale > 1.01 ? (
+          <button
+            type="button"
+            className="retouch-fit"
+            data-zone={zone ? "true" : undefined}
+            onClick={() => setView(FIT)}
+          >
+            {t("Fit to screen")}
+          </button>
+        ) : null}
+      </section>
       {children}
     </div>
   );
@@ -311,9 +458,12 @@ function Veil({ wait }: { wait: CanvasWait }) {
 function ZoneLayer({
   zone,
   frame,
+  gesture,
 }: {
   zone: CanvasZone;
   frame: { width: number; height: number; scale: number };
+  /** Two fingers on the picture are a pinch, never a stroke. */
+  gesture: React.RefObject<{ pinching: boolean }>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [draft, setDraft] = useState<ZoneStroke | undefined>(undefined);
@@ -364,12 +514,20 @@ function ZoneLayer({
     }
   }, [strokes, draft, frame]);
 
+  // Screen pixels per picture pixel, zoom included: the box is measured
+  // after the frame's transform.
+  const screenScale = useCallback(
+    (canvas: HTMLCanvasElement) =>
+      canvas.getBoundingClientRect().width / (frame.width / frame.scale),
+    [frame.width, frame.scale],
+  );
   const toImage = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): Point => {
       const box = event.currentTarget.getBoundingClientRect();
-      return [(event.clientX - box.left) / frame.scale, (event.clientY - box.top) / frame.scale];
+      const k = screenScale(event.currentTarget);
+      return [(event.clientX - box.left) / k, (event.clientY - box.top) / k];
     },
-    [frame.scale],
+    [screenScale],
   );
 
   return (
@@ -380,6 +538,7 @@ function ZoneLayer({
       data-no-edge-swipe
       aria-label={t("Draw the zone to retouch")}
       onPointerDown={(event) => {
+        if (!event.isPrimary || gesture.current?.pinching) return;
         event.currentTarget.setPointerCapture(event.pointerId);
         const point = toImage(event);
         setDraft(
@@ -388,21 +547,30 @@ function ZoneLayer({
             : {
                 kind: "brush",
                 points: [point],
-                radius: zone.radius / frame.scale,
+                // The brush keeps its size on screen, so zooming in paints finer.
+                radius: zone.radius / screenScale(event.currentTarget),
                 ...(zone.tool === "eraser" ? { erase: true } : {}),
               },
         );
       }}
       onPointerMove={(event) => {
         if (!draft) return;
+        if (gesture.current?.pinching) {
+          setDraft(undefined);
+          return;
+        }
         const point = toImage(event);
         const last = draft.points.at(-1);
         // Every couple of screen pixels is plenty, and keeps a long stroke light.
-        if (last && Math.hypot(point[0] - last[0], point[1] - last[1]) * frame.scale < 2) return;
+        if (
+          last &&
+          Math.hypot(point[0] - last[0], point[1] - last[1]) * screenScale(event.currentTarget) < 2
+        )
+          return;
         setDraft({ ...draft, points: [...draft.points, point] } as ZoneStroke);
       }}
       onPointerUp={() => {
-        if (draft) zone.onChange([...zone.strokes, draft]);
+        if (draft && !gesture.current?.pinching) zone.onChange([...zone.strokes, draft]);
         setDraft(undefined);
       }}
       onPointerCancel={() => setDraft(undefined)}

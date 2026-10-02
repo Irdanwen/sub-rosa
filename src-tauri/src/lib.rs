@@ -775,10 +775,14 @@ pub fn run() {
         photos_ios::save_to_photos,
         #[cfg(target_os = "ios")]
         share_ios::share_text,
+        #[cfg(target_os = "ios")]
+        share_ios::share_file,
         #[cfg(target_os = "android")]
         android_exports::save_to_photos,
         #[cfg(target_os = "android")]
         android_exports::share_text,
+        #[cfg(target_os = "android")]
+        android_exports::share_file,
         #[cfg(target_os = "ios")]
         audio::ios_session::set_playback_audio_session,
         providers::provider_model_settings,

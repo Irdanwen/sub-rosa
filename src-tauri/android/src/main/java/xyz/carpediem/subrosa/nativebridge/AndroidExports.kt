@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import app.tauri.annotation.InvokeArg
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -18,6 +19,9 @@ class ShareTextArgs { lateinit var text: String }
 
 @InvokeArg
 class OpenUrlArgs { lateinit var url: String }
+
+@InvokeArg
+class ShareFileArgs { lateinit var path: String }
 
 @InvokeArg
 class SaveToPhotosArgs {
@@ -41,6 +45,48 @@ object AndroidExports {
             invoke.resolve(JSObject())
         } catch (error: Exception) {
             invoke.reject(error.message ?: "share_failed")
+        }
+    }
+
+    /** A Studio picture to the share sheet. The file is copied into the cache
+     * the app's FileProvider already serves, so no other path is exposed. */
+    fun shareFile(activity: Activity, invoke: Invoke) {
+        val args = try {
+            invoke.parseArgs(ShareFileArgs::class.java)
+        } catch (error: Exception) {
+            invoke.reject(error.message ?: "share_failed")
+            return
+        }
+        io.execute {
+            try {
+                val file = File(args.path).canonicalFile
+                val filesRoot = activity.filesDir.canonicalFile
+                require(file.toPath().startsWith(filesRoot.toPath()) && file.isFile) {
+                    "The file could not be found."
+                }
+                val outbox = File(activity.cacheDir, "share").apply { mkdirs() }
+                outbox.listFiles()?.forEach { stale -> stale.delete() }
+                val copy = File(outbox, file.name)
+                file.inputStream().use { input -> copy.outputStream().use { input.copyTo(it) } }
+                val uri = FileProvider.getUriForFile(
+                    activity,
+                    "${activity.packageName}.fileprovider",
+                    copy,
+                )
+                val mime = MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(copy.extension.lowercase()) ?: "image/*"
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = mime
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                activity.runOnUiThread {
+                    activity.startActivity(Intent.createChooser(intent, null))
+                }
+                invoke.resolve(JSObject())
+            } catch (error: Exception) {
+                invoke.reject(error.message ?: "share_failed")
+            }
         }
     }
 

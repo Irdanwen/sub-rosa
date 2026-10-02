@@ -655,6 +655,10 @@
 }
 
 .retouch-suggestions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
@@ -1074,10 +1078,20 @@
   height: 36px;
 }
 
+/* On a phone the zone tools take the title's row while a zone is drawn: the
+   title is the one thing not needed then. */
 .retouch-workspace[data-layout="phone"] .retouch-zone-bar {
-  top: calc(env(safe-area-inset-top) + var(--sp-12) + var(--sp-8));
+  position: static;
+  grid-row: 2;
+  justify-self: center;
+  transform: none;
+  margin: var(--sp-3) var(--sp-4) 0;
   max-width: calc(100% - var(--sp-8));
-  overflow-x: auto;
+}
+
+.retouch-workspace[data-layout="phone"] .retouch-canvas[data-zone="true"] .retouch-title,
+.retouch-workspace[data-layout="phone"] .retouch-zone-hint {
+  display: none;
 }
 
 .retouch-workspace[data-layout="phone"] .retouch-filmstrip {
@@ -1120,9 +1134,25 @@
   border-radius: var(--r-xl);
 }
 
-.retouch-composer[data-compact="true"] .retouch-badge,
-.retouch-composer[data-compact="true"] .retouch-cost {
-  display: none;
+/* On a phone the quick retouches scroll sideways instead of stacking. */
+.retouch-composer[data-compact="true"] .retouch-suggestions {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-inline: calc(var(--sp-4) * -1);
+  padding-inline: var(--sp-4);
+}
+
+.retouch-composer[data-compact="true"] .retouch-suggestion {
+  flex-shrink: 0;
+  min-height: 34px;
+  white-space: nowrap;
+}
+
+/* Listening: the mic says so, in the colour the app uses for recording. */
+.retouch-icon[data-active="true"] {
+  background: var(--record);
+  color: var(--record-foreground);
 }
 
 @media (max-width: 760px) {
@@ -1165,4 +1195,51 @@
 
 .retouch-composer[data-compact="true"] .retouch-bar-tools > * {
   flex-shrink: 0;
+}
+
+/* --- looking closer -------------------------------------------------------- */
+
+/* The room owns its gestures: no page zoom or scroll under a pinch. */
+.retouch-room {
+  touch-action: none;
+}
+
+/* A double tap or "fit" glides; fingers move the picture directly. */
+.retouch-frame {
+  transition: transform var(--t-med) var(--ease-out);
+  will-change: transform;
+}
+
+.retouch-frame[data-gesturing="true"] {
+  transition: none;
+}
+
+.retouch-fit {
+  position: absolute;
+  top: var(--sp-6);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--sp-2) var(--sp-5);
+  border: 1px solid var(--retouch-edge);
+  border-radius: var(--r-pill);
+  background: var(--retouch-glass-strong);
+  color: var(--screen-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  z-index: 3;
+  animation: retouch-fade var(--t-fast) var(--ease-out) both;
+}
+
+.retouch-fit[data-zone="true"] {
+  top: calc(var(--sp-6) + 56px);
+}
+
+.retouch-workspace[data-layout="phone"] .retouch-fit {
+  top: var(--sp-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retouch-frame {
+    transition: none;
+  }
 }

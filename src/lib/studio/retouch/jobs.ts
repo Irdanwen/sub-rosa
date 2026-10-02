@@ -228,3 +228,8 @@ export const OPEN_RETOUCH_EVENT = "subrosa:open-retouch";
 export function requestRetouch(artifactId: string): void {
   window.dispatchEvent(new CustomEvent(OPEN_RETOUCH_EVENT, { detail: artifactId }));
 }
+
+/** Phone only: the system share sheet with a version, as a file. */
+export function shareVersionFile(path: string): Promise<void> {
+  return invoke<void>("share_file", { request: { path } });
+}

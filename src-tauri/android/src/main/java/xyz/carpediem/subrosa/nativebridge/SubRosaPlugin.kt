@@ -185,5 +185,8 @@ class SubRosaPlugin(private val activity: Activity) : Plugin(activity) {
     fun saveToPhotos(invoke: Invoke) = AndroidExports.saveToPhotos(activity, invoke)
 
     @Command
+    fun shareFile(invoke: Invoke) = AndroidExports.shareFile(activity, invoke)
+
+    @Command
     fun openUrl(invoke: Invoke) = AndroidExports.openUrl(activity, invoke)
 }

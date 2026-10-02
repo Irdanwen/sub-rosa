@@ -99,6 +99,7 @@ beforeEach(() => {
   ];
   bridge.invoke.mockReset().mockImplementation(async (command: string, args: unknown) => {
     if (command === "media_job_list") return [];
+    if (command === "mobile_dictation_stop") return { text: "Add a lamp", rawText: "add a lamp" };
     if (command === "media_job_queue") {
       const request = (args as { request: Record<string, unknown> }).request;
       return {
@@ -337,5 +338,80 @@ describe("the retouch workspace", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Retouch 2"),
     );
+  });
+
+  it("fills the field from a quick retouch, and opens the zone when one needs it", async () => {
+    await open("v1.png");
+    fireEvent.click(screen.getByRole("button", { name: "Change the text" }));
+    const field = screen.getByRole("textbox", {
+      name: "Retouch instruction",
+    }) as HTMLTextAreaElement;
+    expect(field.value).toBe("Replace the text in the image with “…”");
+    expect(screen.queryByRole("toolbar", { name: "Zone tools" })).toBeNull();
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Remove something" }));
+    expect(field.value).toMatch(/^Remove what is painted/);
+    expect(screen.getByRole("toolbar", { name: "Zone tools" })).toBeTruthy();
+  });
+
+  it("undoes the last stroke of a zone", async () => {
+    await open("v1.png");
+    fireEvent.click(screen.getByRole("button", { name: "Retouch a zone only" }));
+    expect(screen.getByRole("button", { name: "Undo the last stroke" })).toBeDisabled();
+  });
+
+  describe("on a phone", () => {
+    async function openPhone() {
+      window.localStorage.setItem(
+        "os-june:retouch-sessions",
+        JSON.stringify({ "root.png": { cursor: "v1.png", at: 1 } }),
+      );
+      render(
+        <RetouchWorkspace catalog={catalog} rootId="root.png" layout="phone" onClose={vi.fn()} />,
+      );
+      await screen.findByRole("heading", { level: 2 });
+    }
+
+    it("takes the instruction by voice", async () => {
+      await openPhone();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Dictate" }));
+      });
+      expect(bridge.invoke).toHaveBeenCalledWith("mobile_dictation_start");
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Stop dictation" }));
+      });
+      const field = screen.getByRole("textbox", {
+        name: "Retouch instruction",
+      }) as HTMLTextAreaElement;
+      expect(field.value).toBe("Add a lamp");
+    });
+
+    it("keeps the version in Photos and shares it as a file", async () => {
+      await openPhone();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Save to Photos" }));
+      });
+      expect(bridge.invoke).toHaveBeenCalledWith("save_to_photos", {
+        request: { path: "/gallery/v1.png", kind: "image" },
+      });
+      expect(screen.getByText("Saved to Photos.")).toBeTruthy();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Share" }));
+      });
+      expect(bridge.invoke).toHaveBeenCalledWith("share_file", {
+        request: { path: "/gallery/v1.png" },
+      });
+    });
+
+    it("keeps the model and the tries in the settings, out of the thumb's way", async () => {
+      await openPhone();
+      expect(screen.queryByRole("button", { name: "x2" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Retouch settings" }));
+      const panel = screen.getByRole("dialog", { name: "Retouch settings" });
+      expect(panel.textContent).toContain("Model");
+      fireEvent.click(screen.getByRole("button", { name: "x2" }));
+      expect(screen.getByText(/21\.5 credits/)).toBeTruthy();
+    });
   });
 });

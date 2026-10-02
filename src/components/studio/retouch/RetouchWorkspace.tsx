@@ -2,8 +2,10 @@
 // allows, the instruction under it, the versions beside it. The desktop tab
 // and the phone screen differ only in how the same pieces are laid out.
 
+import { IconArrowDownCircle } from "central-icons/IconArrowDownCircle";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconArrowRotateCounterClockwise } from "central-icons/IconArrowRotateCounterClockwise";
+import { IconArrowUndoUp } from "central-icons/IconArrowUndoUp";
 import { IconBrush } from "central-icons/IconBrush";
 import { IconCrossMedium } from "central-icons/IconCrossMedium";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
@@ -11,11 +13,19 @@ import { IconEraser } from "central-icons/IconEraser";
 import { IconExpand } from "central-icons/IconExpand";
 import { IconFileDownload } from "central-icons/IconFileDownload";
 import { IconSelectLasso } from "central-icons/IconSelectLasso";
+import { IconShareOs } from "central-icons/IconShareOs";
 import { IconSplit } from "central-icons/IconSplit";
-import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useRef, useState } from "react";
 import { friendlyErrorMessage } from "../../../lib/errors";
 import { t } from "../../../lib/i18n";
+import { hapticImpact, hapticNotify } from "../../../lib/haptics";
 import { openModalCount } from "../../../lib/modal-focus";
+import {
+  mobileDictationCancel,
+  mobileDictationStart,
+  mobileDictationStop,
+  saveToPhotos,
+} from "../../../lib/tauri";
 import { isPrimaryShiftShortcut, isPrimaryShortcut } from "../../../lib/platform";
 import { exportArtifact } from "../../../lib/studio/artifacts";
 import { estimateRenderMs, renderEtaKey } from "../../../lib/studio/render-eta";
@@ -26,7 +36,9 @@ import {
   versionCaption,
   versionTitle,
 } from "../../../lib/studio/retouch/labels";
+import { shareVersionFile } from "../../../lib/studio/retouch/jobs";
 import { parentOf } from "../../../lib/studio/retouch/lineage";
+import { RETOUCH_PRESETS, type RetouchPreset } from "../../../lib/studio/retouch/presets";
 import {
   type RetouchReference,
   useRetouchSession,
@@ -35,7 +47,7 @@ import { hasZone, ratioValue, type ZoneStroke } from "../../../lib/studio/retouc
 import type { MediaCatalog } from "../../../lib/studio/types";
 import { GalleryPicker } from "../GalleryPicker";
 import { type CompareMode, RetouchCanvas, type ZoneTool } from "./RetouchCanvas";
-import { RetouchComposer } from "./RetouchComposer";
+import { RetouchComposer, RetouchModelControl, RetouchTriesControl } from "./RetouchComposer";
 import { RetouchFilmstrip, useVersionSrc } from "./RetouchFilmstrip";
 import { imageFilesOf } from "./RetouchPicker";
 import { aspectLabel, RetouchSettingsPanel } from "./RetouchSettings";
@@ -197,15 +209,70 @@ export function RetouchWorkspace({
     };
   }, []);
 
+  // Keeping and sending the version on screen, from the phone.
+  const keepInPhotos = async () => {
+    if (!cursor) return;
+    try {
+      await saveToPhotos(cursor.path, "image");
+      hapticNotify("success");
+      setNotice(t("Saved to Photos."));
+    } catch (cause) {
+      setNotice(friendlyErrorMessage(cause, t("The picture could not be saved.")));
+    }
+  };
+  const shareVersion = async () => {
+    if (!cursor) return;
+    try {
+      await shareVersionFile(cursor.path);
+    } catch (cause) {
+      setNotice(friendlyErrorMessage(cause, t("The picture could not be shared.")));
+    }
+  };
+
+  // A version arriving is felt as well as seen on a phone.
+  const revealed = s.revealId;
+  useEffect(() => {
+    if (phone && revealed) hapticNotify("success");
+  }, [phone, revealed]);
+
   const failure = s.failures.at(-1);
   const titleCaption = cursor ? shortCaption(versionCaption(cursor)) : "";
   const elapsed = cursor?.edit?.elapsedMs;
-  const suggestions = useMemo(
-    () => [
-      t("Change the lighting to golden hour"),
-      t("Remove the object on the left"),
-      t("Replace the text in the image with “…”"),
-    ],
+  const applyPreset = useCallback((preset: RetouchPreset) => {
+    setPrompt(preset.instruction());
+    if (preset.zone) {
+      setCompare("off");
+      setZone((current) => current ?? { tool: "brush", radius: BRUSH_SIZES[1], strokes: [] });
+    }
+  }, []);
+
+  // Dictation on a phone: speaking an instruction beats typing it.
+  const [dictating, setDictating] = useState(false);
+  const toggleDictation = useCallback(async () => {
+    try {
+      if (dictating) {
+        setDictating(false);
+        const result = await mobileDictationStop({ style: "standard" });
+        const spoken = result.text.trim();
+        if (spoken)
+          setPrompt((current) => (current.trim() ? `${current.trim()} ${spoken}` : spoken));
+        hapticNotify("success");
+        return;
+      }
+      await mobileDictationStart();
+      setDictating(true);
+      hapticImpact("medium");
+    } catch (cause) {
+      setDictating(false);
+      setNotice(friendlyErrorMessage(cause, t("Dictation is not available.")));
+    }
+  }, [dictating]);
+  const dictatingRef = useRef(false);
+  dictatingRef.current = dictating;
+  useEffect(
+    () => () => {
+      if (dictatingRef.current) void mobileDictationCancel().catch(() => undefined);
+    },
     [],
   );
 
@@ -373,7 +440,28 @@ export function RetouchWorkspace({
               </div>
             ) : null}
           </div>
-          {!phone ? (
+          {phone ? (
+            <>
+              <button
+                type="button"
+                className="retouch-icon"
+                aria-label={t("Save to Photos")}
+                title={t("Save to Photos")}
+                onClick={() => void keepInPhotos()}
+              >
+                <IconArrowDownCircle size={18} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="retouch-icon"
+                aria-label={t("Share")}
+                title={t("Share")}
+                onClick={() => void shareVersion()}
+              >
+                <IconShareOs size={18} aria-hidden />
+              </button>
+            </>
+          ) : (
             <button
               type="button"
               className="retouch-icon"
@@ -383,7 +471,7 @@ export function RetouchWorkspace({
             >
               <IconFileDownload size={18} aria-hidden />
             </button>
-          ) : null}
+          )}
           <button
             type="button"
             className="retouch-icon"
@@ -431,6 +519,16 @@ export function RetouchWorkspace({
                 ))}
               </fieldset>
             ) : null}
+            <button
+              type="button"
+              className="retouch-icon"
+              aria-label={t("Undo the last stroke")}
+              title={t("Undo the last stroke")}
+              disabled={zone.strokes.length === 0}
+              onClick={() => setZone({ ...zone, strokes: zone.strokes.slice(0, -1) })}
+            >
+              <IconArrowUndoUp size={18} aria-hidden />
+            </button>
             <button
               type="button"
               className="btn btn-ghost"
@@ -527,6 +625,27 @@ export function RetouchWorkspace({
               onChange={s.setSettings}
               onClose={() => setSettingsOpen(false)}
               zoneActive={zoneActive}
+              lead={
+                phone ? (
+                  <section>
+                    <h3>{t("Model")}</h3>
+                    <RetouchModelControl
+                      models={s.models}
+                      model={s.model}
+                      onModel={(modelId) => s.setSettings({ modelId })}
+                    />
+                    {!zoneActive ? (
+                      <>
+                        <h3>{t("Tries per send")}</h3>
+                        <RetouchTriesControl
+                          variants={s.settings.variants}
+                          onVariants={(count) => s.setSettings({ variants: count })}
+                        />
+                      </>
+                    ) : null}
+                  </section>
+                ) : undefined
+              }
             />
           ) : null}
           <RetouchComposer
@@ -550,8 +669,11 @@ export function RetouchWorkspace({
             aspectLabel={zoneActive ? t("Zone") : aspectLabel(s.settings.aspectRatio)}
             onOpenSettings={() => setSettingsOpen((open) => !open)}
             settingsOpen={settingsOpen}
-            suggestions={cursor.edit ? [] : suggestions}
+            presets={RETOUCH_PRESETS}
+            onPreset={applyPreset}
             compact={phone}
+            dictating={dictating}
+            onDictate={phone ? () => void toggleDictation() : undefined}
           />
         </div>
       </RetouchCanvas>

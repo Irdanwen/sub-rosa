@@ -502,7 +502,13 @@ export function MobileApp() {
         openDictation(Boolean(destination.start));
         break;
       case "studio":
-        nav.switchTab("studio");
+        if (nav.tab !== "studio") nav.switchTab("studio");
+        if (destination.retouch)
+          nav.push({
+            view: "studio-retouch",
+            artifactId: destination.retouch.versionId,
+            rootId: destination.retouch.rootId,
+          });
         break;
       case "record":
         recordFromOutside();
@@ -973,7 +979,7 @@ export function MobileApp() {
       />
     );
   } else if (top?.view === "studio-retouch") {
-    screen = <RetouchScreen artifactId={top.artifactId} onBack={nav.pop} />;
+    screen = <RetouchScreen artifactId={top.artifactId} rootId={top.rootId} onBack={nav.pop} />;
   } else if (top?.view === "dictation") {
     screen = <DictationScreen onBack={nav.pop} autoStart={top.autoStart} />;
   } else if (top?.view === "settings-section") {

@@ -39,8 +39,20 @@ function canvas(
 }
 
 /** A version, ready to send: under the operator's 5 MB per image. */
-export function prepareSource(dataUrl: string): Promise<string> {
-  return prepareEditReference(dataUrl);
+export async function prepareSource(dataUrl: string): Promise<string> {
+  // A format the operator cannot read (a phone's HEIC) goes as JPEG.
+  const sendable = /^data:image\/(png|jpeg|webp)[;,]/.test(dataUrl)
+    ? dataUrl
+    : await reencodeAsJpeg(dataUrl);
+  return prepareEditReference(sendable);
+}
+
+/** Any picture the webview can decode, as a full-size JPEG. */
+export async function reencodeAsJpeg(src: string): Promise<string> {
+  const image = await loadImage(src);
+  const { element, context } = canvas(image.naturalWidth, image.naturalHeight);
+  context.drawImage(image, 0, 0);
+  return element.toDataURL("image/jpeg", 0.92);
 }
 
 /** A version bound for the upscaler: its full size kept, its weight under

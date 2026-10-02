@@ -58,9 +58,7 @@ pub fn composite(
     crop: [u32; 4],
     mask_png: &[u8],
 ) -> Result<Vec<u8>, String> {
-    let mut base = image::load_from_memory(parent)
-        .map_err(|error| format!("parent: {error}"))?
-        .to_rgba8();
+    let mut base = upright(parent).map_err(|error| format!("parent: {error}"))?;
     let [x, y, width, height] = crop;
     let fits = |start: u32, length: u32, limit: u32| {
         start.checked_add(length).is_some_and(|end| end <= limit)
@@ -90,6 +88,21 @@ pub fn composite(
         .write_to(&mut out, ImageFormat::Png)
         .map_err(|error| format!("encode: {error}"))?;
     Ok(out.into_inner())
+}
+
+/// Decode as the webview shows it: a camera photo keeps its pixels sideways
+/// and says how to turn them in EXIF, and the browser honours that. The crop
+/// was drawn on the turned picture, so the merge has to happen on it too.
+fn upright(bytes: &[u8]) -> image::ImageResult<RgbaImage> {
+    use image::ImageDecoder;
+    let mut decoder = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(image::ImageError::IoError)?
+        .into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut picture = image::DynamicImage::from_decoder(decoder)?;
+    picture.apply_orientation(orientation);
+    Ok(picture.to_rgba8())
 }
 
 fn blend(base: &mut RgbaImage, edited: &RgbaImage, mask: &image::GrayImage, x: u32, y: u32) {
@@ -164,6 +177,52 @@ mod tests {
         let merged = composite(&parent, &result, [0, 0, 4, 4], &mask).unwrap();
         let merged = image::load_from_memory(&merged).unwrap().to_rgba8();
         assert_eq!(merged.get_pixel(1, 1).0, [128, 128, 128, 255]);
+    }
+
+    /// A JPEG whose EXIF says "turn me 90 degrees clockwise", as a phone
+    /// camera writes a portrait shot.
+    fn sideways_jpeg(width: u32, height: u32) -> Vec<u8> {
+        let mut jpeg = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            width,
+            height,
+            image::Rgb([90, 90, 90]),
+        ))
+        .write_to(&mut jpeg, ImageFormat::Jpeg)
+        .unwrap();
+        let jpeg = jpeg.into_inner();
+        let mut exif = b"Exif\0\0II*\0".to_vec();
+        exif.extend_from_slice(&8u32.to_le_bytes());
+        exif.extend_from_slice(&1u16.to_le_bytes());
+        exif.extend_from_slice(&0x0112u16.to_le_bytes());
+        exif.extend_from_slice(&3u16.to_le_bytes());
+        exif.extend_from_slice(&1u32.to_le_bytes());
+        exif.extend_from_slice(&6u16.to_le_bytes());
+        exif.extend_from_slice(&0u16.to_le_bytes());
+        exif.extend_from_slice(&0u32.to_le_bytes());
+        let mut out = jpeg[..2].to_vec();
+        out.extend_from_slice(&[0xFF, 0xE1]);
+        out.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+        out.extend_from_slice(&exif);
+        out.extend_from_slice(&jpeg[2..]);
+        out
+    }
+
+    #[test]
+    fn merges_on_the_picture_the_way_it_is_shown() {
+        // Stored 40 wide and 20 high, shown 20 wide and 40 high. The crop
+        // was drawn on the shown picture, and only fits that one.
+        let parent = sideways_jpeg(40, 20);
+        let result = solid(10, 30, [255, 0, 0, 255]);
+        let mask = png(image::DynamicImage::ImageLuma8(GrayImage::from_pixel(
+            10,
+            30,
+            Luma([255]),
+        )));
+        let merged = composite(&parent, &result, [5, 5, 10, 30], &mask).unwrap();
+        let merged = image::load_from_memory(&merged).unwrap().to_rgba8();
+        assert_eq!(merged.dimensions(), (20, 40));
+        assert_eq!(merged.get_pixel(8, 20).0, [255, 0, 0, 255]);
     }
 
     #[test]

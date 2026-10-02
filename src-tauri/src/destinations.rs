@@ -38,6 +38,12 @@ pub fn studio() -> String {
     format!("{SCHEME}studio")
 }
 
+/// A retouch that finished: its session, open on the new version. Gallery
+/// ids are file names the app minted (`<uuid>.png`), never paths.
+pub fn retouch(root_id: &str, version_id: &str) -> String {
+    format!("{SCHEME}studio?root={root_id}&retouch={version_id}")
+}
+
 /// Start a recording. This is what a brief's tap does: the one thing you
 /// were about to do anyway.
 pub fn record() -> String {
@@ -57,6 +63,10 @@ mod tests {
         assert_eq!(chat(Some("")), "subrosa://chat");
         assert_eq!(dictation(), "subrosa://dictation");
         assert_eq!(studio(), "subrosa://studio");
+        assert_eq!(
+            retouch("a1.png", "b2.jpg"),
+            "subrosa://studio?root=a1.png&retouch=b2.jpg"
+        );
         assert_eq!(record(), "subrosa://record");
     }
 }

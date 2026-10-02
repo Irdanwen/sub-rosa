@@ -27,6 +27,8 @@ import { startLinkIngest } from "../lib/tauri";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import { FILM_FROM_NOTE_EVENT } from "../lib/film-from-note";
 import { STUDIO_FILM_NOTE_KEY, STUDIO_TAB_STORAGE_KEY } from "../components/studio/studio-keys";
+import { requestRetouch } from "../lib/studio/retouch/jobs";
+import { writeCursor, writeOpenRoot } from "../lib/studio/retouch/prefs";
 import { MeetingAmbiguityPrompt } from "../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../lib/calendar-link";
 import type { CalendarEventDto } from "../lib/tauri";
@@ -1512,6 +1514,18 @@ export function App() {
         setActiveView("dictation");
         break;
       case "studio":
+        if (destination.retouch) {
+          // Land on the retouch tab, on that session and version, whether
+          // Studio is already open (the event) or mounts now (the prefs).
+          writeCursor(destination.retouch.rootId, destination.retouch.versionId);
+          writeOpenRoot(destination.retouch.rootId);
+          try {
+            window.localStorage.setItem(STUDIO_TAB_STORAGE_KEY, "retouch");
+          } catch {
+            // Tab memory is a nicety.
+          }
+          requestRetouch(destination.retouch.versionId);
+        }
         setActiveView("studio");
         break;
       case "record":

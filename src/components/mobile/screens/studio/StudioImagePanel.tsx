@@ -3,21 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { hapticNotify } from "../../../../lib/haptics";
 import { saveArtifactFromBase64 } from "../../../../lib/studio/artifacts";
 import {
-  defaultEditModel,
   estimateCostCredits,
   formatCredits,
-  imageEditModels,
   modelsOfType,
   supportsBackgroundRemoval,
 } from "../../../../lib/studio/catalog";
 import { mediaGet } from "../../../../lib/studio/client";
-import { prepareEditReference } from "../../../../lib/studio/downscale";
-import {
-  composeImages,
-  MAX_COMPOSE_IMAGES,
-  removeBackground,
-  upscaleImage,
-} from "../../../../lib/studio/edit-image";
+import { removeBackground, upscaleImage } from "../../../../lib/studio/edit-image";
 import { enhanceImagePrompt } from "../../../../lib/studio/enhance-prompt";
 import { compareBodies, generateImages } from "../../../../lib/studio/generate-image";
 import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types";
@@ -36,17 +28,18 @@ import {
   StudioSetting,
   StudioToggle,
 } from "./StudioControls";
+import { RetouchLauncher } from "./RetouchLauncher";
 import { ReferencePicker } from "./StudioLightbox";
 
 /** Which of the four image sub-modes the form is in. */
 export type ImageMode = "generate" | "edit" | "upscale" | "cutout";
 
 /**
- * Making a picture: generate, edit, upscale, cut out.
+ * Making a picture: generate, retouch, upscale, cut out.
  *
- * Four sub-modes over one form. They share the model picker and the reference
- * list, and differ in what they send: a prompt, a prompt plus an image, raw
- * bytes, or a mask request.
+ * "edit" is the retouch: on a phone it starts from the photo library or the
+ * camera and opens the retouch screen, which does everything the old one-shot
+ * edit did (combining up to three images included) and keeps every version.
  */
 // --- Image ------------------------------------------------------------------
 
@@ -54,31 +47,20 @@ export function ImagePanel({
   catalog,
   mode,
   onModeChange,
-  references,
-  onReferencesChange,
   galleryImages,
   onGenerated,
 }: {
   catalog: MediaCatalog;
   mode: ImageMode;
   onModeChange: (mode: ImageMode) => void;
-  references: string[];
-  onReferencesChange: (refs: string[]) => void;
   galleryImages: StudioArtifact[];
   onGenerated: () => void;
 }) {
   const generateModels = useMemo(() => modelsOfType(catalog, "image"), [catalog]);
-  const editModels = useMemo(() => imageEditModels(catalog), [catalog]);
   const cutoutAvailable = supportsBackgroundRemoval(catalog);
-  const models = mode === "edit" ? editModels : generateModels;
+  const models = generateModels;
   const [generateModelId, setGenerateModelId] = useState(generateModels[0]?.id ?? "");
-  // Empty = "Automatic": a sensible default edit model is resolved on use.
-  const [editModelId, setEditModelId] = useState("");
-  const modelId = mode === "edit" ? editModelId : generateModelId;
-  const model =
-    mode === "edit"
-      ? (models.find((entry) => entry.id === modelId) ?? defaultEditModel(catalog) ?? models[0])
-      : (models.find((entry) => entry.id === modelId) ?? models[0]);
+  const model = models.find((entry) => entry.id === generateModelId) ?? models[0];
   const [prompt, setPrompt] = useState("");
   // Generate-only settings, at parity with the desktop image studio. They are
   // constraint-driven: aspect/resolution/steps only show when the model exposes
@@ -105,8 +87,7 @@ export function ImagePanel({
   const [hideWatermark, setHideWatermark] = useState(true);
   const [embedExif, setEmbedExif] = useState(false);
   const [improvePrompt, setImprovePrompt] = useState(false);
-  // Upscale and cutout share one single-image source, separate from the
-  // shared edit references.
+  // Upscale and cutout share one single-image source.
   const [upscaleRefs, setUpscaleRefs] = useState<string[]>([]);
   const [scale, setScale] = useState<2 | 3 | 4>(2);
 
@@ -164,7 +145,6 @@ export function ImagePanel({
 
   const generate = useCallback(async () => {
     if (!model || !prompt.trim() || busy) return;
-    if (mode === "edit" && references.length === 0) return;
     setBusy(true);
     setError(null);
     try {
@@ -206,14 +186,7 @@ export function ImagePanel({
         onGenerated();
         return;
       }
-      let images: string[];
-      let extension = "png";
-      if (mode === "edit") {
-        // One reference edits that photo; two or three compose them into a
-        // single image (Carpe Diem's multi-edit). The picker is capped to
-        // MAX_COMPOSE_IMAGES, so every reference here is sent.
-        images = [await composeImages(model.id, prompt.trim(), references)];
-      } else {
+      {
         const body: Record<string, unknown> = {
           model: model.id,
           prompt: usedPrompt,
@@ -229,23 +202,15 @@ export function ImagePanel({
         if (effectiveResolution) body.resolution = effectiveResolution;
         if (maxSteps > 0 && steps > 0) body.steps = steps;
         if (seed.trim() && Number.isFinite(Number(seed))) body.seed = Number(seed);
-        images = await generateImages(model.id, body);
-        extension = format;
-      }
-      if (images.length === 0) throw new Error("The backend returned no image.");
-      for (const base64 of images) {
-        await saveArtifactFromBase64(base64, extension, {
-          kind: "image",
-          model: model.id,
-          prompt: usedPrompt,
-        });
-      }
-      if (mode === "edit") {
-        // Chain: the result becomes the next source, so successive edits
-        // build on each other while every step stays in the gallery.
-        const chained = await prepareEditReference(`data:image/png;base64,${images[0]}`);
-        onReferencesChange([chained]);
-        setPrompt("");
+        const images = await generateImages(model.id, body);
+        if (images.length === 0) throw new Error("The backend returned no image.");
+        for (const base64 of images) {
+          await saveArtifactFromBase64(base64, format, {
+            kind: "image",
+            model: model.id,
+            prompt: usedPrompt,
+          });
+        }
       }
       hapticNotify("success");
       onGenerated();
@@ -268,8 +233,6 @@ export function ImagePanel({
     hideWatermark,
     embedExif,
     stylePreset,
-    references,
-    onReferencesChange,
     onGenerated,
     variants,
     negativePrompt,
@@ -344,7 +307,7 @@ export function ImagePanel({
             {entry === "generate"
               ? t("Generate")
               : entry === "edit"
-                ? t("Edit")
+                ? t("Touch up")
                 : entry === "upscale"
                   ? t("Upscale")
                   : t("Cutout")}
@@ -407,42 +370,20 @@ export function ImagePanel({
             {busy ? <Spinner /> : t("Upscale x{scale}", { scale })}
           </button>
         </>
+      ) : mode === "edit" ? (
+        <RetouchLauncher galleryImages={galleryImages} />
       ) : (
         <>
           <ModelPickerButton
-            label={mode === "edit" ? t("Edit model") : t("Image model")}
-            value={mode === "edit" && !editModelId ? t("Automatic") : (model?.name ?? "")}
+            label={t("Image model")}
+            value={model?.name ?? ""}
             onOpen={() => setPickerOpen(true)}
           />
-          {mode === "edit" ? (
-            <ReferencePicker
-              references={references}
-              onChange={(refs) => onReferencesChange(refs.slice(0, MAX_COMPOSE_IMAGES))}
-              galleryImages={galleryImages}
-              prepare={prepareEditReference}
-              hint={
-                references.length > 1
-                  ? t(
-                      "Combining {count} photos into one (up to {max}). The prompt can call them image 1, image 2, in the order shown.",
-                      { count: references.length, max: MAX_COMPOSE_IMAGES },
-                    )
-                  : references.length === 1
-                    ? t("The prompt describes the edit. Add another photo to combine them.")
-                    : t("Add a photo to edit, or two to three to combine.")
-              }
-            />
-          ) : null}
           <textarea
             className="mobile-studio-prompt"
             value={prompt}
             rows={3}
-            placeholder={
-              mode === "edit"
-                ? references.length > 1
-                  ? t("Describe how to combine the photos")
-                  : t("Describe how to transform the photo")
-                : t("Describe the image to generate")
-            }
+            placeholder={t("Describe the image to generate")}
             onChange={(event) => setPrompt(event.target.value)}
           />
           {mode === "generate" ? (
@@ -574,9 +515,7 @@ export function ImagePanel({
             <button
               type="button"
               className="mobile-studio-generate"
-              disabled={
-                !model || !prompt.trim() || busy || (mode === "edit" && references.length === 0)
-              }
+              disabled={!model || !prompt.trim() || busy}
               onClick={() => void generate()}
             >
               {busy ? <Spinner /> : t("Generate")}
@@ -586,41 +525,26 @@ export function ImagePanel({
             </button>
             {busy ? null : !model ? (
               <p className="mobile-studio-generate-hint">{t("Choose an image model first.")}</p>
-            ) : mode === "edit" && references.length === 0 ? (
-              <p className="mobile-studio-generate-hint">{t("Add a photo to edit.")}</p>
             ) : !prompt.trim() ? (
               <p className="mobile-studio-generate-hint">
                 {t("Describe the image to generate it.")}
               </p>
             ) : null}
           </div>
-          {busy && mode === "edit" ? (
-            <p className="mobile-studio-progress" data-shimmer="true">
-              {references.length > 1
-                ? t("Combining photos. Heavy models can take a minute or two.")
-                : t("Editing. Heavy models can take a minute or two.")}
-            </p>
-          ) : null}
         </>
       )}
       {error ? <p className="mobile-dictation-error">{error}</p> : null}
       {pickerOpen ? (
         <ModelSheet
-          title={mode === "edit" ? t("Edit model") : t("Image model")}
+          title={t("Image model")}
           entries={models.map((entry) => ({
             id: entry.id,
             name: entry.name,
             subtitle: modelSubtitle(entry),
           }))}
-          selectedId={mode === "edit" ? editModelId : (model?.id ?? "")}
-          defaultOption={
-            mode === "edit"
-              ? { label: t("Automatic"), subtitle: t("Picks a capable edit model") }
-              : undefined
-          }
+          selectedId={model?.id ?? ""}
           onSelect={(id) => {
-            if (mode === "edit") setEditModelId(id);
-            else if (id) setGenerateModelId(id);
+            if (id) setGenerateModelId(id);
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}

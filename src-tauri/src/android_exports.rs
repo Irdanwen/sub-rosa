@@ -44,3 +44,23 @@ pub async fn share_text(request: ShareTextRequest) -> Result<(), AppError> {
     crate::android::invoke::<serde_json::Value>("shareText", serde_json::json!({ "text": text }))?;
     Ok(())
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareFileRequest {
+    pub path: String,
+}
+
+/// Share a Studio picture as a file, confined to the gallery like an export.
+#[tauri::command]
+pub async fn share_file(app: AppHandle, request: ShareFileRequest) -> Result<(), AppError> {
+    let gallery = crate::carpe_diem::media::artifacts_dir(&app)?;
+    let path = crate::path_confinement::confine_existing(
+        &[gallery],
+        std::path::Path::new(&request.path),
+        "share_file_missing",
+        "The file could not be found.",
+    )?;
+    crate::android::invoke::<serde_json::Value>("shareFile", serde_json::json!({ "path": path }))?;
+    Ok(())
+}
