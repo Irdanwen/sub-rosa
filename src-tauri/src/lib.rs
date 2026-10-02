@@ -983,6 +983,7 @@ pub fn run() {
             // make sure the embedded backend still answers when we come back.
             #[cfg(mobile)]
             tauri::RunEvent::Resumed => {
+                ios_background::note_lifecycle_change();
                 carpe_diem::sidecar::ensure_alive(app);
                 // Everything whose durable row outlived the suspension self-heals
                 // here: notes mid-transcription, queued Studio generations,

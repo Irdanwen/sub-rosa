@@ -148,6 +148,30 @@ impl ChunkCheckpoint {
     }
 }
 
+/// How many requests in a row may be blamed on the phone suspending the app
+/// before a failure is believed. One suspension cuts at most the request in
+/// flight, so a third in a row is the provider talking, not the lock screen.
+const SUSPENSION_RETRIES: usize = 2;
+
+/// Whether a failed request should simply be asked again because the app was
+/// suspended while it was in flight (ADR-0071). The answer it lost was never
+/// refused: iOS froze the process and the loopback socket went with it, which
+/// surfaces as a 502 or a broken body that the transient rules rightly do not
+/// retry when the app was in the foreground the whole time. No-speech is an
+/// answer, never a casualty.
+pub(super) fn cut_by_suspension(epoch: u64, error: &AppError, suspensions: &mut usize) -> bool {
+    if crate::ios_background::lifecycle_epoch() == epoch
+        || is_no_speech_error(error)
+        || error.code == crate::domain::processing_progress::CANCELLED_CODE
+        || *suspensions >= SUSPENSION_RETRIES
+    {
+        return false;
+    }
+    *suspensions += 1;
+    tracing::info!(code = %error.code, "a transcription request was cut by a suspension; asking again");
+    true
+}
+
 /// Forget an artifact's chunks once the note they fed is ready. A later,
 /// deliberate re-run of a finished note is asking for a fresh transcription,
 /// not for the one it already has.

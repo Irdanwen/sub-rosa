@@ -1641,10 +1641,16 @@ async fn transcribe_with_transient_retries(
     request: TranscriptionRequest,
 ) -> Result<TranscriptionProviderResult, AppError> {
     let operation_id = request.operation_id();
-    for attempt in 0..TRANSIENT_TRANSCRIPTION_ATTEMPTS {
+    let mut suspensions = 0;
+    let mut attempt = 0;
+    loop {
+        let epoch = crate::ios_background::lifecycle_epoch();
         match transcriber(request.clone()).await {
             Ok(transcript) => return Ok(transcript),
             Err(error) => {
+                if chunk_checkpoint::cut_by_suspension(epoch, &error, &mut suspensions) {
+                    continue;
+                }
                 if attempt + 1 < TRANSIENT_TRANSCRIPTION_ATTEMPTS
                     && is_retryable_transcription_error(&error)
                 {
@@ -1657,13 +1663,13 @@ async fn transcribe_with_transient_retries(
                         "transient transcription request failed; retrying"
                     );
                     tokio::time::sleep(retry_delay).await;
+                    attempt += 1;
                     continue;
                 }
                 return Err(error);
             }
         }
     }
-    unreachable!("transcription retry loop always returns")
 }
 
 fn is_retryable_transcription_error(error: &AppError) -> bool {

@@ -3,7 +3,10 @@
 //! was never interrupted.
 
 use super::*;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Mutex,
+};
 
 const CHUNK_SAMPLES: usize = 16_000 * 30;
 
@@ -289,4 +292,73 @@ async fn a_finished_note_leaves_no_chunks_behind() {
     .expect("the re-run finishes");
     assert_eq!(calls.lock().unwrap().len(), 3);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A provider whose first `cut` answers are lost to a suspension: the phone
+/// locks while the request is in flight, and what comes back is a 502.
+fn suspended_provider(calls: &Arc<AtomicUsize>, cut: usize) -> TurnTranscriber {
+    let calls = Arc::clone(calls);
+    Arc::new(move |_request: TranscriptionRequest| {
+        let calls = Arc::clone(&calls);
+        Box::pin(async move {
+            if calls.fetch_add(1, Ordering::SeqCst) < cut {
+                crate::ios_background::note_lifecycle_change();
+                return Err(AppError::new("upstream_provider_failed", "Bad gateway"));
+            }
+            Ok(TranscriptionProviderResult {
+                text: "words".to_string(),
+                language: None,
+                provider: "test".to_string(),
+            })
+        }) as TranscriptionFuture
+    }) as TurnTranscriber
+}
+
+fn single_request() -> TranscriptionRequest {
+    TranscriptionRequest {
+        provider: "test".to_string(),
+        audio_path: PathBuf::from("chunk.wav"),
+        title: "Meeting".to_string(),
+        context: None,
+        language: None,
+        operation_id: Some("note-chunk-0".to_string()),
+        preview: false,
+    }
+}
+
+#[tokio::test]
+async fn a_request_cut_by_a_suspension_is_asked_again() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let transcript =
+        transcribe_with_transient_retries(&suspended_provider(&calls, 1), single_request())
+            .await
+            .expect("the answer lost to the lock screen is asked for again");
+    assert_eq!(transcript.text, "words");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn the_same_failure_without_a_suspension_is_believed() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let failing = {
+        let calls = Arc::clone(&calls);
+        Arc::new(move |_request: TranscriptionRequest| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Err(AppError::new("upstream_provider_failed", "Bad gateway")) })
+                as TranscriptionFuture
+        }) as TurnTranscriber
+    };
+    transcribe_with_transient_retries(&failing, single_request())
+        .await
+        .expect_err("a provider failure in the foreground is not retried");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn suspensions_cannot_retry_forever() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    transcribe_with_transient_retries(&suspended_provider(&calls, usize::MAX), single_request())
+        .await
+        .expect_err("a failure that keeps coming back is eventually believed");
+    assert_eq!(calls.load(Ordering::SeqCst), 1 + SUSPENSION_RETRIES);
 }

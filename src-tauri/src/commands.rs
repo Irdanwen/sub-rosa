@@ -1147,29 +1147,7 @@ async fn finish_recording_session(
             )
             .await
         };
-        match result {
-            Err(error) => {
-                crate::note_processing::settle_failed_run(&task_repos, &task_note_id, error).await;
-            }
-            // A long transcription usually finishes while the app is in the
-            // background — which is exactly when the webview is frozen and
-            // cannot tell anyone. Rust says it instead, and the tap opens the
-            // note (crate::moments).
-            Ok(ready) => {
-                // It has a real title now, which is what makes it findable.
-                crate::spotlight::reindex_detached(&task_app);
-                crate::moments::announce_note_ready(
-                    &task_app,
-                    &ready.id,
-                    &ready.title,
-                    ready
-                        .edited_content
-                        .as_deref()
-                        .or(ready.generated_content.as_deref())
-                        .unwrap_or_default(),
-                );
-            }
-        }
+        crate::note_processing::settle_run(&task_app, &task_repos, &task_note_id, result).await;
         ticket.finish();
     });
     Ok(FinishRecordingResponse {
@@ -1737,7 +1715,7 @@ pub async fn retry_processing(
     let mut note = repos.get_note(&request.note_id).await?;
     crate::domain::processing_progress::fill_live_fields(&mut note);
 
-    let task_repos = repos.clone();
+    let (task_app, task_repos) = (app.clone(), repos.clone());
     let task_note_id = request.note_id.clone();
     tokio::spawn(async move {
         let queue_lock = ticket.lock();
@@ -1810,9 +1788,7 @@ pub async fn retry_processing(
             )
             .await
         };
-        if let Err(error) = result {
-            crate::note_processing::settle_failed_run(&task_repos, &task_note_id, error).await;
-        }
+        crate::note_processing::settle_run(&task_app, &task_repos, &task_note_id, result).await;
         ticket.finish();
     });
     Ok(note)
@@ -1827,9 +1803,10 @@ pub async fn retry_processing(
 /// - the process was suspended and then killed outright, so the note is still
 ///   sitting in `transcribing`/`generating` with nobody working on it.
 ///
-/// The second case is why the sweep asks `domain::processing::is_processing`
-/// rather than trusting the row: a warm resume can find a pipeline that is
-/// genuinely still running, and restarting it would transcribe the note twice.
+/// The second case is why the sweep asks this process, not the row, whether
+/// a note is live (`note_processing::notes_to_resume`): a warm resume can find
+/// a pipeline still running, and restarting it would transcribe the note twice.
+/// A restarted run resumes at its first unfinished chunk (ADR-0071).
 ///
 /// Best-effort: any failure leaves the note where it was, where the manual
 /// retry still applies.
@@ -1844,15 +1821,7 @@ pub fn resume_interrupted_processing(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         let sweep = async {
             let repos = repositories(&app).await?;
-            // The two queries select disjoint statuses, so concatenating them
-            // cannot produce the same note twice.
-            let mut note_ids = repos.list_notes_failed_in_transit().await?;
-            for note_id in repos.list_notes_stuck_in_processing().await? {
-                if !crate::domain::processing::is_processing(&note_id) {
-                    note_ids.push(note_id);
-                }
-            }
-            for note_id in note_ids {
+            for note_id in crate::note_processing::notes_to_resume(&repos).await? {
                 let _ = retry_processing(
                     app.clone(),
                     RetryProcessingRequest {
