@@ -33,7 +33,7 @@ export type MobileRoute =
   | { view: "dictation"; autoStart?: boolean }
   | { view: "settings-section"; section: SettingsSection }
   /** A retouch session, opened on the image that was picked. */
-  | { view: "studio-retouch"; artifactId: string };
+  | { view: "studio-retouch"; artifactId: string; rootId?: string };
 
 export type MobileNav = {
   tab: MobileTab;

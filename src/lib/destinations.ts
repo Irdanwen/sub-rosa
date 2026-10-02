@@ -41,8 +41,8 @@ export type Destination =
    * app's own intent wrote in the app group inbox; Rust reads and validates
    * it (`intent_inbox`). Only a manifest can ask for a message to be sent. */
   | { kind: "intent"; intentId: string }
-  /** Open Studio. */
-  | { kind: "studio" }
+  /** Open Studio; with `retouch`, a retouch session on that version. */
+  | { kind: "studio"; retouch?: { rootId: string; versionId: string } }
   /** Start a recording. */
   | { kind: "record" }
   /** Fetch a link and turn it into a note (ADR-0028). The one destination
@@ -63,6 +63,8 @@ export type Destination =
 
 /** App-generated ids (notes, sessions) are opaque tokens, never paths. */
 const ID_RE = /^[\w-]{1,64}$/;
+/** Gallery ids are file names the app minted: a token and an image extension. */
+const GALLERY_ID_RE = /^[\w-]{1,64}\.(png|jpe?g|webp)$/;
 const MAX_QUERY = 200;
 const MAX_IMPORT_URL = 2048;
 
@@ -111,8 +113,14 @@ export function parseDestination(raw: string): Destination | null {
         : { kind: "dictation" };
     case "intent":
       return ID_RE.test(segment) ? { kind: "intent", intentId: segment } : null;
-    case "studio":
-      return { kind: "studio" };
+    case "studio": {
+      if (segment) return null;
+      const rootId = url.searchParams.get("root") ?? "";
+      const versionId = url.searchParams.get("retouch") ?? "";
+      return GALLERY_ID_RE.test(rootId) && GALLERY_ID_RE.test(versionId)
+        ? { kind: "studio", retouch: { rootId, versionId } }
+        : { kind: "studio" };
+    }
     case "record":
       return { kind: "record" };
     case "share":
@@ -159,6 +167,10 @@ export function destinationUrl(destination: Destination): string {
     }
     case "credits":
       return `${DESTINATION_SCHEME}credits/return`;
+    case "studio":
+      return destination.retouch
+        ? `${DESTINATION_SCHEME}studio?root=${destination.retouch.rootId}&retouch=${destination.retouch.versionId}`
+        : `${DESTINATION_SCHEME}studio`;
     default:
       return `${DESTINATION_SCHEME}${destination.kind}`;
   }

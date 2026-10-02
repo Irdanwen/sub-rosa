@@ -5,6 +5,7 @@
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconImages1 } from "central-icons/IconImages1";
+import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconSettingsSliderHor } from "central-icons/IconSettingsSliderHor";
 import {
@@ -19,6 +20,7 @@ import { t } from "../../../lib/i18n";
 import { modelPrivacyBadge } from "../../../lib/model-privacy";
 import { formatCredits } from "../../../lib/studio/catalog";
 import type { VariantCount } from "../../../lib/studio/retouch/prefs";
+import type { RetouchPreset } from "../../../lib/studio/retouch/presets";
 import type { RetouchReference } from "../../../lib/studio/retouch/useRetouchSession";
 import type { MediaModel } from "../../../lib/studio/types";
 import { MediaModelPicker, mediaModelOption } from "../MediaModelPicker";
@@ -47,9 +49,14 @@ export interface RetouchComposerProps {
   aspectLabel: string;
   onOpenSettings: () => void;
   settingsOpen: boolean;
-  suggestions: string[];
-  /** Mobile lays the bar out tighter. */
+  /** One-tap retouches, offered while the field is empty. */
+  presets: RetouchPreset[];
+  onPreset: (preset: RetouchPreset) => void;
+  /** A phone: thumb-sized, the settings in their own panel, and a mic. */
   compact?: boolean;
+  /** Dictation, when this shell has it. */
+  dictating?: boolean;
+  onDictate?: () => void;
 }
 
 const VARIANT_CHOICES: VariantCount[] = [1, 2, 4];
@@ -75,8 +82,11 @@ export function RetouchComposer({
   aspectLabel,
   onOpenSettings,
   settingsOpen,
-  suggestions,
+  presets,
+  onPreset,
   compact,
+  dictating,
+  onDictate,
 }: RetouchComposerProps) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -85,7 +95,6 @@ export function RetouchComposer({
   const closeAttach = useCallback(() => setAttachOpen(false), []);
   useDismiss(attachRef, attachOpen, closeAttach);
   const canSend = Boolean(value.trim()) && !disabled;
-  const privacy = model ? modelPrivacyBadge({ privacy: model.privacy, traits: [] }) : undefined;
   const refsFull = refs.length >= maxRefs;
 
   // The field grows with the instruction, up to a few lines.
@@ -148,22 +157,29 @@ export function RetouchComposer({
         onPaste={onPaste}
         disabled={disabled}
       />
-      {!value.trim() && suggestions.length > 0 && !compact ? (
-        <div className="retouch-suggestions">
-          {suggestions.map((suggestion) => (
+      {!value.trim() && presets.length > 0 ? (
+        <fieldset className="retouch-suggestions" aria-label={t("Quick retouches")}>
+          {presets.map((preset) => (
             <button
-              key={suggestion}
+              key={preset.id}
               type="button"
               className="retouch-suggestion"
               onClick={() => {
-                onChange(suggestion);
-                fieldRef.current?.focus();
+                onPreset(preset);
+                const field = fieldRef.current;
+                if (!field) return;
+                field.focus();
+                // Leave the caret where the person has something to type.
+                window.requestAnimationFrame(() => {
+                  const end = field.value.length - (preset.caretFromEnd ?? 0);
+                  field.setSelectionRange(end, end);
+                });
               }}
             >
-              {suggestion}
+              {preset.label()}
             </button>
           ))}
-        </div>
+        </fieldset>
       ) : null}
       <div className="retouch-bar">
         <div className="retouch-bar-tools">
@@ -234,37 +250,30 @@ export function RetouchComposer({
           >
             <IconSettingsSliderHor size={18} aria-hidden />
           </button>
-          <button type="button" className="retouch-chip" onClick={onOpenSettings}>
-            {aspectLabel}
-          </button>
-          <span className="retouch-model">
-            <MediaModelPicker
-              options={models.filter((entry) => !entry.offline).map(mediaModelOption)}
-              value={model?.id ?? null}
-              onChange={onModel}
-              ariaLabel={t("Retouch model")}
-            />
-            {privacy ? (
-              <span className="retouch-badge" title={privacy.description}>
-                {privacy.label}
-              </span>
-            ) : null}
-          </span>
-          {!zoneActive ? (
-            <fieldset className="retouch-variants" aria-label={t("Tries per send")}>
-              {VARIANT_CHOICES.map((count) => (
-                <button
-                  key={count}
-                  type="button"
-                  aria-pressed={variants === count}
-                  data-active={variants === count}
-                  onClick={() => onVariants(count)}
-                >
-                  {t("x{count}", { count })}
-                </button>
-              ))}
-            </fieldset>
-          ) : null}
+          {compact ? (
+            onDictate ? (
+              <button
+                type="button"
+                className="retouch-icon"
+                data-active={dictating ? "true" : undefined}
+                aria-pressed={Boolean(dictating)}
+                aria-label={dictating ? t("Stop dictation") : t("Dictate")}
+                onClick={onDictate}
+              >
+                <IconMicrophone size={18} aria-hidden />
+              </button>
+            ) : null
+          ) : (
+            <>
+              <button type="button" className="retouch-chip" onClick={onOpenSettings}>
+                {aspectLabel}
+              </button>
+              <RetouchModelControl models={models} model={model} onModel={onModel} />
+              {!zoneActive ? (
+                <RetouchTriesControl variants={variants} onVariants={onVariants} />
+              ) : null}
+            </>
+          )}
         </div>
         <div className="retouch-bar-send">
           {cost !== undefined ? <span className="retouch-cost">~{formatCredits(cost)}</span> : null}
@@ -280,5 +289,58 @@ export function RetouchComposer({
         </div>
       </div>
     </div>
+  );
+}
+
+/** The model, with its privacy as the catalog publishes it. */
+export function RetouchModelControl({
+  models,
+  model,
+  onModel,
+}: {
+  models: MediaModel[];
+  model?: MediaModel;
+  onModel: (id: string) => void;
+}) {
+  const privacy = model ? modelPrivacyBadge({ privacy: model.privacy, traits: [] }) : undefined;
+  return (
+    <span className="retouch-model">
+      <MediaModelPicker
+        options={models.filter((entry) => !entry.offline).map(mediaModelOption)}
+        value={model?.id ?? null}
+        onChange={onModel}
+        ariaLabel={t("Retouch model")}
+      />
+      {privacy ? (
+        <span className="retouch-badge" title={privacy.description}>
+          {privacy.label}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** How many tries one send makes. */
+export function RetouchTriesControl({
+  variants,
+  onVariants,
+}: {
+  variants: VariantCount;
+  onVariants: (count: VariantCount) => void;
+}) {
+  return (
+    <fieldset className="retouch-variants" aria-label={t("Tries per send")}>
+      {VARIANT_CHOICES.map((count) => (
+        <button
+          key={count}
+          type="button"
+          aria-pressed={variants === count}
+          data-active={variants === count}
+          onClick={() => onVariants(count)}
+        >
+          {t("x{count}", { count })}
+        </button>
+      ))}
+    </fieldset>
   );
 }

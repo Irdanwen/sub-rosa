@@ -1871,6 +1871,21 @@ le **tri de pertinence** des recherches.
 | `src/lib/platform.ts` | `isPrimaryShiftShortcut` (rétablir) | Réappliquer |
 | `src/styles/tokens.css` | `--retouch-stage-h` | Réappliquer |
 
+**Sur téléphone (passe 2)** : le mode « Modifier » du panneau Image devient
+« Retoucher » (`RetouchLauncher` : Photothèque, Appareil photo, Studio) et
+remplace l'ancienne édition en une fois ; barre au pouce (micro par la dictée
+mobile, `RETOUCH_PRESETS`, modèle et essais dans les réglages) ; zoom au
+pincement et au double-tap (`retouch/view.ts`) ; « Enregistrer dans Photos » et
+« Partager » (`share_file`, iOS et Android) ; la notification d'une retouche
+ouvre sa session (`subrosa://studio?root=…&retouch=…`). Le recollage natif lit
+l'orientation EXIF du parent (photo d'appareil).
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/destinations.rs`, `src/lib/destinations.ts` | Adresse `studio?root=&retouch=` | Réappliquer |
+| `src/app/App.tsx` | Destination retouche : préférences + onglet Retouche | Réappliquer |
+| `src-tauri/src/lib.rs` | `share_ios::share_file`, `android_exports::share_file` (liste mobile) | Réappliquer |
+
 ### Pièges
 
 - Les erreurs de valeur (ratio, résolution) arrivent au **retrieve**, pas à la

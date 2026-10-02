@@ -609,7 +609,11 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
                     )
                     .await
                 {
+                    // The finished row knows its file, which is where a tap
+                    // on the notification should open.
+                    notify(app, &updated, true);
                     emit(app, &repos.pool, updated).await;
+                    return true;
                 }
             }
             notify(app, job, true);
@@ -796,13 +800,23 @@ fn notify(app: &AppHandle, job: &MediaJobDto, success: bool) {
         .builder()
         .title(title)
         .body(body)
-        // Tapping it lands in Studio, where the artifact is (see
-        // crate::destinations).
-        .extra(
-            crate::destinations::EXTRA_KEY,
-            crate::destinations::studio(),
-        )
+        // Tapping it lands in Studio, where the artifact is, and a retouch on
+        // its session at the new version (see crate::destinations).
+        .extra(crate::destinations::EXTRA_KEY, destination_of(job))
         .show();
+}
+
+fn destination_of(job: &MediaJobDto) -> String {
+    let root = job
+        .source
+        .as_deref()
+        .and_then(|source| source.strip_prefix("retouch:"));
+    match (root, job.artifact_file_name.as_deref()) {
+        (Some(root), Some(version)) if !root.is_empty() => {
+            crate::destinations::retouch(root, version)
+        }
+        _ => crate::destinations::studio(),
+    }
 }
 
 /// Backends spell statuses differently (and in both cases): normalize.
@@ -900,6 +914,26 @@ mod tests {
         }))
         .expect("an older request deserializes");
         assert!(plain.client_context.is_none() && plain.composite.is_none());
+    }
+
+    #[test]
+    fn a_finished_retouch_opens_on_its_new_version() {
+        let mut job: MediaJobDto = serde_json::from_value(serde_json::json!({
+            "id": "j", "kind": "image", "model": "m", "prompt": "p", "extension": "png",
+            "status": "completed", "submissionConfirmed": true,
+            "source": "retouch:root.png", "artifactFileName": "v2.png",
+            "createdAt": "", "updatedAt": ""
+        }))
+        .expect("job");
+        assert_eq!(
+            destination_of(&job),
+            "subrosa://studio?root=root.png&retouch=v2.png"
+        );
+        job.source = Some("studio".into());
+        assert_eq!(destination_of(&job), "subrosa://studio");
+        job.source = Some("retouch:root.png".into());
+        job.artifact_file_name = None;
+        assert_eq!(destination_of(&job), "subrosa://studio");
     }
 
     #[test]

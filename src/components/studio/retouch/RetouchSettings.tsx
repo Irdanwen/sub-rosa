@@ -1,7 +1,7 @@
 // The settings a retouch can take, offered only where the model lists them:
 // resolution, quality, and the shape of the result.
 
-import { useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import { t } from "../../../lib/i18n";
 import { useModalFocus } from "../../../lib/modal-focus";
 import type { RetouchSettings as Settings } from "../../../lib/studio/retouch/prefs";
@@ -24,7 +24,10 @@ export function RetouchSettingsPanel({
   onChange,
   onClose,
   zoneActive,
+  lead,
 }: {
+  /** Shown first: on a phone, the model and the tries live here. */
+  lead?: ReactNode;
   caps: EditCaps;
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
@@ -44,6 +47,7 @@ export function RetouchSettingsPanel({
       aria-label={t("Retouch settings")}
       tabIndex={-1}
     >
+      {lead}
       {caps.resolutions.length > 0 && resolution ? (
         <section>
           <h3>{t("Resolution")}</h3>

@@ -66,6 +66,25 @@ describe("destination addresses", () => {
     expect(parseDestination("subrosa://record")).toEqual({ kind: "record" });
   });
 
+  it("opens a finished retouch on its session and new version", () => {
+    const address = "subrosa://studio?root=a1-b2.png&retouch=c3_d4.jpg";
+    const destination = {
+      kind: "studio",
+      retouch: { rootId: "a1-b2.png", versionId: "c3_d4.jpg" },
+    } as const;
+    expect(parseDestination(address)).toEqual(destination);
+    // The address Rust builds (crate::destinations::retouch) round-trips.
+    expect(destinationUrl(destination)).toBe(address);
+    // Anything that is not a gallery file name opens Studio, and nothing else.
+    for (const bad of [
+      "subrosa://studio?root=../x.png&retouch=v.png",
+      "subrosa://studio?root=a.png&retouch=v.exe",
+      "subrosa://studio?root=a/b.png&retouch=v.png",
+      "subrosa://studio?retouch=v.png",
+    ])
+      expect(parseDestination(bad)).toEqual(bad.includes("..") ? null : { kind: "studio" });
+  });
+
   it("routes custom assistant notifications separately and rejects malformed ids", () => {
     const destination = { kind: "assistant", taskId: "private-task-1" } as const;
     expect(destinationUrl(destination)).toBe("subrosa://assistant/private-task-1");

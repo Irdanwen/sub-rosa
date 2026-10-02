@@ -3928,3 +3928,71 @@
   place-items: center;
   height: 100dvh;
 }
+
+/* Retouch launcher: the phone's own photos first, big enough for a thumb. */
+.mobile-retouch-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.mobile-retouch-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  border-radius: var(--r-xl);
+  background: var(--screen);
+  color: var(--screen-foreground);
+}
+
+.mobile-retouch-hero h3 {
+  margin: 0 0 var(--sp-1);
+  font-family: var(--font-serif);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-retouch-hero p {
+  margin: 0;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+}
+
+.mobile-retouch-sources {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.mobile-retouch-source {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 92px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--surface-subtle);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.mobile-retouch-source:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.mobile-retouch-source:disabled {
+  opacity: 0.5;
+}
+
+.mobile-retouch-source[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--brand-tint);
+}

@@ -19,7 +19,6 @@ import {
   supportsBackgroundRemoval,
 } from "../../../lib/studio/catalog";
 import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
-import { MAX_COMPOSE_IMAGES } from "../../../lib/studio/edit-image";
 import type { ArtifactKind, MediaCatalog, StudioArtifact } from "../../../lib/studio/types";
 
 import { type AudioMode, AudioPanel } from "./studio/StudioAudioPanels";
@@ -65,7 +64,6 @@ export function StudioScreen() {
   const [preview, setPreview] = useState<StudioArtifact | null>(null);
   // Lifted so the lightbox's "use as reference" can feed the image panel and
   // jump it straight into its Edit sub-mode.
-  const [imageRefs, setImageRefs] = useState<string[]>([]);
   const [imageMode, setImageMode] = useState<ImageMode>("generate");
   // Lifted so the gallery under the audio tab follows the active sub-mode.
   const [audioMode, setAudioMode] = useState<AudioMode>("music");
@@ -137,19 +135,6 @@ export function StudioScreen() {
     },
     [refreshGallery],
   );
-
-  const handleUseAsReference = useCallback(async (artifact: StudioArtifact) => {
-    try {
-      const dataUrl = await artifactDataUrl(artifact);
-      setImageRefs((current) => [...current, dataUrl].slice(-MAX_COMPOSE_IMAGES));
-      setPreview(null);
-      setMode("image");
-      setImageMode("edit");
-      hapticNotify("success");
-    } catch {
-      // The tile stays; the user can retry.
-    }
-  }, []);
 
   /** Read the clip's handoff frame and hand it to the video panel as a pending
    * command, rather than lifting that panel's whole form up here. */
@@ -252,8 +237,6 @@ export function StudioScreen() {
                 catalog={catalog}
                 mode={imageMode}
                 onModeChange={setImageMode}
-                references={imageRefs}
-                onReferencesChange={setImageRefs}
                 galleryImages={galleryImages}
                 onGenerated={refreshGallery}
               />
@@ -302,9 +285,6 @@ export function StudioScreen() {
           artifact={preview}
           onClose={() => setPreview(null)}
           onDelete={() => void handleDeleteArtifact(preview)}
-          onUseAsReference={
-            preview.kind === "image" ? () => void handleUseAsReference(preview) : undefined
-          }
           onContinueShot={
             preview.kind === "video" ? () => void handleContinueShot(preview) : undefined
           }
