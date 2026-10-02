@@ -1949,3 +1949,40 @@ retranscription s'arrête et repart à 0 ». Quatre causes, toutes corrigées :
   continue d'iOS 26 sur l'écran verrouillé, et la notification de progression
   Android.
 
+
+## Une suppression propre s'applique, une divergente se revoit (2026-10-02, ADR-0072)
+
+Rapporté avec capture : 79 cartes « supprimé sur un autre appareil » sur le
+Mac, et la bannière « service indisponible ». Deux causes distinctes.
+
+- **Les cartes** : `account/sync.rs::apply()` faisait de *toute* pierre tombale
+  une carte (même parent = tête locale, même objet absent) ; `resolve_in_store`
+  répondait à une carte de suppression par une **nouvelle** pierre tombale
+  (enfant de la reçue) que chaque autre appareil recevait comme une nouvelle
+  carte ; une reconnexion rejoue tout l'historique (curseur 0), donc l'upsert
+  ressuscitait la ligne avant que la pierre tombale ne devienne une carte.
+  Désormais : `deletion_is_clean` (enfants sans ligne d'outbox et sans tête
+  postérieure à la pierre tombale) → `delete_locally` (même chemin que la
+  suppression locale, `delete_note_records` rendu `pub(crate)`) sous
+  `applying=1` ; sinon `preserve`. `resolve_in_store` n'enqueue rien quand la
+  tête locale **est** la pierre tombale. `settle_clean_deletions` règle les
+  cartes héritées à chaque passage. Les fichiers orphelins passent par
+  `account_sync_removed_files` (migration 038) et sont retirés par
+  `files::remove_queued_files`. Contrat : `docs/accounts-sync-contract.md`
+  § résolutions. Tests : section « Remote deletions » de `sync_tests.rs`.
+- **La bannière** : Backblaze répondait 403 « download bandwidth or
+  transaction (Class B) cap exceeded » sur chaque lecture ; le serveur
+  transformait tout échec objet en 503 sans log ; `files::blob` renvoyait
+  `sync_blob_request_failed` **avant** d'écrire dans `egress_ledger`, et le
+  premier manifeste par `rowid` bloquait les suivants toutes les 5 s. Désormais :
+  le journal d'egress est écrit avant le jugement du statut, le code vient du
+  statut (`sync_blob_missing` 404, `sync_storage_limited` 403/429/503),
+  ces codes sont « isolables » (incident `download`/`upload`, le manifeste
+  s'écarte) et `reconcile_issues` les relâche après 10 min
+  (`TRANSIENT_FILE_RETRY_MINUTES`). Côté `subrosa-cloud`, le fournisseur de
+  stockage distingue `NotFound` (404) et journalise la raison du refus.
+
+⚠️ **Re-merge upstream** : `apply()` et `resolve_in_store` sont des points
+chauds de `account/sync.rs` ; un sync upstream qui y réintroduit
+`preserve(conn, c)` inconditionnel pour `c.deleted` ramène les 79 cartes.
+Le plafond B2 est une action de l'opérateur (Caps & Alerts), pas du code.

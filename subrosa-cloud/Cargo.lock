@@ -2922,6 +2922,7 @@ dependencies = [
  "subrosa-domain",
  "subtle",
  "tokio",
+ "tracing",
  "url",
  "uuid",
  "zeroize",

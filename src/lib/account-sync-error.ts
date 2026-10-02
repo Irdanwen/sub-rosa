@@ -25,6 +25,14 @@ export function accountSyncError(code: string): string {
       return t(
         "The sync service is unavailable or did not respond in time. Your changes will retry automatically.",
       );
+    case "sync_storage_limited":
+      return t(
+        "File storage is limited for now. Your notes still sync, and files will retry on their own.",
+      );
+    case "sync_blob_missing":
+      return t(
+        "A file is no longer available from the service. It stays on the device that made it.",
+      );
     case "account_not_connected":
     case "account_revoked":
     case "sync_authentication_failed":

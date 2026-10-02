@@ -290,14 +290,26 @@ impl BlobStore for StorageProvider {
         }
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
-        self.store
-            .get(&Path::from(key))
-            .await
-            .map_err(|_| Error::Unavailable)?
-            .bytes()
-            .await
-            .map(|b| b.to_vec())
-            .map_err(|_| Error::Unavailable)
+        // A blob the service recorded but storage does not hold is "not found",
+        // and a client can tell that apart from storage refusing to serve
+        // today (an allowance spent, a network blip). Either way the operator
+        // gets to read why: the provider's message names the cause, and it
+        // carries no secret, only the key and the storage's own wording.
+        let result = match self.store.get(&Path::from(key)).await {
+            Ok(result) => result,
+            Err(object_store::Error::NotFound { .. }) => {
+                tracing::warn!(key, "blob missing from object storage");
+                return Err(Error::NotFound);
+            }
+            Err(failure) => {
+                tracing::warn!(key, error = %failure, "object storage refused a read");
+                return Err(Error::Unavailable);
+            }
+        };
+        result.bytes().await.map(|b| b.to_vec()).map_err(|failure| {
+            tracing::warn!(key, error = %failure, "object storage read was cut short");
+            Error::Unavailable
+        })
     }
     async fn delete(&self, key: &str) -> Result<()> {
         match self.store.delete(&Path::from(key)).await {
@@ -394,6 +406,12 @@ mod unconditional_put_tests {
         let s = store();
         let _ = s.put("a/1", b"hello".to_vec()).await;
         assert!(s.put("a/1", b"hello".to_vec()).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_blob_storage_does_not_hold_is_not_found_rather_than_unavailable() {
+        let s = store();
+        assert!(matches!(s.get("a/absent").await, Err(Error::NotFound)));
     }
 
     #[tokio::test]

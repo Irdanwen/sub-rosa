@@ -1114,6 +1114,18 @@ described in the proposal. Revocation cannot erase previously downloaded data.
 **Synchronisation**: exchanging durable, versioned user data between devices,
 including conflict handling and deletions. Distinct from archive import/export.
 
+**Clean deletion**: a remote deletion whose parent revision is this device's
+head for the object, with nothing of the object or its children waiting in the
+outbox and no child revised after it. It is applied locally the way this
+device's own delete would be, and no review card is written
+([ADR-0072](docs/adr/0072-a-clean-remote-deletion-is-applied-not-reviewed.md)).
+
+**Divergent deletion**: any other remote deletion: this device edited the
+object since, or holds an unsent change to it or to one of its children, or a
+child was revised after the deletion was decided. It is kept as a review card
+("deleted on another device, version preserved"). _Avoid_: "conflict" for a
+clean deletion, which is not a disagreement.
+
 **Work continuity**: retrieving the same user-visible history and results and
 continuing compatible work on another device. Distinct from transferring a
 live runtime or executing a task on a hosted service.

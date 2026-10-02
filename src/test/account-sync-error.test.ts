@@ -5,6 +5,7 @@ import { accountSyncError } from "../lib/account-sync-error";
 const EMITTED = [
   "sync_authentication_failed",
   "sync_blob_invalid",
+  "sync_blob_missing",
   "sync_blob_request_failed",
   "sync_conflict_requires_review",
   "sync_dependencies_pending",
@@ -17,6 +18,7 @@ const EMITTED = [
   "sync_object_too_large",
   "sync_pending_changes",
   "sync_resolution_invalid",
+  "sync_storage_limited",
   "sync_timeout",
 ];
 

@@ -502,6 +502,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/037_transcription_chunks.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "038_sync_removed_files.sql",
+        include_str!("../../migrations/038_sync_removed_files.sql"),
+    )
+    .await?;
     crate::account::sync::install(_pool).await?;
     crate::diagnostics::mark("migrations");
 
