@@ -30,6 +30,9 @@ export type ProcessingProgressDto = {
   startedAt: string;
   /** RFC3339. When the current phase started. */
   phaseStartedAt: string;
+  /** Units of this phase kept from an earlier run that was interrupted, so
+   * not done again. Absent or zero on a run that started from scratch. */
+  resumed?: number;
 };
 
 const PHASE_RANK: Record<ProcessingPhase, number> = {

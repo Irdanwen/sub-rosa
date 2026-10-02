@@ -130,7 +130,10 @@ keyring = { version = "3", features = ["apple-native"] }
 # participants). Minimal features: the defaults drag in AppKit, MapKit and
 # CoreLocation for surfaces we never touch.
 block2 = "0.6"
-objc2 = "0.6"
+# `exception`: crate::ios_continued fences BGTaskScheduler calls with
+# objc2::exception::catch, since an Objective-C exception unwinding into Rust
+# is undefined behaviour.
+objc2 = { version = "0.6", features = ["exception"] }
 objc2-event-kit = { version = "0.3", default-features = false, features = [
     "std",
     "block2",

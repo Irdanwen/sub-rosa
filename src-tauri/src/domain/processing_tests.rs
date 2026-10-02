@@ -1216,6 +1216,7 @@ async fn multi_chunk_turn_keeps_earlier_text_when_trailing_chunk_has_no_speech()
             turn_index: Some(0),
             max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
             counts_toward_note_progress: false,
+            checkpoint: None,
         },
     )
     .await
@@ -1255,6 +1256,7 @@ async fn multi_chunk_turn_reports_no_speech_when_every_chunk_is_silent() {
             turn_index: Some(0),
             max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
             counts_toward_note_progress: false,
+            checkpoint: None,
         },
     )
     .await
@@ -1320,6 +1322,7 @@ async fn silent_chunks_are_skipped_before_reaching_the_transcriber() {
             turn_index: Some(0),
             max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
             counts_toward_note_progress: false,
+            checkpoint: None,
         },
     )
     .await
@@ -1586,6 +1589,7 @@ async fn progress_counts_every_chunk_including_the_silent_ones() {
             turn_index: None,
             max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
             counts_toward_note_progress: true,
+            checkpoint: None,
         },
     )
     .await
@@ -1645,6 +1649,7 @@ async fn a_turns_own_chunks_do_not_touch_the_notes_count() {
             turn_index: Some(0),
             max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
             counts_toward_note_progress: false,
+            checkpoint: None,
         },
     )
     .await

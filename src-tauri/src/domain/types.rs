@@ -1142,6 +1142,10 @@ pub struct ProcessingProgressDto {
     pub started_at: String,
     /// When the current phase started (RFC3339), for a per-phase estimate.
     pub phase_started_at: String,
+    /// Units of this phase replayed from an earlier, interrupted run rather
+    /// than done again (ADR-0071). Zero on a run that started from scratch.
+    #[serde(default)]
+    pub resumed: i64,
 }
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

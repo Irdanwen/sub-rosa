@@ -127,6 +127,24 @@ describe("the processing indicator", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Transcribing 12 of 31 parts");
   });
 
+  it("says it picked up an interrupted run until it passes where it resumed", () => {
+    const { rerender } = render(
+      <ProcessingProgressIndicator
+        status="transcribing"
+        progress={progress({ done: 6, total: 20, resumed: 6 })}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Picking up at part 7 of 20");
+
+    rerender(
+      <ProcessingProgressIndicator
+        status="transcribing"
+        progress={progress({ done: 7, total: 20, resumed: 6 })}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Transcribing 7 of 20 parts");
+  });
+
   it("fills the bar from the real count", () => {
     const { container } = render(
       <ProcessingProgressIndicator

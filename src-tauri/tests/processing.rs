@@ -125,6 +125,7 @@ fn live_note_fields_travel_as_plain_fields_on_the_note() {
             total: Some(31),
             started_at: NOW.to_string(),
             phase_started_at: NOW.to_string(),
+            resumed: 4,
         });
     });
 
@@ -140,6 +141,7 @@ fn live_note_fields_travel_as_plain_fields_on_the_note() {
     );
     assert_eq!(json["processingProgress"]["done"], serde_json::json!(12));
     assert_eq!(json["processingProgress"]["total"], serde_json::json!(31));
+    assert_eq!(json["processingProgress"]["resumed"], serde_json::json!(4));
     assert_eq!(
         json["processingProgress"]["startedAt"],
         serde_json::json!(NOW)

@@ -1948,13 +1948,10 @@ impl Repositories {
     /// is still alive is an in-process question, answered by
     /// `domain::processing::is_processing`, not by this row.
     pub async fn list_notes_stuck_in_processing(&self) -> Result<Vec<String>, sqlx::error::Error> {
-        let rows = query(
-            "SELECT id FROM notes
-             WHERE processing_status IN ('transcribing', 'generating')
-               AND deleted_at IS NULL",
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows =
+            query("SELECT id FROM notes WHERE processing_status IN ('transcribing', 'generating')")
+                .fetch_all(&self.pool)
+                .await?;
         Ok(rows.iter().map(|row| row.get("id")).collect())
     }
 

@@ -50,6 +50,22 @@ impl Drop for BackgroundTask {
     }
 }
 
+/// Ask the system to keep transcribing this note after the user leaves the
+/// app, and to show how far it has got (ADR-0071): a continued-processing
+/// task on iOS 26, a foreground service on Android. Called once a
+/// transcription is known to span several chunks: a recording short enough
+/// for one chunk fits in the grace window, and does not deserve a system
+/// activity on the lock screen. `title` is the note's, shown under the bar.
+/// A no-op on the desktop.
+pub fn continue_note(note_id: &str, title: &str) {
+    #[cfg(target_os = "ios")]
+    continued::start(note_id, title);
+    #[cfg(target_os = "android")]
+    crate::android::keep_processing(note_id, title);
+    #[cfg(desktop)]
+    let _ = (note_id, title);
+}
+
 /// Whether any [`BackgroundTask`] guard is currently held — that is, whether
 /// some request, transcription or tool loop is mid-flight right now.
 pub fn work_in_flight() -> bool {
@@ -63,6 +79,45 @@ pub fn work_in_flight() -> bool {
     }
 }
 
+/// Times the app has left or come back to the foreground in this process.
+#[cfg(not(test))]
+static LIFECYCLE_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// Per test thread, so a test that simulates a suspension cannot make another
+// test's genuine failure look like one.
+#[cfg(test)]
+thread_local! {
+    static LIFECYCLE_EPOCH: std::sync::atomic::AtomicU64 =
+        const { std::sync::atomic::AtomicU64::new(0) };
+}
+
+fn with_epoch<R>(read: impl FnOnce(&std::sync::atomic::AtomicU64) -> R) -> R {
+    #[cfg(not(test))]
+    {
+        read(&LIFECYCLE_EPOCH)
+    }
+    #[cfg(test)]
+    {
+        LIFECYCLE_EPOCH.with(read)
+    }
+}
+
+/// A counter that moves every time the app leaves or comes back to the
+/// foreground. A request that started under one value and failed under
+/// another may have been cut by the suspension rather than refused by the
+/// provider (ADR-0071): iOS freezes the process mid-request and can reclaim
+/// the loopback socket under it.
+pub fn lifecycle_epoch() -> u64 {
+    with_epoch(|epoch| epoch.load(std::sync::atomic::Ordering::SeqCst))
+}
+
+/// Record a move between foreground and background. Called on iOS's
+/// did-enter-background notification, which runs before the process is
+/// frozen, and on the `Resumed` run event on both phones.
+pub fn note_lifecycle_change() {
+    with_epoch(|epoch| epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+}
+
 /// Install the lifecycle observers and register the BGTaskScheduler launch
 /// handlers. Must run during app setup: `BGTaskScheduler` refuses (and throws)
 /// registrations made after the app has finished launching.
@@ -73,14 +128,18 @@ pub fn setup(app: &tauri::AppHandle) {
 }
 
 #[cfg(target_os = "ios")]
+#[path = "ios_continued.rs"]
+mod continued;
+
+#[cfg(target_os = "ios")]
 mod ios {
     use block2::RcBlock;
     use objc2::msg_send;
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, Bool};
     use objc2_foundation::{NSError, NSString};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex, OnceLock};
     use tauri::AppHandle;
 
     /// UIBackgroundTaskInvalid (NSUIntegerMax).
@@ -206,7 +265,7 @@ mod ios {
         install_lifecycle_observers();
     }
 
-    fn shared_scheduler() -> Option<*mut AnyObject> {
+    pub(super) fn shared_scheduler() -> Option<*mut AnyObject> {
         let class = AnyClass::get(c"BGTaskScheduler")?;
         let scheduler: *mut AnyObject = unsafe { msg_send![class, sharedScheduler] };
         (!scheduler.is_null()).then_some(scheduler)
@@ -235,18 +294,49 @@ mod ios {
     /// A `BGTask` pointer moved onto the tokio runtime. The system keeps the
     /// task alive until `setTaskCompletedWithSuccess:`, and we retain it on top
     /// so the pointer stays valid across the await.
-    #[derive(Clone, Copy)]
-    struct TaskHandle(*mut AnyObject);
+    #[derive(Clone)]
+    struct TaskHandle {
+        task: *mut AnyObject,
+        /// Completion happens once: the expiration handler and the end of the
+        /// work can both get there, and a second `release` would free the
+        /// task out from under the system.
+        completed: Arc<AtomicBool>,
+    }
     // Safety: BGTask's only use here is the two completion selectors, both of
-    // which are safe to send from any thread.
+    // which are safe to send from any thread, and `completed` makes sure they
+    // run once however many threads race to them.
     unsafe impl Send for TaskHandle {}
+    unsafe impl Sync for TaskHandle {}
 
     impl TaskHandle {
-        fn complete(self, success: bool) {
-            unsafe {
-                let _: () = msg_send![self.0, setTaskCompletedWithSuccess: success];
-                let _: () = msg_send![self.0, release];
+        fn complete(&self, success: bool) {
+            if self.completed.swap(true, Ordering::SeqCst) {
+                return;
             }
+            unsafe {
+                let _: () = msg_send![self.task, setTaskCompletedWithSuccess: success];
+                let _: () = msg_send![self.task, release];
+            }
+        }
+
+        fn is_completed(&self) -> bool {
+            self.completed.load(Ordering::SeqCst)
+        }
+    }
+
+    /// How long a launch handler gives the pipelines the sweep started to
+    /// take their guards, and how often it then looks again.
+    const SETTLE_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+    const SETTLE_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+    /// Keep a background window open for as long as there is work to spend it
+    /// on. The sweep only *starts* a note's pipeline, so reporting completion
+    /// when it returns handed the window back while the transcription it had
+    /// just restarted was on its first chunk (ADR-0071).
+    async fn spend_window_on_work(handle: &TaskHandle) {
+        tokio::time::sleep(SETTLE_GRACE).await;
+        while active_guards() > 0 && !handle.is_completed() {
+            tokio::time::sleep(SETTLE_POLL).await;
         }
     }
 
@@ -259,7 +349,10 @@ mod ios {
         }
         let handle = unsafe {
             let _: *mut AnyObject = msg_send![task, retain];
-            TaskHandle(task)
+            TaskHandle {
+                task,
+                completed: Arc::new(AtomicBool::new(false)),
+            }
         };
         // A fired request is consumed; queue the next one straight away so a
         // sweep that runs out of time is picked up again later.
@@ -271,13 +364,15 @@ mod ios {
         };
         // Expiring mid-sweep is normal: the durable rows survive, so report
         // success and let the next window continue.
+        let on_expiry = handle.clone();
         unsafe {
-            let expiration = RcBlock::new(move || handle.complete(true));
+            let expiration = RcBlock::new(move || on_expiry.complete(true));
             let _: () = msg_send![task, setExpirationHandler: &*expiration];
             std::mem::forget(expiration);
         }
         tauri::async_runtime::spawn(async move {
             crate::background::sweep(&app).await;
+            spend_window_on_work(&handle).await;
             handle.complete(true);
         });
     }
@@ -329,6 +424,7 @@ mod ios {
 
     fn install_lifecycle_observers() {
         observe("UIApplicationDidEnterBackgroundNotification", || {
+            super::note_lifecycle_change();
             schedule_requests();
         });
         observe("UIApplicationWillEnterForegroundNotification", || {

@@ -1894,3 +1894,58 @@ l'orientation EXIF du parent (photo d'appareil).
   `jobs::client_context`, pas par le mapping de ligne.
 - Le banc `retouch-lab.html` + `src/dev/retouch-lab.tsx` (exclus via
   `.git/info/exclude`) charge `studio.css` lui-même, comme `main.tsx`.
+
+## Une transcription survit au verrouillage (2026-10-02, ADR-0071)
+
+Signalé sur iPhone : « si l'écran se verrouille ou si je change d'app, la
+retranscription s'arrête et repart à 0 ». Quatre causes, toutes corrigées :
+
+- **Chaque morceau est gardé.** `transcription_chunks` (migration 037)
+  enregistre chaque morceau fini (texte ou silence) sous une empreinte de la
+  découpe. La boucle vit dans `domain/transcription_checkpoint.rs` (enfant de
+  `processing` par `#[path]`). Elle rejoue les morceaux gardés avec le même
+  contexte et purge les lignes quand la note est prête.
+- **Le balayage de reprise des notes ne tournait jamais.**
+  `list_notes_stuck_in_processing` filtrait sur `notes.deleted_at`, une colonne
+  qui n'existe pas. Sa sélection vit maintenant dans
+  `note_processing::notes_to_resume`, qui saute aussi les notes en file et ne
+  reprend seule qu'une note modifiée depuis moins de 24 h (les vieilles notes
+  bloquées gardent leur bouton Reprendre, pour ne pas facturer d'office).
+- **Une requête coupée par la suspension est redemandée** : l'époque de cycle
+  de vie (`ios_background::lifecycle_epoch`) bouge à l'entrée en arrière-plan
+  et à `Resumed`.
+- **Le système garde le processus** pour une transcription de plus d'un
+  morceau (`ios_background::continue_note`) :
+  - iOS 26 : `BGContinuedProcessingTask` (`ios_continued.rs`), identifiant
+    `xyz.carpediem.subrosa.transcribe.*` ;
+  - Android : `ProcessingService` (`dataSync`).
+
+  Le gestionnaire `BGProcessingTask` attend la fin du travail avant de rendre
+  la main.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/domain/processing.rs` | Boucle des morceaux déléguée à `chunk_checkpoint`, champ `checkpoint`, purge au succès, retry tenant compte de la suspension | Réappliquer |
+| `src-tauri/src/domain/processing_progress.rs` | `resumed`, `overall_fraction`, `standing` | Réappliquer |
+| `src-tauri/src/domain/types.rs` | `ProcessingProgressDto.resumed` | Réappliquer |
+| `src-tauri/src/commands.rs` | `settle_run` aux deux points d'apparition, `notes_to_resume` dans le balayage | Réappliquer |
+| `src-tauri/src/db/repositories.rs` | Requête `list_notes_stuck_in_processing` sans `deleted_at` | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | Migration 037 | Réappliquer |
+| `src/components/note-editor/ProcessingProgressIndicator.tsx`, `ProcessingResumeNotice.tsx` | « Reprise à la partie N sur M », pause en arrière-plan sur téléphone | Réappliquer |
+
+### Pièges
+
+- **Enregistrer deux fois le même identifiant BGTaskScheduler tue l'app** :
+  `ios_continued` numérote ses identifiants et une note n'a qu'une tâche.
+- `tests/background_identifiers.rs` lie les identifiants Rust à l'Info.plist
+  et à `project.yml`. Régénérer `gen/apple` efface le joker `transcribe.*`.
+- L'époque de cycle de vie est locale au thread sous `cfg(test)`, sinon un
+  test qui simule une suspension fait réessayer les échecs des autres.
+- **Porte humaine Android** : déclarer le type `dataSync` dans la Play Console
+  avant la publication sur le Store.
+- **À valider sur appareil** (rien de ceci ne se voit en simulateur) : la tâche
+  continue d'iOS 26 sur l'écran verrouillé, et la notification de progression
+  Android.
+

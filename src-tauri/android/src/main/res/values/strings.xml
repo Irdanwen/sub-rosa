@@ -2,4 +2,7 @@
     <string name="subrosa_recording_channel">Microphone recording</string>
     <string name="subrosa_recording_title">Sub Rosa is recording</string>
     <string name="subrosa_recording_description">Tap to return to your recording.</string>
+    <string name="subrosa_processing_channel">Transcription</string>
+    <string name="subrosa_processing_title">Sub Rosa is transcribing</string>
+    <string name="subrosa_processing_description">Your note will be ready soon.</string>
 </resources>

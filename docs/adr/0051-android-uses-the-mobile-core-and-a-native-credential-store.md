@@ -67,3 +67,14 @@ leaked global reference to `ndk_context::initialize_android_context` once.
 The application context is used rather than the activity because it outlives
 activity recreation. A panicking capture task now reaches the screen as a
 sentence, not as the panic text.
+
+## Addendum 2026-10-02: a note transcription keeps the foreground
+
+A note transcription that spans several chunks now starts a `dataSync`
+foreground service (`ProcessingService`) with a progress notification, for as
+long as the pipeline holds the note
+([ADR-0071](0071-a-transcription-is-kept-chunk-by-chunk-and-a-long-one-asks-the-system-to-continue.md)).
+The rest of the long AI work is unchanged and still relies on durable rows and
+the resume sweep. The service only keeps the process alive. When Android
+refuses it (started from the background) or stops it (the Android 15 data-sync
+cap), the note resumes from its saved chunks.

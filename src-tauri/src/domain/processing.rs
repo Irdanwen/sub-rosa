@@ -413,6 +413,11 @@ async fn transcribe_prepared_wav_and_generate(
             end_ms: None,
             turn_index: None,
             max_chunk_ms: run.max_chunk_ms,
+            checkpoint: Some(chunk_checkpoint::ChunkCheckpoint {
+                repos: repos.clone(),
+                note_id: note_id.to_string(),
+                audio_artifact_id: audio_artifact_id.to_string(),
+            }),
         },
     )
     .await
@@ -436,7 +441,7 @@ async fn transcribe_prepared_wav_and_generate(
         dictionary_context.as_deref(),
     )
     .await;
-    persist_transcript_and_generate(
+    let note = persist_transcript_and_generate(
         repos,
         note_id,
         session_id,
@@ -446,7 +451,9 @@ async fn transcribe_prepared_wav_and_generate(
         existing_generated_note,
         manual_notes,
     )
-    .await
+    .await?;
+    chunk_checkpoint::clear(repos, audio_artifact_id).await;
+    Ok(note)
 }
 
 /// The shared tail of every single-source pipeline: persist the transcript,
@@ -1540,6 +1547,8 @@ struct TranscribePreparedAudioRequest {
     /// Whether these chunks are the note's progress. The per-turn caller
     /// passes `None`: it counts turns, and a turn's chunks are not the run.
     counts_toward_note_progress: bool,
+    /// Where finished chunks are kept so an interrupted run resumes (ADR-0071).
+    checkpoint: Option<chunk_checkpoint::ChunkCheckpoint>,
 }
 
 /// Full-source normalized audio, prepared once per source. The per-turn job
@@ -1600,89 +1609,7 @@ async fn transcribe_prepared_audio(
         .await;
     }
 
-    let progress = request
-        .counts_toward_note_progress
-        .then(|| Progress::for_note(&request.operation_id));
-    if let Some(progress) = &progress {
-        progress.phase(ProcessingPhase::Transcribing);
-        progress.total(audio_paths.len() as i64);
-    }
-    let mut previous = Vec::new();
-    let mut text_parts = Vec::new();
-    let mut language = None;
-    let mut provider_name = request.provider.clone();
-    for (index, audio_path) in audio_paths.into_iter().enumerate() {
-        if let Some(progress) = &progress {
-            progress.check()?;
-        }
-        // Skip clearly-silent chunks before any API call. Fixed-size splitting of
-        // a long (or fully silent) source leaves quiet boundary chunks, and each
-        // request authorizes a credit hold that a no-speech response never
-        // settles — so sending every silent chunk of a silent source would strand
-        // holds until TTL and can trip `authorization_denied` on later work.
-        if crate::audio::turns::source_is_effectively_silent(&audio_path) {
-            report_chunk_done(&progress, index);
-            continue;
-        }
-        let context = merge_transcription_context(
-            request.base_context.as_deref(),
-            build_transcription_context(&previous).as_deref(),
-        );
-        let transcript = match transcribe_with_transient_retries(
-            &transcriber,
-            TranscriptionRequest {
-                provider: request.provider.clone(),
-                audio_path,
-                title: request.title.clone(),
-                context,
-                language: request_language.clone(),
-                operation_id: Some(format!("{}-chunk-{index}", request.operation_id)),
-                preview: false,
-            },
-        )
-        .await
-        {
-            Ok(transcript) => transcript,
-            // Backstop for a chunk the local silence check judged audible but the
-            // provider still reports as no-speech: skip it so earlier chunks' text
-            // survives, rather than aborting and dropping the whole turn.
-            Err(error) if is_no_speech_error(&error) => {
-                report_chunk_done(&progress, index);
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        report_chunk_done(&progress, index);
-        if language.is_none() {
-            language = transcript.language.clone();
-        }
-        provider_name = transcript.provider.clone();
-        let text = transcript.text.trim().to_string();
-        previous.push(SourceTranscriptInput {
-            source: request.source.clone(),
-            text: text.clone(),
-            valid: !text.is_empty(),
-            warning: None,
-            start_ms: request.start_ms,
-            end_ms: request.end_ms,
-            turn_index: request.turn_index,
-        });
-        if !text.is_empty() {
-            text_parts.push(text);
-        }
-    }
-
-    if text_parts.is_empty() {
-        // Every chunk was silent. Report it as a no-speech turn — exactly like a
-        // single silent turn — so it stays a non-blocking failure rather than a
-        // generic error that would fail the whole note.
-        return Err(AppError::new("no_speech", "no_speech"));
-    }
-    Ok(TranscriptionProviderResult {
-        text: text_parts.join("\n"),
-        language,
-        provider: provider_name,
-    })
+    chunk_checkpoint::transcribe_chunks(transcriber, request, audio_paths, request_language).await
 }
 
 /// Race one long call against the user's stop. Only note generation needs
@@ -1714,10 +1641,16 @@ async fn transcribe_with_transient_retries(
     request: TranscriptionRequest,
 ) -> Result<TranscriptionProviderResult, AppError> {
     let operation_id = request.operation_id();
-    for attempt in 0..TRANSIENT_TRANSCRIPTION_ATTEMPTS {
+    let mut suspensions = 0;
+    let mut attempt = 0;
+    loop {
+        let epoch = crate::ios_background::lifecycle_epoch();
         match transcriber(request.clone()).await {
             Ok(transcript) => return Ok(transcript),
             Err(error) => {
+                if chunk_checkpoint::cut_by_suspension(epoch, &error, &mut suspensions) {
+                    continue;
+                }
                 if attempt + 1 < TRANSIENT_TRANSCRIPTION_ATTEMPTS
                     && is_retryable_transcription_error(&error)
                 {
@@ -1730,13 +1663,13 @@ async fn transcribe_with_transient_retries(
                         "transient transcription request failed; retrying"
                     );
                     tokio::time::sleep(retry_delay).await;
+                    attempt += 1;
                     continue;
                 }
                 return Err(error);
             }
         }
     }
-    unreachable!("transcription retry loop always returns")
 }
 
 fn is_retryable_transcription_error(error: &AppError) -> bool {
@@ -1984,6 +1917,7 @@ async fn transcribe_one_turn_job(
             end_ms: Some(job.end_ms),
             turn_index: Some(job.turn_index),
             max_chunk_ms: MAX_TRANSCRIPTION_CHUNK_MS,
+            checkpoint: None,
         },
     )
     .await
@@ -2494,6 +2428,9 @@ fn tail_chars(value: &str, max_chars: usize) -> String {
     }
     chars[chars.len() - max_chars..].iter().collect()
 }
+
+#[path = "transcription_checkpoint.rs"]
+mod chunk_checkpoint;
 
 #[cfg(test)]
 #[path = "processing_tests.rs"]

@@ -496,6 +496,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/036_outbox_compaction.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "037_transcription_chunks.sql",
+        include_str!("../../migrations/037_transcription_chunks.sql"),
+    )
+    .await?;
     crate::account::sync::install(_pool).await?;
     crate::diagnostics::mark("migrations");
 

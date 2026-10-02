@@ -145,6 +145,53 @@ impl Drop for RecordingGuard {
     }
 }
 
+/// Keep the process in the foreground while a note is transcribed, with the
+/// progress in a notification (ADR-0071). Android's counterpart to iOS's
+/// continued-processing task: `ProcessingService` only keeps the process
+/// alive, the work stays in the pipeline. Best effort: Android refuses the
+/// service from the background, and then the saved chunks and the resume
+/// sweep carry the note instead.
+pub fn keep_processing(note_id: &str, title: &str) {
+    use crate::domain::processing_progress::{standing, Standing};
+    use std::collections::HashSet;
+    use std::sync::{LazyLock, Mutex};
+
+    static LIVE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+    let live = || LIVE.lock().unwrap_or_else(|poison| poison.into_inner());
+    if !live().insert(note_id.to_string()) {
+        return;
+    }
+    let note_id = note_id.to_string();
+    let started = invoke::<()>(
+        "startProcessing",
+        serde_json::json!({ "noteId": note_id, "title": title }),
+    );
+    if started.is_err() {
+        live().remove(&note_id);
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match standing(&note_id, PROCESSING_UNITS) {
+                Standing::Running(done) => {
+                    let _ = invoke::<()>(
+                        "updateProcessing",
+                        serde_json::json!({ "noteId": note_id, "done": done }),
+                    );
+                }
+                Standing::Waiting => {}
+                Standing::Settled => break,
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+        let _ = invoke::<()>("stopProcessing", serde_json::json!({ "noteId": note_id }));
+        live().remove(&note_id);
+    });
+}
+
+/// `ProcessingService.PROGRESS_UNITS` on the Kotlin side.
+const PROCESSING_UNITS: i64 = 1_000;
+
 struct AndroidCredentialBuilder;
 
 impl CredentialBuilderApi for AndroidCredentialBuilder {

@@ -52,6 +52,15 @@ function stageMessage(
       case "composing":
         return t("Writing your notes");
       case "transcribing":
+        // A run that picked up an interrupted one says so until it passes
+        // the point it resumed from: the count jumping straight to 7 of 20
+        // would otherwise read as work done in a second (ADR-0071).
+        if (progress.total && progress.resumed && progress.done <= progress.resumed) {
+          return t("Picking up at part {part} of {total}", {
+            part: Math.min(progress.resumed + 1, progress.total),
+            total: progress.total,
+          });
+        }
         // "{done} of {total} parts" rather than "part {done}": with several
         // requests in flight there is no single part being worked on, and
         // naming one would be a small lie repeated every second.

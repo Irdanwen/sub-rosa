@@ -39,6 +39,8 @@ struct Run {
     done: i64,
     /// Units the current phase will do, when that is known before it starts.
     total: Option<i64>,
+    /// Units of the current phase an earlier run already finished.
+    resumed: i64,
     started_at: String,
     phase_started_at: String,
     /// Ref count, not a flag: the imported-audio path delegates to the
@@ -72,7 +74,53 @@ pub fn snapshot(note_id: &str) -> Option<ProcessingProgressDto> {
         total: run.total,
         started_at: run.started_at.clone(),
         phase_started_at: run.phase_started_at.clone(),
+        resumed: run.resumed,
     })
+}
+
+/// How far the whole run has got, in `units`, for a surface that draws one
+/// bar rather than a step and a count (iOS's continued-processing activity).
+///
+/// Transcription is where the time goes, so it owns most of the bar. The
+/// steps around it get a fixed slice each: they are short, and a bar that
+/// waited on them would read as stalled.
+pub fn overall_fraction(progress: &ProcessingProgressDto, units: i64) -> i64 {
+    let permille = match progress.phase {
+        ProcessingPhase::Preparing => 0,
+        ProcessingPhase::DetectingTurns => 30,
+        ProcessingPhase::Transcribing => match progress.total {
+            Some(total) if total > 0 => 50 + 880 * progress.done.clamp(0, total) / total,
+            _ => 50,
+        },
+        ProcessingPhase::Composing => 950,
+    };
+    permille * units / 1_000
+}
+
+/// Where a note's run stands, for a system surface that mirrors it while the
+/// app is out of sight (iOS's continued-processing activity, Android's
+/// processing notification).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    /// A pipeline is on it, this far along, in the units asked for.
+    Running(i64),
+    /// Queued, or between claims: nothing to report, but not over either.
+    Waiting,
+    /// Nothing in this process holds the note any more.
+    Settled,
+}
+
+pub fn standing(note_id: &str, units: i64) -> Standing {
+    if let Some(progress) = snapshot(note_id) {
+        return Standing::Running(overall_fraction(&progress, units));
+    }
+    if crate::domain::processing::is_processing(note_id)
+        || crate::domain::processing_queue::is_enqueued(note_id)
+    {
+        Standing::Waiting
+    } else {
+        Standing::Settled
+    }
 }
 
 /// Fill in what only this process knows about a note: how far its pipeline
@@ -119,6 +167,7 @@ impl ProgressClaim {
                 phase: ProcessingPhase::Preparing,
                 done: 0,
                 total: None,
+                resumed: 0,
                 started_at: stamp.clone(),
                 phase_started_at: stamp,
                 claims: 1,
@@ -176,6 +225,7 @@ impl Progress {
         run.phase = phase;
         run.done = 0;
         run.total = None;
+        run.resumed = 0;
         run.phase_started_at = stamp;
     }
 
@@ -198,6 +248,17 @@ impl Progress {
             return;
         };
         run.done = clamp_done(run.done.max(done), run.total);
+    }
+
+    /// Declare that the first `resumed` units of this phase come from an
+    /// earlier run that was interrupted, so the screen can say it picked up
+    /// where it stopped instead of appearing to race through them.
+    pub fn resumed(&self, resumed: i64) {
+        let mut runs = runs();
+        let Some(run) = runs.get_mut(&self.0) else {
+            return;
+        };
+        run.resumed = clamp_done(resumed.max(0), run.total);
     }
 
     /// Whether the user asked this run to stop.
@@ -408,6 +469,40 @@ mod tests {
             .await
             .expect("a stop requested before anyone waited still resolves the wait");
         drop(claim);
+    }
+
+    #[test]
+    fn the_whole_run_fills_one_bar_in_order() {
+        let at = |phase, done, total| ProcessingProgressDto {
+            phase,
+            done,
+            total,
+            started_at: String::new(),
+            phase_started_at: String::new(),
+            resumed: 0,
+        };
+        let samples = [
+            at(ProcessingPhase::Preparing, 0, None),
+            at(ProcessingPhase::DetectingTurns, 0, None),
+            at(ProcessingPhase::Transcribing, 0, Some(20)),
+            at(ProcessingPhase::Transcribing, 7, Some(20)),
+            at(ProcessingPhase::Transcribing, 20, Some(20)),
+            at(ProcessingPhase::Composing, 0, None),
+        ];
+        let filled = samples
+            .iter()
+            .map(|sample| overall_fraction(sample, 1_000))
+            .collect::<Vec<_>>();
+        assert!(
+            filled.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{filled:?}"
+        );
+        assert!(filled.iter().all(|value| (0..1_000).contains(value)));
+        assert_eq!(
+            overall_fraction(&at(ProcessingPhase::Transcribing, 99, Some(20)), 1_000),
+            930,
+            "a count past its total does not pass the transcription slice"
+        );
     }
 
     #[test]

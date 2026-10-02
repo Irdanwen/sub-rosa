@@ -2,11 +2,17 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <application>
         <service
             android:name="xyz.carpediem.subrosa.nativebridge.RecordingService"
             android:exported="false"
             android:foregroundServiceType="microphone"
+            android:stopWithTask="true" />
+        <service
+            android:name="xyz.carpediem.subrosa.nativebridge.ProcessingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
             android:stopWithTask="true" />
     </application>
 </manifest>
