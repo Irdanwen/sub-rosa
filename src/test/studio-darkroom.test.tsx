@@ -126,13 +126,13 @@ describe("wait progress", () => {
 
 describe("remaining time", () => {
   it("rounds coarsely enough to be a promise it can keep", () => {
-    expect(describeRemaining(20_000, 60_000)).toBe("about 40s left");
-    expect(describeRemaining(0, 240_000)).toBe("about 4 min left");
-    expect(describeRemaining(52_000, 60_000)).toBe("nearly there");
+    expect(describeRemaining(20_000, 60_000)).toBe("About 40s left");
+    expect(describeRemaining(0, 240_000)).toBe("About 4 min left");
+    expect(describeRemaining(52_000, 60_000)).toBe("Nearly there");
   });
 
   it("stops claiming to know once the estimate has passed", () => {
-    expect(describeRemaining(90_000, 60_000)).toBe("any moment now");
+    expect(describeRemaining(90_000, 60_000)).toBe("Any moment now");
     expect(describeRemaining(10_000, undefined)).toBeUndefined();
   });
 });

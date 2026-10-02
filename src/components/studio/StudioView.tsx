@@ -25,6 +25,7 @@ import {
   readStandaloneImageFailures,
   STUDIO_IMAGE_FAILED_EVENT,
 } from "../../lib/studio/image-job-recovery";
+import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
 
 // The workflow canvas pulls in @xyflow/react; only the Workflows tab pays
 // for it.
@@ -33,10 +34,17 @@ const WorkflowStudio = recoverableView(async () => {
   return { default: module.WorkflowStudio };
 });
 
+// The retouch canvas and its tools load with the tab.
+const RetouchStudio = recoverableView(async () => {
+  const module = await import("./retouch/RetouchStudio");
+  return { default: module.RetouchStudio };
+});
+
 type StudioTab =
   | "projects"
   | "start"
   | "image"
+  | "retouch"
   | "video"
   | "audio"
   | "bible"
@@ -56,6 +64,7 @@ function initialTab(): StudioTab {
       saved === "start" ||
       saved === "projects" ||
       saved === "image" ||
+      saved === "retouch" ||
       saved === "video" ||
       saved === "audio" ||
       saved === "assemble" ||
@@ -109,6 +118,20 @@ export function StudioView() {
   const [pendingProduction, setPendingProduction] = useState<string | undefined>(undefined);
   const clearPendingProduction = useCallback(() => setPendingProduction(undefined), []);
 
+  // Any surface showing an image can hand it to the Retouch tab.
+  const [pendingRetouch, setPendingRetouch] = useState<string | undefined>(undefined);
+  const clearPendingRetouch = useCallback(() => setPendingRetouch(undefined), []);
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const artifactId = (event as CustomEvent<string>).detail;
+      if (typeof artifactId !== "string" || !artifactId) return;
+      setPendingRetouch(artifactId);
+      setTab("retouch");
+    };
+    window.addEventListener(OPEN_RETOUCH_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_RETOUCH_EVENT, onOpen);
+  }, []);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(TAB_STORAGE_KEY, tab);
@@ -138,6 +161,7 @@ export function StudioView() {
               { value: "projects", label: t("Projects") },
               { value: "start", label: t("Explore") },
               { value: "image", label: t("Image") },
+              { value: "retouch", label: t("Retouch") },
               { value: "video", label: t("Video") },
               { value: "audio", label: t("Audio") },
               { value: "assemble", label: t("Assemble") },
@@ -181,6 +205,12 @@ export function StudioView() {
         <StudioStart catalog={catalog} onOpen={openWorkshop} />
       ) : tab === "image" ? (
         <ImageStudio catalog={catalog} />
+      ) : tab === "retouch" ? (
+        <RetouchStudio
+          catalog={catalog}
+          pendingArtifactId={pendingRetouch}
+          onPendingApplied={clearPendingRetouch}
+        />
       ) : tab === "video" ? (
         <VideoStudio catalog={catalog} onAssembleChain={assembleChain} />
       ) : tab === "audio" ? (

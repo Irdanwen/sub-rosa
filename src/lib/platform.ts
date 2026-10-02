@@ -38,6 +38,18 @@ export function primaryShiftShortcutLabel(key: string) {
   return isMacLikePlatform() ? `⌘⇧${key}` : `Ctrl Shift ${key}`;
 }
 
+/** The primary modifier with Shift: ⇧⌘ on a Mac, Ctrl+Shift elsewhere. Redo,
+ * where undo is the plain primary shortcut. */
+export function isPrimaryShiftShortcut(
+  event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
+) {
+  if (event.altKey || !event.shiftKey) return false;
+  if (isMacLikePlatform()) {
+    return event.metaKey && !event.ctrlKey;
+  }
+  return event.ctrlKey && !event.metaKey;
+}
+
 export function isPrimaryShortcut(
   event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
 ) {

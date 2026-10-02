@@ -176,6 +176,10 @@
     var(--sp-6)
   );
 
+  /* The retouch stage fills what the window has under the studio's header:
+   * the tab strip, the header block and the page's own padding. */
+  --retouch-stage-h: max(480px, calc(100dvh - var(--card-top) - var(--sp-12) * 5));
+
   --settings-skill-editor-min-h: 360px;
   --settings-skill-editor-ideal-h: 52dvh;
   --settings-skill-editor-max-h: 620px;
