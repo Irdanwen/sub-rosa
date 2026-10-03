@@ -1866,6 +1866,11 @@
   pointer-events: auto;
 }
 
+.mobile-studio-preview-audio {
+  width: 100%;
+  max-width: 560px;
+}
+
 /* Prompt lives in its own readable card (light text on a dark panel), scrolls
    if long, and carries a copy button. */
 .mobile-studio-preview-prompt {

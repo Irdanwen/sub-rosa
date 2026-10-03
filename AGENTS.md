@@ -122,7 +122,9 @@ committed under `src-tauri/gen/apple/`). Full architecture + upstream-diff table
   engine, rendered as guided "Flows" instead of the canvas).
 - **iOS gallery caveat**: never persist absolute paths — the app's data container path
   changes across reinstalls (`listArtifacts` re-derives paths from the disk listing; the
-  asset protocol doesn't resolve in the iOS webview, media renders via base64 data URLs).
+  asset protocol doesn't resolve in the iOS webview: clips and tracks stream from the
+  `subrosa-media:` scheme by byte range (`carpe_diem/media_protocol.rs`), pictures render
+  as data URLs).
 - **Dev loops**: simulator `pnpm tauri ios dev "iPhone 17 Pro"`; inject a key with
   `SIMCTL_CHILD_SUBROSA_DEV_API_KEY=cdm_… xcrun simctl launch booted xyz.carpediem.subrosa`.
   Device: `pnpm tauri ios dev "iPhone de Morgan" --host` (vite must NOT be pinned to

@@ -61,6 +61,18 @@ describe("asset protocol CSP", () => {
   // was handed - clips would not play, posters decoded to nothing, and a note
   // would not read itself aloud. The file it all lands in is the gallery, and
   // the failure is silent in all three places.
+  // The gallery streams from its own scheme (`subrosa-media.rs`), answered as
+  // `subrosa-media://localhost/…` on Apple platforms and
+  // `http://subrosa-media.localhost/…` on Windows and Android, for the same
+  // reason as the asset protocol above. Missing either form is a blank gallery
+  // on that platform only.
+  for (const name of ["img-src", "media-src"]) {
+    it(`lets ${name} load the streamed gallery on every platform`, () => {
+      expect(directive(name)).toContain("subrosa-media:");
+      expect(directive(name)).toContain("http://subrosa-media.localhost");
+    });
+  }
+
   it("lets media-src load the object URLs iOS requires", () => {
     expect(directive("media-src")).toContain("blob:");
   });

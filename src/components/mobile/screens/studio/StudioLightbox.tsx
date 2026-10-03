@@ -9,6 +9,7 @@ import {
   artifactDataUri,
   artifactDataUrl,
   useArtifactDataUrl,
+  usePlayableMediaUrl,
 } from "../../../../lib/artifact-media";
 import { hapticNotify } from "../../../../lib/haptics";
 import { readArtifactBase64, saveArtifactFromBase64 } from "../../../../lib/studio/artifacts";
@@ -60,7 +61,13 @@ export function Lightbox({
   /** Backend-dependent: the cutout endpoint only exists on some backends. */
   canRemoveBackground?: boolean;
 }) {
-  const src = useArtifactDataUrl(artifact);
+  const playsMedia = artifact.kind !== "image";
+  // A picture is decoded here; a clip or a track is streamed from the disk, so
+  // nothing the gallery loads behind this viewer can pull it out from under
+  // the player.
+  const picture = useArtifactDataUrl(playsMedia ? null : artifact);
+  const playable = usePlayableMediaUrl(playsMedia ? artifact : null);
+  const src = playsMedia ? playable.src : picture;
   const [saved, setSaved] = useState(false);
   const [upscaling, setUpscaling] = useState<2 | 4 | null>(null);
   const [cuttingOut, setCuttingOut] = useState(false);
@@ -163,11 +170,25 @@ export function Lightbox({
       <div className="mobile-studio-preview-body">
         {src ? (
           artifact.kind === "video" ? (
+            // biome-ignore lint/a11y/useMediaCaption: a generated clip has no captions to offer.
             <video
               src={src}
               controls
               autoPlay
               playsInline
+              onError={playable.onError}
+              onPlay={() => markMediaPlayback(true)}
+              onPause={() => markMediaPlayback(false)}
+              onEnded={() => markMediaPlayback(false)}
+            />
+          ) : playsMedia ? (
+            // biome-ignore lint/a11y/useMediaCaption: a generated track has no captions to offer.
+            <audio
+              className="mobile-studio-preview-audio"
+              src={src}
+              controls
+              autoPlay
+              onError={playable.onError}
               onPlay={() => markMediaPlayback(true)}
               onPause={() => markMediaPlayback(false)}
               onEnded={() => markMediaPlayback(false)}

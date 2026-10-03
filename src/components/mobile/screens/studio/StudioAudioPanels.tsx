@@ -1,6 +1,6 @@
 import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useArtifactDataUrl } from "../../../../lib/artifact-media";
+import { usePlayableMediaUrl } from "../../../../lib/artifact-media";
 import { useMediaJob } from "../../../../lib/studio/async-job";
 import {
   estimateCostCredits,
@@ -63,9 +63,16 @@ function useSceneTrack(
   dataUrl?: string,
 ): StageResult | undefined {
   const artifact = landed ?? lastTrack ?? null;
-  const src = useArtifactDataUrl(dataUrl ? null : artifact);
-  const url = dataUrl ?? src;
-  return url ? { kind: "audio", src: url, seed: artifact?.path ?? url.slice(-64) } : undefined;
+  const playable = usePlayableMediaUrl(dataUrl ? null : artifact);
+  const url = dataUrl ?? playable.src;
+  return url
+    ? {
+        kind: "audio",
+        src: url,
+        seed: artifact?.path ?? url.slice(-64),
+        onError: dataUrl ? undefined : playable.onError,
+      }
+    : undefined;
 }
 
 /**

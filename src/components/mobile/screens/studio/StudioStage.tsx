@@ -12,9 +12,10 @@ import { markMediaPlayback } from "./StudioControls";
 
 export type StageResult =
   | { kind: "image"; src: string; alt?: string }
-  | { kind: "video"; src: string; poster?: string }
+  /** `onError`: the element could not load its source (see `usePlayableMediaUrl`). */
+  | { kind: "video"; src: string; poster?: string; onError?: () => void }
   /** A rendered track: the frame holds its resting waveform, seeded by it. */
-  | { kind: "audio"; src: string; seed: string };
+  | { kind: "audio"; src: string; seed: string; onError?: () => void };
 
 /** The still silhouette of a track on the scene: the darkroom's wave, at rest.
  * It breathes only while a render runs - and then it is the veil that moves. */
@@ -107,6 +108,7 @@ export function StudioStage({
               measure(result.src, event.currentTarget.videoWidth, event.currentTarget.videoHeight)
             }
             onLoadedData={onLoad}
+            onError={result.onError}
             onAnimationEnd={onRevealEnd}
             onPlay={() => markMediaPlayback(true)}
             onPause={() => markMediaPlayback(false)}
@@ -126,6 +128,7 @@ export function StudioStage({
               src={result.src}
               controls
               preload="metadata"
+              onError={result.onError}
               onPlay={() => markMediaPlayback(true)}
               onPause={() => markMediaPlayback(false)}
               onEnded={() => markMediaPlayback(false)}
