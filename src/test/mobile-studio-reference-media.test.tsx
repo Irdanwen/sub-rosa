@@ -129,7 +129,7 @@ describe("writing a prompt the router will read", () => {
     await chooseFamily(picker, "seedance-2-0-fast", "Seedance 2.0 Fast (full)");
 
     // Nothing filled in yet: plain text-to-video, nothing to say.
-    expect(within(picker).queryByText(/reference to video/)).toBeNull();
+    expect(within(picker).queryByText(/reference to video/i)).toBeNull();
 
     await openMoreOptions();
     await userEvent.click(screen.getByRole("button", { name: "Add a clip" }));
@@ -138,6 +138,39 @@ describe("writing a prompt the router will read", () => {
     if (!input) throw new Error("no clip input");
     await userEvent.upload(input, new File(["clip"], "alley.mp4", { type: "video/mp4" }));
 
-    await waitFor(() => expect(within(picker).getByText(/reference to video/)).toBeTruthy());
+    await waitFor(() => expect(within(picker).getByText(/reference to video/i)).toBeTruthy());
+  });
+});
+
+describe("telling a family's directions apart in the sheet", () => {
+  it("tags each row with what it takes, and names the frame kling v3 insists on", async () => {
+    const picker = await openVideoTab();
+    await userEvent.click(picker);
+    const sheet = await screen.findByRole("dialog", { name: "Video model" });
+    const seedance = within(sheet).getByRole("button", { name: /^Seedance 2\.5/ });
+    expect(within(seedance).getByText("Text")).toBeTruthy();
+    expect(within(seedance).getByText("Image")).toBeTruthy();
+    expect(within(seedance).getByText("References")).toBeTruthy();
+    expect(within(seedance).queryByText("+ opening frame")).toBeNull();
+    // Kling V3 4K: text and references, and its reference variant will not
+    // start without an opening frame - said while the user is still choosing.
+    const kling = within(sheet).getByRole("button", { name: /^Kling V3 4K/ });
+    expect(within(kling).getByText("Text")).toBeTruthy();
+    expect(within(kling).queryByText("Image")).toBeNull();
+    expect(within(kling).getByText("+ opening frame")).toBeTruthy();
+  });
+
+  it("opens on the reference families once a reference photo is in play", async () => {
+    const picker = await openVideoTab();
+    await userEvent.click(picker);
+    // Before any input: every family, no filter chosen.
+    const sheet = await screen.findByRole("dialog", { name: "Video model" });
+    expect(within(sheet).getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    await userEvent.click(within(sheet).getByRole("radio", { name: "From references" }));
+    // The text-only contrast family is out of the way.
+    expect(within(sheet).queryByRole("button", { name: /^Wan 2\.7/ })).toBeNull();
+    expect(within(sheet).getByRole("button", { name: /^Kling O3 4K/ })).toBeTruthy();
   });
 });

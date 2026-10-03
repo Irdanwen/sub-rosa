@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { type VideoFamily, variantFor, variantLabel } from "../lib/studio/catalog";
+import {
+  directionLabel,
+  familyDirections,
+  type VideoFamily,
+  variantFor,
+  variantHint,
+  variantLabel,
+} from "../lib/studio/catalog";
 import type { MediaModel } from "../lib/studio/types";
 
 function m(id: string): MediaModel {
@@ -62,5 +69,29 @@ describe("resolving the variant from the inputs", () => {
     expect(variantLabel("seedance-2-0-image-to-video")).toBe("image to video");
     expect(variantLabel("wan-2-7-video-to-video")).toBe("video to video");
     expect(variantLabel("veo3-fast-text-to-video")).toBe("text to video");
+  });
+
+  it("keeps the search spelling apart from the shown label", () => {
+    // `variantLabel` is what people type ("reference to video"); what the form
+    // shows goes through `t()` and reads in sentence case, in the user's
+    // language (spec/copy-through-t).
+    expect(directionLabel("reference")).toBe("Reference to video");
+    expect(directionLabel("image")).toBe("Image to video");
+    expect(directionLabel("video")).toBe("Video to video");
+    expect(directionLabel("text")).toBe("Text to video");
+    expect(variantHint(FULL, FULL.referenceModel)).toBe("Reference to video");
+  });
+
+  it("lists a family's directions in the order the form asks for their inputs", () => {
+    expect(familyDirections(FULL)).toEqual(["text", "image", "reference"]);
+    expect(familyDirections({ ...FULL, textModel: undefined })).toEqual(["image", "reference"]);
+    expect(
+      familyDirections({
+        key: "wan",
+        name: "Wan",
+        videoModel: m("wan-2-7-video-to-video"),
+        modelSets: [],
+      }),
+    ).toEqual(["video"]);
   });
 });

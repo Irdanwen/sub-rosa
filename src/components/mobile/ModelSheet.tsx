@@ -21,7 +21,17 @@ export type ModelSheetEntry = {
    * row for up to four), and those models' own ids and names are then the very
    * thing a user searches for while nothing on screen contains them. */
   keywords?: string[];
+  /** Short facts shown under the subtitle as small pills, for a row that
+   * stands for several contracts at once (a video family's directions). A
+   * `note` tone marks the one that changes what the user has to supply. */
+  tags?: ModelSheetTag[];
+  /** The filter groups this entry belongs to (see `filters`). */
+  groups?: string[];
 };
+
+export type ModelSheetTag = { label: string; tone?: "note" };
+
+export type ModelSheetFilter = { id: string; label: string };
 
 const FAVORITES_STORAGE_KEY = "subrosa:mobile:model-favorites";
 
@@ -56,6 +66,16 @@ type ModelSheetProps = {
    * that model (leaving the original untouched) instead of switching in place.
    * Omitted where forking makes no sense (e.g. Studio), so no button shows. */
   onFork?: (id: string) => void;
+  /** When set, a row of pills under the search narrows the list to one group
+   * (an entry's `groups`), with an implicit "All" first. Where the catalog is
+   * one long list these do the first cut a search box cannot: a direction is
+   * not a word anybody types. */
+  filters?: ModelSheetFilter[];
+  /** The filter to open on, when the surface already knows what the user is
+   * after (reference photos picked, so reference models). */
+  initialFilter?: string;
+  /** Accessible name of the filter row. */
+  filtersLabel?: string;
 };
 
 /**
@@ -72,8 +92,14 @@ export function ModelSheet({
   onSelect,
   onClose,
   onFork,
+  filters,
+  initialFilter,
+  filtersLabel,
 }: ModelSheetProps) {
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState(() =>
+    initialFilter && filters?.some((entry) => entry.id === initialFilter) ? initialFilter : "all",
+  );
   const [favorites, setFavorites] = useState<Set<string>>(readFavorites);
   const keyboardInset = useKeyboardInset();
 
@@ -153,22 +179,28 @@ export function ModelSheet({
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
+    const grouped =
+      filter === "all" ? entries : entries.filter((entry) => entry.groups?.includes(filter));
     // Each term is matched whole rather than concatenated into one haystack, so
     // a needle can never straddle two of them and match nothing real.
     const matches = needle
-      ? entries.filter((entry) =>
-          [entry.id, entry.name ?? "", entry.subtitle ?? "", ...(entry.keywords ?? [])].some(
-            (term) => term.toLowerCase().includes(needle),
-          ),
+      ? grouped.filter((entry) =>
+          [
+            entry.id,
+            entry.name ?? "",
+            entry.subtitle ?? "",
+            ...(entry.tags ?? []).map((tag) => tag.label),
+            ...(entry.keywords ?? []),
+          ].some((term) => term.toLowerCase().includes(needle)),
         )
-      : entries;
+      : grouped;
     return [...matches].sort((a, b) => {
       const favA = favorites.has(a.id) ? 0 : 1;
       const favB = favorites.has(b.id) ? 0 : 1;
       if (favA !== favB) return favA - favB;
       return (a.name || a.id).localeCompare(b.name || b.id);
     });
-  }, [entries, query, favorites]);
+  }, [entries, query, favorites, filter]);
 
   const toggleFavorite = (id: string) => {
     hapticSelection();
@@ -227,6 +259,30 @@ export function ModelSheet({
             autoCorrect="off"
           />
         </div>
+        {filters && filters.length > 0 ? (
+          <div
+            className="mobile-pill-row mobile-sheet-filters"
+            role="radiogroup"
+            aria-label={filtersLabel ?? t("Filter models")}
+          >
+            {[{ id: "all", label: t("All") }, ...filters].map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                role="radio"
+                aria-checked={filter === entry.id}
+                className="mobile-pill"
+                data-active={filter === entry.id ? "true" : undefined}
+                onClick={() => {
+                  hapticSelection();
+                  setFilter(entry.id);
+                }}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <ul className="mobile-sheet-list">
           {error ? <li className="mobile-sheet-error">{error}</li> : null}
           {defaultOption && !query ? (
@@ -265,6 +321,15 @@ export function ModelSheet({
                 <span className="mobile-sheet-item-text">
                   <span className="mobile-sheet-item-title">{entry.name || entry.id}</span>
                   <span className="mobile-sheet-item-subtitle">{entry.subtitle ?? entry.id}</span>
+                  {entry.tags && entry.tags.length > 0 ? (
+                    <span className="mobile-sheet-tags">
+                      {entry.tags.map((tag) => (
+                        <span key={tag.label} className="mobile-sheet-tag" data-tone={tag.tone}>
+                          {tag.label}
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
                 </span>
               </button>
               {onFork ? (
