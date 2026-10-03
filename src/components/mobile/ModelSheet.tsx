@@ -260,17 +260,15 @@ export function ModelSheet({
           />
         </div>
         {filters && filters.length > 0 ? (
-          <div
+          <fieldset
             className="mobile-pill-row mobile-sheet-filters"
-            role="radiogroup"
             aria-label={filtersLabel ?? t("Filter models")}
           >
             {[{ id: "all", label: t("All") }, ...filters].map((entry) => (
               <button
                 key={entry.id}
                 type="button"
-                role="radio"
-                aria-checked={filter === entry.id}
+                aria-pressed={filter === entry.id}
                 className="mobile-pill"
                 data-active={filter === entry.id ? "true" : undefined}
                 onClick={() => {
@@ -281,7 +279,7 @@ export function ModelSheet({
                 {entry.label}
               </button>
             ))}
-          </div>
+          </fieldset>
         ) : null}
         <ul className="mobile-sheet-list">
           {error ? <li className="mobile-sheet-error">{error}</li> : null}

@@ -165,10 +165,10 @@ describe("telling a family's directions apart in the sheet", () => {
     await userEvent.click(picker);
     // Before any input: every family, no filter chosen.
     const sheet = await screen.findByRole("dialog", { name: "Video model" });
-    expect(within(sheet).getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe(
+    expect(within(sheet).getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
-    await userEvent.click(within(sheet).getByRole("radio", { name: "From references" }));
+    await userEvent.click(within(sheet).getByRole("button", { name: "From references" }));
     // The text-only contrast family is out of the way.
     expect(within(sheet).queryByRole("button", { name: /^Wan 2\.7/ })).toBeNull();
     expect(within(sheet).getByRole("button", { name: /^Kling O3 4K/ })).toBeTruthy();

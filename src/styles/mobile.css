@@ -2168,6 +2168,9 @@
 .mobile-sheet-filters {
   flex-wrap: nowrap;
   margin: 0 0 var(--sp-2);
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;

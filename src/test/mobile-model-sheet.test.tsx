@@ -76,7 +76,7 @@ describe("the model sheet's filters and tags", () => {
     const note = within(kling).getByText("+ opening frame");
     expect(note.getAttribute("data-tone")).toBe("note");
     // No filter row was asked for, so none is there.
-    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Filter models" })).toBeNull();
   });
 
   it("narrows the list to one group, and back to all", async () => {
@@ -91,17 +91,17 @@ describe("the model sheet's filters and tags", () => {
         filtersLabel="Filter video models"
       />,
     );
-    const group = screen.getByRole("radiogroup", { name: "Filter video models" });
-    expect(within(group).getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe(
+    const group = screen.getByRole("group", { name: "Filter video models" });
+    expect(within(group).getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
-    await userEvent.click(within(group).getByRole("radio", { name: "From references" }));
+    await userEvent.click(within(group).getByRole("button", { name: "From references" }));
     expect(screen.queryByRole("button", { name: /^Veo/ })).toBeNull();
     expect(screen.getByRole("button", { name: /Kling V3 4K/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Seedance 2.5/ })).toBeTruthy();
-    await userEvent.click(within(group).getByRole("radio", { name: "Animate an image" }));
+    await userEvent.click(within(group).getByRole("button", { name: "Animate an image" }));
     expect(rowNames()).toEqual(["Seedance 2.5"]);
-    await userEvent.click(within(group).getByRole("radio", { name: "All" }));
+    await userEvent.click(within(group).getByRole("button", { name: "All" }));
     expect(screen.getByRole("button", { name: /^Veo/ })).toBeTruthy();
   });
 
@@ -118,7 +118,7 @@ describe("the model sheet's filters and tags", () => {
       />,
     );
     expect(
-      screen.getByRole("radio", { name: "From references" }).getAttribute("aria-checked"),
+      screen.getByRole("button", { name: "From references" }).getAttribute("aria-pressed"),
     ).toBe("true");
     expect(screen.queryByRole("button", { name: /^Veo/ })).toBeNull();
     await userEvent.type(screen.getByPlaceholderText("Search models"), "seedance");
@@ -138,7 +138,7 @@ describe("the model sheet's filters and tags", () => {
         initialFilter="video"
       />,
     );
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("finds a row by one of its tags", async () => {
