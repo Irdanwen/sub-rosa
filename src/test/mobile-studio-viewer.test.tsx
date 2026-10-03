@@ -108,7 +108,7 @@ describe("the viewer", () => {
   it("shows what the item is on request", async () => {
     renderViewer(1);
     await userEvent.click(screen.getByRole("button", { name: "About this item" }));
-    const info = screen.getByRole("region", { name: "About this item" });
+    const info = screen.getByRole("dialog", { name: "About this item" });
     expect(within(info).getByText("A tram")).toBeTruthy();
     expect(within(info).getByText("kling-v3")).toBeTruthy();
     expect(within(info).getByText("1920 × 1080")).toBeTruthy();

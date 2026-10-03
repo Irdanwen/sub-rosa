@@ -1340,31 +1340,53 @@ async fn gallery_marks_and_collections_travel_and_arrive_without_echo() {
     let collection_rows = outbox_rows(&pool, &album.id).await;
     assert_eq!(collection_rows.len(), 1);
     assert_eq!(collection_rows[0].get::<String, _>("kind"), "folder");
-    let mark_rows = outbox_rows(&pool, clip).await;
+    // The mark travels under its own id, never the file's: the file's record
+    // (`account_studio_files`) is an object of the same kind under the stem,
+    // and the outbox keeps one unsent row per object.
+    query(
+        "INSERT INTO account_studio_files(id,file_name,format,bytes,created_at) VALUES(?,?,?,?,?)",
+    )
+    .bind(clip)
+    .bind(format!("{clip}.mp4"))
+    .bind("mp4")
+    .bind(10)
+    .bind("now")
+    .execute(&pool)
+    .await
+    .unwrap();
+    let file_rows = outbox_rows(&pool, clip).await;
+    assert_eq!(file_rows.len(), 1);
+    let file_body: Value = serde_json::from_str(&file_rows[0].get::<String, _>("body")).unwrap();
+    assert_eq!(file_body["table"], "account_studio_files");
+    let mark_object = crate::studio_library::mark_id(clip);
+    assert_ne!(mark_object, clip);
+    let mark_rows = outbox_rows(&pool, &mark_object).await;
     assert!(!mark_rows.is_empty());
     assert_eq!(mark_rows[0].get::<String, _>("kind"), "artifact");
     let body: Value =
         serde_json::from_str(&mark_rows.last().unwrap().get::<String, _>("body")).unwrap();
     assert_eq!(body["table"], "studio_marks");
+    assert_eq!(body["row"]["file_id"], clip);
     assert_eq!(body["row"]["favorite"], 1);
     assert_eq!(body["row"]["collection_id"], album.id.as_str());
 
     // One arriving from another device.
     let s = session_fixture();
     let key = crypto::random_key();
-    let other = "0192f1a0-7c3e-7d4b-9a10-2f9f5b8e4c99";
+    let other_file = "0192f1a0-7c3e-7d4b-9a10-2f9f5b8e4c99";
+    let other = crate::studio_library::mark_id(other_file);
     let op = uuid::Uuid::new_v4().to_string();
-    let payload = json!({"v":1,"operation_id":op,"parent_revision":null,"deleted":false,"table":"studio_marks","row":{"id":other,"collection_id":null,"favorite":0,"hidden":1,"updated_at":"now"}});
+    let payload = json!({"v":1,"operation_id":op,"parent_revision":null,"deleted":false,"table":"studio_marks","row":{"id":other,"file_id":other_file,"collection_id":null,"favorite":0,"hidden":1,"updated_at":"now"}});
     let c = Change {
         sequence: 1,
         resolved_revisions: Vec::new(),
-        object_id: other.into(),
+        object_id: other.clone(),
         revision: uuid::Uuid::new_v4().to_string(),
         parent_revision: None,
         kind: "artifact".into(),
         ciphertext: crypto::seal(
             &key,
-            &aad(&s, "artifact", other),
+            &aad(&s, "artifact", &other),
             &serde_json::to_vec(&payload).unwrap(),
         )
         .unwrap(),
@@ -1379,6 +1401,78 @@ async fn gallery_marks_and_collections_travel_and_arrive_without_echo() {
     assert!(library
         .marks
         .iter()
-        .any(|mark| mark.id == other && mark.hidden));
-    assert!(outbox_rows(&pool, other).await.is_empty());
+        .any(|mark| mark.file_id == other_file && mark.hidden));
+    assert!(outbox_rows(&pool, &other).await.is_empty());
+}
+
+/// Deleting a gallery file here removes it everywhere, and nothing brings it
+/// back: its record and manifest are tombstoned, and a download of it under
+/// way is dropped.
+#[tokio::test]
+async fn deleting_a_gallery_file_tombstones_its_record_and_manifest_and_cancels_downloads() {
+    let pool = database().await;
+    let clip = "0192f1a0-7c3e-7d4b-9a10-2f9f5b8e4c11";
+    query(
+        "INSERT INTO account_studio_files(id,file_name,format,bytes,created_at) VALUES(?,?,?,?,?)",
+    )
+    .bind(clip)
+    .bind(format!("{clip}.mp4"))
+    .bind("mp4")
+    .bind(10)
+    .bind("now")
+    .execute(&pool)
+    .await
+    .unwrap();
+    let manifest = uuid::Uuid::new_v4().to_string();
+    query("INSERT INTO account_file_manifests(id,artifact_id,bytes,format,chunks_json,created_at,source_kind) VALUES(?,?,?,?,?,?,'studio')")
+        .bind(&manifest).bind(clip).bind(10).bind("mp4").bind("[]").bind("now")
+        .execute(&pool).await.unwrap();
+    query("INSERT INTO account_file_downloads(manifest_id,next_chunk,completed) VALUES(?,0,0)")
+        .bind(&manifest)
+        .execute(&pool)
+        .await
+        .unwrap();
+    crate::studio_library::mark(
+        &pool,
+        serde_json::from_value(json!({ "ids": [format!("{clip}.mp4")], "favorite": true }))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    crate::studio_library::forget_in(&pool, clip).await.unwrap();
+
+    for (table, column) in [
+        ("account_studio_files", "id"),
+        ("account_file_manifests", "artifact_id"),
+        ("studio_marks", "file_id"),
+    ] {
+        assert_eq!(
+            count(
+                &pool,
+                &format!("SELECT count(*) AS n FROM {table} WHERE {column}=?"),
+                clip
+            )
+            .await,
+            0,
+            "{table}"
+        );
+    }
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_file_downloads WHERE manifest_id=?",
+            &manifest
+        )
+        .await,
+        0
+    );
+    let file_tombstone = outbox_rows(&pool, clip).await;
+    assert!(file_tombstone
+        .iter()
+        .any(|row| row.get::<i64, _>("deleted") == 1));
+    let manifest_tombstone = outbox_rows(&pool, &manifest).await;
+    assert!(manifest_tombstone
+        .iter()
+        .any(|row| row.get::<i64, _>("deleted") == 1));
 }

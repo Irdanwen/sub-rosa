@@ -5096,12 +5096,20 @@
 
 .viewer {
   --viewer-pull: 1;
+  /* A photo viewer is black whatever the theme, and what sits on a picture is
+     white whatever the theme: named here once, used everywhere below, so the
+     deliberate departure from the stage tokens is in one place. */
+  --viewer-ink: black;
+  --viewer-paper: white;
+  --viewer-paper-soft: oklch(1 0 0 / 72%);
+  --viewer-glass: oklch(1 0 0 / 12%);
+  --viewer-danger: color-mix(in oklch, var(--destructive) 70%, white);
   position: fixed;
   inset: 0;
   z-index: 60;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  color: white;
+  color: var(--viewer-paper);
   outline: none;
   overscroll-behavior: contain;
   -webkit-user-select: none;
@@ -5112,7 +5120,7 @@
 .viewer-backdrop {
   position: absolute;
   inset: 0;
-  background: black;
+  background: var(--viewer-ink);
   opacity: var(--viewer-pull);
 }
 
@@ -5137,7 +5145,7 @@
 }
 
 .viewer-count {
-  color: oklch(1 0 0 / 72%);
+  color: var(--viewer-paper-soft);
   font-size: var(--fs-sm);
   font-variant-numeric: proportional-nums;
   font-feature-settings:
@@ -5152,14 +5160,14 @@
   height: 40px;
   border: 0;
   border-radius: var(--r-pill);
-  background: oklch(1 0 0 / 12%);
-  color: white;
+  background: var(--viewer-glass);
+  color: var(--viewer-paper);
   -webkit-tap-highlight-color: transparent;
 }
 
 .viewer-icon[aria-pressed="true"] {
-  background: white;
-  color: black;
+  background: var(--viewer-paper);
+  color: var(--viewer-ink);
 }
 
 .viewer-stage {
@@ -5212,7 +5220,7 @@
   border: 0;
   border-radius: var(--r-pill);
   background: oklch(0 0 0 / 45%);
-  color: white;
+  color: var(--viewer-paper);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: opacity var(--t-med) var(--ease-out);
@@ -5279,7 +5287,7 @@
   height: 14px;
   margin-top: -5px;
   border-radius: var(--r-pill);
-  background: white;
+  background: var(--viewer-paper);
   -webkit-appearance: none;
   appearance: none;
 }
@@ -5295,7 +5303,7 @@
 .viewer-track-title {
   margin: 0;
   max-width: 32ch;
-  color: white;
+  color: var(--viewer-paper);
   font-size: var(--fs-lg);
   text-align: center;
   text-wrap: balance;
@@ -5318,13 +5326,13 @@
 }
 
 .viewer-track-wave > span[data-played="true"] {
-  background: white;
+  background: var(--viewer-paper);
 }
 
 .viewer-play-track {
   position: static;
-  background: white;
-  color: black;
+  background: var(--viewer-paper);
+  color: var(--viewer-ink);
 }
 
 .viewer-count[data-initial-focus]:focus {
@@ -5348,7 +5356,7 @@
   border: 0;
   border-radius: var(--r-pill);
   background: none;
-  color: white;
+  color: var(--viewer-paper);
   -webkit-tap-highlight-color: transparent;
   transition: transform var(--t-fast) var(--ease-out);
 }
@@ -5362,7 +5370,7 @@
 }
 
 .viewer-action[data-destructive="true"] {
-  color: oklch(0.72 0.17 25);
+  color: var(--viewer-danger);
 }
 
 .viewer-notice {
@@ -5373,8 +5381,8 @@
   margin: 0;
   padding: var(--sp-2) var(--sp-4);
   border-radius: var(--r-pill);
-  background: white;
-  color: black;
+  background: var(--viewer-paper);
+  color: var(--viewer-ink);
   font-size: var(--fs-sm);
   transform: translateX(-50%);
   animation: stage-fade var(--t-med) var(--ease-out) both;
@@ -5418,7 +5426,7 @@
 
 .viewer-info-prompt p {
   margin: 0;
-  color: white;
+  color: var(--viewer-paper);
   font-size: var(--fs-md);
   line-height: 1.45;
   white-space: pre-wrap;
@@ -5446,7 +5454,7 @@
 .viewer-info-rows dd {
   margin: 0;
   overflow-wrap: anywhere;
-  color: white;
+  color: var(--viewer-paper);
   font-size: var(--fs-sm);
   text-align: right;
 }
@@ -5466,7 +5474,7 @@
   border: 1px solid oklch(1 0 0 / 18%);
   border-radius: var(--r-pill);
   background: oklch(1 0 0 / 8%);
-  color: white;
+  color: var(--viewer-paper);
   font-size: var(--fs-sm);
 }
 
@@ -5485,7 +5493,7 @@
   border: 0;
   border-radius: var(--r-lg);
   background: oklch(1 0 0 / 10%);
-  color: white;
+  color: var(--viewer-paper);
   font-size: var(--fs-md);
 }
 

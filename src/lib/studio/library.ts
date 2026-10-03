@@ -13,8 +13,10 @@ export interface StudioCollection {
 }
 
 export interface StudioMark {
-  /** The UUID stem of the gallery file name. */
+  /** The mark's own synchronised id, derived natively from `fileId`. */
   id: string;
+  /** The UUID stem of the gallery file name. */
+  fileId: string;
   collectionId: string | null;
   favorite: boolean;
   hidden: boolean;
@@ -22,7 +24,7 @@ export interface StudioMark {
 
 export interface StudioLibrary {
   collections: StudioCollection[];
-  /** By mark id (the file's UUID stem). */
+  /** By the file's UUID stem (`markIdOf`). */
   marks: Map<string, StudioMark>;
 }
 
@@ -49,7 +51,7 @@ export async function loadLibrary(): Promise<StudioLibrary> {
   );
   return {
     collections: raw.collections,
-    marks: new Map(raw.marks.map((mark) => [mark.id, mark])),
+    marks: new Map(raw.marks.map((mark) => [mark.fileId, mark])),
   };
 }
 
@@ -82,7 +84,13 @@ export function withMarks(
   const marks = new Map(library.marks);
   for (const artifact of artifacts.filter(canMark)) {
     const id = markIdOf(artifact);
-    const current = marks.get(id) ?? { id, collectionId: null, favorite: false, hidden: false };
+    const current = marks.get(id) ?? {
+      id: "",
+      fileId: id,
+      collectionId: null,
+      favorite: false,
+      hidden: false,
+    };
     marks.set(id, {
       ...current,
       ...(change.favorite !== undefined ? { favorite: change.favorite } : {}),

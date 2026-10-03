@@ -956,6 +956,9 @@ export function AgentSessionScreen({
     ? readableModelName(model, models.find((entry) => entry.id === model)?.name)
     : t("Default model");
   const hasDraft = Boolean(draft.trim()) || attachments.length > 0;
+  const openers = suggestions(Boolean(onGenerateImage)).filter(
+    (suggestion) => !hasDraft || suggestion.id === "image",
+  );
 
   return (
     // data-ambient re-grounds the whole screen while the opening plays: the
@@ -1146,12 +1149,14 @@ export function AgentSessionScreen({
             ))}
           </div>
         ) : null}
-        {showHero && !hasDraft ? (
+        {showHero && openers.length > 0 ? (
           // An empty chat with only a placeholder makes the user invent the
           // capability. These name what it can actually do: read a note in
-          // full, look back over a week, make a picture, remember.
+          // full, look back over a week, make a picture, remember. Once
+          // something is typed, only the picture stays: it takes the draft
+          // with it, where the others would replace it.
           <fieldset className="mobile-chat-suggestions" aria-label={t("Suggestions")}>
-            {suggestions(Boolean(onGenerateImage)).map((suggestion) => (
+            {openers.map((suggestion) => (
               <button
                 key={suggestion.id}
                 type="button"
@@ -1159,7 +1164,7 @@ export function AgentSessionScreen({
                 onClick={() => {
                   hapticSelection();
                   if (suggestion.id === "image") {
-                    onGenerateImage?.(draft);
+                    onGenerateImage?.(draft.trim());
                     return;
                   }
                   setDraft(suggestion.prompt);
@@ -1190,7 +1195,7 @@ export function AgentSessionScreen({
             ref={chatInputRef}
             className="mobile-chat-input"
             value={draft}
-            placeholder={t("Ask anything, privately...")}
+            placeholder={t("Ask anything, privately…")}
             rows={1}
             onChange={(event) => setDraft(event.target.value)}
             onPaste={(event) => {

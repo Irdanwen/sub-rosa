@@ -49,10 +49,14 @@ pub fn measure(path: &Path, bins: usize) -> Result<Waveform, AppError> {
         )
         .map_err(failed)?;
     let mut format = probed.format;
+    // The audio track, not merely the first decodable one: a clip's default
+    // track is its picture.
     let track = format
         .tracks()
         .iter()
-        .find(|track| track.codec_params.codec != CODEC_TYPE_NULL)
+        .find(|track| {
+            track.codec_params.codec != CODEC_TYPE_NULL && track.codec_params.sample_rate.is_some()
+        })
         .ok_or_else(|| AppError::new("media_decode_unsupported", "No audio track."))?;
     let track_id = track.id;
     let mut decoder = symphonia::default::get_codecs()

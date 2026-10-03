@@ -30,16 +30,27 @@ questions had real alternatives.
    triggers journal them, the generic `apply` upserts them, and a deletion is
    a tombstone handled by ADR-0072. A mark that says nothing is deleted
    rather than kept, so an un-favourited, unfiled file travels nothing.
-2. **A mark is keyed by the UUID stem of the gallery file name.** The sync
-   service accepts only UUID object ids, and the stem is what
-   `account/studio.rs` already uses to identify a file across devices: a
-   received file is written as `<stem>.<ext>`. Files without a UUID stem
-   never synchronise, so they cannot be marked either.
+2. **A mark names its file by the UUID stem of the file name, and travels
+   under an id derived from it.** The sync service accepts only UUID object
+   ids, and the stem is what `account/studio.rs` already uses to identify a
+   file across devices: a received file is written as `<stem>.<ext>`. The
+   mark's own id is a name-based UUID of that stem (`mark_id`), never the
+   stem itself: the file's record (`account_studio_files`) is already the
+   object of that id with the same routing kind, and the outbox keeps one
+   unsent row per object, so a mark keyed by the stem overwrote the file's
+   record on its way out, or the other way round, and un-favouriting a file
+   tombstoned the file. Files without a UUID stem never synchronise, so they
+   cannot be marked either.
 3. **Deleting a gallery file deletes it everywhere.** The local delete now
-   also removes its `account_studio_files` row (and any pending upload). The
-   tombstone tells the other devices to remove their copy, as every other
-   synchronised deletion already does. Until now a file deleted on the phone
-   stayed on the Mac for good. The confirmation says so.
+   also removes its `account_studio_files` row, its manifest, any pending
+   upload and any download of it. The two tombstones tell the other devices
+   to remove their copy and stop fetching it, as every other synchronised
+   deletion already does; a device applying the file's tombstone drops its
+   own download in flight, the file's mark and its provenance. Until now a
+   file deleted on the phone stayed on the Mac for good, and a manifest left
+   behind made the deleting device download its own file back. The
+   confirmation says so. A mark that says nothing is never created, so no
+   tombstone leaves for an object no device held.
 
 ## Alternatives rejected
 

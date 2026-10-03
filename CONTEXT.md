@@ -737,8 +737,9 @@ the film workspace's own grouping, ADR-0020).
 
 **Mark**:
 What a person said about one gallery file: its collection, favourite, hidden.
-Keyed by the UUID stem of the file name, the same on every device the file
-reaches, and synchronised with the account (ADR-0073). A file with nothing to
+Names its file by the UUID stem of the file name (`file_id`), the same on
+every device the file reaches, and travels under its own derived id, never
+the file's (ADR-0073); synchronised with the account. A file with nothing to
 say has no mark. **Hidden** removes a file from the gallery's views and its
 search until it is shown again; it is not deleted and not encrypted apart.
 _Avoid_: tag, label, flag.

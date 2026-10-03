@@ -78,6 +78,7 @@ export function StudioViewer({
   onReusePrompt,
   onUseAsReference,
   onUpscaled,
+  onMarked,
   canRemoveBackground = false,
 }: {
   artifact: StudioArtifact;
@@ -90,6 +91,8 @@ export function StudioViewer({
   onReusePrompt?: () => void;
   onUseAsReference?: () => void;
   onUpscaled: () => void;
+  /** Told after a mark changed here, so the gallery behind rereads. */
+  onMarked?: () => void;
   canRemoveBackground?: boolean;
 }) {
   const index = among.findIndex((entry) => entry.path === artifact.path);
@@ -125,17 +128,22 @@ export function StudioViewer({
     setChrome(true);
   }
 
+  const noticeTimer = useRef<number | undefined>(undefined);
   const flash = useCallback((text: string) => {
     setNotice(text);
-    window.setTimeout(() => setNotice(null), 1600);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 1600);
   }, []);
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
 
   const mark = markOf(library, artifact);
   const toggleFavorite = () => {
     const change = { favorite: !mark?.favorite };
     setLibrary((current) => withMarks(current, [artifact], change));
     hapticSelection();
-    markArtifacts([artifact], change).catch(() => hapticNotify("error"));
+    markArtifacts([artifact], change)
+      .then(() => onMarked?.())
+      .catch(() => hapticNotify("error"));
   };
 
   const go = useCallback(
@@ -149,13 +157,15 @@ export function StudioViewer({
 
   // Keyboard, for the desktop browser the shell is developed in.
   useEffect(() => {
+    // Not while a sheet or the info panel is up: the arrows belong to them.
+    if (confirming || infoOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "ArrowLeft") go(previous);
       if (event.key === "ArrowRight") go(next);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, previous, next]);
+  }, [go, previous, next, confirming, infoOpen]);
 
   // Sideways to move, down to close. The axis is decided by the first ten
   // pixels, so a vertical scrub of a slider or a pan of a zoomed picture is
@@ -189,11 +199,19 @@ export function StudioViewer({
     const dx = touch.clientX - state.x;
     const dy = touch.clientY - state.y;
     if (state.pan) {
-      setZoom((current) => ({
-        ...current,
-        x: (state.pan?.x ?? 0) + dx,
-        y: (state.pan?.y ?? 0) + dy,
-      }));
+      // Panned within what the zoom brought into reach, so the picture can
+      // never be pushed out of its own frame.
+      const box = rootRef.current?.getBoundingClientRect();
+      setZoom((current) => {
+        const limitX = box ? ((current.scale - 1) * box.width) / 2 : Number.POSITIVE_INFINITY;
+        const limitY = box ? ((current.scale - 1) * box.height) / 2 : Number.POSITIVE_INFINITY;
+        const clamp = (value: number, limit: number) => Math.max(-limit, Math.min(limit, value));
+        return {
+          ...current,
+          x: clamp((state.pan?.x ?? 0) + dx, limitX),
+          y: clamp((state.pan?.y ?? 0) + dy, limitY),
+        };
+      });
       return;
     }
     if (!state.axis) {
@@ -317,7 +335,7 @@ export function StudioViewer({
         ) : null}
         {canMark(artifact) ? (
           <ViewerAction
-            label={mark?.favorite ? t("Remove from favourites") : t("Add to favourites")}
+            label={mark?.favorite ? t("Remove from favorites") : t("Add to favorites")}
             icon={mark?.favorite ? <IconHeartFilled size={22} /> : <IconHeart size={22} />}
             active={Boolean(mark?.favorite)}
             onAction={toggleFavorite}
@@ -727,6 +745,11 @@ function ViewerInfo({
 }) {
   const [working, setWorking] = useState<"x2" | "x4" | "cutout" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A panel over the viewer: focus goes in, Tab stays, Escape closes the
+  // panel alone (spec/modal-focus.md; the hook's stack leaves the viewer's own
+  // Escape underneath).
+  const panelRef = useRef<HTMLElement>(null);
+  useModalFocus(panelRef, { onClose, initialFocusSelector: ".viewer-info-close" });
 
   const make = async (kind: "x2" | "x4" | "cutout") => {
     if (working) return;
@@ -741,7 +764,7 @@ function ViewerInfo({
       await saveArtifactFromBase64(result, "png", {
         kind: "image",
         model: kind === "cutout" ? "background-remover" : "upscale",
-        prompt: `${artifact.prompt ?? "Image"} (${kind === "cutout" ? "cutout" : kind})`,
+        prompt: `${artifact.prompt?.trim() || t("Image")} (${kind === "cutout" ? "cutout" : kind})`,
       });
       hapticNotify("success");
       onMade();
@@ -778,7 +801,15 @@ function ViewerInfo({
   if (folder) rows.push([t("Folder"), folder]);
 
   return (
-    <section className="viewer-info" data-viewer-control aria-label={t("About this item")}>
+    <section
+      ref={panelRef}
+      className="viewer-info"
+      data-viewer-control
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("About this item")}
+      tabIndex={-1}
+    >
       <div className="viewer-info-grabber" aria-hidden />
       {artifact.prompt?.trim() ? (
         <div className="viewer-info-prompt">

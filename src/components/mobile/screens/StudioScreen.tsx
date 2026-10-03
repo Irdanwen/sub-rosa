@@ -156,13 +156,19 @@ export function StudioScreen() {
     [artifacts],
   );
 
+  /** Marks changed somewhere other than the gallery (the viewer): bumped so
+   * the gallery rereads them. */
+  const [libraryVersion, setLibraryVersion] = useState(0);
   const handleDeleteArtifact = useCallback(
-    async (artifact: StudioArtifact) => {
+    async (artifact: StudioArtifact, next: StudioArtifact | null = null) => {
+      // The viewer moves on first, so it is never torn down and rebuilt
+      // around the deletion.
+      setPreview(next);
       try {
         await deleteArtifact(artifact);
         evictArtifactDataUrl(artifact.path);
-        setPreview(null);
         refreshGallery();
+        setLibraryVersion((version) => version + 1);
       } catch {
         // Removal failures leave the tile in place; the next refresh retries.
       }
@@ -311,6 +317,7 @@ export function StudioScreen() {
                   setMode("image");
                 }}
                 pending={pendingOf(undefined)}
+                libraryVersion={libraryVersion}
               />
             )}
             {galleryKind ? (
@@ -344,13 +351,11 @@ export function StudioScreen() {
             // Deleting moves on to the neighbour, as a photo viewer does.
             const list = previewAmong.length ? previewAmong : [preview];
             const at = list.findIndex((entry) => entry.path === preview.path);
-            const neighbour = list[at + 1] ?? list[at - 1];
-            const rest = list.filter((entry) => entry.path !== preview.path);
-            void handleDeleteArtifact(preview).then(() => {
-              setPreviewAmong(rest);
-              if (neighbour) setPreview(neighbour);
-            });
+            const neighbour = list[at + 1] ?? list[at - 1] ?? null;
+            setPreviewAmong(list.filter((entry) => entry.path !== preview.path));
+            void handleDeleteArtifact(preview, neighbour);
           }}
+          onMarked={() => setLibraryVersion((version) => version + 1)}
           onContinueShot={
             preview.kind === "video" ? () => void handleContinueShot(preview) : undefined
           }
