@@ -3,7 +3,7 @@
 // component for the image, video and audio panels, so a wait looks like a
 // wait wherever it is met (CONTEXT.md, "Stage", "Veil").
 
-import { type CSSProperties, type ReactNode, useMemo } from "react";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { t } from "../../../../lib/i18n";
 import { darkroomWave } from "../../../../lib/studio/darkroom";
 import { StageFrame, useDecodeGate } from "../../../studio/stage/StageFrame";
@@ -59,10 +59,17 @@ export function StudioStage({
   empty?: ReactNode;
 }) {
   const { dataReveal, onLoad } = useDecodeGate(result?.src, Boolean(reveal));
+  // The result's own shape once it is known: a model that publishes no
+  // ratio, or ignores the one asked, still lands at its true proportions.
+  const [measured, setMeasured] = useState<{ src: string; ratio: number } | undefined>(undefined);
+  const measure = (src: string, width: number, height: number) => {
+    if (width > 0 && height > 0) setMeasured({ src, ratio: width / height });
+  };
+  const shape = result && measured?.src === result.src ? measured.ratio : aspect;
   return (
     <section className="mobile-studio-scene" aria-label={t("Latest result")}>
       <StageFrame
-        aspect={aspect}
+        aspect={shape}
         wait={wait}
         waitLabel={waitLabel}
         empty={empty ?? t("Nothing rendered yet. The result appears here.")}
@@ -75,7 +82,14 @@ export function StudioStage({
             src={result.src}
             alt={result.alt ?? t("Generated image")}
             draggable={false}
-            onLoad={onLoad}
+            onLoad={(event) => {
+              measure(
+                result.src,
+                event.currentTarget.naturalWidth,
+                event.currentTarget.naturalHeight,
+              );
+              onLoad();
+            }}
             onAnimationEnd={onRevealEnd}
           />
         ) : result?.kind === "video" ? (
@@ -89,6 +103,9 @@ export function StudioStage({
             playsInline
             controls
             preload="metadata"
+            onLoadedMetadata={(event) =>
+              measure(result.src, event.currentTarget.videoWidth, event.currentTarget.videoHeight)
+            }
             onLoadedData={onLoad}
             onAnimationEnd={onRevealEnd}
             onPlay={() => markMediaPlayback(true)}
