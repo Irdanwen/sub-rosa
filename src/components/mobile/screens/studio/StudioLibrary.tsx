@@ -308,13 +308,17 @@ export function RecentStrip({
   kind,
   onOpen,
   onSeeAll,
+  pending = [],
 }: {
   items: StudioArtifact[];
   kind: ArtifactKind;
   onOpen: (artifact: StudioArtifact) => void;
   onSeeAll: () => void;
+  /** Renders not here yet, shown first in the place they will take. Never
+   * artifacts: nothing is written to the gallery before it exists. */
+  pending?: { key: string }[];
 }) {
-  if (items.length === 0) return null;
+  if (items.length === 0 && pending.length === 0) return null;
   const isAudioKind = kind === "music" || kind === "speech" || kind === "sfx";
   const recent = items.slice(0, isAudioKind ? 3 : 12);
   return (
@@ -327,6 +331,13 @@ export function RecentStrip({
       </div>
       {isAudioKind ? (
         <ul className="mobile-note-list" aria-label={t("Generated audio")}>
+          {pending.map((entry) => (
+            <li
+              key={entry.key}
+              className="mobile-music-row mobile-music-row-pending stage-pending"
+              aria-label={t("Rendering")}
+            />
+          ))}
           {recent.map((artifact) => (
             <MusicRow
               key={artifact.path}
@@ -339,6 +350,14 @@ export function RecentStrip({
         </ul>
       ) : (
         <div className="mobile-studio-recent-strip">
+          {pending.map((entry) => (
+            <span
+              key={entry.key}
+              className="mobile-studio-cell mobile-studio-cell-pending stage-pending"
+              role="img"
+              aria-label={t("Rendering")}
+            />
+          ))}
           {recent.map((artifact) => (
             <GalleryCell key={artifact.path} artifact={artifact} onOpen={() => onOpen(artifact)} />
           ))}

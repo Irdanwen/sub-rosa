@@ -30,8 +30,15 @@ export function StageFrame({
     "--stage-ratio": `${darkroomRatio(aspect)}`,
   } as CSSProperties;
   return (
-    <figure className={["stage-frame", className].filter(Boolean).join(" ")} style={style}>
-      {children ?? (empty ? <figcaption className="stage-frame-empty">{empty}</figcaption> : null)}
+    <figure
+      className={["stage-frame", className].filter(Boolean).join(" ")}
+      // Empty until something is made or being made: a wait takes the
+      // result's full shape, with nothing under the veil to read through it.
+      data-empty={children || wait ? undefined : "true"}
+      style={style}
+    >
+      {children ??
+        (empty && !wait ? <figcaption className="stage-frame-empty">{empty}</figcaption> : null)}
       {wait ? <Veil wait={wait} defaultLabel={waitLabel} /> : null}
     </figure>
   );

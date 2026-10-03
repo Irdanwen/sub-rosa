@@ -4,7 +4,6 @@ import { hapticNotify } from "../../../../lib/haptics";
 import { saveArtifactFromBase64 } from "../../../../lib/studio/artifacts";
 import {
   estimateCostCredits,
-  formatCredits,
   modelsOfType,
   supportsBackgroundRemoval,
 } from "../../../../lib/studio/catalog";
@@ -12,8 +11,13 @@ import { mediaGet } from "../../../../lib/studio/client";
 import { removeBackground, upscaleImage } from "../../../../lib/studio/edit-image";
 import { enhanceImagePrompt } from "../../../../lib/studio/enhance-prompt";
 import { compareBodies, generateImages } from "../../../../lib/studio/generate-image";
+import {
+  estimateRenderMs,
+  rememberRenderMs,
+  renderEtaKey,
+} from "../../../../lib/studio/render-eta";
 import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types";
-import { Spinner } from "../../../ui/Spinner";
+import type { StageWait } from "../../../studio/stage/Veil";
 import { ModelSheet } from "../../ModelSheet";
 import {
   formatRenderOption,
@@ -29,7 +33,9 @@ import {
   StudioToggle,
 } from "./StudioControls";
 import { RetouchLauncher } from "./RetouchLauncher";
+import { Dock, DockComposer } from "./StudioDock";
 import { ReferencePicker } from "./StudioLightbox";
+import { type StageResult, StudioStage } from "./StudioStage";
 
 /** Which of the four image sub-modes the form is in. */
 export type ImageMode = "generate" | "edit" | "upscale" | "cutout";
@@ -49,12 +55,16 @@ export function ImagePanel({
   onModeChange,
   galleryImages,
   onGenerated,
+  onWorking,
 }: {
   catalog: MediaCatalog;
   mode: ImageMode;
   onModeChange: (mode: ImageMode) => void;
   galleryImages: StudioArtifact[];
   onGenerated: () => void;
+  /** Told when a render starts and ends here, so the tab can show it in
+   * Recent: the image path is synchronous and writes no job row to watch. */
+  onWorking?: (working: boolean) => void;
 }) {
   const generateModels = useMemo(() => modelsOfType(catalog, "image"), [catalog]);
   const cutoutAvailable = supportsBackgroundRemoval(catalog);
@@ -74,6 +84,32 @@ export function ImagePanel({
   const [seed, setSeed] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The render in progress, for the veil over the scene. */
+  const [wait, setWait] = useState<StageWait | undefined>(undefined);
+  /** What was last made here, and whether its wipe has played. */
+  const [lastResult, setLastResult] = useState<StageResult | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
+  useEffect(() => {
+    onWorking?.(Boolean(wait));
+  }, [wait, onWorking]);
+  /** Start the clock: the veil shows it, and the estimate is this machine's
+   * median for this kind of render. */
+  const beginWait = useCallback((key: string, seed: string, label?: string) => {
+    setWait({
+      seed,
+      phase: "processing",
+      startedAt: Date.now(),
+      estimateMs: estimateRenderMs(key),
+      label,
+    });
+    return { key, startedAt: Date.now() };
+  }, []);
+  /** A result landed: remember how long it took, put it on the scene, wipe. */
+  const landResult = useCallback((timer: { key: string; startedAt: number }, src: string) => {
+    rememberRenderMs(timer.key, Date.now() - timer.startedAt);
+    setLastResult({ kind: "image", src });
+    setReveal(true);
+  }, []);
   const [pickerOpen, setPickerOpen] = useState(false);
   // Side-by-side comparison: extra models that render the same prompt, one
   // image each, next to the main model's output.
@@ -147,6 +183,7 @@ export function ImagePanel({
     if (!model || !prompt.trim() || busy) return;
     setBusy(true);
     setError(null);
+    const timer = beginWait(renderEtaKey("image", model.id), `${model.id}${prompt}`);
     try {
       // Optional AI pass that expands the prompt before generation. Best
       // effort: a failure falls back to the prompt as typed.
@@ -173,8 +210,13 @@ export function ImagePanel({
                 prompt: usedPrompt,
               });
             }
+            return images[0];
           }),
         );
+        const first = settled.find(
+          (result): result is PromiseFulfilledResult<string> => result.status === "fulfilled",
+        );
+        if (first) landResult(timer, `data:image/png;base64,${first.value}`);
         const failures = settled.filter(
           (result): result is PromiseRejectedResult => result.status === "rejected",
         );
@@ -211,6 +253,7 @@ export function ImagePanel({
             prompt: usedPrompt,
           });
         }
+        landResult(timer, `data:image/${format};base64,${images[0]}`);
       }
       hapticNotify("success");
       onGenerated();
@@ -218,9 +261,12 @@ export function ImagePanel({
       hapticNotify("error");
       setError(err instanceof Error ? t(err.message) : t("The generation failed."));
     } finally {
+      setWait(undefined);
       setBusy(false);
     }
   }, [
+    beginWait,
+    landResult,
     model,
     prompt,
     busy,
@@ -247,6 +293,11 @@ export function ImagePanel({
     if (upscaleRefs.length === 0 || busy) return;
     setBusy(true);
     setError(null);
+    const timer = beginWait(
+      renderEtaKey("upscale", `x${scale}`),
+      upscaleRefs[0].slice(-64),
+      t("Upscaling"),
+    );
     try {
       const result = await upscaleImage(rawBase64(upscaleRefs[0]), scale);
       await saveArtifactFromBase64(result, "png", {
@@ -254,6 +305,7 @@ export function ImagePanel({
         model: "upscale",
         prompt: `Upscaled image (x${scale})`,
       });
+      landResult(timer, `data:image/png;base64,${result}`);
       hapticNotify("success");
       setUpscaleRefs([]);
       onGenerated();
@@ -261,14 +313,20 @@ export function ImagePanel({
       hapticNotify("error");
       setError(err instanceof Error ? t(err.message) : t("The upscale failed."));
     } finally {
+      setWait(undefined);
       setBusy(false);
     }
-  }, [upscaleRefs, scale, busy, onGenerated]);
+  }, [upscaleRefs, scale, busy, onGenerated, beginWait, landResult]);
 
   const cutout = useCallback(async () => {
     if (upscaleRefs.length === 0 || busy) return;
     setBusy(true);
     setError(null);
+    const timer = beginWait(
+      renderEtaKey("cutout", "background-remover"),
+      upscaleRefs[0].slice(-64),
+      t("Removing the background"),
+    );
     try {
       const result = await removeBackground(upscaleRefs[0]);
       await saveArtifactFromBase64(result, "png", {
@@ -276,6 +334,7 @@ export function ImagePanel({
         model: "background-remover",
         prompt: t("Background removed"),
       });
+      landResult(timer, `data:image/png;base64,${result}`);
       hapticNotify("success");
       setUpscaleRefs([]);
       onGenerated();
@@ -283,16 +342,34 @@ export function ImagePanel({
       hapticNotify("error");
       setError(err instanceof Error ? t(err.message) : t("The cutout failed."));
     } finally {
+      setWait(undefined);
       setBusy(false);
     }
-  }, [upscaleRefs, busy, onGenerated]);
+  }, [upscaleRefs, busy, onGenerated, beginWait, landResult]);
 
   const modes: ImageMode[] = cutoutAvailable
     ? ["generate", "edit", "upscale", "cutout"]
     : ["generate", "edit", "upscale"];
 
+  /** On the scene: the last render, or - while upscaling or cutting out - the
+   * picked source, which the result then wipes over. */
+  const sceneResult: StageResult | undefined =
+    (mode === "upscale" || mode === "cutout") && upscaleRefs[0]
+      ? { kind: "image", src: upscaleRefs[0], alt: t("Picked image") }
+      : lastResult;
+
   return (
     <div className="mobile-studio-form">
+      {mode === "edit" ? null : (
+        <StudioStage
+          aspect={mode === "generate" ? effectiveAspect || "1:1" : "1:1"}
+          result={sceneResult}
+          wait={wait}
+          waitLabel={t("Rendering")}
+          reveal={reveal}
+          onRevealEnd={() => setReveal(false)}
+        />
+      )}
       <div className="mobile-segmented" role="tablist" aria-label={t("Image mode")}>
         {modes.map((entry) => (
           <button
@@ -333,7 +410,7 @@ export function ImagePanel({
             disabled={upscaleRefs.length === 0 || busy}
             onClick={() => void cutout()}
           >
-            {busy ? <Spinner /> : t("Remove background")}
+            {t("Remove background")}
           </button>
         </>
       ) : mode === "upscale" ? (
@@ -367,7 +444,7 @@ export function ImagePanel({
             disabled={upscaleRefs.length === 0 || busy}
             onClick={() => void upscale()}
           >
-            {busy ? <Spinner /> : t("Upscale x{scale}", { scale })}
+            {t("Upscale x{scale}", { scale })}
           </button>
         </>
       ) : mode === "edit" ? (
@@ -378,13 +455,6 @@ export function ImagePanel({
             label={t("Image model")}
             value={model?.name ?? ""}
             onOpen={() => setPickerOpen(true)}
-          />
-          <textarea
-            className="mobile-studio-prompt"
-            value={prompt}
-            rows={3}
-            placeholder={t("Describe the image to generate")}
-            onChange={(event) => setPrompt(event.target.value)}
           />
           {mode === "generate" ? (
             <>
@@ -511,26 +581,28 @@ export function ImagePanel({
               </MoreOptions>
             </>
           ) : null}
-          <div className="mobile-studio-generate-bar">
-            <button
-              type="button"
-              className="mobile-studio-generate"
-              disabled={!model || !prompt.trim() || busy}
-              onClick={() => void generate()}
-            >
-              {busy ? <Spinner /> : t("Generate")}
-              {!busy && cost !== undefined ? (
-                <span className="mobile-studio-cost">{formatCredits(cost)}</span>
-              ) : null}
-            </button>
-            {busy ? null : !model ? (
-              <p className="mobile-studio-generate-hint">{t("Choose an image model first.")}</p>
-            ) : !prompt.trim() ? (
-              <p className="mobile-studio-generate-hint">
-                {t("Describe the image to generate it.")}
-              </p>
-            ) : null}
-          </div>
+          <Dock>
+            <DockComposer
+              value={prompt}
+              onChange={setPrompt}
+              placeholder={t("Describe the image to generate")}
+              ariaLabel={t("Prompt")}
+              cost={cost}
+              canSend={Boolean(model && prompt.trim())}
+              busy={busy}
+              onSend={() => void generate()}
+              sendLabel={t("Generate")}
+              blocker={
+                busy
+                  ? undefined
+                  : !model
+                    ? { text: t("Choose an image model first.") }
+                    : !prompt.trim()
+                      ? { text: t("Describe the image to generate it.") }
+                      : undefined
+              }
+            />
+          </Dock>
         </>
       )}
       {error ? <p className="mobile-dictation-error">{error}</p> : null}

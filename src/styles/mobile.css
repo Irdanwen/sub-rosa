@@ -4288,3 +4288,169 @@
 .mobile-shell:has(.mobile-studio-stage) .mobile-tab-bar-item[aria-current="page"] {
   color: var(--screen-foreground);
 }
+
+/* --- The scene and the dock -------------------------------------------------------
+   What a panel last made, at the top, in the result's own shape; and the
+   frosted card the instruction is written in, within thumb's reach. */
+
+.mobile-studio-scene {
+  margin: 0 0 var(--sp-1);
+}
+
+.mobile-studio-scene .stage-frame {
+  --stage-ceiling: 42dvh;
+}
+
+/* Before anything is made the frame says so in a line, not a wall: the
+   result's shape, at a third of its eventual height. */
+.mobile-studio-scene .stage-frame[data-empty="true"] {
+  --stage-ceiling: 22dvh;
+}
+
+.mobile-studio-scene-picture {
+  object-fit: contain;
+}
+
+/* The field is the card's own; the stage's focus ring would frame it twice. */
+.mobile-studio-stage .mobile-studio-dock-field:focus-visible {
+  outline: none;
+}
+
+.mobile-studio-scene-track {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: var(--sp-4);
+}
+
+.mobile-studio-scene-audio {
+  width: 100%;
+  height: 40px;
+}
+
+.mobile-studio-dock {
+  position: sticky;
+  bottom: calc(var(--keyboard-inset, 0px) + var(--sp-2));
+  z-index: 2;
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-xl);
+  background: var(--stage-glass);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  box-shadow: var(--shadow-lg);
+}
+
+.mobile-studio-dock-composer {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.mobile-studio-dock-field {
+  width: 100%;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--screen-foreground);
+  font: inherit;
+  font-size: max(16px, var(--fs-md));
+  line-height: 1.4;
+}
+
+.mobile-studio-dock-field::placeholder {
+  color: var(--screen-muted);
+}
+
+.mobile-studio-dock-suggestions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--sp-2);
+  margin-inline: calc(var(--sp-4) * -1);
+  padding-inline: var(--sp-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-studio-dock-suggestions::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-studio-dock-suggestion {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: var(--sp-1) var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.mobile-studio-dock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.mobile-studio-dock-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-studio-dock-send {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-shrink: 0;
+}
+
+.mobile-studio-dock-cost {
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mobile-studio-send {
+  flex-shrink: 0;
+}
+
+.mobile-studio-dock-hint {
+  margin: 0;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.mobile-studio-dock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
+/* A render not here yet, in the place it will take in Recent. */
+.mobile-studio-cell-pending {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: var(--r-sm);
+}
+
+.mobile-music-row-pending {
+  min-height: 56px;
+  border-bottom: 0;
+  border-radius: var(--r-md);
+}

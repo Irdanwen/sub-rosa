@@ -34,7 +34,11 @@
   border-radius: var(--r-lg);
   overflow: hidden;
   isolation: isolate;
-  background: oklch(15.5% 0.02 0);
+  /* A shade under the stage, in its hue: the frame reads as a frame, and a
+     picture's own blacks still read as black. */
+  background: color-mix(in oklch, var(--screen) 72%, black);
+  /* Growing from the empty line to the result's shape when a render starts. */
+  transition: max-width var(--t-slow) var(--ease-out);
 }
 
 .stage-frame > img,
@@ -308,5 +312,8 @@
   .stage-veil,
   .stage-pending {
     animation: none;
+  }
+  .stage-frame {
+    transition: none;
   }
 }

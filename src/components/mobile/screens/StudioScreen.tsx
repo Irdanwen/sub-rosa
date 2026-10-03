@@ -63,6 +63,9 @@ export function StudioScreen() {
   const [rateOpen, setRateOpen] = useState(false);
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [preview, setPreview] = useState<StudioArtifact | null>(null);
+  /** An image render in flight: the image path writes no job row, so the
+   * panel says so itself and Recent shows the cell. */
+  const [imageWorking, setImageWorking] = useState(false);
   // Lifted so the lightbox's "use as reference" can feed the image panel and
   // jump it straight into its Edit sub-mode.
   const [imageMode, setImageMode] = useState<ImageMode>("generate");
@@ -242,6 +245,7 @@ export function StudioScreen() {
                 onModeChange={setImageMode}
                 galleryImages={galleryImages}
                 onGenerated={refreshGallery}
+                onWorking={setImageWorking}
               />
             ) : mode === "video" ? (
               <VideoPanel
@@ -269,6 +273,7 @@ export function StudioScreen() {
                 kind={galleryKind}
                 onOpen={setPreview}
                 onSeeAll={() => setMode("library")}
+                pending={mode === "image" && imageWorking ? [{ key: "image" }] : []}
               />
             ) : null}
           </>
