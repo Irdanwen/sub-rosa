@@ -120,3 +120,30 @@ python3 -m unittest discover -s subrosa-cloud/deploy/vps -p 'test_*.py' -v
 Huit tests réussis : permissions, refus de remplacement de clés, absence de secrets stdout, prérequis manquants bloquants, configuration OIDC fermée, séparation credentials, validation SAN TLS. Le test PostgreSQL lance un cluster temporaire sans écoute réseau et vérifie réellement DML permis, DDL interdit et accès à la base Keycloak refusé. Il est explicitement marqué ignoré si les binaires locaux PostgreSQL manquent. Syntaxe shell et parsing YAML/JSON vérifiés aussi. Compose a été validé avec `docker compose config --quiet` avec les profils `application` et `operations` sur Docker Compose 2.37.1 du VPS : code de sortie 0, environnement factice sans secrets, aucun container démarré.
 
 Limites : pas de Docker local disponible pour construire ou exécuter ces images ; pas d’essai Keycloak déployé, SMTP réel, S3 réel, sauvegarde externe ou charge réelle. Les UID des images, le readiness Keycloak, les parcours passkey/e-mail et la restauration externe restent des critères d’ouverture. La pile est une préparation reproductible, pas une preuve de mise en service.
+
+## Changer de stockage objet pour les chiffrés (2026-10-03)
+
+Le bucket des chiffrés n'a besoin ni d'Object Lock ni de rétention : seuls le
+registre de suppressions et les sauvegardes en ont. Il peut donc vivre chez un
+fournisseur à sortie gratuite (Cloudflare R2 depuis le 2026-10-03, écritures
+conditionnelles natives, donc sans la relaxation `conditional_writes`). Pour
+migrer :
+
+1. Prouver la sémantique du nouveau bucket avec `s3put_lib.py` (écriture,
+   relecture identique, `If-None-Match: *` refusé à 412 sur un objet existant,
+   suppression) avant toute copie.
+2. Copier avec `deploy/vps/copy-blobs.py --mode copy` : il lit la liste des
+   blobs dans PostgreSQL, ne copie que ce que la destination n'a pas, et
+   vérifie chaque objet contre l'empreinte SHA-256 enregistrée. Relançable.
+3. Remplacer la section `storage` d'`operator.json`, `stack.py start`, puis
+   **`docker restart subrosa-accounts-api-1`** : `start` ne redémarre pas un
+   conteneur dont la définition n'a pas changé, et la configuration n'est
+   relue qu'au démarrage.
+4. Repasser `copy-blobs.py --mode copy` avec l'ancien `operator.json` en
+   `--operator` pour les blobs arrivés pendant la fenêtre, puis `--mode verify`
+   doit afficher `missing 0, size mismatch 0`.
+
+Garder l'ancien bucket intact jusqu'à cette vérification. Un plafond
+journalier de lectures chez l'ancien fournisseur (cas Backblaze, 2 500 lectures
+gratuites par jour) suffit à faire échouer la copie à mi-chemin : elle reprend
+là où elle s'est arrêtée.
