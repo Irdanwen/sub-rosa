@@ -1,6 +1,6 @@
 import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useArtifactDataUrl, useArtifactThumbnail } from "../../../../lib/artifact-media";
+import { useArtifactThumbnail, usePlayableMediaUrl } from "../../../../lib/artifact-media";
 import { hapticNotify } from "../../../../lib/haptics";
 import { registerDownloadedArtifact } from "../../../../lib/studio/artifacts";
 import { useMediaJob } from "../../../../lib/studio/async-job";
@@ -246,13 +246,14 @@ export function VideoPanel({
     onGenerated();
   });
   const sceneClip = landed ?? galleryClips[0] ?? null;
-  const sceneSrc = useArtifactDataUrl(sceneClip);
+  const scene = usePlayableMediaUrl(sceneClip);
   const scenePoster = useArtifactThumbnail(sceneClip);
-  const sceneResult: StageResult | undefined = sceneSrc
+  const sceneResult: StageResult | undefined = scene.src
     ? {
         kind: "video",
-        src: sceneSrc,
+        src: scene.src,
         poster: scenePoster?.kind === "still" ? scenePoster.src : undefined,
+        onError: scene.onError,
       }
     : undefined;
 

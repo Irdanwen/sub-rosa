@@ -187,6 +187,8 @@ pub fn run() {
     providers::load_local_env();
     let context = tauri::generate_context!();
     let mut builder = tauri::Builder::default();
+    // The Studio gallery streams to media elements by byte range (both shells).
+    builder = carpe_diem::media_protocol::register(builder);
     #[cfg(target_os = "android")]
     {
         builder = builder

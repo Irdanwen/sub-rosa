@@ -37,7 +37,7 @@ const DOWNLOAD_HTTP_TIMEOUT: Duration = Duration::from_secs(600);
 /// It is fetched without auth and only used to enrich the Carpe Diem catalog.
 const VENICE_PUBLIC_CATALOG_URL: &str = "https://api.venice.ai/api/v1/models?type=all";
 /// On-disk gallery directory, inside the app data dir.
-const ARTIFACTS_DIR: &str = "studio-media";
+pub(crate) const ARTIFACTS_DIR: &str = "studio-media";
 
 static MEDIA_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static DOWNLOAD_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();

@@ -101,9 +101,10 @@ describe("clip posters", () => {
     const thumbnail = await artifactThumbnail(CLIP);
 
     // The tile still has to be reachable and deletable, so it keeps the media
-    // element it always had rather than resolving to nothing.
+    // element it always had rather than resolving to nothing - streamed, not
+    // copied whole into a blob.
     expect(thumbnail.kind).toBe("media");
-    expect(thumbnail.src).toMatch(/^blob:/);
+    expect(thumbnail.src).toBe("subrosa-media://localhost/clip-1.mp4");
   });
 
   it("leaves images on the downscale path", async () => {
@@ -117,5 +118,27 @@ describe("clip posters", () => {
       kind: "still",
       durationSeconds: undefined,
     });
+  });
+
+  it("never revokes a URL that a player is still holding", async () => {
+    const { artifactDataUrl, usePlayableMediaUrl } = await import("../lib/artifact-media");
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    const mobile = await import("../lib/mobile");
+    vi.spyOn(mobile, "isMobilePlatform").mockReturnValue(true);
+
+    const { result } = renderHook(() => usePlayableMediaUrl(CLIP));
+    expect(result.current.src).toBe("subrosa-media://localhost/clip-1.mp4");
+    // The element could not stream it: the bytes come over IPC into a blob.
+    act(() => result.current.onError());
+    await waitFor(() => expect(result.current.src).toMatch(/^blob:/));
+    const playing = result.current.src;
+
+    // A gallery keeps loading behind the viewer: far more than the cache holds.
+    for (let index = 0; index < 40; index += 1) {
+      await artifactDataUrl({ path: `/gallery/other-${index}.mp4` });
+    }
+
+    expect(objectUrls.revoked).not.toContain(playing);
+    expect(objectUrls.revoked.length).toBeGreaterThan(0);
   });
 });

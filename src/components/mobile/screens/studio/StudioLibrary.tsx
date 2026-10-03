@@ -6,7 +6,7 @@ import { IconCameraSparkle } from "central-icons/IconCameraSparkle";
 import { useCallback, useMemo, useState } from "react";
 import {
   evictArtifactDataUrl,
-  useArtifactDataUrl,
+  usePlayableMediaUrl,
   useArtifactThumbnail,
 } from "../../../../lib/artifact-media";
 import { hapticNotify, hapticSelection } from "../../../../lib/haptics";
@@ -534,7 +534,7 @@ export function MusicRow({
   selected: boolean;
   onToggle: () => void;
 }) {
-  const src = useArtifactDataUrl(artifact);
+  const { src, onError } = usePlayableMediaUrl(artifact);
   return (
     <li className="mobile-music-row" data-selected={selected ? "true" : undefined}>
       {selecting ? (
@@ -554,6 +554,7 @@ export function MusicRow({
           src={src}
           controls
           preload="metadata"
+          onError={onError}
           onPlay={() => markMediaPlayback(true)}
           onPause={() => markMediaPlayback(false)}
           onEnded={() => markMediaPlayback(false)}

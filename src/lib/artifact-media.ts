@@ -1,3 +1,4 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isMobilePlatform } from "./mobile";
 import { artifactSrc, listArtifacts, readArtifactBase64 } from "./studio/artifacts";
@@ -6,12 +7,13 @@ import { extractFrameAt } from "./studio/frames";
 import type { StudioArtifact } from "./studio/types";
 
 /**
- * Media-URL loader for Studio artifacts on mobile. The asset custom protocol
- * (`convertFileSrc`) does not resolve inside the iOS webview, so bytes are read
- * through the existing IPC (`readArtifactBase64`). Images render as data URLs;
- * video and audio must be `blob:` object URLs instead, because WKWebView's
- * media loader byte-range-requests the source and `data:` URLs can't answer one
- * (the <video>/<audio> element just stays blank). A small cache keeps gallery
+ * Media-URL loader for Studio artifacts on mobile. Playback streams from the
+ * `subrosa-media:` scheme ({@link usePlayableMediaUrl}), which answers the byte
+ * ranges WKWebView's media loader asks for. Bytes that have to become pixels
+ * here (thumbnails, posters, edit references) are still read through IPC
+ * (`readArtifactBase64`): images as data URLs, video and audio as `blob:`
+ * object URLs, because a `data:` URL cannot answer a range request (the
+ * <video>/<audio> element just stays blank). A small cache keeps gallery
  * scrolling from re-reading files; the blob URLs in it are revoked when evicted.
  *
  * Grid tiles never hold a media element for a clip: WKWebView paints no first
@@ -33,9 +35,26 @@ function releaseUrl(url: string | undefined) {
   if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
 }
 
+/**
+ * Paths whose full URL something is playing from right now.
+ *
+ * The full cache evicts by revoking, and a gallery keeps filling it while the
+ * viewer is open. Revoking the `blob:` a `<video>` is reading from does not
+ * stop it at once: it plays what it buffered, then its next range request
+ * fails and the clip freezes a few seconds in. A pinned entry is skipped by
+ * eviction until the last player lets go of it.
+ */
+const pinned = new Map<string, number>();
+
 function remember(store: Map<string, string>, key: string, value: string, max: number) {
   if (store.size >= max) {
-    const oldest = store.keys().next().value;
+    let oldest: string | undefined;
+    for (const candidate of store.keys()) {
+      if (store !== cache || !pinned.has(candidate)) {
+        oldest = candidate;
+        break;
+      }
+    }
     if (oldest) {
       releaseUrl(store.get(oldest));
       store.delete(oldest);
@@ -230,11 +249,89 @@ async function loadThumbnail(
       // fall through to the media itself, which is all the tile ever had.
     }
   }
+  // A clip that would not decode, or a track: the tile gets the file itself,
+  // streamed, rather than a whole copy of it held in this process.
+  if (artifact.kind !== "image") return { src: artifactStreamUrl(artifact), kind: "media" };
   const full = await artifactDataUrl(artifact);
-  if (artifact.kind !== "image") return { src: full, kind: "media" };
   const thumb = await makeThumbnail(full);
   remember(thumbCache, artifact.path, thumb, THUMB_CACHE_MAX);
   return still(artifact.path, thumb);
+}
+
+/** The scheme `src-tauri/src/carpe_diem/media_protocol.rs` serves the gallery on. */
+export const MEDIA_SCHEME = "subrosa-media";
+
+/**
+ * A URL a media element streams a gallery file from, by byte range, straight
+ * off the disk: nothing read into the webview first, nothing to revoke.
+ *
+ * The scheme takes a file name, never a path, which is also why it survives
+ * an iOS reinstall moving the app's container.
+ */
+export function artifactStreamUrl(artifact: Pick<StudioArtifact, "path">): string {
+  const name = artifact.path.split(/[\\/]/).pop() ?? "";
+  // Tauri knows which form this platform's webview answers (a custom scheme,
+  // or `http://<scheme>.localhost` on Android and Windows). Outside a shell -
+  // tests, the browser labs - the custom-scheme form stands in.
+  const internals = (window as { __TAURI_INTERNALS__?: { convertFileSrc?: unknown } })
+    .__TAURI_INTERNALS__;
+  return internals?.convertFileSrc
+    ? convertFileSrc(name, MEDIA_SCHEME)
+    : `${MEDIA_SCHEME}://localhost/${encodeURIComponent(name)}`;
+}
+
+/** Holds a full URL out of eviction for as long as a player needs it. */
+function pin(path: string): () => void {
+  pinned.set(path, (pinned.get(path) ?? 0) + 1);
+  return () => {
+    const left = (pinned.get(path) ?? 1) - 1;
+    if (left > 0) pinned.set(path, left);
+    else pinned.delete(path);
+  };
+}
+
+/**
+ * What a `<video>` or `<audio>` plays a gallery file from.
+ *
+ * On the desktop that is the asset protocol, as before. In the phone shells it
+ * is the streamed scheme, and when an element reports that it could not load
+ * it (`onError`), the bytes are read over IPC once into a pinned `blob:` that
+ * no amount of gallery scrolling can revoke while it plays.
+ */
+export function usePlayableMediaUrl(artifact: Pick<StudioArtifact, "path"> | null): {
+  src: string | null;
+  onError: () => void;
+} {
+  const mobile = isMobilePlatform();
+  const path = artifact?.path ?? null;
+  // Keyed by path, so opening another file starts from the stream again
+  // without an effect to reset anything.
+  const [failedPath, setFailedPath] = useState<string | null>(null);
+  const [fallback, setFallback] = useState<{ path: string; url: string } | null>(null);
+  const failed = path !== null && failedPath === path;
+  useEffect(() => {
+    if (!path || !failed) return;
+    const release = pin(path);
+    let cancelled = false;
+    artifactDataUrl({ path })
+      .then((url) => {
+        if (!cancelled) setFallback({ path, url });
+      })
+      .catch(() => {
+        // Nothing left to try: the element keeps showing its own error.
+      });
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [path, failed]);
+  const onError = useCallback(() => {
+    if (mobile && path) setFailedPath(path);
+  }, [mobile, path]);
+  if (!artifact) return { src: null, onError };
+  if (!mobile) return { src: artifactSrc(artifact), onError };
+  if (failed) return { src: fallback?.path === path ? fallback.url : null, onError };
+  return { src: artifactStreamUrl(artifact), onError };
 }
 
 export function evictArtifactDataUrl(path: string) {
