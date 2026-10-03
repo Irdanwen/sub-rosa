@@ -97,7 +97,7 @@ describe("the image panel on the stage", () => {
     // cell the result will take.
     await waitFor(() => expect(scene.querySelector(".stage-veil")).toBeTruthy());
     expect(scene.textContent).toContain("Rendering");
-    expect(screen.getByRole("img", { name: "Rendering" })).toBeTruthy();
+    expect(document.querySelector(".mobile-studio-cell-pending")).toBeTruthy();
 
     await act(async () => {
       finish([PNG]);
@@ -115,6 +115,6 @@ describe("the image panel on the stage", () => {
     // The duration is remembered for the next estimate.
     expect(studio.remember).toHaveBeenCalledWith("image:chroma", expect.any(Number));
     // Recent no longer shows a pending cell.
-    expect(screen.queryByRole("img", { name: "Rendering" })).toBeNull();
+    expect(document.querySelector(".mobile-studio-cell-pending")).toBeNull();
   });
 });

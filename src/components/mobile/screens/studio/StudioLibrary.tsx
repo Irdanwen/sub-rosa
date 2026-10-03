@@ -149,9 +149,9 @@ export function Library({
             <span
               key={entry.key}
               className="mobile-studio-cell mobile-studio-cell-pending stage-pending"
-              role="img"
-              aria-label={t("Rendering")}
-            />
+            >
+              <span className="mobile-studio-pending-label">{t("Rendering")}</span>
+            </span>
           ))}
         </div>
       </section>
@@ -355,11 +355,9 @@ export function RecentStrip({
       {isAudioKind ? (
         <ul className="mobile-note-list" aria-label={t("Generated audio")}>
           {pending.map((entry) => (
-            <li
-              key={entry.key}
-              className="mobile-music-row mobile-music-row-pending stage-pending"
-              aria-label={t("Rendering")}
-            />
+            <li key={entry.key} className="mobile-music-row mobile-music-row-pending stage-pending">
+              <span className="mobile-studio-pending-label">{t("Rendering")}</span>
+            </li>
           ))}
           {recent.map((artifact) => (
             <MusicRow
@@ -377,9 +375,9 @@ export function RecentStrip({
             <span
               key={entry.key}
               className="mobile-studio-cell mobile-studio-cell-pending stage-pending"
-              role="img"
-              aria-label={t("Rendering")}
-            />
+            >
+              <span className="mobile-studio-pending-label">{t("Rendering")}</span>
+            </span>
           ))}
           {recent.map((artifact) => (
             <GalleryCell key={artifact.path} artifact={artifact} onOpen={() => onOpen(artifact)} />

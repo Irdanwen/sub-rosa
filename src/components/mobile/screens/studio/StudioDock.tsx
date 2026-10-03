@@ -70,7 +70,8 @@ export function DockComposer({
   // The field grows with the instruction, up to a few lines.
   useEffect(() => {
     const field = fieldRef.current;
-    if (!field) return;
+    // Measured whenever the text changes, including when it is cleared.
+    if (!field || value === undefined) return;
     field.style.height = "auto";
     field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
   }, [value]);
@@ -94,7 +95,7 @@ export function DockComposer({
         onKeyDown={onKeyDown}
       />
       {suggestions && suggestions.length > 0 && !value.trim() ? (
-        <div className="mobile-studio-dock-suggestions" role="group" aria-label={t("Suggestions")}>
+        <fieldset className="mobile-studio-dock-suggestions" aria-label={t("Suggestions")}>
           {suggestions.map((suggestion) => (
             <button
               key={suggestion.id}
@@ -106,7 +107,7 @@ export function DockComposer({
               {suggestion.label}
             </button>
           ))}
-        </div>
+        </fieldset>
       ) : null}
       {children}
       <div className="mobile-studio-dock-bar">

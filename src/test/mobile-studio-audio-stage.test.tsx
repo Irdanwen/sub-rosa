@@ -114,7 +114,7 @@ describe("the audio panels on the stage", () => {
     expect(scene.textContent).toContain("Narrating");
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
     // Recent shows the narration in flight, though no job row exists for it.
-    expect(screen.getByLabelText("Rendering")).toBeTruthy();
+    expect(document.querySelector(".mobile-music-row-pending")).toBeTruthy();
 
     await act(async () => {
       finish({ base64: "AAAA" });

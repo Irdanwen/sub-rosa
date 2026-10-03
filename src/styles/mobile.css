@@ -4389,6 +4389,10 @@
 }
 
 .mobile-studio-dock-suggestions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
   display: flex;
   flex-wrap: nowrap;
   gap: var(--sp-2);
@@ -4473,4 +4477,19 @@
   min-height: 56px;
   border-bottom: 0;
   border-radius: var(--r-md);
+}
+
+/* What a pending cell is, for a reader; the shimmer says it to the eye. */
+.mobile-studio-pending-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.mobile-studio-cell-pending,
+.mobile-music-row-pending {
+  position: relative;
 }
