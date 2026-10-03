@@ -1,5 +1,6 @@
 import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useArtifactDataUrl } from "../../../../lib/artifact-media";
 import { hapticNotify } from "../../../../lib/haptics";
 import { saveArtifactFromBase64 } from "../../../../lib/studio/artifacts";
 import {
@@ -351,12 +352,15 @@ export function ImagePanel({
     ? ["generate", "edit", "upscale", "cutout"]
     : ["generate", "edit", "upscale"];
 
+  // Before anything is made in this session, the newest picture in the
+  // gallery is what was last made here.
+  const galleryUrl = useArtifactDataUrl(lastResult ? null : (galleryImages[0] ?? null));
   /** On the scene: the last render, or - while upscaling or cutting out - the
    * picked source, which the result then wipes over. */
   const sceneResult: StageResult | undefined =
     (mode === "upscale" || mode === "cutout") && upscaleRefs[0]
       ? { kind: "image", src: upscaleRefs[0], alt: t("Picked image") }
-      : lastResult;
+      : (lastResult ?? (galleryUrl ? { kind: "image", src: galleryUrl } : undefined));
 
   return (
     <div className="mobile-studio-form">

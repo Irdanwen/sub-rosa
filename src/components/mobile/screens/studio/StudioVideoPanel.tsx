@@ -1,11 +1,11 @@
 import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useArtifactDataUrl, useArtifactThumbnail } from "../../../../lib/artifact-media";
 import { hapticNotify } from "../../../../lib/haptics";
 import { registerDownloadedArtifact } from "../../../../lib/studio/artifacts";
 import { useMediaJob } from "../../../../lib/studio/async-job";
 import {
   familyDirections,
-  formatCredits,
   frameFreeReferenceSibling,
   isImageToVideoModel,
   isReferenceToVideoModel,
@@ -58,9 +58,8 @@ import {
 import { takesKlingReferences } from "../../../../lib/studio/kling";
 import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types";
 import { inlineMediaInputs, videoRequestBody } from "../../../../lib/studio/video-request";
-import { Darkroom } from "../../../studio/Darkroom";
 import { JobFailureNotice } from "../../../studio/JobFailureNotice";
-import { Spinner } from "../../../ui/Spinner";
+import type { StageWait } from "../../../studio/stage/Veil";
 import { Switch } from "../../../ui/Switch";
 import { ModelSheet, type ModelSheetTag } from "../../ModelSheet";
 import { videoFamilyOption } from "../../../studio/MediaModelPicker";
@@ -72,11 +71,13 @@ import {
   SelectRow,
   SettingsCard,
 } from "./StudioControls";
+import { Dock, DockComposer } from "./StudioDock";
 import {
   MediaReferencePicker,
   ReferencePicker,
   type ReferencePickerHandle,
 } from "./StudioLightbox";
+import { type StageResult, StudioStage } from "./StudioStage";
 
 /** Where the finished clip's URL hides in the retrieve body. */
 const VIDEO_URL_FIELDS = ["video_url", "url"];
@@ -225,8 +226,12 @@ export function VideoPanel({
   // Rust polled the render and wrote the file into the gallery directory, so
   // this runs even for a job that finished while the app was closed: the hook
   // hydrates from the durable rows on mount.
+  /** The clip that last landed here, for the scene; before any does, the
+   * newest clip in the gallery is what was last made. */
+  const [landed, setLanded] = useState<StudioArtifact | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
   const job = useMediaJob("video", (artifact, finished) => {
-    registerDownloadedArtifact(artifact, {
+    const clip = registerDownloadedArtifact(artifact, {
       kind: "video",
       model: finished.model,
       prompt: finished.prompt,
@@ -235,9 +240,21 @@ export function VideoPanel({
       parentId: finished.parentArtifactId,
       parentHandoffSeconds: finished.parentHandoffSeconds,
     });
+    setLanded(clip);
+    setReveal(true);
     hapticNotify("success");
     onGenerated();
   });
+  const sceneClip = landed ?? galleryClips[0] ?? null;
+  const sceneSrc = useArtifactDataUrl(sceneClip);
+  const scenePoster = useArtifactThumbnail(sceneClip);
+  const sceneResult: StageResult | undefined = sceneSrc
+    ? {
+        kind: "video",
+        src: sceneSrc,
+        poster: scenePoster?.kind === "still" ? scenePoster.src : undefined,
+      }
+    : undefined;
 
   // A rejection names what the model wanted; remember it so the pickers offer
   // the right values next time.
@@ -418,6 +435,17 @@ export function VideoPanel({
       ? job.state
       : undefined;
   const estimate = useMemo(() => estimateRenderMs(renderEtaKey("video", model?.id)), [model?.id]);
+  /** When the queue call left, for the clock during the phase the row does
+   * not cover yet. */
+  const queueingSince = useRef(Date.now());
+  const wait: StageWait | undefined = waiting
+    ? {
+        seed: `${model?.id ?? ""}${prompt}`,
+        phase: waiting.phase,
+        startedAt: waiting.phase === "queueing" ? queueingSince.current : waiting.startedAt,
+        estimateMs: estimate,
+      }
+    : undefined;
 
   /** Whether everything together still fits in one request. Each input can be
    * fine on its own and the body still be over the cap, and the backend only
@@ -431,6 +459,7 @@ export function VideoPanel({
   const start = useCallback(() => {
     const body = requestBody;
     if (!body || !model) return;
+    queueingSince.current = Date.now();
     void job.start({
       kind: "video",
       model: model.id,
@@ -500,50 +529,20 @@ export function VideoPanel({
 
   return (
     <div className="mobile-studio-form">
+      <StudioStage
+        aspect={effectiveVideoAspect || "16:9"}
+        result={sceneResult}
+        wait={wait}
+        waitLabel={t("Rendering")}
+        reveal={reveal}
+        onRevealEnd={() => setReveal(false)}
+      />
       <ModelPickerButton
         label={t("Video model")}
         value={family?.name ?? ""}
         hint={variantHint(family, model)}
         onOpen={() => setPickerOpen(true)}
       />
-      <textarea
-        className="mobile-studio-prompt"
-        value={prompt}
-        rows={3}
-        aria-label={t("Prompt")}
-        placeholder={
-          openingFrame.length > 0
-            ? t("Describe the motion")
-            : references.length > 0
-              ? t("Describe the scene to build from the reference")
-              : t("Describe the video to generate")
-        }
-        onChange={(event) => setPrompt(event.target.value)}
-      />
-      {/* Seedance routes from the prompt's opening words, and a wrong opening
-          does not fail: it runs another workflow and bills for it. So the
-          openings are buttons that write themselves, and only the ones this
-          model can honour are offered. */}
-      {workflows.length > 0 ? (
-        <div className="mobile-reference-actions">
-          {workflows.map((recipe) => (
-            <button
-              key={recipe.id}
-              type="button"
-              className="mobile-chip-button"
-              title={recipe.description}
-              onClick={() =>
-                setPrompt((current) =>
-                  current.startsWith(recipe.prefix) ? current : recipe.prefix,
-                )
-              }
-            >
-              {recipe.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {promptAdvice ? <p className="mobile-workflow-param-hint">{promptAdvice}</p> : null}
       {hasSettings ? (
         <SettingsCard>
           {durationOptions.length > 0 ? (
@@ -687,45 +686,6 @@ export function VideoPanel({
           onChange={(event) => setNegativePrompt(event.target.value)}
         />
       </MoreOptions>
-      {needsConsent ? (
-        <div className="mobile-toggle-row mobile-studio-consent">
-          <Switch
-            checked={consent}
-            aria-label={t("I have the right to use this media")}
-            onCheckedChange={(next) => {
-              setConsent(next);
-              rememberSeedanceConsent(next);
-            }}
-          />
-          <span>
-            {t(
-              "I have the right to use this media and accept this model's face-media policy for anyone shown in it.",
-            )}
-            {personMediaCaveat ? (
-              <span className="mobile-workflow-param-hint">{personMediaCaveat}</span>
-            ) : null}
-          </span>
-        </div>
-      ) : null}
-      {oversize ? <p className="mobile-dictation-error">{oversize}</p> : null}
-      {references.length > 0 && model && !isReferenceToVideoModel(model.id) ? (
-        <p className="mobile-reference-hint">
-          {t("{model} cannot take reference photos, so only the opening frame will be used.", {
-            model: family?.name ?? t("This model"),
-          })}
-        </p>
-      ) : null}
-      {waiting ? (
-        <Darkroom
-          compact
-          seed={`${model?.id ?? ""}${prompt}`}
-          phase={waiting.phase}
-          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
-          estimateMs={estimate}
-          aspectRatio={effectiveVideoAspect}
-          meta={t("You can leave this tab; the job resumes.")}
-        />
-      ) : null}
       {job.state.phase === "failed" ? (
         <JobFailureNotice
           message={job.state.message}
@@ -738,36 +698,69 @@ export function VideoPanel({
           onDismiss={job.reset}
         />
       ) : null}
-      {/* Stays in reach while the form scrolls: the primary action used to sit
-          below three rows of pills and two text fields. */}
-      <div className="mobile-studio-generate-bar">
-        <button
-          type="button"
-          className="mobile-studio-generate"
-          disabled={!requestBody || (needsConsent && !consent) || busy || Boolean(oversize)}
-          onClick={start}
+      <Dock>
+        <DockComposer
+          value={prompt}
+          onChange={setPrompt}
+          ariaLabel={t("Prompt")}
+          placeholder={
+            openingFrame.length > 0
+              ? t("Describe the motion")
+              : references.length > 0
+                ? t("Describe the scene to build from the reference")
+                : t("Describe the video to generate")
+          }
+          // Seedance routes from the prompt's opening words, and a wrong
+          // opening does not fail: it runs another workflow and bills for it.
+          // So the openings are offered as starters, and only the ones this
+          // model can honour.
+          suggestions={workflows.map((recipe) => ({
+            id: recipe.id,
+            label: recipe.label,
+            title: recipe.description,
+          }))}
+          onSuggestion={(id) => {
+            const recipe = workflows.find((entry) => entry.id === id);
+            if (recipe) setPrompt(recipe.prefix);
+          }}
+          cost={quote}
+          canSend={Boolean(requestBody) && !(needsConsent && !consent) && !oversize}
+          busy={busy}
+          onSend={start}
+          sendLabel={t("Generate")}
+          blocker={blocker}
         >
-          {busy ? <Spinner /> : t("Generate")}
-          {!busy && quote !== undefined ? (
-            <span className="mobile-studio-cost">{formatCredits(quote)}</span>
+          {promptAdvice ? <p className="mobile-workflow-param-hint">{promptAdvice}</p> : null}
+          {needsConsent ? (
+            <div className="mobile-toggle-row mobile-studio-consent">
+              <Switch
+                checked={consent}
+                aria-label={t("I have the right to use this media")}
+                onCheckedChange={(next) => {
+                  setConsent(next);
+                  rememberSeedanceConsent(next);
+                }}
+              />
+              <span>
+                {t(
+                  "I have the right to use this media and accept this model's face-media policy for anyone shown in it.",
+                )}
+                {personMediaCaveat ? (
+                  <span className="mobile-workflow-param-hint">{personMediaCaveat}</span>
+                ) : null}
+              </span>
+            </div>
           ) : null}
-        </button>
-        {blocker ? <p className="mobile-studio-generate-hint">{blocker.text}</p> : null}
-        {blocker?.actions?.length ? (
-          <div className="mobile-studio-generate-actions">
-            {blocker.actions.map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                className="mobile-chip-button"
-                onClick={action.onAction}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+          {oversize ? <p className="mobile-dictation-error">{oversize}</p> : null}
+          {references.length > 0 && model && !isReferenceToVideoModel(model.id) ? (
+            <p className="mobile-reference-hint">
+              {t("{model} cannot take reference photos, so only the opening frame will be used.", {
+                model: family?.name ?? t("This model"),
+              })}
+            </p>
+          ) : null}
+        </DockComposer>
+      </Dock>
       {pickerOpen ? (
         <ModelSheet
           title={t("Video model")}
