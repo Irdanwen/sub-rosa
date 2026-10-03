@@ -1,16 +1,20 @@
 import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useArtifactDataUrl } from "../../../../lib/artifact-media";
 import { useMediaJob } from "../../../../lib/studio/async-job";
 import {
   estimateCostCredits,
-  formatCredits,
   modelsOfType,
   musicCapabilities,
   musicModels,
   soundEffectsModels,
 } from "../../../../lib/studio/catalog";
 import { musicPaths, retrieveBody } from "../../../../lib/studio/paths";
-import { estimateRenderMs, renderEtaKey } from "../../../../lib/studio/render-eta";
+import {
+  estimateRenderMs,
+  rememberRenderMs,
+  renderEtaKey,
+} from "../../../../lib/studio/render-eta";
 import {
   generateSpeech,
   SPEECH_FORMATS,
@@ -18,15 +22,14 @@ import {
   SPEECH_SPEED,
   type SpeechFormat,
 } from "../../../../lib/studio/speech";
-import type { MediaCatalog } from "../../../../lib/studio/types";
+import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types";
 import {
   registerDownloadedArtifact,
   saveArtifactFromBase64,
 } from "../../../../lib/studio/artifacts";
 import { hapticNotify } from "../../../../lib/haptics";
-import { Darkroom } from "../../../studio/Darkroom";
 import { JobFailureNotice } from "../../../studio/JobFailureNotice";
-import { Spinner } from "../../../ui/Spinner";
+import type { StageWait } from "../../../studio/stage/Veil";
 import { ModelSheet } from "../../ModelSheet";
 import {
   ModelPickerButton,
@@ -36,6 +39,8 @@ import {
   SettingsCard,
   StudioToggle,
 } from "./StudioControls";
+import { Dock, DockComposer } from "./StudioDock";
+import { type StageResult, StudioStage } from "./StudioStage";
 
 /** Which of the three sound panels is showing. */
 export type AudioMode = "music" | "speech" | "sfx";
@@ -46,6 +51,22 @@ const AUDIO_URL_FIELDS = ["audio_url", "url"];
 
 /** Sound-effect prompts are short by nature and the endpoint says so. */
 const SFX_PROMPT_LIMIT = 250;
+
+/** The scene's shape for a track: the darkroom's own, wide and low. */
+const TRACK_ASPECT = "5:2";
+
+/** The track on the scene: the one that landed in this session, else the
+ * newest of its kind in the gallery, else nothing. */
+function useSceneTrack(
+  landed: StudioArtifact | undefined,
+  lastTrack: StudioArtifact | undefined,
+  dataUrl?: string,
+): StageResult | undefined {
+  const artifact = landed ?? lastTrack ?? null;
+  const src = useArtifactDataUrl(dataUrl ? null : artifact);
+  const url = dataUrl ?? src;
+  return url ? { kind: "audio", src: url, seed: artifact?.path ?? url.slice(-64) } : undefined;
+}
 
 /**
  * The three ways this app makes sound: a track, a voice, an effect.
@@ -61,11 +82,19 @@ export function AudioPanel({
   mode,
   onModeChange,
   onGenerated,
+  galleryTracks = [],
+  onWorking,
 }: {
   catalog: MediaCatalog;
   mode: AudioMode;
   onModeChange: (mode: AudioMode) => void;
   onGenerated: () => void;
+  /** Rendered music, speech and effects: the newest of a kind is what the
+   * scene shows before anything is made in the session. */
+  galleryTracks?: StudioArtifact[];
+  /** Told when the synchronous narration starts and ends, so the tab can
+   * show it in Recent: that path writes no job row to watch. */
+  onWorking?: (working: boolean) => void;
 }) {
   return (
     <div className="mobile-studio-form">
@@ -85,11 +114,24 @@ export function AudioPanel({
         ))}
       </div>
       {mode === "music" ? (
-        <MusicPanel catalog={catalog} onGenerated={onGenerated} />
+        <MusicPanel
+          catalog={catalog}
+          onGenerated={onGenerated}
+          lastTrack={galleryTracks.find((entry) => entry.kind === "music")}
+        />
       ) : mode === "speech" ? (
-        <SpeechPanel catalog={catalog} onGenerated={onGenerated} />
+        <SpeechPanel
+          catalog={catalog}
+          onGenerated={onGenerated}
+          lastTrack={galleryTracks.find((entry) => entry.kind === "speech")}
+          onWorking={onWorking}
+        />
       ) : (
-        <SfxPanel catalog={catalog} onGenerated={onGenerated} />
+        <SfxPanel
+          catalog={catalog}
+          onGenerated={onGenerated}
+          lastTrack={galleryTracks.find((entry) => entry.kind === "sfx")}
+        />
       )}
     </div>
   );
@@ -98,9 +140,13 @@ export function AudioPanel({
 export function SpeechPanel({
   catalog,
   onGenerated,
+  lastTrack,
+  onWorking,
 }: {
   catalog: MediaCatalog;
   onGenerated: () => void;
+  lastTrack?: StudioArtifact;
+  onWorking?: (working: boolean) => void;
 }) {
   const models = useMemo(() => modelsOfType(catalog, "tts"), [catalog]);
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
@@ -116,6 +162,14 @@ export function SpeechPanel({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const abortRef = useRef<AbortController | undefined>(undefined);
+  /** The narration in progress, for the veil; and the one that last landed. */
+  const [wait, setWait] = useState<StageWait | undefined>(undefined);
+  const [landedUrl, setLandedUrl] = useState<string | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
+  const sceneResult = useSceneTrack(undefined, lastTrack, landedUrl);
+  useEffect(() => {
+    onWorking?.(Boolean(wait));
+  }, [wait, onWorking]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -125,6 +179,15 @@ export function SpeechPanel({
     abortRef.current = controller;
     setBusy(true);
     setError(null);
+    const etaKey = renderEtaKey("speech", model.id);
+    const startedAt = Date.now();
+    setWait({
+      seed: `${model.id}${text}`,
+      phase: "processing",
+      startedAt,
+      estimateMs: estimateRenderMs(etaKey),
+      label: t("Narrating"),
+    });
     try {
       const input = text.trim().slice(0, SPEECH_INPUT_LIMIT);
       const { base64 } = await generateSpeech({
@@ -140,6 +203,9 @@ export function SpeechPanel({
         model: model.id,
         prompt: input,
       });
+      rememberRenderMs(etaKey, Date.now() - startedAt);
+      setLandedUrl(`data:${format === "mp3" ? "audio/mpeg" : `audio/${format}`};base64,${base64}`);
+      setReveal(true);
       hapticNotify("success");
       onGenerated();
     } catch (err) {
@@ -148,12 +214,21 @@ export function SpeechPanel({
         setError(err instanceof Error ? t(err.message) : t("The narration failed."));
       }
     } finally {
+      setWait(undefined);
       setBusy(false);
     }
   }, [model, text, busy, effectiveVoice, speed, format, onGenerated]);
 
   return (
     <>
+      <StudioStage
+        aspect={TRACK_ASPECT}
+        result={sceneResult}
+        wait={wait}
+        waitLabel={t("Narrating")}
+        reveal={reveal}
+        onRevealEnd={() => setReveal(false)}
+      />
       <ModelPickerButton
         label={t("Speech model")}
         value={model?.name ?? ""}
@@ -166,15 +241,6 @@ export function SpeechPanel({
           onOpen={() => setVoicePickerOpen(true)}
         />
       ) : null}
-      <textarea
-        className="mobile-studio-prompt"
-        value={text}
-        rows={4}
-        maxLength={SPEECH_INPUT_LIMIT}
-        placeholder={t("Text to narrate")}
-        aria-label={t("Text to narrate")}
-        onChange={(event) => setText(event.target.value)}
-      />
       <div className="mobile-studio-field">
         <div className="mobile-studio-field-head">
           <span className="mobile-studio-field-label">{t("Speed")}</span>
@@ -200,26 +266,39 @@ export function SpeechPanel({
           format={(option) => option.toUpperCase()}
         />
       </SettingsCard>
-      <div className="mobile-studio-generate-bar">
-        <button
-          type="button"
-          className="mobile-studio-generate"
-          disabled={!model || !text.trim() || busy}
-          onClick={() => void generate()}
-        >
-          {busy ? <Spinner /> : t("Generate")}
-        </button>
-      </div>
-      {busy ? (
-        <button
-          type="button"
-          className="mobile-chip-button"
-          onClick={() => abortRef.current?.abort()}
-        >
-          {t("Cancel")}
-        </button>
-      ) : null}
       {error ? <p className="mobile-dictation-error">{error}</p> : null}
+      <Dock>
+        <DockComposer
+          value={text}
+          onChange={(next) => setText(next.slice(0, SPEECH_INPUT_LIMIT))}
+          placeholder={t("Text to narrate")}
+          ariaLabel={t("Text to narrate")}
+          canSend={Boolean(model && text.trim())}
+          busy={busy}
+          onSend={() => void generate()}
+          sendLabel={t("Generate")}
+          tools={
+            busy ? (
+              <button
+                type="button"
+                className="mobile-chip-button"
+                onClick={() => abortRef.current?.abort()}
+              >
+                {t("Cancel")}
+              </button>
+            ) : undefined
+          }
+          blocker={
+            busy
+              ? undefined
+              : !model
+                ? { text: t("Choose a speech model first.") }
+                : !text.trim()
+                  ? { text: t("Write the text to narrate.") }
+                  : undefined
+          }
+        />
+      </Dock>
       {pickerOpen ? (
         <ModelSheet
           title={t("Speech model")}
@@ -255,9 +334,11 @@ export function SpeechPanel({
 export function SfxPanel({
   catalog,
   onGenerated,
+  lastTrack,
 }: {
   catalog: MediaCatalog;
   onGenerated: () => void;
+  lastTrack?: StudioArtifact;
 }) {
   const models = useMemo(() => soundEffectsModels(catalog), [catalog]);
   const paths = musicPaths(catalog.backend);
@@ -271,15 +352,21 @@ export function SfxPanel({
 
   // The file is already in the gallery directory (Rust downloaded it, possibly
   // while the app was closed); indexing it is all that is left.
+  const [landed, setLanded] = useState<StudioArtifact | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
   const job = useMediaJob("sfx", (artifact, finished) => {
-    registerDownloadedArtifact(artifact, {
-      kind: "sfx",
-      model: finished.model,
-      prompt: finished.prompt,
-    });
+    setLanded(
+      registerDownloadedArtifact(artifact, {
+        kind: "sfx",
+        model: finished.model,
+        prompt: finished.prompt,
+      }),
+    );
+    setReveal(true);
     hapticNotify("success");
     onGenerated();
   });
+  const sceneResult = useSceneTrack(landed, lastTrack);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
@@ -303,9 +390,19 @@ export function SfxPanel({
       ? job.state
       : undefined;
   const estimate = useMemo(() => estimateRenderMs(renderEtaKey("sfx", model?.id)), [model?.id]);
+  const queueingSince = useRef(Date.now());
+  const wait: StageWait | undefined = waiting
+    ? {
+        seed: `${model?.id ?? ""}${prompt}`,
+        phase: waiting.phase,
+        startedAt: waiting.phase === "queueing" ? queueingSince.current : waiting.startedAt,
+        estimateMs: estimate,
+      }
+    : undefined;
 
   const start = useCallback(() => {
     if (!model || !prompt.trim()) return;
+    queueingSince.current = Date.now();
     const body: Record<string, unknown> = {
       model: model.id,
       prompt: prompt.trim().slice(0, SFX_PROMPT_LIMIT),
@@ -328,18 +425,18 @@ export function SfxPanel({
 
   return (
     <>
+      <StudioStage
+        aspect={TRACK_ASPECT}
+        result={sceneResult}
+        wait={wait}
+        waitLabel={t("Rendering")}
+        reveal={reveal}
+        onRevealEnd={() => setReveal(false)}
+      />
       <ModelPickerButton
         label={t("Effect model")}
         value={model?.name ?? ""}
         onOpen={() => setPickerOpen(true)}
-      />
-      <textarea
-        className="mobile-studio-prompt"
-        value={prompt}
-        rows={2}
-        maxLength={SFX_PROMPT_LIMIT}
-        placeholder={t("Describe a short sound (a door creak, rain on glass)")}
-        onChange={(event) => setPrompt(event.target.value)}
       />
       <StudioToggle label={t("Auto duration")} checked={autoDuration} onChange={setAutoDuration} />
       {!autoDuration && caps.durationSeconds ? (
@@ -360,30 +457,6 @@ export function SfxPanel({
           />
         </div>
       ) : null}
-      <div className="mobile-studio-generate-bar">
-        <button
-          type="button"
-          className="mobile-studio-generate"
-          disabled={!model || !prompt.trim() || busy}
-          onClick={start}
-        >
-          {busy ? <Spinner /> : t("Generate")}
-          {!busy && cost !== undefined ? (
-            <span className="mobile-studio-cost">{formatCredits(cost)}</span>
-          ) : null}
-        </button>
-      </div>
-      {waiting ? (
-        <Darkroom
-          compact
-          variant="audio"
-          seed={`${model?.id ?? ""}${prompt}`}
-          phase={waiting.phase}
-          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
-          estimateMs={estimate}
-          meta={t("You can leave this tab; the job resumes.")}
-        />
-      ) : null}
       {job.state.phase === "failed" ? (
         <JobFailureNotice
           message={job.state.message}
@@ -396,6 +469,28 @@ export function SfxPanel({
           onDismiss={job.reset}
         />
       ) : null}
+      <Dock>
+        <DockComposer
+          value={prompt}
+          onChange={(next) => setPrompt(next.slice(0, SFX_PROMPT_LIMIT))}
+          placeholder={t("Describe a short sound (a door creak, rain on glass)")}
+          ariaLabel={t("Prompt")}
+          cost={cost}
+          canSend={Boolean(model && prompt.trim())}
+          busy={busy}
+          onSend={start}
+          sendLabel={t("Generate")}
+          blocker={
+            busy
+              ? undefined
+              : !model
+                ? { text: t("Choose an effect model first.") }
+                : !prompt.trim()
+                  ? { text: t("Describe the sound to generate it.") }
+                  : undefined
+          }
+        />
+      </Dock>
       {pickerOpen ? (
         <ModelSheet
           title={t("Effect model")}
@@ -419,9 +514,11 @@ export function SfxPanel({
 export function MusicPanel({
   catalog,
   onGenerated,
+  lastTrack,
 }: {
   catalog: MediaCatalog;
   onGenerated: () => void;
+  lastTrack?: StudioArtifact;
 }) {
   const models = useMemo(() => musicModels(catalog), [catalog]);
   const paths = musicPaths(catalog.backend);
@@ -435,15 +532,21 @@ export function MusicPanel({
 
   // The file is already in the gallery directory (Rust downloaded it, possibly
   // while the app was closed); indexing it is all that is left.
+  const [landed, setLanded] = useState<StudioArtifact | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
   const job = useMediaJob("music", (artifact, finished) => {
-    registerDownloadedArtifact(artifact, {
-      kind: "music",
-      model: finished.model,
-      prompt: finished.prompt,
-    });
+    setLanded(
+      registerDownloadedArtifact(artifact, {
+        kind: "music",
+        model: finished.model,
+        prompt: finished.prompt,
+      }),
+    );
+    setReveal(true);
     hapticNotify("success");
     onGenerated();
   });
+  const sceneResult = useSceneTrack(landed, lastTrack);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(60, caps.durationSeconds.min), caps.durationSeconds.max)
@@ -465,9 +568,19 @@ export function MusicPanel({
       ? job.state
       : undefined;
   const estimate = useMemo(() => estimateRenderMs(renderEtaKey("music", model?.id)), [model?.id]);
+  const queueingSince = useRef(Date.now());
+  const wait: StageWait | undefined = waiting
+    ? {
+        seed: `${model?.id ?? ""}${prompt}`,
+        phase: waiting.phase,
+        startedAt: waiting.phase === "queueing" ? queueingSince.current : waiting.startedAt,
+        estimateMs: estimate,
+      }
+    : undefined;
 
   const start = useCallback(() => {
     if (!model || !prompt.trim()) return;
+    queueingSince.current = Date.now();
     const body: Record<string, unknown> = { model: model.id, prompt: prompt.trim() };
     if (caps.lyrics !== "none" && !instrumental && lyrics.trim()) {
       body.lyrics_prompt = lyrics.trim();
@@ -493,17 +606,18 @@ export function MusicPanel({
 
   return (
     <>
+      <StudioStage
+        aspect={TRACK_ASPECT}
+        result={sceneResult}
+        wait={wait}
+        waitLabel={t("Composing your track")}
+        reveal={reveal}
+        onRevealEnd={() => setReveal(false)}
+      />
       <ModelPickerButton
         label={t("Music model")}
         value={model?.name ?? ""}
         onOpen={() => setPickerOpen(true)}
-      />
-      <textarea
-        className="mobile-studio-prompt"
-        value={prompt}
-        rows={2}
-        placeholder={t("Describe the track (style, mood, tempo)")}
-        onChange={(event) => setPrompt(event.target.value)}
       />
       {caps.lyrics !== "none" ? (
         <>
@@ -527,31 +641,6 @@ export function MusicPanel({
           ) : null}
         </>
       ) : null}
-      <div className="mobile-studio-generate-bar">
-        <button
-          type="button"
-          className="mobile-studio-generate"
-          disabled={!model || !prompt.trim() || lyricsMissing || busy}
-          onClick={start}
-        >
-          {busy ? <Spinner /> : t("Generate")}
-          {!busy && cost !== undefined ? (
-            <span className="mobile-studio-cost">{formatCredits(cost)}</span>
-          ) : null}
-        </button>
-      </div>
-      {waiting ? (
-        <Darkroom
-          compact
-          variant="audio"
-          seed={`${model?.id ?? ""}${prompt}`}
-          phase={waiting.phase}
-          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
-          estimateMs={estimate}
-          label={waiting.phase === "processing" ? t("Composing your track") : undefined}
-          meta={t("You can leave this tab; the job resumes.")}
-        />
-      ) : null}
       {job.state.phase === "failed" ? (
         <JobFailureNotice
           message={job.state.message}
@@ -564,6 +653,30 @@ export function MusicPanel({
           onDismiss={job.reset}
         />
       ) : null}
+      <Dock>
+        <DockComposer
+          value={prompt}
+          onChange={setPrompt}
+          placeholder={t("Describe the track (style, mood, tempo)")}
+          ariaLabel={t("Prompt")}
+          cost={cost}
+          canSend={Boolean(model && prompt.trim()) && !lyricsMissing}
+          busy={busy}
+          onSend={start}
+          sendLabel={t("Generate")}
+          blocker={
+            busy
+              ? undefined
+              : !model
+                ? { text: t("Choose a music model first.") }
+                : !prompt.trim()
+                  ? { text: t("Describe the track to generate it.") }
+                  : lyricsMissing
+                    ? { text: t("Write the lyrics, or make it instrumental.") }
+                    : undefined
+          }
+        />
+      </Dock>
       {pickerOpen ? (
         <ModelSheet
           title={t("Music model")}

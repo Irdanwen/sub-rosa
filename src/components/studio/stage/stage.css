@@ -1,0 +1,319 @@
+/* The stage: a screening room where the picture gets every pixel and the
+ * controls float over it on frosted glass. Dark in either theme, like the
+ * media viewer, so a picture's blacks read as black.
+ *
+ * Born in the retouch tab, shared with every Studio surface since: one set of
+ * glass variables, the veil a render waits behind, the wipe a result arrives
+ * with, and the shimmer of a render that is not here yet. Scope a surface
+ * with `.stage` and the variables resolve. */
+
+.stage {
+  --stage-glass: color-mix(in oklch, var(--screen) 64%, transparent);
+  --stage-glass-strong: color-mix(in oklch, var(--screen) 86%, transparent);
+  --stage-edge: color-mix(in oklch, var(--screen-foreground) 14%, transparent);
+  --stage-soft: color-mix(in oklch, var(--screen-foreground) 10%, transparent);
+  --stage-softer: color-mix(in oklch, var(--screen-foreground) 18%, transparent);
+  background: var(--screen);
+  color: var(--screen-foreground);
+}
+
+.stage :focus-visible {
+  outline: 2px solid var(--screen-foreground);
+  outline-offset: 2px;
+}
+
+/* --- the frame: the result's own shape, in the result's own place --------- */
+
+.stage-frame {
+  --stage-ceiling: 46dvh;
+  position: relative;
+  width: 100%;
+  max-width: calc(var(--stage-ceiling) * var(--stage-ratio, 1.7778));
+  margin: 0 auto;
+  aspect-ratio: var(--stage-aspect, 16 / 9);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  isolation: isolate;
+  /* A shade under the stage, in its hue: the frame reads as a frame, and a
+     picture's own blacks still read as black. */
+  background: color-mix(in oklch, var(--screen) 72%, black);
+  /* Growing from the empty line to the result's shape when a render starts. */
+  transition: max-width var(--t-slow) var(--ease-out);
+}
+
+.stage-frame > img,
+.stage-frame > video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.stage-frame-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  margin: 0;
+  padding: var(--sp-6);
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* --- the veil: the darkroom's light over the picture being worked on ------ */
+
+.stage-veil {
+  --darkroom-l: 66%;
+  --darkroom-c: 0.13;
+  --darkroom-tint: 62%;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: color-mix(in oklch, var(--screen) 38%, transparent);
+  animation: stage-fade var(--t-slow) var(--ease-out) both;
+}
+
+.stage-veil .darkroom-field {
+  opacity: 0.6;
+  mix-blend-mode: screen;
+}
+
+.stage-veil-caption {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-1);
+  max-width: calc(100% - var(--sp-8) * 2);
+  padding: var(--sp-3) var(--sp-6);
+  border-radius: var(--r-lg);
+  background: var(--stage-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--screen-foreground);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.stage-veil-clock {
+  color: var(--screen-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the reveal: a result wipes in over what it was made from ------------- */
+
+.stage-reveal[data-reveal="waiting"] {
+  opacity: 0;
+}
+
+.stage-reveal[data-reveal="true"] {
+  animation: stage-wipe 760ms var(--ease-in-out) both;
+}
+
+@keyframes stage-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes stage-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* --- pending: a render that is not here yet, in the place it will take ---- */
+
+.stage-pending {
+  background: linear-gradient(
+    100deg,
+    var(--stage-soft) 30%,
+    var(--stage-softer) 50%,
+    var(--stage-soft) 70%
+  );
+  background-size: 300% 100%;
+  animation: stage-shimmer 1.8s var(--ease-in-out) infinite;
+}
+
+@keyframes stage-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* --- glass: what floats over the picture ---------------------------------- */
+
+.stage-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--stage-glass);
+  border: 1px solid var(--stage-edge);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.stage-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--screen-foreground);
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .stage-icon:hover:not(:disabled) {
+    background: var(--stage-soft);
+  }
+}
+
+.stage-icon:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.stage-icon[aria-pressed="true"] {
+  background: var(--stage-softer);
+}
+
+.stage-icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* A choice among a few, the chosen one inverted. */
+.stage-segmented {
+  display: inline-flex;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--stage-soft);
+}
+
+.stage-segmented > button {
+  min-width: 30px;
+  min-height: 28px;
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.stage-segmented > button[data-active="true"] {
+  background: var(--screen-foreground);
+  color: var(--screen);
+}
+
+/* The one button that spends: round, inverted, never lost on the glass. */
+.stage-send {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--screen-foreground);
+  color: var(--screen);
+  cursor: pointer;
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+
+.stage-send:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.stage-send:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.stage-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: var(--sp-3) var(--sp-5);
+  border-radius: var(--r-lg);
+  background: var(--stage-glass-strong);
+  border: 1px solid var(--stage-edge);
+  font-size: var(--fs-sm);
+}
+
+.stage-notice[data-tone="error"] {
+  border-color: color-mix(in oklch, var(--destructive) 55%, transparent);
+}
+
+/* The title of what is on the stage, and one line about it. */
+.stage-title {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-3);
+}
+
+.stage-title h1,
+.stage-title h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: calc(var(--fs-display) * 1.2);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  text-shadow: 0 1px 24px color-mix(in oklch, var(--screen) 60%, transparent);
+}
+
+.stage-title-chip {
+  max-width: 100%;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-sm);
+  background: var(--stage-glass-strong);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-reveal[data-reveal="true"] {
+    animation: stage-fade var(--t-fast) var(--ease-out) both;
+  }
+  .stage-veil,
+  .stage-pending {
+    animation: none;
+  }
+  .stage-frame {
+    transition: none;
+  }
+}

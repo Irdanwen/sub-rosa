@@ -1600,8 +1600,8 @@
   min-height: 48px;
   border: none;
   border-radius: var(--r-lg);
-  background: var(--accent);
-  color: var(--accent-foreground);
+  background: var(--primary);
+  color: var(--primary-foreground);
   font-size: var(--fs-md);
   font-weight: var(--fw-medium);
 }
@@ -2945,10 +2945,6 @@
 }
 
 /* A pale Generate button read as disabled; make it the primary action. */
-.mobile-studio-generate {
-  background: var(--primary);
-  color: var(--primary-foreground);
-}
 
 .mobile-studio-generate .mobile-studio-cost {
   opacity: 0.75;
@@ -4047,4 +4043,453 @@
 .mobile-retouch-source[aria-expanded="true"] {
   border-color: var(--border);
   background: var(--brand-tint);
+}
+
+/* --- Studio on the stage ---------------------------------------------------------
+   The Studio tab is a screening room (stage/stage.css): dark in either theme,
+   the controls on frosted glass, the chosen thing inverted. Everything below
+   is scoped to the Studio and says what the shared furniture looks like on
+   the stage; the furniture itself is unchanged elsewhere. No rule here states
+   a font-size on a field: those stay at 16px by the rule above. */
+
+.mobile-studio-stage {
+  background: var(--screen);
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .mobile-stack-header-large-title {
+  font-size: calc(var(--fs-display) * 1.2);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+}
+
+.mobile-studio-stage .mobile-credits-pill {
+  background: var(--stage-glass-strong);
+  border: 1px solid var(--stage-edge);
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .mobile-segmented {
+  background: var(--stage-soft);
+  border-radius: var(--r-pill);
+}
+
+.mobile-studio-stage .mobile-segmented-item {
+  border-radius: var(--r-pill);
+  color: var(--screen-muted);
+}
+
+.mobile-studio-stage .mobile-segmented-item[data-active="true"] {
+  background: var(--screen-foreground);
+  color: var(--screen);
+  box-shadow: none;
+}
+
+.mobile-studio-stage .mobile-settings-scroll {
+  background: transparent;
+}
+
+/* Fields and cards: strong glass with an edge, text in the stage's ink. */
+.mobile-studio-stage .mobile-model-select,
+.mobile-studio-stage .mobile-select-card,
+.mobile-studio-stage .mobile-studio-prompt,
+.mobile-studio-stage .mobile-studio-input,
+.mobile-studio-stage .mobile-studio-search,
+.mobile-studio-stage .mobile-music-row,
+.mobile-studio-stage .mobile-retouch-source,
+.mobile-studio-stage .mobile-studio-select-bar {
+  background: var(--stage-glass-strong);
+  border-color: var(--stage-edge);
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .mobile-studio-prompt::placeholder {
+  color: var(--screen-muted);
+}
+
+.mobile-studio-stage .mobile-select-row {
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .mobile-select-row + .mobile-select-row {
+  border-top-color: var(--stage-edge);
+}
+
+.mobile-studio-stage .mobile-select-row:active {
+  background: var(--stage-soft);
+}
+
+.mobile-studio-stage .mobile-select-row-value,
+.mobile-studio-stage .mobile-model-select-label,
+.mobile-studio-stage .mobile-model-select-hint,
+.mobile-studio-stage .mobile-studio-field-label,
+.mobile-studio-stage .mobile-studio-field-value,
+.mobile-studio-stage .mobile-studio-generate-hint,
+.mobile-studio-stage .mobile-reference-hint,
+.mobile-studio-stage .mobile-workflow-param-hint,
+.mobile-studio-stage .mobile-studio-recent-title,
+.mobile-studio-stage .mobile-library-day-title,
+.mobile-studio-stage .mobile-library-meta,
+.mobile-studio-stage .mobile-studio-empty-hint,
+.mobile-studio-stage .mobile-toggle-hint,
+.mobile-studio-stage .mobile-studio-more-trigger {
+  color: var(--screen-muted);
+}
+
+/* Pills and chips: an edge on the glass, the chosen one inverted. */
+.mobile-studio-stage .mobile-pill,
+.mobile-studio-stage .mobile-chip-button {
+  background: transparent;
+  border-color: var(--stage-edge);
+  color: var(--screen-muted);
+}
+
+.mobile-studio-stage .mobile-chip-button {
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .mobile-pill[data-active="true"] {
+  background: var(--screen-foreground);
+  border-color: transparent;
+  color: var(--screen);
+}
+
+.mobile-studio-stage .mobile-studio-cell,
+.mobile-studio-stage .mobile-studio-cell-loading {
+  background: var(--stage-soft);
+}
+
+/* The one button that spends, inverted, over a fade into the stage. */
+.mobile-studio-stage .mobile-studio-generate {
+  background: var(--screen-foreground);
+  color: var(--screen);
+}
+
+.mobile-studio-stage .mobile-studio-generate-bar {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--screen) 0%, transparent),
+    var(--screen) var(--sp-3)
+  );
+}
+
+/* What went wrong, said on strong glass with the destructive colour as an
+   edge rather than as ink, which would not read on the dark. */
+.mobile-studio-stage .mobile-dictation-error,
+.mobile-studio-stage .mobile-job-failure {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid color-mix(in oklch, var(--destructive) 55%, transparent);
+  border-radius: var(--r-lg);
+  background: var(--stage-glass-strong);
+  color: var(--screen-foreground);
+  text-align: left;
+}
+
+.mobile-studio-stage .mobile-studio-notice {
+  margin: 0 var(--mobile-gutter) var(--sp-3);
+}
+
+.mobile-studio-stage .mobile-retouch-hero {
+  border: 1px solid var(--stage-edge);
+}
+
+.mobile-studio-stage .mobile-toggle-row {
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .mobile-studio-loading {
+  color: var(--screen-muted);
+}
+
+.mobile-studio-stage .empty-state {
+  background: var(--stage-soft);
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .empty-state-title {
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .empty-state-description,
+.mobile-studio-stage .empty-state-icon {
+  color: var(--screen-muted);
+}
+
+/* The sheets a Studio control opens and the tab bar under it follow the
+   stage, or every tap would flash the light theme back. The sheets are
+   portaled to the shell, hence :has. */
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet {
+  background: color-mix(in oklch, var(--screen) 82%, transparent);
+  color: var(--screen-foreground);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-item {
+  border-bottom-color: var(--stage-edge);
+  color: var(--screen-foreground);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-item-subtitle,
+.mobile-shell:has(.mobile-studio-stage) .mobile-action-sheet-subtitle,
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-grabber {
+  color: var(--screen-muted);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-grabber {
+  background: var(--stage-softer);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-tag {
+  background: var(--stage-soft);
+  color: var(--screen-muted);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-tag[data-tone="note"] {
+  background: color-mix(in oklch, var(--brand) 28%, transparent);
+  color: var(--screen-foreground);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-search {
+  background: var(--stage-soft);
+  color: var(--screen-muted);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-search input {
+  color: var(--screen-foreground);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-pill {
+  background: transparent;
+  border-color: var(--stage-edge);
+  color: var(--screen-muted);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-pill[data-active="true"] {
+  background: var(--screen-foreground);
+  border-color: transparent;
+  color: var(--screen);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-icon-button,
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-action-sheet-cancel,
+.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-sheet-dismiss {
+  color: var(--screen-foreground);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-tab-bar {
+  background: var(--screen);
+  border-top-color: var(--stage-edge);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-tab-bar-item {
+  color: var(--screen-muted);
+}
+
+.mobile-shell:has(.mobile-studio-stage) .mobile-tab-bar-item[aria-current="page"] {
+  color: var(--screen-foreground);
+}
+
+/* --- The scene and the dock -------------------------------------------------------
+   What a panel last made, at the top, in the result's own shape; and the
+   frosted card the instruction is written in, within thumb's reach. */
+
+.mobile-studio-scene {
+  margin: 0 0 var(--sp-1);
+}
+
+.mobile-studio-scene .stage-frame {
+  --stage-ceiling: 42dvh;
+}
+
+/* Before anything is made the frame says so in a line, not a wall: the
+   result's shape, at a third of its eventual height. */
+.mobile-studio-scene .stage-frame[data-empty="true"] {
+  --stage-ceiling: 22dvh;
+}
+
+.mobile-studio-scene-picture {
+  object-fit: contain;
+}
+
+/* The field is the card's own; the stage's focus ring would frame it twice. */
+.mobile-studio-stage .mobile-studio-dock-field:focus-visible {
+  outline: none;
+}
+
+.mobile-studio-scene-track {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: var(--sp-4);
+}
+
+.mobile-studio-scene-audio {
+  width: 100%;
+  height: 40px;
+}
+
+/* The still silhouette of a track: the darkroom's wave, at rest. */
+.mobile-studio-scene-wave {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-px);
+  height: 44%;
+  min-height: 0;
+  padding: 0 var(--sp-3);
+}
+
+.mobile-studio-scene-wave > span {
+  flex: 1;
+  max-width: 2px;
+  height: calc(var(--scene-bar, 0.5) * 100%);
+  border-radius: 1px;
+  background: var(--screen-foreground);
+  opacity: 0.55;
+}
+
+.mobile-studio-dock {
+  position: sticky;
+  bottom: calc(var(--keyboard-inset, 0px) + var(--sp-2));
+  z-index: 2;
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-xl);
+  background: var(--stage-glass);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  box-shadow: var(--shadow-lg);
+}
+
+.mobile-studio-dock-composer {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.mobile-studio-dock-field {
+  width: 100%;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--screen-foreground);
+  font: inherit;
+  font-size: max(16px, var(--fs-md));
+  line-height: 1.4;
+}
+
+.mobile-studio-dock-field::placeholder {
+  color: var(--screen-muted);
+}
+
+.mobile-studio-dock-suggestions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--sp-2);
+  margin-inline: calc(var(--sp-4) * -1);
+  padding-inline: var(--sp-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-studio-dock-suggestions::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-studio-dock-suggestion {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: var(--sp-1) var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.mobile-studio-dock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.mobile-studio-dock-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-studio-dock-send {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-shrink: 0;
+}
+
+.mobile-studio-dock-cost {
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mobile-studio-send {
+  flex-shrink: 0;
+}
+
+.mobile-studio-dock-hint {
+  margin: 0;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.mobile-studio-dock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
+/* A render not here yet, in the place it will take in Recent. */
+.mobile-studio-cell-pending {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: var(--r-sm);
+}
+
+.mobile-music-row-pending {
+  min-height: 56px;
+  border-bottom: 0;
+  border-radius: var(--r-md);
+}
+
+/* What a pending cell is, for a reader; the shimmer says it to the eye. */
+.mobile-studio-pending-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.mobile-studio-cell-pending,
+.mobile-music-row-pending {
+  position: relative;
 }

@@ -17,22 +17,15 @@ import {
   useState,
 } from "react";
 import { t } from "../../../lib/i18n";
-import { formatElapsed } from "../../../lib/studio/async-job";
-import { darkroomSeed, darkroomVars } from "../../../lib/studio/darkroom";
-import { describeRemaining, waitProgress } from "../../../lib/studio/render-eta";
 import { FIT, panBy, toggleZoom, type View, zoomAt } from "../../../lib/studio/retouch/view";
 import type { Point, ZoneStroke } from "../../../lib/studio/retouch/zone";
+import { type StageWait, Veil } from "../stage/Veil";
 
 export type CompareMode = "off" | "hold" | "split";
 export type ZoneTool = "brush" | "lasso" | "eraser";
 
-export interface CanvasWait {
-  seed: string;
-  phase: "queueing" | "queued" | "processing";
-  startedAt: number;
-  estimateMs?: number;
-  label?: string;
-}
+/** The wait the canvas shows, in the stage's words. */
+export type CanvasWait = StageWait;
 
 export interface CanvasZone {
   tool: ZoneTool;
@@ -314,7 +307,7 @@ export function RetouchCanvas({
             ) : null}
             <img
               key={src}
-              className="retouch-image"
+              className="retouch-image stage-reveal"
               data-reveal={reveal ? (wiping ? "true" : "waiting") : undefined}
               src={src}
               alt={alt}
@@ -348,7 +341,7 @@ export function RetouchCanvas({
             {showBefore && compare === "hold" ? (
               <span className="retouch-before-tag">{t("Before")}</span>
             ) : null}
-            {wait ? <Veil wait={wait} /> : null}
+            {wait ? <Veil wait={wait} defaultLabel={t("Retouching")} /> : null}
             {zone && frame ? <ZoneLayer zone={zone} frame={frame} gesture={gesture} /> : null}
           </div>
         ) : null}
@@ -404,52 +397,6 @@ function SplitHandle({ value, onChange }: { value: number; onChange: (value: num
       }}
     >
       <span className="retouch-split-grip" />
-    </div>
-  );
-}
-
-/** The darkroom's grain over the version being retouched, with its clock. */
-function Veil({ wait }: { wait: CanvasWait }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 100);
-    return () => window.clearInterval(timer);
-  }, []);
-  const light = useMemo(() => darkroomVars(darkroomSeed(wait.seed)), [wait.seed]);
-  const elapsed = Math.max(0, now - wait.startedAt);
-  const timed = wait.phase === "processing";
-  const progress = timed ? waitProgress(elapsed, wait.estimateMs) : undefined;
-  const remaining = timed ? describeRemaining(elapsed, wait.estimateMs) : undefined;
-  const phase =
-    wait.label ??
-    (wait.phase === "queueing"
-      ? t("Submitting")
-      : wait.phase === "queued"
-        ? t("Queued, waiting for a slot")
-        : t("Retouching"));
-  return (
-    <div className="retouch-veil" style={light as CSSProperties}>
-      <div className="darkroom-field" aria-hidden>
-        <span className="darkroom-lights">
-          <span className="darkroom-light darkroom-light-a" />
-          <span className="darkroom-light darkroom-light-b" />
-          <span className="darkroom-light darkroom-light-c" />
-        </span>
-        <span className="darkroom-grain" />
-      </div>
-      <div className="retouch-veil-caption">
-        <span aria-live="polite">{phase}</span>
-        <span className="retouch-veil-clock">
-          {formatElapsed(elapsed)}
-          {remaining ? ` · ${remaining}` : ""}
-        </span>
-      </div>
-      <div
-        className="darkroom-bar"
-        data-indeterminate={progress === undefined ? "true" : undefined}
-      >
-        <span style={progress === undefined ? undefined : { transform: `scaleX(${progress})` }} />
-      </div>
     </div>
   );
 }

@@ -124,4 +124,29 @@ describe("a reference model that insists on an opening frame", () => {
     // would show. Here: the slot scrolled into view and no error was thrown.
     expect(screen.getByRole("button", { name: "Opening frame" })).toBeTruthy();
   });
+
+  it("shows a render in flight as the veil over the scene", async () => {
+    tauri.invoke.mockImplementation(async (command: string) =>
+      command === "media_job_list"
+        ? [
+            {
+              id: "j1",
+              kind: "video",
+              model: "kling-o3-4k-reference-to-video",
+              prompt: "the room at dusk",
+              extension: "mp4",
+              status: "processing",
+              createdAt: new Date(Date.now() - 42_000).toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ]
+        : undefined,
+    );
+    await openVideoTab();
+    const scene = screen.getByRole("region", { name: "Latest result" });
+    await waitFor(() => expect(scene.querySelector(".stage-veil")).toBeTruthy());
+    expect(scene.textContent).toContain("Rendering");
+    // The round send button is held while the render runs.
+    expect(generate().hasAttribute("disabled")).toBe(true);
+  });
 });

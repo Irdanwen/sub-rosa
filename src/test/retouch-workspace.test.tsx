@@ -262,6 +262,10 @@ describe("the retouch workspace", () => {
     await type("Add a plant");
     // Nothing more is paid for while the version on screen renders.
     expect(queued()).toHaveLength(1);
+    // The wait is the stage's veil over the picture, named in retouch words.
+    const veil = document.querySelector(".stage-veil");
+    expect(veil).toBeTruthy();
+    expect(veil?.textContent).toMatch(/Submitting|Queued|Retouching/);
     await land(queued()[0], "v2.png", 3);
     await waitFor(() => expect(queued()).toHaveLength(2));
     expect(queued()[1]).toMatchObject({

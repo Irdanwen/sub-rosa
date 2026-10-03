@@ -90,7 +90,7 @@ export function RetouchFilmstrip({
         ))}
         {pending.map((step) => (
           <li key={step.key} className="retouch-frame-pending" aria-hidden>
-            <span className="retouch-thumb" />
+            <span className="retouch-thumb stage-pending" />
           </li>
         ))}
       </ol>

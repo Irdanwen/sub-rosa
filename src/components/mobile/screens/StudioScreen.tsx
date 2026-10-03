@@ -19,6 +19,7 @@ import {
   supportsBackgroundRemoval,
 } from "../../../lib/studio/catalog";
 import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
+import { isStudioOwned, useRunningMediaJobs } from "../../../lib/studio/media-jobs-live";
 import type { ArtifactKind, MediaCatalog, StudioArtifact } from "../../../lib/studio/types";
 
 import { type AudioMode, AudioPanel } from "./studio/StudioAudioPanels";
@@ -30,6 +31,7 @@ import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { StackHeader } from "../StackHeader";
 import { ActionSheet } from "../ActionSheet";
+import "../../studio/stage/stage.css";
 
 // No "flows" here: the guided workflow editor was unusable at phone size and
 // was removed from the phone. Productions stay a desktop surface.
@@ -62,6 +64,31 @@ export function StudioScreen() {
   const [rateOpen, setRateOpen] = useState(false);
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [preview, setPreview] = useState<StudioArtifact | null>(null);
+  /** A synchronous render in flight (an image, a narration): those paths
+   * write no job row, so the panel says so itself and Recent shows the cell. */
+  const [localWorking, setLocalWorking] = useState<ArtifactKind | undefined>(undefined);
+  const setImageWorking = useCallback(
+    (working: boolean) => setLocalWorking(working ? "image" : undefined),
+    [],
+  );
+  const setSpeechWorking = useCallback(
+    (working: boolean) => setLocalWorking(working ? "speech" : undefined),
+    [],
+  );
+  /** The durable renders in flight that the Studio queued by hand, for the
+   * cells they will take in Recent and in the gallery. */
+  const running = useRunningMediaJobs();
+  const pendingOf = useCallback(
+    (kind: ArtifactKind | undefined) => [
+      ...(localWorking && (!kind || localWorking === kind)
+        ? [{ key: `local:${localWorking}` }]
+        : []),
+      ...running
+        .filter((job) => isStudioOwned(job) && (!kind || job.kind === kind))
+        .map((job) => ({ key: job.id })),
+    ],
+    [localWorking, running],
+  );
   // Lifted so the lightbox's "use as reference" can feed the image panel and
   // jump it straight into its Edit sub-mode.
   const [imageMode, setImageMode] = useState<ImageMode>("generate");
@@ -161,7 +188,9 @@ export function StudioScreen() {
   }, []);
 
   return (
-    <div className="mobile-screen-root">
+    // The Studio is a stage: dark in either theme, the controls on glass, the
+    // same room the retouch tab renders into (CONTEXT.md, "Stage").
+    <div className="mobile-screen-root mobile-studio-stage stage">
       <StackHeader
         title={t("Studio")}
         large
@@ -185,13 +214,13 @@ export function StudioScreen() {
         }
       />
       {imageFailures[0] ? (
-        <div className="studio-error studio-image-failure" role="alert">
+        <div className="stage-notice mobile-studio-notice" data-tone="error" role="alert">
           <span>
             {t("An image could not be generated: {reason}", { reason: imageFailures[0].message })}
           </span>
           <button
             type="button"
-            className="btn btn-ghost"
+            className="mobile-chip-button"
             onClick={() => dismissStandaloneImageFailure(imageFailures[0].id)}
           >
             {t("Dismiss")}
@@ -239,6 +268,7 @@ export function StudioScreen() {
                 onModeChange={setImageMode}
                 galleryImages={galleryImages}
                 onGenerated={refreshGallery}
+                onWorking={setImageWorking}
               />
             ) : mode === "video" ? (
               <VideoPanel
@@ -256,9 +286,16 @@ export function StudioScreen() {
                 mode={audioMode}
                 onModeChange={setAudioMode}
                 onGenerated={refreshGallery}
+                galleryTracks={galleryTracks}
+                onWorking={setSpeechWorking}
               />
             ) : (
-              <Library items={artifacts} onOpen={setPreview} onChanged={refreshGallery} />
+              <Library
+                items={artifacts}
+                onOpen={setPreview}
+                onChanged={refreshGallery}
+                pending={pendingOf(undefined)}
+              />
             )}
             {galleryKind ? (
               <RecentStrip
@@ -266,6 +303,7 @@ export function StudioScreen() {
                 kind={galleryKind}
                 onOpen={setPreview}
                 onSeeAll={() => setMode("library")}
+                pending={pendingOf(galleryKind)}
               />
             ) : null}
           </>

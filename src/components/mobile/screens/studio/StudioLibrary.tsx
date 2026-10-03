@@ -54,10 +54,13 @@ export function Library({
   items,
   onOpen,
   onChanged,
+  pending = [],
 }: {
   items: StudioArtifact[];
   onOpen: (artifact: StudioArtifact) => void;
   onChanged: () => void;
+  /** Renders not here yet, shown first in the place they will take. */
+  pending?: { key: string }[];
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ArtifactKind | "all">("all");
@@ -136,7 +139,26 @@ export function Library({
   // you were working on, without hunting for its latest version.
   const retouches = useMemo(() => sessionsIn(items).slice(0, 6), [items]);
 
+  /** What is being made right now, ahead of everything that has been. */
+  const inProgress =
+    pending.length > 0 && !selecting && !query.trim() ? (
+      <section className="mobile-library-day" aria-label={t("In progress")}>
+        <h3 className="mobile-library-day-title">{t("In progress")}</h3>
+        <div className="mobile-studio-grid mobile-library-grid">
+          {pending.map((entry) => (
+            <span
+              key={entry.key}
+              className="mobile-studio-cell mobile-studio-cell-pending stage-pending"
+            >
+              <span className="mobile-studio-pending-label">{t("Rendering")}</span>
+            </span>
+          ))}
+        </div>
+      </section>
+    ) : null;
+
   if (items.length === 0) {
+    if (inProgress) return <div className="mobile-studio-gallery">{inProgress}</div>;
     return (
       <EmptyState
         icon={<IconCameraSparkle size={28} />}
@@ -185,6 +207,7 @@ export function Library({
           ))}
         </div>
       ) : null}
+      {inProgress}
       {retouches.length > 0 && !selecting && !query.trim() && filter !== "video" ? (
         <section className="mobile-library-day">
           <h3 className="mobile-library-day-title">{t("Pick up a retouch")}</h3>
@@ -308,13 +331,17 @@ export function RecentStrip({
   kind,
   onOpen,
   onSeeAll,
+  pending = [],
 }: {
   items: StudioArtifact[];
   kind: ArtifactKind;
   onOpen: (artifact: StudioArtifact) => void;
   onSeeAll: () => void;
+  /** Renders not here yet, shown first in the place they will take. Never
+   * artifacts: nothing is written to the gallery before it exists. */
+  pending?: { key: string }[];
 }) {
-  if (items.length === 0) return null;
+  if (items.length === 0 && pending.length === 0) return null;
   const isAudioKind = kind === "music" || kind === "speech" || kind === "sfx";
   const recent = items.slice(0, isAudioKind ? 3 : 12);
   return (
@@ -327,6 +354,11 @@ export function RecentStrip({
       </div>
       {isAudioKind ? (
         <ul className="mobile-note-list" aria-label={t("Generated audio")}>
+          {pending.map((entry) => (
+            <li key={entry.key} className="mobile-music-row mobile-music-row-pending stage-pending">
+              <span className="mobile-studio-pending-label">{t("Rendering")}</span>
+            </li>
+          ))}
           {recent.map((artifact) => (
             <MusicRow
               key={artifact.path}
@@ -339,6 +371,14 @@ export function RecentStrip({
         </ul>
       ) : (
         <div className="mobile-studio-recent-strip">
+          {pending.map((entry) => (
+            <span
+              key={entry.key}
+              className="mobile-studio-cell mobile-studio-cell-pending stage-pending"
+            >
+              <span className="mobile-studio-pending-label">{t("Rendering")}</span>
+            </span>
+          ))}
           {recent.map((artifact) => (
             <GalleryCell key={artifact.path} artifact={artifact} onOpen={() => onOpen(artifact)} />
           ))}
