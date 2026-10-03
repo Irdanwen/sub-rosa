@@ -136,7 +136,10 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen />);
 
-    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Summarize my notes");
+    await user.type(
+      screen.getByPlaceholderText("Ask anything, privately..."),
+      "Summarize my notes",
+    );
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() =>
@@ -180,7 +183,10 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen />);
 
-    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Summarize my notes");
+    await user.type(
+      screen.getByPlaceholderText("Ask anything, privately..."),
+      "Summarize my notes",
+    );
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     // The failure surfaces a one-tap retry; the message was persisted once.
@@ -220,7 +226,10 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen />);
 
-    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Summarize my notes");
+    await user.type(
+      screen.getByPlaceholderText("Ask anything, privately..."),
+      "Summarize my notes",
+    );
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("button", { name: "Try again" });
 
@@ -494,7 +503,10 @@ describe("mobile chat model persistence", () => {
     const user = userEvent.setup();
     const { rerender } = render(<AgentSessionScreen sessionId="task-1" />);
     rerender(<AgentSessionScreen sessionId="task-2" />);
-    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "For the second chat");
+    await user.type(
+      screen.getByPlaceholderText("Ask anything, privately..."),
+      "For the second chat",
+    );
     await act(async () => {
       eventListeners.get("agent-lite://done")?.({
         payload: makeTask({ status: "completed", title: "Previous chat" }),
