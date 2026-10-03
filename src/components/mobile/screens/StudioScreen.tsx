@@ -19,6 +19,7 @@ import {
   supportsBackgroundRemoval,
 } from "../../../lib/studio/catalog";
 import { continuationPrompt, extractHandoffFrame } from "../../../lib/studio/frames";
+import { isStudioOwned, useRunningMediaJobs } from "../../../lib/studio/media-jobs-live";
 import type { ArtifactKind, MediaCatalog, StudioArtifact } from "../../../lib/studio/types";
 
 import { type AudioMode, AudioPanel } from "./studio/StudioAudioPanels";
@@ -73,6 +74,20 @@ export function StudioScreen() {
   const setSpeechWorking = useCallback(
     (working: boolean) => setLocalWorking(working ? "speech" : undefined),
     [],
+  );
+  /** The durable renders in flight that the Studio queued by hand, for the
+   * cells they will take in Recent and in the gallery. */
+  const running = useRunningMediaJobs();
+  const pendingOf = useCallback(
+    (kind: ArtifactKind | undefined) => [
+      ...(localWorking && (!kind || localWorking === kind)
+        ? [{ key: `local:${localWorking}` }]
+        : []),
+      ...running
+        .filter((job) => isStudioOwned(job) && (!kind || job.kind === kind))
+        .map((job) => ({ key: job.id })),
+    ],
+    [localWorking, running],
   );
   // Lifted so the lightbox's "use as reference" can feed the image panel and
   // jump it straight into its Edit sub-mode.
@@ -275,7 +290,12 @@ export function StudioScreen() {
                 onWorking={setSpeechWorking}
               />
             ) : (
-              <Library items={artifacts} onOpen={setPreview} onChanged={refreshGallery} />
+              <Library
+                items={artifacts}
+                onOpen={setPreview}
+                onChanged={refreshGallery}
+                pending={pendingOf(undefined)}
+              />
             )}
             {galleryKind ? (
               <RecentStrip
@@ -283,9 +303,7 @@ export function StudioScreen() {
                 kind={galleryKind}
                 onOpen={setPreview}
                 onSeeAll={() => setMode("library")}
-                pending={
-                  localWorking && localWorking === galleryKind ? [{ key: localWorking }] : []
-                }
+                pending={pendingOf(galleryKind)}
               />
             ) : null}
           </>

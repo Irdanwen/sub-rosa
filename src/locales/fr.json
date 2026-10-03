@@ -1617,6 +1617,7 @@
   "Improve the prompt before generating": "Améliorer le prompt avant de générer",
   "Improve with AI": "Améliorer avec l'IA",
   "In production": "En production",
+  "In progress": "En cours",
   "in the Carpe Diem dashboard, then paste it above.": "dans le tableau de bord Carpe Diem, puis collez-la ci-dessus.",
   "in the Carpe Diem dashboard.": "dans le tableau de bord Carpe Diem.",
   "in the chat to put a request to several models before any work starts. They read it independently, on different weights, and issue a mandate you can edit. When the work is done they read it back against that mandate.": "dans le chat pour soumettre une demande à plusieurs modèles avant que le travail commence. Ils la lisent indépendamment, sur des poids différents, et émettent un mandat que vous pouvez modifier. Quand le travail est fait, ils le relisent à l'aune de ce mandat.",

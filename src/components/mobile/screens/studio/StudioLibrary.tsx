@@ -54,10 +54,13 @@ export function Library({
   items,
   onOpen,
   onChanged,
+  pending = [],
 }: {
   items: StudioArtifact[];
   onOpen: (artifact: StudioArtifact) => void;
   onChanged: () => void;
+  /** Renders not here yet, shown first in the place they will take. */
+  pending?: { key: string }[];
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ArtifactKind | "all">("all");
@@ -136,7 +139,26 @@ export function Library({
   // you were working on, without hunting for its latest version.
   const retouches = useMemo(() => sessionsIn(items).slice(0, 6), [items]);
 
+  /** What is being made right now, ahead of everything that has been. */
+  const inProgress =
+    pending.length > 0 && !selecting && !query.trim() ? (
+      <section className="mobile-library-day" aria-label={t("In progress")}>
+        <h3 className="mobile-library-day-title">{t("In progress")}</h3>
+        <div className="mobile-studio-grid mobile-library-grid">
+          {pending.map((entry) => (
+            <span
+              key={entry.key}
+              className="mobile-studio-cell mobile-studio-cell-pending stage-pending"
+              role="img"
+              aria-label={t("Rendering")}
+            />
+          ))}
+        </div>
+      </section>
+    ) : null;
+
   if (items.length === 0) {
+    if (inProgress) return <div className="mobile-studio-gallery">{inProgress}</div>;
     return (
       <EmptyState
         icon={<IconCameraSparkle size={28} />}
@@ -185,6 +207,7 @@ export function Library({
           ))}
         </div>
       ) : null}
+      {inProgress}
       {retouches.length > 0 && !selecting && !query.trim() && filter !== "video" ? (
         <section className="mobile-library-day">
           <h3 className="mobile-library-day-title">{t("Pick up a retouch")}</h3>
