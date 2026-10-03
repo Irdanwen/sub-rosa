@@ -26,7 +26,9 @@ import { type AudioMode, AudioPanel } from "./studio/StudioAudioPanels";
 import { type ImageMode, ImagePanel } from "./studio/StudioImagePanel";
 import { type VideoHandoff, VideoPanel } from "./studio/StudioVideoPanel";
 import { Lightbox } from "./studio/StudioLightbox";
-import { Library, RecentStrip } from "./studio/StudioLibrary";
+import { StudioGallery } from "./studio/StudioGallery";
+import { RecentStrip } from "./studio/StudioLibrary";
+import { handOffImagePrompt } from "../../../lib/studio/prompt-handoff";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { StackHeader } from "../StackHeader";
@@ -64,6 +66,8 @@ export function StudioScreen() {
   const [rateOpen, setRateOpen] = useState(false);
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [preview, setPreview] = useState<StudioArtifact | null>(null);
+  /** The list the open item was picked from, for moving to its neighbours. */
+  const [previewAmong, setPreviewAmong] = useState<StudioArtifact[]>([]);
   /** A synchronous render in flight (an image, a narration): those paths
    * write no job row, so the panel says so itself and Recent shows the cell. */
   const [localWorking, setLocalWorking] = useState<ArtifactKind | undefined>(undefined);
@@ -293,10 +297,19 @@ export function StudioScreen() {
                 onWorking={setSpeechWorking}
               />
             ) : (
-              <Library
+              <StudioGallery
                 items={artifacts}
-                onOpen={setPreview}
+                onOpen={(artifact, among) => {
+                  setPreview(artifact);
+                  setPreviewAmong(among);
+                }}
                 onChanged={refreshGallery}
+                onContinueShot={(artifact) => void handleContinueShot(artifact)}
+                onReusePrompt={(artifact) => {
+                  handOffImagePrompt(artifact.prompt);
+                  setImageMode("generate");
+                  setMode("image");
+                }}
                 pending={pendingOf(undefined)}
               />
             )}

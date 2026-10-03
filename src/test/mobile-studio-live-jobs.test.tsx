@@ -74,7 +74,7 @@ describe("renders in flight", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "Gallery" }));
     const section = await screen.findByRole("region", { name: "In progress" });
-    expect(section.querySelectorAll(".mobile-studio-cell-pending")).toHaveLength(1);
+    expect(section.querySelectorAll(".stage-pending")).toHaveLength(1);
     expect(within(section).getByText("Rendering")).toBeTruthy();
   });
 
