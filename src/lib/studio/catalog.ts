@@ -435,12 +435,72 @@ export function variantFor(
   return family.textModel ?? family.imageModel ?? family.referenceModel;
 }
 
-/** How a resolved variant reads next to the family name. */
+/** How a resolved variant reads next to the family name - the English
+ * spelling people type into a search box. What is shown goes through
+ * `directionLabel`. */
 export function variantLabel(modelId: string): string {
   if (isReferenceToVideoModel(modelId)) return "reference to video";
   if (modelId.includes("image-to-video")) return "image to video";
   if (modelId.includes("video-to-video")) return "video to video";
   return "text to video";
+}
+
+/** A direction, in the reader's language. */
+export function directionLabel(direction: VideoDirection): string {
+  switch (direction) {
+    case "reference":
+      return t("Reference to video");
+    case "image":
+      return t("Image to video");
+    case "video":
+      return t("Video to video");
+    default:
+      return t("Text to video");
+  }
+}
+
+/** The directions a family offers, in the order its slots are read. */
+export function familyDirections(family: VideoFamily): VideoDirection[] {
+  const directions: VideoDirection[] = [];
+  if (family.textModel) directions.push("text");
+  if (family.imageModel) directions.push("image");
+  if (family.referenceModel) directions.push("reference");
+  if (family.videoModel) directions.push("video");
+  return directions;
+}
+
+/**
+ * The nearest family that renders from references alone, for a family whose
+ * reference variant insists on an opening frame (`requiresOpeningFrame`).
+ *
+ * Same vendor - the first token of the key - and the candidate sharing the
+ * most of the remaining tokens wins, so "kling v3 4k" is offered "kling o3
+ * 4k" rather than "kling o3 standard". Undefined when nothing fits, or when
+ * the family's own reference variant already runs without a frame.
+ */
+export function frameFreeReferenceSibling(
+  families: readonly VideoFamily[],
+  family: VideoFamily,
+): VideoFamily | undefined {
+  if (!family.referenceModel || !requiresOpeningFrame(family.referenceModel.id)) return undefined;
+  const tokens = (key: string) =>
+    key
+      .toLowerCase()
+      .split(/[\s_-]+/)
+      .filter(Boolean);
+  const own = tokens(family.key);
+  const vendor = own[0];
+  if (!vendor) return undefined;
+  let best: { family: VideoFamily; shared: number } | undefined;
+  for (const candidate of families) {
+    if (candidate.key === family.key || !candidate.referenceModel) continue;
+    if (requiresOpeningFrame(candidate.referenceModel.id)) continue;
+    const theirs = tokens(candidate.key);
+    if (theirs[0] !== vendor) continue;
+    const shared = own.slice(1).filter((token) => theirs.includes(token)).length;
+    if (!best || shared > best.shared) best = { family: candidate, shared };
+  }
+  return best?.family;
 }
 
 /**
@@ -459,7 +519,7 @@ export function variantHint(
 ): string | undefined {
   if (!model) return undefined;
   if (model.id === family?.textModel?.id) return undefined;
-  const label = variantLabel(model.id);
+  const label = directionLabel(videoDirectionFromId(model.id) ?? "text");
   const name = model.name.trim();
   return name && name !== model.id && name !== family?.name ? `${label} · ${name}` : label;
 }
@@ -495,7 +555,8 @@ export function videoFamilySearchTerms(family: VideoFamily): string[] {
     if (!model) continue;
     terms.add(model.id);
     terms.add(model.name);
-    for (const alias of [...aliases, variantLabel(model.id)]) {
+    const spoken = directionLabel(videoDirectionFromId(model.id) ?? "text");
+    for (const alias of [...aliases, variantLabel(model.id), spoken]) {
       terms.add(alias);
       terms.add(`${family.name} ${alias}`);
     }

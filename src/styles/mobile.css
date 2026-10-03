@@ -2163,6 +2163,49 @@
   color: var(--muted-foreground);
 }
 
+/* Direction filters: the first cut a search box cannot make, scrolled
+   sideways rather than wrapped so the list keeps its height. */
+.mobile-sheet-filters {
+  flex-wrap: nowrap;
+  margin: 0 0 var(--sp-2);
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-sheet-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-sheet-filters .mobile-pill {
+  flex: 0 0 auto;
+}
+
+/* One-word facts under a row, for a row that stands for several contracts. */
+.mobile-sheet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+
+.mobile-sheet-tag {
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+}
+
+.mobile-sheet-tag[data-tone="note"] {
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+}
+
 /* The model picker is a search surface: it may take most of the screen. */
 .mobile-sheet-backdrop-tall .mobile-sheet {
   max-height: min(88dvh, 100%);
@@ -2938,6 +2981,15 @@
   color: var(--muted-foreground);
   font-size: var(--fs-sm);
   text-align: center;
+}
+
+/* What to tap about a hint, when there is something: the picker it names,
+   or the family that does without. */
+.mobile-studio-generate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
 }
 
 /* What was just made in this tab, under its form: a strip, not the gallery. */

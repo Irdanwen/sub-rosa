@@ -121,6 +121,9 @@ describe("the family list a picker renders", () => {
     // reference clips and refusing them.
     expect(listed.map((entry) => `${entry.key} | ${entry.name}`)).toEqual([
       "kling o3 4k | Kling O3 4K",
+      // Kling V3 4K's two ids, text and reference, join under the one name the
+      // direction suffix is stripped from.
+      "kling v3 4k | Kling V3 4K",
       "seedance 1.5 pro | Seedance 1.5 Pro",
       "seedance-1-5-pro | Seedance 1.5 Pro (full)",
       "seedance 2.0 | Seedance 2.0",

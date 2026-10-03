@@ -1,13 +1,18 @@
 import { t } from "../../../../lib/i18n";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hapticNotify } from "../../../../lib/haptics";
 import { registerDownloadedArtifact } from "../../../../lib/studio/artifacts";
 import { useMediaJob } from "../../../../lib/studio/async-job";
 import {
+  familyDirections,
   formatCredits,
+  frameFreeReferenceSibling,
+  isImageToVideoModel,
   isReferenceToVideoModel,
   isSeedanceModel,
   requiresOpeningFrame,
+  type VideoDirection,
+  type VideoFamily,
   variantFor,
   variantHint,
   videoFamilies,
@@ -57,16 +62,21 @@ import { Darkroom } from "../../../studio/Darkroom";
 import { JobFailureNotice } from "../../../studio/JobFailureNotice";
 import { Spinner } from "../../../ui/Spinner";
 import { Switch } from "../../../ui/Switch";
-import { ModelSheet } from "../../ModelSheet";
+import { ModelSheet, type ModelSheetTag } from "../../ModelSheet";
 import { videoFamilyOption } from "../../../studio/MediaModelPicker";
 import {
   formatRenderOption,
   ModelPickerButton,
+  modelSubtitle,
   MoreOptions,
   SelectRow,
   SettingsCard,
 } from "./StudioControls";
-import { MediaReferencePicker, ReferencePicker } from "./StudioLightbox";
+import {
+  MediaReferencePicker,
+  ReferencePicker,
+  type ReferencePickerHandle,
+} from "./StudioLightbox";
 
 /** Where the finished clip's URL hides in the retrieve body. */
 const VIDEO_URL_FIELDS = ["video_url", "url"];
@@ -91,6 +101,40 @@ export interface VideoHandoff {
  * directions (text, image, reference, continuation), per-family durations, and
  * a consent gate for the families that need one.
  */
+/** The directions a family can be narrowed to in the picker, in the order the
+ * form asks for their inputs. Labels are getters so they read in the language
+ * chosen when the sheet opens. */
+const DIRECTION_FILTERS: { id: VideoDirection; label: () => string }[] = [
+  { id: "text", label: () => t("From a prompt") },
+  { id: "image", label: () => t("Animate an image") },
+  { id: "reference", label: () => t("From references") },
+];
+
+/**
+ * What a family row says about its directions. One word each, because the row
+ * is scanned, not read: "Text · Image · References". A reference variant that
+ * will not start without an opening frame says so here, in the one place the
+ * user is still choosing - the form can only report it after the fact.
+ */
+export function familyTags(family: VideoFamily): ModelSheetTag[] {
+  const tags: ModelSheetTag[] = [];
+  if (family.textModel) tags.push({ label: t("Text") });
+  if (family.imageModel) tags.push({ label: t("Image") });
+  if (family.referenceModel) {
+    tags.push({ label: t("References") });
+    if (requiresOpeningFrame(family.referenceModel.id)) {
+      tags.push({ label: t("+ opening frame"), tone: "note" });
+    }
+  }
+  return tags;
+}
+
+/** Tier and privacy, read off the variant the family is most often run as. */
+function familySubtitle(family: VideoFamily): string {
+  const model = family.textModel ?? family.referenceModel ?? family.imageModel;
+  return model ? modelSubtitle(model) : "";
+}
+
 export function VideoPanel({
   catalog,
   galleryImages,
@@ -338,9 +382,14 @@ export function VideoPanel({
     consent,
   ]);
 
+  /** The request as it would leave, or undefined while the inputs cannot make
+   * one. Generate reads this, as the desktop's does: a body that will not
+   * build is a button that must not press, and a hint that says why. */
+  const requestBody = useMemo(() => queueBody(), [queueBody]);
+
   useEffect(() => {
     setQuote(undefined);
-    const body = queueBody();
+    const body = requestBody;
     if (!body || !model || !supportsVideoQuote(model.id)) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
@@ -354,7 +403,7 @@ export function VideoPanel({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [queueBody, model]);
+  }, [requestBody, model]);
 
   const busy =
     job.state.phase === "queueing" ||
@@ -374,13 +423,13 @@ export function VideoPanel({
    * fine on its own and the body still be over the cap, and the backend only
    * says so with a 413 once the render has been queued - so it is measured on
    * the finished body, before the button is offered. */
-  const oversize = useMemo(() => {
-    const body = queueBody();
-    return body ? requestSizeProblem(inlineMediaInputs(body)) : undefined;
-  }, [queueBody]);
+  const oversize = useMemo(
+    () => (requestBody ? requestSizeProblem(inlineMediaInputs(requestBody)) : undefined),
+    [requestBody],
+  );
 
   const start = useCallback(() => {
-    const body = queueBody();
+    const body = requestBody;
     if (!body || !model) return;
     void job.start({
       kind: "video",
@@ -397,19 +446,53 @@ export function VideoPanel({
       parentArtifactId: handoffFrom?.artifactId,
       parentHandoffSeconds: handoffFrom?.timeSeconds,
     });
-  }, [queueBody, model, prompt, job, handoffFrom]);
+  }, [requestBody, model, prompt, job, handoffFrom]);
 
-  /** Why Generate cannot be pressed yet, said under it rather than left to
-   * a grey button to explain. */
-  const blocker = busy
-    ? undefined
-    : !model
-      ? t("Choose a video model first.")
-      : !prompt.trim()
-        ? t("Describe the video to generate it.")
-        : needsConsent && !consent
-          ? t("Confirm you have the right to use this media.")
-          : undefined;
+  const frameRef = useRef<ReferencePickerHandle>(null);
+  /** The frame this variant will not start without, still missing. */
+  const frameMissing = requiresOpeningFrame(model?.id) && openingFrame.length === 0;
+  /** The family to offer instead when this one insists on a frame: the same
+   * vendor's reference model that runs on references alone. */
+  const frameFreeSibling = useMemo(
+    () => (family && frameMissing ? frameFreeReferenceSibling(familiesForMode, family) : undefined),
+    [family, frameMissing, familiesForMode],
+  );
+  /** Why Generate cannot be pressed yet, said under it rather than left to a
+   * grey button to explain - with what to tap about it, where there is
+   * something. */
+  const blocker: { text: string; actions?: { label: string; onAction: () => void }[] } | undefined =
+    busy
+      ? undefined
+      : !model
+        ? { text: t("Choose a video model first.") }
+        : !prompt.trim()
+          ? { text: t("Describe the video to generate it.") }
+          : needsConsent && !consent
+            ? { text: t("Confirm you have the right to use this media.") }
+            : frameMissing
+              ? {
+                  text: t("Add an opening frame: {model} starts from one.", {
+                    model: family?.name ?? t("This model"),
+                  }),
+                  actions: [
+                    { label: t("Add an opening frame"), onAction: () => frameRef.current?.open() },
+                    ...(frameFreeSibling
+                      ? [
+                          {
+                            label: t("Use {model} instead", { model: frameFreeSibling.name }),
+                            onAction: () => setFamilyKey(frameFreeSibling.key),
+                          },
+                        ]
+                      : []),
+                  ],
+                }
+              : !requestBody && (isReferenceToVideoModel(model.id) || isImageToVideoModel(model.id))
+                ? {
+                    text: t("Add a photo or reference images: {model} works from a picture.", {
+                      model: family?.name ?? t("This model"),
+                    }),
+                  }
+                : undefined;
   const hasSettings =
     durationOptions.length > 0 ||
     videoAspectOptions.length > 0 ||
@@ -493,6 +576,7 @@ export function VideoPanel({
       ) : null}
       {family?.imageModel || family?.referenceModel ? (
         <ReferencePicker
+          ref={frameRef}
           label={t("Opening frame")}
           cap={1}
           references={openingFrame}
@@ -508,7 +592,11 @@ export function VideoPanel({
                   position: Math.round(handoffFrom.timeSeconds * 10) / 10,
                   duration: Math.round(handoffFrom.durationSeconds * 10) / 10,
                 })
-              : t("Optional opening frame: the clip starts from this photo.")
+              : frameMissing
+                ? t("Opening frame required: {model} starts from this photo.", {
+                    model: family?.name ?? t("This model"),
+                  })
+                : t("Optional opening frame: the clip starts from this photo.")
           }
         />
       ) : null}
@@ -627,16 +715,6 @@ export function VideoPanel({
           })}
         </p>
       ) : null}
-      {requiresOpeningFrame(model?.id) && openingFrame.length === 0 ? (
-        // The body refuses to build without it; this says why rather than
-        // leaving a dead button.
-        <p className="mobile-dictation-error">
-          {t(
-            "{model} starts from a frame, so it needs an opening frame as well as its reference photos.",
-            { model: family?.name ?? t("This model") },
-          )}
-        </p>
-      ) : null}
       {waiting ? (
         <Darkroom
           compact
@@ -666,9 +744,7 @@ export function VideoPanel({
         <button
           type="button"
           className="mobile-studio-generate"
-          disabled={
-            !model || !prompt.trim() || (needsConsent && !consent) || busy || Boolean(oversize)
-          }
+          disabled={!requestBody || (needsConsent && !consent) || busy || Boolean(oversize)}
           onClick={start}
         >
           {busy ? <Spinner /> : t("Generate")}
@@ -676,7 +752,21 @@ export function VideoPanel({
             <span className="mobile-studio-cost">{formatCredits(quote)}</span>
           ) : null}
         </button>
-        {blocker ? <p className="mobile-studio-generate-hint">{blocker}</p> : null}
+        {blocker ? <p className="mobile-studio-generate-hint">{blocker.text}</p> : null}
+        {blocker?.actions?.length ? (
+          <div className="mobile-studio-generate-actions">
+            {blocker.actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                className="mobile-chip-button"
+                onClick={action.onAction}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
       {pickerOpen ? (
         <ModelSheet
@@ -684,11 +774,25 @@ export function VideoPanel({
           entries={familiesForMode.map((entry) => ({
             id: entry.key,
             name: entry.name,
-            subtitle: videoFamilyOption(entry).details.join(" · "),
+            subtitle: familySubtitle(entry),
+            tags: familyTags(entry),
+            groups: familyDirections(entry),
             // One row stands for up to four backend models, so searching what
             // the row shows cannot find a variant by its own name or id.
-            keywords: videoFamilySearchTerms(entry),
+            keywords: [...videoFamilySearchTerms(entry), ...videoFamilyOption(entry).details],
           }))}
+          filters={DIRECTION_FILTERS.map((entry) => ({ id: entry.id, label: entry.label() }))}
+          filtersLabel={t("Filter video models")}
+          // The sheet opens on the direction the inputs already imply: with
+          // reference photos picked, the families that cannot take them are
+          // noise until the user asks for them.
+          initialFilter={
+            references.length > 0 || referenceClips.length > 0
+              ? "reference"
+              : openingFrame.length > 0
+                ? "image"
+                : undefined
+          }
           selectedId={family?.key ?? ""}
           onSelect={(id) => {
             if (id) setFamilyKey(id);

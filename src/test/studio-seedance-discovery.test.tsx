@@ -88,18 +88,18 @@ describe("naming the variant the inputs resolved to", () => {
 
   it("names the direction, and the backend's own name when it differs", () => {
     // The whole point: "Seedance 2.5 R2V" appears nowhere else in the app.
-    expect(resolve(false, true)).toBe("reference to video · Seedance 2.5 R2V");
+    expect(resolve(false, true)).toBe("Reference to video · Seedance 2.5 R2V");
   });
 
   it("gives the direction alone when the variant shares the family name", () => {
-    expect(resolve(true, false)).toBe("image to video");
+    expect(resolve(true, false)).toBe("Image to video");
   });
 
   it("names a reference-only family's single variant", () => {
     // No text variant to be the silent default, so there is always something
     // to say.
     expect(variantHint(family("kling o3 4k"), family("kling o3 4k").referenceModel)).toBe(
-      "reference to video · Kling O3 4K R2V",
+      "Reference to video · Kling O3 4K R2V",
     );
   });
 
@@ -107,7 +107,7 @@ describe("naming the variant the inputs resolved to", () => {
     // The full seedance ids fall back to their own id as a name; repeating it
     // next to the label would be noise, not information.
     const full = family("seedance-2-0");
-    expect(variantHint(full, full.referenceModel)).toBe("reference to video");
+    expect(variantHint(full, full.referenceModel)).toBe("Reference to video");
   });
 });
 

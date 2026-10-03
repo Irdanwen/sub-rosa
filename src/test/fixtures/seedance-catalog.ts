@@ -204,6 +204,42 @@ export const OTHER_VIDEO_MODELS: MediaModel[] = [
       video_input: true,
     },
   },
+  // Kling V3 4K is published as text-to-video and reference-to-video only, and
+  // its reference variant will not start without an opening frame (measured
+  // 2026-10-01 and 2026-10-03: "image_url is required for this model"); it
+  // also publishes no aspect ratios, the frame deciding the shape.
+  {
+    id: "kling-v3-4k-text-to-video",
+    name: "Kling V3 4K",
+    mediaType: "video",
+    tier: "premium",
+    offline: false,
+    constraints: {
+      durations: seconds(3, 15),
+      aspect_ratios: ["16:9", "9:16", "1:1"],
+      resolutions: [],
+      audio: true,
+      audio_configurable: true,
+      audio_input: false,
+      video_input: false,
+    },
+  },
+  {
+    id: "kling-v3-4k-reference-to-video",
+    name: "Kling V3 4K R2V",
+    mediaType: "referenceToVideo",
+    tier: "premium",
+    offline: false,
+    constraints: {
+      durations: seconds(3, 15),
+      aspect_ratios: NO_RATIOS,
+      resolutions: [],
+      audio: true,
+      audio_configurable: true,
+      audio_input: false,
+      video_input: false,
+    },
+  },
   {
     id: "kling-o3-4k-reference-to-video",
     name: "Kling O3 4K R2V",
