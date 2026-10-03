@@ -413,6 +413,44 @@ async fn save_artifact(
     if let Some(Value::Object(generation)) = &mut request.generation {
         generation.remove("path");
     }
+    let mut tx = pool.begin().await.map_err(storage_error)?;
+    // A file was made once. The webview stamps `createdAt` when it files the
+    // generation, which for a render that landed while the app was closed is
+    // the next launch: the item then jumped to the top of the gallery. The
+    // earliest date on record stays, along with what was measured about the
+    // file, which the webview's own record never carries.
+    if let Some(Value::Object(incoming)) = &mut request.generation {
+        let existing: Option<Option<String>> =
+            query("SELECT generation FROM studio_artifact_metadata WHERE id = ?")
+                .bind(&request.id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(storage_error)?
+                .map(|row| row.try_get("generation"))
+                .transpose()
+                .map_err(storage_error)?;
+        if let Some(Value::Object(current)) = existing
+            .flatten()
+            .and_then(|source| serde_json::from_str::<Value>(&source).ok())
+        {
+            let earlier = current.get("createdAt").and_then(Value::as_f64);
+            let later = incoming.get("createdAt").and_then(Value::as_f64);
+            if let (Some(earlier), Some(later), Some(original)) =
+                (earlier, later, current.get("createdAt"))
+            {
+                if earlier < later {
+                    incoming.insert("createdAt".into(), original.clone());
+                }
+            }
+            for key in MEASURE_FIELDS {
+                if !incoming.contains_key(*key) {
+                    if let Some(value) = current.get(*key) {
+                        incoming.insert((*key).to_owned(), value.clone());
+                    }
+                }
+            }
+        }
+    }
     let generation = request
         .generation
         .as_ref()
@@ -423,8 +461,10 @@ async fn save_artifact(
     let row = query("INSERT INTO studio_artifact_metadata (id, title, project_ids, generation) VALUES (?, COALESCE(?, ''), COALESCE(?, '[]'), ?) ON CONFLICT(id) DO UPDATE SET title = COALESCE(?, studio_artifact_metadata.title), project_ids = COALESCE(?, studio_artifact_metadata.project_ids), generation = COALESCE(excluded.generation, studio_artifact_metadata.generation) RETURNING *")
         .bind(&request.id).bind(&request.title).bind(&ids).bind(generation)
         .bind(&request.title).bind(&ids)
-        .fetch_one(pool).await.map_err(storage_error)?;
-    artifact_metadata(&row)
+        .fetch_one(&mut *tx).await.map_err(storage_error)?;
+    let metadata = artifact_metadata(&row)?;
+    tx.commit().await.map_err(storage_error)?;
+    Ok(metadata)
 }
 
 /// Remove gallery metadata and project memberships together, so a deleted
@@ -488,7 +528,10 @@ async fn delete_artifact_metadata(pool: &SqlitePool, id: &str) -> Result<(), Str
 async fn record_landed(pool: &SqlitePool, id: &str, generation: &Value) -> Result<(), String> {
     validate_id(id)?;
     let generation = bounded_json(generation, MAX_GENERATION_BYTES)?;
-    query("INSERT INTO studio_artifact_metadata (id, title, project_ids, generation) VALUES (?, '', '[]', ?) ON CONFLICT(id) DO UPDATE SET generation = COALESCE(studio_artifact_metadata.generation, excluded.generation)")
+    // Field by field, with what is stored winning: a measure filed a moment
+    // earlier must not keep the prompt out, and the webview's richer record
+    // must not be flattened by the job's.
+    query("INSERT INTO studio_artifact_metadata (id, title, project_ids, generation) VALUES (?, '', '[]', ?) ON CONFLICT(id) DO UPDATE SET generation = CASE WHEN studio_artifact_metadata.generation IS NULL THEN excluded.generation ELSE json_patch(excluded.generation, studio_artifact_metadata.generation) END")
         .bind(id)
         .bind(generation)
         .execute(pool)
@@ -1374,5 +1417,37 @@ mod tests {
         assert_eq!(generation["width"], 1280);
         // A measure cannot rewrite what was asked for.
         assert_eq!(generation["prompt"], "A tram");
+    }
+
+    #[tokio::test]
+    async fn a_late_filing_keeps_the_landing_date_and_the_measures() {
+        let dir = tempfile::tempdir().expect("dir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        let landed =
+            json!({ "id": "clip.mp4", "kind": "video", "prompt": "A tram", "createdAt": 1_000 });
+        record_landed(&pool, "clip.mp4", &landed)
+            .await
+            .expect("filed");
+        merge_measures(&pool, "clip.mp4", &json!({ "durationMs": 5200 }))
+            .await
+            .expect("measured");
+        // The webview files the same render at its next launch, much later.
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: None,
+                project_ids: None,
+                generation: Some(
+                    json!({ "id": "clip.mp4", "kind": "video", "prompt": "A tram", "createdAt": 9_000 }),
+                ),
+            },
+        )
+        .await
+        .expect("saved");
+        let all = list_artifacts(&pool).await.expect("list");
+        let generation = all[0].generation.clone().expect("generation");
+        assert_eq!(generation["createdAt"], 1_000);
+        assert_eq!(generation["durationMs"], 5200);
     }
 }

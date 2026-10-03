@@ -69,16 +69,18 @@ describe("the gallery", () => {
     const tile = screen.getByRole("button", { name: "A lighthouse" });
     tile.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
     const sheet = await screen.findByRole("dialog");
-    await userEvent.click(within(sheet).getByRole("button", { name: "Add to favourites" }));
+    await userEvent.click(within(sheet).getByRole("button", { name: "Add to favorites" }));
     expect(tauri.invoke).toHaveBeenCalledWith("studio_library_mark", {
       request: { ids: [ITEMS[0].fileName], favorite: true },
     });
-    await userEvent.click(screen.getByRole("button", { name: "Favourites" }));
+    await userEvent.click(screen.getByRole("button", { name: "Favorites" }));
     expect(screen.getAllByRole("button", { name: /A (lighthouse|tram|waltz)/ })).toHaveLength(1);
   });
 
   it("keeps hidden items out of the gallery until asked for", async () => {
-    library.marks = [{ id: uuid(2), collectionId: null, favorite: false, hidden: true }];
+    library.marks = [
+      { id: "m2", fileId: uuid(2), collectionId: null, favorite: false, hidden: true },
+    ];
     renderGallery();
     await screen.findByRole("button", { name: "1 hidden item" });
     expect(screen.queryByRole("button", { name: "A tram" })).toBeNull();

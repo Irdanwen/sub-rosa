@@ -25,7 +25,7 @@ import type { ArtifactKind, MediaCatalog, StudioArtifact } from "../../../lib/st
 import { type AudioMode, AudioPanel } from "./studio/StudioAudioPanels";
 import { type ImageMode, ImagePanel } from "./studio/StudioImagePanel";
 import { type VideoHandoff, VideoPanel } from "./studio/StudioVideoPanel";
-import { Lightbox } from "./studio/StudioLightbox";
+import { StudioViewer } from "./studio/StudioViewer";
 import { StudioGallery } from "./studio/StudioGallery";
 import { RecentStrip } from "./studio/StudioLibrary";
 import { handOffImagePrompt } from "../../../lib/studio/prompt-handoff";
@@ -156,13 +156,19 @@ export function StudioScreen() {
     [artifacts],
   );
 
+  /** Marks changed somewhere other than the gallery (the viewer): bumped so
+   * the gallery rereads them. */
+  const [libraryVersion, setLibraryVersion] = useState(0);
   const handleDeleteArtifact = useCallback(
-    async (artifact: StudioArtifact) => {
+    async (artifact: StudioArtifact, next: StudioArtifact | null = null) => {
+      // The viewer moves on first, so it is never torn down and rebuilt
+      // around the deletion.
+      setPreview(next);
       try {
         await deleteArtifact(artifact);
         evictArtifactDataUrl(artifact.path);
-        setPreview(null);
         refreshGallery();
+        setLibraryVersion((version) => version + 1);
       } catch {
         // Removal failures leave the tile in place; the next refresh retries.
       }
@@ -311,6 +317,7 @@ export function StudioScreen() {
                   setMode("image");
                 }}
                 pending={pendingOf(undefined)}
+                libraryVersion={libraryVersion}
               />
             )}
             {galleryKind ? (
@@ -335,13 +342,29 @@ export function StudioScreen() {
         />
       ) : null}
       {preview ? (
-        <Lightbox
+        <StudioViewer
           artifact={preview}
+          among={previewAmong.length ? previewAmong : [preview]}
+          onNavigate={setPreview}
           onClose={() => setPreview(null)}
-          onDelete={() => void handleDeleteArtifact(preview)}
+          onDelete={() => {
+            // Deleting moves on to the neighbour, as a photo viewer does.
+            const list = previewAmong.length ? previewAmong : [preview];
+            const at = list.findIndex((entry) => entry.path === preview.path);
+            const neighbour = list[at + 1] ?? list[at - 1] ?? null;
+            setPreviewAmong(list.filter((entry) => entry.path !== preview.path));
+            void handleDeleteArtifact(preview, neighbour);
+          }}
+          onMarked={() => setLibraryVersion((version) => version + 1)}
           onContinueShot={
             preview.kind === "video" ? () => void handleContinueShot(preview) : undefined
           }
+          onReusePrompt={() => {
+            handOffImagePrompt(preview.prompt);
+            setPreview(null);
+            setImageMode("generate");
+            setMode("image");
+          }}
           onUpscaled={refreshGallery}
           canRemoveBackground={Boolean(catalog && supportsBackgroundRemoval(catalog))}
         />

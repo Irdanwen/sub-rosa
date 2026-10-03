@@ -267,9 +267,13 @@ async function clipPoster(artifact: Pick<StudioArtifact, "path">): Promise<strin
   const stream = artifactStreamUrl(artifact);
   try {
     const poster = await posterJpeg(stream);
-    const seconds = await mediaDuration(stream);
-    if (seconds > 0) clipLengths.set(artifact.path, seconds);
-    filePoster(artifact, poster, seconds > 0 ? Math.round(seconds * 1000) : undefined);
+    // The picture is in hand: the tile gets it now. The length is read from
+    // the clip's metadata behind it and filed with the poster, so the next
+    // launch has both; a slow answer must not hold twenty tiles grey.
+    void mediaDuration(stream).then((seconds) => {
+      if (seconds > 0) clipLengths.set(artifact.path, seconds);
+      filePoster(artifact, poster, seconds > 0 ? Math.round(seconds * 1000) : undefined);
+    });
     return poster.dataUrl;
   } catch {
     // Not a WebKit shell, or a clip it cannot paint: decode a frame instead.
@@ -443,6 +447,8 @@ export interface TrackShape {
 
 const trackShapes = new Map<string, TrackShape>();
 const pendingShapes = new Map<string, Promise<TrackShape>>();
+/** Tracks that would not decode: asked once per launch, not once per scroll. */
+const unmeasurable = new Set<string>();
 let shapeTurn: Promise<unknown> = Promise.resolve();
 
 /** Measures a track once (decoded natively, one at a time) and files the
@@ -450,6 +456,9 @@ let shapeTurn: Promise<unknown> = Promise.resolve();
 function measureTrack(artifact: Pick<StudioArtifact, "path">): Promise<TrackShape> {
   const known = trackShapes.get(artifact.path);
   if (known) return Promise.resolve(known);
+  if (unmeasurable.has(artifact.path)) {
+    return Promise.reject(new Error("That track could not be measured."));
+  }
   const running = pendingShapes.get(artifact.path);
   if (running) return running;
   const id = fileNameOf(artifact.path);
@@ -462,6 +471,10 @@ function measureTrack(artifact: Pick<StudioArtifact, "path">): Promise<TrackShap
       trackShapes.set(artifact.path, shape);
       void invoke("studio_artifact_measure", { id, measures: shape }).catch(() => undefined);
       return shape;
+    })
+    .catch((error: unknown) => {
+      unmeasurable.add(artifact.path);
+      throw error;
     })
     .finally(() => pendingShapes.delete(artifact.path));
   pendingShapes.set(artifact.path, read);

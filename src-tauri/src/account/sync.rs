@@ -81,7 +81,14 @@ const TABLES: &[Table] = &[
     Table {
         name: "studio_marks",
         kind: "artifact",
-        columns: &["id", "collection_id", "favorite", "hidden", "updated_at"],
+        columns: &[
+            "id",
+            "file_id",
+            "collection_id",
+            "favorite",
+            "hidden",
+            "updated_at",
+        ],
     },
     Table {
         name: "account_studio_files",
@@ -1095,6 +1102,37 @@ pub(super) async fn delete_locally(
                 .await?
                 .map(|row| row.get("file_name"));
             if let Some(name) = name.filter(|n| !n.is_empty()) {
+                if lane == "studio" {
+                    // What this device filed about the file goes with it: its
+                    // mark (or a later folder change would revive it as a
+                    // child of the tombstone), its provenance, and a download
+                    // of it still under way, which would otherwise finish and
+                    // put the file back after the deletion.
+                    query("DELETE FROM studio_marks WHERE file_id=?")
+                        .bind(id)
+                        .execute(&mut *conn)
+                        .await?;
+                    query("DELETE FROM studio_artifact_metadata WHERE id=?")
+                        .bind(&name)
+                        .execute(&mut *conn)
+                        .await?;
+                    let manifests: Vec<String> =
+                        query("SELECT id FROM account_file_manifests WHERE artifact_id=?")
+                            .bind(id)
+                            .fetch_all(&mut *conn)
+                            .await?
+                            .into_iter()
+                            .map(|row| row.get("id"))
+                            .collect();
+                    for manifest in manifests {
+                        query("DELETE FROM account_file_downloads WHERE manifest_id=?")
+                            .bind(&manifest)
+                            .execute(&mut *conn)
+                            .await?;
+                        queue_removed_file(conn, "staging", format!("{manifest}.part"), &now)
+                            .await?;
+                    }
+                }
                 queue_removed_file(conn, lane, name, &now).await?;
             }
             query(&format!("DELETE FROM {table} WHERE id=?"))

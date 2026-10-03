@@ -919,6 +919,11 @@ pub async fn carpe_diem_media_save_poster(
 ) -> Result<(), AppError> {
     let invalid = || AppError::new("media_artifact_invalid", "That poster is not valid.");
     let id = super::media_protocol::file_name_of(&request.id).ok_or_else(invalid)?;
+    // Judged on the text first: a base64 string is decoded into three quarters
+    // of its length, and an oversized one is refused before any of it is.
+    if request.base64.len() > MAX_POSTER_BYTES * 4 / 3 + 4 {
+        return Err(invalid());
+    }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(request.base64.trim())
         .map_err(|_| invalid())?;

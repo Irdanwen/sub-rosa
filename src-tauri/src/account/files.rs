@@ -209,6 +209,27 @@ async fn remove_queued_files(
                     let target = gallery.join(name);
                     ensure_contained(gallery, &target)
                         .map_err(|_| std::io::Error::other("outside gallery"))
+                        .and_then(|_| {
+                            // Its poster goes with it (a missing one is the
+                            // common case).
+                            let poster = gallery
+                                .join(crate::carpe_diem::media::POSTERS_DIR)
+                                .join(format!("{}.jpg", name.to_string_lossy()));
+                            let _ = std::fs::remove_file(poster);
+                            std::fs::remove_file(&target)
+                        })
+                }
+            }
+            // A download that was under way for a file deleted elsewhere.
+            "staging" => {
+                let name = std::path::Path::new(&path);
+                if name.components().count() != 1 {
+                    Ok(())
+                } else {
+                    let staging = paths.data_dir.join("account-sync-staging");
+                    let target = staging.join(name);
+                    ensure_contained(&staging, &target)
+                        .map_err(|_| std::io::Error::other("outside staging"))
                         .and_then(|_| std::fs::remove_file(&target))
                 }
             }
@@ -394,8 +415,11 @@ pub(super) async fn upload_one(
     });
     let chunks_json = serde_json::to_string(&chunks).map_err(|_| file_error())?;
     let mut tx = pool.begin().await?;
-    query("UPDATE account_file_uploads SET next_offset=?,chunks_json=?,pending_blob_id=NULL,pending_ciphertext=NULL,pending_bytes=NULL,pending_digest=NULL,completed=? WHERE artifact_id=?").bind(offset+size).bind(&chunks_json).bind(offset+size==total).bind(&artifact).execute(&mut *tx).await?;
-    if offset + size == total {
+    let advanced = query("UPDATE account_file_uploads SET next_offset=?,chunks_json=?,pending_blob_id=NULL,pending_ciphertext=NULL,pending_bytes=NULL,pending_digest=NULL,completed=? WHERE artifact_id=?").bind(offset+size).bind(&chunks_json).bind(offset+size==total).bind(&artifact).execute(&mut *tx).await?.rows_affected();
+    // The upload row can vanish mid-upload: the file was deleted and its
+    // record tombstoned. A manifest written then would describe a file no
+    // device holds, and park forever on every other one.
+    if advanced == 1 && offset + size == total {
         query("INSERT INTO account_file_manifests(id,artifact_id,bytes,format,chunks_json,created_at,source_kind) VALUES(?,?,?,?,?,?,?)").bind(row.get::<String,_>("manifest_id")).bind(&artifact).bind(total).bind(row.get::<String,_>("format")).bind(&chunks_json).bind(chrono::Utc::now().to_rfc3339()).bind(&source_kind).execute(&mut *tx).await?;
     }
     tx.commit().await?;

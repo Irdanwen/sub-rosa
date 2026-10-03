@@ -59,7 +59,13 @@ export function StackHeader({
         ) : (
           <span className="mobile-stack-header-spacer" />
         )}
-        <h1 className="mobile-stack-header-title">{title}</h1>
+        {title ? (
+          <h1 className="mobile-stack-header-title">{title}</h1>
+        ) : (
+          // A screen whose page is its own title keeps the row's shape with
+          // no empty heading in the accessibility tree.
+          <span className="mobile-stack-header-title" aria-hidden />
+        )}
         <div className="mobile-stack-header-trailing">{trailing}</div>
       </div>
     </header>

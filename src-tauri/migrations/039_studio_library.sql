@@ -8,10 +8,13 @@ CREATE TABLE IF NOT EXISTS studio_collections (
   updated_at TEXT NOT NULL
 );
 
--- What a person said about one gallery file. The id is the UUID stem of the
--- gallery file name, the same on every device the file reaches.
+-- What a person said about one gallery file. file_id is the UUID stem of the
+-- gallery file name, the same on every device the file reaches. The row's own
+-- id is derived from it, and is never the file's id: the file's synchronised
+-- record already travels under that one, and two objects cannot share it.
 CREATE TABLE IF NOT EXISTS studio_marks (
   id TEXT PRIMARY KEY,
+  file_id TEXT NOT NULL UNIQUE,
   collection_id TEXT,
   favorite INTEGER NOT NULL DEFAULT 0,
   hidden INTEGER NOT NULL DEFAULT 0,

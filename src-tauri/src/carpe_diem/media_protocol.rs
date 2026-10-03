@@ -25,11 +25,18 @@ use tauri::{AppHandle, Runtime, UriSchemeContext, UriSchemeResponder};
 /// or `http://subrosa-media.localhost/<name>` where the platform needs it).
 pub const SCHEME: &str = "subrosa-media";
 
-/// The most one response carries. A media element asks for open ranges
+/// The most one ranged response carries. A media element asks for open ranges
 /// (`bytes=0-`) and keeps asking where the last answer stopped, so a bounded
 /// answer streams a three-hundred-megabyte clip in steady steps instead of
 /// reading it whole. The same bound the asset protocol uses.
 const MAX_RANGE_BYTES: u64 = 1024 * 1024;
+
+/// The most a request without a `Range` is answered whole. The responder
+/// hands over one buffer, so a whole answer is the file in memory once; an
+/// image loader reading a clip's first frame needs that, and anything this
+/// large gets the first step as `206` instead, which a media element follows
+/// and an image loader gives up on rather than taking the process down.
+const MAX_WHOLE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// What a request resolved to before any file was opened.
 #[derive(Debug, PartialEq, Eq)]
@@ -59,6 +66,30 @@ pub fn register<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
 }
 
 fn respond<R: Runtime>(app: &AppHandle<R>, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let origin = request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .filter(|origin| app_origin(origin))
+        .and_then(|origin| origin.parse::<tauri::http::HeaderValue>().ok());
+    // A preflight (a `fetch` that sets `Range`) wants the allowance, not the
+    // file.
+    if request.method() == tauri::http::Method::OPTIONS {
+        let mut response = status(StatusCode::NO_CONTENT);
+        if let Some(origin) = origin {
+            let headers = response.headers_mut();
+            headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+            headers.insert(
+                header::ACCESS_CONTROL_ALLOW_HEADERS,
+                tauri::http::HeaderValue::from_static("range"),
+            );
+            headers.insert(
+                header::ACCESS_CONTROL_ALLOW_METHODS,
+                tauri::http::HeaderValue::from_static("GET, HEAD"),
+            );
+        }
+        return response;
+    }
     let Some(target) = target_of(request.uri().path()) else {
         return status(StatusCode::FORBIDDEN);
     };
@@ -75,21 +106,19 @@ fn respond<R: Runtime>(app: &AppHandle<R>, request: &Request<Vec<u8>>) -> Respon
             .join(super::media::POSTERS_DIR)
             .join(format!("{name}.jpg")),
     };
-    let origin = request
-        .headers()
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        .filter(|origin| app_origin(origin))
-        .map(str::to_owned);
-    match serve(&path, range) {
+    let head_only = request.method() == tauri::http::Method::HEAD;
+    match serve(&path, range, head_only) {
         Ok(mut response) => {
             // A frame is read off a clip by drawing it on a canvas, which the
             // webview allows only for a source that says this page may read
             // it. Only the app's own page: nothing loaded in a frame may.
-            if let Some(origin) = origin.and_then(|value| value.parse().ok()) {
-                response
-                    .headers_mut()
-                    .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+            if let Some(origin) = origin {
+                let headers = response.headers_mut();
+                headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+                headers.insert(
+                    header::ACCESS_CONTROL_EXPOSE_HEADERS,
+                    tauri::http::HeaderValue::from_static("content-range, content-length"),
+                );
             }
             response
         }
@@ -110,16 +139,21 @@ fn gallery_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, ()> {
 }
 
 /// The origins the app's own page is served from: the custom scheme on Apple
-/// platforms, `*.localhost` where the webview needs http, and the loopback dev
-/// server.
+/// platforms, `*.localhost` where the webview needs http, and, in a debug
+/// build only, the loopback dev server.
 pub(crate) fn app_origin(origin: &str) -> bool {
+    app_origin_for(origin, cfg!(debug_assertions))
+}
+
+fn app_origin_for(origin: &str, dev: bool) -> bool {
     matches!(
         origin,
         "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost"
-    ) || origin
-        .strip_prefix("http://localhost:")
-        .or_else(|| origin.strip_prefix("http://127.0.0.1:"))
-        .is_some_and(|port| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()))
+    ) || (dev
+        && origin
+            .strip_prefix("http://localhost:")
+            .or_else(|| origin.strip_prefix("http://127.0.0.1:"))
+            .is_some_and(|port| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit())))
 }
 
 /// What a request asks for: a gallery file, or the poster kept for one.
@@ -218,7 +252,7 @@ pub(crate) fn byte_range(header: Option<&str>, len: u64) -> ByteRange {
     }
 }
 
-fn serve(path: &Path, range: Option<&str>) -> std::io::Result<Response<Vec<u8>>> {
+fn serve(path: &Path, range: Option<&str>, head_only: bool) -> std::io::Result<Response<Vec<u8>>> {
     let mut file = std::fs::File::open(path)?;
     let len = file.metadata()?.len();
     let mime = mime_for(path);
@@ -226,24 +260,37 @@ fn serve(path: &Path, range: Option<&str>) -> std::io::Result<Response<Vec<u8>>>
         .header(header::CONTENT_TYPE, mime)
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CACHE_CONTROL, "no-cache");
-    let response = match byte_range(range, len) {
+    let range = match byte_range(range, len) {
+        ByteRange::Whole if len > MAX_WHOLE_BYTES => ByteRange::Part {
+            start: 0,
+            end: MAX_RANGE_BYTES - 1,
+        },
+        other => other,
+    };
+    let response = match range {
         ByteRange::Whole => {
-            let mut body = Vec::with_capacity(len as usize);
-            file.read_to_end(&mut body)?;
+            let mut body = Vec::new();
+            if !head_only {
+                body.reserve_exact(len as usize);
+                file.read_to_end(&mut body)?;
+            }
             builder
                 .status(StatusCode::OK)
-                .header(header::CONTENT_LENGTH, body.len())
+                .header(header::CONTENT_LENGTH, len)
                 .body(body)
         }
         ByteRange::Part { start, end } => {
             let wanted = end + 1 - start;
-            let mut body = Vec::with_capacity(wanted as usize);
-            file.seek(SeekFrom::Start(start))?;
-            file.take(wanted).read_to_end(&mut body)?;
+            let mut body = Vec::new();
+            if !head_only {
+                body.reserve_exact(wanted as usize);
+                file.seek(SeekFrom::Start(start))?;
+                file.take(wanted).read_to_end(&mut body)?;
+            }
             builder
                 .status(StatusCode::PARTIAL_CONTENT)
                 .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
-                .header(header::CONTENT_LENGTH, body.len())
+                .header(header::CONTENT_LENGTH, wanted)
                 .body(body)
         }
         ByteRange::Unsatisfiable => builder
@@ -316,10 +363,13 @@ mod tests {
             "tauri://localhost",
             "http://tauri.localhost",
             "https://tauri.localhost",
-            "http://localhost:1420",
-            "http://127.0.0.1:5199",
         ] {
-            assert!(app_origin(allowed), "{allowed}");
+            assert!(app_origin_for(allowed, false), "{allowed}");
+        }
+        // The dev server only while developing.
+        for dev_only in ["http://localhost:1420", "http://127.0.0.1:5199"] {
+            assert!(app_origin_for(dev_only, true), "{dev_only}");
+            assert!(!app_origin_for(dev_only, false), "{dev_only}");
         }
         for refused in [
             "https://example.com",
@@ -328,7 +378,7 @@ mod tests {
             "http://127.0.0.1:80/x",
             "null",
         ] {
-            assert!(!app_origin(refused), "{refused}");
+            assert!(!app_origin_for(refused, true), "{refused}");
         }
     }
 
@@ -396,14 +446,19 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("clip.mp4");
         std::fs::write(&path, (0u8..=99).collect::<Vec<_>>()).unwrap();
-        let response = serve(&path, Some("bytes=10-19")).unwrap();
+        let response = serve(&path, Some("bytes=10-19"), false).unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.body(), &(10u8..=19).collect::<Vec<_>>());
         assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 10-19/100");
         assert_eq!(response.headers()[header::CONTENT_TYPE], "video/mp4");
-        let whole = serve(&path, None).unwrap();
+        let whole = serve(&path, None, false).unwrap();
         assert_eq!(whole.status(), StatusCode::OK);
         assert_eq!(whole.body().len(), 100);
+        // A HEAD carries the headers and no bytes.
+        let head = serve(&path, None, true).unwrap();
+        assert_eq!(head.status(), StatusCode::OK);
+        assert!(head.body().is_empty());
+        assert_eq!(head.headers()[header::CONTENT_LENGTH], "100");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -105,6 +105,7 @@ export function StudioGallery({
   onContinueShot,
   onReusePrompt,
   pending = [],
+  libraryVersion = 0,
 }: {
   items: StudioArtifact[];
   /** Opens one item in the viewer, with the list it was opened from (for
@@ -114,6 +115,8 @@ export function StudioGallery({
   onContinueShot?: (artifact: StudioArtifact) => void;
   onReusePrompt?: (artifact: StudioArtifact) => void;
   pending?: { key: string }[];
+  /** Bumped by whoever else changes marks (the viewer), so the grid rereads. */
+  libraryVersion?: number;
 }) {
   const [library, setLibrary] = useState<StudioLibrary>(EMPTY_LIBRARY);
   const [view, setView] = useState<View>("all");
@@ -139,9 +142,12 @@ export function StudioGallery({
       .then(setLibrary)
       .catch(() => undefined);
   }, []);
+  // Reread on mount, and again each time someone else (the viewer) changes a
+  // mark and bumps the version.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the version is the trigger, not an input
   useEffect(() => {
     refreshLibrary();
-  }, [refreshLibrary]);
+  }, [refreshLibrary, libraryVersion]);
 
   const setColumns = useCallback((value: number) => {
     const next = Math.min(MAX_COLUMNS, Math.max(MIN_COLUMNS, value));
@@ -149,10 +155,13 @@ export function StudioGallery({
     writeColumns(next);
   }, []);
 
+  const noticeTimer = useRef<number | undefined>(undefined);
   const flash = useCallback((text: string) => {
     setNotice(text);
-    window.setTimeout(() => setNotice(null), 1800);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 1800);
   }, []);
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
 
   /** Changes marks at once on screen, then natively; a failed write reloads. */
   const applyMarks = useCallback(
@@ -319,7 +328,7 @@ export function StudioGallery({
     ];
     if (markable) {
       actions.push({
-        label: mark?.favorite ? t("Remove from favourites") : t("Add to favourites"),
+        label: mark?.favorite ? t("Remove from favorites") : t("Add to favorites"),
         onAction: () => applyMarks([artifact], { favorite: !mark?.favorite }),
       });
       actions.push({ label: t("Add to a folder"), onAction: () => setFiling([artifact]) });
@@ -376,7 +385,7 @@ export function StudioGallery({
     { id: "image", label: t("Images") },
     { id: "video", label: t("Videos") },
     { id: "audio", label: t("Sounds") },
-    { id: "favorites", label: t("Favourites") },
+    { id: "favorites", label: t("Favorites") },
     { id: "collections", label: t("Folders") },
   ];
   const openCollection = library.collections.find((entry) => entry.id === collectionId);
@@ -528,7 +537,7 @@ export function StudioGallery({
               {query.trim()
                 ? t("Nothing matches that search.")
                 : view === "favorites"
-                  ? t("Press and hold an item to add it to your favourites.")
+                  ? t("Press and hold an item to add it to your favorites.")
                   : openCollection
                     ? t("This folder is empty. Press and hold an item to add it here.")
                     : t("Nothing here yet.")}
@@ -598,12 +607,12 @@ export function StudioGallery({
               onAction={() => setFiling(selectedItems)}
             />
             <SelectAction
-              label={t("Add to favourites")}
+              label={t("Add to favorites")}
               icon={<IconHeart size={20} aria-hidden />}
               disabled={selectedItems.length === 0}
               onAction={() => {
                 applyMarks(selectedItems, { favorite: true });
-                flash(t("Added to favourites"));
+                flash(t("Added to favorites"));
                 exitSelection();
               }}
             />
@@ -854,7 +863,11 @@ function GalleryTile({
   const [ref, near] = useNearScreen<HTMLButtonElement>();
   const press = useLongPress(onHold);
   const audio = AUDIO_KINDS.includes(artifact.kind);
-  const thumbnail = useArtifactThumbnail(near && !audio ? artifact : null);
+  // A filed poster that is not there any more (a cleaned folder, a failed
+  // rename) sends the tile back to making one.
+  const [posterGone, setPosterGone] = useState(false);
+  const subject = posterGone ? { ...artifact, posterVersion: undefined } : artifact;
+  const thumbnail = useArtifactThumbnail(near && !audio ? subject : null);
   const shape = useTrackShape(near && audio ? artifact : null);
   const seconds =
     (artifact.durationMs ? artifact.durationMs / 1000 : undefined) ??
@@ -878,7 +891,7 @@ function GalleryTile({
         data-selected={selected ? "true" : undefined}
         style={ratio ? ({ aspectRatio: ratio } as CSSProperties) : undefined}
         aria-label={artifact.prompt?.trim() || kindName(artifact.kind)}
-        aria-description={favorite ? t("Favourite") : undefined}
+        aria-description={favorite ? t("Favorite") : undefined}
         aria-pressed={selecting ? selected : undefined}
         {...press.handlers}
         onClick={() => {
@@ -889,7 +902,16 @@ function GalleryTile({
         {audio ? (
           <AudioArt artifact={artifact} peaks={shape?.peaks} />
         ) : thumbnail?.kind === "still" ? (
-          <img src={thumbnail.src} alt="" draggable={false} loading="lazy" decoding="async" />
+          <img
+            src={thumbnail.src}
+            alt=""
+            draggable={false}
+            loading="lazy"
+            decoding="async"
+            onError={() => {
+              if (!posterGone && artifact.posterVersion) setPosterGone(true);
+            }}
+          />
         ) : thumbnail?.kind === "media" ? (
           <span className="mobile-gallery-tile-fallback" aria-hidden>
             <IconPlay size={18} />
