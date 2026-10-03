@@ -196,6 +196,18 @@ const TABLES: &[Table] = &[
             "updated_at",
         ],
     },
+    // The gallery's organisation (ADR-0073). Collections route as folders,
+    // marks as artifacts; neither column is a dependency `apply` waits on.
+    Table {
+        name: "studio_collections",
+        kind: "folder",
+        columns: &["id", "name", "created_at", "updated_at"],
+    },
+    Table {
+        name: "studio_marks",
+        kind: "artifact",
+        columns: &["id", "collection_id", "favorite", "hidden", "updated_at"],
+    },
     Table {
         name: "account_studio_files",
         kind: "artifact",

@@ -1317,3 +1317,68 @@ async fn a_chunk_the_service_would_not_serve_steps_aside_and_comes_back_later() 
     reconcile_issues(&pool).await.unwrap();
     assert_eq!(issue_count(&pool).await.unwrap(), 0);
 }
+
+/// The gallery's organisation travels (ADR-0073): a mark leaves as an
+/// artifact, a collection as a folder, and one received from another device
+/// lands without being sent back.
+#[tokio::test]
+async fn gallery_marks_and_collections_travel_and_arrive_without_echo() {
+    let pool = database().await;
+    let album = crate::studio_library::save_collection(&pool, None, "Storyboard")
+        .await
+        .unwrap();
+    let clip = "0192f1a0-7c3e-7d4b-9a10-2f9f5b8e4c11";
+    crate::studio_library::mark(
+        &pool,
+        serde_json::from_value(
+            json!({ "ids": [format!("{clip}.mp4")], "favorite": true, "collectionId": album.id }),
+        )
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let collection_rows = outbox_rows(&pool, &album.id).await;
+    assert_eq!(collection_rows.len(), 1);
+    assert_eq!(collection_rows[0].get::<String, _>("kind"), "folder");
+    let mark_rows = outbox_rows(&pool, clip).await;
+    assert!(!mark_rows.is_empty());
+    assert_eq!(mark_rows[0].get::<String, _>("kind"), "artifact");
+    let body: Value =
+        serde_json::from_str(&mark_rows.last().unwrap().get::<String, _>("body")).unwrap();
+    assert_eq!(body["table"], "studio_marks");
+    assert_eq!(body["row"]["favorite"], 1);
+    assert_eq!(body["row"]["collection_id"], album.id.as_str());
+
+    // One arriving from another device.
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let other = "0192f1a0-7c3e-7d4b-9a10-2f9f5b8e4c99";
+    let op = uuid::Uuid::new_v4().to_string();
+    let payload = json!({"v":1,"operation_id":op,"parent_revision":null,"deleted":false,"table":"studio_marks","row":{"id":other,"collection_id":null,"favorite":0,"hidden":1,"updated_at":"now"}});
+    let c = Change {
+        sequence: 1,
+        resolved_revisions: Vec::new(),
+        object_id: other.into(),
+        revision: uuid::Uuid::new_v4().to_string(),
+        parent_revision: None,
+        kind: "artifact".into(),
+        ciphertext: crypto::seal(
+            &key,
+            &aad(&s, "artifact", other),
+            &serde_json::to_vec(&payload).unwrap(),
+        )
+        .unwrap(),
+        deleted: false,
+        operation_id: Some(op),
+    };
+    let body = verify(&s, &key, &c).unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, &c, &body).await.unwrap());
+    tx.commit().await.unwrap();
+    let library = crate::studio_library::list(&pool).await.unwrap();
+    assert!(library
+        .marks
+        .iter()
+        .any(|mark| mark.id == other && mark.hidden));
+    assert!(outbox_rows(&pool, other).await.is_empty());
+}

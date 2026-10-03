@@ -886,6 +886,7 @@ pub async fn carpe_diem_media_delete_artifact(
         .ok_or_else(|| AppError::new("media_artifact_invalid", "Invalid gallery file name."))?;
     // Its poster goes with it; a missing one is the common case.
     let _ = tokio::fs::remove_file(dir.join(POSTERS_DIR).join(format!("{id}.jpg"))).await;
+    crate::studio_library::forget(&app, id).await;
     crate::studio_project::delete_gallery_artifact_metadata(&app, id)
         .await
         .map_err(|error| AppError::new("media_artifact_delete_failed", error))

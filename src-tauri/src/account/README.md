@@ -144,7 +144,7 @@ It is excluded from the AI usage counters.
 | User memory | Stored facts; no embeddings or provider authorization is transferred |
 | Conversations | Portable visible user/assistant history; explicit continuation starts a new turn |
 | Imports | Historical ingest metadata and resulting notes/transcripts; no remote download or paid execution |
-| Studio | Completed gallery files and available prompt/model metadata; no remote job execution |
+| Studio | Completed gallery files and available prompt/model metadata; the gallery's collections, favourites and hidden marks (ADR-0073); a gallery delete removes the file on every device; no remote job execution |
 | Provider configuration | Encrypted URL/key, activated only after explicit authenticated validation |
 | Usage | Observed request counts/bytes, available turn counters, and dated balance snapshots |
 

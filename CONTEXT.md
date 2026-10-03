@@ -726,6 +726,23 @@ worth keeping is written into it rather than held in a form's state. See
 _Avoid_: library, assets, media pool, uploads (nothing is uploaded); "the
 gallery" is the word in the code, the desktop UI, and the mobile sheet alike.
 
+**Collection**:
+A named group of gallery files, shown to the user as a folder ("Dossier"). A
+file is in at most one collection; deleting a collection never deletes its
+files, they go back to the whole gallery. Stored in `studio_collections` and
+synchronised with the account (ADR-0073).
+_Avoid_: folder in code (that is a note folder, `folders`, and `folder_id` is
+the column `account::sync` resolves against it), album, project (a project is
+the film workspace's own grouping, ADR-0020).
+
+**Mark**:
+What a person said about one gallery file: its collection, favourite, hidden.
+Keyed by the UUID stem of the file name, the same on every device the file
+reaches, and synchronised with the account (ADR-0073). A file with nothing to
+say has no mark. **Hidden** removes a file from the gallery's views and its
+search until it is shown again; it is not deleted and not encrypted apart.
+_Avoid_: tag, label, flag.
+
 ### Retouch (fork)
 
 **Retouch**:
