@@ -536,20 +536,17 @@ export const ReferencePicker = forwardRef<
       : []),
   ];
 
-  const offerSources = useCallback(() => {
+  const offerSources = () => {
     if (sources.length === 1) sources[0].onAction();
     else setSourcesOpen(true);
-  }, [sources]);
-  useImperativeHandle(
-    ref,
-    () => ({
-      open() {
-        rootRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
-        if (!full) offerSources();
-      },
-    }),
-    [offerSources, full],
-  );
+  };
+  // Rebuilt every render on purpose: the sources list is, too.
+  useImperativeHandle(ref, () => ({
+    open() {
+      rootRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      if (!full) offerSources();
+    },
+  }));
 
   const readPicked = useCallback(
     (file: File | undefined) => {
