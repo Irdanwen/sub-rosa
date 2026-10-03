@@ -214,6 +214,12 @@
   width: 44px;
 }
 
+.mobile-stack-header-leading {
+  display: flex;
+  align-items: center;
+  min-width: 44px;
+}
+
 .mobile-stack-header-trailing {
   display: flex;
   align-items: center;
@@ -2443,26 +2449,41 @@
   margin-top: 2px;
 }
 
-/* Openers on an empty chat: quiet, tappable, and stacked so a long one wraps
- * rather than being clipped by a row. */
+/* Openers on an empty chat: short chips with an icon, in one row above the
+ * composer that scrolls sideways. Within the thumb's reach, and the middle of
+ * the screen is left to the question itself. */
 .mobile-chat-suggestions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: nowrap;
   gap: var(--sp-2);
-  width: 100%;
-  max-width: 320px;
-  margin-top: var(--sp-6);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0 var(--mobile-gutter) var(--sp-1);
+  border: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-chat-suggestions::-webkit-scrollbar {
+  display: none;
 }
 
 .mobile-chat-suggestion {
-  min-height: 44px;
-  padding: var(--sp-2) var(--sp-4);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: 0 var(--sp-4) 0 var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
   background: var(--card);
   color: var(--foreground);
-  font-size: var(--fs-md);
-  text-align: center;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
   /* Feedback on press, not on release. A button that only changes on click
    * responds when the finger leaves, which reads as lag even at 0ms. */
   transition:
@@ -3398,10 +3419,12 @@
   text-align: center;
 }
 
+/* The rose alone, in the page's own ink: one quiet mark, not a logo. */
 .mobile-chat-hero-mark {
   display: inline-flex;
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
+  color: color-mix(in oklch, var(--foreground) 88%, var(--brand));
 }
 
 .mobile-chat-hero-mark svg {
@@ -3581,33 +3604,93 @@
   }
 }
 
+/* The paperclip needs no ring: a bare glyph reads as a tool, a ring as a
+ * second send button. */
+.mobile-composer-bare {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+/* The model, named the way a person says it, with a chevron that says it
+ * opens. Text, not a filled pill: it is a setting, not an action. */
 .mobile-composer-model {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
-  max-width: 46vw;
-  padding: 0 var(--sp-3);
+  gap: var(--sp-1);
+  min-height: 40px;
+  min-width: 0;
+  max-width: 52vw;
+  padding: 0 var(--sp-2);
   border: none;
   border-radius: var(--r-pill);
-  background: var(--muted);
-  color: var(--foreground);
+  background: none;
+  color: var(--muted-foreground);
   font-size: var(--fs-sm);
   white-space: nowrap;
+}
+
+.mobile-composer-model-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.mobile-composer-model svg {
+  flex-shrink: 0;
 }
 
 .mobile-composer-spacer {
   flex: 1;
 }
 
-/* The send circle flips to high contrast when armed, like the reference. */
+/* One round button, in the page's strongest contrast: the microphone while
+ * the field is empty, the arrow once there is something to send. */
 .mobile-chat-send {
   position: relative;
-  background: var(--primary);
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--foreground);
+  color: var(--background);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.mobile-chat-send:active {
+  transform: scale(0.94);
+}
+
+.mobile-chat-send[data-active="true"] {
+  background: var(--record, var(--destructive));
   color: var(--primary-foreground);
-  width: 36px;
-  height: 36px;
+}
+
+.mobile-chat-send[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--record, var(--destructive));
+  animation: mobile-dictate-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-chat-send {
+    transition: none;
+  }
+  .mobile-chat-send[data-active="true"]::before {
+    animation: none;
+  }
 }
 
 .mobile-chat-send:disabled {
@@ -3631,6 +3714,31 @@
 
 .mobile-chat-attachments {
   padding: var(--sp-2) var(--mobile-gutter) 0;
+}
+
+/* The tab bar under the opening takes the night too: a cream bar under a dark
+ * image cut the screen in two. Glass, like the composer above it. */
+.mobile-shell:has(.mobile-chat[data-ambient="true"]) .mobile-tab-bar {
+  border-top-color: oklch(1 0 0 / 8%);
+  background: oklch(0.16 0.012 230 / 86%);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+}
+
+.mobile-shell:has(.mobile-chat[data-ambient="true"]) .mobile-tab-bar-item {
+  color: oklch(0.86 0 0);
+}
+
+.mobile-shell:has(.mobile-chat[data-ambient="true"]) .mobile-tab-bar-item[aria-current="page"] {
+  color: color-mix(in oklch, var(--brand) 62%, white);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .mobile-shell:has(.mobile-chat[data-ambient="true"]) .mobile-tab-bar {
+    background: oklch(0.16 0.012 230);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* --- The opening ground: what stands on it ---------------------------------

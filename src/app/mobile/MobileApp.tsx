@@ -1,4 +1,5 @@
 import { AssistantsScreen } from "../../components/assistants/AssistantsDialog";
+import { handOffImagePrompt } from "../../lib/studio/prompt-handoff";
 import { useAccountLibrarySync } from "../useAccountLibrarySync";
 import { t } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
@@ -1079,6 +1080,10 @@ export function MobileApp() {
             onOpenSession={openChatSession}
             onOpenHistory={() => nav.push({ view: "agent-history" })}
             onNewChat={() => openChatSession(undefined)}
+            onGenerateImage={(prompt) => {
+              handOffImagePrompt(prompt);
+              nav.switchTab("studio");
+            }}
             initialDraft={pendingChat?.text}
             autoSend={pendingChat?.send}
             onInitialDraftUsed={() => setPendingChat(null)}
