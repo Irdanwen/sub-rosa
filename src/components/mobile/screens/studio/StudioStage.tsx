@@ -3,8 +3,9 @@
 // component for the image, video and audio panels, so a wait looks like a
 // wait wherever it is met (CONTEXT.md, "Stage", "Veil").
 
-import type { ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useMemo } from "react";
 import { t } from "../../../../lib/i18n";
+import { darkroomWave } from "../../../../lib/studio/darkroom";
 import { StageFrame, useDecodeGate } from "../../../studio/stage/StageFrame";
 import type { StageWait } from "../../../studio/stage/Veil";
 import { markMediaPlayback } from "./StudioControls";
@@ -12,8 +13,27 @@ import { markMediaPlayback } from "./StudioControls";
 export type StageResult =
   | { kind: "image"; src: string; alt?: string }
   | { kind: "video"; src: string; poster?: string }
-  /** A rendered track: the frame holds its resting waveform, drawn by the caller. */
-  | { kind: "audio"; src: string; wave: ReactNode };
+  /** A rendered track: the frame holds its resting waveform, seeded by it. */
+  | { kind: "audio"; src: string; seed: string };
+
+/** The still silhouette of a track on the scene: the darkroom's wave, at rest.
+ * It breathes only while a render runs - and then it is the veil that moves. */
+export function SceneWave({ seed }: { seed: string }) {
+  const bars = useMemo(() => darkroomWave(seed, 36), [seed]);
+  return (
+    <span className="mobile-studio-scene-wave" aria-hidden>
+      {bars.map((height, index) => (
+        <span
+          // Bar positions are the identity here; the heights are a seeded
+          // silhouette and can repeat.
+          // biome-ignore lint/suspicious/noArrayIndexKey: position is the identity
+          key={index}
+          style={{ "--scene-bar": `${height}` } as CSSProperties}
+        />
+      ))}
+    </span>
+  );
+}
 
 export function StudioStage({
   aspect,
@@ -82,7 +102,7 @@ export function StudioStage({
             data-reveal={reveal ? "true" : undefined}
             onAnimationEnd={onRevealEnd}
           >
-            {result.wave}
+            <SceneWave seed={result.seed} />
             {/* biome-ignore lint/a11y/useMediaCaption: a generated track has no captions to offer. */}
             <audio
               className="mobile-studio-scene-audio"

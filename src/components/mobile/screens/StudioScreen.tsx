@@ -63,9 +63,17 @@ export function StudioScreen() {
   const [rateOpen, setRateOpen] = useState(false);
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [preview, setPreview] = useState<StudioArtifact | null>(null);
-  /** An image render in flight: the image path writes no job row, so the
-   * panel says so itself and Recent shows the cell. */
-  const [imageWorking, setImageWorking] = useState(false);
+  /** A synchronous render in flight (an image, a narration): those paths
+   * write no job row, so the panel says so itself and Recent shows the cell. */
+  const [localWorking, setLocalWorking] = useState<ArtifactKind | undefined>(undefined);
+  const setImageWorking = useCallback(
+    (working: boolean) => setLocalWorking(working ? "image" : undefined),
+    [],
+  );
+  const setSpeechWorking = useCallback(
+    (working: boolean) => setLocalWorking(working ? "speech" : undefined),
+    [],
+  );
   // Lifted so the lightbox's "use as reference" can feed the image panel and
   // jump it straight into its Edit sub-mode.
   const [imageMode, setImageMode] = useState<ImageMode>("generate");
@@ -263,6 +271,8 @@ export function StudioScreen() {
                 mode={audioMode}
                 onModeChange={setAudioMode}
                 onGenerated={refreshGallery}
+                galleryTracks={galleryTracks}
+                onWorking={setSpeechWorking}
               />
             ) : (
               <Library items={artifacts} onOpen={setPreview} onChanged={refreshGallery} />
@@ -273,7 +283,9 @@ export function StudioScreen() {
                 kind={galleryKind}
                 onOpen={setPreview}
                 onSeeAll={() => setMode("library")}
-                pending={mode === "image" && imageWorking ? [{ key: "image" }] : []}
+                pending={
+                  localWorking && localWorking === galleryKind ? [{ key: localWorking }] : []
+                }
               />
             ) : null}
           </>

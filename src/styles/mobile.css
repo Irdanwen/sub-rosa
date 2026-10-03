@@ -4330,6 +4330,26 @@
   height: 40px;
 }
 
+/* The still silhouette of a track: the darkroom's wave, at rest. */
+.mobile-studio-scene-wave {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-px);
+  height: 44%;
+  min-height: 0;
+  padding: 0 var(--sp-3);
+}
+
+.mobile-studio-scene-wave > span {
+  flex: 1;
+  max-width: 2px;
+  height: calc(var(--scene-bar, 0.5) * 100%);
+  border-radius: 1px;
+  background: var(--screen-foreground);
+  opacity: 0.55;
+}
+
 .mobile-studio-dock {
   position: sticky;
   bottom: calc(var(--keyboard-inset, 0px) + var(--sp-2));
