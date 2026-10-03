@@ -10,6 +10,7 @@ pub mod shares;
 pub(crate) mod studio;
 mod summaries;
 pub mod sync;
+mod sync_issues;
 use crate::{domain::types::AppError, redacted::Redacted};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
