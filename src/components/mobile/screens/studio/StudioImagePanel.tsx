@@ -15,6 +15,7 @@ import { mediaGet } from "../../../../lib/studio/client";
 import { removeBackground, upscaleImage } from "../../../../lib/studio/edit-image";
 import { enhanceImagePrompt } from "../../../../lib/studio/enhance-prompt";
 import { compareBodies, generateImages } from "../../../../lib/studio/generate-image";
+import { takeImagePrompt } from "../../../../lib/studio/prompt-handoff";
 import {
   estimateRenderMs,
   rememberRenderMs,
@@ -83,7 +84,8 @@ export function ImagePanel({
   const recommendedId = PREFERRED_IMAGE_MODELS.find((id) =>
     models.some((entry) => entry.id === id),
   );
-  const [prompt, setPrompt] = useState("");
+  // Opens with what the chat handed over, when it handed something over.
+  const [prompt, setPrompt] = useState(() => takeImagePrompt() ?? "");
   // Generate-only settings, at parity with the desktop image studio. They are
   // constraint-driven: aspect/resolution/steps only show when the model exposes
   // them, and `variants` fans out into that many images (heavy models render

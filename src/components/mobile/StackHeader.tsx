@@ -8,11 +8,21 @@ type StackHeaderProps = {
   backLabel?: string;
   /** Right-aligned actions (icon buttons). */
   trailing?: ReactNode;
+  /** A left-hand action on a root screen, where there is no back button
+   * (the chat's history). Ignored when `onBack` is set. */
+  leading?: ReactNode;
   /** Large iOS-style title on root screens; compact inline title when pushed. */
   large?: boolean;
 };
 
-export function StackHeader({ title, onBack, backLabel, trailing, large }: StackHeaderProps) {
+export function StackHeader({
+  title,
+  onBack,
+  backLabel,
+  trailing,
+  leading,
+  large,
+}: StackHeaderProps) {
   // A large title puts its actions on the title's own row, the way the
   // platform does. Rendering the compact row anyway left the buttons floating
   // in an otherwise empty 44 pt band above the title, with the title stranded
@@ -44,6 +54,8 @@ export function StackHeader({ title, onBack, backLabel, trailing, large }: Stack
             <IconChevronLeftMedium size={20} aria-hidden />
             <span>{backLabel ?? t("Back")}</span>
           </button>
+        ) : leading ? (
+          <div className="mobile-stack-header-leading">{leading}</div>
         ) : (
           <span className="mobile-stack-header-spacer" />
         )}

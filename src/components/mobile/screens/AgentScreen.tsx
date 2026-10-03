@@ -17,12 +17,20 @@ import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
+import { IconBarsTwo } from "central-icons/IconBarsTwo";
+import { IconBrain } from "central-icons/IconBrain";
+import { IconBubblePlus } from "central-icons/IconBubblePlus";
+import { IconCalendar2 } from "central-icons/IconCalendar2";
+import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { IconClock } from "central-icons/IconClock";
+import { IconImageSparkle } from "central-icons/IconImageSparkle";
+import { IconNoteText } from "central-icons/IconNoteText";
+import { IconSparklesSoft } from "central-icons/IconSparklesSoft";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { chatBlocksToClipboardText } from "../../../lib/chat-blocks";
 import { friendlyErrorMessage, messageFromError } from "../../../lib/errors";
@@ -53,7 +61,8 @@ import {
   sendAgentMessage,
   setAgentTaskModel,
 } from "../../../lib/tauri";
-import { BrandGradientMark } from "../../brand/Marks";
+import { readableModelName } from "../../../lib/model-names";
+import { BrandMark } from "../../brand/Marks";
 import { ChatAmbient } from "../ChatAmbient";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
@@ -416,6 +425,8 @@ type AgentSessionScreenProps = {
   onOpenSession?: (sessionId: string) => void;
   onOpenHistory?: () => void;
   onNewChat?: () => void;
+  /** "Generate an image" on the opening: hands what was typed to Studio. */
+  onGenerateImage?: (prompt: string) => void;
   /** Text to open the composer with (`subrosa://chat?q=` or a Shortcuts
    * action). Read once, at mount. */
   initialDraft?: string;
@@ -435,6 +446,7 @@ export function AgentSessionScreen({
   onOpenSession,
   onOpenHistory,
   onNewChat,
+  onGenerateImage,
   initialDraft,
   autoSend = false,
   onInitialDraftUsed,
@@ -938,11 +950,12 @@ export function AgentSessionScreen({
   const [ambientPresent, setAmbientPresent] = useState(showHero);
 
   const stageLabel = stageText(stage?.stage ?? "thinking");
-  // Prefer the catalog's display name ("Claude Opus 4.7") over the raw id.
-  const activeModelLabel =
-    models.find((entry) => entry.id === model)?.name ||
-    shortModelLabel(model) ||
-    t("Default model");
+  // A name a person reads ("GLM 5.3 Flash"), never the wire id: the catalog
+  // reports the id as the name for most chat models.
+  const activeModelLabel = model
+    ? readableModelName(model, models.find((entry) => entry.id === model)?.name)
+    : t("Default model");
+  const hasDraft = Boolean(draft.trim()) || attachments.length > 0;
 
   return (
     // data-ambient re-grounds the whole screen while the opening plays: the
@@ -959,22 +972,32 @@ export function AgentSessionScreen({
     >
       <ChatAmbient active={showHero} onPresenceChange={setAmbientPresent} />
       <StackHeader
-        title={task?.title.trim() || t("New chat")}
+        // A new chat's opening has no title: the page is the question it asks.
+        title={!task && showHero ? "" : task?.title.trim() || t("New chat")}
         onBack={onBack}
         backLabel={t("Chats")}
+        leading={
+          onOpenHistory && !onBack ? (
+            <button
+              type="button"
+              className="mobile-icon-button"
+              aria-label={t("Chat history")}
+              onClick={onOpenHistory}
+            >
+              <IconBarsTwo size={20} />
+            </button>
+          ) : undefined
+        }
         trailing={
           <>
-            {credits ? (
+            {credits && !showHero ? (
               // Compact form (no "credits" word): the pill shares the header
               // with the title and two buttons, unlike Studio's roomy one.
               <span className="mobile-credits-pill" aria-label={t("Available credits")}>
-                {formatCredits(credits.availableCredits).replace(" credits", "")}
-                {typeof credits.priceMultiplier === "number"
-                  ? ` · x${credits.priceMultiplier.toFixed(2)}`
-                  : ""}
+                {formatCredits(credits.availableCredits)}
               </span>
             ) : null}
-            {onOpenHistory ? (
+            {onOpenHistory && onBack ? (
               <button
                 type="button"
                 className="mobile-icon-button"
@@ -992,7 +1015,7 @@ export function AgentSessionScreen({
                 disabled={running}
                 onClick={onNewChat}
               >
-                <IconPlusMedium size={20} />
+                <IconBubblePlus size={20} />
               </button>
             ) : null}
           </>
@@ -1004,31 +1027,9 @@ export function AgentSessionScreen({
         {showHero ? (
           <div className="mobile-chat-hero">
             <span className="mobile-chat-hero-mark" aria-hidden>
-              <BrandGradientMark />
+              <BrandMark />
             </span>
-            <h2 className="mobile-chat-hero-greeting">{greeting()}</h2>
-            <p className="mobile-chat-hero-hint">
-              {t("Ask about your notes, or have me write one.")}
-            </p>
-            {/* An empty chat with only a placeholder makes the user invent the
-             * capability. These name what it can actually do now: read a note
-             * in full, search the web, and write back. */}
-            <div className="mobile-chat-suggestions">
-              {suggestions().map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  className="mobile-chat-suggestion"
-                  onClick={() => {
-                    hapticSelection();
-                    setDraft(suggestion);
-                    chatInputRef.current?.focus();
-                  }}
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
+            <h2 className="mobile-chat-hero-greeting">{t("Ask a question")}</h2>
           </div>
         ) : null}
         {task?.messages.map((message) => (
@@ -1145,6 +1146,32 @@ export function AgentSessionScreen({
             ))}
           </div>
         ) : null}
+        {showHero && !hasDraft ? (
+          // An empty chat with only a placeholder makes the user invent the
+          // capability. These name what it can actually do: read a note in
+          // full, look back over a week, make a picture, remember.
+          <fieldset className="mobile-chat-suggestions" aria-label={t("Suggestions")}>
+            {suggestions(Boolean(onGenerateImage)).map((suggestion) => (
+              <button
+                key={suggestion.id}
+                type="button"
+                className="mobile-chat-suggestion"
+                onClick={() => {
+                  hapticSelection();
+                  if (suggestion.id === "image") {
+                    onGenerateImage?.(draft);
+                    return;
+                  }
+                  setDraft(suggestion.prompt);
+                  chatInputRef.current?.focus();
+                }}
+              >
+                {suggestion.icon}
+                {suggestion.label}
+              </button>
+            ))}
+          </fieldset>
+        ) : null}
         <div className="mobile-chat-composer-card">
           <input
             ref={attachInputRef}
@@ -1163,7 +1190,7 @@ export function AgentSessionScreen({
             ref={chatInputRef}
             className="mobile-chat-input"
             value={draft}
-            placeholder={t("Ask about your notes")}
+            placeholder={t("Ask anything, privately...")}
             rows={1}
             onChange={(event) => setDraft(event.target.value)}
             onPaste={(event) => {
@@ -1187,44 +1214,47 @@ export function AgentSessionScreen({
           <div className="mobile-chat-composer-row">
             <button
               type="button"
-              className="mobile-composer-round"
+              className="mobile-composer-bare"
               aria-label={t("Attach a file")}
               onClick={() => attachInputRef.current?.click()}
             >
-              <IconPaperclip1 size={17} />
+              <IconPaperclip1 size={19} />
             </button>
             <button
               type="button"
               className="mobile-composer-model"
               onClick={() => setPickerOpen(true)}
-              aria-label={t("Choose model")}
+              aria-label={t("Choose model, {model}", { model: activeModelLabel })}
             >
-              {activeModelLabel}
+              <IconSparklesSoft size={15} aria-hidden />
+              <span className="mobile-composer-model-name">{activeModelLabel}</span>
+              <IconChevronDownSmall size={14} aria-hidden />
             </button>
             <span className="mobile-composer-spacer" />
-            <button
-              type="button"
-              className="mobile-composer-round"
-              data-active={dictating ? "true" : undefined}
-              aria-label={dictating ? t("Stop dictation") : t("Dictate")}
-              onClick={() => void toggleDictation()}
-            >
-              <IconMicrophone size={17} />
-            </button>
-            <button
-              type="button"
-              className="mobile-chat-send"
-              aria-label={t("Send")}
-              disabled={
-                (!draft.trim() && attachments.length === 0) ||
-                running ||
-                loadingTask ||
-                taskLoadFailed
-              }
-              onClick={() => void send()}
-            >
-              <IconArrowUp size={18} />
-            </button>
+            {/* One round button that changes with the field: the microphone
+                while there is nothing to send, the arrow once there is. */}
+            {hasDraft && !dictating ? (
+              <button
+                type="button"
+                className="mobile-chat-send"
+                aria-label={t("Send")}
+                disabled={running || loadingTask || taskLoadFailed}
+                onClick={() => void send()}
+              >
+                <IconArrowUp size={20} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="mobile-chat-send"
+                data-mic="true"
+                data-active={dictating ? "true" : undefined}
+                aria-label={dictating ? t("Stop dictation") : t("Dictate")}
+                onClick={() => void toggleDictation()}
+              >
+                <IconMicrophone size={20} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1233,7 +1263,8 @@ export function AgentSessionScreen({
           title={t("Chat model")}
           entries={models.map((entry) => ({
             id: entry.id,
-            name: entry.name,
+            name: readableModelName(entry.id, entry.name),
+            keywords: [entry.name],
             subtitle:
               entry.supportsVision || entry.traits?.some((trait) => trait.includes("vision"))
                 ? t("Vision · reads images")
@@ -1249,11 +1280,6 @@ export function AgentSessionScreen({
       ) : null}
     </div>
   );
-}
-
-function shortModelLabel(modelId: string): string {
-  if (!modelId) return "";
-  return modelId.length > 18 ? `${modelId.slice(0, 17)}…` : modelId;
 }
 
 function stageText(stage: AgentLiteStatusDto["stage"]): string {
@@ -1328,23 +1354,45 @@ async function downscaleImageFile(file: File, maxDim = 2048): Promise<string> {
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 
-/** Time-of-day greeting in the device language (French or English). */
 /** Openers for an empty chat. Each one exercises a different tool, so the
- * first reply also teaches what the assistant reaches for. */
-function suggestions(): string[] {
+ * first reply also teaches what the assistant reaches for. The label is the
+ * short form on the chip; the prompt is what lands in the field. */
+function suggestions(canMakeImages: boolean): {
+  id: string;
+  label: string;
+  prompt: string;
+  icon: ReactNode;
+}[] {
   return [
-    t("Summarise my last meeting"),
-    t("What did I work on this week?"),
-    t("Remember that I prefer short replies"),
+    {
+      id: "meeting",
+      label: t("My last meeting"),
+      prompt: t("Summarise my last meeting"),
+      icon: <IconNoteText size={16} aria-hidden />,
+    },
+    {
+      id: "week",
+      label: t("My week"),
+      prompt: t("What did I work on this week?"),
+      icon: <IconCalendar2 size={16} aria-hidden />,
+    },
+    ...(canMakeImages
+      ? [
+          {
+            id: "image",
+            label: t("Generate an image"),
+            prompt: "",
+            icon: <IconImageSparkle size={16} aria-hidden />,
+          },
+        ]
+      : []),
+    {
+      id: "remember",
+      label: t("Remember a preference"),
+      prompt: t("Remember that I prefer short replies"),
+      icon: <IconBrain size={16} aria-hidden />,
+    },
   ];
-}
-
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 5) return t("Good night");
-  if (hour < 12) return t("Good morning");
-  if (hour < 18) return t("Good afternoon");
-  return t("Good evening");
 }
 
 /** Progressive reveal of a fresh reply — the backend is not streaming, so the

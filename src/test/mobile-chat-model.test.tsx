@@ -105,7 +105,7 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen sessionId="task-1" />);
 
-    const modelButton = await screen.findByRole("button", { name: "Choose model" });
+    const modelButton = await screen.findByRole("button", { name: /^Choose model/ });
     await waitFor(() => expect(modelButton).toHaveTextContent("Venice Uncensored"));
   });
 
@@ -115,7 +115,7 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen sessionId="task-1" />);
 
-    const modelButton = await screen.findByRole("button", { name: "Choose model" });
+    const modelButton = await screen.findByRole("button", { name: /^Choose model/ });
     await waitFor(() => expect(modelButton).toHaveTextContent("Venice Uncensored"));
 
     await user.click(modelButton);
@@ -136,7 +136,7 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen />);
 
-    await user.type(screen.getByPlaceholderText("Ask about your notes"), "Summarize my notes");
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Summarize my notes");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() =>
@@ -155,7 +155,7 @@ describe("mobile chat model persistence", () => {
     const user = userEvent.setup();
 
     render(<AgentSessionScreen sessionId="task-1" onOpenSession={onOpenSession} />);
-    const modelButton = await screen.findByRole("button", { name: "Choose model" });
+    const modelButton = await screen.findByRole("button", { name: /^Choose model/ });
     await waitFor(() => expect(modelButton).toHaveTextContent("Venice Uncensored"));
 
     await user.click(modelButton);
@@ -180,7 +180,7 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen />);
 
-    await user.type(screen.getByPlaceholderText("Ask about your notes"), "Summarize my notes");
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Summarize my notes");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     // The failure surfaces a one-tap retry; the message was persisted once.
@@ -202,7 +202,7 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen />);
 
-    const composer = screen.getByPlaceholderText("Ask about your notes");
+    const composer = screen.getByPlaceholderText("Ask anything, privately...");
     await user.type(composer, "Summarize my notes");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
@@ -220,12 +220,12 @@ describe("mobile chat model persistence", () => {
 
     render(<AgentSessionScreen />);
 
-    await user.type(screen.getByPlaceholderText("Ask about your notes"), "Summarize my notes");
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Summarize my notes");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("button", { name: "Try again" });
 
     // Switch to another model, then retry: the re-run uses the new model.
-    await user.click(screen.getByRole("button", { name: "Choose model" }));
+    await user.click(screen.getByRole("button", { name: /^Choose model/ }));
     const sheet = await screen.findByRole("dialog", { name: "Chat model" });
     await user.click(within(sheet).getByText("Qwen 3"));
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -240,7 +240,7 @@ describe("mobile chat model persistence", () => {
     const user = userEvent.setup();
     const { container } = render(<AgentSessionScreen sessionId="task-1" />);
     await screen.findByText("Draft a reply");
-    const composer = screen.getByPlaceholderText("Ask about your notes");
+    const composer = screen.getByPlaceholderText("Ask anything, privately...");
     await user.type(composer, "Keep my draft");
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
     if (!fileInput) throw new Error("Missing attachment input");
@@ -276,7 +276,7 @@ describe("mobile chat model persistence", () => {
     );
     const user = userEvent.setup();
     render(<AgentSessionScreen />);
-    const composer = screen.getByPlaceholderText("Ask about your notes");
+    const composer = screen.getByPlaceholderText("Ask anything, privately...");
     await user.type(composer, "First message");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await user.type(composer, "Next thought");
@@ -294,7 +294,7 @@ describe("mobile chat model persistence", () => {
     );
     const user = userEvent.setup();
     render(<AgentSessionScreen sessionId="task-1" />);
-    await user.type(screen.getByPlaceholderText("Ask about your notes"), "Continue here");
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Continue here");
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     await act(async () => resolveLoad(makeTask()));
     await user.click(screen.getByRole("button", { name: "Send" }));
@@ -307,7 +307,7 @@ describe("mobile chat model persistence", () => {
     const user = userEvent.setup();
     render(<AgentSessionScreen sessionId="task-1" />);
     await screen.findByRole("button", { name: "Try again" });
-    const composer = screen.getByPlaceholderText("Ask about your notes");
+    const composer = screen.getByPlaceholderText("Ask anything, privately...");
     await user.type(composer, "Continue here");
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -356,7 +356,7 @@ describe("mobile chat model persistence", () => {
     const user = userEvent.setup();
     render(<AgentSessionScreen sessionId="task-1" />);
     await screen.findByText("Thinking");
-    await user.type(screen.getByPlaceholderText("Ask about your notes"), "Next question");
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Next question");
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(tauriMocks.agentLiteRun).not.toHaveBeenCalled();
   });
@@ -391,7 +391,7 @@ describe("mobile chat model persistence", () => {
       );
     });
     await screen.findByText("Finished chat");
-    await user.type(screen.getByPlaceholderText("Ask about your notes"), "Next question");
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Next question");
     expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
     expect(screen.queryByText("Old question")).toBeNull();
   });
@@ -494,7 +494,7 @@ describe("mobile chat model persistence", () => {
     const user = userEvent.setup();
     const { rerender } = render(<AgentSessionScreen sessionId="task-1" />);
     rerender(<AgentSessionScreen sessionId="task-2" />);
-    await user.type(screen.getByPlaceholderText("Ask about your notes"), "For the second chat");
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "For the second chat");
     await act(async () => {
       eventListeners.get("agent-lite://done")?.({
         payload: makeTask({ status: "completed", title: "Previous chat" }),
@@ -519,7 +519,7 @@ describe("mobile chat model persistence", () => {
     );
     const user = userEvent.setup();
     render(<AgentSessionScreen />);
-    await user.type(screen.getByPlaceholderText("Ask about your notes"), "A question");
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "A question");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("button", { name: "Try again" });
     await act(async () => {
@@ -532,18 +532,43 @@ describe("mobile chat model persistence", () => {
     expect(screen.queryByText("Outdated history")).toBeNull();
   });
 
-  it("uses the chosen app language for greetings and suggested messages", async () => {
+  it("uses the chosen app language for the opening and suggested messages", async () => {
     vi.spyOn(navigator, "language", "get").mockReturnValue("en-US");
-    vi.spyOn(Date.prototype, "getHours").mockReturnValue(10);
     applyLocale("fr");
     const user = userEvent.setup();
     render(<AgentSessionScreen />);
-    expect(screen.getByText("Bonjour")).toBeInTheDocument();
-    const suggestion = screen.getByRole("button", { name: "Résume ma dernière réunion" });
+    expect(screen.getByText("Posez une question")).toBeInTheDocument();
+    // The chip says it short; the field gets the whole request.
+    const suggestion = screen.getByRole("button", { name: "Ma dernière réunion" });
     await user.click(suggestion);
     expect(screen.getByRole("textbox")).toHaveValue("Résume ma dernière réunion");
-    expect(screen.queryByText("Good morning")).toBeNull();
+    expect(screen.queryByText("Ask a question")).toBeNull();
     expect(tauriMocks.agentLiteRun).not.toHaveBeenCalled();
+  });
+
+  it("turns the microphone into the send arrow once there is something to send", async () => {
+    const user = userEvent.setup();
+    render(<AgentSessionScreen />);
+    expect(screen.getByRole("button", { name: "Dictate" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    await user.type(screen.getByPlaceholderText("Ask anything, privately..."), "Hello");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Dictate" })).toBeNull();
+  });
+
+  it("names the model the way a person says it, never by its wire id", async () => {
+    window.localStorage.setItem("subrosa:mobile:chat-model", "z-ai-glm-5-3-flash");
+    render(<AgentSessionScreen />);
+    const chip = await screen.findByRole("button", { name: /^Choose model/ });
+    expect(chip.textContent).not.toContain("z-ai-glm-5-3-flash");
+  });
+
+  it("hands what was typed to Studio from the image chip", async () => {
+    const onGenerateImage = vi.fn();
+    const user = userEvent.setup();
+    render(<AgentSessionScreen onGenerateImage={onGenerateImage} />);
+    await user.click(screen.getByRole("button", { name: "Generate an image" }));
+    expect(onGenerateImage).toHaveBeenCalledWith("");
   });
 
   it("translates resumed activity and dynamic archived counts into French", async () => {
