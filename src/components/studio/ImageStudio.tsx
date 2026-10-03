@@ -12,7 +12,9 @@ import {
   defaultEditModel,
   estimateCostCredits,
   imageEditModels,
-  modelsOfType,
+  defaultImageModel,
+  imageGenerationModels,
+  rememberImageModel,
   supportsBackgroundRemoval,
 } from "../../lib/studio/catalog";
 import { MediaError, mediaGet, mediaRaw } from "../../lib/studio/client";
@@ -42,11 +44,11 @@ type ImageFormat = "png" | "webp" | "jpeg";
 
 export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
   const [mode, setMode] = useState<ImageMode>("generate");
-  const generateModels = useMemo(() => modelsOfType(catalog, "image"), [catalog]);
+  const generateModels = useMemo(() => imageGenerationModels(catalog), [catalog]);
   const editModels = useMemo(() => imageEditModels(catalog), [catalog]);
   const cutoutAvailable = supportsBackgroundRemoval(catalog);
 
-  const [modelId, setModelId] = useState(generateModels[0]?.id ?? "");
+  const [modelId, setModelId] = useState(() => defaultImageModel(catalog)?.id ?? "");
   const model = generateModels.find((entry) => entry.id === modelId);
   const constraints = model?.constraints;
 
@@ -360,7 +362,10 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
             <ModelSelect
               models={generateModels}
               value={modelId || null}
-              onChange={setModelId}
+              onChange={(id) => {
+                setModelId(id);
+                rememberImageModel(id);
+              }}
               ariaLabel={t("Image model")}
             />
           </StudioField>

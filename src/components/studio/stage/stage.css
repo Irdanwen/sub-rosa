@@ -63,6 +63,89 @@
   text-align: center;
 }
 
+/* --- the idle canvas: the frame before anything is made here ------------- */
+
+.stage-idle {
+  --darkroom-l: 52%;
+  --darkroom-c: 0.08;
+  --darkroom-tint: 48%;
+  /* The same light as a render, at a third of its pace: the frame is alive,
+     and plainly not working on anything. */
+  --darkroom-drift: 60s;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.stage-idle .darkroom-field {
+  opacity: 0.38;
+  mix-blend-mode: screen;
+  animation-duration: 11s;
+}
+
+.stage-idle .darkroom-grain {
+  opacity: 0.1;
+}
+
+.stage-idle-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  text-align: center;
+}
+
+.stage-idle-mark {
+  display: inline-grid;
+  color: color-mix(in oklch, var(--screen-foreground) 82%, var(--brand));
+  opacity: 0.9;
+}
+
+.stage-idle-mark svg {
+  width: 40px;
+  height: 40px;
+}
+
+.stage-idle-hint {
+  margin: 0;
+  max-width: 28ch;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.stage-idle-action {
+  position: absolute;
+  left: var(--sp-3);
+  bottom: var(--sp-3);
+}
+
+.stage-idle-recall {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-1);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: var(--stage-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--screen-foreground);
+  font-size: var(--fs-xs);
+}
+
+.stage-idle-recall img {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  object-fit: cover;
+}
+
 /* --- the veil: the darkroom's light over the picture being worked on ------ */
 
 .stage-veil {
@@ -311,6 +394,11 @@
   }
   .stage-veil,
   .stage-pending {
+    animation: none;
+  }
+  .stage-idle .darkroom-field,
+  .stage-idle .darkroom-light,
+  .stage-idle .darkroom-grain {
     animation: none;
   }
   .stage-frame {

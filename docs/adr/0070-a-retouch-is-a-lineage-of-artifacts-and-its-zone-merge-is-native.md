@@ -98,3 +98,15 @@ here is the paid result.
 - **Sending the full image and asking the model to "change only the marked
   area".** Measured: the model re-renders everything, and the pixels outside
   drift.
+
+## Addendum, 2026-10-03: the model belongs to the retouch
+
+Ideogram 4.5 was the default, but the chosen model was stored once per
+device (`os-june:retouch-settings`). A model picked for one photo therefore
+became the model of every later retouch, and a new retouch stopped opening on
+the default without the user ever choosing that. The model is now kept per
+retouch (`os-june:retouch-session-models`, keyed by the root, capped like the
+cursors); the resolution, ratio and tries per send stay device-wide. A new
+retouch always opens on `ideogram-v4-5-edit` while the catalog offers it, and
+the phone picks the model in the same sheet as every other Studio picker,
+with the default pinned first and marked as recommended.

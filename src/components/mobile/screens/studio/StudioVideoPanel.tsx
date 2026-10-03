@@ -226,8 +226,8 @@ export function VideoPanel({
   // Rust polled the render and wrote the file into the gallery directory, so
   // this runs even for a job that finished while the app was closed: the hook
   // hydrates from the durable rows on mount.
-  /** The clip that last landed here, for the scene; before any does, the
-   * newest clip in the gallery is what was last made. */
+  /** The clip that last landed here, for the scene. Before one does the
+   * canvas is blank, and the newest clip is one tap away (`recall`). */
   const [landed, setLanded] = useState<StudioArtifact | undefined>(undefined);
   const [reveal, setReveal] = useState(false);
   const job = useMediaJob("video", (artifact, finished) => {
@@ -245,7 +245,9 @@ export function VideoPanel({
     hapticNotify("success");
     onGenerated();
   });
-  const sceneClip = landed ?? galleryClips[0] ?? null;
+  const sceneClip = landed ?? null;
+  const newestClip = galleryClips[0];
+  const newestPoster = useArtifactThumbnail(landed ? null : (newestClip ?? null));
   const scene = usePlayableMediaUrl(sceneClip);
   const scenePoster = useArtifactThumbnail(sceneClip);
   const sceneResult: StageResult | undefined = scene.src
@@ -537,6 +539,17 @@ export function VideoPanel({
         waitLabel={t("Rendering")}
         reveal={reveal}
         onRevealEnd={() => setReveal(false)}
+        idle={{
+          seed: "video",
+          hint: t("Describe a shot. It will play here."),
+          recall: newestClip
+            ? {
+                label: t("Last creation"),
+                thumb: newestPoster?.kind === "still" ? newestPoster.src : undefined,
+                onRecall: () => setLanded(newestClip),
+              }
+            : undefined,
+        }}
       />
       <ModelPickerButton
         label={t("Video model")}

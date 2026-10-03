@@ -76,6 +76,9 @@ type ModelSheetProps = {
   initialFilter?: string;
   /** Accessible name of the filter row. */
   filtersLabel?: string;
+  /** The entry this surface recommends: listed first, above favorites, while
+   * nothing is searched. Its row should say why (a "Recommended" tag). */
+  pinnedId?: string;
 };
 
 /**
@@ -95,6 +98,7 @@ export function ModelSheet({
   filters,
   initialFilter,
   filtersLabel,
+  pinnedId,
 }: ModelSheetProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState(() =>
@@ -195,12 +199,15 @@ export function ModelSheet({
         )
       : grouped;
     return [...matches].sort((a, b) => {
+      if (!needle && pinnedId && (a.id === pinnedId) !== (b.id === pinnedId)) {
+        return a.id === pinnedId ? -1 : 1;
+      }
       const favA = favorites.has(a.id) ? 0 : 1;
       const favB = favorites.has(b.id) ? 0 : 1;
       if (favA !== favB) return favA - favB;
       return (a.name || a.id).localeCompare(b.name || b.id);
     });
-  }, [entries, query, favorites, filter]);
+  }, [entries, query, favorites, filter, pinnedId]);
 
   const toggleFavorite = (id: string) => {
     hapticSelection();

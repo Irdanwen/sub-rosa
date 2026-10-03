@@ -100,7 +100,7 @@ export function useRetouchSession(catalog: MediaCatalog, rootId: string | undefi
   const [revealId, setRevealId] = useState<string | undefined>(undefined);
   const [variantGroup, setVariantGroup] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [settings, setSettingsState] = useState<RetouchSettings>(readSettings);
+  const [settings, setSettingsState] = useState<RetouchSettings>(() => readSettings(rootId));
   const redoMemory = useRef(new Map<string, string>());
   const cursorRef = useRef(cursorId);
   cursorRef.current = cursorId;
@@ -137,6 +137,9 @@ export function useRetouchSession(catalog: MediaCatalog, rootId: string | undefi
     setVariantGroup(undefined);
     setError(undefined);
     setCursorId(readCursor(rootId) ?? rootId);
+    // Each retouch opens on its own model, or on the default when none was
+    // chosen for it: never on whatever the previous photo was given.
+    setSettingsState(readSettings(rootId));
     setFailures(readRetouchFailures(rootId));
     const restored = readQueue(rootId);
     setQueue(restored);
@@ -161,13 +164,16 @@ export function useRetouchSession(catalog: MediaCatalog, rootId: string | undefi
     if (rootId) writeQueue(rootId, queue);
   }, [rootId, queue]);
 
-  const setSettings = useCallback((patch: Partial<RetouchSettings>) => {
-    setSettingsState((current) => {
-      const next = { ...current, ...patch };
-      writeSettings(next);
-      return next;
-    });
-  }, []);
+  const setSettings = useCallback(
+    (patch: Partial<RetouchSettings>) => {
+      setSettingsState((current) => {
+        const next = { ...current, ...patch };
+        writeSettings(next, rootId);
+        return next;
+      });
+    },
+    [rootId],
+  );
 
   // A version arrived. It takes the screen when it was made from the version
   // on screen; otherwise it waits in the filmstrip.

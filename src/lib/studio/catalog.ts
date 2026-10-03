@@ -50,6 +50,61 @@ export function modelsOfType(catalog: MediaCatalog, type: MediaType): MediaModel
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Image-typed entries that make nothing from a prompt.
+ *
+ * The catalog files a background remover under `image` because that is what
+ * it returns. Offered as a generator it takes a prompt, spends, and answers
+ * with an error, so the generation pickers leave it out.
+ */
+const NOT_A_GENERATOR = /(?:^|-)(?:bg-remover|background-remov)/i;
+
+/** The models that turn a prompt into a picture, by name. */
+export function imageGenerationModels(catalog: MediaCatalog): MediaModel[] {
+  return modelsOfType(catalog, "image").filter((model) => !NOT_A_GENERATOR.test(model.id));
+}
+
+/**
+ * What a new generation starts on, best first.
+ *
+ * Chosen for the user, not by alphabet: sorting by name made a stylised anime
+ * model the default for everyone. A catalog without these falls back to its
+ * first generator rather than to nothing.
+ */
+export const PREFERRED_IMAGE_MODELS = ["gpt-image-2-5-flare", "gpt-image-2"];
+
+const IMAGE_MODEL_STORAGE_KEY = "subrosa:studio:image-model";
+
+/**
+ * The generation model to open on: the one last chosen here while the catalog
+ * still offers it, else the preferred one, else the first.
+ */
+export function defaultImageModel(catalog: MediaCatalog): MediaModel | undefined {
+  const models = imageGenerationModels(catalog);
+  let remembered: string | null = null;
+  try {
+    remembered = window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY);
+  } catch {
+    // A remembered choice is a nicety.
+  }
+  const chosen = remembered ? models.find((model) => model.id === remembered) : undefined;
+  if (chosen) return chosen;
+  for (const preferred of PREFERRED_IMAGE_MODELS) {
+    const hit = models.find((model) => model.id === preferred);
+    if (hit) return hit;
+  }
+  return models[0];
+}
+
+/** Remembers the generation model the user picked, for the next visit. */
+export function rememberImageModel(id: string): void {
+  try {
+    window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, id);
+  } catch {
+    // Ignore: the default is a good answer too.
+  }
+}
+
 /** Edit models Carpe Diem forwards to Venice but does not advertise in its
  * operator `/v1/models` catalog. Verified callable via `/image/edit` (an
  * unknown id returns `Invalid model id`, these return an image). Surfaced so

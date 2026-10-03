@@ -1,11 +1,14 @@
 import { t } from "../../../../lib/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useArtifactDataUrl } from "../../../../lib/artifact-media";
+import { artifactDataUrl, useArtifactThumbnail } from "../../../../lib/artifact-media";
 import { hapticNotify } from "../../../../lib/haptics";
 import { saveArtifactFromBase64 } from "../../../../lib/studio/artifacts";
 import {
+  defaultImageModel,
   estimateCostCredits,
-  modelsOfType,
+  imageGenerationModels,
+  PREFERRED_IMAGE_MODELS,
+  rememberImageModel,
   supportsBackgroundRemoval,
 } from "../../../../lib/studio/catalog";
 import { mediaGet } from "../../../../lib/studio/client";
@@ -21,6 +24,8 @@ import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types"
 import type { StageWait } from "../../../studio/stage/Veil";
 import { ModelSheet } from "../../ModelSheet";
 import {
+  DockChip,
+  DockSelectChip,
   formatRenderOption,
   ModelPickerButton,
   modelSubtitle,
@@ -67,11 +72,17 @@ export function ImagePanel({
    * Recent: the image path is synchronous and writes no job row to watch. */
   onWorking?: (working: boolean) => void;
 }) {
-  const generateModels = useMemo(() => modelsOfType(catalog, "image"), [catalog]);
+  const generateModels = useMemo(() => imageGenerationModels(catalog), [catalog]);
   const cutoutAvailable = supportsBackgroundRemoval(catalog);
   const models = generateModels;
-  const [generateModelId, setGenerateModelId] = useState(generateModels[0]?.id ?? "");
-  const model = models.find((entry) => entry.id === generateModelId) ?? models[0];
+  const [generateModelId, setGenerateModelId] = useState(
+    () => defaultImageModel(catalog)?.id ?? "",
+  );
+  const model = models.find((entry) => entry.id === generateModelId) ?? defaultImageModel(catalog);
+  /** The model this app recommends, pinned first in the picker. */
+  const recommendedId = PREFERRED_IMAGE_MODELS.find((id) =>
+    models.some((entry) => entry.id === id),
+  );
   const [prompt, setPrompt] = useState("");
   // Generate-only settings, at parity with the desktop image studio. They are
   // constraint-driven: aspect/resolution/steps only show when the model exposes
@@ -352,15 +363,42 @@ export function ImagePanel({
     ? ["generate", "edit", "upscale", "cutout"]
     : ["generate", "edit", "upscale"];
 
-  // Before anything is made in this session, the newest picture in the
-  // gallery is what was last made here.
-  const galleryUrl = useArtifactDataUrl(lastResult ? null : (galleryImages[0] ?? null));
   /** On the scene: the last render, or - while upscaling or cutting out - the
-   * picked source, which the result then wipes over. */
+   * picked source, which the result then wipes over. Nothing made in this
+   * session leaves the canvas blank: the newest picture in the gallery was
+   * shown here once, and read as the result of a prompt not yet written. */
   const sceneResult: StageResult | undefined =
     (mode === "upscale" || mode === "cutout") && upscaleRefs[0]
       ? { kind: "image", src: upscaleRefs[0], alt: t("Picked image") }
-      : (lastResult ?? (galleryUrl ? { kind: "image", src: galleryUrl } : undefined));
+      : lastResult;
+  const newest = galleryImages[0] ?? null;
+  const newestThumb = useArtifactThumbnail(mode === "generate" && !lastResult ? newest : null);
+  const recallNewest = useCallback(async () => {
+    if (!newest) return;
+    try {
+      setLastResult({ kind: "image", src: await artifactDataUrl(newest) });
+    } catch {
+      // The gallery is one tab away; a recall that cannot read is no loss.
+    }
+  }, [newest]);
+  const idle =
+    mode === "generate"
+      ? {
+          seed: "image-generate",
+          hint: t("Describe an image. It will appear here."),
+          recall: newest
+            ? {
+                label: t("Last creation"),
+                thumb: newestThumb?.src,
+                onRecall: () => void recallNewest(),
+              }
+            : undefined,
+        }
+      : {
+          seed: `image-${mode}`,
+          hint:
+            mode === "upscale" ? t("Pick an image to enlarge.") : t("Pick an image to cut out."),
+        };
 
   return (
     <div className="mobile-studio-form">
@@ -372,6 +410,7 @@ export function ImagePanel({
           waitLabel={t("Rendering")}
           reveal={reveal}
           onRevealEnd={() => setReveal(false)}
+          idle={idle}
         />
       )}
       <div className="mobile-segmented" role="tablist" aria-label={t("Image mode")}>
@@ -455,34 +494,8 @@ export function ImagePanel({
         <RetouchLauncher galleryImages={galleryImages} />
       ) : (
         <>
-          <ModelPickerButton
-            label={t("Image model")}
-            value={model?.name ?? ""}
-            onOpen={() => setPickerOpen(true)}
-          />
           {mode === "generate" ? (
             <>
-              {aspectOptions.length > 0 || resolutionOptions.length > 0 ? (
-                <SettingsCard>
-                  {aspectOptions.length > 0 ? (
-                    <SelectRow
-                      label={t("Aspect ratio")}
-                      value={effectiveAspect}
-                      options={aspectOptions}
-                      onChange={setAspectRatio}
-                      format={formatRenderOption}
-                    />
-                  ) : null}
-                  {resolutionOptions.length > 0 ? (
-                    <SelectRow
-                      label={t("Resolution")}
-                      value={effectiveResolution}
-                      options={resolutionOptions}
-                      onChange={setResolution}
-                    />
-                  ) : null}
-                </SettingsCard>
-              ) : null}
               <MoreOptions>
                 <textarea
                   className="mobile-studio-prompt"
@@ -596,6 +609,32 @@ export function ImagePanel({
               busy={busy}
               onSend={() => void generate()}
               sendLabel={t("Generate")}
+              tools={
+                <>
+                  <DockChip
+                    label={t("Image model")}
+                    value={model?.name ?? t("Choose")}
+                    onOpen={() => setPickerOpen(true)}
+                  />
+                  {aspectOptions.length > 0 ? (
+                    <DockSelectChip
+                      label={t("Aspect ratio")}
+                      value={effectiveAspect}
+                      options={aspectOptions}
+                      onChange={setAspectRatio}
+                      format={formatRenderOption}
+                    />
+                  ) : null}
+                  {resolutionOptions.length > 0 ? (
+                    <DockSelectChip
+                      label={t("Resolution")}
+                      value={effectiveResolution}
+                      options={resolutionOptions}
+                      onChange={setResolution}
+                    />
+                  ) : null}
+                </>
+              }
               blocker={
                 busy
                   ? undefined
@@ -617,10 +656,15 @@ export function ImagePanel({
             id: entry.id,
             name: entry.name,
             subtitle: modelSubtitle(entry),
+            tags: entry.id === recommendedId ? [{ label: t("Recommended") }] : undefined,
           }))}
           selectedId={model?.id ?? ""}
+          pinnedId={recommendedId}
           onSelect={(id) => {
-            if (id) setGenerateModelId(id);
+            if (id) {
+              setGenerateModelId(id);
+              rememberImageModel(id);
+            }
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}

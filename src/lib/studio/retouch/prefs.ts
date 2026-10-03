@@ -6,12 +6,15 @@ const SETTINGS_KEY = "os-june:retouch-settings";
 const SESSIONS_KEY = "os-june:retouch-sessions";
 const OPEN_KEY = "os-june:retouch-open";
 const QUEUE_KEY = "os-june:retouch-queue";
+const SESSION_MODELS_KEY = "os-june:retouch-session-models";
 const MAX_REMEMBERED_SESSIONS = 50;
 
 export type VariantCount = 1 | 2 | 4;
 
 export interface RetouchSettings {
-  /** Empty for the session default. */
+  /** Empty for the default (Ideogram V4.5). Kept per retouch, never carried
+   * into a new one: a model picked once for one photo used to become every
+   * later retouch's model without the user choosing it again. */
   modelId: string;
   resolution?: string;
   quality?: string;
@@ -54,20 +57,39 @@ function write(key: string, value: unknown): void {
   }
 }
 
-export function readSettings(): RetouchSettings {
+export function readSettings(rootId?: string): RetouchSettings {
   const saved = read<Partial<RetouchSettings>>(SETTINGS_KEY, {});
   const variants = saved.variants === 2 || saved.variants === 4 ? saved.variants : 1;
   return {
     ...DEFAULT_SETTINGS,
     ...saved,
-    modelId: typeof saved.modelId === "string" ? saved.modelId : "",
+    modelId: rootId ? (readSessionModel(rootId) ?? "") : "",
     aspectRatio: typeof saved.aspectRatio === "string" ? saved.aspectRatio : "auto",
     variants,
   };
 }
 
-export function writeSettings(settings: RetouchSettings): void {
-  write(SETTINGS_KEY, settings);
+export function writeSettings(settings: RetouchSettings, rootId?: string): void {
+  const { modelId, ...shared } = settings;
+  write(SETTINGS_KEY, shared);
+  if (rootId) writeSessionModel(rootId, modelId);
+}
+
+/** The model a retouch was last given, if one was chosen for it. */
+export function readSessionModel(rootId: string): string | undefined {
+  const models = read<Record<string, { model: string; at: number }>>(SESSION_MODELS_KEY, {});
+  const model = models[rootId]?.model;
+  return typeof model === "string" && model ? model : undefined;
+}
+
+function writeSessionModel(rootId: string, modelId: string): void {
+  const models = read<Record<string, { model: string; at: number }>>(SESSION_MODELS_KEY, {});
+  if (modelId) models[rootId] = { model: modelId, at: Date.now() };
+  else delete models[rootId];
+  const kept = Object.entries(models)
+    .sort(([, a], [, b]) => b.at - a.at)
+    .slice(0, MAX_REMEMBERED_SESSIONS);
+  write(SESSION_MODELS_KEY, Object.fromEntries(kept));
 }
 
 /** Where a session was left, so reopening it lands on the same version. */

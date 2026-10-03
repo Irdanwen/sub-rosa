@@ -2171,6 +2171,9 @@
 /* Direction filters: the first cut a search box cannot make, scrolled
    sideways rather than wrapped so the list keeps its height. */
 .mobile-sheet-filters {
+  /* A flex child that scrolls has no minimum height, so a capped sheet with a
+   * long list squeezed this row to a sliver and cut its pills in half. */
+  flex-shrink: 0;
   flex-wrap: nowrap;
   margin: 0 0 var(--sp-2);
   padding: 0;
@@ -3138,11 +3141,15 @@
 .mobile-sheet-row {
   display: flex;
   align-items: center;
+  /* The rule runs under the whole row, star included: drawn on the button
+   * alone it stopped short of the star and read as a layout slip. */
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .mobile-sheet-row .mobile-sheet-item {
   flex: 1;
   min-width: 0;
+  border-bottom: 0;
 }
 
 .mobile-favorite-button {
@@ -4224,73 +4231,82 @@
 /* The sheets a Studio control opens and the tab bar under it follow the
    stage, or every tap would flash the light theme back. The sheets are
    portaled to the shell, hence :has. */
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet {
   background: color-mix(in oklch, var(--screen) 82%, transparent);
   color: var(--screen-foreground);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-item {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet-item,
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet-row {
   border-bottom-color: var(--stage-edge);
   color: var(--screen-foreground);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-item-subtitle,
-.mobile-shell:has(.mobile-studio-stage) .mobile-action-sheet-subtitle,
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-grabber {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet-item-subtitle,
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-action-sheet-subtitle,
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet-grabber {
   color: var(--screen-muted);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-grabber {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet-grabber {
   background: var(--stage-softer);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-tag {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet-tag {
   background: var(--stage-soft);
   color: var(--screen-muted);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet-tag[data-tone="note"] {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen)
+  .mobile-sheet-tag[data-tone="note"] {
   background: color-mix(in oklch, var(--brand) 28%, transparent);
   color: var(--screen-foreground);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-search {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet .mobile-search {
   background: var(--stage-soft);
   color: var(--screen-muted);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-search input {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet .mobile-search input {
   color: var(--screen-foreground);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-pill {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet .mobile-pill {
   background: transparent;
   border-color: var(--stage-edge);
   color: var(--screen-muted);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-pill[data-active="true"] {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen)
+  .mobile-sheet
+  .mobile-pill[data-active="true"] {
   background: var(--screen-foreground);
   border-color: transparent;
   color: var(--screen);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-icon-button,
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-action-sheet-cancel,
-.mobile-shell:has(.mobile-studio-stage) .mobile-sheet .mobile-sheet-dismiss {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-sheet .mobile-icon-button,
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen)
+  .mobile-sheet
+  .mobile-action-sheet-cancel,
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen)
+  .mobile-sheet
+  .mobile-sheet-dismiss {
   color: var(--screen-foreground);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-tab-bar {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-tab-bar {
   background: var(--screen);
   border-top-color: var(--stage-edge);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-tab-bar-item {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen) .mobile-tab-bar-item {
   color: var(--screen-muted);
 }
 
-.mobile-shell:has(.mobile-studio-stage) .mobile-tab-bar-item[aria-current="page"] {
+.mobile-shell:has(.mobile-studio-stage, .mobile-retouch-screen)
+  .mobile-tab-bar-item[aria-current="page"] {
   color: var(--screen-foreground);
 }
 
@@ -4364,10 +4380,14 @@
   padding: var(--sp-4);
   border: 1px solid var(--stage-edge);
   border-radius: var(--r-xl);
-  background: var(--stage-glass);
+  /* Nearly solid: the panel scrolls under the dock, and at the stage's usual
+   * 64% the settings above showed through the prompt as ghost text. */
+  background: color-mix(in oklch, var(--screen) 90%, transparent);
   backdrop-filter: blur(22px) saturate(1.2);
   -webkit-backdrop-filter: blur(22px) saturate(1.2);
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    0 calc(var(--sp-6) * -1) var(--sp-6) calc(var(--sp-2) * -1) var(--screen),
+    var(--shadow-lg);
 }
 
 .mobile-studio-dock-composer {
@@ -4437,6 +4457,35 @@
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+/* A setting riding in the dock's bar: the model, the ratio. */
+.mobile-dock-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 46vw;
+  min-height: 32px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: var(--stage-soft);
+  color: var(--screen-foreground);
+  font-size: var(--fs-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-dock-chip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-dock-chip svg {
+  flex-shrink: 0;
+  color: var(--screen-muted);
 }
 
 .mobile-studio-dock-send {
