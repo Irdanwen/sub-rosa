@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   directionLabel,
   familyDirections,
+  frameFreeReferenceSibling,
   type VideoFamily,
   variantFor,
   variantHint,
@@ -93,5 +94,27 @@ describe("resolving the variant from the inputs", () => {
         modelSets: [],
       }),
     ).toEqual(["video"]);
+  });
+
+  it("offers the same vendor's frame-free reference family, closest tier first", () => {
+    const fam = (key: string, name: string, referenceId: string): VideoFamily => ({
+      key,
+      name,
+      textModel: m(`${referenceId.replace("reference-to-video", "text-to-video")}`),
+      referenceModel: m(referenceId),
+      modelSets: [],
+    });
+    const klingV3 = fam("kling v3 4k", "Kling V3 4K", "kling-v3-4k-reference-to-video");
+    const families = [
+      fam("kling o3 standard", "Kling O3 Standard", "kling-o3-standard-reference-to-video"),
+      fam("kling o3 4k", "Kling O3 4K", "kling-o3-4k-reference-to-video"),
+      klingV3,
+      FULL,
+    ];
+    expect(frameFreeReferenceSibling(families, klingV3)?.key).toBe("kling o3 4k");
+    // Seedance's reference variant runs without a frame: nothing to offer.
+    expect(frameFreeReferenceSibling(families, FULL)).toBeUndefined();
+    // No frame-free kling at all: nothing from another vendor is offered.
+    expect(frameFreeReferenceSibling([klingV3, FULL], klingV3)).toBeUndefined();
   });
 });

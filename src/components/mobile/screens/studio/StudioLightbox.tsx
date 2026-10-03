@@ -4,7 +4,7 @@ import { useModalFocus } from "../../../../lib/modal-focus";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
-import { useCallback, useRef, useState } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import {
   artifactDataUri,
   artifactDataUrl,
@@ -488,31 +488,36 @@ export function MediaReferencePicker({
   );
 }
 
-export function ReferencePicker({
-  references,
-  onChange,
-  galleryImages,
-  hint,
-  error,
-  prepare,
-  label,
-  cap,
-}: {
-  references: string[];
-  onChange: (refs: string[]) => void;
-  galleryImages: StudioArtifact[];
-  hint?: string;
-  /** What the add button says ("Opening frame", "Reference photos"...). */
-  label?: string;
-  /** How many photos the slot takes; the add button goes once it is full. */
-  cap?: number;
-  /** Why the last photo was refused. Sits with the input rather than in a
-   * failure message after the render was billed. */
-  error?: string;
-  /** Transform a picked photo before it enters the reference list (e.g.
-   * downscale below the backend's size cap). Defaults to identity. */
-  prepare?: (dataUrl: string) => Promise<string>;
-}) {
+/** What a surface can ask of a picker it holds a ref to. */
+export interface ReferencePickerHandle {
+  /** Bring the picker into view and offer its sources, as a tap on its
+   * button would: the one thing a form's hint can do about an empty slot. */
+  open(): void;
+}
+
+export const ReferencePicker = forwardRef<
+  ReferencePickerHandle,
+  {
+    references: string[];
+    onChange: (refs: string[]) => void;
+    galleryImages: StudioArtifact[];
+    hint?: string;
+    /** What the add button says ("Opening frame", "Reference photos"...). */
+    label?: string;
+    /** How many photos the slot takes; the add button goes once it is full. */
+    cap?: number;
+    /** Why the last photo was refused. Sits with the input rather than in a
+     * failure message after the render was billed. */
+    error?: string;
+    /** Transform a picked photo before it enters the reference list (e.g.
+     * downscale below the backend's size cap). Defaults to identity. */
+    prepare?: (dataUrl: string) => Promise<string>;
+  }
+>(function ReferencePicker(
+  { references, onChange, galleryImages, hint, error, prepare, label, cap },
+  ref,
+) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -530,6 +535,21 @@ export function ReferencePicker({
       ? [{ label: t("From the Studio gallery"), onAction: () => setGalleryOpen(true) }]
       : []),
   ];
+
+  const offerSources = useCallback(() => {
+    if (sources.length === 1) sources[0].onAction();
+    else setSourcesOpen(true);
+  }, [sources]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      open() {
+        rootRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+        if (!full) offerSources();
+      },
+    }),
+    [offerSources, full],
+  );
 
   const readPicked = useCallback(
     (file: File | undefined) => {
@@ -558,7 +578,7 @@ export function ReferencePicker({
   );
 
   return (
-    <div className="mobile-reference">
+    <div className="mobile-reference" ref={rootRef}>
       <input
         ref={inputRef}
         type="file"
@@ -609,10 +629,7 @@ export function ReferencePicker({
             type="button"
             className="mobile-chip-button"
             aria-haspopup={sources.length > 1 ? "dialog" : undefined}
-            onClick={() => {
-              if (sources.length === 1) sources[0].onAction();
-              else setSourcesOpen(true);
-            }}
+            onClick={offerSources}
           >
             {label ?? t("Add a photo")}
           </button>
@@ -650,4 +667,4 @@ export function ReferencePicker({
       ) : null}
     </div>
   );
-}
+});

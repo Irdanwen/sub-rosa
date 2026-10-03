@@ -2980,6 +2980,15 @@
   text-align: center;
 }
 
+/* What to tap about a hint, when there is something: the picker it names,
+   or the family that does without. */
+.mobile-studio-generate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
 /* What was just made in this tab, under its form: a strip, not the gallery. */
 .mobile-studio-recent {
   display: flex;

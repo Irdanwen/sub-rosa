@@ -470,6 +470,40 @@ export function familyDirections(family: VideoFamily): VideoDirection[] {
 }
 
 /**
+ * The nearest family that renders from references alone, for a family whose
+ * reference variant insists on an opening frame (`requiresOpeningFrame`).
+ *
+ * Same vendor - the first token of the key - and the candidate sharing the
+ * most of the remaining tokens wins, so "kling v3 4k" is offered "kling o3
+ * 4k" rather than "kling o3 standard". Undefined when nothing fits, or when
+ * the family's own reference variant already runs without a frame.
+ */
+export function frameFreeReferenceSibling(
+  families: readonly VideoFamily[],
+  family: VideoFamily,
+): VideoFamily | undefined {
+  if (!family.referenceModel || !requiresOpeningFrame(family.referenceModel.id)) return undefined;
+  const tokens = (key: string) =>
+    key
+      .toLowerCase()
+      .split(/[\s_-]+/)
+      .filter(Boolean);
+  const own = tokens(family.key);
+  const vendor = own[0];
+  if (!vendor) return undefined;
+  let best: { family: VideoFamily; shared: number } | undefined;
+  for (const candidate of families) {
+    if (candidate.key === family.key || !candidate.referenceModel) continue;
+    if (requiresOpeningFrame(candidate.referenceModel.id)) continue;
+    const theirs = tokens(candidate.key);
+    if (theirs[0] !== vendor) continue;
+    const shared = own.slice(1).filter((token) => theirs.includes(token)).length;
+    if (!best || shared > best.shared) best = { family: candidate, shared };
+  }
+  return best?.family;
+}
+
+/**
  * What to say about the variant the inputs resolved to, or undefined when it is
  * the family's plain text-to-video and there is nothing to add.
  *
