@@ -54,6 +54,7 @@ import { aspectLabel, RetouchSettingsPanel } from "./RetouchSettings";
 import { RetouchVariants } from "./RetouchVariants";
 import { useDismiss } from "./useDismiss";
 import "./retouch.css";
+import "../stage/stage.css";
 
 interface ZoneState {
   tool: ZoneTool;
@@ -294,12 +295,12 @@ export function RetouchWorkspace({
     );
   }
   if (!s.loaded || !cursor) {
-    return <div className="retouch-workspace" data-layout={layout} aria-busy="true" />;
+    return <div className="retouch-workspace stage" data-layout={layout} aria-busy="true" />;
   }
 
   return (
     <section
-      className="retouch-workspace"
+      className="retouch-workspace stage"
       data-layout={layout}
       aria-label={t("Retouch")}
       onDragOver={(event) => {

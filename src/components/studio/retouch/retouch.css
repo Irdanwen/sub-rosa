@@ -2,12 +2,14 @@
  * float over it on frosted glass. The stage is dark in either theme, like the
  * media viewer, so a picture's blacks read as black. */
 
+/* The glass is the stage's (stage/stage.css); these names stay for the rules
+ * below, which are the retouch's own. */
 .retouch-workspace {
-  --retouch-glass: color-mix(in oklch, var(--screen) 64%, transparent);
-  --retouch-glass-strong: color-mix(in oklch, var(--screen) 86%, transparent);
-  --retouch-edge: color-mix(in oklch, var(--screen-foreground) 14%, transparent);
-  --retouch-soft: color-mix(in oklch, var(--screen-foreground) 10%, transparent);
-  --retouch-softer: color-mix(in oklch, var(--screen-foreground) 18%, transparent);
+  --retouch-glass: var(--stage-glass);
+  --retouch-glass-strong: var(--stage-glass-strong);
+  --retouch-edge: var(--stage-edge);
+  --retouch-soft: var(--stage-soft);
+  --retouch-softer: var(--stage-softer);
   position: relative;
   height: var(--retouch-stage-h);
   border-radius: var(--r-xl);
@@ -15,11 +17,6 @@
   background: var(--screen);
   color: var(--screen-foreground);
   isolation: isolate;
-}
-
-.retouch-workspace :focus-visible {
-  outline: 2px solid var(--screen-foreground);
-  outline-offset: 2px;
 }
 
 .retouch-gone {
@@ -63,36 +60,12 @@
   object-fit: contain;
 }
 
-/* The new version wipes in over the one it was made from: the eye follows
- * the edge across, and sees what changed as it passes. */
-.retouch-image[data-reveal="waiting"] {
-  opacity: 0;
-}
-
-.retouch-image[data-reveal="true"] {
-  animation: retouch-wipe 760ms var(--ease-in-out) both;
-}
-
-@keyframes retouch-wipe {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
+/* The new version wipes in over the one it was made from (the stage's
+ * reveal): the eye follows the edge across, and sees what changed as it
+ * passes. */
 
 .retouch-before[data-mode="hold"] {
-  animation: retouch-fade var(--t-fast) var(--ease-out) both;
-}
-
-@keyframes retouch-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: stage-fade var(--t-fast) var(--ease-out) both;
 }
 
 .retouch-before-tag {
@@ -135,47 +108,6 @@
   border-radius: var(--r-pill);
   background: var(--screen-foreground);
   box-shadow: var(--shadow-md);
-}
-
-/* --- the wait: the darkroom's light over the picture being worked on ------ */
-
-.retouch-veil {
-  --darkroom-l: 66%;
-  --darkroom-c: 0.13;
-  --darkroom-tint: 62%;
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  isolation: isolate;
-  background: color-mix(in oklch, var(--screen) 38%, transparent);
-  animation: retouch-fade var(--t-slow) var(--ease-out) both;
-}
-
-.retouch-veil .darkroom-field {
-  opacity: 0.6;
-  mix-blend-mode: screen;
-}
-
-.retouch-veil-caption {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-1);
-  padding: var(--sp-3) var(--sp-6);
-  border-radius: var(--r-lg);
-  background: var(--retouch-glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  font-size: var(--fs-sm);
-  text-align: center;
-}
-
-.retouch-veil-clock {
-  color: var(--screen-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 /* --- the zone ------------------------------------------------------------- */
@@ -374,7 +306,7 @@
   -webkit-backdrop-filter: blur(18px);
   box-shadow: var(--shadow-lg);
   z-index: 5;
-  animation: retouch-fade var(--t-fast) var(--ease-out) both;
+  animation: stage-fade var(--t-fast) var(--ease-out) both;
 }
 
 .retouch-menu[data-align="end"] {
@@ -485,24 +417,9 @@
   text-align: center;
 }
 
+/* A version not here yet shimmers in its place (the stage's pending). */
 .retouch-frame-pending .retouch-thumb {
-  background: linear-gradient(
-    100deg,
-    var(--retouch-soft) 30%,
-    var(--retouch-softer) 50%,
-    var(--retouch-soft) 70%
-  );
-  background-size: 300% 100%;
-  animation: retouch-shimmer 1.8s var(--ease-in-out) infinite;
-}
-
-@keyframes retouch-shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: 0 0;
-  }
+  background-color: transparent;
 }
 
 /* --- the dock: notices, settings and the instruction ----------------------- */
@@ -1166,15 +1083,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .retouch-image[data-reveal="true"] {
-    animation: retouch-fade var(--t-fast) var(--ease-out) both;
-  }
-  .retouch-veil,
   .retouch-panel,
   .retouch-menu {
-    animation: none;
-  }
-  .retouch-frame-pending .retouch-thumb {
     animation: none;
   }
 }
@@ -1237,7 +1147,7 @@
   font-size: var(--fs-sm);
   cursor: pointer;
   z-index: 3;
-  animation: retouch-fade var(--t-fast) var(--ease-out) both;
+  animation: stage-fade var(--t-fast) var(--ease-out) both;
 }
 
 .retouch-fit[data-zone="true"] {

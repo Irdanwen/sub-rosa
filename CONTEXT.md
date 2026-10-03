@@ -688,6 +688,32 @@ render is finished. Local, best-effort, and absent by default: with no
 estimate the darkroom sweeps rather than fills.
 _Avoid_: ETA, progress (the backend reports none), percentage complete.
 
+**Stage**:
+The dark surface a Studio result is shown on, in both themes: the picture
+gets every pixel, and the controls float over it on frosted glass. Born in
+the retouch tab, it is now the room every Studio surface renders into, and
+the shared module that holds its glass, its veil and its reveal
+(`src/components/studio/stage/`). The **frame** is the result's own shape in
+the result's own place on it.
+_Avoid_: canvas (that is the workflow editor), viewer, dark mode (the stage
+is dark whatever the theme), hero.
+
+**Veil**:
+What covers the frame while a render is being made from what is in it: the
+darkroom's seeded light and grain laid over the current picture, dimmed, a
+centred caption with the phase in words and the clock, and the darkroom's
+bar. A veil is the darkroom when there is already something on the stage;
+the darkroom alone is the veil when there is not. The result arrives with a
+**reveal**, wiping in over what it was made from once it is decoded.
+_Avoid_: overlay, blur, loading state, spinner.
+
+**Dock**:
+Where the instruction is written and sent on a stage: a frosted card under
+the frame holding the prompt, the quick suggestions, the settings rows and
+the one round button that spends, with its price beside it. On a phone it is
+what stays within thumb's reach while the form scrolls.
+_Avoid_: composer (the chat's word), toolbar, form, bottom bar.
+
 ### Studio gallery (fork)
 
 **Gallery**:
