@@ -108,10 +108,17 @@ describe("the image panel on the stage", () => {
     expect(picture.src).toContain("data:image/png;base64,");
     // Held invisible until decoded, then wiped in.
     expect(picture.getAttribute("data-reveal")).toBe("waiting");
+    // The frame was asked for 1:1; the picture that lands is wider, and the
+    // frame takes its shape once it is decoded.
+    const frame = scene.querySelector(".stage-frame") as HTMLElement;
+    expect(frame.style.getPropertyValue("--stage-aspect")).toBe("1 / 1");
+    Object.defineProperty(picture, "naturalWidth", { value: 1536, configurable: true });
+    Object.defineProperty(picture, "naturalHeight", { value: 1024, configurable: true });
     await act(async () => {
       picture.dispatchEvent(new Event("load"));
     });
     expect(picture.getAttribute("data-reveal")).toBe("true");
+    expect(frame.style.getPropertyValue("--stage-aspect")).toBe("1.5");
     // The duration is remembered for the next estimate.
     expect(studio.remember).toHaveBeenCalledWith("image:chroma", expect.any(Number));
     // Recent no longer shows a pending cell.

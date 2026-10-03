@@ -85,4 +85,16 @@ describe("renders in flight", () => {
     expect(screen.getByText("Nothing generated yet")).toBeTruthy();
     expect(screen.queryByRole("region", { name: "In progress" })).toBeNull();
   });
+
+  it("count a heavy image once: the panel's own flag and its queue row are one render", async () => {
+    // The row the queue path writes for a heavy image model, owned by the
+    // Studio, while the image panel still holds its own working flag.
+    tauri.invoke.mockImplementation(async (command: string) =>
+      command === "media_job_list" ? [row("i1", "image", "studio")] : undefined,
+    );
+    render(<StudioScreen />);
+    await screen.findByRole("button", { name: /^Image model/ });
+    const recent = await screen.findByRole("region", { name: "Recent" });
+    expect(recent.querySelectorAll(".mobile-studio-cell-pending")).toHaveLength(1);
+  });
 });

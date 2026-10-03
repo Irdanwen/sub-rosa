@@ -79,14 +79,17 @@ export function StudioScreen() {
    * cells they will take in Recent and in the gallery. */
   const running = useRunningMediaJobs();
   const pendingOf = useCallback(
-    (kind: ArtifactKind | undefined) => [
-      ...(localWorking && (!kind || localWorking === kind)
-        ? [{ key: `local:${localWorking}` }]
-        : []),
-      ...running
-        .filter((job) => isStudioOwned(job) && (!kind || job.kind === kind))
-        .map((job) => ({ key: job.id })),
-    ],
+    (kind: ArtifactKind | undefined) => {
+      const rows = running.filter((job) => isStudioOwned(job) && (!kind || job.kind === kind));
+      // A heavy image goes through the queue and so has a row of its own while
+      // the panel still holds its flag: one render, one cell.
+      const rowOfSameKind = rows.some((job) => job.kind === localWorking);
+      const local =
+        localWorking && (!kind || localWorking === kind) && !rowOfSameKind
+          ? [{ key: `local:${localWorking}` }]
+          : [];
+      return [...local, ...rows.map((job) => ({ key: job.id }))];
+    },
     [localWorking, running],
   );
   // Lifted so the lightbox's "use as reference" can feed the image panel and
