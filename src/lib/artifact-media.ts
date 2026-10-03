@@ -1,9 +1,9 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isMobilePlatform } from "./mobile";
 import { artifactSrc, listArtifacts, readArtifactBase64 } from "./studio/artifacts";
-import { makeThumbnail } from "./studio/downscale";
-import { extractFrameAt } from "./studio/frames";
+import { makeThumbnail, posterJpeg } from "./studio/downscale";
+import { extractFrameAt, mediaDuration } from "./studio/frames";
 import type { StudioArtifact } from "./studio/types";
 
 /**
@@ -183,6 +183,70 @@ function inTurn<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** What a tile needs to know about an item to paint it. */
+type TileSubject = Pick<StudioArtifact, "path" | "kind"> &
+  Partial<Pick<StudioArtifact, "posterVersion" | "durationMs">>;
+
+function fileNameOf(path: string): string {
+  return path.split(/[\\/]/).pop() ?? "";
+}
+
+/** The still filed for an item, on the media scheme: painted straight from
+ * disk, with nothing decoded in this process. */
+export function artifactPosterUrl(
+  artifact: Pick<StudioArtifact, "path" | "posterVersion">,
+): string {
+  const name = encodeURIComponent(fileNameOf(artifact.path));
+  return `${mediaSchemeBase()}poster/${name}?v=${artifact.posterVersion ?? 1}`;
+}
+
+/**
+ * Files a poster and what was measured making it, so the item is never
+ * decoded for its tile again. Best-effort: a failure costs a decode on the
+ * next launch, nothing more.
+ */
+function filePoster(
+  artifact: Pick<StudioArtifact, "path">,
+  poster: { dataUrl: string; width: number; height: number },
+  durationMs?: number,
+): void {
+  const id = fileNameOf(artifact.path);
+  void invoke("carpe_diem_media_save_poster", {
+    request: { id, base64: poster.dataUrl.replace(/^data:[^,]+,/, "") },
+  })
+    .then(() =>
+      invoke("studio_artifact_measure", {
+        id,
+        measures: {
+          posterVersion: 1,
+          width: poster.width,
+          height: poster.height,
+          ...(durationMs ? { durationMs } : {}),
+        },
+      }),
+    )
+    .catch(() => undefined);
+}
+
+/** A frame out of a clip: streamed first, which reads only the bytes that
+ * frame needs, else from the whole file over IPC. */
+async function clipFrame(artifact: Pick<StudioArtifact, "path">) {
+  try {
+    return await extractFrameAt(artifactStreamUrl(artifact), POSTER_TIME_SECONDS);
+  } catch {
+    const base64 = await readArtifactBase64(artifact);
+    // A throwaway object URL, not the cached one: `cache` evicts by revoking,
+    // and reading a poster has no business invalidating the URL the lightbox
+    // may be playing from. Revoked as soon as the frame is out.
+    const url = URL.createObjectURL(base64ToBlob(base64, mimeFor(artifact.path)));
+    try {
+      return await extractFrameAt(url, POSTER_TIME_SECONDS);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+}
+
 /**
  * A still decoded out of a clip, to stand in for it in the grid.
  *
@@ -191,25 +255,47 @@ function inTurn<T>(task: () => Promise<T>): Promise<T> {
  * an empty grey square however the element was coaxed (`preload="metadata"`, a
  * `#t=` media fragment: neither is honoured before playback). Decoding the
  * frame ourselves and handing over an `<img>` is the one thing that does not
- * depend on the media element's goodwill.
+ * depend on the media element's goodwill. Done once per clip: the still is
+ * filed on disk with the clip's length and size.
  */
 async function clipPoster(artifact: Pick<StudioArtifact, "path">): Promise<string> {
-  const base64 = await readArtifactBase64(artifact);
-  // A throwaway object URL, not the cached one: `cache` evicts by revoking, and
-  // reading a poster has no business invalidating the URL the lightbox may be
-  // playing from. Revoked as soon as the frame is out.
-  const url = URL.createObjectURL(base64ToBlob(base64, mimeFor(artifact.path)));
+  // WebKit paints a clip's opening frame inside an <img> straight off the
+  // stream, in a fraction of a second, where a detached <video> on iOS loads
+  // its metadata and then never decodes a picture at all (measured: 0.2 s
+  // against a 15 s timeout). Elsewhere the image fails fast and the frame is
+  // read the long way.
+  const stream = artifactStreamUrl(artifact);
   try {
-    const frame = await extractFrameAt(url, POSTER_TIME_SECONDS);
-    if (frame.durationSeconds > 0) clipLengths.set(artifact.path, frame.durationSeconds);
-    return makeThumbnail(frame.dataUrl);
-  } finally {
-    URL.revokeObjectURL(url);
+    const poster = await posterJpeg(stream);
+    const seconds = await mediaDuration(stream);
+    if (seconds > 0) clipLengths.set(artifact.path, seconds);
+    filePoster(artifact, poster, seconds > 0 ? Math.round(seconds * 1000) : undefined);
+    return poster.dataUrl;
+  } catch {
+    // Not a WebKit shell, or a clip it cannot paint: decode a frame instead.
   }
+  const frame = await clipFrame(artifact);
+  if (frame.durationSeconds > 0) clipLengths.set(artifact.path, frame.durationSeconds);
+  const poster = await posterJpeg(frame.dataUrl);
+  filePoster(
+    artifact,
+    { ...poster, width: frame.width || poster.width, height: frame.height || poster.height },
+    frame.durationSeconds > 0 ? Math.round(frame.durationSeconds * 1000) : undefined,
+  );
+  return poster.dataUrl;
 }
 
-function still(path: string, src: string): ArtifactThumbnail {
-  return { src, kind: "still", durationSeconds: clipLengths.get(path) };
+function still(artifact: TileSubject, src: string): ArtifactThumbnail {
+  const known = artifact.durationMs ? artifact.durationMs / 1000 : undefined;
+  return { src, kind: "still", durationSeconds: known ?? clipLengths.get(artifact.path) };
+}
+
+/** The filed poster, when there is one: nothing to decode, nothing to wait for. */
+function filedThumbnail(artifact: TileSubject): ArtifactThumbnail | null {
+  if (!artifact.posterVersion || (artifact.kind !== "image" && artifact.kind !== "video")) {
+    return null;
+  }
+  return still(artifact, artifactPosterUrl(artifact));
 }
 
 /** In-flight reads, so two tiles for the same file decode it once. Cheap for an
@@ -222,11 +308,11 @@ const pendingThumbnails = new Map<string, Promise<ArtifactThumbnail>>();
  * cells render this instead and keep the full image for the lightbox. Videos
  * resolve to a poster frame; audio, which has no picture, to the file itself.
  */
-export function artifactThumbnail(
-  artifact: Pick<StudioArtifact, "path" | "kind">,
-): Promise<ArtifactThumbnail> {
+export function artifactThumbnail(artifact: TileSubject): Promise<ArtifactThumbnail> {
+  const filed = filedThumbnail(artifact);
+  if (filed) return Promise.resolve(filed);
   const cached = thumbCache.get(artifact.path);
-  if (cached) return Promise.resolve(still(artifact.path, cached));
+  if (cached) return Promise.resolve(still(artifact, cached));
   const running = pendingThumbnails.get(artifact.path);
   if (running) return running;
   const read = loadThumbnail(artifact).finally(() => {
@@ -236,14 +322,12 @@ export function artifactThumbnail(
   return read;
 }
 
-async function loadThumbnail(
-  artifact: Pick<StudioArtifact, "path" | "kind">,
-): Promise<ArtifactThumbnail> {
+async function loadThumbnail(artifact: TileSubject): Promise<ArtifactThumbnail> {
   if (artifact.kind === "video") {
     try {
       const poster = await inTurn(() => clipPoster(artifact));
       remember(thumbCache, artifact.path, poster, THUMB_CACHE_MAX);
-      return still(artifact.path, poster);
+      return still(artifact, poster);
     } catch {
       // A clip that will not decode still has to be reachable and deletable:
       // fall through to the media itself, which is all the tile ever had.
@@ -252,10 +336,20 @@ async function loadThumbnail(
   // A clip that would not decode, or a track: the tile gets the file itself,
   // streamed, rather than a whole copy of it held in this process.
   if (artifact.kind !== "image") return { src: artifactStreamUrl(artifact), kind: "media" };
+  // A picture's poster comes off the streamed file, so the full image never
+  // crosses into this process as base64 just to be shrunk.
+  try {
+    const poster = await posterJpeg(artifactStreamUrl(artifact));
+    filePoster(artifact, poster);
+    remember(thumbCache, artifact.path, poster.dataUrl, THUMB_CACHE_MAX);
+    return still(artifact, poster.dataUrl);
+  } catch {
+    // Outside the app's own scheme (an older shell, a test), shrink the copy.
+  }
   const full = await artifactDataUrl(artifact);
   const thumb = await makeThumbnail(full);
   remember(thumbCache, artifact.path, thumb, THUMB_CACHE_MAX);
-  return still(artifact.path, thumb);
+  return still(artifact, thumb);
 }
 
 /** The scheme `src-tauri/src/carpe_diem/media_protocol.rs` serves the gallery on. */
@@ -269,15 +363,20 @@ export const MEDIA_SCHEME = "subrosa-media";
  * an iOS reinstall moving the app's container.
  */
 export function artifactStreamUrl(artifact: Pick<StudioArtifact, "path">): string {
-  const name = artifact.path.split(/[\\/]/).pop() ?? "";
-  // Tauri knows which form this platform's webview answers (a custom scheme,
-  // or `http://<scheme>.localhost` on Android and Windows). Outside a shell -
-  // tests, the browser labs - the custom-scheme form stands in.
+  return `${mediaSchemeBase()}${encodeURIComponent(fileNameOf(artifact.path))}`;
+}
+
+/**
+ * `subrosa-media://localhost/`, or the `http://subrosa-media.localhost/` form
+ * where the platform's webview needs it. Tauri knows which; outside a shell
+ * (tests, the browser labs) the custom-scheme form stands in.
+ */
+function mediaSchemeBase(): string {
   const internals = (window as { __TAURI_INTERNALS__?: { convertFileSrc?: unknown } })
     .__TAURI_INTERNALS__;
   return internals?.convertFileSrc
-    ? convertFileSrc(name, MEDIA_SCHEME)
-    : `${MEDIA_SCHEME}://localhost/${encodeURIComponent(name)}`;
+    ? convertFileSrc("", MEDIA_SCHEME)
+    : `${MEDIA_SCHEME}://localhost/`;
 }
 
 /** Holds a full URL out of eviction for as long as a player needs it. */
@@ -332,6 +431,74 @@ export function usePlayableMediaUrl(artifact: Pick<StudioArtifact, "path"> | nul
   if (!mobile) return { src: artifactSrc(artifact), onError };
   if (failed) return { src: fallback?.path === path ? fallback.url : null, onError };
   return { src: artifactStreamUrl(artifact), onError };
+}
+
+/** How many bars a track's silhouette is measured in. */
+const TRACK_BARS = 48;
+
+export interface TrackShape {
+  durationMs: number;
+  peaks: number[];
+}
+
+const trackShapes = new Map<string, TrackShape>();
+const pendingShapes = new Map<string, Promise<TrackShape>>();
+let shapeTurn: Promise<unknown> = Promise.resolve();
+
+/** Measures a track once (decoded natively, one at a time) and files the
+ * answer with it, so the gallery draws its shape from then on for free. */
+function measureTrack(artifact: Pick<StudioArtifact, "path">): Promise<TrackShape> {
+  const known = trackShapes.get(artifact.path);
+  if (known) return Promise.resolve(known);
+  const running = pendingShapes.get(artifact.path);
+  if (running) return running;
+  const id = fileNameOf(artifact.path);
+  const task = () =>
+    invoke<TrackShape>("carpe_diem_media_track_shape", { request: { id, bins: TRACK_BARS } });
+  const run = shapeTurn.then(task, task);
+  shapeTurn = run.catch(() => undefined);
+  const read = run
+    .then((shape) => {
+      trackShapes.set(artifact.path, shape);
+      void invoke("studio_artifact_measure", { id, measures: shape }).catch(() => undefined);
+      return shape;
+    })
+    .finally(() => pendingShapes.delete(artifact.path));
+  pendingShapes.set(artifact.path, read);
+  return read;
+}
+
+/**
+ * A track's length and silhouette: from what was filed with it when there
+ * is one, else measured once. Null while measuring, or when the file cannot
+ * be decoded (the tile then keeps its seeded silhouette).
+ */
+export function useTrackShape(
+  artifact:
+    | (Pick<StudioArtifact, "path"> & Partial<Pick<StudioArtifact, "peaks" | "durationMs">>)
+    | null,
+): TrackShape | null {
+  const filed =
+    artifact?.peaks && artifact.peaks.length > 0
+      ? { peaks: artifact.peaks, durationMs: artifact.durationMs ?? 0 }
+      : null;
+  const [measured, setMeasured] = useState<TrackShape | null>(() =>
+    artifact ? (trackShapes.get(artifact.path) ?? null) : null,
+  );
+  const path = filed ? null : (artifact?.path ?? null);
+  useEffect(() => {
+    if (!path) return;
+    let cancelled = false;
+    measureTrack({ path })
+      .then((shape) => {
+        if (!cancelled) setMeasured(shape);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+  return filed ?? measured;
 }
 
 export function evictArtifactDataUrl(path: string) {
@@ -446,11 +613,11 @@ export function useArtifactPreview(
 
 /** What already sits in the caches for this artifact, so a tile that has been
  * seen before paints on its first render instead of after a round trip. */
-function cachedThumbnail(
-  artifact: Pick<StudioArtifact, "path" | "kind">,
-): ArtifactThumbnail | null {
+function cachedThumbnail(artifact: TileSubject): ArtifactThumbnail | null {
+  const filed = filedThumbnail(artifact);
+  if (filed) return filed;
   const thumb = thumbCache.get(artifact.path);
-  if (thumb) return still(artifact.path, thumb);
+  if (thumb) return still(artifact, thumb);
   // Only for images: for a clip the cached entry is the media itself, and the
   // poster this is about to resolve is the thing worth waiting a beat for.
   const full = artifact.kind === "image" ? cache.get(artifact.path) : undefined;
@@ -460,7 +627,7 @@ function cachedThumbnail(
 /** Like {@link useArtifactDataUrl} but resolves to a grid tile: a downscaled
  * still for images, a decoded poster frame for clips; null while loading or on
  * failure. */
-export function useArtifactThumbnail(artifact: Pick<StudioArtifact, "path" | "kind"> | null) {
+export function useArtifactThumbnail(artifact: TileSubject | null) {
   const [thumbnail, setThumbnail] = useState<ArtifactThumbnail | null>(() =>
     artifact ? cachedThumbnail(artifact) : null,
   );
@@ -480,6 +647,6 @@ export function useArtifactThumbnail(artifact: Pick<StudioArtifact, "path" | "ki
     return () => {
       cancelled = true;
     };
-  }, [artifact?.path, artifact?.kind]);
+  }, [artifact?.path, artifact?.kind, artifact?.posterVersion]);
   return thumbnail;
 }

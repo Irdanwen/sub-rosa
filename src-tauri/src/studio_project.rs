@@ -478,6 +478,76 @@ async fn delete_artifact_metadata(pool: &SqlitePool, id: &str) -> Result<(), Str
     Ok(())
 }
 
+/// Files what a render was asked for, the moment its file lands.
+///
+/// The prompt used to reach the gallery only when the panel that queued the
+/// render was open to hear it finish. A clip that landed while the phone sat
+/// on another tab was adopted from the disk with no prompt, and showed as "No
+/// prompt recorded" for good. Never overwrites: whatever the webview files
+/// itself (a retouch's lineage, a title) is richer than the job row.
+async fn record_landed(pool: &SqlitePool, id: &str, generation: &Value) -> Result<(), String> {
+    validate_id(id)?;
+    let generation = bounded_json(generation, MAX_GENERATION_BYTES)?;
+    query("INSERT INTO studio_artifact_metadata (id, title, project_ids, generation) VALUES (?, '', '[]', ?) ON CONFLICT(id) DO UPDATE SET generation = COALESCE(studio_artifact_metadata.generation, excluded.generation)")
+        .bind(id)
+        .bind(generation)
+        .execute(pool)
+        .await
+        .map_err(storage_error)?;
+    Ok(())
+}
+
+pub(crate) async fn record_landed_artifact(
+    app: &AppHandle,
+    id: &str,
+    generation: &Value,
+) -> Result<(), String> {
+    record_landed(&pool(app).await?, id, generation).await
+}
+
+/// Adds measures learned after the fact (a poster's clip length, a track's
+/// waveform) to an item's generation without touching anything else in it.
+async fn merge_measures(pool: &SqlitePool, id: &str, measures: &Value) -> Result<(), String> {
+    validate_id(id)?;
+    let Value::Object(measures) = measures else {
+        return Err(INVALID_DOCUMENT.into());
+    };
+    let mut tx = pool.begin().await.map_err(storage_error)?;
+    let current: Option<Option<String>> =
+        query("SELECT generation FROM studio_artifact_metadata WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(storage_error)?
+            .map(|row| row.try_get("generation"))
+            .transpose()
+            .map_err(storage_error)?;
+    let mut generation = match current.flatten() {
+        Some(source) => serde_json::from_str::<Value>(&source).map_err(storage_error)?,
+        None => Value::Object(Default::default()),
+    };
+    let Value::Object(fields) = &mut generation else {
+        return Err(INVALID_DOCUMENT.into());
+    };
+    for key in MEASURE_FIELDS {
+        if let Some(value) = measures.get(*key) {
+            fields.insert((*key).to_owned(), value.clone());
+        }
+    }
+    let json = bounded_json(&generation, MAX_GENERATION_BYTES)?;
+    query("INSERT INTO studio_artifact_metadata (id, title, project_ids, generation) VALUES (?, '', '[]', ?) ON CONFLICT(id) DO UPDATE SET generation = excluded.generation")
+        .bind(id)
+        .bind(json)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_error)?;
+    tx.commit().await.map_err(storage_error)?;
+    Ok(())
+}
+
+/// What a measure may set: nothing that says what was asked for or by whom.
+const MEASURE_FIELDS: &[&str] = &["durationMs", "width", "height", "peaks", "posterVersion"];
+
 pub(crate) async fn delete_gallery_artifact_metadata(
     app: &AppHandle,
     id: &str,
@@ -647,6 +717,17 @@ pub async fn studio_artifact_save(
     request: SaveArtifactRequest,
 ) -> Result<ArtifactMetadata, String> {
     save_artifact(&pool(&app).await?, request).await
+}
+
+/// Records what was learned about a file by looking at it: a clip's length
+/// and size, a track's waveform. Measured once, then read from here.
+#[tauri::command]
+pub async fn studio_artifact_measure(
+    app: AppHandle,
+    id: String,
+    measures: Value,
+) -> Result<(), String> {
+    merge_measures(&pool(&app).await?, &id, &measures).await
 }
 
 #[tauri::command]
@@ -1254,5 +1335,44 @@ mod tests {
         let metadata = list_artifacts(&pool).await.unwrap();
         assert_eq!(metadata[0].title, "Old title");
         assert_eq!(metadata[0].project_ids, vec!["film-one"]);
+    }
+    #[tokio::test]
+    async fn a_landed_render_is_filed_once_and_measures_join_it() {
+        let dir = tempfile::tempdir().expect("dir");
+        let pool = open_database(&dir.path().join("studio.sqlite")).await;
+        let landed =
+            json!({ "id": "clip.mp4", "kind": "video", "prompt": "A tram", "model": "kling" });
+        record_landed(&pool, "clip.mp4", &landed)
+            .await
+            .expect("filed");
+        // The webview's own filing is richer, and a late landing never undoes it.
+        save_artifact(
+            &pool,
+            SaveArtifactRequest {
+                id: "clip.mp4".into(),
+                title: None,
+                project_ids: None,
+                generation: Some(json!({ "id": "clip.mp4", "kind": "video", "prompt": "A tram", "parentId": "a.mp4" })),
+            },
+        )
+        .await
+        .expect("saved");
+        record_landed(&pool, "clip.mp4", &landed)
+            .await
+            .expect("filed again");
+        merge_measures(
+            &pool,
+            "clip.mp4",
+            &json!({ "durationMs": 5200, "width": 1280, "prompt": "hijack" }),
+        )
+        .await
+        .expect("measured");
+        let all = list_artifacts(&pool).await.expect("list");
+        let generation = all[0].generation.clone().expect("generation");
+        assert_eq!(generation["parentId"], "a.mp4");
+        assert_eq!(generation["durationMs"], 5200);
+        assert_eq!(generation["width"], 1280);
+        // A measure cannot rewrite what was asked for.
+        assert_eq!(generation["prompt"], "A tram");
     }
 }

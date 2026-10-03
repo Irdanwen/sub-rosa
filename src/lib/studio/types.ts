@@ -129,6 +129,15 @@ export interface StudioArtifact {
   /** Retouch lineage: this image is a version of another one. Its own field,
    * never `parentId` (which `chain.ts` walks for video shots). */
   edit?: RetouchLineage;
+  /** Measures learned by looking at the file once, then kept with it
+   * (`studio_artifact_measure`): a clip's or track's length, a picture's or
+   * clip's size, a track's silhouette (0..1 bars), and whether a poster
+   * still was filed for it (`/poster/<file>` on the media scheme). */
+  durationMs?: number;
+  width?: number;
+  height?: number;
+  peaks?: number[];
+  posterVersion?: number;
 }
 
 /** How a retouch version was made. */

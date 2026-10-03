@@ -570,3 +570,26 @@ export function stripContinuationPrefix(prompt: string): string {
   }
   return out;
 }
+
+/**
+ * A clip's or a track's length in seconds, from its metadata alone: nothing
+ * is decoded and no frame is waited for, so this answers on iOS where a
+ * detached element never paints. Zero when the length cannot be read in time.
+ */
+export function mediaDuration(src: string, timeoutMs = 8000): Promise<number> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    const done = (seconds: number) => {
+      window.clearTimeout(timer);
+      video.removeAttribute("src");
+      video.load();
+      resolve(Number.isFinite(seconds) && seconds > 0 ? seconds : 0);
+    };
+    const timer = window.setTimeout(() => done(0), timeoutMs);
+    video.addEventListener("loadedmetadata", () => done(video.duration), { once: true });
+    video.addEventListener("error", () => done(0), { once: true });
+    video.src = src;
+  });
+}

@@ -884,9 +884,96 @@ pub async fn carpe_diem_media_delete_artifact(
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| AppError::new("media_artifact_invalid", "Invalid gallery file name."))?;
+    // Its poster goes with it; a missing one is the common case.
+    let _ = tokio::fs::remove_file(dir.join(POSTERS_DIR).join(format!("{id}.jpg"))).await;
     crate::studio_project::delete_gallery_artifact_metadata(&app, id)
         .await
         .map_err(|error| AppError::new("media_artifact_delete_failed", error))
+}
+
+/// Where the gallery keeps a still for each clip, beside the files and out of
+/// their listing (the listing skips directories).
+pub(crate) const POSTERS_DIR: &str = ".posters";
+
+/// The largest poster accepted. A 512px JPEG is a few tens of kilobytes; this
+/// is the bound that keeps a mistaken caller from writing a whole frame.
+const MAX_POSTER_BYTES: usize = 512 * 1024;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavePosterRequest {
+    /// The gallery file the still stands for (its file name).
+    pub id: String,
+    /// A JPEG, base64 without a data-URI prefix.
+    pub base64: String,
+}
+
+/// Keeps a clip's poster on disk, so the gallery decodes each clip once in
+/// its life instead of once per launch. Served back through `subrosa-media:`
+/// at `/poster/<id>`.
+#[tauri::command]
+pub async fn carpe_diem_media_save_poster(
+    app: AppHandle,
+    request: SavePosterRequest,
+) -> Result<(), AppError> {
+    let invalid = || AppError::new("media_artifact_invalid", "That poster is not valid.");
+    let id = super::media_protocol::file_name_of(&request.id).ok_or_else(invalid)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(request.base64.trim())
+        .map_err(|_| invalid())?;
+    if bytes.len() > MAX_POSTER_BYTES || !bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Err(invalid());
+    }
+    let dir = artifacts_dir(&app)?.join(POSTERS_DIR);
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|error| AppError::new("media_artifact_save_failed", error.to_string()))?;
+    let target = dir.join(format!("{id}.jpg"));
+    let staging = dir.join(format!("{id}.jpg.part"));
+    tokio::fs::write(&staging, bytes)
+        .await
+        .map_err(|error| AppError::new("media_artifact_save_failed", error.to_string()))?;
+    tokio::fs::rename(&staging, &target)
+        .await
+        .map_err(|error| AppError::new("media_artifact_save_failed", error.to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackShapeRequest {
+    /// The gallery file (its file name).
+    pub id: String,
+    /// How many bars; clamped to a sensible range.
+    pub bins: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackShapeDto {
+    pub duration_ms: i64,
+    pub peaks: Vec<f32>,
+}
+
+/// A track's length and silhouette, measured from the file (see
+/// `audio::track_shape`). The webview files the answer with the item, so
+/// each track is decoded for this once.
+#[tauri::command]
+pub async fn carpe_diem_media_track_shape(
+    app: AppHandle,
+    request: TrackShapeRequest,
+) -> Result<TrackShapeDto, AppError> {
+    let id = super::media_protocol::file_name_of(&request.id)
+        .ok_or_else(|| AppError::new("media_artifact_invalid", "Invalid gallery file name."))?;
+    let path = artifacts_dir(&app)?.join(id);
+    let bins = request.bins.clamp(8, 256);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::audio::track_shape::measure(&path, bins).map(|shape| TrackShapeDto {
+            duration_ms: shape.duration_ms,
+            peaks: shape.peaks,
+        })
+    })
+    .await
+    .map_err(|error| AppError::new("media_decode_failed", error.to_string()))?
 }
 
 /// Reads a gallery artifact back as base64, so a generated image can feed the
