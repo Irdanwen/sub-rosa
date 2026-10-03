@@ -4655,3 +4655,547 @@
 .mobile-music-row-pending {
   position: relative;
 }
+
+/* --- The Studio gallery (StudioGallery.tsx) ------------------------------------
+ *
+ * A photo library's grammar: square tiles edge to edge, the day as a sticky
+ * heading, kinds and folders as a row of tabs, and every action one long
+ * press away. Lives on the Studio's stage, so it speaks in stage tokens. */
+
+.mobile-gallery {
+  display: grid;
+  /* One column that never grows to the width of the scrolling tab row. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  padding-bottom: calc(var(--sp-12) + 64px);
+}
+
+.mobile-gallery-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-gallery-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--stage-soft);
+  color: var(--screen-muted);
+}
+
+.mobile-gallery-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--screen-foreground);
+  font: inherit;
+  font-size: max(16px, var(--fs-md));
+}
+
+.mobile-gallery-search input::placeholder {
+  color: var(--screen-muted);
+}
+
+.mobile-gallery-round {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--screen-foreground);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-gallery-text-button {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: none;
+  color: var(--screen-foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-gallery-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--sp-2);
+  min-inline-size: 0;
+  margin: 0 calc(var(--mobile-gutter) * -1);
+  padding: 0 var(--mobile-gutter);
+  border: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-gallery-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-gallery-tab {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-gallery-tab[data-active="true"] {
+  border-color: transparent;
+  background: var(--screen-foreground);
+  color: var(--screen);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-gallery-crumb {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mobile-gallery-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+}
+
+.mobile-gallery-crumb-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--screen-foreground);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-gallery-body {
+  --gallery-columns: 3;
+  display: grid;
+  gap: var(--sp-4);
+  /* A pinch is a density change here, never a page zoom. */
+  touch-action: pan-x pan-y;
+}
+
+.mobile-gallery[data-selecting="true"] .mobile-gallery-body {
+  /* Sideways is selection while selecting; up and down still scroll. */
+  touch-action: pan-y;
+}
+
+.mobile-gallery-day {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.mobile-gallery-day-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 calc(var(--mobile-gutter) * -1);
+  padding: var(--sp-2) var(--mobile-gutter);
+  background: linear-gradient(var(--screen) 70%, transparent);
+  color: var(--screen-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--gallery-columns), minmax(0, 1fr));
+  gap: 2px;
+  margin: 0 calc(var(--mobile-gutter) * -1);
+}
+
+.mobile-gallery-body[data-columns="1"] .mobile-gallery-grid {
+  gap: var(--sp-5);
+  margin: 0;
+}
+
+.mobile-gallery-item {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.mobile-gallery-tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in oklch, var(--screen) 82%, white);
+  color: var(--screen-foreground);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.mobile-gallery-tile:active {
+  transform: scale(0.97);
+}
+
+.mobile-gallery-item[data-feed="true"] .mobile-gallery-tile {
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-lg);
+}
+
+.mobile-gallery-tile > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mobile-gallery-item[data-feed="true"] .mobile-gallery-tile > img {
+  object-fit: contain;
+  background: color-mix(in oklch, var(--screen) 72%, black);
+}
+
+.mobile-gallery-tile-loading {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    var(--stage-soft) 30%,
+    var(--stage-softer) 50%,
+    var(--stage-soft) 70%
+  );
+  background-size: 300% 100%;
+  animation: stage-shimmer 1.8s linear infinite;
+}
+
+.mobile-gallery-tile-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--screen-muted);
+}
+
+.mobile-gallery-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  background: oklch(0 0 0 / 55%);
+  color: white;
+  font-size: 11px;
+  font-variant-numeric: proportional-nums;
+  font-feature-settings:
+    "tnum" 0,
+    "pnum" 1;
+  line-height: 1.3;
+}
+
+.mobile-gallery-badge-top {
+  top: 6px;
+  bottom: auto;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.02em;
+}
+
+.mobile-gallery-favorite {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: inline-grid;
+  color: white;
+  filter: drop-shadow(0 1px 2px oklch(0 0 0 / 60%));
+}
+
+.mobile-gallery-check {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid white;
+  border-radius: var(--r-pill);
+  background: oklch(0 0 0 / 25%);
+  color: white;
+  box-shadow: 0 1px 3px oklch(0 0 0 / 40%);
+}
+
+.mobile-gallery-check[data-on="true"] {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.mobile-gallery-caption {
+  display: grid;
+  gap: 2px;
+  padding: 0 var(--sp-1);
+}
+
+.mobile-gallery-caption-prompt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--screen-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.mobile-gallery-caption-meta {
+  overflow: hidden;
+  color: var(--screen-muted);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A track: tinted by its own file, its kind, its shape and its words. */
+.mobile-gallery-audio {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 8px;
+  background:
+    radial-gradient(circle at 20% 15%, oklch(0.42 0.09 var(--audio-hue-a)), transparent 60%),
+    radial-gradient(circle at 85% 90%, oklch(0.34 0.08 var(--audio-hue-b)), transparent 65%),
+    oklch(0.2 0.02 var(--audio-hue-a));
+  text-align: left;
+}
+
+.mobile-gallery-audio-kind {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: oklch(1 0 0 / 14%);
+  color: white;
+}
+
+.mobile-gallery-audio-wave {
+  display: flex;
+  align-items: center;
+  gap: 1.5px;
+  min-height: 0;
+  opacity: 0.55;
+}
+
+.mobile-gallery-audio-wave[data-measured="true"] {
+  opacity: 0.9;
+}
+
+.mobile-gallery-audio-wave > span {
+  flex: 1;
+  min-width: 1px;
+  height: calc(var(--bar) * 70%);
+  border-radius: 1px;
+  background: white;
+}
+
+.mobile-gallery-audio-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: oklch(1 0 0 / 88%);
+  font-size: 11px;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mobile-gallery-body[data-columns="4"] .mobile-gallery-audio-title {
+  display: none;
+}
+
+/* After the tile's own rules, so the dimming of a selected one wins. */
+.mobile-gallery-tile[data-selected="true"] > img,
+.mobile-gallery-tile[data-selected="true"] > .mobile-gallery-audio {
+  opacity: 0.62;
+}
+
+.mobile-gallery-empty {
+  margin: var(--sp-8) 0;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.mobile-gallery-hidden-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+}
+
+/* Folders: a cover and a name, two to a row. */
+.mobile-gallery-folders {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4) var(--sp-3);
+}
+
+.mobile-gallery-folder {
+  display: grid;
+  gap: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--screen-foreground);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mobile-gallery-folder-cover {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--stage-soft);
+  color: var(--screen-muted);
+}
+
+.mobile-gallery-folder-cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mobile-gallery-folder-new .mobile-gallery-folder-cover {
+  border: 1.5px dashed var(--stage-edge);
+  background: none;
+}
+
+.mobile-gallery-folder-name {
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-gallery-folder-count {
+  color: var(--screen-muted);
+  font-size: var(--fs-xs);
+}
+
+.mobile-gallery-notice {
+  position: sticky;
+  bottom: calc(var(--sp-4) + 56px);
+  justify-self: center;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-pill);
+  background: var(--screen-foreground);
+  color: var(--screen);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-md);
+  animation: stage-fade var(--t-med) var(--ease-out) both;
+}
+
+/* Selection: the count, and what can be done to all of it, within reach. */
+.mobile-gallery-select-bar {
+  position: sticky;
+  bottom: var(--sp-2);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-xl);
+  background: color-mix(in oklch, var(--screen) 90%, transparent);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  box-shadow: var(--shadow-lg);
+}
+
+.mobile-gallery-select-count {
+  color: var(--screen-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+
+.mobile-gallery-select-actions {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.mobile-gallery-select-action {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--screen-foreground);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-gallery-select-action:disabled {
+  opacity: 0.35;
+}
+
+.mobile-gallery-select-action[data-destructive="true"] {
+  color: var(--destructive);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-gallery-tile {
+    transition: none;
+  }
+  .mobile-gallery-tile-loading {
+    animation: none;
+  }
+}
