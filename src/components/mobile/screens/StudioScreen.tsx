@@ -30,6 +30,7 @@ import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { StackHeader } from "../StackHeader";
 import { ActionSheet } from "../ActionSheet";
+import "../../studio/stage/stage.css";
 
 // No "flows" here: the guided workflow editor was unusable at phone size and
 // was removed from the phone. Productions stay a desktop surface.
@@ -161,7 +162,9 @@ export function StudioScreen() {
   }, []);
 
   return (
-    <div className="mobile-screen-root">
+    // The Studio is a stage: dark in either theme, the controls on glass, the
+    // same room the retouch tab renders into (CONTEXT.md, "Stage").
+    <div className="mobile-screen-root mobile-studio-stage stage">
       <StackHeader
         title={t("Studio")}
         large
@@ -185,13 +188,13 @@ export function StudioScreen() {
         }
       />
       {imageFailures[0] ? (
-        <div className="studio-error studio-image-failure" role="alert">
+        <div className="stage-notice mobile-studio-notice" data-tone="error" role="alert">
           <span>
             {t("An image could not be generated: {reason}", { reason: imageFailures[0].message })}
           </span>
           <button
             type="button"
-            className="btn btn-ghost"
+            className="mobile-chip-button"
             onClick={() => dismissStandaloneImageFailure(imageFailures[0].id)}
           >
             {t("Dismiss")}
