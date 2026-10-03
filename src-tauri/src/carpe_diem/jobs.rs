@@ -609,6 +609,18 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
                     )
                     .await
                 {
+                    // What was asked for is filed with the file now, not when
+                    // a panel happens to be open to hear the job finish.
+                    let generation =
+                        landed_generation(&updated, chrono::Utc::now().timestamp_millis());
+                    if let Some(id) = updated.artifact_file_name.as_deref() {
+                        if let Err(error) =
+                            crate::studio_project::record_landed_artifact(app, id, &generation)
+                                .await
+                        {
+                            eprintln!("media job {}: could not file its prompt: {error}", job.id);
+                        }
+                    }
                     // The finished row knows its file, which is where a tap
                     // on the notification should open.
                     notify(app, &updated, true);
@@ -630,6 +642,32 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
             false
         }
     }
+}
+
+/// The gallery's record of a finished render, from its durable row: the same
+/// shape the webview files (`StudioArtifact` minus its path).
+fn landed_generation(job: &MediaJobDto, now_ms: i64) -> serde_json::Value {
+    let mut generation = serde_json::json!({
+        "id": job.artifact_file_name,
+        "fileName": job.artifact_file_name,
+        "kind": job.kind,
+        "model": job.model,
+        "prompt": job.prompt,
+        "bytes": job.artifact_bytes,
+        "createdAt": now_ms,
+    });
+    if let serde_json::Value::Object(fields) = &mut generation {
+        if let Some(parent) = &job.parent_artifact_id {
+            fields.insert("parentId".into(), parent.clone().into());
+        }
+        if let Some(seconds) = job.parent_handoff_seconds {
+            fields.insert("parentHandoffSeconds".into(), seconds.into());
+        }
+        if let Some(cost) = job.cost_credits {
+            fields.insert("costCredits".into(), cost.into());
+        }
+    }
+    generation
 }
 
 async fn pending_composite(app: &AppHandle, id: &str) -> Option<super::zone::CompositeSpec> {
@@ -934,6 +972,27 @@ mod tests {
         job.source = Some("retouch:root.png".into());
         job.artifact_file_name = None;
         assert_eq!(destination_of(&job), "subrosa://studio");
+    }
+
+    #[test]
+    fn a_landed_render_files_what_was_asked_for() {
+        let job: MediaJobDto = serde_json::from_value(serde_json::json!({
+            "id": "j", "kind": "video", "model": "kling-v3", "prompt": "A tram at dusk",
+            "extension": "mp4", "status": "completed", "submissionConfirmed": true,
+            "artifactFileName": "clip.mp4", "artifactBytes": 42,
+            "parentArtifactId": "earlier.mp4", "parentHandoffSeconds": 4.5,
+            "createdAt": "", "updatedAt": ""
+        }))
+        .expect("job");
+        let generation = landed_generation(&job, 1_700_000_000_000);
+        assert_eq!(generation["id"], "clip.mp4");
+        assert_eq!(generation["fileName"], "clip.mp4");
+        assert_eq!(generation["kind"], job.kind.as_str());
+        assert_eq!(generation["prompt"], job.prompt.as_str());
+        assert_eq!(generation["parentId"], "earlier.mp4");
+        assert_eq!(generation["parentHandoffSeconds"], 4.5);
+        assert_eq!(generation["createdAt"], 1_700_000_000_000i64);
+        assert!(generation.get("costCredits").is_none());
     }
 
     #[test]

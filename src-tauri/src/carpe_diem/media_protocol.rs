@@ -8,7 +8,8 @@
 //! few seconds already buffered. A media element wants byte ranges from a
 //! file, so this answers byte ranges from the file.
 //!
-//! The URL names a gallery file by its name, never by a path: `/<file name>`.
+//! The URL names a gallery file by its name, never by a path: `/<file name>`,
+//! or `/poster/<file name>` for the still kept for a clip.
 //! Anything that is not a bare file name of the gallery is refused, so the
 //! scheme cannot reach outside `$APPDATA/studio-media/` whatever the webview
 //! asks. That is also why it does not reuse the asset protocol, whose scope is
@@ -58,7 +59,7 @@ pub fn register<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
 }
 
 fn respond<R: Runtime>(app: &AppHandle<R>, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
-    let Some(name) = file_name_of(request.uri().path()) else {
+    let Some(target) = target_of(request.uri().path()) else {
         return status(StatusCode::FORBIDDEN);
     };
     let Ok(dir) = gallery_dir(app) else {
@@ -68,8 +69,30 @@ fn respond<R: Runtime>(app: &AppHandle<R>, request: &Request<Vec<u8>>) -> Respon
         .headers()
         .get(header::RANGE)
         .and_then(|value| value.to_str().ok());
-    match serve(&dir.join(&name), range) {
-        Ok(response) => response,
+    let path = match target {
+        Target::File(name) => dir.join(name),
+        Target::Poster(name) => dir
+            .join(super::media::POSTERS_DIR)
+            .join(format!("{name}.jpg")),
+    };
+    let origin = request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .filter(|origin| app_origin(origin))
+        .map(str::to_owned);
+    match serve(&path, range) {
+        Ok(mut response) => {
+            // A frame is read off a clip by drawing it on a canvas, which the
+            // webview allows only for a source that says this page may read
+            // it. Only the app's own page: nothing loaded in a frame may.
+            if let Some(origin) = origin.and_then(|value| value.parse().ok()) {
+                response
+                    .headers_mut()
+                    .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+            }
+            response
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => status(StatusCode::NOT_FOUND),
         Err(error) => {
             tracing::warn!("subrosa-media: could not read a gallery file: {error}");
@@ -84,6 +107,34 @@ fn gallery_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, ()> {
         .app_data_dir()
         .map(|dir| dir.join(super::media::ARTIFACTS_DIR))
         .map_err(|_| ())
+}
+
+/// The origins the app's own page is served from: the custom scheme on Apple
+/// platforms, `*.localhost` where the webview needs http, and the loopback dev
+/// server.
+pub(crate) fn app_origin(origin: &str) -> bool {
+    matches!(
+        origin,
+        "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost"
+    ) || origin
+        .strip_prefix("http://localhost:")
+        .or_else(|| origin.strip_prefix("http://127.0.0.1:"))
+        .is_some_and(|port| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// What a request asks for: a gallery file, or the poster kept for one.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Target {
+    File(String),
+    Poster(String),
+}
+
+/// `/<file name>` or `/poster/<file name>`, and nothing else.
+pub(crate) fn target_of(path: &str) -> Option<Target> {
+    match path.strip_prefix("/poster/") {
+        Some(rest) => file_name_of(rest).map(Target::Poster),
+        None => file_name_of(path).map(Target::File),
+    }
 }
 
 /// The one file name a request path may name, or nothing.
@@ -257,6 +308,44 @@ mod tests {
         ] {
             assert_eq!(file_name_of(refused), None, "{refused} must be refused");
         }
+    }
+
+    #[test]
+    fn only_the_apps_own_page_may_read_frames_off_a_clip() {
+        for allowed in [
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+            "http://localhost:1420",
+            "http://127.0.0.1:5199",
+        ] {
+            assert!(app_origin(allowed), "{allowed}");
+        }
+        for refused in [
+            "https://example.com",
+            "http://localhost.evil.com:80",
+            "http://localhost:",
+            "http://127.0.0.1:80/x",
+            "null",
+        ] {
+            assert!(!app_origin(refused), "{refused}");
+        }
+    }
+
+    #[test]
+    fn a_poster_is_named_by_its_clip_and_cannot_climb_out() {
+        assert_eq!(
+            target_of("/clip.mp4"),
+            Some(Target::File("clip.mp4".into()))
+        );
+        assert_eq!(
+            target_of("/poster/clip.mp4"),
+            Some(Target::Poster("clip.mp4".into()))
+        );
+        assert_eq!(target_of("/poster/../clip.mp4"), None);
+        assert_eq!(target_of("/poster/%2e%2e%2fsecret"), None);
+        assert_eq!(target_of("/poster/"), None);
+        assert_eq!(target_of("/posters/clip.mp4"), None);
     }
 
     #[test]

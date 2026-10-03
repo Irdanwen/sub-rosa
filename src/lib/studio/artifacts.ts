@@ -303,23 +303,40 @@ export async function listArtifacts(kind?: ArtifactKind): Promise<StudioArtifact
   // be seen or deleted from the app again. Prompt and model are genuinely lost
   // (they only ever lived in the index), so say so rather than inventing them.
   const known = new Set(alive.map((entry) => entry.fileName));
+  // What was measured about an adopted file (its poster, length, silhouette)
+  // is kept even though what produced it was not.
+  const measuredById = new Map(durable.map((entry) => [entry.id, entry.generation]));
   const adopted: StudioArtifact[] = files
     .filter((file) => !known.has(file.fileName))
-    .map((file) => ({
-      id: file.fileName,
-      kind: kindFromFileName(file.fileName),
-      path: file.path,
-      fileName: file.fileName,
-      bytes: file.bytes,
-      model: "",
-      prompt: "",
-      createdAt: file.modifiedMs ?? Date.now(),
-    }));
+    .map((file) => {
+      const measured = measuredById.get(file.fileName);
+      return {
+        id: file.fileName,
+        kind: kindFromFileName(file.fileName),
+        path: file.path,
+        fileName: file.fileName,
+        bytes: file.bytes,
+        model: "",
+        prompt: "",
+        createdAt: file.modifiedMs ?? Date.now(),
+        ...(measured ? pickMeasures(measured) : {}),
+      };
+    });
   if (adopted.length > 0) changed = true;
 
   const merged = [...alive, ...adopted].sort((a, b) => b.createdAt - a.createdAt);
   if (changed || merged.length !== index.length) writeIndex(merged);
   return kind ? merged.filter((entry) => entry.kind === kind) : merged;
+}
+
+/** The fields a measure files (`studio_artifact_measure`), and only those. */
+function pickMeasures(generation: Partial<StudioArtifact>): Partial<StudioArtifact> {
+  const { durationMs, width, height, peaks, posterVersion } = generation;
+  return Object.fromEntries(
+    Object.entries({ durationMs, width, height, peaks, posterVersion }).filter(
+      ([, value]) => value !== undefined,
+    ),
+  );
 }
 
 interface DiskArtifact {

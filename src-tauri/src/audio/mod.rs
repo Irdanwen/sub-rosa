@@ -6,6 +6,7 @@ pub mod ios_session;
 pub mod live_preview;
 pub mod recovery;
 pub mod system_macos;
+pub mod track_shape;
 pub mod turns;
 pub mod validation;
 pub mod waveform;

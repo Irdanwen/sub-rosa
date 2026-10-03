@@ -14,6 +14,9 @@
 function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    // A streamed gallery file is another origin; without this a canvas it is
+    // drawn on refuses to be read back.
+    if (!dataUrl.startsWith("data:")) img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("The image could not be decoded."));
     img.src = dataUrl;
@@ -100,4 +103,27 @@ export function prepareEditReference(dataUrl: string): Promise<string> {
  * downsamples it (which is what makes the full-res tiles look blurry). */
 export function makeThumbnail(dataUrl: string): Promise<string> {
   return downscaleDataUrl(dataUrl, { maxEdge: 512, maxBytes: 400_000, quality: 0.8 });
+}
+
+/**
+ * A gallery poster: always a JPEG at most 512px on its long side, from any
+ * source an image can load (a data URL, a decoded frame, a streamed file),
+ * with the size of the original. Unlike `makeThumbnail` it never hands the
+ * source back as is, because the result is filed on disk as a `.jpg`.
+ */
+export async function posterJpeg(
+  src: string,
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  const img = await loadImage(src);
+  const width = img.naturalWidth;
+  const height = img.naturalHeight;
+  if (!width || !height) throw new Error("The image could not be decoded.");
+  const scale = Math.min(1, 512 / Math.max(width, height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("The image could not be decoded.");
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { dataUrl: canvas.toDataURL("image/jpeg", 0.8), width, height };
 }
