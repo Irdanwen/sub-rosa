@@ -40,7 +40,7 @@ import {
   StudioToggle,
 } from "./StudioControls";
 import { Dock, DockComposer } from "./StudioDock";
-import { type StageResult, StudioStage } from "./StudioStage";
+import { type StageResult, StudioStage, type StudioStageIdle } from "./StudioStage";
 
 /** Which of the three sound panels is showing. */
 export type AudioMode = "music" | "speech" | "sfx";
@@ -55,17 +55,20 @@ const SFX_PROMPT_LIMIT = 250;
 /** The scene's shape for a track: the darkroom's own, wide and low. */
 const TRACK_ASPECT = "5:2";
 
-/** The track on the scene: the one that landed in this session, else the
- * newest of its kind in the gallery, else nothing. */
+/** The track on the scene: the one that landed in this session, else the one
+ * recalled from the gallery on request. Before either, the canvas is blank:
+ * the newest track used to sit there and read as the answer to a prompt not
+ * written yet. */
 function useSceneTrack(
   landed: StudioArtifact | undefined,
   lastTrack: StudioArtifact | undefined,
   dataUrl?: string,
-): StageResult | undefined {
-  const artifact = landed ?? lastTrack ?? null;
+): { result: StageResult | undefined; idle: StudioStageIdle } {
+  const [recalled, setRecalled] = useState<StudioArtifact | undefined>(undefined);
+  const artifact = landed ?? recalled ?? null;
   const playable = usePlayableMediaUrl(dataUrl ? null : artifact);
   const url = dataUrl ?? playable.src;
-  return url
+  const result: StageResult | undefined = url
     ? {
         kind: "audio",
         src: url,
@@ -73,6 +76,15 @@ function useSceneTrack(
         onError: dataUrl ? undefined : playable.onError,
       }
     : undefined;
+  const idle: StudioStageIdle = {
+    seed: "audio",
+    hint: t("Describe a sound. It will play here."),
+    recall:
+      lastTrack && !result
+        ? { label: t("Last creation"), onRecall: () => setRecalled(lastTrack) }
+        : undefined,
+  };
+  return { result, idle };
 }
 
 /**
@@ -173,7 +185,7 @@ export function SpeechPanel({
   const [wait, setWait] = useState<StageWait | undefined>(undefined);
   const [landedUrl, setLandedUrl] = useState<string | undefined>(undefined);
   const [reveal, setReveal] = useState(false);
-  const sceneResult = useSceneTrack(undefined, lastTrack, landedUrl);
+  const scene = useSceneTrack(undefined, lastTrack, landedUrl);
   useEffect(() => {
     onWorking?.(Boolean(wait));
   }, [wait, onWorking]);
@@ -230,7 +242,8 @@ export function SpeechPanel({
     <>
       <StudioStage
         aspect={TRACK_ASPECT}
-        result={sceneResult}
+        result={scene.result}
+        idle={scene.idle}
         wait={wait}
         waitLabel={t("Narrating")}
         reveal={reveal}
@@ -373,7 +386,7 @@ export function SfxPanel({
     hapticNotify("success");
     onGenerated();
   });
-  const sceneResult = useSceneTrack(landed, lastTrack);
+  const scene = useSceneTrack(landed, lastTrack);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
@@ -434,7 +447,8 @@ export function SfxPanel({
     <>
       <StudioStage
         aspect={TRACK_ASPECT}
-        result={sceneResult}
+        result={scene.result}
+        idle={scene.idle}
         wait={wait}
         waitLabel={t("Rendering")}
         reveal={reveal}
@@ -553,7 +567,7 @@ export function MusicPanel({
     hapticNotify("success");
     onGenerated();
   });
-  const sceneResult = useSceneTrack(landed, lastTrack);
+  const scene = useSceneTrack(landed, lastTrack);
 
   const duration = caps.durationSeconds
     ? Math.min(Math.max(60, caps.durationSeconds.min), caps.durationSeconds.max)
@@ -615,7 +629,8 @@ export function MusicPanel({
     <>
       <StudioStage
         aspect={TRACK_ASPECT}
-        result={sceneResult}
+        result={scene.result}
+        idle={scene.idle}
         wait={wait}
         waitLabel={t("Composing your track")}
         reveal={reveal}

@@ -79,7 +79,7 @@ describe("the image panel on the stage", () => {
     render(<StudioScreen />);
     await screen.findByRole("button", { name: /^Image model/ });
     const scene = screen.getByRole("region", { name: "Latest result" });
-    expect(scene.textContent).toContain("Nothing rendered yet.");
+    expect(scene.textContent).toContain("Describe an image. It will appear here.");
     // Nothing to send yet, and the hint says why.
     const send = screen.getByRole("button", { name: "Generate" });
     expect(send.hasAttribute("disabled")).toBe(true);
@@ -123,5 +123,67 @@ describe("the image panel on the stage", () => {
     expect(studio.remember).toHaveBeenCalledWith("image:chroma", expect.any(Number));
     // Recent no longer shows a pending cell.
     expect(document.querySelector(".mobile-studio-cell-pending")).toBeNull();
+  });
+
+  it("opens on a blank canvas even with pictures in the gallery, and recalls one on request", async () => {
+    studio.artifacts.mockResolvedValue([
+      {
+        id: "old.png",
+        kind: "image",
+        path: "/gallery/old.png",
+        fileName: "old.png",
+        bytes: 10,
+        model: "chroma",
+        prompt: "a storm at sea",
+        createdAt: 1,
+      },
+    ]);
+    tauri.invoke.mockImplementation(async (command: string) =>
+      command === "carpe_diem_media_read_artifact" ? PNG : undefined,
+    );
+    render(<StudioScreen />);
+    await screen.findByRole("button", { name: /^Image model/ });
+    const scene = screen.getByRole("region", { name: "Latest result" });
+    // The storm is not shown as if it were the answer to a prompt not written.
+    expect(scene.querySelector("img.mobile-studio-scene-picture")).toBeNull();
+    expect(scene.textContent).toContain("Describe an image. It will appear here.");
+
+    await userEvent.click(await screen.findByRole("button", { name: /Last creation/ }));
+    await waitFor(() =>
+      expect(
+        (scene.querySelector("img.mobile-studio-scene-picture") as HTMLImageElement | null)?.src,
+      ).toContain(PNG),
+    );
+  });
+
+  it("opens on GPT Image 2.5 and never offers a background remover as a generator", async () => {
+    studio.catalog.mockResolvedValue({
+      ...catalog(),
+      models: [
+        ...catalog().models,
+        { id: "bria-bg-remover", name: "Background Remover", mediaType: "image", offline: false },
+        {
+          id: "gpt-image-2-5-flare",
+          name: "GPT Image 2.5 Flare",
+          mediaType: "image",
+          offline: false,
+        },
+      ],
+    });
+    render(<StudioScreen />);
+    const chip = await screen.findByRole("button", { name: /^Image model/ });
+    expect(chip.getAttribute("aria-label")).toBe("Image model, GPT Image 2.5 Flare");
+
+    await userEvent.click(chip);
+    const sheet = await screen.findByRole("dialog", { name: "Image model" });
+    const rows = [...sheet.querySelectorAll(".mobile-sheet-item-title")].map(
+      (row) => row.textContent,
+    );
+    // Recommended first, and only what makes a picture from a prompt.
+    expect(rows).toEqual(["GPT Image 2.5 Flare", "Chroma"]);
+
+    // A choice is remembered for the next visit.
+    await userEvent.click(screen.getByRole("button", { name: /Chroma/ }));
+    expect(window.localStorage.getItem("subrosa:studio:image-model")).toBe("chroma");
   });
 });

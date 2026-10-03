@@ -2,12 +2,15 @@ import { t } from "../../../../lib/i18n";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
 import { type ReactNode, useState } from "react";
+import { createPortal } from "react-dom";
 import { hapticSelection } from "../../../../lib/haptics";
 import { isIosPlatform } from "../../../../lib/mobile";
 import { modelPrivacyBadge } from "../../../../lib/model-privacy";
+import { formatCredits } from "../../../../lib/studio/catalog";
 import { setPlaybackAudioSession } from "../../../../lib/tauri";
 import { Switch } from "../../../ui/Switch";
 import { OptionSheet } from "../../OptionSheet";
+import { sheetHost } from "../../sheet-host";
 
 /**
  * The parts every Studio panel is built from.
@@ -64,10 +67,87 @@ export function ModelPickerButton({
   );
 }
 
+// --- Dock chips --------------------------------------------------------------
+
+/**
+ * A setting that rides in the dock's bar, beside the prompt it shapes: the
+ * model, the frame's ratio. They used to be cards stacked between the scene
+ * and the dock, which is exactly where a sticky dock slides over them.
+ */
+export function DockChip({
+  label,
+  value,
+  onOpen,
+}: {
+  /** What the setting is, for a screen reader; the chip itself shows the value. */
+  label: string;
+  value: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="mobile-dock-chip"
+      aria-haspopup="dialog"
+      aria-label={`${label}, ${value}`}
+      onClick={() => {
+        hapticSelection();
+        onOpen();
+      }}
+    >
+      <span className="mobile-dock-chip-value">{value}</span>
+      <IconChevronDownSmall size={14} aria-hidden />
+    </button>
+  );
+}
+
+/** A dock chip with a short list of values, chosen in a sheet. */
+export function DockSelectChip({
+  label,
+  value,
+  options,
+  onChange,
+  format = (option) => option,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  format?: (option: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <DockChip label={label} value={format(value)} onOpen={() => setOpen(true)} />
+      {open
+        ? // Portaled: the dock's frosted glass is a containing block for
+          // anything fixed inside it, and the sheet would open inside the card.
+          createPortal(
+            <OptionSheet
+              title={label}
+              options={options.map((option) => ({ value: option, label: format(option) }))}
+              selected={value}
+              onSelect={(next) => {
+                onChange(next);
+                setOpen(false);
+              }}
+              onClose={() => setOpen(false)}
+            />,
+            sheetHost(),
+          )
+        : null}
+    </>
+  );
+}
+
 /** The line under a model's name in a picker: its tier and what happens to
  * the prompt, in words. The catalog's own values ("standard · anonymized")
  * were shown as they came, in English. */
-export function modelSubtitle(model: { tier?: string; privacy?: string }): string {
+export function modelSubtitle(model: {
+  tier?: string;
+  privacy?: string;
+  costCredits?: number;
+}): string {
   const parts: string[] = [];
   const tier = model.tier?.trim().toLowerCase();
   if (tier === "standard") parts.push(t("Standard"));
@@ -77,6 +157,11 @@ export function modelSubtitle(model: { tier?: string; privacy?: string }): strin
   if (privacy?.mode === "private") parts.push(t("Zero data retention"));
   else if (privacy?.mode === "anonymous") parts.push(t("Anonymous mode"));
   else if (privacy) parts.push(privacy.label);
+  // The price of one render, where the catalog publishes a flat one: the thing
+  // that most separates two otherwise similar rows.
+  if (typeof model.costCredits === "number" && Number.isFinite(model.costCredits)) {
+    parts.push(`~${formatCredits(model.costCredits)}`);
+  }
   return parts.join(" · ");
 }
 

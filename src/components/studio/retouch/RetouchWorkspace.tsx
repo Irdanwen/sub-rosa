@@ -15,7 +15,7 @@ import { IconFileDownload } from "central-icons/IconFileDownload";
 import { IconSelectLasso } from "central-icons/IconSelectLasso";
 import { IconShareOs } from "central-icons/IconShareOs";
 import { IconSplit } from "central-icons/IconSplit";
-import { type DragEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type DragEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { friendlyErrorMessage } from "../../../lib/errors";
 import { t } from "../../../lib/i18n";
 import { hapticImpact, hapticNotify } from "../../../lib/haptics";
@@ -44,7 +44,7 @@ import {
   useRetouchSession,
 } from "../../../lib/studio/retouch/useRetouchSession";
 import { hasZone, ratioValue, type ZoneStroke } from "../../../lib/studio/retouch/zone";
-import type { MediaCatalog } from "../../../lib/studio/types";
+import type { MediaCatalog, MediaModel } from "../../../lib/studio/types";
 import { GalleryPicker } from "../GalleryPicker";
 import { type CompareMode, RetouchCanvas, type ZoneTool } from "./RetouchCanvas";
 import { RetouchComposer, RetouchModelControl, RetouchTriesControl } from "./RetouchComposer";
@@ -94,11 +94,19 @@ export function RetouchWorkspace({
   rootId,
   layout,
   onClose,
+  renderModelControl,
 }: {
   catalog: MediaCatalog;
   rootId: string;
   layout: "desktop" | "phone";
   onClose: () => void;
+  /** The phone shell's own model picker, in place of the desktop dialog: the
+   * dialog portals to the page body, outside the phone's dark sheet rules. */
+  renderModelControl?: (control: {
+    models: MediaModel[];
+    model?: MediaModel;
+    onModel: (id: string) => void;
+  }) => ReactNode;
 }) {
   const s = useRetouchSession(catalog, rootId);
   const [prompt, setPrompt] = useState("");
@@ -630,11 +638,19 @@ export function RetouchWorkspace({
                 phone ? (
                   <section>
                     <h3>{t("Model")}</h3>
-                    <RetouchModelControl
-                      models={s.models}
-                      model={s.model}
-                      onModel={(modelId) => s.setSettings({ modelId })}
-                    />
+                    {renderModelControl ? (
+                      renderModelControl({
+                        models: s.models,
+                        model: s.model,
+                        onModel: (modelId) => s.setSettings({ modelId }),
+                      })
+                    ) : (
+                      <RetouchModelControl
+                        models={s.models}
+                        model={s.model}
+                        onModel={(modelId) => s.setSettings({ modelId })}
+                      />
+                    )}
                     {!zoneActive ? (
                       <>
                         <h3>{t("Tries per send")}</h3>

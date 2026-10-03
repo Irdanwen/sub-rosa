@@ -6,6 +6,7 @@
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { t } from "../../../../lib/i18n";
 import { darkroomWave } from "../../../../lib/studio/darkroom";
+import { IdleCanvas } from "../../../studio/stage/IdleCanvas";
 import { StageFrame, useDecodeGate } from "../../../studio/stage/StageFrame";
 import type { StageWait } from "../../../studio/stage/Veil";
 import { markMediaPlayback } from "./StudioControls";
@@ -36,6 +37,13 @@ export function SceneWave({ seed }: { seed: string }) {
   );
 }
 
+/** The blank canvas a panel opens on (see `StudioStage`'s `idle`). */
+export type StudioStageIdle = {
+  seed: string;
+  hint: string;
+  recall?: { label: string; thumb?: string; onRecall: () => void };
+};
+
 export function StudioStage({
   aspect,
   result,
@@ -44,6 +52,7 @@ export function StudioStage({
   reveal,
   onRevealEnd,
   empty,
+  idle,
 }: {
   /** The shape the next result will have: "16:9", "1:1", 1.5. */
   aspect?: string | number;
@@ -58,6 +67,12 @@ export function StudioStage({
   onRevealEnd?: () => void;
   /** What the empty frame says, when nothing has been made here yet. */
   empty?: ReactNode;
+  /**
+   * A blank canvas in the result's shape instead of the empty line: the frame
+   * a panel opens on before anything is made in this session. `recall` puts
+   * the last creation back on it, on request rather than by default.
+   */
+  idle?: StudioStageIdle;
 }) {
   const { dataReveal, onLoad } = useDecodeGate(result?.src, Boolean(reveal));
   // The result's own shape once it is known: a model that publishes no
@@ -134,6 +149,19 @@ export function StudioStage({
               onEnded={() => markMediaPlayback(false)}
             />
           </div>
+        ) : idle && !wait ? (
+          <IdleCanvas
+            seed={idle.seed}
+            hint={idle.hint}
+            action={
+              idle.recall ? (
+                <button type="button" className="stage-idle-recall" onClick={idle.recall.onRecall}>
+                  {idle.recall.thumb ? <img src={idle.recall.thumb} alt="" /> : null}
+                  {idle.recall.label}
+                </button>
+              ) : undefined
+            }
+          />
         ) : undefined}
       </StageFrame>
     </section>

@@ -7,9 +7,59 @@ import { listArtifacts } from "../../../../lib/studio/artifacts";
 import { fetchMediaCatalog } from "../../../../lib/studio/catalog";
 import { rootIdOf } from "../../../../lib/studio/retouch/lineage";
 import { writeCursor } from "../../../../lib/studio/retouch/prefs";
-import type { MediaCatalog } from "../../../../lib/studio/types";
+import { PREFERRED_RETOUCH_MODEL } from "../../../../lib/studio/retouch/request";
+import type { MediaCatalog, MediaModel } from "../../../../lib/studio/types";
 import { RetouchWorkspace } from "../../../studio/retouch/RetouchWorkspace";
 import { Spinner } from "../../../ui/Spinner";
+import { ModelSheet } from "../../ModelSheet";
+import { ModelPickerButton, modelSubtitle } from "./StudioControls";
+
+/**
+ * The retouch model on a phone: the same sheet as every other Studio picker,
+ * not the desktop dialog, which opened light over a dark screen and listed
+ * raw model ids.
+ */
+function PhoneRetouchModel({
+  models,
+  model,
+  onModel,
+}: {
+  models: MediaModel[];
+  model?: MediaModel;
+  onModel: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ModelPickerButton
+        label={t("Retouch model")}
+        value={model?.name ?? ""}
+        onOpen={() => setOpen(true)}
+      />
+      {open ? (
+        <ModelSheet
+          title={t("Retouch model")}
+          entries={models
+            .filter((entry) => !entry.offline)
+            .map((entry) => ({
+              id: entry.id,
+              name: entry.name,
+              subtitle: modelSubtitle(entry),
+              tags:
+                entry.id === PREFERRED_RETOUCH_MODEL ? [{ label: t("Recommended") }] : undefined,
+            }))}
+          selectedId={model?.id ?? ""}
+          pinnedId={PREFERRED_RETOUCH_MODEL}
+          onSelect={(id) => {
+            if (id) onModel(id);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
 
 export function RetouchScreen({
   artifactId,
@@ -67,7 +117,13 @@ export function RetouchScreen({
           </button>
         </div>
       ) : catalog && rootId ? (
-        <RetouchWorkspace catalog={catalog} rootId={rootId} layout="phone" onClose={onBack} />
+        <RetouchWorkspace
+          catalog={catalog}
+          rootId={rootId}
+          layout="phone"
+          onClose={onBack}
+          renderModelControl={(control) => <PhoneRetouchModel {...control} />}
+        />
       ) : (
         <div className="mobile-retouch-loading">
           <Spinner aria-label={t("Loading")} />

@@ -54,6 +54,10 @@ describe("the stage stylesheet", () => {
     const reduced = stageCss.slice(stageCss.indexOf("@media (prefers-reduced-motion: reduce)"));
     expect(reduced).toMatch(/\.stage-reveal\[data-reveal="true"\]\s*\{\s*animation: stage-fade/);
     expect(reduced).toMatch(/\.stage-veil,\s*\.stage-pending\s*\{\s*animation: none;/);
+    // The blank canvas is still: its light is decoration, not progress.
+    expect(reduced).toMatch(
+      /\.stage-idle \.darkroom-field,\s*\.stage-idle \.darkroom-light,\s*\.stage-idle \.darkroom-grain\s*\{\s*animation: none;/,
+    );
   });
 
   it("gives every stage class a component uses a rule", () => {
