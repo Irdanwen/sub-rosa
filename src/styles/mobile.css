@@ -5138,7 +5138,7 @@
   color: var(--screen);
   font-size: var(--fs-sm);
   box-shadow: var(--shadow-md);
-  animation: stage-fade var(--t-base) var(--ease-out) both;
+  animation: stage-fade var(--t-med) var(--ease-out) both;
 }
 
 /* Selection: the count, and what can be done to all of it, within reach. */
