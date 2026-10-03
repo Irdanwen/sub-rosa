@@ -25,7 +25,7 @@ import type { ArtifactKind, MediaCatalog, StudioArtifact } from "../../../lib/st
 import { type AudioMode, AudioPanel } from "./studio/StudioAudioPanels";
 import { type ImageMode, ImagePanel } from "./studio/StudioImagePanel";
 import { type VideoHandoff, VideoPanel } from "./studio/StudioVideoPanel";
-import { Lightbox } from "./studio/StudioLightbox";
+import { StudioViewer } from "./studio/StudioViewer";
 import { StudioGallery } from "./studio/StudioGallery";
 import { RecentStrip } from "./studio/StudioLibrary";
 import { handOffImagePrompt } from "../../../lib/studio/prompt-handoff";
@@ -335,13 +335,31 @@ export function StudioScreen() {
         />
       ) : null}
       {preview ? (
-        <Lightbox
+        <StudioViewer
           artifact={preview}
+          among={previewAmong.length ? previewAmong : [preview]}
+          onNavigate={setPreview}
           onClose={() => setPreview(null)}
-          onDelete={() => void handleDeleteArtifact(preview)}
+          onDelete={() => {
+            // Deleting moves on to the neighbour, as a photo viewer does.
+            const list = previewAmong.length ? previewAmong : [preview];
+            const at = list.findIndex((entry) => entry.path === preview.path);
+            const neighbour = list[at + 1] ?? list[at - 1];
+            const rest = list.filter((entry) => entry.path !== preview.path);
+            void handleDeleteArtifact(preview).then(() => {
+              setPreviewAmong(rest);
+              if (neighbour) setPreview(neighbour);
+            });
+          }}
           onContinueShot={
             preview.kind === "video" ? () => void handleContinueShot(preview) : undefined
           }
+          onReusePrompt={() => {
+            handOffImagePrompt(preview.prompt);
+            setPreview(null);
+            setImageMode("generate");
+            setMode("image");
+          }}
           onUpscaled={refreshGallery}
           canRemoveBackground={Boolean(catalog && supportsBackgroundRemoval(catalog))}
         />

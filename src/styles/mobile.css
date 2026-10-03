@@ -1832,121 +1832,9 @@
   object-fit: cover;
 }
 
-.mobile-studio-preview {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.mobile-studio-preview-scrim {
-  position: absolute;
-  inset: 0;
-  border: none;
-  /* A media viewer overlays white images + light text, so it needs a solidly
-     dark backdrop in both themes — not the light theme `--scrim` (12% ink),
-     which let the gallery show through. */
-  background: rgb(0 0 0 / 0.92);
-}
-
-.mobile-studio-preview-body {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-3);
-  width: 92vw;
-  max-height: 88vh;
-  overflow-y: auto;
-  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
-  pointer-events: auto;
-}
-
-.mobile-studio-preview-body img,
-.mobile-studio-preview-body video {
-  max-width: 92vw;
-  max-height: 56vh;
-  border-radius: var(--r-lg);
-  pointer-events: auto;
-}
-
-.mobile-studio-preview-audio {
-  width: 100%;
-  max-width: 560px;
-}
-
-/* Prompt lives in its own readable card (light text on a dark panel), scrolls
-   if long, and carries a copy button. */
-.mobile-studio-preview-prompt {
-  width: 100%;
-  max-width: 560px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3);
-  border-radius: var(--r-md);
-  background: rgb(255 255 255 / 0.1);
-  pointer-events: auto;
-}
-
-.mobile-studio-preview-prompt-text {
-  margin: 0;
-  color: #fff;
-  font-size: var(--fs-sm);
-  line-height: 1.45;
-  max-height: 22vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  -webkit-user-select: text;
-  user-select: text;
-}
-
-.mobile-studio-preview-copy {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--r-pill);
-  border: 1px solid rgb(255 255 255 / 0.25);
-  background: transparent;
-  color: #fff;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
-.mobile-studio-preview-copy:active {
-  background: rgb(255 255 255 / 0.15);
-  transform: scale(0.96);
-}
-
-.mobile-studio-preview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--sp-2);
-  pointer-events: auto;
-}
-
-.mobile-studio-preview-actions .mobile-chip-button {
-  background: rgb(255 255 255 / 0.92);
-}
-
 .mobile-chip-button[data-tone="destructive"] {
   color: var(--destructive);
   border-color: var(--destructive);
-}
-
-/* The way into a retouch: the one action on a picture that opens a whole
- * workspace, so it reads first. */
-.mobile-studio-preview-actions .mobile-chip-button[data-tone="primary"] {
-  background: var(--screen);
-  color: var(--screen-foreground);
-  border-color: transparent;
 }
 
 /* --- Swipe rows ---------------------------------------------------------------- */
@@ -2607,7 +2495,6 @@
 /* Shared release ease for the small copy chips: press lands instantly,
  * release settles instead of snapping. */
 .mobile-chat-copy,
-.mobile-studio-preview-copy,
 .simple-markdown-code-copy {
   transition: transform var(--t-med) var(--ease-out);
 }
@@ -5197,5 +5084,420 @@
   }
   .mobile-gallery-tile-loading {
     animation: none;
+  }
+}
+
+/* --- The viewer (StudioViewer.tsx) ------------------------------------------------
+ *
+ * One item, full screen, on black. The chrome (top bar, action bar) fades with
+ * a tap or once a clip plays, the way a photo viewer gets out of the way. The
+ * pull-down to close scales the stage and lets the backdrop through
+ * (--viewer-pull runs from 1 to 0). Always dark, whatever the app's theme. */
+
+.viewer {
+  --viewer-pull: 1;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  color: white;
+  outline: none;
+  overscroll-behavior: contain;
+  -webkit-user-select: none;
+  user-select: none;
+  animation: stage-fade var(--t-med) var(--ease-out) both;
+}
+
+.viewer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: black;
+  opacity: var(--viewer-pull);
+}
+
+.viewer-top,
+.viewer-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  transition: opacity var(--t-med) var(--ease-out);
+}
+
+.viewer:not([data-chrome="true"]) .viewer-top,
+.viewer:not([data-chrome="true"]) .viewer-bar {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.viewer-top {
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top) + var(--sp-2)) var(--sp-3) var(--sp-2);
+}
+
+.viewer-count {
+  color: oklch(1 0 0 / 72%);
+  font-size: var(--fs-sm);
+  font-variant-numeric: proportional-nums;
+  font-feature-settings:
+    "tnum" 0,
+    "pnum" 1;
+}
+
+.viewer-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: oklch(1 0 0 / 12%);
+  color: white;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.viewer-icon[aria-pressed="true"] {
+  background: white;
+  color: black;
+}
+
+.viewer-stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
+  touch-action: none;
+  transition: transform var(--t-slow) var(--ease-spring);
+}
+
+.viewer-picture {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  overflow: hidden;
+}
+
+.viewer-picture img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transition: transform var(--t-med) var(--ease-out);
+  -webkit-touch-callout: none;
+}
+
+.viewer-clip {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+}
+
+.viewer-clip video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.viewer-play {
+  position: absolute;
+  display: inline-grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: oklch(0 0 0 / 45%);
+  color: white;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: opacity var(--t-med) var(--ease-out);
+}
+
+.viewer-clip-controls {
+  position: absolute;
+  right: var(--sp-3);
+  bottom: var(--sp-3);
+  left: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  transition: opacity var(--t-med) var(--ease-out);
+}
+
+.viewer-clip:not([data-controls="true"]) .viewer-play,
+.viewer-clip:not([data-controls="true"]) .viewer-clip-controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.viewer-scrubber {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.viewer-time {
+  min-width: 36px;
+  color: oklch(1 0 0 / 80%);
+  font-size: 12px;
+  font-variant-numeric: proportional-nums;
+  font-feature-settings:
+    "tnum" 0,
+    "pnum" 1;
+  text-align: center;
+}
+
+.viewer-scrubber input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.viewer-scrubber input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    white var(--progress, 0%),
+    oklch(1 0 0 / 28%) var(--progress, 0%)
+  );
+}
+
+.viewer-scrubber input[type="range"]::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: var(--r-pill);
+  background: white;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.viewer-track {
+  display: grid;
+  width: min(100%, 520px);
+  justify-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-6);
+}
+
+.viewer-track-title {
+  margin: 0;
+  max-width: 32ch;
+  color: white;
+  font-size: var(--fs-lg);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.viewer-track-wave {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 120px;
+  gap: 2px;
+}
+
+.viewer-track-wave > span {
+  flex: 1;
+  height: calc(var(--bar) * 100%);
+  border-radius: 1px;
+  background: oklch(1 0 0 / 30%);
+  transition: background-color var(--t-fast) linear;
+}
+
+.viewer-track-wave > span[data-played="true"] {
+  background: white;
+}
+
+.viewer-play-track {
+  position: static;
+  background: white;
+  color: black;
+}
+
+.viewer-count[data-initial-focus]:focus {
+  outline: none;
+}
+
+.viewer-track .viewer-scrubber {
+  width: 100%;
+}
+
+.viewer-bar {
+  justify-content: space-around;
+  padding: var(--sp-2) var(--sp-3) calc(env(safe-area-inset-bottom) + var(--sp-2));
+}
+
+.viewer-action {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: white;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.viewer-action:active {
+  transform: scale(0.92);
+}
+
+.viewer-action[data-active="true"] {
+  color: color-mix(in oklch, var(--brand) 62%, white);
+}
+
+.viewer-action[data-destructive="true"] {
+  color: oklch(0.72 0.17 25);
+}
+
+.viewer-notice {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom) + 80px);
+  left: 50%;
+  z-index: 3;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-pill);
+  background: white;
+  color: black;
+  font-size: var(--fs-sm);
+  transform: translateX(-50%);
+  animation: stage-fade var(--t-med) var(--ease-out) both;
+}
+
+/* What the item is: a panel over the lower part, not a page. */
+.viewer-info {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  display: grid;
+  gap: var(--sp-4);
+  max-height: 70dvh;
+  padding: var(--sp-2) var(--sp-5) calc(env(safe-area-inset-bottom) + var(--sp-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: oklch(0.17 0.005 85 / 94%);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  animation: mobile-sheet-in 280ms var(--ease-spring);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.viewer-info-grabber {
+  justify-self: center;
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: oklch(1 0 0 / 30%);
+}
+
+.viewer-info-prompt {
+  display: grid;
+  gap: var(--sp-2);
+  justify-items: start;
+}
+
+.viewer-info-prompt p {
+  margin: 0;
+  color: white;
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.viewer-info-rows {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.viewer-info-rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid oklch(1 0 0 / 8%);
+}
+
+.viewer-info-rows dt {
+  color: oklch(1 0 0 / 60%);
+  font-size: var(--fs-sm);
+}
+
+.viewer-info-rows dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: white;
+  font-size: var(--fs-sm);
+  text-align: right;
+}
+
+.viewer-info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.viewer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid oklch(1 0 0 / 18%);
+  border-radius: var(--r-pill);
+  background: oklch(1 0 0 / 8%);
+  color: white;
+  font-size: var(--fs-sm);
+}
+
+.viewer-chip:disabled {
+  opacity: 0.5;
+}
+
+.viewer-info-error {
+  margin: 0;
+  color: oklch(0.78 0.14 25);
+  font-size: var(--fs-sm);
+}
+
+.viewer-info-close {
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: oklch(1 0 0 / 10%);
+  color: white;
+  font-size: var(--fs-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewer,
+  .viewer-info,
+  .viewer-notice {
+    animation: none;
+  }
+  .viewer-stage,
+  .viewer-picture img,
+  .viewer-action {
+    transition: none;
   }
 }
