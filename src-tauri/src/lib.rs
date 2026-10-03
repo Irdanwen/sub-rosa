@@ -94,6 +94,7 @@ pub mod score;
 pub mod shotlist;
 pub mod studio_actions;
 pub mod studio_ai;
+pub mod studio_library;
 pub mod studio_project;
 pub mod timeline;
 pub mod win_console;
@@ -522,6 +523,10 @@ pub fn run() {
             studio_project::studio_artifact_list,
             studio_project::studio_artifact_save,
             studio_project::studio_artifact_measure,
+            studio_library::studio_library_list,
+            studio_library::studio_library_mark,
+            studio_library::studio_collection_save,
+            studio_library::studio_collection_delete,
             carpe_diem::media::carpe_diem_media_save_poster,
             carpe_diem::media::carpe_diem_media_track_shape,
             studio_project::studio_artifact_organize,
@@ -805,6 +810,10 @@ pub fn run() {
         studio_project::studio_artifact_list,
         studio_project::studio_artifact_save,
         studio_project::studio_artifact_measure,
+        studio_library::studio_library_list,
+        studio_library::studio_library_mark,
+        studio_library::studio_collection_save,
+        studio_library::studio_collection_delete,
         carpe_diem::media::carpe_diem_media_save_poster,
         carpe_diem::media::carpe_diem_media_track_shape,
         studio_project::studio_artifact_organize,
