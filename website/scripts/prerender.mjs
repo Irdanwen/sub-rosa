@@ -4,6 +4,9 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { createServer } from "vite";
 
+const escapeAttribute = (value) =>
+  value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
 const server = await createServer({
   mode: "production",
   server: { middlewareMode: true },
@@ -12,6 +15,8 @@ const server = await createServer({
 try {
   const { App } = await server.ssrLoadModule("/src/App.tsx");
   const { guides, guideBySlug } = await server.ssrLoadModule("/src/pages/docs-content.ts");
+  const { families, familyBySlug } = await server.ssrLoadModule("/src/models/catalog.ts");
+  await (await server.ssrLoadModule("/src/models/loader.ts")).loadModelCatalog();
   const template = await readFile("dist/index.html", "utf8");
   const pages = [
     "/",
@@ -21,6 +26,8 @@ try {
     "/help",
     "/docs",
     ...guides.map((guide) => `/docs/${guide.slug}`),
+    "/models",
+    ...families.map((family) => `/models/${family.slug}`),
   ];
   const base = server.config.base.replace(/\/$/, "");
   for (const path of [...pages, ...pages.map((page) => (page === "/" ? "/fr/" : `/fr${page}`))]) {
@@ -28,16 +35,25 @@ try {
     const page = french ? (path === "/fr/" ? "/" : path.slice(3)) : path;
     const body = renderToString(createElement(App, { initialPath: path }));
     const guide = page.startsWith("/docs/") ? guideBySlug(page.slice(6)) : null;
+    const family = page.startsWith("/models/") ? familyBySlug(page.slice(8)) : null;
     const title = guide
       ? `${guide.title[french ? 1 : 0]} · Sub Rosa`
-      : page === "/"
-        ? "Sub Rosa"
-        : `${{ "/downloads": french ? "Télécharger" : "Download", "/privacy": french ? "Confidentialité" : "Privacy", "/security": french ? "Sécurité" : "Security", "/help": "Documentation", "/docs": "Documentation" }[page]} · Sub Rosa`;
+      : family
+        ? `${french ? (family.nameFr ?? family.name) : family.name} · ${french ? "Catalogue des modèles" : "Model catalog"} · Sub Rosa`
+        : page === "/"
+          ? "Sub Rosa"
+          : `${{ "/downloads": french ? "Télécharger" : "Download", "/privacy": french ? "Confidentialité" : "Privacy", "/security": french ? "Sécurité" : "Security", "/help": "Documentation", "/docs": "Documentation", "/models": french ? "Catalogue des modèles" : "Model catalog" }[page]} · Sub Rosa`;
     const description = guide
       ? guide.summary[french ? 1 : 0]
-      : french
-        ? "Sub Rosa réunit vos conversations, vos notes et vos idées dans un espace personnel. Téléchargez l’app pour votre appareil."
-        : "Sub Rosa brings conversations, notes and ideas into one personal workspace. Download the app for your device.";
+      : family
+        ? escapeAttribute(family.summary[french ? 1 : 0])
+        : page === "/models"
+          ? french
+            ? "Ce que chaque modèle de Sub Rosa sait faire, ce qu’il coûte et comment choisir : texte, transcription, image, retouche, vidéo, voix et musique."
+            : "What each Sub Rosa model is good at, what it costs and how to choose: text, transcription, image, editing, video, voice and music."
+          : french
+            ? "Sub Rosa réunit vos conversations, vos notes et vos idées dans un espace personnel. Téléchargez l’app pour votre appareil."
+            : "Sub Rosa brings conversations, notes and ideas into one personal workspace. Download the app for your device.";
     const enPath = `${base}${page}`;
     const frPath = `${base}/fr${page === "/" ? "/" : page}`;
     const html = template

@@ -62,6 +62,27 @@ iPhone download URL. Update
 the manifest when publishing a release; publishing a website does not release
 new desktop/iOS binaries.
 
+## Model catalog
+
+`/models` (and `/fr/models`) explains every model a person can pick in the app,
+grouped by family, with what each is good at, its limits, its privacy mode and a
+price a reader can picture. The page never fetches anything: the security policy
+only allows the site's own origin, so the catalog is frozen at build time.
+
+- `src/models/snapshot.json` is the live catalog, written by
+  `pnpm website:models` from Carpe Diem's public `/v1/models` and `/pricing`
+  plus the provider's public model names. Video prices come from the free
+  `/video/quote` endpoint and need `CARPE_DIEM_API_KEY` (nothing is charged);
+  without it the previous video prices are kept.
+- `src/models/families.json` is the written part: one entry per family, in
+  English and French, with the sources each claim came from.
+- `src/models/needs.ts` answers "what should I use for…" and lists the app's
+  defaults.
+
+After refreshing the snapshot, run `pnpm vitest run src/test/website-models.test.tsx`:
+it fails until every new model sits in a family and every retired one is gone,
+so the page cannot quietly fall behind the app.
+
 ## Deployment
 
 The default build serves the complete website at the root of its dedicated

@@ -43,6 +43,7 @@ export function createSitePaths(base = "/", accountOrigin = "") {
     )
       return true;
     if (/^\/(?:fr\/)?docs(?:\/[a-z0-9-]+)?$/.test(path)) return true;
+    if (/^\/(?:fr\/)?models(?:\/[a-z0-9-]+)?$/.test(path)) return true;
     // A share link is a fresh page load: it reads its key from the fragment,
     // which `handles` refuses to intercept anyway, and it must not inherit the
     // state of whatever tab the reader clicked from.

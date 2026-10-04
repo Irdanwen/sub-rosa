@@ -8,6 +8,7 @@ import {
   setWebsiteLocale,
 } from "./lib/i18n";
 import { siteHref, sitePaths } from "./lib/paths";
+import { loadModelCatalog, modelsPath } from "./models/loader";
 
 const root = document.getElementById("root");
 const route = sitePaths.route(location.pathname) ?? "/not-found";
@@ -30,9 +31,17 @@ if (redirectToFrench) {
         : "en",
   );
 }
-if (root && !redirectToFrench)
+const render = () =>
+  root &&
   createRoot(root).render(
     <React.StrictMode>
       <App />
     </React.StrictMode>,
   );
+const page = route === "/fr" ? "/" : route.startsWith("/fr/") ? route.slice(3) : route;
+// The prerendered catalog stays on screen until its chunk is here, then the
+// first render already has it: no empty frame in between.
+if (!redirectToFrench) {
+  if (modelsPath(page.split("?")[0])) loadModelCatalog().then(render, render);
+  else render();
+}

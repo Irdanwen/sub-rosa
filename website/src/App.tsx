@@ -11,6 +11,8 @@ import { ReturnToApp } from "./pages/return";
 import { Downloads, Information } from "./pages/public";
 import { Documentation, documentationPath } from "./pages/docs";
 import { guideBySlug, read } from "./pages/docs-content";
+import { modelsPath, useModelCatalog } from "./models/loader";
+
 import { SharePage } from "./pages/share";
 import "./style.css";
 import { registerAccountNavigation } from "./lib/webmcp";
@@ -321,6 +323,7 @@ export function App({ initialPath }: { initialPath?: string }) {
         : "en",
   );
   const pathname = publicRoute(rawPathname);
+  const catalog = useModelCatalog(modelsPath(pathname));
   setWebsiteLocale(locale);
   const href = (target: string) => localizedSiteHref(target, locale);
 
@@ -385,12 +388,14 @@ export function App({ initialPath }: { initialPath?: string }) {
         ? `${t("Your account", "Votre compte")} · Sub Rosa`
         : documentationPath(pathname) || pathname === "/help"
           ? `${pathname.startsWith("/docs/") ? read(guideBySlug(pathname.slice(6))?.title ?? ["Documentation", "Documentation"]) : t("Documentation", "Documentation")} · Sub Rosa`
-          : pathname === "/downloads"
-            ? `${t("Download", "Télécharger")} · Sub Rosa`
-            : pathname === "/"
-              ? "Sub Rosa"
-              : `${t("Information", "Informations")} · Sub Rosa`;
-  }, [locale, accountPath, sharePath, pathname]);
+          : modelsPath(pathname)
+            ? `${catalog ? catalog.modelCatalogTitle(pathname) : t("Model catalog", "Catalogue des modèles")} · Sub Rosa`
+            : pathname === "/downloads"
+              ? `${t("Download", "Télécharger")} · Sub Rosa`
+              : pathname === "/"
+                ? "Sub Rosa"
+                : `${t("Information", "Informations")} · Sub Rosa`;
+  }, [locale, accountPath, sharePath, pathname, catalog]);
   const changeLocale = (next: SiteLocale) => {
     rememberWebsiteLocale(next);
     setLocale(next);
@@ -422,6 +427,9 @@ export function App({ initialPath }: { initialPath?: string }) {
             <a href={href("/downloads")}>{t("Download", "Télécharger")}</a>
             <a className="header-secondary docs-header-link" href={href("/docs")}>
               {t("Guides", "Guides")}
+            </a>
+            <a className="header-secondary docs-header-link" href={href("/models")}>
+              {t("Models", "Modèles")}
             </a>
             <a className="header-secondary" href={href("/privacy")}>
               {t("Our approach", "Notre approche")}
@@ -478,6 +486,14 @@ export function App({ initialPath }: { initialPath?: string }) {
           <AccountPage path={path} />
         ) : documentationPath(pathname) || pathname === "/help" ? (
           <Documentation path={pathname === "/help" ? "/docs" : pathname} locale={locale} />
+        ) : modelsPath(pathname) ? (
+          catalog ? (
+            <catalog.ModelCatalog path={pathname} locale={locale} />
+          ) : (
+            <section className="page wrap" aria-busy="true">
+              <p className="eyebrow">{t("Model catalog", "Catalogue des modèles")}</p>
+            </section>
+          )
         ) : pathname === "/downloads" ? (
           <Downloads />
         ) : pathname !== "/" ? (
@@ -501,6 +517,7 @@ export function App({ initialPath }: { initialPath?: string }) {
           </div>
           <div className="footer-links">
             <a href={href("/docs")}>{t("Documentation", "Documentation")}</a>
+            <a href={href("/models")}>{t("Model catalog", "Catalogue des modèles")}</a>
             <a href={href("/privacy")}>{t("Privacy", "Confidentialité")}</a>
             <a href={href("/security")}>{t("Security", "Sécurité")}</a>
             <a href="https://github.com/Irdanwen/sub-rosa-releases/releases">
