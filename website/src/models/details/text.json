@@ -690,8 +690,8 @@
         {
           "version": "DeepSeek V4 Flash 0731",
           "ids": ["deepseek-v4-flash-0731", "deepseek-v4-flash-0731-fast"],
-          "params": "284B",
-          "activeParams": "13B",
+          "params": null,
+          "activeParams": null,
           "openWeights": true,
           "license": "MIT",
           "maxOutput": null,
@@ -2458,7 +2458,7 @@
         {
           "version": "Qwen3.6 35B A3B",
           "ids": ["qwen3-6-35b-a3b", "e2ee-qwen3-6-35b-a3b"],
-          "params": "36B",
+          "params": "35B",
           "activeParams": "3B",
           "openWeights": true,
           "license": "Apache 2.0",
@@ -4508,8 +4508,8 @@
         {
           "version": "Gemma 4 Uncensored",
           "ids": ["gemma-4-uncensored", "e2ee-gemma-4-26b-a4b-uncensored-p"],
-          "params": "26B",
-          "activeParams": "4B",
+          "params": null,
+          "activeParams": null,
           "openWeights": null,
           "license": null,
           "maxOutput": 8192,

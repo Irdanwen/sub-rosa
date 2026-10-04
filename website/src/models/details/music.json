@@ -660,7 +660,7 @@
           "ids": ["stable-audio-25"],
           "params": null,
           "activeParams": null,
-          "openWeights": false,
+          "openWeights": null,
           "license": "Proprietary",
           "maxOutput": null,
           "inputs": ["text"],

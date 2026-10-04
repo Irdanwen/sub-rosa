@@ -19,24 +19,6 @@
       ]
     },
     {
-      "id": "aa-coding",
-      "name": "Artificial Analysis Coding Index",
-      "publisher": "Artificial Analysis",
-      "category": "text",
-      "unit": "points",
-      "scale": [0, 100],
-      "higherIsBetter": true,
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "measures": [
-        "The coding part of the same test suite: writing code that passes tests and fixing real programs.",
-        "La partie code de la même batterie : écrire du code qui passe des tests et corriger de vrais programmes."
-      ],
-      "howToRead": [
-        "Higher is better. It matters if you ask for code or let the agent work in files.",
-        "Plus c’est haut, mieux c’est. Il compte si vous demandez du code ou laissez l’agent travailler dans des fichiers."
-      ]
-    },
-    {
       "id": "swe-bench-verified",
       "name": "SWE-bench Verified",
       "publisher": "SWE-bench",
@@ -196,24 +178,6 @@
       "howToRead": [
         "An Elo rating: higher sounds more natural to more people. 100 points apart means the higher-rated model wins about 64% of duels.",
         "Un classement Elo : plus le score est haut, plus la voix paraît naturelle au plus grand nombre. À 100 points d’écart, le mieux classé gagne environ 64 % des duels."
-      ]
-    },
-    {
-      "id": "aa-music",
-      "name": "Artificial Analysis Music Arena",
-      "publisher": "Artificial Analysis",
-      "category": "music",
-      "unit": "Elo",
-      "scale": [500, 1600],
-      "higherIsBetter": true,
-      "url": "https://artificialanalysis.ai/",
-      "measures": [
-        "People listen to two tracks made from the same request and pick the one they prefer.",
-        "Des gens écoutent deux morceaux faits à partir de la même demande et choisissent celui qu’ils préfèrent."
-      ],
-      "howToRead": [
-        "An Elo rating: higher is preferred more often.",
-        "Un classement Elo : plus le score est haut, plus le modèle est souvent préféré."
       ]
     }
   ],
