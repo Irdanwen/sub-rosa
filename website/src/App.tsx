@@ -488,7 +488,11 @@ export function App({ initialPath }: { initialPath?: string }) {
           <Documentation path={pathname === "/help" ? "/docs" : pathname} locale={locale} />
         ) : modelsPath(pathname) ? (
           catalog ? (
-            <catalog.ModelCatalog path={pathname} locale={locale} />
+            <catalog.ModelCatalog
+              path={pathname}
+              query={path.split("?")[1] ?? ""}
+              locale={locale}
+            />
           ) : (
             <section className="page wrap" aria-busy="true">
               <p className="eyebrow">{t("Model catalog", "Catalogue des modèles")}</p>

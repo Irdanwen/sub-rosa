@@ -1,0 +1,1352 @@
+{
+  "families": [
+    {
+      "slug": "kokoro",
+      "differentiator": [
+        "Kokoro is an 82-million-parameter open-weights model that runs on modest hardware, which is why it is the cheapest voice in the catalog and can run in private mode. It trades some expressiveness for speed and cost.",
+        "Kokoro est un modèle à poids ouverts de 82 millions de paramètres qui tourne sur du matériel modeste, d’où son prix très bas et la possibilité de le proposer en mode privé. Il troque un peu d’expressivité contre la vitesse et le coût."
+      ],
+      "signature": [
+        ["82M parameters, Apache 2.0", "82 M de paramètres, Apache 2.0"],
+        ["54 voices, 8 languages in v1.0", "54 voix, 8 langues dans la v1.0"],
+        ["Trained for about $1,000 of GPU time", "Entraîné avec environ 1 000 $ de calcul GPU"]
+      ],
+      "releases": [
+        {
+          "version": "Kokoro v0.19",
+          "date": "2024-12-25",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Initial release: English only, 10 voices, trained on under 100 hours of audio",
+              "Première version : anglais uniquement, 10 voix, entraîné sur moins de 100 heures d’audio"
+            ]
+          ],
+          "source": "https://huggingface.co/hexgrad/Kokoro-82M"
+        },
+        {
+          "version": "Kokoro v1.0",
+          "date": "2025-01-27",
+          "ids": ["tts-kokoro"],
+          "external": false,
+          "changes": [
+            ["Multilingual: 8 languages instead of 1", "Multilingue : 8 langues au lieu d’une"],
+            [
+              "54 voices instead of 10, trained on a few hundred hours of audio",
+              "54 voix au lieu de 10, entraîné sur quelques centaines d’heures d’audio"
+            ]
+          ],
+          "source": "https://huggingface.co/hexgrad/Kokoro-82M"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Kokoro v1.0",
+          "ids": ["tts-kokoro"],
+          "params": "82M",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["8 languages, 54 voices", "8 langues, 54 voix"],
+          "source": "https://huggingface.co/hexgrad/Kokoro-82M"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Long article read aloud", "Un long article lu à voix haute"],
+          "prompt": [
+            "Read this blog post aloud in a calm, neutral voice so I can listen while I cook.",
+            "Lisez cet article de blog à voix haute d’une voix calme et neutre pour que je l’écoute en cuisinant."
+          ],
+          "why": [
+            "A very low cost per character keeps long texts affordable.",
+            "Le coût très bas au caractère rend les longs textes abordables."
+          ]
+        },
+        {
+          "title": ["Private narration of sensitive notes", "Narration privée de notes sensibles"],
+          "prompt": [
+            "Read my meeting summary aloud.",
+            "Lisez à voix haute le résumé de ma réunion."
+          ],
+          "why": ["Private mode means nothing is kept.", "Avec le mode privé, rien n’est conservé."]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "orpheus-tts",
+          "verdict": [
+            "Orpheus is more expressive in English but costs more and speaks English only.",
+            "Orpheus est plus expressif en anglais, mais coûte plus cher et ne parle qu’anglais."
+          ]
+        },
+        {
+          "slug": "qwen3-tts",
+          "verdict": [
+            "Qwen3 TTS covers 10 languages with cloning, at several times Kokoro's price.",
+            "Qwen3 TTS couvre 10 langues avec clonage, à un prix plusieurs fois supérieur à celui de Kokoro."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/hexgrad/Kokoro-82M",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://docs.venice.ai/overview/pricing"
+      ],
+      "strengths": [
+        [
+          "Cheapest voice in the catalog by a wide margin",
+          "La voix la moins chère du catalogue, de loin"
+        ],
+        ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"],
+        ["54 voices across 8 languages", "54 voix réparties sur 8 langues"]
+      ],
+      "limits": [
+        ["Only one French voice (ff_siwis)", "Une seule voix française (ff_siwis)"],
+        ["Less expressive than the larger models", "Moins expressif que les grands modèles"]
+      ],
+      "facts": [
+        ["54 voices", "54 voix"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "chatterbox-hd",
+      "differentiator": [
+        "Chatterbox is Resemble AI's MIT-licensed voice model with an adjustable emotion exaggeration setting and built-in watermarking. Here it runs in private mode, so expressive output stays off third-party logs.",
+        "Chatterbox est un modèle de voix de Resemble AI sous licence MIT, avec un réglage d’exagération émotionnelle et un tatouage numérique intégré. Ici, il tourne en mode privé : la voix expressive ne laisse aucune trace chez un tiers."
+      ],
+      "signature": [
+        ["Emotion exaggeration control", "Réglage de l’exagération émotionnelle"],
+        ["MIT license, imperceptible watermark", "Licence MIT, tatouage imperceptible"],
+        ["Voice cloning from 5 to 20 s of audio", "Clonage de voix à partir de 5 à 20 s d’audio"]
+      ],
+      "releases": [
+        {
+          "version": "Chatterbox HD",
+          "date": "2025-05",
+          "ids": ["tts-chatterbox-hd"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced Chatterbox: open-source speech with zero-shot voice cloning and an emotion exaggeration control",
+              "Lancement de Chatterbox : synthèse vocale open source avec clonage sans entraînement et réglage de l’exagération émotionnelle"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-speech/leaderboard"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Chatterbox HD",
+          "ids": ["tts-chatterbox-hd"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text", "audio"],
+          "outputs": ["audio"],
+          "languages": [
+            "The open model line now covers 23 languages",
+            "La gamme ouverte couvre désormais 23 langues"
+          ],
+          "source": "https://huggingface.co/ResembleAI/chatterbox"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Dramatic audiobook scene", "Scène dramatique d’un livre audio"],
+          "prompt": [
+            "Read this passage with rising tension, as if the narrator is afraid.",
+            "Lisez ce passage avec une tension croissante, comme si le narrateur avait peur."
+          ],
+          "why": [
+            "The expressiveness setting suits emotional range.",
+            "Le réglage d’expressivité convient aux émotions marquées."
+          ]
+        },
+        {
+          "title": ["Private character voices", "Voix de personnages en privé"],
+          "prompt": [
+            "Voice the villain of my short story, slow and menacing.",
+            "Donnez une voix lente et menaçante au méchant de ma nouvelle."
+          ],
+          "why": [
+            "Private mode keeps drafts off third-party servers.",
+            "Le mode privé garde vos brouillons hors des serveurs tiers."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "elevenlabs-tts",
+          "verdict": [
+            "ElevenLabs has far more languages and polish, but does not offer private mode.",
+            "ElevenLabs offre bien plus de langues et de finition, mais sans mode privé."
+          ]
+        },
+        {
+          "slug": "orpheus-tts",
+          "verdict": [
+            "Orpheus is also private and expressive, but English only.",
+            "Orpheus est aussi privé et expressif, mais uniquement en anglais."
+          ]
+        },
+        {
+          "slug": "kokoro",
+          "verdict": [
+            "Kokoro is much cheaper and also private, but less dramatic.",
+            "Kokoro est bien moins cher et aussi privé, mais moins dramatique."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/ResembleAI/chatterbox",
+        "https://www.resemble.ai/chatterbox/",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://huggingface.co/ResembleAI/chatterbox/blob/refs%2Fpr%2F1/README.md"
+      ],
+      "strengths": [
+        ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"],
+        [
+          "Designed for emotional range, from flat to dramatic",
+          "Conçu pour la palette émotionnelle, du neutre au dramatique"
+        ]
+      ],
+      "limits": [
+        ["9 voices only", "9 voix seulement"],
+        ["Mid-range price per character", "Prix moyen au caractère"]
+      ],
+      "facts": [
+        ["9 voices, WAV output", "9 voix, sortie WAV"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "elevenlabs-tts",
+      "differentiator": [
+        "ElevenLabs Turbo v2.5 sits in the middle of the line for quality and latency, a line that moved from Multilingual v2 to the expressive Eleven v3 and v4. ElevenLabs now lists Turbo v2.5 as deprecated in favor of Flash v2.5, so the catalog entry is a stable, lower-cost option.",
+        "ElevenLabs Turbo v2.5 occupe le milieu de la gamme, en qualité comme en latence, une gamme passée de Multilingual v2 à Eleven v3 puis v4, plus expressifs. ElevenLabs le déclare désormais obsolète au profit de Flash v2.5 : c’est une option stable et peu coûteuse."
+      ],
+      "signature": [
+        ["32 languages, French included", "32 langues, dont le français"],
+        ["Fast: Flash v2.5 reaches about 75 ms", "Rapide : Flash v2.5 atteint environ 75 ms"],
+        ["Newer v3 and v4 add audio tags", "Les v3 et v4 ajoutent des balises audio"]
+      ],
+      "releases": [
+        {
+          "version": "Multilingual v2",
+          "date": "2023-08",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Emotion-aware multilingual voice, 29 languages",
+              "Voix multilingue sensible aux émotions, 29 langues"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-speech/leaderboard"
+        },
+        {
+          "version": "Turbo v2.5",
+          "date": "2024-07",
+          "ids": ["tts-elevenlabs-turbo-v2-5"],
+          "external": false,
+          "changes": [
+            [
+              "Low-latency model covering 32 languages",
+              "Modèle à faible latence couvrant 32 langues"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-speech/leaderboard"
+        },
+        {
+          "version": "Flash v2.5",
+          "date": "2024-12-18",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Faster still: speech in about 75 ms plus network latency, 32 languages",
+              "Encore plus rapide : environ 75 ms plus la latence réseau, 32 langues"
+            ]
+          ],
+          "source": "https://elevenlabs.io/blog/meet-flash"
+        },
+        {
+          "version": "Eleven v3",
+          "date": "2025-06-03",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "70+ languages, inline audio tags such as [whispers], multi-speaker dialogue",
+              "Plus de 70 langues, balises audio comme [whispers], dialogue à plusieurs voix"
+            ]
+          ],
+          "source": "https://elevenlabs.io/blog/eleven-v3"
+        },
+        {
+          "version": "Eleven v4",
+          "date": "2026-09-28",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "90+ languages, better voice cloning from 10 s of audio, a Turbo variant for real time",
+              "Plus de 90 langues, meilleur clonage dès 10 s d’audio, variante Turbo pour le temps réel"
+            ]
+          ],
+          "source": "https://elevenlabs.io/blog/eleven-v4"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Turbo v2.5",
+          "ids": ["tts-elevenlabs-turbo-v2-5"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["32 languages", "32 langues"],
+          "source": "https://elevenlabs.io/docs/overview/models"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Narrated product video in French", "Vidéo produit narrée en français"],
+          "prompt": [
+            "Narrate this product description in warm, clear French for a 30 second ad.",
+            "Narre cette description de produit en français chaleureux et clair pour une publicité de 30 secondes."
+          ],
+          "why": ["32 languages and polished voices.", "32 langues et des voix soignées."]
+        },
+        {
+          "title": ["Voice replies in an app", "Réponses vocales dans une application"],
+          "prompt": [
+            "Say: Your appointment is confirmed for Tuesday at 3 pm.",
+            "Dis : Votre rendez-vous est confirmé pour mardi à 15 h."
+          ],
+          "why": ["Built for low latency.", "Conçu pour une faible latence."]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gemini-flash-tts",
+          "verdict": [
+            "Gemini 3.1 Flash TTS scores higher on the Speech Arena and steers delivery with tags, at about three times the price.",
+            "Gemini 3.1 Flash TTS obtient un meilleur score à l’arène vocale et pilote l’interprétation par balises, pour environ trois fois le prix."
+          ]
+        },
+        {
+          "slug": "minimax-speech",
+          "verdict": [
+            "MiniMax Speech-02 HD has a close arena score and covers 30+ languages.",
+            "MiniMax Speech-02 HD a un score d’arène proche et couvre plus de 30 langues."
+          ]
+        },
+        {
+          "slug": "inworld-tts",
+          "verdict": [
+            "Inworld costs about a fifth as much with 15 languages.",
+            "Inworld coûte environ cinq fois moins avec 15 langues."
+          ]
+        }
+      ],
+      "sources": [
+        "https://elevenlabs.io/docs/overview/models",
+        "https://elevenlabs.io/blog/eleven-v3",
+        "https://elevenlabs.io/blog/meet-flash",
+        "https://elevenlabs.io/blog/eleven-v4",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://elevenlabs.io/docs/models",
+        "https://docs.typingmind.com/changelog/typingmind/eleven-turbo-v2.5-and-eleven-turbo-v2"
+      ],
+      "strengths": [
+        ["32 languages, French included", "32 langues, dont le français"],
+        ["Built for low latency", "Conçu pour une faible latence"]
+      ],
+      "limits": [
+        ["Mid-range price per character", "Prix moyen au caractère"],
+        ["Anonymized, not private", "Anonymisé, pas privé"]
+      ],
+      "facts": [
+        ["21 voices", "21 voix"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "gemini-flash-tts",
+      "differentiator": [
+        "Gemini 3.1 Flash TTS lets you direct delivery in plain text with audio tags and Director's Notes, and covers more than 70 languages. Google has since moved the family to Gemini 3.8, so this is the previous generation.",
+        "Gemini 3.1 Flash TTS permet de diriger l’interprétation en texte libre avec des balises audio et des notes de réalisateur, et couvre plus de 70 langues. Google est depuis passé à Gemini 3.8 : c’est la génération précédente."
+      ],
+      "signature": [
+        ["Audio tags and Director's Notes", "Balises audio et notes de réalisateur"],
+        ["70+ languages, multi-speaker dialogue", "Plus de 70 langues, dialogue à plusieurs voix"],
+        ["SynthID watermark on all audio", "Tatouage SynthID sur tout l’audio"]
+      ],
+      "releases": [
+        {
+          "version": "Gemini 3.1 Flash TTS",
+          "date": "2026-04-15",
+          "ids": ["tts-gemini-3-1-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced granular audio tags for style, pace and delivery",
+              "Introduit des balises audio fines pour le style, le rythme et l’interprétation"
+            ],
+            [
+              "70+ languages and native multi-speaker dialogue",
+              "Plus de 70 langues et dialogue natif à plusieurs voix"
+            ]
+          ],
+          "source": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-tts/"
+        },
+        {
+          "version": "Gemini 3.8 Flash TTS",
+          "date": "2026-09-22",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Generally available, over 130 languages, inline tags like <sigh> and <breath>",
+              "Disponible en version stable, plus de 130 langues, balises comme <sigh> et <breath>"
+            ]
+          ],
+          "source": "https://ai.google.dev/gemini-api/docs/changelog"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Gemini 3.1 Flash TTS",
+          "ids": ["tts-gemini-3-1-flash"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["70+ languages", "Plus de 70 langues"],
+          "source": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-tts/"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Two-person podcast dialogue", "Dialogue de podcast à deux voix"],
+          "prompt": [
+            "Speaker 1 [excited]: We just launched! Speaker 2 [whispers]: Don't tell anyone yet.",
+            "Intervenant 1 [excited] : On vient de lancer ! Intervenant 2 [whispers] : Ne le dites à personne pour l’instant."
+          ],
+          "why": [
+            "Tags give fine control of mood per line.",
+            "Les balises donnent un contrôle fin de l’humeur ligne par ligne."
+          ]
+        },
+        {
+          "title": ["Multilingual course narration", "Narration de cours multilingue"],
+          "prompt": [
+            "Narrate this lesson slowly and clearly, with a friendly teacher's tone.",
+            "Narre cette leçon lentement et clairement, avec le ton d’un professeur bienveillant."
+          ],
+          "why": [
+            "Wide language coverage and steerable tone.",
+            "Large couverture de langues et ton pilotable."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "elevenlabs-tts",
+          "verdict": [
+            "ElevenLabs is cheaper per character with fewer languages and less tag control.",
+            "ElevenLabs coûte moins cher au caractère, avec moins de langues et moins de contrôle par balises."
+          ]
+        },
+        {
+          "slug": "xai-tts",
+          "verdict": [
+            "xAI also uses inline tags, at about a tenth of the price.",
+            "xAI utilise aussi des balises dans le texte, à environ un dixième du prix."
+          ]
+        },
+        {
+          "slug": "inworld-tts",
+          "verdict": [
+            "Inworld is far cheaper and expressive, with 15 languages.",
+            "Inworld est bien moins cher et expressif, avec 15 langues."
+          ]
+        }
+      ],
+      "sources": [
+        "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-tts/",
+        "https://ai.google.dev/gemini-api/docs/changelog",
+        "https://ai.google.dev/gemini-api/docs/speech-generation",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-tts",
+        "https://datanorth.ai/news/google-gemini-3-1-flash-tts-release"
+      ],
+      "strengths": [
+        [
+          "More than 200 audio tags for tone, pace and accent",
+          "Plus de 200 balises audio pour le ton, le rythme et l’accent"
+        ],
+        ["70+ languages", "Plus de 70 langues"],
+        ["30 voices", "30 voix"]
+      ],
+      "limits": [
+        [
+          "The dearest voice in the catalog per character",
+          "La voix la plus chère du catalogue au caractère"
+        ],
+        ["Anonymized, not private", "Anonymisé, pas privé"]
+      ],
+      "facts": [
+        ["30 voices", "30 voix"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "gradium-tts",
+      "differentiator": [
+        "Gradium TTS is built for real-time voice agents, with a first audio chunk in under 50 ms and attention to hard cases like phone numbers and alphanumeric text. It is a young model, first seen on the Artificial Analysis arena in August 2026.",
+        "Gradium TTS est conçu pour les agents vocaux en temps réel, avec un premier fragment audio en moins de 50 ms et un soin particulier pour les cas difficiles comme les numéros de téléphone et le texte alphanumérique. C’est un modèle récent, apparu sur l’arène d’Artificial Analysis en août 2026."
+      ],
+      "signature": [
+        ["Under 50 ms to first audio", "Moins de 50 ms avant le premier son"],
+        ["Strong on phone numbers and codes", "Solide sur numéros et codes"],
+        ["Cloud or on-device options", "Options cloud ou sur appareil"]
+      ],
+      "releases": [
+        {
+          "version": "Gradium TTS",
+          "date": "2026-08",
+          "ids": ["tts-gradium-v1"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced a real-time TTS model aimed at voice agents, with voice cloning and voice design",
+              "Lancement d’un modèle de voix en temps réel pour agents vocaux, avec clonage et conception de voix"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-speech/leaderboard"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Gradium TTS",
+          "ids": ["tts-gradium-v1"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": null,
+          "source": "https://gradium.ai"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Spelling out a phone number", "Épeler un numéro de téléphone"],
+          "prompt": [
+            "Read this aloud clearly: call 04 78 22 31 90, reference AB-7731-QX.",
+            "Lisez ceci clairement : appelez le 04 78 22 31 90, référence AB-7731-QX."
+          ],
+          "why": ["Built for alphanumeric text.", "Conçu pour le texte alphanumérique."]
+        },
+        {
+          "title": ["Voice agent replies", "Réponses d’un agent vocal"],
+          "prompt": [
+            "Your order has shipped and will arrive on Thursday.",
+            "Votre commande est expédiée et arrivera jeudi."
+          ],
+          "why": ["Very low latency.", "Latence très faible."]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "elevenlabs-tts",
+          "verdict": [
+            "ElevenLabs has a longer track record and more languages, with a lower arena score here.",
+            "ElevenLabs a plus d’ancienneté et couvre plus de langues, avec un score d’arène inférieur ici."
+          ]
+        },
+        {
+          "slug": "inworld-tts",
+          "verdict": [
+            "Inworld is cheaper and also aimed at real time.",
+            "Inworld est moins cher et vise aussi le temps réel."
+          ]
+        },
+        {
+          "slug": "minimax-speech",
+          "verdict": [
+            "MiniMax Speech-02 HD has more languages, with a lower arena score.",
+            "MiniMax Speech-02 HD a plus de langues, avec un score d’arène inférieur."
+          ]
+        }
+      ],
+      "sources": [
+        "https://gradium.ai",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://gradium.ai/blog/gradium-tts-latency-and-accuracy"
+      ],
+      "strengths": [
+        [
+          "Gradium reports strong results on hard-to-pronounce sentences",
+          "Gradium annonce de bons résultats sur les phrases difficiles à prononcer"
+        ],
+        ["12 voices", "12 voix"]
+      ],
+      "limits": [
+        ["Mid-range price per character", "Prix moyen au caractère"],
+        ["Anonymized, not private", "Anonymisé, pas privé"]
+      ],
+      "facts": [
+        ["12 voices", "12 voix"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "inworld-tts",
+      "differentiator": [
+        "Inworld TTS-1.5 Max pairs expressive speech with a very low price. Inworld says Max runs under 250 ms at the 90th percentile and Mini under 130 ms, and lists the TTS-1.5 line as deprecated now that Realtime TTS-2 exists.",
+        "Inworld TTS-1.5 Max associe une voix expressive à un prix très bas. Inworld annonce moins de 250 ms pour Max et moins de 130 ms pour Mini (90e centile), et déclare la gamme TTS-1.5 obsolète, remplacée par Realtime TTS-2."
+      ],
+      "signature": [
+        ["Under 250 ms (P90) for Max", "Moins de 250 ms (P90) pour Max"],
+        ["15 languages, Hindi added in 1.5", "15 langues, hindi ajouté en 1.5"],
+        ["Second cheapest voice here", "Deuxième voix la moins chère ici"]
+      ],
+      "releases": [
+        {
+          "version": "TTS-1.5 Max",
+          "date": "2026-01-21",
+          "ids": ["tts-inworld-1-5-max"],
+          "external": false,
+          "changes": [
+            [
+              "30% more expressive and 40% fewer word errors than TTS-1, per Inworld",
+              "30 % plus expressif et 40 % d’erreurs de mots en moins que TTS-1, selon Inworld"
+            ],
+            [
+              "Four times lower latency, 15 languages with Hindi added",
+              "Latence divisée par quatre, 15 langues avec le hindi ajouté"
+            ]
+          ],
+          "source": "https://inworld.ai/blog/introducing-inworld-tts-1-5"
+        },
+        {
+          "version": "Realtime TTS-2",
+          "date": "2026-08-31",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Multi-turn awareness, natural-language voice direction, over 100 languages",
+              "Prise en compte de la conversation, direction de la voix en langage naturel, plus de 100 langues"
+            ]
+          ],
+          "source": "https://inworld.ai/blog/realtime-tts-2"
+        }
+      ],
+      "specs": [
+        {
+          "version": "TTS-1.5 Max",
+          "ids": ["tts-inworld-1-5-max"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["15 languages", "15 langues"],
+          "source": "https://inworld.ai/blog/introducing-inworld-tts-1-5"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Audiobook on a budget", "Livre audio à petit budget"],
+          "prompt": [
+            "Narrate chapter one in a warm, steady voice with natural pauses.",
+            "Narre le premier chapitre avec une voix chaude et régulière, aux pauses naturelles."
+          ],
+          "why": ["Good expressiveness at a very low price.", "Bonne expressivité à très bas prix."]
+        },
+        {
+          "title": ["Game character lines", "Répliques de personnage de jeu"],
+          "prompt": [
+            "Say, with a tired smile: We made it. Barely.",
+            "Dis, avec un sourire fatigué : On y est arrivés. De justesse."
+          ],
+          "why": [
+            "Expressive voices cost little per line.",
+            "Des voix expressives, peu coûteuses par réplique."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "xai-tts",
+          "verdict": [
+            "xAI is even cheaper with 20 languages and inline tags.",
+            "xAI est encore moins cher, avec 20 langues et des balises dans le texte."
+          ]
+        },
+        {
+          "slug": "elevenlabs-tts",
+          "verdict": [
+            "ElevenLabs offers 32 languages at about five times the price.",
+            "ElevenLabs propose 32 langues pour environ cinq fois le prix."
+          ]
+        },
+        {
+          "slug": "gemini-flash-tts",
+          "verdict": [
+            "Gemini steers delivery with tags and covers 70+ languages, at a much higher price.",
+            "Gemini pilote l’interprétation par balises et couvre 70+ langues, à un prix bien plus élevé."
+          ]
+        }
+      ],
+      "sources": [
+        "https://inworld.ai/blog/introducing-inworld-tts-1-5",
+        "https://inworld.ai/blog/realtime-tts-2",
+        "https://docs.inworld.ai/tts/tts-models",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://docs.inworld.ai/release-notes/tts",
+        "https://blog.fal.ai/inworld-tts-1-5-max-now-available-on-fal"
+      ],
+      "strengths": [
+        ["Second cheapest voice in the catalog", "Deuxième voix la moins chère du catalogue"],
+        ["15 languages, French included", "15 langues, dont le français"],
+        ["14 voices", "14 voix"]
+      ],
+      "limits": [
+        ["Anonymized, not private", "Anonymisé, pas privé"],
+        ["WAV output only", "Sortie WAV uniquement"]
+      ],
+      "facts": [
+        ["14 voices", "14 voix"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "minimax-speech",
+      "differentiator": [
+        "MiniMax Speech-02 HD is an autoregressive transformer with a learnable speaker encoder, aimed at audiobooks and voice-overs in 32 languages. MiniMax has since shipped Speech 2.6 and 2.8, which score higher on the arena.",
+        "MiniMax Speech-02 HD est un transformeur autorégressif avec un encodeur de locuteur entraînable, destiné aux livres audio et aux voix off en 32 langues. MiniMax a depuis publié Speech 2.6 et 2.8, mieux classés à l’arène."
+      ],
+      "signature": [
+        ["32 languages, zero-shot voice cloning", "32 langues, clonage de voix sans entraînement"],
+        ["HD and Turbo variants", "Variantes HD et Turbo"],
+        ["Later 2.8 adds natural sound tags", "La 2.8 ajoute des balises sonores"]
+      ],
+      "releases": [
+        {
+          "version": "Speech-02 HD",
+          "date": "2025-04-02",
+          "ids": ["tts-minimax-speech-02-hd"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced HD and Turbo variants with strong prosody and voice similarity",
+              "Lancement des variantes HD et Turbo, prosodie et ressemblance de voix soignées"
+            ]
+          ],
+          "source": "https://platform.minimax.io/docs/release-notes/models.md"
+        },
+        {
+          "version": "Speech 2.6",
+          "date": "2025-10-29",
+          "ids": [],
+          "external": true,
+          "changes": [["More responsive voice for agents", "Voix plus réactive pour les agents"]],
+          "source": "https://platform.minimax.io/docs/release-notes/models.md"
+        },
+        {
+          "version": "Speech 2.8",
+          "date": "2026-01-23",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Natural sound tags and cleaner audio",
+              "Balises sonores naturelles et audio plus propre"
+            ]
+          ],
+          "source": "https://platform.minimax.io/docs/release-notes/models.md"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Speech-02 HD",
+          "ids": ["tts-minimax-speech-02-hd"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["32 languages", "32 langues"],
+          "source": "https://www.minimax.io/news/minimax-speech-02"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Audiobook chapter", "Chapitre de livre audio"],
+          "prompt": [
+            "Read this chapter in a deep, calm male voice, steady pace.",
+            "Lisez ce chapitre d’une voix d’homme grave et calme, à un rythme régulier."
+          ],
+          "why": [
+            "Steady long reading with character voices.",
+            "Lecture longue et régulière avec des voix typées."
+          ]
+        },
+        {
+          "title": ["Corporate voice-over", "Voix off d’entreprise"],
+          "prompt": [
+            "Narrate this 45 second company intro in a confident, friendly tone.",
+            "Narre cette présentation d’entreprise de 45 secondes sur un ton assuré et amical."
+          ],
+          "why": ["HD quality in 32 languages.", "Qualité HD en 32 langues."]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "elevenlabs-tts",
+          "verdict": [
+            "ElevenLabs is about half the price at a similar arena score.",
+            "ElevenLabs coûte environ moitié moins pour un score d’arène similaire."
+          ]
+        },
+        {
+          "slug": "gemini-flash-tts",
+          "verdict": [
+            "Gemini scores higher and uses tags, at a higher price.",
+            "Gemini est mieux classé et utilise des balises, à un prix plus élevé."
+          ]
+        },
+        {
+          "slug": "gradium-tts",
+          "verdict": [
+            "Gradium scores higher at about a third of the price.",
+            "Gradium est mieux classé pour environ un tiers du prix."
+          ]
+        }
+      ],
+      "sources": [
+        "https://platform.minimax.io/docs/release-notes/models.md",
+        "https://www.minimax.io/news/minimax-speech-02",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://www.minimax.io/news/speech-02-series"
+      ],
+      "strengths": [
+        ["More than 30 languages, French included", "Plus de 30 langues, dont le français"],
+        ["15 character voices (calm, deep, lively...)", "15 voix typées (calme, grave, enjouée…)"]
+      ],
+      "limits": [
+        ["Among the dearest voices per character", "Parmi les voix les plus chères au caractère"],
+        [
+          "Voice cloning is not offered in Sub Rosa",
+          "Le clonage de voix n’est pas proposé dans Sub Rosa"
+        ]
+      ],
+      "facts": [
+        ["15 voices", "15 voix"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "orpheus-tts",
+      "differentiator": [
+        "Orpheus is an Apache 2.0 speech model built on a Llama language model, with emotion tags such as laugh and sigh in the text and about 200 ms streaming latency. In Sub Rosa it speaks English only.",
+        "Orpheus est un modèle de voix sous licence Apache 2.0 construit sur un modèle de langage Llama, avec des balises d’émotion comme rire ou soupir dans le texte et environ 200 ms de latence en flux. Dans Sub Rosa, il ne parle qu’anglais."
+      ],
+      "signature": [
+        ["Built on Llama 3.2 3B", "Construit sur Llama 3.2 3B"],
+        ["Emotion tags in the text", "Balises d’émotion dans le texte"],
+        ["About 200 ms streaming latency", "Environ 200 ms de latence en flux"]
+      ],
+      "releases": [
+        {
+          "version": "Orpheus 3B 0.1 finetuned",
+          "date": "2025-03",
+          "ids": ["tts-orpheus"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced open speech model with zero-shot cloning and emotion tags",
+              "Lancement d’un modèle de voix ouvert avec clonage sans entraînement et balises d’émotion"
+            ]
+          ],
+          "source": "https://huggingface.co/canopylabs/orpheus-3b-0.1-ft"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Orpheus 3B",
+          "ids": ["tts-orpheus"],
+          "params": "3B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["English in Sub Rosa", "Anglais dans Sub Rosa"],
+          "source": "https://huggingface.co/canopylabs/orpheus-3b-0.1-ft"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Lively English dialogue", "Dialogue anglais vivant"],
+          "prompt": [
+            "Tara: <laugh> You really did that? Leo: <sigh> Yes, and I regret it.",
+            "Tara : <laugh> You really did that? Leo : <sigh> Yes, and I regret it."
+          ],
+          "why": [
+            "Tags make laughs and sighs natural.",
+            "Les balises rendent rires et soupirs naturels."
+          ]
+        },
+        {
+          "title": ["Private English narration", "Narration anglaise privée"],
+          "prompt": [
+            "Read this short story aloud with feeling.",
+            "Lisez cette nouvelle à voix haute avec émotion."
+          ],
+          "why": [
+            "Private mode and expressive delivery.",
+            "Mode privé et interprétation expressive."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "chatterbox-hd",
+          "verdict": [
+            "Chatterbox is also private and expressive, at a lower price.",
+            "Chatterbox est aussi privé et expressif, à un prix inférieur."
+          ]
+        },
+        {
+          "slug": "kokoro",
+          "verdict": [
+            "Kokoro is private and far cheaper, with 8 languages but less drama.",
+            "Kokoro est privé et bien moins cher, avec 8 langues, mais moins théâtral."
+          ]
+        },
+        {
+          "slug": "qwen3-tts",
+          "verdict": [
+            "Qwen3 TTS is private too and covers 10 languages.",
+            "Qwen3 TTS est aussi privé et couvre 10 langues."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/canopylabs/orpheus-3b-0.1-ft",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://github.com/canopyai/Orpheus-TTS",
+        "https://www.segmind.com/models/orpheus-3b-0.1"
+      ],
+      "strengths": [
+        [
+          "Tags like <laugh> and <sigh> in the text",
+          "Balises comme <laugh> et <sigh> dans le texte"
+        ],
+        ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"]
+      ],
+      "limits": [["English voices only", "Voix anglaises uniquement"], ["8 voices", "8 voix"]],
+      "facts": [
+        ["8 voices, WAV output", "8 voix, sortie WAV"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "qwen3-tts",
+      "differentiator": [
+        "Qwen3 TTS is Alibaba's Apache 2.0 speech family in 0.6B and 1.7B sizes, with 3 second voice cloning, voice design from a text description and 97 ms streaming latency. It speaks 10 languages, including French, Chinese, Japanese and Korean.",
+        "Qwen3 TTS est la famille de voix d’Alibaba (Apache 2.0) en tailles 0,6 Md et 1,7 Md, avec clonage en 3 secondes, conception de voix par description et 97 ms de latence en flux. Elle parle 10 langues, dont le français, le chinois, le japonais et le coréen."
+      ],
+      "signature": [
+        ["0.6B and 1.7B open models", "Modèles ouverts 0,6 Md et 1,7 Md"],
+        ["Voice cloning from 3 s of audio", "Clonage de voix dès 3 s d’audio"],
+        ["10 languages, 97 ms streaming", "10 langues, 97 ms en flux"]
+      ],
+      "releases": [
+        {
+          "version": "Qwen3 TTS",
+          "date": "2026-01-22",
+          "ids": ["tts-qwen3-0-6b", "tts-qwen3-1-7b"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced 0.6B and 1.7B models with voice cloning, voice design and streaming",
+              "Lancement des modèles 0,6 Md et 1,7 Md avec clonage, conception de voix et flux"
+            ]
+          ],
+          "source": "https://github.com/QwenLM/Qwen3-TTS"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Qwen3 TTS 1.7B",
+          "ids": ["tts-qwen3-1-7b"],
+          "params": "1.7B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "audio"],
+          "outputs": ["audio"],
+          "languages": ["10 languages", "10 langues"],
+          "source": "https://github.com/QwenLM/Qwen3-TTS"
+        },
+        {
+          "version": "Qwen3 TTS 0.6B",
+          "ids": ["tts-qwen3-0-6b"],
+          "params": "0.6B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "audio"],
+          "outputs": ["audio"],
+          "languages": ["10 languages", "10 langues"],
+          "source": "https://github.com/QwenLM/Qwen3-TTS"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Private French narration", "Narration française privée"],
+          "prompt": [
+            "Read this report aloud in clear, natural French.",
+            "Lisez ce rapport à voix haute en français clair et naturel."
+          ],
+          "why": [
+            "Private mode with French among its 10 languages.",
+            "Mode privé avec le français parmi 10 langues."
+          ]
+        },
+        {
+          "title": ["Custom character voice", "Voix de personnage sur mesure"],
+          "prompt": [
+            "A gruff old sailor with a slow, raspy voice tells a story.",
+            "Un vieux marin bourru à la voix lente et rauque raconte une histoire."
+          ],
+          "why": [
+            "Voice design from a text description.",
+            "Conception de voix à partir d’une description."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "kokoro",
+          "verdict": [
+            "Kokoro is private and much cheaper, with a smaller voice set.",
+            "Kokoro est privé et bien moins cher, avec moins de voix."
+          ]
+        },
+        {
+          "slug": "orpheus-tts",
+          "verdict": [
+            "Orpheus is more theatrical, but in English only.",
+            "Orpheus est plus théâtral, mais en anglais seulement."
+          ]
+        },
+        {
+          "slug": "chatterbox-hd",
+          "verdict": [
+            "Chatterbox scores higher on the arena and is also private.",
+            "Chatterbox est mieux classé à l’arène et aussi privé."
+          ]
+        }
+      ],
+      "sources": [
+        "https://github.com/QwenLM/Qwen3-TTS",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://simonwillison.net/2026/Jan/22/qwen3-tts"
+      ],
+      "strengths": [
+        ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"],
+        ["10 languages, French included", "10 langues, dont le français"]
+      ],
+      "limits": [
+        ["9 voices", "9 voix"],
+        ["Dearer than Kokoro or Inworld", "Plus cher que Kokoro ou Inworld"]
+      ],
+      "facts": [
+        ["9 voices, MP3 output", "9 voix, sortie MP3"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "xai-tts",
+      "differentiator": [
+        "xAI TTS offers 20 languages, inline speech tags like [laugh] and <whisper>, speed control and character-level timestamps in one API call, at one of the lowest prices here. The Speech Arena lists it as SpaceXAI TTS.",
+        "xAI TTS propose 20 langues, des balises comme [laugh] et <whisper>, un réglage de vitesse et des horodatages au caractère en un seul appel d’API, à l’un des prix les plus bas ici. L’arène vocale l’affiche sous le nom SpaceXAI TTS."
+      ],
+      "signature": [
+        ["Inline tags: [pause], [laugh], <whisper>", "Balises : [pause], [laugh], <whisper>"],
+        ["20 languages, automatic detection", "20 langues, détection automatique"],
+        ["Character-level timestamps", "Horodatage au caractère"]
+      ],
+      "releases": [
+        {
+          "version": "xAI TTS",
+          "date": "2026-04",
+          "ids": ["tts-xai-v1"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced Grok text to speech with expressive voices, tags and telephony formats",
+              "Lancement de la synthèse vocale Grok avec voix expressives, balises et formats pour la téléphonie"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-speech/leaderboard"
+        }
+      ],
+      "specs": [
+        {
+          "version": "xAI TTS v1",
+          "ids": ["tts-xai-v1"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["20 languages", "20 langues"],
+          "source": "https://docs.x.ai/developers/model-capabilities/audio/text-to-speech"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Expressive voice-over for a short video",
+            "Voix off expressive pour vidéo courte"
+          ],
+          "prompt": [
+            "[pause] And then, <whisper>nobody knew.</whisper> [laugh] Until today!",
+            "[pause] Et puis, <whisper>personne ne savait.</whisper> [laugh] Jusqu’à aujourd’hui !"
+          ],
+          "why": [
+            "Tags shape pauses, whispers and laughs.",
+            "Les balises façonnent pauses, chuchotements et rires."
+          ]
+        },
+        {
+          "title": ["Captioned narration", "Narration sous-titrée"],
+          "prompt": [
+            "Narrate this tutorial script at a slightly slower pace.",
+            "Narre le script de ce tutoriel à un rythme un peu plus lent."
+          ],
+          "why": [
+            "Timestamps help sync captions.",
+            "Les horodatages aident à synchroniser les sous-titres."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "inworld-tts",
+          "verdict": [
+            "Inworld is also cheap and expressive, with 15 languages.",
+            "Inworld est aussi économique et expressif, avec 15 langues."
+          ]
+        },
+        {
+          "slug": "gemini-flash-tts",
+          "verdict": [
+            "Gemini scores higher with more languages, at about ten times the price.",
+            "Gemini est mieux classé avec plus de langues, pour environ dix fois le prix."
+          ]
+        },
+        {
+          "slug": "elevenlabs-tts",
+          "verdict": [
+            "ElevenLabs has 32 languages at about three times the price.",
+            "ElevenLabs a 32 langues pour environ trois fois le prix."
+          ]
+        }
+      ],
+      "sources": [
+        "https://docs.x.ai/developers/model-capabilities/audio/text-to-speech",
+        "https://docs.x.ai/docs/release-notes",
+        "https://artificialanalysis.ai/text-to-speech/leaderboard",
+        "https://www.atlascloud.ai/ko/models/xai/tts-v1"
+      ],
+      "strengths": [
+        ["Third cheapest voice in the catalog", "Troisième voix la moins chère du catalogue"],
+        ["Inline speech tags for delivery", "Balises dans le texte pour l’interprétation"],
+        ["26 voices", "26 voix"]
+      ],
+      "limits": [["Anonymized, not private", "Anonymisé, pas privé"]],
+      "facts": [
+        ["26 voices", "26 voix"],
+        [
+          "Up to 5,000 characters per request in Sub Rosa",
+          "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
+        ]
+      ]
+    },
+    {
+      "slug": "seed-audio",
+      "differentiator": [
+        "Seed Audio 1.0 from ByteDance takes one prompt that describes the voice, the performance and the background sound together, instead of picking a preset voice. In Sub Rosa it is billed by the second, with 20 languages.",
+        "Seed Audio 1.0 de ByteDance prend un seul prompt qui décrit la voix, l’interprétation et le fond sonore, au lieu de choisir une voix prédéfinie. Dans Sub Rosa, il est facturé à la seconde, avec 20 langues."
+      ],
+      "signature": [
+        ["One prompt: voice, acting, ambience", "Un prompt : voix, jeu, ambiance"],
+        ["No preset voices", "Pas de voix prédéfinies"],
+        ["Speed 0.5x to 2x, MP3 or WAV", "Vitesse de 0,5x à 2x, MP3 ou WAV"]
+      ],
+      "releases": [
+        {
+          "version": "Seed Audio 1.0",
+          "date": null,
+          "ids": ["seed-audio-1-0"],
+          "external": false,
+          "changes": [
+            [
+              "Release date not published by the maker; listed as current by ByteDance Seed",
+              "Date de sortie non publiée par l’éditeur ; présenté comme actuel par ByteDance Seed"
+            ]
+          ],
+          "source": "https://seed.bytedance.com/en/seed_audio"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Seed Audio 1.0",
+          "ids": ["seed-audio-1-0"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["20 languages in Sub Rosa", "20 langues dans Sub Rosa"],
+          "source": "https://seed.bytedance.com/en/seed_audio"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Voiced scene with ambience", "Scène parlée avec ambiance"],
+          "prompt": [
+            "A tired detective speaks softly in a rainy alley, distant traffic and dripping water behind him: It was always going to end here.",
+            "Un détective fatigué parle doucement dans une ruelle sous la pluie, trafic lointain et gouttes d’eau derrière lui : C’était écrit, ça devait finir ici."
+          ],
+          "why": [
+            "Voice and background come from one description.",
+            "La voix et le fond sonore viennent d’une seule description."
+          ]
+        },
+        {
+          "title": ["Character voice test", "Essai de voix de personnage"],
+          "prompt": [
+            "A cheerful old woman with a warm voice greets customers in a busy market.",
+            "Une vieille dame joyeuse à la voix chaleureuse accueille les clients sur un marché animé."
+          ],
+          "why": [
+            "The voice is described, not picked from a list.",
+            "La voix se décrit, elle ne se choisit pas dans une liste."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "elevenlabs-tts",
+          "verdict": [
+            "ElevenLabs gives you polished preset voices instead of a described one.",
+            "ElevenLabs offre des voix soignées à choisir plutôt qu’à décrire."
+          ]
+        },
+        {
+          "slug": "xai-tts",
+          "verdict": [
+            "xAI uses preset voices with inline tags for delivery.",
+            "xAI utilise des voix prédéfinies avec des balises pour l’interprétation."
+          ]
+        },
+        {
+          "slug": "gemini-flash-tts",
+          "verdict": [
+            "Gemini steers delivery with tags and Director's Notes, with a voice chosen from a list.",
+            "Gemini pilote l’interprétation par balises et notes de réalisateur, avec une voix choisie dans une liste."
+          ]
+        }
+      ],
+      "sources": [
+        "https://seed.bytedance.com/en/seed_audio",
+        "https://seed.bytedance.com/en/blog/from-speech-to-audio-creation-introducing-the-seed-audio-1-0-audio-creation-model",
+        "https://help.scenario.com/articles/7490394523-seed-audio-1-0-the-essentials"
+      ],
+      "strengths": [
+        [
+          "Voice, effects and ambience from one description",
+          "Voix, bruitages et ambiance à partir d’une seule description"
+        ],
+        ["20 languages, French included", "20 langues, dont le français"],
+        ["Billed by the second of audio", "Facturé à la seconde d’audio"]
+      ],
+      "limits": [
+        [
+          "No preset voices: the voice is described in the prompt",
+          "Pas de voix prédéfinies : la voix se décrit dans le prompt"
+        ],
+        [
+          "Listed with the music models in Sub Rosa, not with the voices",
+          "Rangé avec les modèles de musique dans Sub Rosa, pas avec les voix"
+        ]
+      ],
+      "facts": [["Speed 0.5x to 2x", "Vitesse de 0,5x à 2x"], ["MP3 or WAV", "MP3 ou WAV"]]
+    }
+  ]
+}

@@ -1,0 +1,2544 @@
+{
+  "benchmarks": [
+    {
+      "id": "aa-intelligence",
+      "name": "Artificial Analysis Intelligence Index",
+      "publisher": "Artificial Analysis",
+      "category": "text",
+      "unit": "points",
+      "scale": [0, 100],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "measures": [
+        "One score averaging about ten independent tests of reasoning, knowledge, math, coding and agent work, all run the same way for every model.",
+        "Un score moyen d’une dizaine de tests indépendants de raisonnement, de connaissances, de maths, de code et de travail en agent, menés de la même façon pour chaque modèle."
+      ],
+      "howToRead": [
+        "Higher is better. Each model is listed at its highest reasoning effort. Two or three points apart is a close call; ten points is a different class of model.",
+        "Plus c’est haut, mieux c’est. Chaque modèle est mesuré à son effort de raisonnement maximal. Deux ou trois points d’écart, c’est serré ; dix points, c’est une autre classe de modèle."
+      ]
+    },
+    {
+      "id": "aa-coding",
+      "name": "Artificial Analysis Coding Index",
+      "publisher": "Artificial Analysis",
+      "category": "text",
+      "unit": "points",
+      "scale": [0, 100],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "measures": [
+        "The coding part of the same test suite: writing code that passes tests and fixing real programs.",
+        "La partie code de la même batterie : écrire du code qui passe des tests et corriger de vrais programmes."
+      ],
+      "howToRead": [
+        "Higher is better. It matters if you ask for code or let the agent work in files.",
+        "Plus c’est haut, mieux c’est. Il compte si vous demandez du code ou laissez l’agent travailler dans des fichiers."
+      ]
+    },
+    {
+      "id": "swe-bench-verified",
+      "name": "SWE-bench Verified",
+      "publisher": "SWE-bench",
+      "category": "text",
+      "unit": "%",
+      "scale": [0, 100],
+      "higherIsBetter": true,
+      "url": "https://www.swebench.com/",
+      "measures": [
+        "The share of 500 real bugs from open-source projects the model fixes on its own, checked by the projects’ own tests.",
+        "La part des 500 vrais bugs de projets open source que le modèle corrige seul, vérifiée par les tests propres à chaque projet."
+      ],
+      "howToRead": [
+        "Higher is better. Makers often publish this number themselves, with their own setup: compare it with care.",
+        "Plus c’est haut, mieux c’est. Les fabricants publient souvent ce chiffre eux-mêmes, avec leur propre réglage : comparez avec prudence."
+      ]
+    },
+    {
+      "id": "gpqa-diamond",
+      "name": "GPQA Diamond",
+      "publisher": "GPQA",
+      "category": "text",
+      "unit": "%",
+      "scale": [0, 100],
+      "higherIsBetter": true,
+      "url": "https://arxiv.org/abs/2311.12022",
+      "measures": [
+        "198 graduate-level questions in biology, physics and chemistry that experts get right and a web search does not answer.",
+        "198 questions de niveau troisième cycle en biologie, physique et chimie, que les experts réussissent et qu’une recherche web ne résout pas."
+      ],
+      "howToRead": [
+        "Higher is better. Guessing scores 25%; specialists in the field reach about 65%.",
+        "Plus c’est haut, mieux c’est. Répondre au hasard donne 25 % ; les spécialistes du domaine atteignent environ 65 %."
+      ]
+    },
+    {
+      "id": "aa-stt-wer",
+      "name": "Artificial Analysis word error rate",
+      "publisher": "Artificial Analysis",
+      "category": "transcription",
+      "unit": "%",
+      "scale": [0, 30],
+      "higherIsBetter": false,
+      "url": "https://artificialanalysis.ai/speech-to-text",
+      "measures": [
+        "The share of words a transcription gets wrong (missed, added or replaced) on a mixed set of real recordings.",
+        "La part des mots qu’une transcription rate (oubliés, ajoutés ou remplacés) sur un ensemble varié de vrais enregistrements."
+      ],
+      "howToRead": [
+        "Lower is better. At 5%, one word in twenty needs fixing; under 3% a transcript reads almost clean.",
+        "Plus c’est bas, mieux c’est. À 5 %, un mot sur vingt est à corriger ; sous 3 %, la transcription se lit presque sans retouche."
+      ]
+    },
+    {
+      "id": "aa-text-to-image",
+      "name": "Artificial Analysis Text to Image Arena",
+      "publisher": "Artificial Analysis",
+      "category": "image",
+      "unit": "Elo",
+      "scale": [500, 1600],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/text-to-image/arena",
+      "measures": [
+        "Thousands of people compare two images made from the same prompt without knowing the models, and pick the better one.",
+        "Des milliers de personnes comparent deux images faites à partir du même prompt, sans connaître les modèles, et choisissent la meilleure."
+      ],
+      "howToRead": [
+        "An Elo rating, as in chess: higher is preferred more often. 100 points apart means the higher one wins about 64% of duels.",
+        "Un classement Elo, comme aux échecs : plus le score est haut, plus le modèle est souvent préféré. À 100 points d’écart, le mieux classé gagne environ 64 % des duels."
+      ]
+    },
+    {
+      "id": "aa-image-edit",
+      "name": "Artificial Analysis Image Editing Arena",
+      "publisher": "Artificial Analysis",
+      "category": "edit",
+      "unit": "Elo",
+      "scale": [500, 1600],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/text-to-image/arena?tab=leaderboard&input=image",
+      "measures": [
+        "The same blind duel, for edits: two results of the same instruction on the same photo, and people pick the better edit.",
+        "Le même duel à l’aveugle, pour la retouche : deux résultats de la même consigne sur la même photo, et les gens choisissent la meilleure retouche."
+      ],
+      "howToRead": [
+        "An Elo rating: higher is preferred more often. 100 points apart means the higher-rated model wins about 64% of duels.",
+        "Un classement Elo : plus le score est haut, plus le modèle est souvent préféré. À 100 points d’écart, le mieux classé gagne environ 64 % des duels."
+      ]
+    },
+    {
+      "id": "aa-text-to-video",
+      "name": "Artificial Analysis Text to Video Arena",
+      "publisher": "Artificial Analysis",
+      "category": "video",
+      "unit": "Elo",
+      "scale": [500, 1600],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/text-to-video/arena",
+      "measures": [
+        "People watch two silent clips made from the same description, without knowing the models, and pick the better one.",
+        "Des gens regardent deux plans muets faits à partir de la même description, sans connaître les modèles, et choisissent le meilleur."
+      ],
+      "howToRead": [
+        "An Elo rating: higher is preferred more often. 100 points apart means the higher-rated model wins about 64% of duels.",
+        "Un classement Elo : plus le score est haut, plus le modèle est souvent préféré. À 100 points d’écart, le mieux classé gagne environ 64 % des duels."
+      ]
+    },
+    {
+      "id": "aa-image-to-video",
+      "name": "Artificial Analysis Image to Video Arena",
+      "publisher": "Artificial Analysis",
+      "category": "video",
+      "unit": "Elo",
+      "scale": [500, 1600],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/text-to-video/arena?tab=leaderboard&input=image",
+      "measures": [
+        "The same blind duel, starting from one image: which clip brings it to life better.",
+        "Le même duel à l’aveugle, à partir d’une image : quel plan l’anime le mieux."
+      ],
+      "howToRead": [
+        "An Elo rating: higher is preferred more often. 100 points apart means the higher-rated model wins about 64% of duels.",
+        "Un classement Elo : plus le score est haut, plus le modèle est souvent préféré. À 100 points d’écart, le mieux classé gagne environ 64 % des duels."
+      ]
+    },
+    {
+      "id": "aa-text-to-video-audio",
+      "name": "Artificial Analysis Text to Video Arena with audio",
+      "publisher": "Artificial Analysis",
+      "category": "video",
+      "unit": "Elo",
+      "scale": [500, 1600],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/text-to-video/arena?tab=leaderboard&audio=true",
+      "measures": [
+        "The duel for clips with sound: picture, voices, effects and how well they match.",
+        "Le duel pour les plans avec le son : image, voix, bruitages et leur cohérence."
+      ],
+      "howToRead": [
+        "An Elo rating: higher is preferred more often. Only models that make their own sound take part.",
+        "Un classement Elo : plus le score est haut, plus le modèle est souvent préféré. Seuls les modèles qui font leur propre son y participent."
+      ]
+    },
+    {
+      "id": "aa-tts",
+      "name": "Artificial Analysis Speech Arena",
+      "publisher": "Artificial Analysis",
+      "category": "voice",
+      "unit": "Elo",
+      "scale": [500, 1600],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "measures": [
+        "People listen to the same sentence read by two voices, without knowing the models, and pick the more natural one.",
+        "Des gens écoutent la même phrase lue par deux voix, sans connaître les modèles, et choisissent la plus naturelle."
+      ],
+      "howToRead": [
+        "An Elo rating: higher sounds more natural to more people. 100 points apart means the higher-rated model wins about 64% of duels.",
+        "Un classement Elo : plus le score est haut, plus la voix paraît naturelle au plus grand nombre. À 100 points d’écart, le mieux classé gagne environ 64 % des duels."
+      ]
+    },
+    {
+      "id": "aa-music",
+      "name": "Artificial Analysis Music Arena",
+      "publisher": "Artificial Analysis",
+      "category": "music",
+      "unit": "Elo",
+      "scale": [500, 1600],
+      "higherIsBetter": true,
+      "url": "https://artificialanalysis.ai/",
+      "measures": [
+        "People listen to two tracks made from the same request and pick the one they prefer.",
+        "Des gens écoutent deux morceaux faits à partir de la même demande et choisissent celui qu’ils préfèrent."
+      ],
+      "howToRead": [
+        "An Elo rating: higher is preferred more often.",
+        "Un classement Elo : plus le score est haut, plus le modèle est souvent préféré."
+      ]
+    }
+  ],
+  "scores": [
+    {
+      "benchmark": "aa-intelligence",
+      "model": "z-ai-glm-5-3",
+      "value": 45,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-5-3",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "z-ai-glm-5-3-flash",
+      "value": 42,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-5-3-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "zai-org-glm-5-2",
+      "value": 34,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-5-2",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "zai-org-glm-5-1",
+      "value": 26,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-5-1",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "zai-org-glm-5",
+      "value": 28,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "zai-org-glm-4.7",
+      "value": 22,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-4-7",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "zai-org-glm-4.6",
+      "value": 15,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-4-6",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "zai-org-glm-4.7-flash",
+      "value": 15,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-4-7-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "z-ai-glm-5-turbo",
+      "value": 27,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-5-turbo",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "z-ai-glm-5v-turbo",
+      "value": 23,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/glm-5v-turbo",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "kimi-k3",
+      "value": 44,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/kimi-k3",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "kimi-k2-7-code",
+      "value": 26,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/kimi-k2-7-code",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "kimi-k2-6",
+      "value": 27,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "kimi-k2-5",
+      "value": 23,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/kimi-k2-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "Kimi K2 Thinking",
+      "value": 22,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/kimi-k2-thinking",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "gpqa-diamond",
+      "model": "kimi-k3",
+      "value": 93.5,
+      "date": "2026-10-04",
+      "url": "https://huggingface.co/moonshotai/Kimi-K3",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "deepseek-v4-1-flash",
+      "value": 39,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/deepseek-v4-1-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "deepseek-v4-pro-0813",
+      "value": 36,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/deepseek-v4-pro",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "deepseek-v4-flash-0731",
+      "value": 34,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/deepseek-v4-flash-0731",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "DeepSeek V4 Pro 0424",
+      "value": 30,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/deepseek-v4-pro-0424",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "deepseek-v3.2",
+      "value": 16,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/deepseek-v3-2",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "gpqa-diamond",
+      "model": "deepseek-v4-1-flash",
+      "value": 90.9,
+      "date": "2026-10-04",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-opus-5-5",
+      "value": 58,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-opus-5-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-sonnet-5-5",
+      "value": 56,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-sonnet-5-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-fable-5-1",
+      "value": 53,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-fable-5",
+      "value": 50,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-fable-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-opus-5",
+      "value": 51,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-opus-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-sonnet-5",
+      "value": 38,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-sonnet-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-opus-4-8",
+      "value": 42,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-opus-4-7",
+      "value": 41,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-opus-4-6",
+      "value": 26,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-opus-4-5",
+      "value": 24,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-opus-4-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-sonnet-4-6",
+      "value": 25,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "swe-bench-verified",
+      "model": "claude-sonnet-4-5",
+      "value": 77.2,
+      "date": "2025-09-29",
+      "url": "https://www.anthropic.com/news/claude-sonnet-4-5",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-6-astra",
+      "value": 53,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-61-sol",
+      "value": 52,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-6-sol",
+      "value": 48,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-6-luna",
+      "value": 38,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-6-luna",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-56-sol",
+      "value": 47,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-56-terra",
+      "value": 42,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-56-luna",
+      "value": 37,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-55",
+      "value": 38,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-5-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-54",
+      "value": 39,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-5-4",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-54-mini",
+      "value": 24,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-5-4-mini",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-53-codex",
+      "value": 33,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-5-3-codex",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-52",
+      "value": 30,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-5-2",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-4o-2024-11-20",
+      "value": 8,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-4o",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-4o-mini-2024-07-18",
+      "value": 7,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-4o-mini",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "openai-gpt-oss-120b",
+      "value": 12,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gpt-oss-120b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "gpqa-diamond",
+      "model": "openai-gpt-oss-120b",
+      "value": 80.81,
+      "date": "2026-10-04",
+      "url": "https://huggingface.co/openai/gpt-oss-120b",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "gemini-3-8-flash",
+      "value": 41,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "gemini-3-7-flash",
+      "value": 39,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "gemini-3-6-flash",
+      "value": 34,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemini-3-6-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "gemini-3-5-flash",
+      "value": 33,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemini-3-5-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "gemini-3-5-flash-lite",
+      "value": 22,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemini-3-5-flash-lite",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "gemini-3-flash-preview",
+      "value": 18,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemini-3-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "gemini-3-1-pro-preview",
+      "value": 30,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemini-3-1-pro-preview",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "Gemini 4 Argon",
+      "value": 53,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemini-4-argon",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "grok-4-7",
+      "value": 46,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/grok-4-7",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "grok-4-6",
+      "value": 44,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/grok-4-6",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "grok-4-5",
+      "value": 39,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/grok-4-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "grok-4-3",
+      "value": 25,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/grok-4-3",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "grok-4-20",
+      "value": 26,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/grok-4-20",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen-3-8-max",
+      "value": 45,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen-3-7-max",
+      "value": 29,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-7-max",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen-3-7-plus",
+      "value": 25,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-7-plus",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen-3-6-plus",
+      "value": 27,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-5-397b-a17b",
+      "value": 18,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-5-397b-a17b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "Qwen3.8-Flash-Next",
+      "value": 40,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-8-flash-next",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen-3-8-2-4t-a95b",
+      "value": 40,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-8-2-4t-a95b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen-3-8-27b",
+      "value": 34,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-8-27b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-6-27b",
+      "value": 21,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-6-27b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-6-35b-a3b",
+      "value": 18,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-6-35b-a3b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-5-35b-a3b",
+      "value": 19,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-5-35b-a3b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-5-9b",
+      "value": 11,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-5-9b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-235b-a22b-instruct-2507",
+      "value": 12,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-235b-a22b-instruct-2507",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-235b-a22b-thinking-2507",
+      "value": 13,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-235b-a22b-instruct-2507-reasoning",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-coder-480b-a35b-instruct-turbo",
+      "value": 12,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-coder-480b-a35b-instruct",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-next-80b",
+      "value": 11,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-next-80b-a3b-reasoning",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "qwen3-vl-235b-a22b",
+      "value": 13,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/qwen3-vl-235b-a22b-reasoning",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "gpqa-diamond",
+      "model": "qwen-3-8-27b",
+      "value": 89.2,
+      "date": "2026-10-04",
+      "url": "https://huggingface.co/Qwen/Qwen3.8-27B",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "google-gemma-4-31b-it",
+      "value": 15,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemma-4-31b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "google-gemma-4-26b-a4b-it",
+      "value": 17,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemma-4-26b-a4b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "google-gemma-3-27b-it",
+      "value": 5,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/gemma-3-27b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "gpqa-diamond",
+      "model": "google-gemma-4-31b-it",
+      "value": 84.3,
+      "date": "2026-10-04",
+      "url": "https://huggingface.co/google/gemma-4-31b-it",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "llama-3.3-70b",
+      "value": 8,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/llama-3-3-instruct-70b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "Llama 4 Maverick",
+      "value": 10,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "Llama 3.1 405B",
+      "value": 7,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "mistral-small-3-2-24b-instruct",
+      "value": 8,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/mistral-small-3-2",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "Mistral Small 4",
+      "value": 11,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/mistral-small-4",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "minimax-m27",
+      "value": 23,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/minimax-m2-7",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "minimax-m25",
+      "value": 23,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/minimax-m2-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "MiniMax-M3",
+      "value": 29,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/minimax-m3",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "swe-bench-verified",
+      "model": "minimax-m25",
+      "value": 80.2,
+      "date": "2026-10-04",
+      "url": "https://huggingface.co/MiniMaxAI/MiniMax-M2.5",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "mercury-2-5",
+      "value": 12,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/mercury-2-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "mercury-2",
+      "value": 14,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/mercury-2",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "xiaomi-mimo-v2-6-flash",
+      "value": 38,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/mimo-v2-6-flash",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "MiMo-V2.6-Pro",
+      "value": 46,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/mimo-v2-6-pro",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "MiMo-V2.5-Pro",
+      "value": 26,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/mimo-v2-5-pro",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "MiMo-V2-Flash (non-reasoning)",
+      "value": 16,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/mimo-v2-flash",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "nvidia-nemotron-3-ultra-550b-a55b",
+      "value": 23,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/nvidia-nemotron-3-ultra-550b-a55b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "nvidia-nemotron-3-nano-30b-a3b",
+      "value": 7,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/nvidia-nemotron-3-nano-30b-a3b",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "inkling",
+      "value": 25,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/models/inkling",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "swe-bench-verified",
+      "model": "inkling",
+      "value": 77.6,
+      "date": "2026-10-04",
+      "url": "https://thinkingmachines.ai/news/introducing-inkling/",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-stt-wer",
+      "model": "Parakeet TDT 0.6B v2",
+      "value": 6.4,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/speech-to-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-stt-wer",
+      "model": "nvidia/parakeet-tdt-0.6b-v3",
+      "value": 6.34,
+      "date": "2026-10-04",
+      "url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-stt-wer",
+      "model": "openai/whisper-large-v3",
+      "value": 4.1,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/speech-to-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-stt-wer",
+      "model": "fal-ai/wizper",
+      "value": 4.7,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/speech-to-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-stt-wer",
+      "model": "elevenlabs/scribe-v2",
+      "value": 2.2,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/speech-to-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-stt-wer",
+      "model": "stt-xai-v1",
+      "value": 4.0,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/speech-to-text/models/grok-stt",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-stt-wer",
+      "model": "Grok Voice Transcribe 2.0",
+      "value": 2.3,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/speech-to-text/models/grok-stt",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-stt-wer",
+      "model": "stt-xai-v1",
+      "value": 6.9,
+      "date": "2026-10-04",
+      "url": "https://x.ai/news/grok-stt-and-tts-apis",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "gpt-image-2-5-sunburst",
+      "value": 1197,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "gpt-image-2-5-flare",
+      "value": 1191,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "gpt-image-2",
+      "value": 1172,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "grok-imagine-image-2-0",
+      "value": 1155,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "nano-banana-2",
+      "value": 1125,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "muse-image",
+      "value": 1115,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "gpt-image-1-5",
+      "value": 1107,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "nano-banana-pro",
+      "value": 1102,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "nano-banana-2-lite",
+      "value": 1096,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "qwen-image-3-pro",
+      "value": 1090,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "seedream-v5-pro",
+      "value": 1081,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "qwen-image-3",
+      "value": 1076,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "grok-imagine-image-quality",
+      "value": 1045,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "qwen-image-2-pro",
+      "value": 1031,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Seedream 4.0",
+      "value": 1029,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "krea-v2-large",
+      "value": 1026,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "seedream-v4",
+      "value": 1029,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "flux-2-max",
+      "value": 1020,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "grok-imagine-image",
+      "value": 1019,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "luma-uni-1-max",
+      "value": 1014,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "ideogram-v4-5",
+      "value": 1013,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "krea-v2-medium",
+      "value": 1012,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "seedream-v5-lite",
+      "value": 1012,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "GPT Image 1 (high)",
+      "value": 1010,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "ideogram-v4",
+      "value": 1004,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "flux-2-pro",
+      "value": 1004,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "luma-uni-1",
+      "value": 992,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "wan-2-7-text-to-image",
+      "value": 990,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "recraft-v4-pro",
+      "value": 987,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Nano Banana (Gemini 2.5 Flash Image)",
+      "value": 985,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "recraft-v4",
+      "value": 983,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "wan-2-7-pro-text-to-image",
+      "value": 983,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "HunyuanImage 3.0 Instruct",
+      "value": 995,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "qwen-image-2",
+      "value": 962,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "ImagineArt 1.5 Preview",
+      "value": 957,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "ImagineArt 2.0",
+      "value": 970,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "hunyuan-image-v3",
+      "value": 944,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "z-image-turbo",
+      "value": 941,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "FLUX.1 Kontext [max]",
+      "value": 933,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "FLUX1.1 [pro]",
+      "value": 891,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "FLUX.1 [dev]",
+      "value": 841,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Ideogram 3.0",
+      "value": 897,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "qwen-image",
+      "value": 889,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Recraft V3",
+      "value": 868,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Krea 1",
+      "value": 820,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "venice-sd35",
+      "value": 840,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Stable Diffusion 3 Large",
+      "value": 838,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Stable Diffusion XL 1.0",
+      "value": 678,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Wan 2.6 Image",
+      "value": 1026,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Seedream 3.0",
+      "value": 959,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Recraft V4.1",
+      "value": 990,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "gpt-image-2-5-sunburst-edit",
+      "value": 1182,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "gpt-image-2-5-flare-edit",
+      "value": 1162,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "gpt-image-2-edit",
+      "value": 1122,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "muse-image-edit",
+      "value": 1118,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "nano-banana-2-edit",
+      "value": 1108,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "grok-imagine-image-2-0-edit",
+      "value": 1107,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "seedream-v5-pro-edit",
+      "value": 1107,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "gpt-image-1-5-edit",
+      "value": 1102,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "nano-banana-pro-edit",
+      "value": 1099,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "grok-imagine-quality-edit",
+      "value": 1084,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "qwen-image-3-pro-edit",
+      "value": 1075,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "grok-imagine-edit",
+      "value": 1070,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "luma-uni-1-max-edit",
+      "value": 1070,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "ideogram-v4-5-edit",
+      "value": 1064,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "seedream-v5-lite-edit",
+      "value": 1057,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "qwen-image-3-edit",
+      "value": 1054,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "nano-banana-2-lite-edit",
+      "value": 1045,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "wan-2-7-pro-edit",
+      "value": 1042,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "luma-uni-1-edit",
+      "value": 1039,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Wan 2.6 Image",
+      "value": 1038,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "seedream-v4-edit",
+      "value": 1035,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Qwen Image Edit Plus 2511",
+      "value": 1021,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "qwen-image-2-pro-edit",
+      "value": 1018,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Seedream 4.0",
+      "value": 1013,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "flux-2-max-edit",
+      "value": 995,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Nano Banana (Gemini 2.5 Flash Image)",
+      "value": 986,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Qwen Image Edit Plus 2509",
+      "value": 981,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "GPT Image 1 (high)",
+      "value": 979,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "qwen-image-2-edit",
+      "value": 962,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Qwen Image Edit",
+      "value": 918,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "SeedEdit 3.0",
+      "value": 914,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "FLUX.1 Kontext [pro]",
+      "value": 911,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "FLUX.1 Kontext [max]",
+      "value": 930,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "FLUX.2 [pro]",
+      "value": 1007,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Seedream 4.5",
+      "value": 1023,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Seedream 4.5",
+      "value": 1035,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Qwen-Image-2.1",
+      "value": 1036,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Qwen-Image-2.1",
+      "value": 1073,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "HunyuanImage 3.5 (Preview)",
+      "value": 1087,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "HunyuanImage 3.0 Instruct",
+      "value": 1066,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "Qwen Image Max 2512",
+      "value": 999,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "Qwen Image Edit Max 2601",
+      "value": 999,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "minimax-h3-max-image-to-video",
+      "value": 1195,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "minimax-h3-image-to-video",
+      "value": 1181,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "Gemini Omni Flash",
+      "value": 1178,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "Seedance 2.0 720p",
+      "value": 1176,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "wan-3-0-image-to-video",
+      "value": 1164,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "happyhorse-1-1-image-to-video",
+      "value": 1104,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "grok-imagine-1-5-image-to-video-private",
+      "value": 1098,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "happyhorse-1-0-image-to-video",
+      "value": 1083,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "veo3.1-full-image-to-video",
+      "value": 1082,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "wan-2-7-image-to-video",
+      "value": 1077,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "grok-imagine-image-to-video-private",
+      "value": 1072,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "Veo 3.1 Lite",
+      "value": 1071,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "PixVerse V6",
+      "value": 1070,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "veo3.1-fast-image-to-video",
+      "value": 1066,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "vidu-q3-image-to-video",
+      "value": 1056,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "kling-v3-pro-image-to-video",
+      "value": 1055,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "kling-v3-standard-image-to-video",
+      "value": 1051,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "kling-o3-pro-image-to-video",
+      "value": 1044,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "ltx-2-5-fast-image-to-video",
+      "value": 1038,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "kling-o3-standard-image-to-video",
+      "value": 1036,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "Vidu Q3 Turbo",
+      "value": 1029,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "ltx-2-5-pro-image-to-video",
+      "value": 1007,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "seedance-1-5-pro-image-to-video-basic",
+      "value": 1000,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "kling-2.6-pro-image-to-video",
+      "value": 988,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "pixverse-v5.6-image-to-video",
+      "value": 963,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "LTX-2.3 Pro",
+      "value": 949,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "ltx-2-v2-3-fast-image-to-video",
+      "value": 946,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "LTX-2 Fast",
+      "value": 923,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "wan-2.6-image-to-video",
+      "value": 889,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-to-video",
+      "model": "LTX-2 Pro",
+      "value": 863,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "wan-3-0-text-to-video",
+      "value": 1156,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "seedance-2-5-text-to-video-basic",
+      "value": 1142,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "minimax-h3-text-to-video",
+      "value": 1138,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "minimax-h3-max-text-to-video",
+      "value": 1134,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "flux-3-text-to-video",
+      "value": 1127,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "seedance-2-0-text-to-video-basic",
+      "value": 1119,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "gemini-omni-flash-1-1-text-to-video",
+      "value": 1113,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "grok-imagine-1-5-text-to-video-private",
+      "value": 1044,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "happyhorse-1-1-text-to-video",
+      "value": 1043,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "wan-2-7-text-to-video",
+      "value": 1029,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "happyhorse-1-0-text-to-video",
+      "value": 1025,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "kling-o3-pro-text-to-video",
+      "value": 1017,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "kling-v3-pro-text-to-video",
+      "value": 1000,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "PixVerse V6",
+      "value": 986,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "veo3.1-full-text-to-video",
+      "value": 966,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "veo3.1-fast-text-to-video",
+      "value": 958,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "ltx-2-5-fast-text-to-video",
+      "value": 947,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "Veo 3.1 Lite",
+      "value": 947,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "ltx-2-5-pro-text-to-video",
+      "value": 944,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "Vidu Q3 Turbo",
+      "value": 913,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "LTX-2.3 Pro",
+      "value": 893,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-text-to-video-audio",
+      "model": "ltx-2-v2-3-fast-text-to-video",
+      "value": 854,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video",
+      "model": "wan-3-0-text-to-video",
+      "value": 1129,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video",
+      "model": "minimax-h3-text-to-video",
+      "value": 1118,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video",
+      "model": "minimax-h3-max-text-to-video",
+      "value": 1115,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video",
+      "model": "seedance-2-5-text-to-video-basic",
+      "value": 1102,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-video",
+      "model": "flux-3-text-to-video",
+      "value": 1094,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "tts-kokoro",
+      "value": 1064,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "tts-chatterbox-hd",
+      "value": 1102,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Chatterbox",
+      "value": 1025,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "tts-elevenlabs-turbo-v2-5",
+      "value": 1098,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Multilingual v2",
+      "value": 1097,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Flash v2.5",
+      "value": 1078,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Eleven v3",
+      "value": 1174,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Eleven v4",
+      "value": 1321,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "tts-gemini-3-1-flash",
+      "value": 1209,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Gemini 2.5 Flash TTS",
+      "value": 1058,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Gemini 3.8 Flash TTS",
+      "value": 1275,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "tts-gradium-v1",
+      "value": 1151,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Inworld Realtime TTS-2",
+      "value": 1251,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "tts-minimax-speech-02-hd",
+      "value": 1114,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Speech 2.6 HD",
+      "value": 1128,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Speech 2.8 HD",
+      "value": 1173,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Qwen3 TTS",
+      "value": 932,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "Qwen3 TTS Flash",
+      "value": 944,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "SpaceXAI TTS (xAI)",
+      "value": 1136,
+      "date": "2026-10-04",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent",
+      "external": true
+    }
+  ]
+}

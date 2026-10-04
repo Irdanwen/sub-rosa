@@ -1,0 +1,317 @@
+{
+  "families": [
+    {
+      "slug": "elevenlabs-sound-effects",
+      "differentiator": [
+        "ElevenLabs Sound Effects (model eleven_text_to_sound_v2) makes effects and foley from a short description, with seamless looping for ambience and a prompt influence setting. It is the only model of the three that lets you tune how literally it follows the prompt.",
+        "ElevenLabs Sound Effects (modèle eleven_text_to_sound_v2) produit des effets et des bruitages à partir d’une courte description, avec des boucles sans raccord pour les ambiances et un réglage de fidélité au prompt. C’est le seul des trois qui permet de régler la fidélité au texte."
+      ],
+      "signature": [
+        ["Seamless loops for ambience", "Boucles sans raccord pour les ambiances"],
+        ["Prompt influence from 0 to 1", "Fidélité au prompt de 0 à 1"],
+        ["Up to 30 s, WAV 48 kHz", "Jusqu’à 30 s, WAV 48 kHz"]
+      ],
+      "releases": [
+        {
+          "version": "Sound Effects v2",
+          "date": null,
+          "ids": ["elevenlabs-sound-effects-v2"],
+          "external": false,
+          "changes": [
+            [
+              "Release date not published; the API lists v2 as the only model, with looping and 0.5 to 30 s durations",
+              "Date de sortie non publiée ; l’API présente la v2 comme seul modèle, avec boucles et durées de 0,5 à 30 s"
+            ]
+          ],
+          "source": "https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Sound Effects v2",
+          "ids": ["elevenlabs-sound-effects-v2"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": null,
+          "source": "https://elevenlabs.io/docs/overview/capabilities/sound-effects"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Foley for a short film", "Bruitage pour un court métrage"],
+          "prompt": [
+            "Footsteps on gravel, then a heavy wooden door creaks open.",
+            "Des pas sur du gravier, puis une lourde porte en bois qui grince."
+          ],
+          "why": [
+            "Handles multi-part sequences in one prompt.",
+            "Gère une séquence en plusieurs temps dans un seul prompt."
+          ]
+        },
+        {
+          "title": ["Looping ambience for a game", "Ambiance en boucle pour un jeu"],
+          "prompt": [
+            "Rain on a tin roof with distant thunder, seamless loop.",
+            "Pluie sur un toit en tôle avec tonnerre lointain, boucle sans raccord."
+          ],
+          "why": ["Supports seamless loops.", "Prend en charge les boucles sans raccord."]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "mmaudio",
+          "verdict": [
+            "MMAudio is open and cheaper per second, with less polish on complex sounds.",
+            "MMAudio est ouvert et moins cher à la seconde, avec moins de finesse sur les sons complexes."
+          ]
+        },
+        {
+          "slug": "sonilo-sound-effects",
+          "verdict": [
+            "Sonilo is licensed for commercial use and offers type and texture controls.",
+            "Sonilo est sous licence commerciale et offre des réglages de type et de texture."
+          ]
+        }
+      ],
+      "sources": [
+        "https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert",
+        "https://elevenlabs.io/docs/overview/capabilities/sound-effects",
+        "https://the-decoder.com/elevenlabs-releases-version-2-of-its-ai-sound-effects-model-with-longer-clips-and-better-audio-quality/"
+      ],
+      "strengths": [
+        [
+          "Can make seamless loops for ambience",
+          "Peut produire des boucles sans raccord pour les ambiances"
+        ],
+        ["Billed by the second", "Facturé à la seconde"]
+      ],
+      "limits": [
+        ["22 s at most per sound in Sub Rosa", "22 s au maximum par son dans Sub Rosa"],
+        ["Short prompts only (450 characters)", "Prompts courts seulement (450 caractères)"]
+      ],
+      "facts": [["1 to 22 s", "1 à 22 s"], ["MP3 output", "Sortie MP3"]]
+    },
+    {
+      "slug": "mmaudio",
+      "differentiator": [
+        "MMAudio comes from a research paper on joint video, audio and text training, and in Sub Rosa it turns a text description into sound effects of up to 30 s. Its checkpoints are CC BY-NC 4.0, so check licensing before commercial use.",
+        "MMAudio vient d’un article de recherche sur l’entraînement conjoint vidéo, audio et texte ; dans Sub Rosa, il transforme une description en bruitages de 30 s maximum. Ses poids sont sous CC BY-NC 4.0 : vérifiez la licence avant un usage commercial."
+      ],
+      "signature": [
+        ["Research model, paper Dec 2024", "Modèle de recherche, article déc. 2024"],
+        ["Checkpoints under CC BY-NC 4.0", "Poids sous CC BY-NC 4.0"],
+        ["Default output 8 s, up to 30 s here", "8 s par défaut, jusqu’à 30 s ici"]
+      ],
+      "releases": [
+        {
+          "version": "MMAudio",
+          "date": "2024-12-19",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Paper on video to audio synthesis trained jointly on video, audio and text",
+              "Article sur la synthèse audio depuis la vidéo, entraînée conjointement sur vidéo, audio et texte"
+            ]
+          ],
+          "source": "https://huggingface.co/hkchengrex/MMAudio"
+        },
+        {
+          "version": "MMAudio V2",
+          "date": null,
+          "ids": ["mmaudio-v2-text-to-audio"],
+          "external": false,
+          "changes": [
+            [
+              "Large 44 kHz v2 checkpoint listed in the repository; release date not published",
+              "Poids large 44 kHz v2 listés dans le dépôt ; date de sortie non publiée"
+            ]
+          ],
+          "source": "https://github.com/hkchengrex/MMAudio"
+        }
+      ],
+      "specs": [
+        {
+          "version": "MMAudio V2",
+          "ids": ["mmaudio-v2-text-to-audio"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": true,
+          "license": "CC BY-NC 4.0 (weights)",
+          "maxOutput": null,
+          "inputs": ["text", "video"],
+          "outputs": ["audio"],
+          "languages": null,
+          "source": "https://github.com/hkchengrex/MMAudio"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Low-cost effects for a rough cut",
+            "Effets à bas coût pour un premier montage"
+          ],
+          "prompt": [
+            "Door slam in an empty hallway with a short echo.",
+            "Claquement de porte dans un couloir vide avec un court écho."
+          ],
+          "why": [
+            "Lowest price per second of the three.",
+            "Prix à la seconde le plus bas des trois."
+          ]
+        },
+        {
+          "title": ["Ambient texture", "Texture d’ambiance"],
+          "prompt": [
+            "Wind through tall grass with distant birds, 20 seconds.",
+            "Vent dans les hautes herbes avec des oiseaux lointains, 20 secondes."
+          ],
+          "why": ["Up to 30 s per sound.", "Jusqu’à 30 s par son."]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "elevenlabs-sound-effects",
+          "verdict": [
+            "ElevenLabs is more refined, with loops, at a higher price per second.",
+            "ElevenLabs est plus abouti, avec des boucles, à un prix à la seconde plus élevé."
+          ]
+        },
+        {
+          "slug": "sonilo-sound-effects",
+          "verdict": [
+            "Sonilo is licensed for commercial use, but costs more.",
+            "Sonilo est sous licence commerciale, mais plus cher."
+          ]
+        }
+      ],
+      "sources": [
+        "https://github.com/hkchengrex/MMAudio",
+        "https://huggingface.co/hkchengrex/MMAudio",
+        "https://www.atlascloud.ai/fr/models/atlascloud/mmaudio-v2"
+      ],
+      "strengths": [
+        [
+          "Cheapest sound effects in the catalog per second",
+          "Les bruitages les moins chers du catalogue à la seconde"
+        ],
+        ["Up to 30 s per sound", "Jusqu’à 30 s par son"]
+      ],
+      "limits": [
+        [
+          "Less refined than ElevenLabs on complex sounds",
+          "Moins fin qu’ElevenLabs sur les sons complexes"
+        ]
+      ],
+      "facts": [["1 to 30 s", "1 à 30 s"], ["WAV output", "Sortie WAV"]]
+    },
+    {
+      "slug": "sonilo-sound-effects",
+      "differentiator": [
+        "Sonilo Sound Effects comes from a model trained on licensed catalogs through a Shutterstock partnership. Its API offers text to sound effects and video to sound effects, with control over type, texture and intensity.",
+        "Sonilo Sound Effects vient d’un modèle entraîné sur des catalogues sous licence via un partenariat avec Shutterstock. Son API propose du texte vers bruitage et de la vidéo vers bruitage, avec contrôle du type, de la texture et de l’intensité."
+      ],
+      "signature": [
+        [
+          "Licensed catalogs, Shutterstock partner",
+          "Catalogues sous licence, partenaire Shutterstock"
+        ],
+        ["Text or video to sound effects", "Texte ou vidéo vers bruitages"],
+        ["Commercial licensing by plan", "Licence commerciale selon l’offre"]
+      ],
+      "releases": [
+        {
+          "version": "Sonilo V1.1 Sound Effects",
+          "date": null,
+          "ids": ["sonilo-v1-1-sound-effects"],
+          "external": false,
+          "changes": [
+            [
+              "Release date not published; listed as current in Sonilo's docs",
+              "Date de sortie non publiée ; présenté comme actuel dans la documentation de Sonilo"
+            ]
+          ],
+          "source": "https://sonilo.com/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Sonilo V1.1 Sound Effects",
+          "ids": ["sonilo-v1-1-sound-effects"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "video"],
+          "outputs": ["audio"],
+          "languages": null,
+          "source": "https://sonilo.com/"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Effects for a published video", "Effets pour une vidéo publiée"],
+          "prompt": [
+            "Heavy rain on a window with a distant rumble of thunder.",
+            "Forte pluie sur une vitre avec un grondement de tonnerre lointain."
+          ],
+          "why": [
+            "Licensed training suits content you publish.",
+            "L’entraînement sous licence convient aux contenus publiés."
+          ]
+        },
+        {
+          "title": [
+            "Sound design for a game trailer",
+            "Conception sonore pour une bande-annonce de jeu"
+          ],
+          "prompt": [
+            "A sword unsheathing with a metallic scrape, then a short echoing clang.",
+            "Une épée qu’on dégaine dans un bruit métallique, puis un bref choc qui résonne."
+          ],
+          "why": [
+            "Type, texture and intensity controls.",
+            "Réglages de type, de texture et d’intensité."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "elevenlabs-sound-effects",
+          "verdict": [
+            "ElevenLabs adds seamless loops and a prompt influence setting.",
+            "ElevenLabs ajoute des boucles sans raccord et un réglage de fidélité au prompt."
+          ]
+        },
+        {
+          "slug": "mmaudio",
+          "verdict": [
+            "MMAudio is cheaper per second but non-commercial on its weights.",
+            "MMAudio est moins cher à la seconde, mais ses poids sont non commerciaux."
+          ]
+        }
+      ],
+      "sources": [
+        "https://sonilo.com/",
+        "https://platform.sonilo.com/docs",
+        "https://www.layer.ai/models/sonilo-v1-1-text-to-sound-effects",
+        "https://help.scenario.com/articles/4687923546-sonilo-v1-1-video-to-video-the-essentials"
+      ],
+      "strengths": [
+        ["Commercial use cleared, per Sonilo", "Utilisation commerciale autorisée, selon Sonilo"],
+        [
+          "Control over type, texture and intensity",
+          "Contrôle du type, de la texture et de l’intensité"
+        ]
+      ],
+      "limits": [["22 s at most per sound in Sub Rosa", "22 s au maximum par son dans Sub Rosa"]],
+      "facts": [["1 to 22 s in Sub Rosa", "1 à 22 s dans Sub Rosa"], ["MP3 output", "Sortie MP3"]]
+    }
+  ]
+}

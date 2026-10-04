@@ -1,0 +1,3508 @@
+{
+  "families": [
+    {
+      "slug": "kling-v3",
+      "differentiator": [
+        "Kling V3 is Kuaishou's flagship: clips of up to 15 s with several shots in one prompt, native sound, and a 4K tier. It also has a motion control mode that copies the movement of a reference clip onto your image.",
+        "Kling V3 est le modèle phare de Kuaishou : des clips jusqu’à 15 s avec plusieurs plans dans un même prompt, du son natif et un niveau 4K. Il propose aussi un mode de contrôle du mouvement qui copie le geste d’un clip de référence sur votre image."
+      ],
+      "signature": [
+        ["Multi-shot clips up to 15 s", "Clips multi-plans jusqu’à 15 s"],
+        ["Native 4K tier, 30 fps", "Niveau 4K natif, 30 i/s"],
+        ["Motion control from a reference clip", "Contrôle du mouvement par clip de référence"]
+      ],
+      "releases": [
+        {
+          "version": "Kling 2.1",
+          "date": "2025-05",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Introduced separate quality modes so you can trade cost for fidelity.",
+              "A introduit des modes de qualité distincts pour arbitrer entre coût et fidélité."
+            ]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Kling_AI"
+        },
+        {
+          "version": "Kling 2.6",
+          "date": "2025-12",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "First Kling with native audio: dialogue, effects and ambience in one pass.",
+              "Premier Kling avec son natif : dialogues, effets et ambiances en une seule passe."
+            ],
+            ["Clips stay at 5 or 10 s.", "Les clips restent à 5 ou 10 s."]
+          ],
+          "source": "https://morphic.com/fr/ai-glossary/Kling-25"
+        },
+        {
+          "version": "Kling 3.0",
+          "date": "2026-02-05",
+          "ids": [
+            "kling-v3-standard-text-to-video",
+            "kling-v3-standard-image-to-video",
+            "kling-v3-pro-text-to-video",
+            "kling-v3-pro-image-to-video",
+            "kling-v3-turbo-standard-text-to-video",
+            "kling-v3-turbo-standard-image-to-video",
+            "kling-v3-turbo-pro-text-to-video",
+            "kling-v3-turbo-pro-image-to-video",
+            "kling-v3-4k-text-to-video",
+            "kling-v3-4k-reference-to-video",
+            "kling-v3-pro-motion-control",
+            "kling-v3-standard-motion-control"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Multi-shot sequences of up to 15 s in a single generation, with characters kept consistent.",
+              "Séquences multi-plans jusqu’à 15 s en une génération, avec des personnages cohérents."
+            ],
+            [
+              "Native 2K and 4K output at 30 fps with synchronized audio.",
+              "Sortie native 2K et 4K à 30 i/s avec audio synchronisé."
+            ],
+            [
+              "Adds motion control, which transfers movement from a reference video.",
+              "Ajoute le contrôle du mouvement, qui transfère le geste d’une vidéo de référence."
+            ]
+          ],
+          "source": "https://www.cined.com/kling-3-0-ai-video-model-introduced-native-4k-"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Kling V3",
+          "ids": [
+            "kling-v3-standard-text-to-video",
+            "kling-v3-standard-image-to-video",
+            "kling-v3-pro-text-to-video",
+            "kling-v3-pro-image-to-video",
+            "kling-v3-turbo-standard-text-to-video",
+            "kling-v3-turbo-standard-image-to-video",
+            "kling-v3-turbo-pro-text-to-video",
+            "kling-v3-turbo-pro-image-to-video",
+            "kling-v3-4k-text-to-video",
+            "kling-v3-4k-reference-to-video",
+            "kling-v3-pro-motion-control",
+            "kling-v3-standard-motion-control"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://www.cined.com/kling-3-0-ai-video-model-introduced-native-4k-"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Product teaser with sound", "Teaser produit avec son"],
+          "prompt": [
+            "A 10 second ad for a matte black water bottle on a wet stone ledge at sunrise. Slow push-in, then a cut to a close-up of droplets on the cap. Soft ambient birdsong, no voice.",
+            "Une publicité de 10 secondes pour une gourde noir mat posée sur un rebord de pierre mouillé au lever du soleil. Lent travelling avant, puis coupe sur un gros plan des gouttes sur le bouchon. Chants d’oiseaux discrets, sans voix."
+          ],
+          "why": [
+            "Several shots and sound come from one prompt, with no editing step.",
+            "Plusieurs plans et le son viennent d’un seul prompt, sans montage."
+          ]
+        },
+        {
+          "title": ["Copy a dance or a gesture", "Copier une danse ou un geste"],
+          "prompt": [
+            "Use my illustrated character as the starting image and apply the movement from my reference clip of a person waving, keeping the background still.",
+            "Utiliser mon personnage illustré comme image de départ et appliquer le mouvement de mon clip de référence où une personne fait signe de la main, en gardant le fond fixe."
+          ],
+          "why": [
+            "Motion control lets a reference clip drive the movement of your image.",
+            "Le contrôle du mouvement laisse un clip de référence piloter le geste de votre image."
+          ]
+        },
+        {
+          "title": ["Short scene for a film", "Courte scène de film"],
+          "prompt": [
+            "Shot 1: wide shot of a lighthouse in a storm. Shot 2: the keeper climbs the stairs. Shot 3: close-up of his face as he mutters, in English, 'Not tonight.'",
+            "Plan 1 : plan large d’un phare dans la tempête. Plan 2 : le gardien monte l’escalier. Plan 3 : gros plan sur son visage alors qu’il murmure, en anglais, « Not tonight. »"
+          ],
+          "why": [
+            "Up to 15 s with cuts keeps one story beat in a single clip.",
+            "Jusqu’à 15 s avec coupes : un temps fort de l’histoire tient dans un seul clip."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "seedance-2-5",
+          "verdict": [
+            "Seedance 2.5 reaches 30 s per clip and takes many more references.",
+            "Seedance 2.5 atteint 30 s par clip et accepte bien plus de références."
+          ]
+        },
+        {
+          "slug": "veo",
+          "verdict": [
+            "Veo stops at 8 s per clip but is polished and realistic.",
+            "Veo s’arrête à 8 s par clip mais reste soigné et réaliste."
+          ]
+        },
+        {
+          "slug": "wan-3",
+          "verdict": [
+            "Wan 3.0 also does 30 s and takes documents as input.",
+            "Wan 3.0 fait aussi 30 s et accepte des documents en entrée."
+          ]
+        }
+      ],
+      "sources": [
+        "https://www.cined.com/kling-3-0-ai-video-model-introduced-native-4k-",
+        "https://www.mindstudio.ai/models/kling-v3-0-motion-control",
+        "https://en.wikipedia.org/wiki/Kling_AI",
+        "https://morphic.com/fr/ai-glossary/Kling-25",
+        "https://fal.ai/models/fal-ai/kling-video/v3/pro/text-to-video",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+        "https://morphic.com/resources/how-to/kling-3.0-guide"
+      ],
+      "strengths": [
+        [
+          "Cuts between shots on prompts like \"shot 1, 3s\", inside one clip",
+          "Enchaîne les plans sur des prompts comme « shot 1, 3s », dans un seul clip"
+        ],
+        [
+          "Sound, dialogue and ambience generated with the picture (not on Turbo)",
+          "Son, dialogues et ambiance générés avec l’image (sauf Turbo)"
+        ],
+        [
+          "Motion Control versions transfer a real performance to your character",
+          "Les variantes Motion Control transfèrent un vrai mouvement à votre personnage"
+        ],
+        [
+          "Four price levels in one family, from Turbo Standard to 4K",
+          "Quatre niveaux de prix dans une seule famille, de Turbo Standard à la 4K"
+        ]
+      ],
+      "limits": [
+        [
+          "4K costs about two and a half times Pro per second; its reference version needs a starting image",
+          "La 4K coûte environ deux fois et demie le prix de Pro à la seconde ; sa version références exige une image de départ"
+        ],
+        [
+          "Turbo and Motion Control versions have no sound",
+          "Les variantes Turbo et Motion Control n’ont pas de son"
+        ],
+        [
+          "Motion Control length follows your source clip; no quote before launch",
+          "La durée de Motion Control suit votre clip source ; pas de devis avant lancement"
+        ]
+      ],
+      "facts": [
+        ["3 to 15 s per clip", "3 à 15 s par clip"],
+        ["Native sound on Standard, Pro and 4K", "Son natif sur Standard, Pro et 4K"],
+        [
+          "Text to video, image to video, references (4K) and motion control",
+          "Texte vers vidéo, image vers vidéo, références (4K) et contrôle du mouvement"
+        ]
+      ]
+    },
+    {
+      "slug": "kling-o3",
+      "differentiator": [
+        "Kling O3 (3.0 Omni) is built around references: you feed it images, elements, video and a voice and it keeps the same character and voice across scenes. Pick it over plain V3 when consistency across shots matters more than camera control.",
+        "Kling O3 (3.0 Omni) est construit autour des références : vous lui fournissez des images, des éléments, une vidéo et une voix, et il garde le même personnage et la même voix d’une scène à l’autre. Préférez-le à V3 quand la cohérence entre plans compte plus que le contrôle de caméra."
+      ],
+      "signature": [
+        ["Reference-to-video with elements", "Référence vers vidéo avec éléments"],
+        [
+          "Voice binding keeps a speaker consistent",
+          "La liaison de voix garde un locuteur cohérent"
+        ],
+        ["3 to 15 s, multi-shot storyboard", "3 à 15 s, storyboard multi-plans"]
+      ],
+      "releases": [
+        {
+          "version": "Kling 2.6",
+          "date": "2025-12",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "First Kling with native audio, 5 or 10 s clips.",
+              "Premier Kling avec son natif, clips de 5 ou 10 s."
+            ]
+          ],
+          "source": "https://morphic.com/fr/ai-glossary/Kling-25"
+        },
+        {
+          "version": "Kling 3.0 Omni (O3)",
+          "date": "2026-02",
+          "ids": [
+            "kling-o3-standard-text-to-video",
+            "kling-o3-standard-image-to-video",
+            "kling-o3-standard-reference-to-video",
+            "kling-o3-pro-text-to-video",
+            "kling-o3-pro-image-to-video",
+            "kling-o3-pro-reference-to-video",
+            "kling-o3-4k-text-to-video",
+            "kling-o3-4k-reference-to-video",
+            "kling-o3-4k-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Unified prompting where text, images, video and audio are equal inputs.",
+              "Prompt unifié où texte, images, vidéo et audio sont des entrées à égalité."
+            ],
+            [
+              "Voice binding and video-based character references keep identity across scenes.",
+              "La liaison de voix et les références vidéo gardent l’identité d’une scène à l’autre."
+            ],
+            [
+              "Multi-shot storyboard up to 15 s with per-character lip-sync.",
+              "Storyboard multi-plans jusqu’à 15 s avec synchro labiale par personnage."
+            ]
+          ],
+          "source": "https://picsart.com/blog/kling-3-0-omni-integration/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Kling O3 (Omni)",
+          "ids": [
+            "kling-o3-standard-text-to-video",
+            "kling-o3-standard-image-to-video",
+            "kling-o3-standard-reference-to-video",
+            "kling-o3-pro-text-to-video",
+            "kling-o3-pro-image-to-video",
+            "kling-o3-pro-reference-to-video",
+            "kling-o3-4k-text-to-video",
+            "kling-o3-4k-reference-to-video",
+            "kling-o3-4k-image-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "audio"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://picsart.com/blog/kling-3-0-omni-integration/"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Recurring mascot", "Mascotte récurrente"],
+          "prompt": [
+            "Using the attached mascot images as references, show the same fox mascot waving in a bakery, then walking down a rainy street. Keep its red scarf and round glasses identical.",
+            "À partir des images de la mascotte jointes, montrer la même mascotte renard qui salue dans une boulangerie, puis marche dans une rue pluvieuse. Garder l’écharpe rouge et les lunettes rondes identiques."
+          ],
+          "why": [
+            "Reference mode locks the look of a character across shots.",
+            "Le mode référence verrouille l’apparence d’un personnage d’un plan à l’autre."
+          ]
+        },
+        {
+          "title": ["Two-person dialogue", "Dialogue à deux"],
+          "prompt": [
+            "Two friends at a cafe table. The woman says 'Did you book the tickets?' and the man answers 'Yes, we leave at nine.' Natural lip-sync, quiet cafe ambience.",
+            "Deux amis à une table de café. La femme dit « Did you book the tickets? » et l’homme répond « Yes, we leave at nine. » Synchro labiale naturelle, ambiance de café calme."
+          ],
+          "why": [
+            "Per-character lip-sync and voice binding fit conversations.",
+            "La synchro labiale par personnage et la liaison de voix conviennent aux conversations."
+          ]
+        },
+        {
+          "title": ["Start and end frame", "Image de début et de fin"],
+          "prompt": [
+            "Animate from my first frame (empty desk) to my last frame (desk covered in notes) over 8 seconds, with a time-lapse feel and a pencil scratching sound.",
+            "Animer de ma première image (bureau vide) à ma dernière image (bureau couvert de notes) sur 8 secondes, effet accéléré et bruit de crayon qui gratte."
+          ],
+          "why": [
+            "It supports first and last frame control, plus references.",
+            "Il accepte le contrôle des images de début et de fin, plus des références."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "kling-v3",
+          "verdict": [
+            "V3 favors camera and motion control, O3 favors identity and references.",
+            "V3 privilégie caméra et mouvement, O3 privilégie identité et références."
+          ]
+        },
+        {
+          "slug": "seedance-2-5",
+          "verdict": [
+            "Seedance 2.5 takes up to 30 images, 10 videos and 10 audio clips.",
+            "Seedance 2.5 accepte jusqu’à 30 images, 10 vidéos et 10 clips audio."
+          ]
+        },
+        {
+          "slug": "gemini-omni-flash",
+          "verdict": [
+            "Omni Flash edits video through conversation and extends scenes.",
+            "Omni Flash modifie la vidéo par conversation et prolonge les scènes."
+          ]
+        }
+      ],
+      "sources": [
+        "https://picsart.com/blog/kling-3-0-omni-integration/",
+        "https://www.mindstudio.ai/models/kling-video-o3",
+        "https://fal.ai/models/fal-ai/kling-video/o3/pro/reference-to-video",
+        "https://morphic.com/fr/ai-glossary/Kling-25",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        [
+          "References as elements: up to 4 subjects, each with extra angles",
+          "Références sous forme d’éléments : jusqu’à 4 sujets, chacun avec d’autres angles"
+        ],
+        [
+          "Up to 4 scene images to fix the set, light and style",
+          "Jusqu’à 4 images de scène pour fixer le décor, la lumière et le style"
+        ],
+        ["Sound and dialogue generated with the picture", "Son et dialogues générés avec l’image"]
+      ],
+      "limits": [
+        [
+          "Name each reference in the prompt by its tag (@Element1, @Image1)",
+          "Désignez chaque référence dans le prompt par son repère (@Element1, @Image1)"
+        ],
+        [
+          "4K is among the dearest options per second",
+          "La 4K fait partie des options les plus chères à la seconde"
+        ]
+      ],
+      "facts": [
+        ["3 to 15 s per clip, native sound", "3 à 15 s par clip, son natif"],
+        ["Text, image or references to video", "Texte, image ou références vers vidéo"]
+      ]
+    },
+    {
+      "slug": "kling-2",
+      "differentiator": [
+        "This is the previous Kling generation: 5 or 10 s clips from text or image. 2.5 Turbo is silent and cheap for fast iteration, while 2.6 was the first Kling with native dialogue, effects and ambience.",
+        "C’est la génération Kling précédente : des clips de 5 ou 10 s à partir d’un texte ou d’une image. 2.5 Turbo est muet et économique pour itérer vite, tandis que 2.6 a été le premier Kling avec dialogues, effets et ambiances natifs."
+      ],
+      "signature": [
+        ["5 or 10 s clips only", "Clips de 5 ou 10 s seulement"],
+        ["2.6 adds native audio", "2.6 ajoute le son natif"],
+        ["2.5 Turbo: fast and cheap drafts", "2.5 Turbo : brouillons rapides et économiques"]
+      ],
+      "releases": [
+        {
+          "version": "Kling 2.1",
+          "date": "2025-05",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Introduced separate quality modes (standard, pro, master tier names).",
+              "A introduit des modes de qualité distincts (niveaux standard, pro et master)."
+            ]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Kling_AI"
+        },
+        {
+          "version": "Kling 2.6",
+          "date": "2025-12",
+          "ids": ["kling-2.6-pro-text-to-video", "kling-2.6-pro-image-to-video"],
+          "external": false,
+          "changes": [
+            [
+              "First native audio in the Kling family: dialogue, effects and ambience in one pass.",
+              "Premier son natif de la famille Kling : dialogues, effets et ambiances en une passe."
+            ],
+            [
+              "Voice output in English and Chinese, with other languages translated.",
+              "Voix en anglais et en chinois, autres langues traduites."
+            ]
+          ],
+          "source": "https://fal.ai/models/fal-ai/kling-video/v2.6/pro/text-to-video"
+        },
+        {
+          "version": "Kling 2.5 Turbo",
+          "date": null,
+          "ids": ["kling-2.5-turbo-pro-text-to-video", "kling-2.5-turbo-pro-image-to-video"],
+          "external": false,
+          "changes": [
+            [
+              "Faster generation at lower cost with sharper detail and better cinematic movement than 2.1.",
+              "Génération plus rapide et moins chère, avec plus de netteté et de mouvement cinématographique que 2.1."
+            ],
+            [
+              "Text and image to video up to 1080p, no audio.",
+              "Texte et image vers vidéo jusqu’à 1080p, sans audio."
+            ]
+          ],
+          "source": "https://morphic.com/fr/ai-glossary/Kling-25"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Kling 2.6 Pro",
+          "ids": ["kling-2.6-pro-text-to-video", "kling-2.6-pro-image-to-video"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://fal.ai/models/fal-ai/kling-video/v2.6/pro/text-to-video"
+        },
+        {
+          "version": "Kling 2.5 Turbo Pro",
+          "ids": ["kling-2.5-turbo-pro-text-to-video", "kling-2.5-turbo-pro-image-to-video"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video"],
+          "languages": null,
+          "source": "https://morphic.com/fr/ai-glossary/Kling-25"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Fast draft of a shot", "Brouillon rapide d’un plan"],
+          "prompt": [
+            "A drone shot slowly rising over a green valley with a river at golden hour. 5 seconds, no people.",
+            "Un plan de drone qui s’élève lentement au-dessus d’une vallée verte traversée par une rivière à l’heure dorée. 5 secondes, sans personne."
+          ],
+          "why": [
+            "2.5 Turbo is cheap, so you can test an idea before paying for more.",
+            "2.5 Turbo est économique : testez une idée avant de payer davantage."
+          ]
+        },
+        {
+          "title": ["Animate a still photo", "Animer une photo fixe"],
+          "prompt": [
+            "Gently animate this portrait: a slight smile, hair moving in a light breeze, soft background blur. Keep the face unchanged.",
+            "Animer doucement ce portrait : léger sourire, cheveux ondulant dans une légère brise, flou d’arrière-plan doux. Garder le visage inchangé."
+          ],
+          "why": [
+            "Image to video is dependable and keeps the subject stable.",
+            "L’image vers vidéo est fiable et garde le sujet stable."
+          ]
+        },
+        {
+          "title": ["Short spoken line", "Courte réplique parlée"],
+          "prompt": [
+            "A barista hands over a coffee and says in English, 'Careful, it is hot.' Busy cafe sounds in the background.",
+            "Un barista tend un café et dit en anglais : « Careful, it is hot. » Bruits de café animé en arrière-plan."
+          ],
+          "why": [
+            "2.6 generates the voice and sound with the picture.",
+            "2.6 génère la voix et le son avec l’image."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "seedance-2",
+          "verdict": [
+            "Seedance 2.0 reaches 15 s with references and sound.",
+            "Seedance 2.0 atteint 15 s avec références et son."
+          ]
+        },
+        {
+          "slug": "wan-2",
+          "verdict": [
+            "Wan 2.x costs less and adds a video-to-video edit mode.",
+            "Wan 2.x coûte moins cher et ajoute un mode de modification vidéo."
+          ]
+        },
+        {
+          "slug": "veo",
+          "verdict": [
+            "Veo gives realistic shots with sound, but only up to 8 s.",
+            "Veo donne des plans réalistes avec son mais à 8 s maximum."
+          ]
+        }
+      ],
+      "sources": [
+        "https://morphic.com/fr/ai-glossary/Kling-25",
+        "https://fal.ai/models/fal-ai/kling-video/v2.6/pro/text-to-video",
+        "https://fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/text-to-video",
+        "https://en.wikipedia.org/wiki/Kling_AI",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        [
+          "2.5 Turbo Pro is among the cheaper cinematic options per second",
+          "2.5 Turbo Pro compte parmi les options cinéma les moins chères à la seconde"
+        ],
+        [
+          "Fast turnaround, good for drafts and many short clips",
+          "Rendu rapide, bien pour les brouillons et les séries de clips courts"
+        ],
+        [
+          "2.6 Pro adds sound generated with the picture",
+          "2.6 Pro ajoute un son généré avec l’image"
+        ]
+      ],
+      "limits": [
+        ["Only 5 or 10 s per clip", "Seulement 5 ou 10 s par clip"],
+        [
+          "2.5 Turbo is silent: add music or narration afterwards",
+          "2.5 Turbo est muet : ajoutez musique ou narration ensuite"
+        ]
+      ],
+      "facts": [
+        ["5 or 10 s", "5 ou 10 s"],
+        ["Text or image to video", "Texte ou image vers vidéo"],
+        ["Native sound on 2.6 only", "Son natif sur 2.6 uniquement"]
+      ]
+    },
+    {
+      "slug": "seedance-2-5",
+      "differentiator": [
+        "Seedance 2.5 is ByteDance's long-clip model: 30 s in a single run, sound generated with the picture, and a reference budget of up to 30 images, 10 videos and 10 audio clips. It can also be extended turn by turn.",
+        "Seedance 2.5 est le modèle de clips longs de ByteDance : 30 s en une seule génération, son généré avec l’image et un budget de références allant jusqu’à 30 images, 10 vidéos et 10 clips audio. Il peut aussi se prolonger tour par tour."
+      ],
+      "signature": [
+        ["30 s per clip, extendable", "30 s par clip, prolongeable"],
+        ["Up to 30 images, 10 videos, 10 audio", "Jusqu’à 30 images, 10 vidéos, 10 audio"],
+        ["Sound generated with the picture", "Son généré avec l’image"]
+      ],
+      "releases": [
+        {
+          "version": "Seedance 2.0",
+          "date": "2026-02-12",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Up to 15 s clips with native audio and multi-shot scenes from text, image, audio and video.",
+              "Clips jusqu’à 15 s avec audio natif et scènes multi-plans à partir de texte, image, audio et vidéo."
+            ]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Seedance"
+        },
+        {
+          "version": "Seedance 2.5",
+          "date": "2026-07-31",
+          "ids": [
+            "seedance-2-5-text-to-video-basic",
+            "seedance-2-5-image-to-video-basic",
+            "seedance-2-5-reference-to-video-basic",
+            "seedance-2-5-us-text-to-video-private",
+            "seedance-2-5-us-image-to-video-private",
+            "seedance-2-5-us-reference-to-video-private"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Clip length doubles to 30 s in a single run, with multi-turn extension beyond.",
+              "La durée double pour atteindre 30 s en une génération, avec prolongation en plusieurs tours."
+            ],
+            [
+              "Reference budget up to 30 images, 10 videos and 10 audio clips per request.",
+              "Budget de références jusqu’à 30 images, 10 vidéos et 10 clips audio par requête."
+            ],
+            [
+              "Timestamp-specific editing that keeps the visual style.",
+              "Retouche à un instant précis en gardant le style visuel."
+            ]
+          ],
+          "source": "https://technode.com/2026/07/31/bytedance-launches-seedance-2-5-video-generation-model/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Seedance 2.5",
+          "ids": [
+            "seedance-2-5-text-to-video-basic",
+            "seedance-2-5-image-to-video-basic",
+            "seedance-2-5-reference-to-video-basic",
+            "seedance-2-5-us-text-to-video-private",
+            "seedance-2-5-us-image-to-video-private",
+            "seedance-2-5-us-reference-to-video-private"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "audio"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://technode.com/2026/07/31/bytedance-launches-seedance-2-5-video-generation-model/"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Whole scene in one take", "Scène entière en un plan"],
+          "prompt": [
+            "A 25 second scene in a night market: the camera follows a vendor frying noodles, a customer arrives and orders in English, steam rises, crowd noise and sizzling throughout.",
+            "Une scène de 25 secondes dans un marché de nuit : la caméra suit un vendeur qui fait sauter des nouilles, un client arrive et commande en anglais, la vapeur monte, bruit de foule et grésillements en continu."
+          ],
+          "why": [
+            "30 s per clip removes stitching for a full scene.",
+            "Des clips de 30 s évitent le montage bout à bout pour une scène entière."
+          ]
+        },
+        {
+          "title": ["Cast from reference images", "Distribution à partir de références"],
+          "prompt": [
+            "Use my three character reference images and the audio clip of the narrator's voice. The trio walks through a library while the narrator speaks.",
+            "Utiliser mes trois images de référence de personnages et le clip audio de la voix du narrateur. Le trio traverse une bibliothèque pendant que le narrateur parle."
+          ],
+          "why": [
+            "It accepts many references at once for several characters.",
+            "Il accepte beaucoup de références à la fois pour plusieurs personnages."
+          ]
+        },
+        {
+          "title": ["Music-driven clip", "Clip rythmé par la musique"],
+          "prompt": [
+            "A 15 second clip of a skateboarder in an empty parking lot, cuts on each beat of my reference track, warm sunset light.",
+            "Un clip de 15 secondes d’un skateur sur un parking vide, avec une coupe à chaque temps de ma piste de référence, lumière chaude de coucher de soleil."
+          ],
+          "why": [
+            "Audio references can steer timing and tempo shifts.",
+            "Les références audio peuvent guider le rythme et les changements de tempo."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "wan-3",
+          "verdict": [
+            "Wan 3.0 also reaches 30 s and takes documents as input.",
+            "Wan 3.0 atteint aussi 30 s et accepte des documents en entrée."
+          ]
+        },
+        {
+          "slug": "kling-v3",
+          "verdict": [
+            "Kling V3 is shorter (15 s) but adds motion control and a 4K tier.",
+            "Kling V3 est plus court (15 s) mais ajoute le contrôle du mouvement et un niveau 4K."
+          ]
+        },
+        {
+          "slug": "minimax-h3",
+          "verdict": [
+            "MiniMax H3 has open weights and 2K output at 15 s.",
+            "MiniMax H3 a des poids ouverts et une sortie 2K à 15 s."
+          ]
+        }
+      ],
+      "sources": [
+        "https://technode.com/2026/07/31/bytedance-launches-seedance-2-5-video-generation-model/",
+        "https://the-decoder.com/bytedances-seedance-2-5-breaks-the-30-second-barrier-for-ai-video-generation/",
+        "https://en.wikipedia.org/wiki/Seedance",
+        "https://artificialanalysis.ai/video/leaderboard/text-to-video"
+      ],
+      "strengths": [
+        [
+          "Up to 30 s in a single generation, no stitching",
+          "Jusqu’à 30 s en une seule génération, sans raccord"
+        ],
+        ["Sound generated with the picture", "Son généré avec l’image"],
+        [
+          "The only Seedance with a private (zero retention) version",
+          "Le seul Seedance proposé en version privée (aucune conservation)"
+        ]
+      ],
+      "limits": [
+        [
+          "Among the dearest per second; the private US version costs about twice as much",
+          "Parmi les plus chers à la seconde ; la version privée US coûte environ le double"
+        ],
+        [
+          "Public versions refuse photos with a recognizable person",
+          "Les versions publiques refusent les photos où l’on reconnaît une personne"
+        ],
+        [
+          "No reference clips, only images and audio",
+          "Pas de clips de référence, seulement des images et de l’audio"
+        ]
+      ],
+      "facts": [
+        ["4 to 30 s, native sound", "4 à 30 s, son natif"],
+        ["Up to 1080p", "Jusqu’à 1080p"],
+        ["Text, image or references to video", "Texte, image ou références vers vidéo"],
+        [
+          "Public versions anonymized, US versions private",
+          "Versions publiques anonymisées, versions US privées"
+        ]
+      ]
+    },
+    {
+      "slug": "seedance-2",
+      "differentiator": [
+        "Seedance 2.0 turned ByteDance's line into a four-input model (text, image, audio, video) with sound generated jointly with the picture and automatic shot planning. The catalog also keeps cheaper Fast and Mini tiers and the earlier 1.5 Pro.",
+        "Seedance 2.0 a fait de la gamme ByteDance un modèle à quatre entrées (texte, image, audio, vidéo), avec son généré en même temps que l’image et découpage automatique des plans. Le catalogue garde aussi les niveaux Fast et Mini, moins chers, et l’ancien 1.5 Pro."
+      ],
+      "signature": [
+        ["Joint audio and video generation", "Génération conjointe audio et vidéo"],
+        ["Fast and Mini tiers for drafts", "Niveaux Fast et Mini pour les brouillons"],
+        ["Automatic shot decomposition", "Découpage automatique des plans"]
+      ],
+      "releases": [
+        {
+          "version": "Seedance 1.0",
+          "date": "2025-06",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "First Seedance: 1080p text and image to video with multi-shot clips, no audio.",
+              "Premier Seedance : texte et image vers vidéo en 1080p avec clips multi-plans, sans audio."
+            ]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Seedance"
+        },
+        {
+          "version": "Seedance 1.5 Pro",
+          "date": "2025-12",
+          "ids": ["seedance-1-5-pro-text-to-video-basic", "seedance-1-5-pro-image-to-video-basic"],
+          "external": false,
+          "changes": [
+            [
+              "Generates audio and video together in one model, with multilingual lip-sync.",
+              "Génère l’audio et la vidéo ensemble dans un seul modèle, avec synchro labiale multilingue."
+            ],
+            [
+              "Adds sound effects, music and camera moves such as dolly zoom.",
+              "Ajoute effets sonores, musique et mouvements de caméra comme le travelling compensé."
+            ]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Seedance"
+        },
+        {
+          "version": "Seedance 2.0",
+          "date": "2026-02-12",
+          "ids": [
+            "seedance-2-0-text-to-video-basic",
+            "seedance-2-0-image-to-video-basic",
+            "seedance-2-0-reference-to-video-basic",
+            "seedance-2-0-fast-text-to-video-basic",
+            "seedance-2-0-fast-image-to-video-basic",
+            "seedance-2-0-fast-reference-to-video-basic",
+            "seedance-2-0-mini-text-to-video-basic",
+            "seedance-2-0-mini-image-to-video-basic",
+            "seedance-2-0-mini-reference-to-video-basic"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Four input types in one prompt: text, image, audio and video.",
+              "Quatre types d’entrée dans un prompt : texte, image, audio et vidéo."
+            ],
+            [
+              "Clips up to 15 s with multi-shot scene planning and synced audio.",
+              "Clips jusqu’à 15 s avec découpage multi-plans et audio synchronisé."
+            ],
+            [
+              "Fast and Mini tiers trade quality for price.",
+              "Les niveaux Fast et Mini sacrifient de la qualité pour un prix plus bas."
+            ]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Seedance"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Seedance 2.0",
+          "ids": [
+            "seedance-2-0-text-to-video-basic",
+            "seedance-2-0-image-to-video-basic",
+            "seedance-2-0-reference-to-video-basic",
+            "seedance-2-0-fast-text-to-video-basic",
+            "seedance-2-0-fast-image-to-video-basic",
+            "seedance-2-0-fast-reference-to-video-basic",
+            "seedance-2-0-mini-text-to-video-basic",
+            "seedance-2-0-mini-image-to-video-basic",
+            "seedance-2-0-mini-reference-to-video-basic"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "audio", "video"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://seed.bytedance.com/en/seedance2_0"
+        },
+        {
+          "version": "Seedance 1.5 Pro",
+          "ids": ["seedance-1-5-pro-text-to-video-basic", "seedance-1-5-pro-image-to-video-basic"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": ["Multilingual lip-sync", "Synchro labiale multilingue"],
+          "source": "https://en.wikipedia.org/wiki/Seedance"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Dialogue scene", "Scène de dialogue"],
+          "prompt": [
+            "Two colleagues in an elevator. She says, in English, 'Big day tomorrow.' He answers, 'Don't remind me.' Soft elevator hum, 8 seconds.",
+            "Deux collègues dans un ascenseur. Elle dit, en anglais : « Big day tomorrow. » Il répond : « Don’t remind me. » Léger bourdonnement d’ascenseur, 8 secondes."
+          ],
+          "why": [
+            "Voice and picture are generated together, so lips match.",
+            "Voix et image sont générées ensemble : les lèvres suivent la voix."
+          ]
+        },
+        {
+          "title": ["Cheap draft first", "Brouillon économique d’abord"],
+          "prompt": [
+            "A red kite flying over a beach, camera tilting up to the sky. 5 seconds.",
+            "Un cerf-volant rouge au-dessus d’une plage, la caméra bascule vers le ciel. 5 secondes."
+          ],
+          "why": [
+            "Mini and Fast let you test before the full tier.",
+            "Mini et Fast permettent de tester avant le niveau complet."
+          ]
+        },
+        {
+          "title": ["Animate a storyboard frame", "Animer une case de storyboard"],
+          "prompt": [
+            "From this concept frame, create a 10 second shot where the astronaut turns, the visor reflects a distant planet, with a deep low hum.",
+            "À partir de cette image de concept, créer un plan de 10 secondes où l’astronaute se retourne, la visière reflète une planète lointaine, avec un bourdonnement grave."
+          ],
+          "why": [
+            "Image input keeps the look of your concept art.",
+            "L’image en entrée garde le style de votre concept art."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "kling-v3",
+          "verdict": [
+            "Kling V3 adds motion control and a 4K tier.",
+            "Kling V3 ajoute le contrôle du mouvement et un niveau 4K."
+          ]
+        },
+        {
+          "slug": "veo",
+          "verdict": [
+            "Veo is capped at 8 s but very polished.",
+            "Veo est limité à 8 s mais très soigné."
+          ]
+        },
+        {
+          "slug": "wan-2",
+          "verdict": [
+            "Wan 2.x is cheaper and has a video edit mode.",
+            "Wan 2.x est moins cher et a un mode de modification vidéo."
+          ]
+        }
+      ],
+      "sources": [
+        "https://en.wikipedia.org/wiki/Seedance",
+        "https://seed.bytedance.com/en/seedance2_0",
+        "https://www.analyticsvidhya.com/blog/2026/02/what-is-seedance-2-0/",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+        "https://www.together.ai/models/seedance-2-0"
+      ],
+      "strengths": [
+        [
+          "Lip-synced speech in several languages, generated with the picture",
+          "Paroles synchronisées avec les lèvres en plusieurs langues, générées avec l’image"
+        ],
+        [
+          "Reference mode takes several images and audio clips",
+          "Le mode références accepte plusieurs images et extraits audio"
+        ],
+        [
+          "2.0 goes up to 4K; Mini and 1.5 keep costs low",
+          "2.0 monte jusqu’à la 4K ; Mini et 1.5 gardent les coûts bas"
+        ]
+      ],
+      "limits": [
+        [
+          "These public versions refuse photos with a recognizable person",
+          "Ces versions publiques refusent les photos où l’on reconnaît une personne"
+        ],
+        [
+          "No reference clips here, only images and audio",
+          "Pas de clips de référence ici, seulement des images et de l’audio"
+        ]
+      ],
+      "facts": [
+        ["2.0: 4 to 15 s; 1.5 Pro: 4 to 12 s", "2.0 : 4 à 15 s ; 1.5 Pro : 4 à 12 s"],
+        ["Native sound on every version", "Son natif sur toutes les versions"],
+        ["2.0 up to 4K, Fast and Mini up to 720p", "2.0 jusqu’à la 4K, Fast et Mini jusqu’à 720p"]
+      ]
+    },
+    {
+      "slug": "veo",
+      "differentiator": [
+        "Veo is Google's video model, and Veo 3 was the first mainstream model to generate dialogue, effects and ambience with the picture. Veo 3.1 added reference images, first and last frame control and scene extension, but each clip stays at 8 s or less.",
+        "Veo est le modèle vidéo de Google, et Veo 3 a été le premier modèle grand public à générer dialogues, effets et ambiances avec l’image. Veo 3.1 a ajouté les images de référence, le contrôle de la première et de la dernière image et la prolongation de scène, mais chaque clip reste à 8 s ou moins."
+      ],
+      "signature": [
+        ["Sound generated with the picture", "Son généré avec l’image"],
+        ["3.1: up to 3 reference images", "3.1 : jusqu’à 3 images de référence"],
+        ["8 s per clip, extendable", "8 s par clip, prolongeable"]
+      ],
+      "releases": [
+        {
+          "version": "Veo 1",
+          "date": "2024-05",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Announced at Google I/O 2024: 1080p video more than a minute long.",
+              "Annoncé à Google I/O 2024 : vidéo 1080p de plus d’une minute."
+            ]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Veo_(text-to-video_model)"
+        },
+        {
+          "version": "Veo 2",
+          "date": "2024-12",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Better physics understanding and up to 4K resolution, no audio.",
+              "Meilleure compréhension de la physique et jusqu’à 4K, sans audio."
+            ]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Veo_(text-to-video_model)"
+        },
+        {
+          "version": "Veo 3",
+          "date": "2025-05",
+          "ids": [
+            "veo3-fast-text-to-video",
+            "veo3-fast-image-to-video",
+            "veo3-full-text-to-video",
+            "veo3-full-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "First Veo with synchronized dialogue, sound effects and ambient noise.",
+              "Premier Veo avec dialogues, effets sonores et ambiance synchronisés."
+            ],
+            ["Clips capped at 8 s.", "Clips plafonnés à 8 s."]
+          ],
+          "source": "https://en.wikipedia.org/wiki/Veo_(text-to-video_model)"
+        },
+        {
+          "version": "Veo 3.1",
+          "date": "2025-10-15",
+          "ids": [
+            "veo3.1-fast-text-to-video",
+            "veo3.1-fast-image-to-video",
+            "veo3.1-full-text-to-video",
+            "veo3.1-full-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Reference images (up to 3) to keep a character or style across shots.",
+              "Images de référence (jusqu’à 3) pour garder un personnage ou un style d’un plan à l’autre."
+            ],
+            [
+              "First and last frame control and scene extension to a minute or more.",
+              "Contrôle de la première et de la dernière image, prolongation de scène jusqu’à une minute ou plus."
+            ],
+            [
+              "Richer native audio and stronger prompt adherence.",
+              "Audio natif plus riche et meilleure fidélité au prompt."
+            ]
+          ],
+          "source": "https://developers.googleblog.com/en/introducing-veo-3-1-and-new-creative-controls-in-the-gemini-api"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Veo 3.1",
+          "ids": [
+            "veo3.1-fast-text-to-video",
+            "veo3.1-fast-image-to-video",
+            "veo3.1-full-text-to-video",
+            "veo3.1-full-image-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://developers.googleblog.com/en/introducing-veo-3-1-and-new-creative-controls-in-the-gemini-api"
+        },
+        {
+          "version": "Veo 3",
+          "ids": [
+            "veo3-fast-text-to-video",
+            "veo3-fast-image-to-video",
+            "veo3-full-text-to-video",
+            "veo3-full-image-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://en.wikipedia.org/wiki/Veo_(text-to-video_model)"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Realistic establishing shot", "Plan d’ensemble réaliste"],
+          "prompt": [
+            "A rainy Tokyo street at night, neon reflections on the asphalt, a cyclist passes under an umbrella. 8 seconds, rain and distant traffic sound.",
+            "Une rue de Tokyo sous la pluie la nuit, reflets de néons sur l’asphalte, un cycliste passe sous un parapluie. 8 secondes, bruit de pluie et de circulation lointaine."
+          ],
+          "why": [
+            "Veo handles photorealistic light and ambient sound well.",
+            "Veo rend bien la lumière photoréaliste et les sons d’ambiance."
+          ]
+        },
+        {
+          "title": ["Interview-style line", "Réplique façon interview"],
+          "prompt": [
+            "A chef in a kitchen looks at the camera and says, 'The secret is patience.' Soft clatter of pans behind.",
+            "Un chef en cuisine regarde la caméra et dit : « The secret is patience. » Léger bruit de casseroles derrière."
+          ],
+          "why": [
+            "Dialogue and effects come in the same pass.",
+            "Dialogue et effets arrivent dans la même passe."
+          ]
+        },
+        {
+          "title": ["Morph between two frames", "Transition entre deux images"],
+          "prompt": [
+            "Transition from my first frame (a seed) to my last frame (a full sunflower) with a time-lapse feel, gentle piano.",
+            "Transition de ma première image (une graine) à ma dernière image (un tournesol épanoui) en accéléré, piano doux."
+          ],
+          "why": [
+            "3.1 supports first and last frame control.",
+            "3.1 gère le contrôle de la première et de la dernière image."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "seedance-2",
+          "verdict": [
+            "Seedance 2.0 runs to 15 s and takes audio and video inputs.",
+            "Seedance 2.0 va jusqu’à 15 s et accepte l’audio et la vidéo en entrée."
+          ]
+        },
+        {
+          "slug": "kling-v3",
+          "verdict": [
+            "Kling V3 gives longer multi-shot clips and a 4K tier.",
+            "Kling V3 donne des clips multi-plans plus longs et un niveau 4K."
+          ]
+        },
+        {
+          "slug": "grok-imagine-video",
+          "verdict": [
+            "Grok Imagine reaches 15 s but only at 720p.",
+            "Grok Imagine atteint 15 s mais seulement en 720p."
+          ]
+        }
+      ],
+      "sources": [
+        "https://en.wikipedia.org/wiki/Veo_(text-to-video_model)",
+        "https://developers.googleblog.com/en/introducing-veo-3-1-and-new-creative-controls-in-the-gemini-api",
+        "https://deepmind.google/models/veo/",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        [
+          "Sound, speech and effects synced to the picture",
+          "Son, voix et bruitages synchronisés avec l’image"
+        ],
+        ["Veo 3.1 goes up to 4K", "Veo 3.1 monte jusqu’à la 4K"],
+        [
+          "Fast versions cost half the Full price or less",
+          "Les versions Fast coûtent la moitié du prix des versions Full, voire moins"
+        ]
+      ],
+      "limits": [
+        ["8 s at most per clip", "8 s au maximum par clip"],
+        ["Veo 3 image to video is 8 s only", "Veo 3 en image vers vidéo ne fait que 8 s"],
+        ["No reference mode in this catalog", "Pas de mode références dans ce catalogue"]
+      ],
+      "facts": [
+        ["4, 6 or 8 s", "4, 6 ou 8 s"],
+        ["Native sound", "Son natif"],
+        ["Veo 3.1 up to 4K, Veo 3 up to 1080p", "Veo 3.1 jusqu’à la 4K, Veo 3 jusqu’à 1080p"]
+      ]
+    },
+    {
+      "slug": "wan-3",
+      "differentiator": [
+        "Wan 3.0 is Alibaba's closed-weights flagship: up to 30 s at 1080p, and the prompt can include text, images, video, audio and even PDFs or slide decks. It tops the Artificial Analysis text-to-video arena at the time of reading.",
+        "Wan 3.0 est le modèle phare d’Alibaba aux poids fermés : jusqu’à 30 s en 1080p, avec un prompt pouvant mêler texte, images, vidéo, audio et même PDF ou présentations. Il est en tête de l’arène texte vers vidéo d’Artificial Analysis à la date de lecture."
+      ],
+      "signature": [
+        ["Up to 30 s at 1080p", "Jusqu’à 30 s en 1080p"],
+        ["Takes PDFs and slide decks as input", "Accepte PDF et présentations en entrée"],
+        ["Closed weights, unlike Wan 2.2", "Poids fermés, contrairement à Wan 2.2"]
+      ],
+      "releases": [
+        {
+          "version": "Wan 2.7",
+          "date": "2026-04",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Added first and last frame generation, video-to-video editing and subject referencing.",
+              "A ajouté la génération par première et dernière image, la modification vidéo et la référence de sujet."
+            ]
+          ],
+          "source": "https://www.mindstudio.ai/blog/wan-2-7-ai-video-model-features-release-timeline"
+        },
+        {
+          "version": "Wan 3.0",
+          "date": "2026-08-24",
+          "ids": [
+            "wan-3-0-text-to-video",
+            "wan-3-0-image-to-video",
+            "wan-3-0-reference-to-video",
+            "wan-3-0-prime-text-to-video",
+            "wan-3-0-prime-image-to-video",
+            "wan-3-0-prime-reference-to-video",
+            "wan-3-0-pro-text-to-video",
+            "wan-3-0-pro-image-to-video",
+            "wan-3-0-pro-reference-to-video",
+            "wan-3-0-prime-pro-text-to-video",
+            "wan-3-0-prime-pro-image-to-video",
+            "wan-3-0-prime-pro-reference-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Clip length doubles from 15 s to 30 s, up to 1080p.",
+              "La durée double, de 15 s à 30 s, jusqu’à 1080p."
+            ],
+            [
+              "Takes up to 10 images, 5 videos and 5 audio clips, plus PDFs and slides.",
+              "Accepte jusqu’à 10 images, 5 vidéos et 5 clips audio, plus PDF et présentations."
+            ],
+            [
+              "Weights are closed, a break from the open Wan 2.2.",
+              "Poids fermés, une rupture avec le Wan 2.2 ouvert."
+            ]
+          ],
+          "source": "https://datanorth.ai/news/alibaba-launches-wan3-0-video-model"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Wan 3.0",
+          "ids": [
+            "wan-3-0-text-to-video",
+            "wan-3-0-image-to-video",
+            "wan-3-0-reference-to-video",
+            "wan-3-0-prime-text-to-video",
+            "wan-3-0-prime-image-to-video",
+            "wan-3-0-prime-reference-to-video",
+            "wan-3-0-pro-text-to-video",
+            "wan-3-0-pro-image-to-video",
+            "wan-3-0-pro-reference-to-video",
+            "wan-3-0-prime-pro-text-to-video",
+            "wan-3-0-prime-pro-image-to-video",
+            "wan-3-0-prime-pro-reference-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "audio"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://datanorth.ai/news/alibaba-launches-wan3-0-video-model"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Slide deck to explainer", "Présentation vers vidéo explicative"],
+          "prompt": [
+            "Turn the attached quarterly results slides into a 30 second explainer video with a calm English voice-over and simple animated charts.",
+            "Transformer les diapositives de résultats trimestriels jointes en vidéo explicative de 30 secondes avec une voix off anglaise posée et des graphiques animés simples."
+          ],
+          "why": [
+            "Documents as input are a Wan 3.0 first among these models.",
+            "Les documents en entrée sont une nouveauté de Wan 3.0 parmi ces modèles."
+          ]
+        },
+        {
+          "title": ["Long continuous shot", "Long plan continu"],
+          "prompt": [
+            "A single 30 second tracking shot through a flower market at dawn, vendors arranging bouquets, soft chatter and birdsong.",
+            "Un seul travelling de 30 secondes dans un marché aux fleurs à l’aube, des vendeurs qui composent des bouquets, bavardages doux et chants d’oiseaux."
+          ],
+          "why": [
+            "30 s in one clip keeps motion and layout consistent.",
+            "Tenir 30 s en un seul clip garde le mouvement et le décor cohérents."
+          ]
+        },
+        {
+          "title": ["Consistent character ad", "Publicité avec personnage constant"],
+          "prompt": [
+            "Using my two reference images of the runner, show her tying her shoes, then sprinting across a bridge. Same outfit throughout, upbeat drums.",
+            "Avec mes deux images de référence de la coureuse, la montrer qui noue ses chaussures puis sprinte sur un pont. Même tenue du début à la fin, percussions entraînantes."
+          ],
+          "why": [
+            "Reference mode keeps characters and props stable.",
+            "Le mode référence garde personnages et accessoires stables."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "seedance-2-5",
+          "verdict": [
+            "Seedance 2.5 offers 30 s too, with a larger reference budget.",
+            "Seedance 2.5 offre aussi 30 s, avec un budget de références plus large."
+          ]
+        },
+        {
+          "slug": "minimax-h3",
+          "verdict": [
+            "MiniMax H3 has open weights but tops out at 15 s.",
+            "MiniMax H3 a des poids ouverts mais plafonne à 15 s."
+          ]
+        },
+        {
+          "slug": "kling-o3",
+          "verdict": [
+            "Kling O3 is stronger on voice binding for recurring characters.",
+            "Kling O3 est meilleur pour la liaison de voix des personnages récurrents."
+          ]
+        }
+      ],
+      "sources": [
+        "https://datanorth.ai/news/alibaba-launches-wan3-0-video-model",
+        "https://thenextweb.com/news/alibaba-wan3-video-model-after-share-sale",
+        "https://www.mindstudio.ai/blog/wan-2-7-ai-video-model-features-release-timeline",
+        "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        ["Up to 30 s in one clip", "Jusqu’à 30 s en un seul clip"],
+        ["Sound generated with the picture", "Son généré avec l’image"],
+        [
+          "Text, image and reference modes at every level",
+          "Modes texte, image et références à chaque niveau"
+        ]
+      ],
+      "limits": [
+        [
+          "Standard and Prime stop at 1080p; 4K needs Pro or Prime Pro",
+          "Standard et Prime s’arrêtent à 1080p ; la 4K demande Pro ou Prime Pro"
+        ],
+        [
+          "Long clips add up: the price is per second",
+          "Les clips longs coûtent vite cher : le prix est à la seconde"
+        ]
+      ],
+      "facts": [
+        ["2 to 30 s, native sound", "2 à 30 s, son natif"],
+        ["Up to 1080p (Pro levels up to 4K)", "Jusqu’à 1080p (niveaux Pro jusqu’à la 4K)"]
+      ]
+    },
+    {
+      "slug": "wan-2",
+      "differentiator": [
+        "Wan 2.x is Alibaba's earlier line: cheaper than Wan 3.0, with 5 to 15 s clips, references and a video-to-video edit mode. Wan 2.2 was the last open-weights flagship under Apache 2.0, which still makes this family the open reference point.",
+        "Wan 2.x est la gamme antérieure d’Alibaba : moins chère que Wan 3.0, avec des clips de 5 à 15 s, des références et un mode de modification vidéo. Wan 2.2 est le dernier modèle phare à poids ouverts sous Apache 2.0, ce qui fait toujours de cette famille la référence ouverte."
+      ],
+      "signature": [
+        ["Cheaper than Wan 3.0", "Moins cher que Wan 3.0"],
+        ["Video-to-video edit mode (2.7)", "Mode de modification vidéo (2.7)"],
+        ["2.2 is open under Apache 2.0", "2.2 est ouvert sous Apache 2.0"]
+      ],
+      "releases": [
+        {
+          "version": "Wan 2.2",
+          "date": "2025-07",
+          "ids": ["wan-2-2-enhanced-image-to-video"],
+          "external": false,
+          "changes": [
+            [
+              "Last Wan video flagship released with open weights under Apache 2.0.",
+              "Dernier modèle phare vidéo de Wan publié avec poids ouverts sous Apache 2.0."
+            ]
+          ],
+          "source": "https://thenextweb.com/news/alibaba-wan3-video-model-after-share-sale"
+        },
+        {
+          "version": "Wan 2.5 preview",
+          "date": "2025-09",
+          "ids": ["wan-2.5-preview-text-to-video", "wan-2.5-preview-image-to-video"],
+          "external": false,
+          "changes": [
+            [
+              "Preview with optional audio input and 480p to 1080p output.",
+              "Préversion avec entrée audio facultative et sortie de 480p à 1080p."
+            ]
+          ],
+          "source": "https://fal.ai/models/fal-ai/wan-25-preview/text-to-video"
+        },
+        {
+          "version": "Wan 2.6",
+          "date": "2025-12",
+          "ids": [
+            "wan-2.6-text-to-video",
+            "wan-2.6-image-to-video",
+            "wan-2.6-flash-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Clips of 5, 10 or 15 s at up to 1080p with audio sync.",
+              "Clips de 5, 10 ou 15 s jusqu’à 1080p avec synchro audio."
+            ],
+            [
+              "A toggle between single-shot and multi-shot framing.",
+              "Choix entre plan unique et multi-plans."
+            ]
+          ],
+          "source": "https://www.mindstudio.ai/models/wan-2-6"
+        },
+        {
+          "version": "Wan 2.7",
+          "date": null,
+          "ids": [
+            "wan-2-7-text-to-video",
+            "wan-2-7-image-to-video",
+            "wan-2-7-reference-to-video",
+            "wan-2-7-video-to-video",
+            "wan-2-7-enhanced-text-to-video",
+            "wan-2-7-enhanced-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Added first and last frame generation, video-to-video editing and subject referencing.",
+              "A ajouté la génération par première et dernière image, la modification vidéo et la référence de sujet."
+            ],
+            ["Better camera control.", "Meilleur contrôle de la caméra."]
+          ],
+          "source": "https://www.mindstudio.ai/blog/wan-2-7-ai-video-model-features-release-timeline"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Wan 2.7",
+          "ids": [
+            "wan-2-7-text-to-video",
+            "wan-2-7-image-to-video",
+            "wan-2-7-reference-to-video",
+            "wan-2-7-video-to-video",
+            "wan-2-7-enhanced-text-to-video",
+            "wan-2-7-enhanced-image-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://www.mindstudio.ai/blog/wan-2-7-ai-video-model-features-release-timeline"
+        },
+        {
+          "version": "Wan 2.2",
+          "ids": ["wan-2-2-enhanced-image-to-video"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["image"],
+          "outputs": ["video"],
+          "languages": null,
+          "source": "https://thenextweb.com/news/alibaba-wan3-video-model-after-share-sale"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Edit an existing clip", "Modifier un clip existant"],
+          "prompt": [
+            "Take my attached clip and change the weather from sunny to heavy snow, keeping the people and camera movement exactly the same.",
+            "Prendre mon clip joint et passer la météo du soleil à une forte neige, en gardant exactement les mêmes personnes et le même mouvement de caméra."
+          ],
+          "why": ["2.7 has a video-to-video edit mode.", "2.7 a un mode de modification vidéo."]
+        },
+        {
+          "title": ["Budget social clip", "Clip social à petit budget"],
+          "prompt": [
+            "A 10 second vertical clip of a cat jumping onto a bookshelf, playful music, bright home interior.",
+            "Un clip vertical de 10 secondes d’un chat qui saute sur une étagère, musique enjouée, intérieur lumineux."
+          ],
+          "why": ["Lower price per second than Wan 3.0.", "Prix par seconde plus bas que Wan 3.0."]
+        },
+        {
+          "title": ["Start and end frame", "Première et dernière image"],
+          "prompt": [
+            "Animate from my first frame (closed flower bud) to my last frame (open bloom) over 5 seconds.",
+            "Animer de ma première image (bouton de fleur fermé) à ma dernière image (fleur ouverte) sur 5 secondes."
+          ],
+          "why": [
+            "2.7 supports first and last frame.",
+            "2.7 gère la première et la dernière image."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "kling-2",
+          "verdict": [
+            "Kling 2.x is the closest in price, limited to 5 or 10 s.",
+            "Kling 2.x est le plus proche en prix, limité à 5 ou 10 s."
+          ]
+        },
+        {
+          "slug": "seedance-2",
+          "verdict": [
+            "Seedance 2.0 adds audio and video inputs and sound on every tier.",
+            "Seedance 2.0 ajoute les entrées audio et vidéo et le son à chaque niveau."
+          ]
+        },
+        {
+          "slug": "ltx",
+          "verdict": [
+            "LTX is also open weights, with 4K and native audio.",
+            "LTX est aussi à poids ouverts, avec 4K et audio natif."
+          ]
+        }
+      ],
+      "sources": [
+        "https://www.mindstudio.ai/blog/wan-2-7-ai-video-model-features-release-timeline",
+        "https://www.mindstudio.ai/models/wan-2-6",
+        "https://fal.ai/models/fal-ai/wan-25-preview/text-to-video",
+        "https://thenextweb.com/news/alibaba-wan3-video-model-after-share-sale",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        [
+          "2.6 and 2.7 Enhanced generate sound with the picture",
+          "2.6 et 2.7 Enhanced génèrent le son avec l’image"
+        ],
+        [
+          "2.7 Edit changes an existing clip from plain instructions",
+          "2.7 Edit transforme un clip existant à partir de consignes simples"
+        ],
+        [
+          "2.6 Flash is among the cheapest image to video options",
+          "2.6 Flash compte parmi les options image vers vidéo les moins chères"
+        ]
+      ],
+      "limits": [
+        [
+          "Plain 2.7 text and image versions are silent here",
+          "Les versions 2.7 texte et image simples sont muettes ici"
+        ],
+        [
+          "The edit mode shows no price estimate before launch",
+          "Le mode retouche n’affiche pas d’estimation de prix avant lancement"
+        ]
+      ],
+      "facts": [
+        [
+          "5 to 15 s (2.2: 5 or 8 s; 2.5: 5 or 10 s)",
+          "5 à 15 s (2.2 : 5 ou 8 s ; 2.5 : 5 ou 10 s)"
+        ],
+        ["Up to 1080p", "Jusqu’à 1080p"],
+        [
+          "Text, image, references and video to video",
+          "Texte, image, références et vidéo vers vidéo"
+        ]
+      ]
+    },
+    {
+      "slug": "minimax-h3",
+      "differentiator": [
+        "MiniMax H3 is an omni-modal model: text, images, video and audio go in, and video with stereo sound comes out, up to 2K and 15 s with native multi-shot. Its weights are open, and its Max tier leads the Artificial Analysis image-to-video arena at the time of reading.",
+        "MiniMax H3 est un modèle omni-modal : texte, images, vidéo et audio en entrée, vidéo avec son stéréo en sortie, jusqu’à 2K et 15 s avec multi-plans natif. Ses poids sont ouverts, et son niveau Max est en tête de l’arène image vers vidéo d’Artificial Analysis à la date de lecture."
+      ],
+      "signature": [
+        ["Open weights, 33B parameters", "Poids ouverts, 33 Md de paramètres"],
+        ["Stereo sound, up to 2K, 15 s", "Son stéréo, jusqu’à 2K, 15 s"],
+        ["Max tier adds camera keyframes", "Le niveau Max ajoute les images clés de caméra"]
+      ],
+      "releases": [
+        {
+          "version": "Hailuo 02",
+          "date": "2025-06-18",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Native 1080p, triple the parameters and four times the training data of its predecessor.",
+              "1080p natif, trois fois plus de paramètres et quatre fois plus de données d’entraînement."
+            ],
+            [
+              "768p at 6 or 10 s, 1080p at 6 s, no audio.",
+              "768p en 6 ou 10 s, 1080p en 6 s, sans audio."
+            ]
+          ],
+          "source": "https://www.minimax.io/news/minimax-hailuo-02"
+        },
+        {
+          "version": "Hailuo 2.3",
+          "date": "2025-10-28",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Better body motion, stylization (anime, ink wash) and facial micro-expressions.",
+              "Meilleurs mouvements du corps, stylisation (anime, lavis) et micro-expressions."
+            ],
+            [
+              "Adds a cheaper Fast model at the same price tier.",
+              "Ajoute un modèle Fast moins cher."
+            ]
+          ],
+          "source": "https://www.minimax.io/news/minimax-hailuo-23"
+        },
+        {
+          "version": "MiniMax H3",
+          "date": "2026-07-31",
+          "ids": [
+            "minimax-h3-text-to-video",
+            "minimax-h3-image-to-video",
+            "minimax-h3-reference-to-video",
+            "minimax-h3-enhanced-text-to-video",
+            "minimax-h3-enhanced-reference-to-video",
+            "minimax-h3-max-text-to-video",
+            "minimax-h3-max-image-to-video",
+            "minimax-h3-max-reference-to-video",
+            "minimax-h3-max-multi-angle",
+            "minimax-h3-max-turbo-text-to-video",
+            "minimax-h3-max-turbo-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "General-purpose omni-modal model: text, image, video and audio in, one shared framework.",
+              "Modèle omni-modal généraliste : texte, image, vidéo et audio en entrée, dans un cadre commun."
+            ],
+            [
+              "Video with native stereo audio up to 2K and 15 s, with native multi-shot.",
+              "Vidéo avec audio stéréo natif jusqu’à 2K et 15 s, avec multi-plans natif."
+            ],
+            [
+              "Open weights on Hugging Face under the MiniMax H3 Community License.",
+              "Poids ouverts sur Hugging Face sous la licence communautaire MiniMax H3."
+            ]
+          ],
+          "source": "https://www.minimax.io/blog/minimax-h3"
+        }
+      ],
+      "specs": [
+        {
+          "version": "MiniMax H3",
+          "ids": [
+            "minimax-h3-text-to-video",
+            "minimax-h3-image-to-video",
+            "minimax-h3-reference-to-video",
+            "minimax-h3-enhanced-text-to-video",
+            "minimax-h3-enhanced-reference-to-video",
+            "minimax-h3-max-text-to-video",
+            "minimax-h3-max-image-to-video",
+            "minimax-h3-max-reference-to-video",
+            "minimax-h3-max-multi-angle",
+            "minimax-h3-max-turbo-text-to-video",
+            "minimax-h3-max-turbo-image-to-video"
+          ],
+          "params": "33B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "MiniMax H3 Community License",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "audio"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://huggingface.co/MiniMaxAI/MiniMax-H3"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Orbit around a product photo", "Orbite autour d’une photo produit"],
+          "prompt": [
+            "Using the Multi-Angle mode on my sneaker photo: keep the sneaker frozen and orbit the camera 90 degrees to the left, then rise slightly. 6 seconds.",
+            "Avec le mode Multi-Angle sur ma photo de basket : garder la basket figée et faire orbiter la caméra de 90 degrés vers la gauche puis monter légèrement. 6 secondes."
+          ],
+          "why": [
+            "The Max camera mode moves the viewpoint while the scene stays still.",
+            "Le mode caméra Max déplace le point de vue pendant que la scène reste fixe."
+          ]
+        },
+        {
+          "title": ["Character from reference images", "Personnage à partir d’images de référence"],
+          "prompt": [
+            "Use my 3 reference images of the explorer and my 5 second voice clip. She reads a map in a jungle and says 'We are close.'",
+            "Utiliser mes 3 images de référence de l’exploratrice et mon clip de voix de 5 secondes. Elle lit une carte dans la jungle et dit « We are close. »"
+          ],
+          "why": [
+            "It takes up to 9 images, 3 videos and 3 audio clips.",
+            "Il accepte jusqu’à 9 images, 3 vidéos et 3 clips audio."
+          ]
+        },
+        {
+          "title": ["Cheap 768p preview", "Aperçu 768p économique"],
+          "prompt": [
+            "A paper boat drifting down a rainy gutter, close-up, 8 seconds, gentle rain sound.",
+            "Un bateau en papier qui dérive dans un caniveau sous la pluie, gros plan, 8 secondes, bruit de pluie doux."
+          ],
+          "why": [
+            "768p costs well under 2K, good for testing.",
+            "Le 768p coûte bien moins que le 2K, pratique pour tester."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "wan-3",
+          "verdict": [
+            "Wan 3.0 runs to 30 s but has closed weights.",
+            "Wan 3.0 va jusqu’à 30 s mais a des poids fermés."
+          ]
+        },
+        {
+          "slug": "seedance-2-5",
+          "verdict": [
+            "Seedance 2.5 reaches 30 s with a larger reference budget.",
+            "Seedance 2.5 atteint 30 s avec un budget de références plus large."
+          ]
+        },
+        {
+          "slug": "flux-3-video",
+          "verdict": [
+            "FLUX 3 offers 20 s clips with keyframes and a draft mode.",
+            "FLUX 3 offre des clips de 20 s avec images clés et mode brouillon."
+          ]
+        }
+      ],
+      "sources": [
+        "https://www.minimax.io/blog/minimax-h3",
+        "https://huggingface.co/MiniMaxAI/MiniMax-H3",
+        "https://fal.ai/learn/tools/what-is-h3-max-camera-controls",
+        "https://www.minimax.io/news/minimax-hailuo-02",
+        "https://www.minimax.io/news/minimax-hailuo-23",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+        "https://openrouter.ai/minimax/hailuo-3-max"
+      ],
+      "strengths": [
+        [
+          "H3 Max and Turbo run in private mode (no data kept)",
+          "H3 Max et Turbo tournent en mode privé (aucune donnée conservée)"
+        ],
+        [
+          "Turbo is among the cheapest clips with sound",
+          "Turbo fait partie des clips avec son les moins chers"
+        ],
+        [
+          "Multi-Angle makes product spins and bullet-time from one photo",
+          "Multi-Angle crée des rotations produit et du bullet time à partir d’une photo"
+        ]
+      ],
+      "limits": [
+        [
+          "H3 Max stops at 1080p; 2K needs the anonymized H3",
+          "H3 Max s’arrête à 1080p ; la 2K demande H3, anonymisé"
+        ],
+        ["Clips start at 5 s", "Les clips commencent à 5 s"]
+      ],
+      "facts": [
+        ["5 to 15 s, native sound", "5 à 15 s, son natif"],
+        ["H3 Max: 480p to 1080p; H3: 768p or 2K", "H3 Max : 480p à 1080p ; H3 : 768p ou 2K"],
+        ["Max versions private, plain H3 anonymized", "Versions Max privées, H3 simple anonymisé"]
+      ]
+    },
+    {
+      "slug": "grok-imagine-video",
+      "differentiator": [
+        "Grok Imagine is xAI's video model with sound generated in one pass, clips of 1 to 15 s, and a video-to-video editing mode. It tops out at 720p, so it favors speed and length over resolution.",
+        "Grok Imagine est le modèle vidéo de xAI avec son généré en une passe, des clips de 1 à 15 s et un mode de modification vidéo. Il plafonne à 720p : il privilégie la rapidité et la durée plutôt que la résolution."
+      ],
+      "signature": [
+        ["1 to 15 s in 1 s steps", "De 1 à 15 s par pas de 1 s"],
+        ["Dialogue and lip-sync in one pass", "Dialogue et synchro labiale en une passe"],
+        ["Capped at 720p, 24 fps", "Plafonné à 720p, 24 i/s"]
+      ],
+      "releases": [
+        {
+          "version": "Grok Imagine video",
+          "date": "2026-01-28",
+          "ids": [
+            "grok-imagine-text-to-video-private",
+            "grok-imagine-image-to-video-private",
+            "grok-imagine-reference-to-video-private",
+            "grok-imagine-video-to-video-private"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "API launch: text and image to video with native audio, plus video editing (add, remove, restyle).",
+              "Lancement de l’API : texte et image vers vidéo avec audio natif, plus modification vidéo (ajout, retrait, style)."
+            ],
+            ["Up to 720p, 8 s default clips.", "Jusqu’à 720p, clips de 8 s par défaut."]
+          ],
+          "source": "https://x.ai/news/grok-imagine-api"
+        },
+        {
+          "version": "Grok Imagine video 1.5",
+          "date": "2026-05-30",
+          "ids": [
+            "grok-imagine-1-5-text-to-video-private",
+            "grok-imagine-1-5-image-to-video-private",
+            "grok-imagine-1-5-reference-to-video-private",
+            "grok-imagine-1-5-lite-text-to-video",
+            "grok-imagine-1-5-lite-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Maximum clip length rises from 10 s to 15 s.",
+              "La durée maximale passe de 10 s à 15 s."
+            ],
+            [
+              "Native one-pass audio with dialogue, lip-sync, effects and music.",
+              "Audio natif en une passe avec dialogue, synchro labiale, effets et musique."
+            ],
+            [
+              "Better subject preservation; still 720p at 24 fps.",
+              "Meilleure conservation du sujet ; toujours 720p à 24 i/s."
+            ]
+          ],
+          "source": "https://blog.buildfastwithai.com/grok-imagine-video-1-5-review-2026"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Grok Imagine video 1.5",
+          "ids": [
+            "grok-imagine-1-5-text-to-video-private",
+            "grok-imagine-1-5-image-to-video-private",
+            "grok-imagine-1-5-reference-to-video-private",
+            "grok-imagine-1-5-lite-text-to-video",
+            "grok-imagine-1-5-lite-image-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://blog.buildfastwithai.com/grok-imagine-video-1-5-review-2026"
+        },
+        {
+          "version": "Grok Imagine video",
+          "ids": [
+            "grok-imagine-text-to-video-private",
+            "grok-imagine-image-to-video-private",
+            "grok-imagine-reference-to-video-private",
+            "grok-imagine-video-to-video-private"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://x.ai/news/grok-imagine-api"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Quick talking clip", "Clip parlé rapide"],
+          "prompt": [
+            "A cheerful news anchor at a desk says 'Good evening, here is today's weather.' 6 seconds, studio ambience.",
+            "Une présentatrice enjouée à son bureau dit « Good evening, here is today’s weather. » 6 secondes, ambiance de studio."
+          ],
+          "why": [
+            "Dialogue with lip-sync arrives with the picture.",
+            "Dialogue et synchro labiale arrivent avec l’image."
+          ]
+        },
+        {
+          "title": ["Restyle an existing video", "Changer le style d’une vidéo"],
+          "prompt": [
+            "Take my clip and restyle it as a watercolor painting, keeping the motion and framing.",
+            "Prendre mon clip et le transformer en aquarelle, en gardant le mouvement et le cadrage."
+          ],
+          "why": [
+            "The video-to-video mode edits clips.",
+            "Le mode vidéo vers vidéo modifie des clips."
+          ]
+        },
+        {
+          "title": ["15 second social loop", "Boucle sociale de 15 secondes"],
+          "prompt": [
+            "A neon-lit ramen counter, steam rising, a chef flips noodles, 15 seconds, sizzling and soft jazz.",
+            "Un comptoir de ramen éclairé au néon, vapeur qui monte, un chef fait sauter les nouilles, 15 secondes, grésillements et jazz doux."
+          ],
+          "why": [
+            "Version 1.5 allows 15 s in one clip.",
+            "La version 1.5 permet 15 s en un seul clip."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "veo",
+          "verdict": [
+            "Veo is sharper at 1080p or more but capped at 8 s.",
+            "Veo est plus net en 1080p ou plus mais plafonné à 8 s."
+          ]
+        },
+        {
+          "slug": "happyhorse",
+          "verdict": [
+            "HappyHorse offers 1080p with 7-language lip-sync.",
+            "HappyHorse offre le 1080p avec synchro labiale en 7 langues."
+          ]
+        },
+        {
+          "slug": "kling-2",
+          "verdict": [
+            "Kling 2.x is limited to 5 or 10 s clips.",
+            "Kling 2.x est limité à des clips de 5 ou 10 s."
+          ]
+        }
+      ],
+      "sources": [
+        "https://x.ai/news/grok-imagine-api",
+        "https://blog.buildfastwithai.com/grok-imagine-video-1-5-review-2026",
+        "https://vercel.com/ai-gateway/models/grok-imagine-video/about",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+        "https://www.buildfastwithai.com/blogs/grok-imagine-video-1-5-review-2026"
+      ],
+      "strengths": [
+        [
+          "Private mode on every version: nothing is kept",
+          "Mode privé sur toutes les versions : rien n’est conservé"
+        ],
+        ["Any length from 1 to 15 s, by the second", "Toute durée de 1 à 15 s, à la seconde près"],
+        [
+          "1.5 Lite is among the cheapest clips with sound",
+          "1.5 Lite fait partie des clips avec son les moins chers"
+        ]
+      ],
+      "limits": [
+        [
+          "1.0 reference mode is silent and stops at 10 s",
+          "Le mode références 1.0 est muet et s’arrête à 10 s"
+        ],
+        [
+          "The edit mode shows no price estimate before launch",
+          "Le mode retouche n’affiche pas d’estimation de prix avant lancement"
+        ]
+      ],
+      "facts": [
+        ["1 to 15 s, native sound", "1 à 15 s, son natif"],
+        ["1.5 up to 1080p, 1.0 up to 720p", "1.5 jusqu’à 1080p, 1.0 jusqu’à 720p"],
+        [
+          "Text, image, references and video to video",
+          "Texte, image, références et vidéo vers vidéo"
+        ]
+      ]
+    },
+    {
+      "slug": "gemini-omni-flash",
+      "differentiator": [
+        "Gemini Omni Flash is Google's any-input, any-output model, focused on video. You can edit a video by chatting, extend a scene in 10 s steps, and draft at 360p before a final pass. It ranks near the top of the image-to-video arena.",
+        "Gemini Omni Flash est le modèle « tout à partir de tout » de Google, centré sur la vidéo. On peut modifier une vidéo en discutant, prolonger une scène par pas de 10 s et faire des brouillons en 360p avant la version finale. Il se classe près du sommet de l’arène image vers vidéo."
+      ],
+      "signature": [
+        ["Edit video by conversation", "Modifier la vidéo par conversation"],
+        ["1.1 extends scenes in 10 s steps", "1.1 prolonge les scènes par pas de 10 s"],
+        ["360p drafts, upscale to 4K", "Brouillons 360p, agrandissement jusqu’à 4K"]
+      ],
+      "releases": [
+        {
+          "version": "Gemini Omni Flash",
+          "date": "2026-05-19",
+          "ids": [
+            "gemini-omni-flash-text-to-video",
+            "gemini-omni-flash-image-to-video",
+            "gemini-omni-flash-reference-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Debuts the Omni family: video from video, audio, images and text, with conversational editing.",
+              "Inaugure la famille Omni : vidéo à partir de vidéo, audio, images et texte, avec modification par conversation."
+            ],
+            ["Audio limited to voice at launch.", "Audio limité à la voix au lancement."]
+          ],
+          "source": "https://mezha.ua/en/news/google-presents-gemini-omni-flash-model-311433/"
+        },
+        {
+          "version": "Gemini Omni 1.1 Flash",
+          "date": "2026-08-27",
+          "ids": [
+            "gemini-omni-flash-1-1-text-to-video",
+            "gemini-omni-flash-1-1-image-to-video",
+            "gemini-omni-flash-1-1-reference-to-video",
+            "gemini-omni-flash-1-1-video-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Scene extension reads 10 s of prior footage instead of the last second.",
+              "La prolongation de scène lit 10 s de séquence au lieu de la dernière seconde."
+            ],
+            [
+              "Extends in 10 s steps up to 40 s, with start and end frame control.",
+              "Prolonge par pas de 10 s jusqu’à 40 s, avec contrôle des images de début et de fin."
+            ],
+            [
+              "360p draft previews, upscale to 1080p or 4K.",
+              "Aperçus 360p, agrandissement en 1080p ou 4K."
+            ]
+          ],
+          "source": "https://www.etvbharat.com/en/technology/google-gemini-omni-1-dot-1-flash-google-flow-enn26082900548"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Gemini Omni 1.1 Flash",
+          "ids": [
+            "gemini-omni-flash-1-1-text-to-video",
+            "gemini-omni-flash-1-1-image-to-video",
+            "gemini-omni-flash-1-1-reference-to-video",
+            "gemini-omni-flash-1-1-video-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "audio"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://deepmind.google/models/gemini-omni/"
+        },
+        {
+          "version": "Gemini Omni Flash",
+          "ids": [
+            "gemini-omni-flash-text-to-video",
+            "gemini-omni-flash-image-to-video",
+            "gemini-omni-flash-reference-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "audio"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://deepmind.google/models/gemini-omni/"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Extend a finished clip", "Prolonger un clip terminé"],
+          "prompt": [
+            "Continue my clip for 10 more seconds: the hiker reaches the summit and the clouds part, same lighting and style.",
+            "Prolonger mon clip de 10 secondes supplémentaires : le randonneur atteint le sommet et les nuages s’écartent, même lumière et même style."
+          ],
+          "why": [
+            "Extension uses the previous 10 s as context.",
+            "La prolongation utilise les 10 s précédentes comme contexte."
+          ]
+        },
+        {
+          "title": ["Change a detail by asking", "Changer un détail en demandant"],
+          "prompt": [
+            "In my clip, change the car color from blue to yellow and make it rain, keep everything else the same.",
+            "Dans mon clip, passer la voiture du bleu au jaune et faire pleuvoir, garder tout le reste identique."
+          ],
+          "why": [
+            "Edits are conversational and build on each other.",
+            "Les modifications sont conversationnelles et s’enchaînent."
+          ]
+        },
+        {
+          "title": ["Loop between two frames", "Boucle entre deux images"],
+          "prompt": [
+            "Animate from my first frame (dawn skyline) to my last frame (the same skyline at night) as a smooth time-lapse.",
+            "Animer de ma première image (skyline à l’aube) à ma dernière image (la même skyline de nuit) en accéléré fluide."
+          ],
+          "why": [
+            "Start and end frame control suits looping effects.",
+            "Le contrôle début et fin convient aux boucles."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "veo",
+          "verdict": [
+            "Veo is the other Google option, with 8 s clips and reference images.",
+            "Veo est l’autre option Google, avec des clips de 8 s et des images de référence."
+          ]
+        },
+        {
+          "slug": "seedance-2-5",
+          "verdict": [
+            "Seedance 2.5 makes 30 s clips and takes more references.",
+            "Seedance 2.5 fait des clips de 30 s et accepte plus de références."
+          ]
+        },
+        {
+          "slug": "runway",
+          "verdict": [
+            "Runway Gen-4.5 focuses on controlled camera work and is silent.",
+            "Runway Gen-4.5 se concentre sur la caméra contrôlée et reste muet."
+          ]
+        }
+      ],
+      "sources": [
+        "https://mezha.ua/en/news/google-presents-gemini-omni-flash-model-311433/",
+        "https://www.etvbharat.com/en/technology/google-gemini-omni-1-dot-1-flash-google-flow-enn26082900548",
+        "https://deepmind.google/models/gemini-omni/",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        ["One family for generating and editing", "Une seule famille pour générer et retoucher"],
+        ["Version 1.1 goes from 360p to 4K", "La version 1.1 va de 360p à la 4K"],
+        ["Mid-range price per second", "Prix moyen à la seconde"]
+      ],
+      "limits": [
+        ["10 s at most per clip", "10 s au maximum par clip"],
+        [
+          "The catalog offers no sound switch for this family",
+          "Le catalogue ne propose pas de réglage du son pour cette famille"
+        ],
+        [
+          "The edit mode shows no price estimate before launch",
+          "Le mode retouche n’affiche pas d’estimation de prix avant lancement"
+        ]
+      ],
+      "facts": [
+        ["4, 6, 8 or 10 s", "4, 6, 8 ou 10 s"],
+        ["1.1 up to 4K", "1.1 jusqu’à la 4K"],
+        [
+          "Text, image, references and video to video",
+          "Texte, image, références et vidéo vers vidéo"
+        ]
+      ]
+    },
+    {
+      "slug": "happyhorse",
+      "differentiator": [
+        "HappyHorse comes from Alibaba's Taotian Future Life Lab, led by a former technical architect of Kling. It generates video and audio in one pass with lip-sync in seven languages, up to 1080p and 15 s.",
+        "HappyHorse vient du Taotian Future Life Lab d’Alibaba, dirigé par un ancien architecte technique de Kling. Il génère vidéo et audio en une seule passe avec synchro labiale en sept langues, jusqu’à 1080p et 15 s."
+      ],
+      "signature": [
+        ["Lip-sync in 7 languages", "Synchro labiale en 7 langues"],
+        ["Up to 9 reference images (1.1)", "Jusqu’à 9 images de référence (1.1)"],
+        ["Text, image, reference, video edit", "Texte, image, référence, retouche vidéo"]
+      ],
+      "releases": [
+        {
+          "version": "HappyHorse 1.0",
+          "date": "2026-04-27",
+          "ids": [
+            "happyhorse-1-0-text-to-video",
+            "happyhorse-1-0-image-to-video",
+            "happyhorse-1-0-reference-to-video",
+            "happyhorse-1-0-video-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Video and audio in a single forward pass with lip-sync in 7 languages.",
+              "Vidéo et audio en une seule passe avec synchro labiale en 7 langues."
+            ],
+            [
+              "Text, image, reference and video-edit endpoints at 720p and 1080p.",
+              "Modes texte, image, référence et retouche vidéo en 720p et 1080p."
+            ]
+          ],
+          "source": "https://datanorth.ai/news/alibaba-launches-happyhorse-video-model"
+        },
+        {
+          "version": "HappyHorse 1.1",
+          "date": "2026-06-28",
+          "ids": [
+            "happyhorse-1-1-text-to-video",
+            "happyhorse-1-1-image-to-video",
+            "happyhorse-1-1-reference-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Stronger scene coherence, prompt adherence and temporal consistency.",
+              "Meilleure cohérence de scène, fidélité au prompt et stabilité temporelle."
+            ],
+            [
+              "Reference-based generation with up to 9 images, 3 to 15 s clips.",
+              "Génération par références jusqu’à 9 images, clips de 3 à 15 s."
+            ]
+          ],
+          "source": "https://www.cometapi.com/models/aliyun/happy-horse-1-1/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "HappyHorse 1.1",
+          "ids": [
+            "happyhorse-1-1-text-to-video",
+            "happyhorse-1-1-image-to-video",
+            "happyhorse-1-1-reference-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://www.cometapi.com/models/aliyun/happy-horse-1-1/"
+        },
+        {
+          "version": "HappyHorse 1.0",
+          "ids": [
+            "happyhorse-1-0-text-to-video",
+            "happyhorse-1-0-image-to-video",
+            "happyhorse-1-0-reference-to-video",
+            "happyhorse-1-0-video-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["video", "audio"],
+          "languages": [
+            "7 lip-sync languages (EN, ZH, YUE, JA, KO, DE, FR)",
+            "7 langues de synchro labiale (EN, ZH, YUE, JA, KO, DE, FR)"
+          ],
+          "source": "https://datanorth.ai/news/alibaba-launches-happyhorse-video-model"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Multilingual spokesperson", "Porte-parole multilingue"],
+          "prompt": [
+            "A friendly pharmacist at a counter says in French, 'Bonjour, comment puis-je vous aider ?' with a soft smile. 5 seconds.",
+            "Un pharmacien aimable à son comptoir dit en français : « Bonjour, comment puis-je vous aider ? » avec un doux sourire. 5 secondes."
+          ],
+          "why": [
+            "Lip-sync covers seven languages including French.",
+            "La synchro labiale couvre sept langues dont le français."
+          ]
+        },
+        {
+          "title": ["Product in context", "Produit en situation"],
+          "prompt": [
+            "Using my product photo as reference, show the loudspeaker on a kitchen counter at morning light, camera slowly pushing in. 8 seconds.",
+            "Avec ma photo produit comme référence, montrer l’enceinte sur un plan de travail de cuisine à la lumière du matin, caméra qui avance lentement. 8 secondes."
+          ],
+          "why": [
+            "Reference mode keeps the product consistent.",
+            "Le mode référence garde le produit cohérent."
+          ]
+        },
+        {
+          "title": ["Edit an existing clip", "Retoucher un clip"],
+          "prompt": [
+            "Replace the red jacket with a green raincoat in my clip, keep the walking motion.",
+            "Remplacer la veste rouge par un imperméable vert dans mon clip, garder le mouvement de marche."
+          ],
+          "why": [
+            "1.0 offers a video-edit mode.",
+            "La version 1.0 offre un mode de retouche vidéo."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "wan-3",
+          "verdict": [
+            "Wan 3.0 goes to 30 s and takes documents as input.",
+            "Wan 3.0 va jusqu’à 30 s et accepte des documents en entrée."
+          ]
+        },
+        {
+          "slug": "kling-v3",
+          "verdict": [
+            "Kling V3 adds multi-shot, motion control and a 4K tier.",
+            "Kling V3 ajoute multi-plans, contrôle du mouvement et niveau 4K."
+          ]
+        },
+        {
+          "slug": "minimax-h3",
+          "verdict": [
+            "MiniMax H3 reaches 2K with open weights.",
+            "MiniMax H3 atteint le 2K avec poids ouverts."
+          ]
+        }
+      ],
+      "sources": [
+        "https://datanorth.ai/news/alibaba-launches-happyhorse-video-model",
+        "https://www.cometapi.com/models/aliyun/happy-horse-1-1/",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        [
+          "Lip-sync in 7 languages, French included",
+          "Synchronisation labiale en 7 langues, dont le français"
+        ],
+        [
+          "Ranked first on the Artificial Analysis video arena at launch (April 2026)",
+          "Classé premier de l’arène vidéo Artificial Analysis à son lancement (avril 2026)"
+        ],
+        ["Same price for 1.0 and 1.1", "Même prix pour 1.0 et 1.1"]
+      ],
+      "limits": [
+        ["Mid-range price, not a budget option", "Prix moyen, pas une option économique"],
+        ["1080p at most", "1080p au maximum"]
+      ],
+      "facts": [
+        ["3 to 15 s, native sound", "3 à 15 s, son natif"],
+        ["720p or 1080p", "720p ou 1080p"],
+        [
+          "Text, image, references and video to video",
+          "Texte, image, références et vidéo vers vidéo"
+        ]
+      ]
+    },
+    {
+      "slug": "pixverse",
+      "differentiator": [
+        "PixVerse C1 is the company's first model built for film production: action sequences, effects and reference-guided consistency, up to 1080p and 15 s with audio. V5.6 is the older, pricier option.",
+        "PixVerse C1 est le premier modèle de la société conçu pour la production de films : scènes d’action, effets et cohérence guidée par références, jusqu’à 1080p et 15 s avec audio. V5.6 est l’option plus ancienne et plus chère."
+      ],
+      "signature": [
+        ["Action and effects shots", "Scènes d’action et effets"],
+        ["3 to 15 s, 360p to 1080p", "De 3 à 15 s, de 360p à 1080p"],
+        ["First and last frame transitions", "Transitions première et dernière image"]
+      ],
+      "releases": [
+        {
+          "version": "PixVerse V5.6",
+          "date": "2026-01",
+          "ids": [
+            "pixverse-v5.6-text-to-video",
+            "pixverse-v5.6-image-to-video",
+            "pixverse-v5.6-transition"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Text and image to video at 5, 8 or 10 s and up to 1080p, with optional audio.",
+              "Texte et image vers vidéo en 5, 8 ou 10 s jusqu’à 1080p, avec audio facultatif."
+            ],
+            [
+              "Ranked second on the Artificial Analysis arena by 28 February 2026.",
+              "Deuxième de l’arène Artificial Analysis au 28 février 2026."
+            ]
+          ],
+          "source": "https://pixverse.ai/en/blog"
+        },
+        {
+          "version": "PixVerse V6",
+          "date": "2026-03-30",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Better camera work, character performance and multi-shot video with native audio.",
+              "Meilleur travail de caméra, jeu des personnages et vidéo multi-plans avec audio natif."
+            ]
+          ],
+          "source": "https://pixverse.ai/en/blog"
+        },
+        {
+          "version": "PixVerse C1",
+          "date": "2026-04-07",
+          "ids": [
+            "pixverse-c1-text-to-video",
+            "pixverse-c1-image-to-video",
+            "pixverse-c1-reference-to-video",
+            "pixverse-c1-transition"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "First model built for film: action, effects and reference-guided consistency.",
+              "Premier modèle conçu pour le cinéma : action, effets et cohérence par références."
+            ],
+            [
+              "Up to 15 s at 1080p with synchronized audio.",
+              "Jusqu’à 15 s en 1080p avec audio synchronisé."
+            ]
+          ],
+          "source": "https://docs.platform.pixverse.ai/c1-released-2067883m0"
+        }
+      ],
+      "specs": [
+        {
+          "version": "PixVerse C1",
+          "ids": [
+            "pixverse-c1-text-to-video",
+            "pixverse-c1-image-to-video",
+            "pixverse-c1-reference-to-video",
+            "pixverse-c1-transition"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://docs.platform.pixverse.ai/c1-released-2067883m0"
+        },
+        {
+          "version": "PixVerse V5.6",
+          "ids": [
+            "pixverse-v5.6-text-to-video",
+            "pixverse-v5.6-image-to-video",
+            "pixverse-v5.6-transition"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://fal.ai/models/fal-ai/pixverse/v5.6/text-to-video"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Action beat", "Scène d’action"],
+          "prompt": [
+            "A rooftop chase at night: the hero leaps between buildings, sparks as she lands, camera following. 8 seconds, heavy footsteps and wind.",
+            "Une poursuite sur les toits la nuit : l’héroïne saute d’immeuble en immeuble, étincelles à l’atterrissage, caméra qui la suit. 8 secondes, pas lourds et vent."
+          ],
+          "why": [
+            "C1 targets combat and effects shots.",
+            "C1 vise les scènes de combat et d’effets."
+          ]
+        },
+        {
+          "title": ["Transition between two frames", "Transition entre deux images"],
+          "prompt": [
+            "Transition from my first frame (empty beach) to my last frame (beach full of umbrellas), sped-up crowd noise.",
+            "Transition de ma première image (plage vide) à ma dernière image (plage pleine de parasols), bruit de foule accéléré."
+          ],
+          "why": [
+            "Transition mode takes first and last frames.",
+            "Le mode transition accepte une première et une dernière image."
+          ]
+        },
+        {
+          "title": ["Cheap short ad", "Publicité courte économique"],
+          "prompt": [
+            "A smoothie being poured into a glass in slow motion, bright kitchen, 5 seconds, fresh sound.",
+            "Un smoothie versé dans un verre au ralenti, cuisine lumineuse, 5 secondes, son frais."
+          ],
+          "why": [
+            "C1 costs less than V5.6 per second here.",
+            "C1 coûte moins par seconde que V5.6 ici."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "vidu",
+          "verdict": [
+            "Vidu Q3 adds multi-shot scenes and 16 s clips.",
+            "Vidu Q3 ajoute des scènes multi-plans et des clips de 16 s."
+          ]
+        },
+        {
+          "slug": "kling-2",
+          "verdict": [
+            "Kling 2.x is steadier for plain image animation.",
+            "Kling 2.x est plus fiable pour une simple animation d’image."
+          ]
+        },
+        {
+          "slug": "ltx",
+          "verdict": [
+            "LTX is open weights with 4K and native audio.",
+            "LTX est à poids ouverts avec 4K et audio natif."
+          ]
+        }
+      ],
+      "sources": [
+        "https://pixverse.ai/en/blog",
+        "https://docs.platform.pixverse.ai/c1-released-2067883m0",
+        "https://fal.ai/models/fal-ai/pixverse/v5.6/text-to-video",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video",
+        "https://runware.ai/models/pixverse-v5-6"
+      ],
+      "strengths": [
+        [
+          "C1 is among the cheapest clips with sound",
+          "C1 fait partie des clips avec son les moins chers"
+        ],
+        [
+          "Transition mode joins a first and a last frame",
+          "Le mode transition relie une première et une dernière image"
+        ],
+        ["Wide choice of formats, 21:9 included", "Large choix de formats, 21:9 compris"]
+      ],
+      "limits": [
+        ["1080p at most", "1080p au maximum"],
+        [
+          "V5.6 costs more than C1 and does less",
+          "V5.6 coûte plus cher que C1 pour un résultat moindre"
+        ]
+      ],
+      "facts": [
+        ["C1: 3 to 15 s; V5.6: 5 or 8 s", "C1 : 3 à 15 s ; V5.6 : 5 ou 8 s"],
+        ["Native sound", "Son natif"],
+        ["360p to 1080p", "360p à 1080p"]
+      ]
+    },
+    {
+      "slug": "runway",
+      "differentiator": [
+        "Runway Gen-4.5 aims at controlled, realistic motion and was announced at the top of the Artificial Analysis text-to-video arena in December 2025. The catalog versions are silent, so plan your own music or narration.",
+        "Runway Gen-4.5 vise un mouvement réaliste et contrôlé, et a été annoncé en tête de l’arène texte vers vidéo d’Artificial Analysis en décembre 2025. Les versions du catalogue sont muettes : prévoyez votre musique ou votre voix off."
+      ],
+      "signature": [
+        ["Controlled, realistic motion", "Mouvement réaliste et maîtrisé"],
+        ["Gen-4: consistency from one image", "Gen-4 : cohérence à partir d’une image"],
+        ["Silent clips, 2 to 10 s", "Clips muets, de 2 à 10 s"]
+      ],
+      "releases": [
+        {
+          "version": "Runway Gen-4",
+          "date": "2025-03-31",
+          "ids": ["runway-gen4-turbo"],
+          "external": false,
+          "changes": [
+            [
+              "Consistent characters, locations and objects across scenes from a single reference image.",
+              "Personnages, lieux et objets cohérents d’une scène à l’autre à partir d’une seule image de référence."
+            ],
+            [
+              "Gen-4 Turbo is the faster image-to-video variant.",
+              "Gen-4 Turbo est la variante image vers vidéo plus rapide."
+            ]
+          ],
+          "source": "https://techcrunch.com/2025/03/31/runway-releases-an-impressive-new-video-generating-ai-model/"
+        },
+        {
+          "version": "Runway Gen-4.5",
+          "date": "2025-12-01",
+          "ids": ["runway-gen4-5-text", "runway-gen4-5"],
+          "external": false,
+          "changes": [
+            [
+              "Higher quality from better pre- and post-training at the same speed as Gen-4.",
+              "Qualité supérieure grâce à un meilleur entraînement, à la même vitesse que Gen-4."
+            ],
+            [
+              "Announced in first place on the Artificial Analysis text-to-video arena at 1,247 Elo.",
+              "Annoncé premier de l’arène texte vers vidéo d’Artificial Analysis à 1 247 Elo."
+            ]
+          ],
+          "source": "https://runway.com/research/introducing-runway-gen-4.5"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Runway Gen-4.5",
+          "ids": ["runway-gen4-5-text", "runway-gen4-5"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video"],
+          "languages": null,
+          "source": "https://runway.com/research/introducing-runway-gen-4.5"
+        },
+        {
+          "version": "Runway Gen-4 Turbo",
+          "ids": ["runway-gen4-turbo"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["image"],
+          "outputs": ["video"],
+          "languages": null,
+          "source": "https://runway.com/research/introducing-runway-gen-4"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Controlled camera move", "Mouvement de caméra maîtrisé"],
+          "prompt": [
+            "Slow dolly-in on a vintage typewriter on a wooden desk, dust in the light, shallow depth of field. 5 seconds.",
+            "Lent travelling avant sur une machine à écrire ancienne posée sur un bureau en bois, poussière dans la lumière, faible profondeur de champ. 5 secondes."
+          ],
+          "why": [
+            "Runway is strong on realistic motion and framing.",
+            "Runway est solide pour le mouvement et le cadrage réalistes."
+          ]
+        },
+        {
+          "title": ["Animate a still", "Animer une image fixe"],
+          "prompt": [
+            "Animate this product photo: the perfume bottle rotates slowly on a mirrored surface, soft light sweep. Keep the label readable.",
+            "Animer cette photo produit : le flacon de parfum tourne lentement sur une surface miroir, léger balayage de lumière. Garder l’étiquette lisible."
+          ],
+          "why": [
+            "Gen-4 Turbo is made for image-to-video.",
+            "Gen-4 Turbo est conçu pour l’image vers vidéo."
+          ]
+        },
+        {
+          "title": ["Silent b-roll", "Plans de coupe muets"],
+          "prompt": [
+            "A person types on a laptop in a sunlit cafe, steam from a cup in the foreground, 6 seconds.",
+            "Une personne tape sur un portable dans un café ensoleillé, vapeur d’une tasse au premier plan, 6 secondes."
+          ],
+          "why": [
+            "Silent clips are handy under your own voice-over.",
+            "Les clips muets servent bien sous votre voix off."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "veo",
+          "verdict": [
+            "Veo adds native sound but caps at 8 s.",
+            "Veo ajoute le son natif mais plafonne à 8 s."
+          ]
+        },
+        {
+          "slug": "kling-v3",
+          "verdict": [
+            "Kling V3 makes longer clips with sound and a 4K tier.",
+            "Kling V3 fait des clips plus longs avec son et niveau 4K."
+          ]
+        },
+        {
+          "slug": "flux-3-video",
+          "verdict": [
+            "FLUX 3 makes 20 s clips with native audio.",
+            "FLUX 3 fait des clips de 20 s avec audio natif."
+          ]
+        }
+      ],
+      "sources": [
+        "https://runway.com/research/introducing-runway-gen-4.5",
+        "https://runway.com/research/introducing-runway-gen-4",
+        "https://techcrunch.com/2025/03/31/runway-releases-an-impressive-new-video-generating-ai-model/",
+        "https://imagine.art/blogs/runway-gen-4-5-overview",
+        "https://runwayml.com/research/introducing-runway-gen-4.5"
+      ],
+      "strengths": [
+        ["Any length from 2 to 10 s", "Toute durée de 2 à 10 s"],
+        [
+          "Gen-4 Turbo is among the cheaper image to video options",
+          "Gen-4 Turbo compte parmi les options image vers vidéo les moins chères"
+        ]
+      ],
+      "limits": [
+        [
+          "No sound in this catalog: add music or narration afterwards",
+          "Pas de son dans ce catalogue : ajoutez musique ou narration ensuite"
+        ],
+        ["10 s at most", "10 s au maximum"]
+      ],
+      "facts": [
+        ["2 to 10 s", "2 à 10 s"],
+        [
+          "Text or image to video (Turbo: image only)",
+          "Texte ou image vers vidéo (Turbo : image seulement)"
+        ],
+        ["Silent", "Muet"]
+      ]
+    },
+    {
+      "slug": "ltx",
+      "differentiator": [
+        "LTX is Lightricks' open-weights video line with audio generated alongside the picture. LTX-2.5 adds native multi-shot, auto duration and 4K HDR, on a 22B-parameter model that you can also run yourself.",
+        "LTX est la gamme vidéo à poids ouverts de Lightricks, avec l’audio généré en même temps que l’image. LTX-2.5 ajoute le multi-plans natif, la durée automatique et le 4K HDR, sur un modèle de 22 Md de paramètres que vous pouvez aussi exécuter vous-même."
+      ],
+      "signature": [
+        ["Open weights, 22B parameters", "Poids ouverts, 22 Md de paramètres"],
+        ["2.5: native multi-shot, 4K HDR", "2.5 : multi-plans natif, 4K HDR"],
+        ["Fast tier for cheap drafts", "Niveau Fast pour brouillons économiques"]
+      ],
+      "releases": [
+        {
+          "version": "LTX-2",
+          "date": "2026-01",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Open DiT audio-video model, 19B parameters, generating synchronized sound and picture.",
+              "Modèle audio-vidéo DiT ouvert, 19 Md de paramètres, qui génère son et image synchronisés."
+            ]
+          ],
+          "source": "https://huggingface.co/Lightricks/LTX-2"
+        },
+        {
+          "version": "LTX-2.3",
+          "date": "2026-03-05",
+          "ids": [
+            "ltx-2-v2-3-fast-text-to-video",
+            "ltx-2-v2-3-fast-image-to-video",
+            "ltx-2-v2-3-full-text-to-video",
+            "ltx-2-v2-3-full-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Rebuilt VAE for sharper detail, and native portrait 1080x1920 video.",
+              "VAE reconstruit pour des détails plus nets et vidéo portrait native 1080x1920."
+            ],
+            [
+              "Cleaner audio from a new vocoder, up to 4K and 20 s.",
+              "Audio plus propre grâce à un nouveau vocodeur, jusqu’à 4K et 20 s."
+            ]
+          ],
+          "source": "https://rits.shanghai.nyu.edu/ai/ltx-2-3-sharper-video-native-portrait-and-cleaner-audio-in-lightricks-latest-open-source-model/"
+        },
+        {
+          "version": "LTX-2.5",
+          "date": "2026-08",
+          "ids": [
+            "ltx-2-5-fast-text-to-video",
+            "ltx-2-5-fast-image-to-video",
+            "ltx-2-5-pro-text-to-video",
+            "ltx-2-5-pro-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Native multi-shot generation with consistent characters and settings.",
+              "Génération multi-plans native avec personnages et décors cohérents."
+            ],
+            [
+              "Auto duration and native 4K HDR output.",
+              "Durée automatique et sortie native 4K HDR."
+            ],
+            [
+              "22B asymmetric dual-stream transformer, open weights.",
+              "Transformeur asymétrique à double flux de 22 Md de paramètres, poids ouverts."
+            ]
+          ],
+          "source": "https://comfyui-wiki.com/en/news/2026-08-11-ltx-2-5-open-weights-release"
+        }
+      ],
+      "specs": [
+        {
+          "version": "LTX-2.5",
+          "ids": [
+            "ltx-2-5-fast-text-to-video",
+            "ltx-2-5-fast-image-to-video",
+            "ltx-2-5-pro-text-to-video",
+            "ltx-2-5-pro-image-to-video"
+          ],
+          "params": "22B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "LTX-2.x Community License",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "audio"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://comfyui-wiki.com/en/news/2026-08-11-ltx-2-5-open-weights-release"
+        },
+        {
+          "version": "LTX-2.3",
+          "ids": [
+            "ltx-2-v2-3-fast-text-to-video",
+            "ltx-2-v2-3-fast-image-to-video",
+            "ltx-2-v2-3-full-text-to-video",
+            "ltx-2-v2-3-full-image-to-video"
+          ],
+          "params": "22B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "image", "audio", "video"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://rits.shanghai.nyu.edu/ai/ltx-2-3-sharper-video-native-portrait-and-cleaner-audio-in-lightricks-latest-open-source-model/"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Fast storyboard drafts", "Brouillons de storyboard rapides"],
+          "prompt": [
+            "A knight walks into a torchlit hall, then a cut to the throne with a shadow on it. 8 seconds, echoing footsteps.",
+            "Un chevalier entre dans une salle éclairée aux torches, puis coupe sur le trône où se projette une ombre. 8 secondes, pas qui résonnent."
+          ],
+          "why": [
+            "Fast tier and multi-shot keep iterations cheap.",
+            "Le niveau Fast et le multi-plans gardent les itérations bon marché."
+          ]
+        },
+        {
+          "title": ["Vertical video for phones", "Vidéo verticale pour mobile"],
+          "prompt": [
+            "A vertical 1080x1920 clip of a street musician playing violin, passers-by slowing down, live city sound.",
+            "Un clip vertical 1080x1920 d’un musicien de rue au violon, des passants qui ralentissent, bruit de ville en direct."
+          ],
+          "why": [
+            "LTX-2.3 added native portrait training.",
+            "LTX-2.3 a ajouté un entraînement portrait natif."
+          ]
+        },
+        {
+          "title": ["Animate a still with sound", "Animer une image avec son"],
+          "prompt": [
+            "Animate this photo of a campfire: flames flicker, sparks rise, crackling sound and a distant owl.",
+            "Animer cette photo de feu de camp : les flammes vacillent, des étincelles montent, crépitements et hibou au loin."
+          ],
+          "why": [
+            "It generates audio with the picture from a single image.",
+            "Il génère l’audio avec l’image à partir d’une seule image."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "wan-2",
+          "verdict": [
+            "Wan 2.x is cheaper in this catalog, with an edit mode.",
+            "Wan 2.x est moins cher dans ce catalogue, avec un mode de modification."
+          ]
+        },
+        {
+          "slug": "longcat",
+          "verdict": [
+            "LongCat does 30 s but silent and at 720p.",
+            "LongCat fait 30 s mais muet et en 720p."
+          ]
+        },
+        {
+          "slug": "ovi",
+          "verdict": [
+            "Ovi is smaller and open, limited to 5 s clips.",
+            "Ovi est plus petit et ouvert, limité à des clips de 5 s."
+          ]
+        }
+      ],
+      "sources": [
+        "https://comfyui-wiki.com/en/news/2026-08-11-ltx-2-5-open-weights-release",
+        "https://huggingface.co/Lightricks/LTX-2.5",
+        "https://rits.shanghai.nyu.edu/ai/ltx-2-3-sharper-video-native-portrait-and-cleaner-audio-in-lightricks-latest-open-source-model/",
+        "https://huggingface.co/Lightricks/LTX-2",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        ["Up to 20 s on the Fast versions", "Jusqu’à 20 s sur les versions Fast"],
+        ["Up to 2160p (4K) on 2.5 Fast and 2.3", "Jusqu’à 2160p (4K) sur 2.5 Fast et 2.3"],
+        [
+          "2.3 Fast is among the cheapest at 1080p",
+          "2.3 Fast compte parmi les moins chers en 1080p"
+        ],
+        ["2.5 adds native multi-shot scenes", "2.5 ajoute des scènes multiplans natives"]
+      ],
+      "limits": [
+        ["Pro and Full stop at 10 s", "Pro et Full s’arrêtent à 10 s"],
+        ["Clips start at 6 s", "Les clips commencent à 6 s"]
+      ],
+      "facts": [
+        ["6 to 20 s (Fast), 6 to 10 s (Pro, Full)", "6 à 20 s (Fast), 6 à 10 s (Pro, Full)"],
+        ["Native sound", "Son natif"],
+        ["720p to 2160p", "720p à 2160p"]
+      ]
+    },
+    {
+      "slug": "vidu",
+      "differentiator": [
+        "Vidu Q3 from ShengShu generates up to 16 s in one pass at 1080p with dialogue, effects and music, and detects scene boundaries to cut between camera angles itself. A reference-to-video mode arrived in April 2026.",
+        "Vidu Q3 de ShengShu génère jusqu’à 16 s en une passe en 1080p avec dialogues, effets et musique, et détecte lui-même les changements de scène pour couper entre des angles de caméra. Un mode référence vers vidéo est arrivé en avril 2026."
+      ],
+      "signature": [
+        ["16 s in one pass, 1080p", "16 s en une passe, 1080p"],
+        ["Automatic scene cuts", "Coupes de scène automatiques"],
+        ["Pro and Turbo variants", "Variantes Pro et Turbo"]
+      ],
+      "releases": [
+        {
+          "version": "Vidu Q3",
+          "date": "2026-01-30",
+          "ids": ["vidu-q3-text-to-video", "vidu-q3-image-to-video"],
+          "external": false,
+          "changes": [
+            [
+              "Up to 16 s of continuous video at 1080p and 24 fps in a single pass.",
+              "Jusqu’à 16 s de vidéo continue en 1080p à 24 i/s en une passe."
+            ],
+            [
+              "Native audio (dialogue, effects, music) and automatic multi-shot scene detection.",
+              "Audio natif (dialogue, effets, musique) et détection automatique des plans."
+            ],
+            [
+              "Reference-to-video mode added in April 2026.",
+              "Mode référence vers vidéo ajouté en avril 2026."
+            ]
+          ],
+          "source": "https://developer.puter.com/ai/vidu/vidu-q3/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Vidu Q3",
+          "ids": ["vidu-q3-text-to-video", "vidu-q3-image-to-video"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://developer.puter.com/ai/vidu/vidu-q3/"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Small scene with dialogue", "Petite scène dialoguée"],
+          "prompt": [
+            "Two neighbors talk over a garden fence. He says 'Lovely tomatoes this year.' She answers 'Secret is the compost.' Cuts between both faces. 12 seconds.",
+            "Deux voisins discutent par-dessus une clôture de jardin. Il dit « Lovely tomatoes this year. » Elle répond « Secret is the compost. » Coupes entre les deux visages. 12 secondes."
+          ],
+          "why": [
+            "It cuts between angles on its own and syncs lips.",
+            "Il passe seul d’un angle à l’autre et synchronise les lèvres."
+          ]
+        },
+        {
+          "title": ["Start and end frame animation", "Animation début et fin"],
+          "prompt": [
+            "From my first frame (closed door) to my last frame (door open, warm light), slow push-in with creaking sound.",
+            "De ma première image (porte fermée) à ma dernière image (porte ouverte, lumière chaude), lent travelling avant avec grincement."
+          ],
+          "why": [
+            "Image mode accepts configurable start and end frames.",
+            "Le mode image accepte des images de début et de fin."
+          ]
+        },
+        {
+          "title": ["Camera move on a landscape", "Mouvement de caméra sur un paysage"],
+          "prompt": [
+            "A tracking shot along a coastal road at sunset, convertible driving, ocean wind sound, 10 seconds.",
+            "Un travelling le long d’une route côtière au coucher du soleil, une décapotable roule, bruit du vent marin, 10 secondes."
+          ],
+          "why": [
+            "Native camera control handles push-ins and tracking.",
+            "Le contrôle de caméra natif gère les travellings avant et latéraux."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "pixverse",
+          "verdict": [
+            "PixVerse C1 targets action shots at a lower price.",
+            "PixVerse C1 vise les scènes d’action à un prix plus bas."
+          ]
+        },
+        {
+          "slug": "kling-v3",
+          "verdict": [
+            "Kling V3 runs 15 s with 4K and motion control.",
+            "Kling V3 fait 15 s avec 4K et contrôle du mouvement."
+          ]
+        },
+        {
+          "slug": "seedance-2",
+          "verdict": [
+            "Seedance 2.0 accepts references and audio inputs.",
+            "Seedance 2.0 accepte références et entrées audio."
+          ]
+        }
+      ],
+      "sources": [
+        "https://developer.puter.com/ai/vidu/vidu-q3/",
+        "https://www.atlascloud.ai/blog/ai-updates/vidu-q3-ai-video-generator-now-on-atlas-cloud-create-16s-cinematic-with-native-audio-sync",
+        "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+      ],
+      "strengths": [
+        [
+          "Switches camera angles inside one generation",
+          "Change d’angle de caméra dans une seule génération"
+        ],
+        [
+          "Dialogue, effects and music generated with the picture",
+          "Dialogues, bruitages et musique générés avec l’image"
+        ]
+      ],
+      "limits": [
+        ["Mid-range to high price per second", "Prix moyen à élevé à la seconde"],
+        ["No reference mode here", "Pas de mode références ici"]
+      ],
+      "facts": [
+        ["3 to 16 s, native sound", "3 à 16 s, son natif"],
+        ["360p to 1080p", "360p à 1080p"]
+      ]
+    },
+    {
+      "slug": "longcat",
+      "differentiator": [
+        "LongCat-Video from Meituan is a 13.6B open model, MIT-licensed, built for long clips: up to 30 s here and minutes in the research release. It is silent and capped at 720p, which keeps its price per second very low.",
+        "LongCat-Video de Meituan est un modèle ouvert de 13,6 Md de paramètres, sous licence MIT, conçu pour les clips longs : jusqu’à 30 s ici et plusieurs minutes dans la version de recherche. Il est muet et plafonné à 720p, ce qui garde son prix par seconde très bas."
+      ],
+      "signature": [
+        ["Open weights, MIT license", "Poids ouverts, licence MIT"],
+        ["Up to 30 s, 720p, silent", "Jusqu’à 30 s, 720p, muet"],
+        ["One model: text, image, continuation", "Un seul modèle : texte, image, suite"]
+      ],
+      "releases": [
+        {
+          "version": "LongCat-Video",
+          "date": "2025-10-27",
+          "ids": [
+            "longcat-distilled-text-to-video",
+            "longcat-distilled-image-to-video",
+            "longcat-text-to-video",
+            "longcat-image-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Unified text-to-video, image-to-video and video continuation in one 13.6B model.",
+              "Texte vers vidéo, image vers vidéo et prolongation dans un seul modèle de 13,6 Md de paramètres."
+            ],
+            [
+              "Minutes-long output without quality loss, 720p at 30 fps.",
+              "Sortie de plusieurs minutes sans perte de qualité, 720p à 30 i/s."
+            ],
+            [
+              "Distilled variant for faster, cheaper generation.",
+              "Variante distillée pour une génération plus rapide et moins chère."
+            ]
+          ],
+          "source": "https://www.caixinglobal.com/2025-10-28/tech-brief-oct-28-meituan-releases-open-source-video-generation-model-102376386.html"
+        }
+      ],
+      "specs": [
+        {
+          "version": "LongCat-Video",
+          "ids": [
+            "longcat-distilled-text-to-video",
+            "longcat-distilled-image-to-video",
+            "longcat-text-to-video",
+            "longcat-image-to-video"
+          ],
+          "params": "13.6B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["video"],
+          "languages": null,
+          "source": "https://huggingface.co/meituan-longcat/LongCat-Video"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Long silent b-roll", "Plan de coupe long et muet"],
+          "prompt": [
+            "A 30 second slow drift over a misty pine forest at dawn, no people, calm movement.",
+            "Une lente dérive de 30 secondes au-dessus d’une forêt de pins embrumée à l’aube, sans personne, mouvement calme."
+          ],
+          "why": [
+            "30 s clips at a very low price per second.",
+            "Clips de 30 s à très bas prix par seconde."
+          ]
+        },
+        {
+          "title": ["Animate a concept image", "Animer une image de concept"],
+          "prompt": [
+            "Animate this fantasy castle illustration: clouds drift, banners wave, light changes slowly. 10 seconds.",
+            "Animer cette illustration de château fantastique : les nuages dérivent, les bannières flottent, la lumière change doucement. 10 secondes."
+          ],
+          "why": [
+            "Image to video at 720p is cheap for drafts.",
+            "L’image vers vidéo en 720p est économique pour les brouillons."
+          ]
+        },
+        {
+          "title": ["Test an idea cheaply", "Tester une idée à petit prix"],
+          "prompt": [
+            "A toy train circling a Christmas tree, camera low, warm lights, 5 seconds.",
+            "Un petit train circulant autour d’un sapin de Noël, caméra basse, lumières chaudes, 5 secondes."
+          ],
+          "why": [
+            "The distilled version trades quality for speed.",
+            "La version distillée sacrifie de la qualité pour la vitesse."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "ltx",
+          "verdict": [
+            "LTX adds native audio and 4K but costs more.",
+            "LTX ajoute l’audio natif et le 4K mais coûte plus cher."
+          ]
+        },
+        {
+          "slug": "wan-2",
+          "verdict": [
+            "Wan 2.x gives 1080p and sound on some versions.",
+            "Wan 2.x donne le 1080p et du son sur certaines versions."
+          ]
+        },
+        {
+          "slug": "ovi",
+          "verdict": [
+            "Ovi adds sound but only 5 s clips.",
+            "Ovi ajoute le son mais seulement des clips de 5 s."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/meituan-longcat/LongCat-Video",
+        "https://www.caixinglobal.com/2025-10-28/tech-brief-oct-28-meituan-releases-open-source-video-generation-model-102376386.html"
+      ],
+      "strengths": [
+        [
+          "Distilled is the cheapest video in the catalog per second",
+          "Distilled est la vidéo la moins chère du catalogue à la seconde"
+        ],
+        ["Up to 30 s per clip", "Jusqu’à 30 s par clip"],
+        ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"]
+      ],
+      "limits": [["Silent", "Muet"], ["720p only", "720p seulement"]],
+      "facts": [
+        ["5, 10, 15, 20 or 30 s", "5, 10, 15, 20 ou 30 s"],
+        ["720p, no sound", "720p, sans son"],
+        ["Text or image to video", "Texte ou image vers vidéo"]
+      ]
+    },
+    {
+      "slug": "ovi",
+      "differentiator": [
+        "Ovi from Character.AI was billed as the first open-source video model with native audio, with 11B parameters and an Apache 2.0 license. It makes short 5 s clips with speech, effects and ambience from one image and a prompt.",
+        "Ovi de Character.AI a été présenté comme le premier modèle vidéo open source avec audio natif, avec 11 Md de paramètres et une licence Apache 2.0. Il produit de courts clips de 5 s avec voix, effets et ambiance à partir d’une image et d’un prompt."
+      ],
+      "signature": [
+        ["Open weights, Apache 2.0", "Poids ouverts, Apache 2.0"],
+        ["Tagged dialogue and sound prompts", "Dialogue et sons balisés dans le prompt"],
+        ["5 s clips with audio", "Clips de 5 s avec audio"]
+      ],
+      "releases": [
+        {
+          "version": "Ovi",
+          "date": "2025-10-05",
+          "ids": ["ovi-image-to-video"],
+          "external": false,
+          "changes": [
+            [
+              "First open-source video model with native audio, from text or text plus image.",
+              "Premier modèle vidéo open source avec audio natif, à partir d’un texte ou d’un texte et d’une image."
+            ],
+            [
+              "Multi-speaker dialogue with timing controlled by tags in the prompt.",
+              "Dialogues multi-personnages avec timing piloté par des balises dans le prompt."
+            ]
+          ],
+          "source": "https://blog.fal.ai/ovi-is-now-available-on-fal/"
+        },
+        {
+          "version": "Ovi 1.1",
+          "date": "2025-11-10",
+          "ids": [],
+          "external": true,
+          "changes": [
+            ["Adds 10 s videos at 960x960 resolution.", "Ajoute des vidéos de 10 s en 960x960."]
+          ],
+          "source": "https://github.com/character-ai/Ovi"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Ovi",
+          "ids": ["ovi-image-to-video"],
+          "params": "11B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://github.com/character-ai/Ovi"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Talking portrait", "Portrait parlant"],
+          "prompt": [
+            "Animate this portrait: <S>Welcome to our shop, take your time.<E> <AUDCAP>Soft jazz, quiet street sounds<ENDAUDCAP>",
+            "Animer ce portrait : <S>Welcome to our shop, take your time.<E> <AUDCAP>Soft jazz, quiet street sounds<ENDAUDCAP>"
+          ],
+          "why": [
+            "Tags place speech and ambient sound precisely.",
+            "Les balises placent précisément voix et sons d’ambiance."
+          ]
+        },
+        {
+          "title": ["Two-voice exchange", "Échange à deux voix"],
+          "prompt": [
+            "Two travelers at a train platform. <S>Is this the right train?<E> <S>Yes, platform four.<E> <AUDCAP>Station announcements, rolling suitcases<ENDAUDCAP>",
+            "Deux voyageurs sur un quai. <S>Is this the right train?<E> <S>Yes, platform four.<E> <AUDCAP>Station announcements, rolling suitcases<ENDAUDCAP>"
+          ],
+          "why": ["It handles multi-speaker dialogue.", "Il gère les dialogues à plusieurs voix."]
+        },
+        {
+          "title": ["Cheap sound test", "Test sonore économique"],
+          "prompt": [
+            "A rain-soaked window with a cat watching droplets, <AUDCAP>steady rain, distant thunder<ENDAUDCAP>",
+            "Une fenêtre sous la pluie avec un chat qui regarde les gouttes, <AUDCAP>steady rain, distant thunder<ENDAUDCAP>"
+          ],
+          "why": [
+            "Low price per second with native audio.",
+            "Prix par seconde bas avec audio natif."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "ltx",
+          "verdict": [
+            "LTX is larger with 4K, multi-shot and longer clips.",
+            "LTX est plus grand, avec 4K, multi-plans et clips plus longs."
+          ]
+        },
+        {
+          "slug": "longcat",
+          "verdict": ["LongCat makes 30 s silent clips.", "LongCat fait des clips muets de 30 s."]
+        },
+        {
+          "slug": "wan-2",
+          "verdict": [
+            "Wan 2.x makes 5 to 15 s clips up to 1080p.",
+            "Wan 2.x fait des clips de 5 à 15 s jusqu’à 1080p."
+          ]
+        }
+      ],
+      "sources": [
+        "https://github.com/character-ai/Ovi",
+        "https://blog.fal.ai/ovi-is-now-available-on-fal/"
+      ],
+      "strengths": [
+        ["Speech and sound generated with the picture", "Voix et son générés avec l’image"],
+        ["Among the cheapest clips with sound", "Parmi les clips avec son les moins chers"],
+        ["Private mode", "Mode privé"]
+      ],
+      "limits": [
+        ["5 s only, from an image", "5 s seulement, à partir d’une image"],
+        [
+          "Lower resolution than recent commercial models",
+          "Résolution plus basse que les modèles commerciaux récents"
+        ]
+      ],
+      "facts": [
+        ["5 s, native sound", "5 s, son natif"],
+        ["Image to video only", "Image vers vidéo uniquement"]
+      ]
+    },
+    {
+      "slug": "flux-3-video",
+      "differentiator": [
+        "FLUX 3 is Black Forest Labs' first video family: clips of 5 to 20 s with native audio, five modes (text, image, first and last frame, keyframes, extend) and a cheap Draft tier for previews. An open-weight Dev backbone is announced.",
+        "FLUX 3 est la première famille vidéo de Black Forest Labs : clips de 5 à 20 s avec audio natif, cinq modes (texte, image, première et dernière image, images clés, prolongation) et un niveau Draft économique pour les aperçus. Un modèle Dev à poids ouverts est annoncé."
+      ],
+      "signature": [
+        ["5 to 20 s with native audio", "5 à 20 s avec audio natif"],
+        ["1 to 10 timed keyframes", "1 à 10 images clés minutées"],
+        ["Draft tier for cheap previews", "Niveau Draft pour aperçus économiques"]
+      ],
+      "releases": [
+        {
+          "version": "FLUX 3 video",
+          "date": "2026-08-04",
+          "ids": [
+            "flux-3-text-to-video",
+            "flux-3-image-to-video",
+            "flux-3-first-last-frame-to-video"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "First BFL video model: text, image, first and last frame, keyframes and continuation.",
+              "Premier modèle vidéo de BFL : texte, image, première et dernière image, images clés et suite."
+            ],
+            [
+              "Native dialogue, effects and ambience, 5 to 20 s clips up to 1080p here.",
+              "Dialogues, effets et ambiances natifs, clips de 5 à 20 s jusqu’à 1080p ici."
+            ],
+            [
+              "Draft tier from $0.06 per second for quick previews.",
+              "Niveau Draft dès 0,06 $ par seconde pour des aperçus rapides."
+            ]
+          ],
+          "source": "https://pixverse.ai/en/blog/flux-3-review"
+        }
+      ],
+      "specs": [
+        {
+          "version": "FLUX 3 video",
+          "ids": [
+            "flux-3-text-to-video",
+            "flux-3-image-to-video",
+            "flux-3-first-last-frame-to-video"
+          ],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["video", "audio"],
+          "languages": null,
+          "source": "https://bfl.ai/models/flux-3-video"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Scene with keyframes", "Scène avec images clés"],
+          "prompt": [
+            "Use my 3 keyframes (a closed letter, a hand opening it, a smiling face). 12 seconds, soft piano, paper rustle.",
+            "Utiliser mes 3 images clés (une lettre fermée, une main qui l’ouvre, un visage souriant). 12 secondes, piano doux, froissement de papier."
+          ],
+          "why": [
+            "Up to 10 timed keyframes pin the story beats.",
+            "Jusqu’à 10 images clés minutées fixent les temps forts."
+          ]
+        },
+        {
+          "title": ["Continue an existing shot", "Prolonger un plan existant"],
+          "prompt": [
+            "Continue my 4 second clip for 10 more seconds: the dog runs into the field, same light and framing, with joyful barking.",
+            "Prolonger mon clip de 4 secondes avec 10 secondes de plus : le chien court dans le champ, même lumière et même cadrage, avec des aboiements joyeux."
+          ],
+          "why": [
+            "Continuation takes an existing clip with its audio.",
+            "La prolongation prend un clip existant avec son audio."
+          ]
+        },
+        {
+          "title": ["Spoken ad line", "Réplique publicitaire"],
+          "prompt": [
+            "A barista slides a cup across the counter and says 'First one is on us.' 6 seconds, cafe ambience, close-up.",
+            "Un barista fait glisser une tasse sur le comptoir et dit « First one is on us. » 6 secondes, ambiance de café, gros plan."
+          ],
+          "why": [
+            "Dialogue lines in quotes are voiced with the picture.",
+            "Les répliques entre guillemets sont prononcées en même temps que l’image."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "veo",
+          "verdict": ["Veo is polished but limited to 8 s.", "Veo est soigné mais limité à 8 s."]
+        },
+        {
+          "slug": "seedance-2-5",
+          "verdict": [
+            "Seedance 2.5 reaches 30 s with more references.",
+            "Seedance 2.5 atteint 30 s avec plus de références."
+          ]
+        },
+        {
+          "slug": "minimax-h3",
+          "verdict": [
+            "MiniMax H3 is open weights, 15 s at up to 2K.",
+            "MiniMax H3 est à poids ouverts, 15 s jusqu’à 2K."
+          ]
+        }
+      ],
+      "sources": [
+        "https://pixverse.ai/en/blog/flux-3-review",
+        "https://help.scenario.com/articles/2415759054-flux-3-video-the-essentials",
+        "https://bfl.ai/models/flux-3-video",
+        "https://artificialanalysis.ai/video/leaderboard/text-to-video"
+      ],
+      "strengths": [
+        [
+          "Speech, effects and ambience generated with the picture",
+          "Voix, bruitages et ambiance générés avec l’image"
+        ],
+        ["Up to 20 s per clip", "Jusqu’à 20 s par clip"],
+        ["First and last frame mode", "Mode première et dernière image"]
+      ],
+      "limits": [
+        ["Mid-range to high price per second", "Prix moyen à élevé à la seconde"],
+        ["1080p at most", "1080p au maximum"]
+      ],
+      "facts": [
+        ["5, 10, 15 or 20 s, native sound", "5, 10, 15 ou 20 s, son natif"],
+        ["720p or 1080p", "720p ou 1080p"]
+      ]
+    },
+    {
+      "slug": "topaz-video-upscale",
+      "differentiator": [
+        "Topaz Video is not a generator: it enlarges and cleans up a clip you already have with the Starlight diffusion models, up to 4K, and can raise the frame rate. It adds no new content, only detail.",
+        "Topaz Video n’est pas un générateur : il agrandit et nettoie un clip existant avec les modèles de diffusion Starlight, jusqu’en 4K, et peut augmenter la fréquence d’images. Il n’ajoute aucun nouveau contenu, seulement du détail."
+      ],
+      "signature": [
+        ["Diffusion upscaling (Starlight)", "Agrandissement par diffusion (Starlight)"],
+        ["Up to 4K, optional frame interpolation", "Jusqu’à 4K, interpolation facultative"],
+        ["Enhances; never invents scenes", "Améliore sans inventer de scène"]
+      ],
+      "releases": [
+        {
+          "version": "Topaz Video (Starlight)",
+          "date": null,
+          "ids": ["topaz-video-upscale"],
+          "external": false,
+          "changes": [
+            [
+              "Starlight, the first diffusion model for video enhancement, gains 4K export.",
+              "Starlight, premier modèle de diffusion pour l’amélioration vidéo, gagne l’export 4K."
+            ],
+            [
+              "Cloud API offers Starlight Precise 2.5 and Starlight Fast 2.",
+              "L’API cloud propose Starlight Precise 2.5 et Starlight Fast 2."
+            ]
+          ],
+          "source": "https://www.topazlabs.com/starlight"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Topaz Video Upscale",
+          "ids": ["topaz-video-upscale"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["video"],
+          "outputs": ["video"],
+          "languages": null,
+          "source": "https://docs.magnific.com/api-reference/video/video-upscaler-topaz/overview"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Sharpen a 720p generation", "Affiner une génération 720p"],
+          "prompt": [
+            "Upscale my 720p clip to 4K, keep the original look, reduce noise, no added sharpening halos.",
+            "Passer mon clip 720p en 4K, garder le rendu d’origine, réduire le bruit, sans halos de netteté."
+          ],
+          "why": [
+            "It turns a cheap draft into a final-quality file.",
+            "Il transforme un brouillon économique en fichier de qualité finale."
+          ]
+        },
+        {
+          "title": ["Smoother motion", "Mouvement plus fluide"],
+          "prompt": [
+            "Upscale to 2K and raise the frame rate from 24 to 60 fps using frame interpolation.",
+            "Passer en 2K et monter la fréquence d’images de 24 à 60 i/s par interpolation d’images."
+          ],
+          "why": [
+            "Interpolation can create new in-between frames.",
+            "L’interpolation peut créer des images intermédiaires."
+          ]
+        },
+        {
+          "title": ["Restore old footage", "Restaurer d’anciennes images"],
+          "prompt": [
+            "Upscale this old family video to 2K and clean up compression noise while keeping faces natural.",
+            "Passer cette vieille vidéo de famille en 2K et nettoyer le bruit de compression en gardant des visages naturels."
+          ],
+          "why": [
+            "Starlight is built for restoration.",
+            "Starlight est conçu pour la restauration."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "runway",
+          "verdict": [
+            "Runway generates new clips, Topaz only improves finished ones.",
+            "Runway génère de nouveaux clips, Topaz n’améliore que les clips finis."
+          ]
+        },
+        {
+          "slug": "ltx",
+          "verdict": [
+            "LTX has its own spatial and temporal upscalers for its outputs.",
+            "LTX a ses propres outils d’agrandissement spatial et temporel pour ses sorties."
+          ]
+        }
+      ],
+      "sources": [
+        "https://www.topazlabs.com/topaz-video",
+        "https://www.topazlabs.com/starlight",
+        "https://docs.magnific.com/api-reference/video/video-upscaler-topaz/overview"
+      ],
+      "strengths": [
+        ["2x or 4x enlargement of your own clip", "Agrandissement x2 ou x4 de votre propre clip"],
+        [
+          "Keeps your edit, changes only the sharpness",
+          "Garde votre montage, ne change que la netteté"
+        ]
+      ],
+      "limits": [
+        [
+          "Cannot be quoted before launch: the price depends on the clip",
+          "Pas de devis avant lancement : le prix dépend du clip"
+        ],
+        ["Adds no sound and no motion", "N’ajoute ni son ni mouvement"]
+      ],
+      "facts": [["2x or 4x", "x2 ou x4"], ["Length follows your clip", "La durée suit votre clip"]]
+    }
+  ]
+}

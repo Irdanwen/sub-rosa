@@ -1,91 +1,30 @@
 import { useState } from "react";
-import { t, type SiteLocale } from "../lib/i18n";
-import { localizedSiteHref } from "../lib/paths";
+import { t, type SiteLocale } from "../../lib/i18n";
 import {
+  type Category,
+  benchmarksFor,
   categories,
   categoryTitle,
-  contextLine,
   displayName,
-  type Category,
-  type Family,
   families,
   familyBySlug,
   familyName,
   familyPrivacy,
   familyPrivacyLabel,
+  familyReleases,
+  leaderboard,
   modelById,
-  modelTypeLabel,
-  priceBand,
-  priceBandLabel,
   priceLine,
-  privacyLabel,
-  snapshot,
+  releaseDate,
   specLine,
-  traitLabel,
   unitPrice,
-} from "../models/catalog";
-import { defaults, needs } from "../models/needs";
-import { read } from "./docs-content";
+} from "../../models/catalog";
+import { defaults } from "../../models/needs";
+import { read } from "../docs-content";
+import { FamilyCard, NeedList, catalogHref, checkedOn } from "./shared";
 
-/** The page title for a catalog path, in the current language. */
-export function modelCatalogTitle(path: string) {
-  const family = path.startsWith("/models/") ? familyBySlug(path.slice(8)) : undefined;
-  const catalog = t("Model catalog", "Catalogue des modèles");
-  return family ? `${familyName(family)} · ${catalog}` : catalog;
-}
-
-export function ModelCatalog({ path, locale }: { path: string; locale: SiteLocale }) {
-  const slug = path === "/models" ? null : path.slice("/models/".length);
-  if (!slug) return <CatalogHome locale={locale} />;
-  const family = familyBySlug(slug);
-  if (!family) return <FamilyMissing locale={locale} />;
-  return <FamilyPage family={family} locale={locale} />;
-}
-
-const checkedOn = () =>
-  new Intl.DateTimeFormat(t("en", "fr"), { dateStyle: "long" }).format(
-    new Date(`${snapshot.checkedAt}T12:00:00Z`),
-  );
-
-function Badges({ family }: { family: Family }) {
-  const privacy = familyPrivacyLabel(family);
-  const band = priceBand(modelById(family.pick));
-  return (
-    <span className="models-badges">
-      <span className={`models-badge models-privacy-${privacy.kind}`}>{read(privacy.label)}</span>
-      {band && (
-        <span className="models-badge models-price">
-          <span aria-hidden="true">{"●".repeat(band)}</span>
-          <span aria-hidden="true" className="models-price-rest">
-            {"●".repeat(4 - band)}
-          </span>{" "}
-          {read(priceBandLabel(band))}
-        </span>
-      )}
-    </span>
-  );
-}
-
-function FamilyCard({ family, locale }: { family: Family; locale: SiteLocale }) {
-  return (
-    <a className="models-card" href={localizedSiteHref(`/models/${family.slug}`, locale)}>
-      <span className="models-card-kind">
-        {read(categoryTitle(family.category))} · {family.maker}
-      </span>
-      <strong>{familyName(family)}</strong>
-      <p>{read(family.summary)}</p>
-      <Badges family={family} />
-      <span className="models-card-count">
-        {family.ids.length === 1
-          ? t("1 model", "1 modèle")
-          : t(`${family.ids.length} models`, `${family.ids.length} modèles`)}
-      </span>
-    </a>
-  );
-}
-
-function CatalogHome({ locale }: { locale: SiteLocale }) {
-  const href = (target: string) => localizedSiteHref(target, locale);
+export function CatalogHome({ locale }: { locale: SiteLocale }) {
+  const href = (target: string) => catalogHref(target.replace(/^\/models\/?/, ""), locale);
   const [tab, setTab] = useState<Category>("text");
   // The grid follows the kind of work chosen above, so a phone shows twenty
   // families rather than a hundred; the select still opens the whole catalog.
@@ -121,9 +60,18 @@ function CatalogHome({ locale }: { locale: SiteLocale }) {
               "Sub Rosa vous donne accès à des centaines de modèles pour écrire, écouter, dessiner, filmer et composer. Voici à quoi chacun excelle, ce qu’il coûte et comment choisir.",
             )}
           </p>
+          <div className="models-hero-actions">
+            <a className="button primary" href={href("/models/guide")}>
+              {t("Understand what makes them different", "Comprendre ce qui les distingue")}
+            </a>
+            <a className="button" href={href("/models/compare")}>
+              {t("Compare models", "Comparer des modèles")}
+            </a>
+          </div>
           <nav className="models-jump" aria-label={t("On this page", "Sur cette page")}>
+            <a href="#models-kinds">{t("By kind of work", "Par type de travail")}</a>
             <a href="#models-needs">{t("How to choose", "Comment choisir")}</a>
-            <a href="#models-legend">{t("Privacy and price", "Confidentialité et prix")}</a>
+            <a href="#models-recent">{t("New releases", "Nouveautés")}</a>
             <a href="#models-all">{t("Every family", "Toutes les familles")}</a>
           </nav>
           <p className="models-checked">
@@ -136,6 +84,64 @@ function CatalogHome({ locale }: { locale: SiteLocale }) {
       </section>
 
       <div className="wrap models-body">
+        <section className="models-section" aria-labelledby="models-kinds">
+          <p className="eyebrow">{t("Explore", "Explorer")}</p>
+          <h2 id="models-kinds">{t("Eight kinds of work.", "Huit types de travail.")}</h2>
+          <p className="models-lede">
+            {t(
+              "Each kind has its own page: what separates its models, leaderboards, a quality and price chart, and every family side by side.",
+              "Chaque type a sa page : ce qui distingue ses modèles, des classements, un graphique qualité-prix, et toutes les familles côte à côte.",
+            )}
+          </p>
+          <div className="kind-grid">
+            {categories.map((category) => {
+              const members = families.filter((family) => family.category === category.id);
+              const benchmark = benchmarksFor(category.id)[0];
+              const leader = benchmark ? leaderboard(benchmark.id)[0] : undefined;
+              const leaderModel = leader ? modelById(leader.model) : undefined;
+              const newest = members
+                .flatMap((family) =>
+                  familyReleases(family.slug)
+                    .filter((release) => release.inCatalog)
+                    .map((release) => ({ ...release, family })),
+                )
+                .sort((a, b) => b.date.localeCompare(a.date))[0];
+              return (
+                <a className="kind-tile" href={href(`/models/${category.id}`)} key={category.id}>
+                  <strong>{read(category.title)}</strong>
+                  <p>{read(category.description)}</p>
+                  <dl>
+                    <div>
+                      <dt>{t("Families", "Familles")}</dt>
+                      <dd>{members.length}</dd>
+                    </div>
+                    {leaderModel && (
+                      <div>
+                        <dt>{t("Top measured", "En tête mesuré")}</dt>
+                        <dd>{displayName(leaderModel)}</dd>
+                      </div>
+                    )}
+                    {newest && (
+                      <div>
+                        <dt>{t("Newest", "Plus récent")}</dt>
+                        <dd>
+                          {newest.version.startsWith(newest.family.name.split(" ")[0])
+                            ? newest.version
+                            : `${newest.version} (${familyName(newest.family)})`}
+                          , {releaseDate(newest.date)}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  <span className="kind-tile-arrow" aria-hidden="true">
+                    ↗
+                  </span>
+                </a>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="models-section" aria-labelledby="models-defaults">
           <p className="eyebrow">{t("Not sure?", "Vous hésitez ?")}</p>
           <h2 id="models-defaults">
@@ -190,33 +196,7 @@ function CatalogHome({ locale }: { locale: SiteLocale }) {
           <p className="models-tab-description">
             {read(categories.find((category) => category.id === tab)?.description ?? ["", ""])}
           </p>
-          <div className="models-needs">
-            {needs
-              .filter((need) => need.category === tab)
-              .map((need) => {
-                const first = familyBySlug(need.pick);
-                const second = need.alternative ? familyBySlug(need.alternative.slug) : undefined;
-                return (
-                  <article className="models-need" key={need.id}>
-                    <h3>{read(need.question)}</h3>
-                    {first && (
-                      <a className="models-need-pick" href={href(`/models/${first.slug}`)}>
-                        <span>{t("Choose", "Choisissez")}</span>
-                        <strong>{familyName(first)}</strong>
-                        <small>{read(need.why)}</small>
-                      </a>
-                    )}
-                    {second && need.alternative && (
-                      <a className="models-need-alt" href={href(`/models/${second.slug}`)}>
-                        <span>{t("Or", "Ou")}</span>
-                        <strong>{familyName(second)}</strong>
-                        <small>{read(need.alternative.why)}</small>
-                      </a>
-                    )}
-                  </article>
-                );
-              })}
-          </div>
+          <NeedList category={tab} locale={locale} />
         </section>
 
         <section className="models-section" aria-labelledby="models-compare">
@@ -266,6 +246,32 @@ function CatalogHome({ locale }: { locale: SiteLocale }) {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="models-section" aria-labelledby="models-recent">
+          <p className="eyebrow">{t("New releases", "Nouveautés")}</p>
+          <h2 id="models-recent">{t("What came out lately.", "Ce qui est sorti récemment.")}</h2>
+          <ol className="timeline">
+            {families
+              .flatMap((family) =>
+                familyReleases(family.slug)
+                  .filter((release) => release.inCatalog)
+                  .map((release) => ({ ...release, family })),
+              )
+              .sort((a, b) => b.date.localeCompare(a.date))
+              .slice(0, 12)
+              .map((release) => (
+                <li key={`${release.family.slug}-${release.version}`}>
+                  <time dateTime={release.date}>{releaseDate(release.date)}</time>
+                  <a href={href(`/models/${release.family.slug}`)}>
+                    <strong>{release.version}</strong>
+                    <span>
+                      {read(categoryTitle(release.family.category))} · {release.family.maker}
+                    </span>
+                  </a>
+                </li>
+              ))}
+          </ol>
         </section>
 
         <section className="models-section models-legend" aria-labelledby="models-legend">
@@ -389,210 +395,6 @@ function CatalogHome({ locale }: { locale: SiteLocale }) {
           </p>
         </section>
       </div>
-    </div>
-  );
-}
-
-function FamilyMissing({ locale }: { locale: SiteLocale }) {
-  return (
-    <section className="page wrap docs-not-found">
-      <p className="eyebrow">{t("Model catalog", "Catalogue des modèles")}</p>
-      <h1>{t("This model could not be found.", "Ce modèle est introuvable.")}</h1>
-      <p>
-        {t(
-          "It may have been renamed or retired. The catalog lists everything available today.",
-          "Il a peut-être été renommé ou retiré. Le catalogue liste tout ce qui est disponible aujourd’hui.",
-        )}
-      </p>
-      <a className="button primary" href={localizedSiteHref("/models", locale)}>
-        {t("Browse the catalog", "Parcourir le catalogue")}
-      </a>
-    </section>
-  );
-}
-
-function FamilyPage({ family, locale }: { family: Family; locale: SiteLocale }) {
-  const href = (target: string) => localizedSiteHref(target, locale);
-  const pick = modelById(family.pick);
-  const price = priceLine(pick);
-  const context = contextLine(pick);
-  const shared = (other: Family) =>
-    other.needs.filter((need) => family.needs.includes(need)).length;
-  const neighbours = families
-    .filter((other) => other.category === family.category && other.slug !== family.slug)
-    .sort((a, b) => shared(b) - shared(a))
-    .slice(0, 6);
-  const fitsNeeds = needs.filter(
-    (need) => need.pick === family.slug || need.alternative?.slug === family.slug,
-  );
-  return (
-    <div className="wrap models-family">
-      <nav className="docs-breadcrumb" aria-label={t("Breadcrumb", "Fil d’Ariane")}>
-        <a href={href("/models")}>{t("Model catalog", "Catalogue des modèles")}</a>
-        <span aria-hidden="true">/</span>
-        <span>{read(categoryTitle(family.category))}</span>
-      </nav>
-      <header className="models-family-head">
-        <p className="eyebrow">
-          {read(categoryTitle(family.category))} · {family.maker}
-        </p>
-        <h1>{familyName(family)}</h1>
-        <p className="docs-article-intro">{read(family.summary)}</p>
-        <Badges family={family} />
-      </header>
-
-      <div className="models-family-grid">
-        <section className="models-panel">
-          <h2>{t("Where it shines", "Ses points forts")}</h2>
-          <ul>
-            {family.strengths.map((item) => (
-              <li key={item[0]}>{read(item)}</li>
-            ))}
-          </ul>
-        </section>
-        <section className="models-panel">
-          <h2>{t("Think twice when", "À éviter quand")}</h2>
-          <ul>
-            {family.limits.map((item) => (
-              <li key={item[0]}>{read(item)}</li>
-            ))}
-          </ul>
-        </section>
-      </div>
-
-      <section className="models-panel models-pick">
-        <h2>{t("Our pick in this family", "Notre choix dans cette famille")}</h2>
-        {pick && (
-          <>
-            <p className="models-pick-name">
-              <strong>{displayName(pick)}</strong> <code>{pick.id}</code>
-            </p>
-            <ul className="models-facts">
-              {price && <li>{price}</li>}
-              {context && <li>{context}</li>}
-              {pick.seconds && !family.facts.some(([en]) => /\d s\b/.test(en)) && (
-                <li>
-                  {pick.seconds[0] === pick.seconds[1]
-                    ? t(`Clips of ${pick.seconds[0]} s`, `Plans de ${pick.seconds[0]} s`)
-                    : t(
-                        `Clips from ${pick.seconds[0]} to ${pick.seconds[1]} s`,
-                        `Plans de ${pick.seconds[0]} à ${pick.seconds[1]} s`,
-                      )}
-                </li>
-              )}
-              {pick.audio && !family.facts.some(([en]) => /sound|audio/i.test(en)) && (
-                <li>{t("Can add its own sound", "Peut ajouter son propre son")}</li>
-              )}
-              {(pick.traits ?? []).map((trait) =>
-                traitLabel[trait] ? <li key={trait}>{read(traitLabel[trait])}</li> : null,
-              )}
-              {family.facts.map((item) => (
-                <li key={item[0]}>{read(item)}</li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
-
-      {family.variants && family.variants.length > 0 && (
-        <section className="models-panel">
-          <h2>{t("Other versions worth knowing", "Autres versions à connaître")}</h2>
-          <dl className="models-variants">
-            {family.variants.map((variant) => {
-              const model = modelById(variant.id);
-              return (
-                <div key={variant.id}>
-                  <dt>{model ? displayName(model) : variant.id}</dt>
-                  <dd>{read(variant.note)}</dd>
-                </div>
-              );
-            })}
-          </dl>
-        </section>
-      )}
-
-      {fitsNeeds.length > 0 && (
-        <section className="models-panel">
-          <h2>{t("Recommended for", "Recommandé pour")}</h2>
-          <ul>
-            {fitsNeeds.map((need) => (
-              <li key={need.id}>{read(need.question)}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <details className="models-panel models-all-ids">
-        <summary>
-          {family.ids.length === 1
-            ? t("The model in this family", "Le modèle de cette famille")
-            : t(
-                `All ${family.ids.length} models in this family`,
-                `Les ${family.ids.length} modèles de cette famille`,
-              )}
-        </summary>
-        <div className="models-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">{t("Model", "Modèle")}</th>
-                <th scope="col">{t("Use", "Usage")}</th>
-                <th scope="col">{t("Privacy", "Confidentialité")}</th>
-                <th scope="col">{t("Price", "Prix")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {family.ids.map((id) => {
-                const model = modelById(id);
-                if (!model) return null;
-                return (
-                  <tr key={id}>
-                    <td>
-                      <strong>{displayName(model)}</strong>
-                      <code>{id}</code>
-                    </td>
-                    <td>{read(modelTypeLabel[model.type] ?? [model.type, model.type])}</td>
-                    <td>{read(privacyLabel(model.privacy))}</td>
-                    <td>{priceLine(model) ?? t("Shown in the app", "Affiché dans l’app")}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </details>
-
-      {family.url && (
-        <p className="models-learn">
-          <a className="button" href={family.url} rel="noopener noreferrer">
-            {t(
-              `Learn more about ${familyName(family)}`,
-              `En savoir plus sur ${familyName(family)}`,
-            )}{" "}
-            ↗
-          </a>
-        </p>
-      )}
-
-      {neighbours.length > 0 && (
-        <aside className="docs-related">
-          <h2>{t("Compare with", "Comparer avec")}</h2>
-          <div>
-            {neighbours.map((other) => (
-              <a href={href(`/models/${other.slug}`)} key={other.slug}>
-                <strong>{familyName(other)}</strong>
-                <span>{read(other.summary)}</span>
-              </a>
-            ))}
-          </div>
-        </aside>
-      )}
-      <p className="models-footnote">
-        {t(
-          `Prices and availability checked on ${checkedOn()}. Sub Rosa shows the exact price before you start.`,
-          `Prix et disponibilité vérifiés le ${checkedOn()}. Sub Rosa affiche le prix exact avant de lancer.`,
-        )}
-      </p>
     </div>
   );
 }

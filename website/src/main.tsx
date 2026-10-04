@@ -42,6 +42,9 @@ const page = route === "/fr" ? "/" : route.startsWith("/fr/") ? route.slice(3) :
 // The prerendered catalog stays on screen until its chunk is here, then the
 // first render already has it: no empty frame in between.
 if (!redirectToFrench) {
-  if (modelsPath(page.split("?")[0])) loadModelCatalog().then(render, render);
+  if (modelsPath(page.split("?")[0]))
+    loadModelCatalog()
+      .then((catalog) => catalog.prepareCatalogPath(page.split("?")[0], location.search.slice(1)))
+      .then(render, render);
   else render();
 }

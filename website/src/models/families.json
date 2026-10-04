@@ -54,43 +54,6 @@
       "Sub Rosa's default chat model: an open model from Z.ai with strong reasoning and tool use, in private mode.",
       "Le modèle de chat par défaut de Sub Rosa : un modèle ouvert de Z.ai, solide en raisonnement et en usage d’outils, en mode privé."
     ],
-    "strengths": [
-      [
-        "Default in Sub Rosa: strong reasoning, tool use and structured output",
-        "Par défaut dans Sub Rosa : raisonnement, usage d’outils et sortie structurée solides"
-      ],
-      [
-        "Private mode on every version: zero data retention",
-        "Mode privé sur toutes les versions : aucune conservation des données"
-      ],
-      [
-        "1M token context on GLM 5.2 and 5.3, enough for long documents",
-        "Contexte de 1M de jetons sur GLM 5.2 et 5.3, assez pour de longs documents"
-      ],
-      [
-        "Mid-range price for its level; Flash versions cost a fraction of that",
-        "Prix moyen pour son niveau ; les versions Flash coûtent une fraction de ce prix"
-      ]
-    ],
-    "limits": [
-      [
-        "GLM 5.2, 5.1 and 5.3 read text only: attach an image and pick another model",
-        "GLM 5.2, 5.1 et 5.3 ne lisent que le texte : pour une image, prenez un autre modèle"
-      ],
-      [
-        "GLM 5 Turbo and 5V Turbo are anonymized, not private",
-        "GLM 5 Turbo et 5V Turbo sont anonymisés, pas privés"
-      ]
-    ],
-    "facts": [
-      ["GLM 5.2: 1M token context, text input", "GLM 5.2 : contexte de 1M de jetons, entrée texte"],
-      [
-        "Tool calling, reasoning effort, JSON schema output",
-        "Appel d’outils, effort de raisonnement, sortie en schéma JSON"
-      ],
-      ["Images: GLM 5.3 Flash and GLM 5V Turbo", "Images : GLM 5.3 Flash et GLM 5V Turbo"],
-      ["Open weights (MIT license) for GLM 5.2", "Poids ouverts (licence MIT) pour GLM 5.2"]
-    ],
     "needs": [
       "everyday-writing",
       "deep-reasoning",
@@ -98,12 +61,7 @@
       "long-documents",
       "maximum-privacy"
     ],
-    "url": "https://huggingface.co/zai-org/GLM-5.2",
-    "sources": [
-      "https://rits.shanghai.nyu.edu/ai/glm-5-2-z-ais-open-weights-coder-beats-gpt-5-5-at-1-6-the-cost/",
-      "https://datanorth.ai/news/z-ai-releases-glm-5-3",
-      "https://huggingface.co/zai-org/GLM-5.2"
-    ]
+    "url": "https://huggingface.co/zai-org/GLM-5.2"
   },
   {
     "slug": "kimi",
@@ -147,49 +105,8 @@
       "Sub Rosa's suggested alternate: an open model that excels at long tool-driven tasks and reads images, in private mode.",
       "L’alternative suggérée par Sub Rosa : un modèle ouvert excellent sur les longues tâches avec outils, qui lit les images, en mode privé."
     ],
-    "strengths": [
-      [
-        "Sub Rosa switches to K2.6 when you attach an image",
-        "Sub Rosa bascule sur K2.6 quand vous joignez une image"
-      ],
-      [
-        "Ranked the leading open-weight model by Artificial Analysis at release",
-        "Classé meilleur modèle à poids ouverts par Artificial Analysis à sa sortie"
-      ],
-      [
-        "Excels at long tasks that chain many tool calls",
-        "Excelle sur les longues tâches qui enchaînent les appels d’outils"
-      ],
-      [
-        "Private mode, and a version listed as end-to-end encrypted",
-        "Mode privé, et une version annoncée chiffrée de bout en bout"
-      ]
-    ],
-    "limits": [
-      [
-        "K3 and K3 Fast are among the dearer open models per token",
-        "K3 et K3 Fast comptent parmi les modèles ouverts les plus chers au jeton"
-      ],
-      ["K2.6 context stops at 256K tokens", "Le contexte de K2.6 s’arrête à 256K jetons"]
-    ],
-    "facts": [
-      [
-        "K2.6: 256K context, vision, tool calling",
-        "K2.6 : contexte de 256K, vision, appel d’outils"
-      ],
-      [
-        "K3: 1M context, several images per message",
-        "K3 : contexte de 1M, plusieurs images par message"
-      ],
-      ["Open weights", "Poids ouverts"]
-    ],
     "needs": ["agent-tools", "read-image", "code", "deep-reasoning", "maximum-privacy"],
-    "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
-    "sources": [
-      "https://artificialanalysis.ai/articles/kimi-k2-6-the-new-leading-open-weights-model",
-      "https://rits.shanghai.nyu.edu/ai/kimi-k3-open-weights-ship-2-8t-parameters-1-4-tb-to-run/",
-      "https://huggingface.co/moonshotai/Kimi-K2.6"
-    ]
+    "url": "https://huggingface.co/moonshotai/Kimi-K2.6"
   },
   {
     "slug": "deepseek",
@@ -234,38 +151,8 @@
       "Low-cost open models with 1M context and good reasoning; V4.1 Flash adds image reading. Pick it to do a lot for very little.",
       "Des modèles ouverts bon marché, contexte de 1M, bon raisonnement ; V4.1 Flash lit aussi les images. Pour faire beaucoup à petit prix."
     ],
-    "strengths": [
-      ["Very low price per token, private mode", "Prix au jeton très bas, mode privé"],
-      [
-        "1M token context on every V4 version",
-        "Contexte de 1M de jetons sur toutes les versions V4"
-      ],
-      [
-        "Tool calling and adjustable reasoning effort",
-        "Appel d’outils et effort de raisonnement réglable"
-      ]
-    ],
-    "limits": [
-      [
-        "Only V4.1 Flash reads images, and its maker says it lags on complex images",
-        "Seul V4.1 Flash lit les images, et son éditeur reconnaît un retard sur les images complexes"
-      ],
-      [
-        "V4.1 Flash is the newest version: prefer it for new work",
-        "V4.1 Flash est la version la plus récente : préférez-la pour tout nouveau travail"
-      ]
-    ],
-    "facts": [
-      ["1M token context (V3.2: 160K)", "Contexte de 1M de jetons (V3.2 : 160K)"],
-      ["Vision on V4.1 Flash only", "Vision sur V4.1 Flash uniquement"],
-      ["Open weights", "Poids ouverts"]
-    ],
     "needs": ["fast-cheap", "code", "long-documents"],
-    "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
-    "sources": [
-      "https://thenextweb.com/news/deepseek-v4-1-flash-launch-v4-pro-retired-price-cut",
-      "https://propakistani.pk/2026/09/11/deepseek-v4-1-flash-launches-with-lower-prices-and-native-vision/"
-    ]
+    "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"
   },
   {
     "slug": "claude",
@@ -317,44 +204,8 @@
       "Anthropic's models, strong at writing, code and long agent work, with vision and 1M context. Anonymized, and on the dear side.",
       "Les modèles d’Anthropic, forts en rédaction, en code et en travail d’agent au long cours, avec vision et contexte de 1M. Anonymisés, plutôt chers."
     ],
-    "strengths": [
-      [
-        "Clear writing and polished documents (Sonnet 5.5)",
-        "Rédaction claire et documents soignés (Sonnet 5.5)"
-      ],
-      [
-        "Strong at coding and long multi-step agent tasks",
-        "Fort en code et en longues tâches d’agent à plusieurs étapes"
-      ],
-      [
-        "Reads images, several per message, with tool calling",
-        "Lit les images, plusieurs par message, avec appel d’outils"
-      ]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Anthropic's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation d’Anthropic s’applique"
-      ],
-      [
-        "Dear per token; Fable and Fast versions are among the dearest",
-        "Cher au jeton ; Fable et les versions Fast comptent parmi les plus chers"
-      ]
-    ],
-    "facts": [
-      ["1M token context (4.5 versions: 198K)", "Contexte de 1M de jetons (versions 4.5 : 198K)"],
-      [
-        "Vision, tool calling, adjustable reasoning effort",
-        "Vision, appel d’outils, effort de raisonnement réglable"
-      ]
-    ],
     "needs": ["code", "deep-reasoning", "everyday-writing", "read-image"],
-    "url": "https://www.anthropic.com/claude",
-    "sources": [
-      "https://aiweekly.co/fr/alerts/anthropic-sort-claude-opus-55-40-moins-cher-quopus-5",
-      "https://tech.ifeng.com/c/8wp16Vi4lWz",
-      "https://thezvi.substack.com/p/claude-fable-5-and-mythos-5-the-system"
-    ]
+    "url": "https://www.anthropic.com/claude"
   },
   {
     "slug": "gpt",
@@ -411,49 +262,8 @@
       "OpenAI's models: Astra for the hardest work, Sol for coding and agents, Luna for cheap volume. Anonymized.",
       "Les modèles d’OpenAI : Astra pour le plus difficile, Sol pour le code et les agents, Luna pour le volume à bas prix. Anonymisés."
     ],
-    "strengths": [
-      [
-        "GPT-6.1 Sol: near Astra results at a quarter of its price",
-        "GPT-6.1 Sol : des résultats proches d’Astra pour un quart de son prix"
-      ],
-      [
-        "Over 1M token context, vision and tool calling on GPT-6",
-        "Plus de 1M de jetons de contexte, vision et outils sur GPT-6"
-      ],
-      [
-        "A tier for every budget, from Luna to Astra Pro",
-        "Un palier pour chaque budget, de Luna à Astra Pro"
-      ]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: OpenAI's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation d’OpenAI s’applique"
-      ],
-      [
-        "Pro versions of GPT-5.4 and 5.5 cost far more than anything else",
-        "Les versions Pro de GPT-5.4 et 5.5 coûtent bien plus que tout le reste"
-      ],
-      [
-        "GPT-4o and GPT-5.2 are older: prefer GPT-6",
-        "GPT-4o et GPT-5.2 sont anciens : préférez GPT-6"
-      ]
-    ],
-    "facts": [
-      ["GPT-6: 1.05M token context", "GPT-6 : contexte de 1,05M de jetons"],
-      ["Vision, tool calling, reasoning effort", "Vision, appel d’outils, effort de raisonnement"],
-      [
-        "\"Pro\" versions think longer on hard tasks",
-        "Les versions « Pro » réfléchissent plus longtemps"
-      ]
-    ],
     "needs": ["deep-reasoning", "code", "read-image"],
-    "url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
-    "sources": [
-      "https://datanorth.ai/news/openai-launches-gpt-6-sol-and-luna",
-      "https://www.eesel.ai/blog/gpt-5-6",
-      "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
-    ]
+    "url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
   },
   {
     "slug": "gpt-oss",
@@ -475,24 +285,8 @@
       "OpenAI's open-weight model, run in private mode: cheap, quick, with adjustable reasoning. Good for everyday questions.",
       "Le modèle à poids ouverts d’OpenAI, en mode privé : bon marché, rapide, raisonnement réglable. Convient aux questions courantes."
     ],
-    "strengths": [
-      ["Very low price, private mode", "Prix très bas, mode privé"],
-      ["Adjustable reasoning depth", "Profondeur de raisonnement réglable"]
-    ],
-    "limits": [
-      ["Text only, 128K context", "Texte seul, contexte de 128K"],
-      [
-        "The encrypted version has no tool calling, so none of Sub Rosa's agent tools",
-        "La version chiffrée n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
-      ]
-    ],
-    "facts": [
-      ["117B-parameter mixture of experts", "Mélange d’experts de 117 milliards de paramètres"],
-      ["128K token context", "Contexte de 128K jetons"]
-    ],
     "needs": ["fast-cheap"],
-    "url": "https://huggingface.co/openai/gpt-oss-120b",
-    "sources": ["https://huggingface.co/openai/gpt-oss-120b"]
+    "url": "https://huggingface.co/openai/gpt-oss-120b"
   },
   {
     "slug": "gemini",
@@ -526,38 +320,8 @@
       "Google's Gemini Flash models: fast, 1M context, and they take images, audio and video as input. Anonymized.",
       "Les modèles Gemini Flash de Google : rapides, contexte de 1M, ils acceptent images, audio et vidéo en entrée. Anonymisés."
     ],
-    "strengths": [
-      [
-        "Reads images, audio and video, not only text",
-        "Lit les images, l’audio et la vidéo, pas seulement le texte"
-      ],
-      ["1M token context for long documents", "Contexte de 1M de jetons pour les longs documents"],
-      [
-        "3.8 Flash is built for coding and agents at a moderate price",
-        "3.8 Flash est conçu pour le code et les agents à prix modéré"
-      ]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Google's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation de Google s’applique"
-      ],
-      [
-        "The Pro and 3 Flash models are previews and may change",
-        "Les modèles Pro et 3 Flash sont des préversions et peuvent changer"
-      ]
-    ],
-    "facts": [
-      ["1M token context", "Contexte de 1M de jetons"],
-      ["Input: text, image, audio, video", "Entrée : texte, image, audio, vidéo"],
-      ["Tool calling and JSON schema output", "Appel d’outils et sortie en schéma JSON"]
-    ],
     "needs": ["read-image", "long-documents"],
-    "url": "https://deepmind.google/models/gemini/flash/",
-    "sources": [
-      "https://datanorth.ai/news/google-launches-gemini-3-8-flash-gemini-3-8-flash-cyber",
-      "https://deepmind.google/models/gemini/flash/"
-    ]
+    "url": "https://deepmind.google/models/gemini/flash/"
   },
   {
     "slug": "grok",
@@ -598,37 +362,8 @@
       "xAI's Grok models, in private mode, with vision, very long context and search on X. Grok 4.7 is the newest.",
       "Les modèles Grok de xAI, en mode privé, avec vision, contexte très long et recherche sur X. Grok 4.7 est le plus récent."
     ],
-    "strengths": [
-      [
-        "Private mode despite being a closed model",
-        "Mode privé alors qu’il s’agit d’un modèle fermé"
-      ],
-      ["Up to 2M tokens of context (Grok 4.20)", "Jusqu’à 2M de jetons de contexte (Grok 4.20)"],
-      [
-        "Can search posts on X as well as the web",
-        "Peut chercher dans les publications de X en plus du web"
-      ]
-    ],
-    "limits": [
-      [
-        "Independent tests rate Grok 4.7 only slightly above 4.6",
-        "Les tests indépendants placent Grok 4.7 à peine au-dessus de 4.6"
-      ],
-      [
-        "Grok 4.20 Multi-Agent cannot use Sub Rosa's agent tools",
-        "Grok 4.20 Multi-Agent ne peut pas utiliser les outils de l’agent Sub Rosa"
-      ]
-    ],
-    "facts": [
-      ["Grok 4.7: 500K token context", "Grok 4.7 : contexte de 500K jetons"],
-      ["Vision, tool calling, X search", "Vision, appel d’outils, recherche X"]
-    ],
     "needs": ["long-documents", "deep-reasoning"],
-    "url": "https://docs.x.ai/developers/models",
-    "sources": [
-      "https://christopheralarcon.com/blog/grok-4-7-explained/",
-      "https://docs.x.ai/developers/models"
-    ]
+    "url": "https://docs.x.ai/developers/models"
   },
   {
     "slug": "qwen",
@@ -664,35 +399,8 @@
       "Alibaba's hosted Qwen models, with 1M context and image and video input. Flash is cheap and fast. Anonymized.",
       "Les modèles Qwen hébergés par Alibaba, contexte de 1M, entrée image et vidéo. Flash est rapide et bon marché. Anonymisés."
     ],
-    "strengths": [
-      ["Reads images and video", "Lit les images et la vidéo"],
-      [
-        "1M token context on the 3.6 to 3.8 versions",
-        "Contexte de 1M de jetons sur les versions 3.6 à 3.8"
-      ],
-      ["Qwen 3.8 Flash costs very little per token", "Qwen 3.8 Flash coûte très peu au jeton"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Alibaba Cloud's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation d’Alibaba Cloud s’applique"
-      ],
-      [
-        "For private mode, use the open Qwen models instead",
-        "Pour le mode privé, prenez plutôt les modèles Qwen ouverts"
-      ]
-    ],
-    "facts": [
-      ["1M token context (3.5 397B: 128K)", "Contexte de 1M de jetons (3.5 397B : 128K)"],
-      ["Input: text, image, video", "Entrée : texte, image, vidéo"],
-      ["Tool calling", "Appel d’outils"]
-    ],
     "needs": ["long-documents", "read-image"],
     "url": "https://www.alibabacloud.com/help/en/model-studio/models",
-    "sources": [
-      "https://datanorth.ai/news/alibaba-releases-qwen3-8-max",
-      "https://www.alibabacloud.com/help/en/model-studio/models"
-    ],
     "nameFr": "Qwen Max, Plus et Flash"
   },
   {
@@ -746,40 +454,8 @@
       "Qwen models with open weights, run in private mode. Qwen 3.8 27B reads images and video at a low price.",
       "Les modèles Qwen à poids ouverts, en mode privé. Qwen 3.8 27B lit images et vidéo à petit prix."
     ],
-    "strengths": [
-      ["Private mode on every version", "Mode privé sur toutes les versions"],
-      [
-        "Wide choice of sizes, from very cheap to very large",
-        "Large choix de tailles, du très bon marché au très grand"
-      ],
-      [
-        "Qwen 3.8 27B reads images and video, 262K context",
-        "Qwen 3.8 27B lit images et vidéo, contexte de 262K"
-      ]
-    ],
-    "limits": [
-      [
-        "Older 2507, Next and Coder models trail the 3.6 to 3.8 ones",
-        "Les anciens modèles 2507, Next et Coder sont en retrait par rapport aux 3.6 à 3.8"
-      ],
-      [
-        "Qwen 2.5 7B (encrypted) has no tool calling, so none of Sub Rosa's agent tools",
-        "Qwen 2.5 7B (chiffré) n’a pas d’appel d’outils, donc pas d’outils de l’agent"
-      ]
-    ],
-    "facts": [
-      [
-        "Qwen 3.8 27B: 262K context, vision, tool calling",
-        "Qwen 3.8 27B : contexte de 262K, vision, outils"
-      ],
-      ["Open weights", "Poids ouverts"]
-    ],
     "needs": ["fast-cheap", "read-image", "maximum-privacy"],
     "url": "https://huggingface.co/Qwen/Qwen3.8-27B",
-    "sources": [
-      "https://www.deeplearning.ai/the-batch/qwen3-8-max-lands-with-a-bang",
-      "https://huggingface.co/Qwen/Qwen3.8-27B"
-    ],
     "nameFr": "Modèles ouverts Qwen"
   },
   {
@@ -802,39 +478,8 @@
       "Google's small open models, run in private mode: very cheap, they read images and video and call tools.",
       "Les petits modèles ouverts de Google, en mode privé : très bon marché, ils lisent images et vidéo et appellent des outils."
     ],
-    "strengths": [
-      [
-        "Among the cheapest models that read images",
-        "Parmi les modèles les moins chers qui lisent les images"
-      ],
-      [
-        "Private mode, tool calling, 256K context (Gemma 4)",
-        "Mode privé, appel d’outils, contexte de 256K (Gemma 4)"
-      ]
-    ],
-    "limits": [
-      [
-        "Small models: less reliable on long reasoning than large ones",
-        "Petits modèles : moins fiables que les grands sur un raisonnement long"
-      ],
-      [
-        "Short replies: 8K tokens of output at most on Gemma 4",
-        "Réponses courtes : 8K jetons maximum en sortie sur Gemma 4"
-      ]
-    ],
-    "facts": [
-      [
-        "Gemma 4: 256K context, image and video input",
-        "Gemma 4 : contexte de 256K, entrée image et vidéo"
-      ],
-      ["Open weights", "Poids ouverts"]
-    ],
     "needs": ["fast-cheap", "read-image"],
-    "url": "https://deepmind.google/models/gemma/",
-    "sources": [
-      "https://huggingface.co/google/gemma-4-31B-it",
-      "https://deepmind.google/models/gemma/"
-    ]
+    "url": "https://deepmind.google/models/gemma/"
   },
   {
     "slug": "llama",
@@ -863,37 +508,8 @@
       "Meta's older open Llama models and the Hermes 3 fine-tune, in private mode. Newer families do better for the price.",
       "Les anciens modèles ouverts Llama de Meta et Hermes 3, en mode privé. Les familles récentes font mieux à prix égal."
     ],
-    "strengths": [
-      ["Private mode, well-known behavior", "Mode privé, comportement bien connu"],
-      [
-        "Hermes 3 follows your system prompt and persona closely",
-        "Hermes 3 suit de près votre prompt système et votre personnage"
-      ]
-    ],
-    "limits": [
-      [
-        "Older generation: no vision, no reasoning mode",
-        "Ancienne génération : ni vision, ni mode raisonnement"
-      ],
-      [
-        "Hermes 3 has no tool calling, so none of Sub Rosa's agent tools",
-        "Hermes 3 n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
-      ],
-      [
-        "Llama 3.3 70B costs more than newer, stronger models",
-        "Llama 3.3 70B coûte plus cher que des modèles plus récents et plus forts"
-      ]
-    ],
-    "facts": [
-      ["128K token context", "Contexte de 128K jetons"],
-      ["Replies capped at 4K tokens (Llama)", "Réponses limitées à 4K jetons (Llama)"]
-    ],
     "needs": [],
     "url": "https://www.llama.com",
-    "sources": [
-      "https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct",
-      "https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-405B"
-    ],
     "nameFr": "Llama et Hermes 3"
   },
   {
@@ -907,29 +523,8 @@
       "A compact 24B model from Mistral AI, in private mode: very cheap, reads images and calls tools.",
       "Un modèle compact de 24 milliards de paramètres de Mistral AI, en mode privé : très bon marché, lit les images et appelle des outils."
     ],
-    "strengths": [
-      [
-        "One of the cheapest models in the catalog",
-        "L’un des modèles les moins chers du catalogue"
-      ],
-      [
-        "Reads images, tool calling, 256K context",
-        "Lit les images, appel d’outils, contexte de 256K"
-      ]
-    ],
-    "limits": [
-      [
-        "No reasoning mode: weaker on hard problems",
-        "Pas de mode raisonnement : plus faible sur les problèmes difficiles"
-      ]
-    ],
-    "facts": [
-      ["24B parameters, 256K context", "24 milliards de paramètres, contexte de 256K"],
-      ["Open weights", "Poids ouverts"]
-    ],
     "needs": ["fast-cheap"],
-    "url": "https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506",
-    "sources": ["https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506"]
+    "url": "https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506"
   },
   {
     "slug": "minimax",
@@ -951,24 +546,8 @@
       "MiniMax's open models, tuned for coding and agent work, in private mode at a low price.",
       "Les modèles ouverts de MiniMax, réglés pour le code et le travail d’agent, en mode privé et à petit prix."
     ],
-    "strengths": [
-      [
-        "Built for coding and multi-step agent tasks",
-        "Conçus pour le code et les tâches d’agent à plusieurs étapes"
-      ],
-      ["Low price, private mode, tool calling", "Prix bas, mode privé, appel d’outils"]
-    ],
-    "limits": [
-      ["M2.5 and M2.7 read text only", "M2.5 et M2.7 ne lisent que le texte"],
-      ["M3 is a preview and may change", "M3 est une préversion et peut changer"]
-    ],
-    "facts": [
-      ["M2.7: 198K context", "M2.7 : contexte de 198K"],
-      ["M3 preview: 512K context, vision", "M3 préversion : contexte de 512K, vision"]
-    ],
     "needs": ["code", "agent-tools"],
-    "url": "https://www.minimax.io",
-    "sources": ["https://huggingface.co/MiniMaxAI/MiniMax-M3", "https://www.minimax.io"]
+    "url": "https://www.minimax.io"
   },
   {
     "slug": "mercury",
@@ -981,33 +560,8 @@
       "Diffusion language models that write many tokens at once: very fast replies, with reasoning and tools, at a low price.",
       "Des modèles de langage par diffusion qui écrivent plusieurs jetons à la fois : réponses très rapides, avec raisonnement et outils, à petit prix."
     ],
-    "strengths": [
-      [
-        "Very fast output: over 1,000 tokens per second, according to Inception",
-        "Sortie très rapide : plus de 1 000 jetons par seconde selon Inception"
-      ],
-      [
-        "Low price, tool calling, adjustable reasoning",
-        "Prix bas, appel d’outils, raisonnement réglable"
-      ]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Inception's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation d’Inception s’applique"
-      ],
-      ["Text only, no image reading", "Texte seul, ne lit pas les images"]
-    ],
-    "facts": [
-      ["Mercury 2.5: 260K context", "Mercury 2.5 : contexte de 260K"],
-      ["Diffusion model, not word by word", "Modèle par diffusion, pas mot à mot"]
-    ],
     "needs": ["fast-cheap"],
-    "url": "https://www.inceptionlabs.ai/models",
-    "sources": [
-      "https://www.testingcatalog.com/inception-launches-mercury-2-5-at-1-107-tokens-per-second/",
-      "https://www.inceptionlabs.ai/models"
-    ]
+    "url": "https://www.inceptionlabs.ai/models"
   },
   {
     "slug": "mimo",
@@ -1029,30 +583,8 @@
       "Xiaomi's open models that understand text, images, audio and video, with 1M context, in private mode and very cheap.",
       "Les modèles ouverts de Xiaomi qui comprennent texte, images, audio et vidéo, contexte de 1M, en mode privé et très bon marché."
     ],
-    "strengths": [
-      [
-        "Reads images, audio and video at a very low price",
-        "Lit images, audio et vidéo à très bas prix"
-      ],
-      [
-        "1M token context, tool calling, private mode",
-        "Contexte de 1M de jetons, appel d’outils, mode privé"
-      ]
-    ],
-    "limits": [
-      ["Less widely tested than the bigger families", "Moins éprouvé que les grandes familles"]
-    ],
-    "facts": [
-      ["1M token context", "Contexte de 1M de jetons"],
-      ["Input: text, image, audio, video", "Entrée : texte, image, audio, vidéo"],
-      ["Open weights (MIT license)", "Poids ouverts (licence MIT)"]
-    ],
     "needs": ["fast-cheap", "read-image", "long-documents"],
-    "url": "https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
-    "sources": [
-      "https://openrouter.ai/xiaomi/mimo-v2.6-flash",
-      "https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL"
-    ]
+    "url": "https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL"
   },
   {
     "slug": "nemotron",
@@ -1074,27 +606,8 @@
       "NVIDIA's open models for agent work: Ultra handles long tool-driven tasks, Nano is small and cheap. Private mode.",
       "Les modèles ouverts de NVIDIA pour le travail d’agent : Ultra tient les longues tâches avec outils, Nano est petit et bon marché. Mode privé."
     ],
-    "strengths": [
-      [
-        "Ultra is built for long agent runs with many tool calls",
-        "Ultra est conçu pour de longues sessions d’agent avec beaucoup d’outils"
-      ],
-      ["Private mode, moderate price", "Mode privé, prix modéré"]
-    ],
-    "limits": [["Text only, no image reading", "Texte seul, ne lit pas les images"]],
-    "facts": [
-      [
-        "Ultra: 550B parameters, 55B active, 256K context here",
-        "Ultra : 550 milliards de paramètres, 55 actifs, contexte de 256K ici"
-      ],
-      ["Open weights", "Poids ouverts"]
-    ],
     "needs": [],
-    "url": "https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/",
-    "sources": [
-      "https://pasqualepillitteri.it/en/news/3924/nemotron-3-ultra-nvidia-open-model",
-      "https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/"
-    ]
+    "url": "https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/"
   },
   {
     "slug": "seed",
@@ -1107,29 +620,8 @@
       "ByteDance's multimodal model for coding and long agent tasks, reading images and video. Anonymized.",
       "Le modèle multimodal de ByteDance pour le code et les longues tâches d’agent, qui lit images et vidéo. Anonymisé."
     ],
-    "strengths": [
-      [
-        "Built for coding and long multi-step tasks",
-        "Conçu pour le code et les longues tâches à plusieurs étapes"
-      ],
-      ["Reads images and video, tool calling", "Lit images et vidéo, appel d’outils"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: ByteDance's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation de ByteDance s’applique"
-      ]
-    ],
-    "facts": [
-      ["256K token context", "Contexte de 256K jetons"],
-      ["Input: text, image, video", "Entrée : texte, image, vidéo"]
-    ],
     "needs": ["code"],
-    "url": "https://seed.bytedance.com/en/",
-    "sources": [
-      "https://openrouter.ai/bytedance-seed/seed-2-1-turbo",
-      "https://seed.bytedance.com/en/"
-    ]
+    "url": "https://seed.bytedance.com/en/"
   },
   {
     "slug": "inkling",
@@ -1142,31 +634,8 @@
       "The first open model from Thinking Machines Lab: general purpose, reads images and audio, 512K context, private mode.",
       "Le premier modèle ouvert de Thinking Machines Lab : polyvalent, lit images et audio, contexte de 512K, mode privé."
     ],
-    "strengths": [
-      ["Reads images and audio as well as text", "Lit les images et l’audio en plus du texte"],
-      [
-        "Tool calling and adjustable reasoning, private mode",
-        "Appel d’outils et raisonnement réglable, mode privé"
-      ]
-    ],
-    "limits": [
-      [
-        "Mid-range price; cheaper models cover everyday chat",
-        "Prix moyen ; des modèles moins chers suffisent au quotidien"
-      ],
-      ["No video input here", "Pas d’entrée vidéo ici"]
-    ],
-    "facts": [
-      ["512K token context", "Contexte de 512K jetons"],
-      ["975B parameters, 41B active", "975 milliards de paramètres, 41 actifs"],
-      ["Open weights (Apache 2.0)", "Poids ouverts (Apache 2.0)"]
-    ],
     "needs": ["read-image"],
-    "url": "https://thinkingmachines.ai",
-    "sources": [
-      "https://rits.shanghai.nyu.edu/ai/thinking-machines-releases-inkling-its-first-open-weight-model/",
-      "https://huggingface.co/thinkingmachines/Inkling-NVFP4"
-    ]
+    "url": "https://thinkingmachines.ai"
   },
   {
     "slug": "venice-uncensored",
@@ -1188,27 +657,8 @@
       "Uncensored models for open creative writing and role play, based on Mistral Small 24B, in private mode.",
       "Des modèles non censurés pour l’écriture créative libre et le jeu de rôle, basés sur Mistral Small 24B, en mode privé."
     ],
-    "strengths": [
-      [
-        "Few refusals: built for unfiltered fiction and dialogue",
-        "Peu de refus : conçus pour la fiction et le dialogue sans filtre"
-      ],
-      ["Private mode, low price, reads images", "Mode privé, prix bas, lit les images"]
-    ],
-    "limits": [
-      [
-        "No reasoning mode: weak on hard problems and code",
-        "Pas de mode raisonnement : faibles sur les problèmes difficiles et le code"
-      ],
-      ["128K context and short replies", "Contexte de 128K et réponses courtes"]
-    ],
-    "facts": [
-      ["128K token context", "Contexte de 128K jetons"],
-      ["Vision and tool calling", "Vision et appel d’outils"]
-    ],
     "needs": ["uncensored-creative"],
-    "url": "https://huggingface.co/cognitivecomputations/Dolphin-Mistral-24B-Venice-Edition",
-    "sources": ["https://huggingface.co/cognitivecomputations/Dolphin-Mistral-24B-Venice-Edition"]
+    "url": "https://huggingface.co/cognitivecomputations/Dolphin-Mistral-24B-Venice-Edition"
   },
   {
     "slug": "aion",
@@ -1235,27 +685,8 @@
       "Storytelling systems where several models write each reply together, for interactive fiction with mature themes.",
       "Des systèmes de narration où plusieurs modèles écrivent chaque réponse ensemble, pour la fiction interactive aux thèmes adultes."
     ],
-    "strengths": [
-      [
-        "Stronger narrative structure, tension and conflict",
-        "Structure narrative, tension et conflits plus marqués"
-      ],
-      ["Handles mature and darker themes", "Aborde les thèmes adultes et sombres"]
-    ],
-    "limits": [
-      ["Anonymized, not private", "Anonymisé, pas privé"],
-      [
-        "Made for fiction, not for notes or research; Aion 3.5 is dear",
-        "Fait pour la fiction, pas pour les notes ou la recherche ; Aion 3.5 est cher"
-      ]
-    ],
-    "facts": [
-      ["Aion 3.5: 262K context", "Aion 3.5 : contexte de 262K"],
-      ["Built on GLM models (3.0 Mini: DeepSeek)", "Bâti sur des modèles GLM (3.0 Mini : DeepSeek)"]
-    ],
     "needs": ["uncensored-creative"],
-    "url": "https://www.aionlabs.ai/docs/models/",
-    "sources": ["https://openrouter.ai/aion-labs/aion-3.5", "https://www.aionlabs.ai/docs/models/"]
+    "url": "https://www.aionlabs.ai/docs/models/"
   },
   {
     "slug": "uncensored",
@@ -1296,36 +727,8 @@
       "Open models altered by the community to remove refusals. Pick one for unfiltered creative work.",
       "Des modèles ouverts modifiés par la communauté pour supprimer les refus. Pour un travail créatif sans filtre."
     ],
-    "strengths": [
-      [
-        "Few refusals on fiction and sensitive topics",
-        "Peu de refus sur la fiction et les sujets sensibles"
-      ],
-      [
-        "Gemma 4 Uncensored: private, cheap, reads images",
-        "Gemma 4 Uncensored : privé, bon marché, lit les images"
-      ]
-    ],
-    "limits": [
-      [
-        "Removing refusals can lower accuracy and judgment",
-        "Supprimer les refus peut réduire la justesse et le jugement"
-      ],
-      [
-        "The encrypted Gemma has no tool calling, so none of Sub Rosa's agent tools",
-        "La Gemma chiffrée n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
-      ]
-    ],
-    "facts": [
-      ["Gemma 4 Uncensored: 256K context, vision", "Gemma 4 Uncensored : contexte de 256K, vision"],
-      ["Abliterated Large V2: 1M context", "Abliterated Large V2 : contexte de 1M"]
-    ],
     "needs": ["uncensored-creative"],
     "url": "https://docs.abliteration.ai/models",
-    "sources": [
-      "https://docs.abliteration.ai/models",
-      "https://huggingface.co/Olafangensan/GLM-4.7-Flash-heretic"
-    ],
     "nameFr": "Modèles communautaires non censurés"
   },
   {
@@ -1339,32 +742,8 @@
       "Sub Rosa's default transcription: fast and accurate for everyday dictation and meetings, among the cheapest, in private mode.",
       "La transcription par défaut de Sub Rosa : rapide et précise pour la dictée et les réunions, parmi les moins chères, en mode privé."
     ],
-    "strengths": [
-      [
-        "Default in Sub Rosa for dictation and meetings",
-        "Par défaut dans Sub Rosa pour la dictée et les réunions"
-      ],
-      [
-        "Cheapest private option, tied with Whisper",
-        "L’option privée la moins chère, à égalité avec Whisper"
-      ],
-      ["Detects the language and adds punctuation", "Détecte la langue et ajoute la ponctuation"]
-    ],
-    "limits": [
-      [
-        "Covers 25 European languages only: for others, pick Whisper",
-        "Ne couvre que 25 langues européennes : pour les autres, prenez Whisper"
-      ]
-    ],
-    "facts": [
-      [
-        "25 European languages, French and English included",
-        "25 langues européennes, dont le français et l’anglais"
-      ]
-    ],
     "needs": ["meetings"],
-    "url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
-    "sources": ["https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"]
+    "url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
   },
   {
     "slug": "whisper",
@@ -1386,28 +765,8 @@
       "OpenAI's open speech model: the widest language coverage here at the same low price as Parakeet, in private mode.",
       "Le modèle vocal ouvert d’OpenAI : la plus large couverture de langues ici, au même petit prix que Parakeet, en mode privé."
     ],
-    "strengths": [
-      [
-        "Best multilingual accuracy in Sub Rosa's suggestions",
-        "La meilleure précision multilingue des suggestions de Sub Rosa"
-      ],
-      ["Close to 100 languages", "Près de 100 langues"],
-      ["Same low price as Parakeet, private mode", "Même petit prix que Parakeet, mode privé"]
-    ],
-    "limits": [
-      [
-        "Can invent text over long silences or noise",
-        "Peut inventer du texte sur les longs silences ou le bruit"
-      ]
-    ],
-    "facts": [["Whisper Large V3, open weights", "Whisper Large V3, poids ouverts"]],
     "needs": ["multilingual"],
-    "url": "https://huggingface.co/openai/whisper-large-v3",
-    "sources": [
-      "https://huggingface.co/openai/whisper-large-v3",
-      "https://fal.ai/models/fal-ai/wizper",
-      "https://en.wikipedia.org/wiki/Whisper_(speech_recognition_system)"
-    ]
+    "url": "https://huggingface.co/openai/whisper-large-v3"
   },
   {
     "slug": "scribe",
@@ -1420,30 +779,8 @@
       "ElevenLabs' transcription model, covering over 90 languages. Anonymized, and the dearest transcription here.",
       "Le modèle de transcription d’ElevenLabs, plus de 90 langues. Anonymisé, et la transcription la plus chère ici."
     ],
-    "strengths": [
-      [
-        "Over 90 languages with automatic detection",
-        "Plus de 90 langues avec détection automatique"
-      ],
-      ["Labels non-speech sounds, per ElevenLabs", "Signale les sons hors parole, selon ElevenLabs"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: ElevenLabs' retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation d’ElevenLabs s’applique"
-      ],
-      [
-        "Costs about 1.6 times Parakeet or Whisper",
-        "Coûte environ 1,6 fois le prix de Parakeet ou de Whisper"
-      ]
-    ],
-    "facts": [["90+ languages", "Plus de 90 langues"]],
     "needs": ["multilingual"],
-    "url": "https://elevenlabs.io/speech-to-text-api",
-    "sources": [
-      "https://www.mindstudio.ai/models/elevenlabs-scribe-v2",
-      "https://elevenlabs.io/speech-to-text-api"
-    ]
+    "url": "https://elevenlabs.io/speech-to-text-api"
   },
   {
     "slug": "xai-stt",
@@ -1456,24 +793,8 @@
       "xAI's speech recognition, the cheapest transcription in the catalog. Anonymized.",
       "La reconnaissance vocale de xAI, la transcription la moins chère du catalogue. Anonymisée."
     ],
-    "strengths": [
-      ["Lowest price per minute here", "Le prix à la minute le plus bas ici"],
-      ["25+ languages, per xAI", "Plus de 25 langues, selon xAI"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: xAI's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation de xAI s’applique"
-      ],
-      [
-        "Newer and less tested than Parakeet or Whisper",
-        "Plus récent et moins éprouvé que Parakeet ou Whisper"
-      ]
-    ],
-    "facts": [["25+ languages", "Plus de 25 langues"]],
     "needs": [],
-    "url": "https://x.ai/news/grok-stt-and-tts-apis",
-    "sources": ["https://x.ai/news/grok-stt-and-tts-apis"]
+    "url": "https://x.ai/news/grok-stt-and-tts-apis"
   },
   {
     "slug": "nano-banana",
@@ -1502,41 +823,8 @@
       "Google's Gemini image models: strong prompt understanding and real-world knowledge. Pick Nano Banana 2 as a reliable all-rounder.",
       "Les modèles d’image Gemini de Google : bonne compréhension des consignes et du monde réel. Prenez Nano Banana 2 comme valeur sûre."
     ],
-    "strengths": [
-      [
-        "Follows long, detailed prompts closely",
-        "Suit de près les consignes longues et détaillées"
-      ],
-      [
-        "Draws on real-world knowledge (places, objects, diagrams)",
-        "S’appuie sur des connaissances du monde réel (lieux, objets, schémas)"
-      ],
-      ["Keeps a subject consistent across images", "Garde un sujet cohérent d’une image à l’autre"]
-    ],
-    "limits": [
-      [
-        "Among the dearer families: about 5 credits for Nano Banana 2",
-        "Parmi les familles chères : environ 5 crédits pour Nano Banana 2"
-      ],
-      [
-        "Anonymized, not private: Google's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation de Google s’applique"
-      ]
-    ],
-    "facts": [
-      ["1K, 2K or 4K output (2 and Pro)", "Sortie 1K, 2K ou 4K (2 et Pro)"],
-      [
-        "Prompts up to about 32,000 characters (2 and Pro)",
-        "Consignes jusqu’à environ 32 000 caractères (2 et Pro)"
-      ]
-    ],
     "needs": ["photoreal", "character-consistency"],
-    "url": "https://deepmind.google/models/gemini-image/",
-    "sources": [
-      "https://deepmind.google/models/gemini-image/",
-      "https://www.eesel.ai/blog/nano-banana-2-lite",
-      "https://datanorth.ai/news/google-releases-nano-banana-pro"
-    ]
+    "url": "https://deepmind.google/models/gemini-image/"
   },
   {
     "slug": "gpt-image",
@@ -1572,43 +860,8 @@
       "OpenAI's image models, known for readable text and precise instruction following. Start with GPT Image 2.5 Flare.",
       "Les modèles d’image d’OpenAI, réputés pour un texte lisible et le respect des consignes. Commencez par GPT Image 2.5 Flare."
     ],
-    "strengths": [
-      [
-        "Renders readable text, including non-Latin scripts",
-        "Rend un texte lisible, y compris hors alphabet latin"
-      ],
-      [
-        "Follows complex, multi-part instructions",
-        "Suit des consignes complexes en plusieurs points"
-      ]
-    ],
-    "limits": [
-      [
-        "Price rises with quality and resolution: about 1.5 credits is the floor",
-        "Le prix monte avec la qualité et la résolution : environ 1,5 crédit au minimum"
-      ],
-      [
-        "Anonymized, not private: OpenAI's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation d’OpenAI s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "1K, 2K or 4K; low, medium or high quality (2 and 2.5)",
-        "1K, 2K ou 4K ; qualité basse, moyenne ou haute (2 et 2.5)"
-      ],
-      [
-        "Prompts up to 10,000 characters (2 and 2.5)",
-        "Consignes jusqu’à 10 000 caractères (2 et 2.5)"
-      ]
-    ],
     "needs": ["text-in-image", "graphic-design"],
-    "url": "https://platform.openai.com/docs/guides/image-generation",
-    "sources": [
-      "https://docs.kanaries.net/articles/gpt-image-2-5",
-      "https://www.cometapi.com/what-is-gpt-image-2-5/",
-      "https://datanorth.ai/news/openai-launches-gpt-image-2-with-99-text-accuracy"
-    ]
+    "url": "https://platform.openai.com/docs/guides/image-generation"
   },
   {
     "slug": "flux",
@@ -1637,44 +890,8 @@
       "Black Forest Labs' photorealistic models. FLUX.2 Pro is what the Sub Rosa agent uses for detailed, realistic images.",
       "Les modèles photoréalistes de Black Forest Labs. L’agent de Sub Rosa utilise FLUX.2 Pro pour les images réalistes et détaillées."
     ],
-    "strengths": [
-      [
-        "Photoreal detail: skin, materials, lighting",
-        "Détail photoréaliste : peau, matières, lumière"
-      ],
-      [
-        "Good value: FLUX.2 Pro costs about 1.5 credits",
-        "Bon rapport qualité-prix : FLUX.2 Pro coûte environ 1,5 crédit"
-      ],
-      [
-        "FLUX 3 is announced with multilingual text rendering",
-        "FLUX 3 est annoncé avec un rendu de texte multilingue"
-      ]
-    ],
-    "limits": [
-      [
-        "FLUX 3 is days old: few independent reviews yet",
-        "FLUX 3 a quelques jours : peu d’avis indépendants pour l’instant"
-      ],
-      [
-        "Anonymized, not private: Black Forest Labs' policy applies",
-        "Anonymisé, pas privé : la politique de Black Forest Labs s’applique"
-      ]
-    ],
-    "facts": [
-      ["FLUX 3: 1K, 2K or 4K output", "FLUX 3 : sortie 1K, 2K ou 4K"],
-      [
-        "Prompts up to 3,000 characters (FLUX.2), 32,000 (FLUX 3)",
-        "Consignes jusqu’à 3 000 caractères (FLUX.2), 32 000 (FLUX 3)"
-      ]
-    ],
     "needs": ["photoreal"],
-    "url": "https://bfl.ai/models/flux-2",
-    "sources": [
-      "https://www.hedra.com/models/image/black-forest-labs/flux2-max",
-      "https://runware.ai/flux-3-image",
-      "https://bfl.ai/models/flux-3"
-    ]
+    "url": "https://bfl.ai/models/flux-2"
   },
   {
     "slug": "qwen-image",
@@ -1710,41 +927,8 @@
       "Alibaba's models for images full of text: posters, menus, infographics. Qwen Image 3 is the current generation.",
       "Les modèles d’Alibaba pour les images chargées de texte : affiches, menus, infographies. Qwen Image 3 est la génération actuelle."
     ],
-    "strengths": [
-      [
-        "Dense layouts: newspapers, menus, storyboards, interfaces",
-        "Mises en page denses : journaux, menus, planches, interfaces"
-      ],
-      [
-        "Small text in many languages (12 announced for version 3)",
-        "Petit texte en plusieurs langues (12 annoncées pour la version 3)"
-      ],
-      [
-        "Close prompt adherence at about 2 credits",
-        "Respect fidèle des consignes pour environ 2 crédits"
-      ]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Alibaba Cloud's policy applies",
-        "Anonymisé, pas privé : la politique d’Alibaba Cloud s’applique"
-      ],
-      [
-        "Five versions in the catalog: the older ones are rarely the better buy",
-        "Cinq versions au catalogue : les anciennes sont rarement le meilleur choix"
-      ]
-    ],
-    "facts": [
-      ["Qwen Image 3 and 3 Pro: 1K or 2K output", "Qwen Image 3 et 3 Pro : sortie 1K ou 2K"],
-      ["Prompts up to 10,000 characters (2 and 3)", "Consignes jusqu’à 10 000 caractères (2 et 3)"]
-    ],
     "needs": ["text-in-image", "graphic-design"],
-    "url": "https://qwen.ai",
-    "sources": [
-      "https://llm-stats.com/blog/research/qwen-image-3-0-launch",
-      "https://www.orcarouter.ai/blog/qwen-image-3-0-ga",
-      "https://www.analyticsvidhya.com/blog/2026/02/qwen-image-2-0-is-here/"
-    ]
+    "url": "https://qwen.ai"
   },
   {
     "slug": "seedream",
@@ -1773,32 +957,8 @@
       "ByteDance's models for consistent subjects and clean typography across a series. Seedream 5 Pro is the flagship.",
       "Les modèles de ByteDance pour garder un sujet et une typographie nets sur toute une série. Seedream 5 Pro est le haut de gamme."
     ],
-    "strengths": [
-      [
-        "Keeps the same subject consistent across a series",
-        "Garde le même sujet cohérent sur une série"
-      ],
-      ["Legible small text and logos", "Petit texte et logos lisibles"],
-      ["Fair price: about 2.6 to 3 credits", "Prix raisonnable : environ 2,6 à 3 crédits"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: ByteDance's policy applies",
-        "Anonymisé, pas privé : la politique de ByteDance s’applique"
-      ],
-      ["Tops out at 2K, no 4K", "Plafonne à 2K, pas de 4K"]
-    ],
-    "facts": [
-      ["Seedream 5 Pro: 1K or 2K output", "Seedream 5 Pro : sortie 1K ou 2K"],
-      ["Prompts up to 10,000 characters", "Consignes jusqu’à 10 000 caractères"]
-    ],
     "needs": ["character-consistency"],
-    "url": "https://seed.bytedance.com/en/seedream5_0",
-    "sources": [
-      "https://runware.ai/docs/models/bytedance-seedream-5-0-pro/guides",
-      "https://vercel.com/ai-gateway/models/seedream-5.0-lite",
-      "https://happycapy.ai/blog/seedream-4-5"
-    ]
+    "url": "https://seed.bytedance.com/en/seedream5_0"
   },
   {
     "slug": "ideogram",
@@ -1820,34 +980,8 @@
       "A model built around typography: posters, logos, covers where the words must be exactly right. Ideogram 4.5 is the current one.",
       "Un modèle pensé pour la typographie : affiches, logos, couvertures où chaque mot compte. Ideogram 4.5 est la version actuelle."
     ],
-    "strengths": [
-      [
-        "Multi-line, multi-font text treated as part of the design",
-        "Texte sur plusieurs lignes et polices, traité comme un élément de design"
-      ],
-      ["Strong layout sense for graphic work", "Bon sens de la mise en page pour le graphisme"],
-      ["About 2 credits for version 4.5", "Environ 2 crédits pour la version 4.5"]
-    ],
-    "limits": [
-      ["Less suited to pure photorealism", "Moins adapté au pur photoréalisme"],
-      [
-        "Anonymized, not private: Ideogram's policy applies",
-        "Anonymisé, pas privé : la politique d’Ideogram s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "Ideogram 4.5: 1K or 2K; low, medium or high quality",
-        "Ideogram 4.5 : 1K ou 2K ; qualité basse, moyenne ou haute"
-      ],
-      ["Prompts up to 10,000 characters", "Consignes jusqu’à 10 000 caractères"]
-    ],
     "needs": ["text-in-image", "graphic-design"],
-    "url": "https://ideogram.ai/features/text-rendering/",
-    "sources": [
-      "https://invideo.io/blog/ideogram-ai-image-generator/",
-      "https://runware.ai/docs/models/ideogram-4-5-precise-edit.md"
-    ]
+    "url": "https://ideogram.ai/features/text-rendering/"
   },
   {
     "slug": "recraft",
@@ -1869,30 +1003,8 @@
       "A design-minded model: balanced composition, cohesive color, structured text. Pick it for marketing visuals and brand work.",
       "Un modèle tourné vers le design : composition équilibrée, couleurs cohérentes, texte structuré. Pour le marketing et l’identité visuelle."
     ],
-    "strengths": [
-      [
-        "Composition and color that look intentional, not stock",
-        "Composition et couleurs soignées, loin de l’image de banque"
-      ],
-      ["Readable, structured text for graphics", "Texte lisible et structuré pour le graphisme"]
-    ],
-    "limits": [
-      [
-        "V4 Pro is among the dearest images here (about 15 credits)",
-        "V4 Pro compte parmi les images les plus chères ici (environ 15 crédits)"
-      ],
-      [
-        "Anonymized, not private: Recraft's policy applies",
-        "Anonymisé, pas privé : la politique de Recraft s’applique"
-      ]
-    ],
-    "facts": [
-      ["Prompts up to 10,000 characters", "Consignes jusqu’à 10 000 caractères"],
-      ["Released February 2026", "Sorti en février 2026"]
-    ],
     "needs": ["graphic-design"],
-    "url": "https://www.recraft.ai/docs/recraft-models/recraft-V4",
-    "sources": ["https://www.recraft.ai/docs/recraft-models/recraft-V4"]
+    "url": "https://www.recraft.ai/docs/recraft-models/recraft-V4"
   },
   {
     "slug": "grok-imagine",
@@ -1921,24 +1033,8 @@
       "xAI's image models, run in private mode here. Grok Imagine 2.0 is the newest, a good choice when privacy matters.",
       "Les modèles d’image de xAI, en mode privé ici. Grok Imagine 2.0 est le plus récent, un bon choix quand la confidentialité compte."
     ],
-    "strengths": [
-      [
-        "Private mode: no data kept by the provider",
-        "Mode privé : rien n’est conservé par le fournisseur"
-      ],
-      ["Realistic textures and lighting", "Textures et lumière réalistes"]
-    ],
-    "limits": [["Tops out at 2K, no 4K", "Plafonne à 2K, pas de 4K"]],
-    "facts": [
-      ["1K or 2K output", "Sortie 1K ou 2K"],
-      ["Prompts up to 7,500 characters", "Consignes jusqu’à 7 500 caractères"]
-    ],
     "needs": ["photoreal"],
-    "url": "https://docs.x.ai/docs/guides/image-generation",
-    "sources": [
-      "https://llmgateway.io/models/grok-imagine-image-2-0",
-      "https://www.cometapi.com/grok-imagine-quality-mode-api/"
-    ]
+    "url": "https://docs.x.ai/docs/guides/image-generation"
   },
   {
     "slug": "hunyuan-image",
@@ -1951,33 +1047,8 @@
       "Tencent's large open-weight model, run in private mode. Pick it for long, knowledge-heavy prompts in English or Chinese.",
       "Le grand modèle ouvert de Tencent, en mode privé. Pour les consignes longues et riches en connaissances, en anglais ou en chinois."
     ],
-    "strengths": [
-      [
-        "Private mode with a large open model (80B parameters, mixture of experts)",
-        "Mode privé avec un grand modèle ouvert (80 Md de paramètres, mélange d’experts)"
-      ],
-      [
-        "Reasons over long prompts and renders long text strings",
-        "Raisonne sur des consignes longues et rend des textes longs"
-      ]
-    ],
-    "limits": [
-      [
-        "About 4.6 credits, dear for a private model",
-        "Environ 4,6 crédits, cher pour un modèle privé"
-      ],
-      [
-        "First released in 2025: newer families often follow prompts better",
-        "Sorti en 2025 : des familles plus récentes suivent souvent mieux les consignes"
-      ]
-    ],
-    "facts": [["Prompts up to 3,000 characters", "Consignes jusqu’à 3 000 caractères"]],
     "needs": [],
-    "url": "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0",
-    "sources": [
-      "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0",
-      "https://technode.com/2025/09/28/tencent-open-sources-hunyuanimage-3-0-an-80b-multimodal-image-generation-model/"
-    ]
+    "url": "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0"
   },
   {
     "slug": "krea",
@@ -2006,37 +1077,8 @@
       "Krea's own model, built for aesthetics and expressive styles rather than literal prompt following. Turbo is fast and runs in private mode.",
       "Le modèle maison de Krea, pensé pour l’esthétique et les styles expressifs plus que pour la lecture littérale. Turbo est rapide et privé."
     ],
-    "strengths": [
-      [
-        "Expressive looks that avoid generic AI output",
-        "Rendus expressifs, loin de l’image IA générique"
-      ],
-      [
-        "Turbo: quick iterations in private mode, about 2 credits",
-        "Turbo : itérations rapides en mode privé, environ 2 crédits"
-      ]
-    ],
-    "limits": [
-      [
-        "Interprets prompts loosely: not for exact layouts or text",
-        "Interprète librement : pas pour une mise en page ou un texte exacts"
-      ],
-      [
-        "Only Turbo is private; Medium and Large are anonymized",
-        "Seul Turbo est privé ; Medium et Large sont anonymisés"
-      ]
-    ],
-    "facts": [
-      ["Turbo: 1K or 2K output", "Turbo : sortie 1K ou 2K"],
-      ["Prompts up to 5,000 characters", "Consignes jusqu’à 5 000 caractères"],
-      ["Turbo private; Medium and Large anonymized", "Turbo privé ; Medium et Large anonymisés"]
-    ],
     "needs": ["illustration"],
-    "url": "https://www.krea.ai/docs/user-guide/features/krea-2",
-    "sources": [
-      "https://www.krea.ai/docs/user-guide/features/krea-2",
-      "https://www.krea.ai/docs/user-guide/features/krea-2-turbo"
-    ]
+    "url": "https://www.krea.ai/docs/user-guide/features/krea-2"
   },
   {
     "slug": "luma-uni",
@@ -2058,31 +1100,8 @@
       "Luma's model that reasons before drawing, good at tricky spatial instructions and styles. Pick it when other models miss the scene.",
       "Le modèle de Luma qui raisonne avant de dessiner, à l’aise avec les consignes spatiales et les styles. Quand les autres ratent la scène."
     ],
-    "strengths": [
-      [
-        "Plans the scene: placement, angles, logic",
-        "Planifie la scène : placement, angles, logique"
-      ],
-      ["Wide range of art styles, including manga", "Large palette de styles, manga compris"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Luma's policy applies",
-        "Anonymisé, pas privé : la politique de Luma s’applique"
-      ],
-      ["Max costs more than twice the base model", "Max coûte plus du double du modèle de base"]
-    ],
-    "facts": [
-      ["Prompts up to 6,000 characters", "Consignes jusqu’à 6 000 caractères"],
-      ["About 2.6 credits (Uni-1)", "Environ 2,6 crédits (Uni-1)"]
-    ],
     "needs": [],
-    "url": "https://lumalabs.ai/uni-1",
-    "sources": [
-      "https://lumalabs.ai/uni-1",
-      "https://the-decoder.com/luma-ais-uni-1-could-be-the-first-real-challenger-to-googles-nano-banana-image-dominance/",
-      "https://layer.ai/models/lumalabs-uni-1-max.md"
-    ]
+    "url": "https://lumalabs.ai/uni-1"
   },
   {
     "slug": "wan-image",
@@ -2104,32 +1123,8 @@
       "Alibaba Wan's image models with a thinking mode for complex scenes. Use the standard one for drafts, Pro for final product shots.",
       "Les modèles d’image Wan d’Alibaba, avec un mode raisonnement pour les scènes complexes. Standard pour l’ébauche, Pro pour le rendu final."
     ],
-    "strengths": [
-      [
-        "Handles multi-subject scenes and embedded text",
-        "Gère les scènes à plusieurs sujets et le texte intégré"
-      ],
-      ["Suited to product and advertising imagery", "Adapté aux visuels produit et publicitaires"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Alibaba Cloud's policy applies",
-        "Anonymisé, pas privé : la politique d’Alibaba Cloud s’applique"
-      ],
-      [
-        "Pro costs more than twice the standard model",
-        "Pro coûte plus du double du modèle standard"
-      ]
-    ],
-    "facts": [
-      ["Prompts up to 3,000 characters", "Consignes jusqu’à 3 000 caractères"],
-      ["About 1.9 credits (standard)", "Environ 1,9 crédit (standard)"]
-    ],
     "needs": [],
-    "url": "https://wan.video",
-    "sources": [
-      "https://help.scenario.com/articles/9990433066-wan-2-7-alibaba-s-new-image-generation-standard"
-    ]
+    "url": "https://wan.video"
   },
   {
     "slug": "imagineart",
@@ -2142,30 +1137,8 @@
       "ImagineArt's flagship, tuned for realism, mood and composition. Pick it for posters, product visuals and cinematic stills.",
       "Le modèle phare d’ImagineArt, réglé pour le réalisme, l’ambiance et la composition. Pour affiches, visuels produit et plans de cinéma."
     ],
-    "strengths": [
-      ["Realistic lighting, depth and materials", "Lumière, profondeur et matières réalistes"],
-      [
-        "Expressive faces and mood-driven color",
-        "Visages expressifs et couleurs au service de l’ambiance"
-      ]
-    ],
-    "limits": [
-      [
-        "About 3 credits, with few independent reviews",
-        "Environ 3 crédits, avec peu d’avis indépendants"
-      ],
-      [
-        "Anonymized, not private: ImagineArt's policy applies",
-        "Anonymisé, pas privé : la politique d’ImagineArt s’applique"
-      ]
-    ],
-    "facts": [["Prompts up to 10,000 characters", "Consignes jusqu’à 10 000 caractères"]],
     "needs": ["photoreal"],
-    "url": "https://docs.imagine.art/ai-models/image/imagineart-1-5-pro",
-    "sources": [
-      "https://docs.imagine.art/ai-models/image/imagineart-1-5-pro",
-      "https://artlist.io/blog/new-imagineart-1-5/"
-    ]
+    "url": "https://docs.imagine.art/ai-models/image/imagineart-1-5-pro"
   },
   {
     "slug": "muse-image",
@@ -2178,27 +1151,8 @@
       "Meta's first image model (July 2026), with clean in-image text. At about 1 credit, a cheap way to get readable graphics.",
       "Le premier modèle d’image de Meta (juillet 2026), au texte net. À environ 1 crédit, une façon économique d’obtenir des visuels lisibles."
     ],
-    "strengths": [
-      ["Legible text for how-tos and infographics", "Texte lisible pour tutoriels et infographies"],
-      ["About 1 credit an image", "Environ 1 crédit l’image"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Meta's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation de Meta s’applique"
-      ],
-      [
-        "Its planning and web search features live in Meta's apps, not here",
-        "Sa planification et sa recherche web n’existent que dans les applis Meta, pas ici"
-      ]
-    ],
-    "facts": [["Prompts up to 10,000 characters", "Consignes jusqu’à 10 000 caractères"]],
     "needs": ["fast-cheap-image"],
-    "url": "https://about.fb.com/news/2026/07/introducing-muse-image/",
-    "sources": [
-      "https://about.fb.com/news/2026/07/introducing-muse-image/",
-      "https://www.mobileworldlive.com/ai-cloud/meta-platforms-debuts-muse-image-ai-model/"
-    ]
+    "url": "https://about.fb.com/news/2026/07/introducing-muse-image/"
   },
   {
     "slug": "chroma",
@@ -2211,32 +1165,8 @@
       "An open model built from FLUX.1, run in private mode for about 0.5 credit. The Sub Rosa agent uses it as a versatile option.",
       "Un modèle ouvert dérivé de FLUX.1, en mode privé pour environ 0,5 crédit. L’agent de Sub Rosa s’en sert comme option polyvalente."
     ],
-    "strengths": [
-      [
-        "Private and among the cheapest (about 0.5 credit)",
-        "Privé et parmi les moins chers (environ 0,5 crédit)"
-      ],
-      [
-        "Versatile across styles, with few content filters",
-        "Polyvalent d’un style à l’autre, avec peu de filtres de contenu"
-      ]
-    ],
-    "limits": [
-      [
-        "Below the paid flagships on text and complex scenes",
-        "En dessous des modèles haut de gamme sur le texte et les scènes complexes"
-      ]
-    ],
-    "facts": [
-      ["8.9B parameters, Apache 2.0 license", "8,9 Md de paramètres, licence Apache 2.0"],
-      ["Prompts up to 7,500 characters", "Consignes jusqu’à 7 500 caractères"]
-    ],
     "needs": ["fast-cheap-image"],
-    "url": "https://huggingface.co/lodestones/Chroma1-HD",
-    "sources": [
-      "https://huggingface.co/lodestones/Chroma1-HD",
-      "https://comfyui-wiki.com/en/models/chroma/chroma-1-hd"
-    ]
+    "url": "https://huggingface.co/lodestones/Chroma1-HD"
   },
   {
     "slug": "sd35",
@@ -2249,33 +1179,8 @@
       "Stability AI's SD 3.5 Large, private and about 0.5 credit. It is the Sub Rosa agent's default when you don't name a model.",
       "SD 3.5 Large de Stability AI, privé, environ 0,5 crédit. C’est le modèle par défaut de l’agent de Sub Rosa si vous n’en nommez aucun."
     ],
-    "strengths": [
-      [
-        "Private and among the cheapest (about 0.5 credit)",
-        "Privé et parmi les moins chers (environ 0,5 crédit)"
-      ],
-      [
-        "Fine for quick illustrations and mood images",
-        "Convient aux illustrations rapides et aux images d’ambiance"
-      ]
-    ],
-    "limits": [
-      [
-        "Older (2024): weaker text and prompt following than recent models",
-        "Plus ancien (2024) : texte et respect des consignes en retrait"
-      ],
-      ["Short prompts only: 1,500 characters", "Consignes courtes seulement : 1 500 caractères"]
-    ],
-    "facts": [
-      [
-        "Shown as \"Venice SD35\" in the model list",
-        "Affiché « Venice SD35 » dans la liste des modèles"
-      ],
-      ["8B parameters", "8 Md de paramètres"]
-    ],
     "needs": ["fast-cheap-image"],
-    "url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
-    "sources": ["https://huggingface.co/stabilityai/stable-diffusion-3.5-large"]
+    "url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large"
   },
   {
     "slug": "z-image",
@@ -2288,29 +1193,8 @@
       "A small, fast open model with good photorealism, private and about 0.5 credit. Pick it for quick drafts that still look real.",
       "Un petit modèle ouvert et rapide, bon en photoréalisme, privé, environ 0,5 crédit. Pour des brouillons rapides qui font vrai."
     ],
-    "strengths": [
-      ["Very fast: built to draw in 8 steps", "Très rapide : conçu pour dessiner en 8 étapes"],
-      [
-        "Photorealism and bilingual (English, Chinese) text",
-        "Photoréalisme et texte bilingue (anglais, chinois)"
-      ]
-    ],
-    "limits": [
-      [
-        "A 6B model: less detail than the large paid flagships",
-        "Un modèle de 6 Md : moins de détail que les grands modèles payants"
-      ]
-    ],
-    "facts": [
-      ["Apache 2.0 license", "Licence Apache 2.0"],
-      ["Prompts up to 7,500 characters", "Consignes jusqu’à 7 500 caractères"]
-    ],
     "needs": ["fast-cheap-image"],
-    "url": "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo",
-    "sources": [
-      "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo",
-      "https://comfyui-wiki.com/en/models/z-image/z-image-turbo"
-    ]
+    "url": "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"
   },
   {
     "slug": "anime-wai",
@@ -2323,24 +1207,8 @@
       "A popular anime fine-tune of Illustrious XL, private and about 0.5 credit. Pick it for anime characters and stylized art.",
       "Un modèle anime populaire dérivé d’Illustrious XL, privé, environ 0,5 crédit. Pour les personnages anime et l’art stylisé."
     ],
-    "strengths": [
-      [
-        "Accurate anime characters and vibrant color",
-        "Personnages anime fidèles et couleurs vives"
-      ],
-      ["Private and among the cheapest", "Privé et parmi les moins chers"]
-    ],
-    "limits": [
-      ["Anime only: not for photos or text", "Anime uniquement : ni photo ni texte"],
-      ["Short prompts only: 1,500 characters", "Consignes courtes seulement : 1 500 caractères"]
-    ],
-    "facts": [["Based on SDXL (Illustrious XL)", "Basé sur SDXL (Illustrious XL)"]],
     "needs": ["illustration"],
-    "url": "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0",
-    "sources": [
-      "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0",
-      "https://anifusion.ai/models/"
-    ]
+    "url": "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0"
   },
   {
     "slug": "lustify",
@@ -2359,21 +1227,8 @@
       "SDXL fine-tunes for adult content, uncensored, private and about 0.5 credit. Use v8, the most recent.",
       "Modèles dérivés de SDXL pour contenus adultes, non censurés, privés, environ 0,5 crédit. Prenez la v8, la plus récente."
     ],
-    "strengths": [
-      ["Private and among the cheapest", "Privé et parmi les moins chers"],
-      [
-        "Three versions: v8 is the newest (2026)",
-        "Trois versions : la v8 est la plus récente (2026)"
-      ]
-    ],
-    "limits": [
-      ["Adults only, and only for that use", "Réservé aux adultes, et à cet usage seulement"],
-      ["Short prompts only: 1,500 characters", "Consignes courtes seulement : 1 500 caractères"]
-    ],
-    "facts": [["Adult content, uncensored", "Contenu adulte, non censuré"]],
     "needs": [],
-    "url": "",
-    "sources": ["https://civitai.com/models/573152"]
+    "url": ""
   },
   {
     "slug": "image-tools",
@@ -2395,34 +1250,8 @@
       "Utility models rather than generators. The upscaler enlarges an image 2x to 4x, with an optional enhance pass.",
       "Des outils plutôt que des générateurs. L’agrandisseur agrandit une image de x2 à x4, avec une passe d’amélioration en option."
     ],
-    "strengths": [
-      ["Upscaler runs in private mode", "L’agrandisseur tourne en mode privé"],
-      [
-        "Turns a small draft into a print-size file",
-        "Transforme un petit brouillon en fichier imprimable"
-      ]
-    ],
-    "limits": [
-      [
-        "Enlarging adds no new content: fix the image first",
-        "Agrandir n’ajoute rien : corrigez l’image d’abord"
-      ],
-      [
-        "Background removal is not available in Sub Rosa yet",
-        "Le détourage n’est pas encore disponible dans Sub Rosa"
-      ]
-    ],
-    "facts": [
-      ["Scale 2x to 4x, optional enhance", "Échelle x2 à x4, amélioration en option"],
-      ["4x costs more than 2x", "x4 coûte plus cher que x2"],
-      [
-        "Upscaler private; background remover anonymized",
-        "Agrandisseur privé ; détourage anonymisé"
-      ]
-    ],
     "needs": [],
     "url": "https://www.bria.ai",
-    "sources": ["https://github.com/Bria-AI/RMBG-2.0", "https://docs.venice.ai/overview/models"],
     "nameFr": "Agrandissement et détourage"
   },
   {
@@ -2457,37 +1286,8 @@
       "Instruction-following edits that keep the rest of the image intact. Qwen Image 2 is the Studio's first \"Automatic\" choice.",
       "Des retouches qui suivent la consigne et préservent le reste de l’image. Qwen Image 2 est le premier choix « Automatique » du Studio."
     ],
-    "strengths": [
-      [
-        "Changes what you ask, leaves the rest alone",
-        "Change ce que vous demandez, laisse le reste"
-      ],
-      ["Edits text in an image cleanly", "Retouche proprement le texte d’une image"],
-      ["About 2 to 2.6 credits an edit", "Environ 2 à 2,6 crédits la retouche"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Alibaba Cloud's policy applies",
-        "Anonymisé, pas privé : la politique d’Alibaba Cloud s’applique"
-      ],
-      [
-        "2 Pro is now dearer (about 5 credits) than 3 Pro",
-        "2 Pro est désormais plus cher (environ 5 crédits) que 3 Pro"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      ["Qwen Image 3 and 3 Pro: 1K or 2K output", "Qwen Image 3 et 3 Pro : sortie 1K ou 2K"]
-    ],
     "needs": ["precise-edit", "retouch-text"],
     "url": "https://qwen.ai",
-    "sources": [
-      "https://webkul.com/blog/qwen-image-2/",
-      "https://llm-stats.com/blog/research/qwen-image-3-0-launch"
-    ],
     "nameFr": "Qwen Image (retouche)"
   },
   {
@@ -2517,33 +1317,8 @@
       "ByteDance's editors keep lighting, color and the subject's look while changing what you ask. Seedream 5 Lite is the second \"Automatic\" choice.",
       "Les éditeurs de ByteDance gardent lumière, couleurs et apparence du sujet en changeant ce que vous demandez. Seedream 5 Lite est le deuxième choix « Automatique »."
     ],
-    "strengths": [
-      ["Preserves subject, lighting and color tone", "Préserve sujet, lumière et tonalité"],
-      [
-        "Combines several images into one coherent scene",
-        "Assemble plusieurs images en une scène cohérente"
-      ],
-      ["About 2.6 credits an edit", "Environ 2,6 crédits la retouche"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: ByteDance's policy applies",
-        "Anonymisé, pas privé : la politique de ByteDance s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      ["Seedream 5 Pro: 1K or 2K output", "Seedream 5 Pro : sortie 1K ou 2K"]
-    ],
     "needs": ["multi-image-compose"],
     "url": "https://seed.bytedance.com/en/seedream5_0",
-    "sources": [
-      "https://runware.ai/docs/models/bytedance-seedream-5-0-pro/guides",
-      "https://happycapy.ai/blog/seedream-4-5"
-    ],
     "nameFr": "Seedream (retouche)"
   },
   {
@@ -2573,36 +1348,8 @@
       "Google's conversational editors: describe the change in plain words. Nano Banana 2 is the fourth \"Automatic\" choice.",
       "Les éditeurs de Google : décrivez le changement avec vos mots. Nano Banana 2 est le quatrième choix « Automatique »."
     ],
-    "strengths": [
-      ["Understands loose, natural instructions", "Comprend des consignes libres et naturelles"],
-      [
-        "Blends several photos while keeping people recognizable",
-        "Mêle plusieurs photos en gardant les personnes reconnaissables"
-      ]
-    ],
-    "limits": [
-      [
-        "Dearer than Qwen or Seedream: about 5 credits an edit",
-        "Plus cher que Qwen ou Seedream : environ 5 crédits la retouche"
-      ],
-      [
-        "Anonymized, not private: Google's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation de Google s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      ["1K, 2K or 4K output (2 and Pro)", "Sortie 1K, 2K ou 4K (2 et Pro)"]
-    ],
     "needs": ["multi-image-compose", "precise-edit"],
     "url": "https://deepmind.google/models/gemini-image/",
-    "sources": [
-      "https://deepmind.google/models/gemini-image/",
-      "https://www.eesel.ai/blog/nano-banana-2-lite"
-    ],
     "nameFr": "Nano Banana (retouche)"
   },
   {
@@ -2616,33 +1363,8 @@
       "Ideogram's precise editor, the one the Retouch tab opens with: paint a zone, describe the change, the rest of the pixels stay put.",
       "L’éditeur précis d’Ideogram, celui qu’ouvre l’onglet Retouche : peignez une zone, décrivez le changement, le reste ne bouge pas."
     ],
-    "strengths": [
-      [
-        "Restores untouched pixels, so framing and color hold across rounds",
-        "Restaure les pixels non touchés : cadrage et couleurs tiennent d’une passe à l’autre"
-      ],
-      [
-        "Strong on lettering, product and color fixes",
-        "Fort pour le lettrage, les produits et les corrections de couleur"
-      ]
-    ],
-    "limits": [
-      ["Dear: about 13 credits an edit", "Cher : environ 13 crédits la retouche"],
-      [
-        "Anonymized, not private: Ideogram's policy applies",
-        "Anonymisé, pas privé : la politique d’Ideogram s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      ["1K or 2K; low, medium or high quality", "1K ou 2K ; qualité basse, moyenne ou haute"]
-    ],
     "needs": ["precise-edit", "retouch-text"],
     "url": "https://ideogram.ai/features/text-rendering/",
-    "sources": ["https://runware.ai/docs/models/ideogram-4-5-precise-edit.md"],
     "nameFr": "Ideogram 4.5 (retouche)"
   },
   {
@@ -2684,39 +1406,8 @@
       "OpenAI's editors for localized changes and text fixes. Sunburst holds intricate detail best; Flare is quicker at the same price.",
       "Les éditeurs d’OpenAI pour les changements localisés et le texte. Sunburst tient le mieux les détails ; Flare va plus vite au même prix."
     ],
-    "strengths": [
-      [
-        "Keeps reference details across successive edits",
-        "Garde les détails de référence d’une retouche à l’autre"
-      ],
-      ["Reliable text replacement inside images", "Remplacement fiable du texte dans l’image"]
-    ],
-    "limits": [
-      [
-        "About 4 credits for 2.5, far more for older versions",
-        "Environ 4 crédits pour 2.5, bien plus pour les anciennes versions"
-      ],
-      [
-        "Anonymized, not private: OpenAI's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation d’OpenAI s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      [
-        "1K, 2K or 4K; low, medium or high quality",
-        "1K, 2K ou 4K ; qualité basse, moyenne ou haute"
-      ]
-    ],
     "needs": ["precise-edit", "retouch-text"],
     "url": "https://platform.openai.com/docs/guides/image-generation",
-    "sources": [
-      "https://docs.kanaries.net/articles/gpt-image-2-5",
-      "https://grida.co/docs/models/gpt-image-2.5"
-    ],
     "nameFr": "GPT Image (retouche)"
   },
   {
@@ -2736,42 +1427,8 @@
       "Photoreal edits that keep faces, outfits and products recognizable. FLUX 3 is the newer and cheaper of the two.",
       "Des retouches photoréalistes qui gardent visages, tenues et produits reconnaissables. FLUX 3 est le plus récent et le moins cher des deux."
     ],
-    "strengths": [
-      [
-        "Consistent characters and products across references",
-        "Personnages et produits cohérents d’une référence à l’autre"
-      ],
-      [
-        "Local edits without disturbing the surroundings",
-        "Retouches locales sans perturber le reste"
-      ]
-    ],
-    "limits": [
-      [
-        "FLUX 3 is days old: few independent reviews yet",
-        "FLUX 3 a quelques jours : peu d’avis indépendants pour l’instant"
-      ],
-      [
-        "Anonymized, not private: Black Forest Labs' policy applies",
-        "Anonymisé, pas privé : la politique de Black Forest Labs s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      [
-        "FLUX 3: 1K, 2K or 4K output, about 3 credits",
-        "FLUX 3 : sortie 1K, 2K ou 4K, environ 3 crédits"
-      ]
-    ],
     "needs": ["multi-image-compose"],
     "url": "https://bfl.ai/models/flux-3",
-    "sources": [
-      "https://runware.ai/flux-3-image",
-      "https://www.hedra.com/models/image/black-forest-labs/flux2-max"
-    ],
     "nameFr": "FLUX (retouche)"
   },
   {
@@ -2798,36 +1455,8 @@
       "xAI's editors in private mode: the pick when the photo you edit should not be kept by anyone. Version 2.0 is the most recent.",
       "Les éditeurs de xAI en mode privé : le choix quand la photo retouchée ne doit être conservée par personne. La 2.0 est la plus récente."
     ],
-    "strengths": [
-      [
-        "Private mode: no data kept by the provider",
-        "Mode privé : rien n’est conservé par le fournisseur"
-      ],
-      [
-        "A cheap version for quick fixes, about 1.5 credits an edit",
-        "Une version bon marché pour les petites corrections, environ 1,5 crédit la retouche"
-      ]
-    ],
-    "limits": [
-      ["Tops out at 2K", "Plafonne à 2K"],
-      [
-        "2.0 edit costs about 3.6 credits, more than its generator",
-        "La retouche 2.0 coûte environ 3,6 crédits, plus que la génération"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      ["1K or 2K output", "Sortie 1K ou 2K"]
-    ],
     "needs": [],
     "url": "https://docs.x.ai/docs/guides/image-generation",
-    "sources": [
-      "https://llmgateway.io/models/grok-imagine-image-2-0",
-      "https://www.cometapi.com/grok-imagine-quality-mode-api/"
-    ],
     "nameFr": "Grok Imagine (retouche)"
   },
   {
@@ -2847,30 +1476,8 @@
       "Luma's reasoning editor, good at camera angle, lighting and style changes on a single image.",
       "L’éditeur de Luma qui raisonne, à l’aise pour changer l’angle, la lumière ou le style d’une seule image."
     ],
-    "strengths": [
-      [
-        "Directable changes to angle, light and color",
-        "Changements dirigés d’angle, de lumière et de couleur"
-      ],
-      [
-        "Style transfer across many art styles",
-        "Transfert de style, avec de nombreux styles artistiques au choix"
-      ]
-    ],
-    "limits": [
-      ["One image per edit: no combining", "Une image par retouche : pas d’assemblage"],
-      [
-        "Anonymized, not private: Luma's policy applies",
-        "Anonymisé, pas privé : la politique de Luma s’applique"
-      ]
-    ],
-    "facts": [
-      ["Single source image", "Une seule image source"],
-      ["About 3 credits (Uni-1)", "Environ 3 crédits (Uni-1)"]
-    ],
     "needs": [],
     "url": "https://lumalabs.ai/uni-1",
-    "sources": ["https://lumalabs.ai/uni-1"],
     "nameFr": "Luma Uni-1 (retouche)"
   },
   {
@@ -2884,25 +1491,8 @@
       "Meta's editor at about 1 credit: the cheapest way to try a change or blend a few photos.",
       "L’éditeur de Meta à environ 1 crédit : la façon la moins chère d’essayer un changement ou de mêler quelques photos."
     ],
-    "strengths": [
-      ["About 1 credit an edit", "Environ 1 crédit la retouche"],
-      ["Blends several references into one image", "Mêle plusieurs références en une image"]
-    ],
-    "limits": [
-      [
-        "Anonymized, not private: Meta's retention policy applies",
-        "Anonymisé, pas privé : la politique de conservation de Meta s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ]
-    ],
     "needs": [],
     "url": "https://about.fb.com/news/2026/07/introducing-muse-image/",
-    "sources": ["https://about.fb.com/news/2026/07/introducing-muse-image/"],
     "nameFr": "Muse Image (retouche)"
   },
   {
@@ -2916,36 +1506,8 @@
       "Alibaba Wan's professional editor for complex, multi-element changes and restyling.",
       "L’éditeur professionnel de Wan (Alibaba) pour les retouches complexes à plusieurs éléments et les changements de style."
     ],
-    "strengths": [
-      [
-        "Swaps elements and restyles from plain instructions",
-        "Remplace des éléments et change le style sur simple consigne"
-      ],
-      [
-        "Keeps detail on multi-element edits",
-        "Garde le détail sur les retouches à plusieurs éléments"
-      ]
-    ],
-    "limits": [
-      ["About 4.8 credits an edit", "Environ 4,8 crédits la retouche"],
-      [
-        "Anonymized, not private: Alibaba Cloud's policy applies",
-        "Anonymisé, pas privé : la politique d’Alibaba Cloud s’applique"
-      ]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      ["1K or 2K output", "Sortie 1K ou 2K"]
-    ],
     "needs": [],
     "url": "https://wan.video",
-    "sources": [
-      "https://www.eachlabs.ai/alibaba/wan-2-7/alibaba-wan-2-7-pro-text-to-image",
-      "https://help.scenario.com/articles/9990433066-wan-2-7-alibaba-s-new-image-generation-standard"
-    ],
     "nameFr": "Wan 2.7 Pro (retouche)"
   },
   {
@@ -2959,30 +1521,8 @@
       "An open editing model run in private mode, strong on portraits, old photo repair and stylized text. About 2 credits.",
       "Un modèle de retouche ouvert, en mode privé, fort sur les portraits, la restauration de photos anciennes et le texte stylisé. Environ 2 crédits."
     ],
-    "strengths": [
-      [
-        "Keeps a person's identity through edits",
-        "Garde l’identité d’une personne au fil des retouches"
-      ],
-      ["Restores old photos", "Restaure les photos anciennes"],
-      ["Private mode at about 2 credits", "Mode privé pour environ 2 crédits"]
-    ],
-    "limits": [
-      ["Short prompts only: 1,500 characters", "Consignes courtes seulement : 1 500 caractères"]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ],
-      ["Open weights, Apache 2.0 license", "Poids ouverts, licence Apache 2.0"]
-    ],
     "needs": [],
-    "url": "https://github.com/FireRedTeam/FireRed-Image-Edit",
-    "sources": [
-      "https://github.com/FireRedTeam/FireRed-Image-Edit",
-      "https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.0"
-    ]
+    "url": "https://github.com/FireRedTeam/FireRed-Image-Edit"
   },
   {
     "slug": "qwen-edit-uncensored",
@@ -2995,26 +1535,8 @@
       "A Qwen-based editor without content restrictions, run in private mode for about 2 credits.",
       "Un éditeur basé sur Qwen, sans restriction de contenu, en mode privé pour environ 2 crédits."
     ],
-    "strengths": [
-      [
-        "Private mode: no data kept by the provider",
-        "Mode privé : rien n’est conservé par le fournisseur"
-      ],
-      ["Accepts edits other models refuse", "Accepte des retouches que d’autres modèles refusent"]
-    ],
-    "limits": [
-      ["Short prompts only: 1,500 characters", "Consignes courtes seulement : 1 500 caractères"],
-      ["Little public documentation", "Peu de documentation publique"]
-    ],
-    "facts": [
-      [
-        "Up to 3 images per edit in Sub Rosa, 5 MB each",
-        "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
-      ]
-    ],
     "needs": [],
-    "url": "https://qwen.ai",
-    "sources": ["https://docs.venice.ai/overview/models"]
+    "url": "https://qwen.ai"
   },
   {
     "slug": "kling-v3",
@@ -3070,53 +1592,8 @@
       "Kuaishou's 2026 generation: text or image to video with sound and multi-shot prompts. Pick it as your all-round cinematic choice.",
       "La génération 2026 de Kuaishou : texte ou image vers vidéo, avec son et prompts multiplans. Choisissez-la comme valeur sûre pour un rendu cinéma."
     ],
-    "strengths": [
-      [
-        "Cuts between shots on prompts like \"shot 1, 3s\", inside one clip",
-        "Enchaîne les plans sur des prompts comme « shot 1, 3s », dans un seul clip"
-      ],
-      [
-        "Sound, dialogue and ambience generated with the picture (not on Turbo)",
-        "Son, dialogues et ambiance générés avec l’image (sauf Turbo)"
-      ],
-      [
-        "Motion Control versions transfer a real performance to your character",
-        "Les variantes Motion Control transfèrent un vrai mouvement à votre personnage"
-      ],
-      [
-        "Four price levels in one family, from Turbo Standard to 4K",
-        "Quatre niveaux de prix dans une seule famille, de Turbo Standard à la 4K"
-      ]
-    ],
-    "limits": [
-      [
-        "4K costs about two and a half times Pro per second; its reference version needs a starting image",
-        "La 4K coûte environ deux fois et demie le prix de Pro à la seconde ; sa version références exige une image de départ"
-      ],
-      [
-        "Turbo and Motion Control versions have no sound",
-        "Les variantes Turbo et Motion Control n’ont pas de son"
-      ],
-      [
-        "Motion Control length follows your source clip; no quote before launch",
-        "La durée de Motion Control suit votre clip source ; pas de devis avant lancement"
-      ]
-    ],
-    "facts": [
-      ["3 to 15 s per clip", "3 à 15 s par clip"],
-      ["Native sound on Standard, Pro and 4K", "Son natif sur Standard, Pro et 4K"],
-      [
-        "Text to video, image to video, references (4K) and motion control",
-        "Texte vers vidéo, image vers vidéo, références (4K) et contrôle du mouvement"
-      ]
-    ],
     "needs": ["cinematic", "animate-image", "with-sound", "motion-control"],
-    "url": "https://app.klingai.com/global/",
-    "sources": [
-      "https://www.cined.com/kling-3-0-ai-video-model-introduced-native-4k-",
-      "https://morphic.com/resources/how-to/kling-3.0-guide",
-      "https://www.mindstudio.ai/models/kling-v3-0-motion-control"
-    ]
+    "url": "https://app.klingai.com/global/"
   },
   {
     "slug": "kling-o3",
@@ -3155,37 +1632,8 @@
       "The omni version of Kling 3.0, built to keep a character or product identical across clips. Pick it when the same face must come back shot after shot.",
       "La version omni de Kling 3.0, qui garde un personnage ou un produit identique d’un clip à l’autre. Choisissez-la quand un visage doit revenir à chaque plan."
     ],
-    "strengths": [
-      [
-        "References as elements: up to 4 subjects, each with extra angles",
-        "Références sous forme d’éléments : jusqu’à 4 sujets, chacun avec d’autres angles"
-      ],
-      [
-        "Up to 4 scene images to fix the set, light and style",
-        "Jusqu’à 4 images de scène pour fixer le décor, la lumière et le style"
-      ],
-      ["Sound and dialogue generated with the picture", "Son et dialogues générés avec l’image"]
-    ],
-    "limits": [
-      [
-        "Name each reference in the prompt by its tag (@Element1, @Image1)",
-        "Désignez chaque référence dans le prompt par son repère (@Element1, @Image1)"
-      ],
-      [
-        "4K is among the dearest options per second",
-        "La 4K fait partie des options les plus chères à la seconde"
-      ]
-    ],
-    "facts": [
-      ["3 to 15 s per clip, native sound", "3 à 15 s par clip, son natif"],
-      ["Text, image or references to video", "Texte, image ou références vers vidéo"]
-    ],
     "needs": ["character-references", "with-sound", "cinematic"],
-    "url": "https://app.klingai.com/global/",
-    "sources": [
-      "https://www.mindstudio.ai/models/kling-video-o3",
-      "https://picsart.com/blog/kling-3-0-omni-integration/"
-    ]
+    "url": "https://app.klingai.com/global/"
   },
   {
     "slug": "kling-2",
@@ -3212,32 +1660,8 @@
       "The previous Kling generation, kept because it is cheap and dependable. Sub Rosa's Studio workflows use 2.5 Turbo Pro by default.",
       "La génération précédente de Kling, gardée parce qu’elle est économique et fiable. Les workflows du Studio de Sub Rosa utilisent 2.5 Turbo Pro par défaut."
     ],
-    "strengths": [
-      [
-        "2.5 Turbo Pro is among the cheaper cinematic options per second",
-        "2.5 Turbo Pro compte parmi les options cinéma les moins chères à la seconde"
-      ],
-      [
-        "Fast turnaround, good for drafts and many short clips",
-        "Rendu rapide, bien pour les brouillons et les séries de clips courts"
-      ],
-      ["2.6 Pro adds sound generated with the picture", "2.6 Pro ajoute un son généré avec l’image"]
-    ],
-    "limits": [
-      ["Only 5 or 10 s per clip", "Seulement 5 ou 10 s par clip"],
-      [
-        "2.5 Turbo is silent: add music or narration afterwards",
-        "2.5 Turbo est muet : ajoutez musique ou narration ensuite"
-      ]
-    ],
-    "facts": [
-      ["5 or 10 s", "5 ou 10 s"],
-      ["Text or image to video", "Texte ou image vers vidéo"],
-      ["Native sound on 2.6 only", "Son natif sur 2.6 uniquement"]
-    ],
     "needs": ["fast-cheap-video", "animate-image"],
     "url": "https://klingai.com",
-    "sources": ["https://morphic.com/fr/ai-glossary/Kling-25"],
     "nameFr": "Kling 2.5 et 2.6"
   },
   {
@@ -3274,46 +1698,8 @@
       "ByteDance's July 2026 model, which makes up to 30 s in one pass with sound. Pick it for a long continuous scene.",
       "Le modèle de ByteDance de juillet 2026, qui produit jusqu’à 30 s d’un seul tenant, avec le son. Choisissez-le pour une longue scène continue."
     ],
-    "strengths": [
-      [
-        "Up to 30 s in a single generation, no stitching",
-        "Jusqu’à 30 s en une seule génération, sans raccord"
-      ],
-      ["Sound generated with the picture", "Son généré avec l’image"],
-      [
-        "The only Seedance with a private (zero retention) version",
-        "Le seul Seedance proposé en version privée (aucune conservation)"
-      ]
-    ],
-    "limits": [
-      [
-        "Among the dearest per second; the private US version costs about twice as much",
-        "Parmi les plus chers à la seconde ; la version privée US coûte environ le double"
-      ],
-      [
-        "Public versions refuse photos with a recognizable person",
-        "Les versions publiques refusent les photos où l’on reconnaît une personne"
-      ],
-      [
-        "No reference clips, only images and audio",
-        "Pas de clips de référence, seulement des images et de l’audio"
-      ]
-    ],
-    "facts": [
-      ["4 to 30 s, native sound", "4 à 30 s, son natif"],
-      ["Up to 1080p", "Jusqu’à 1080p"],
-      ["Text, image or references to video", "Texte, image ou références vers vidéo"],
-      [
-        "Public versions anonymized, US versions private",
-        "Versions publiques anonymisées, versions US privées"
-      ]
-    ],
     "needs": ["long-shot", "with-sound", "cinematic"],
-    "url": "https://seed.bytedance.com/en/seedance2_5",
-    "sources": [
-      "https://technode.com/2026/07/31/bytedance-launches-seedance-2-5-video-generation-model/",
-      "https://the-decoder.com/bytedances-seedance-2-5-breaks-the-30-second-barrier-for-ai-video-generation/"
-    ]
+    "url": "https://seed.bytedance.com/en/seedance2_5"
   },
   {
     "slug": "seedance-2",
@@ -3358,41 +1744,8 @@
       "ByteDance's 2026 multimodal model: image, references and audio in, a clip with synced sound out. Pick it for dialogue scenes up to 15 s.",
       "Le modèle multimodal 2026 de ByteDance : images et audio en entrée, un clip au son synchronisé en sortie. Choisissez-le pour des scènes dialoguées jusqu’à 15 s."
     ],
-    "strengths": [
-      [
-        "Lip-synced speech in several languages, generated with the picture",
-        "Paroles synchronisées avec les lèvres en plusieurs langues, générées avec l’image"
-      ],
-      [
-        "Reference mode takes several images and audio clips",
-        "Le mode références accepte plusieurs images et extraits audio"
-      ],
-      [
-        "2.0 goes up to 4K; Mini and 1.5 keep costs low",
-        "2.0 monte jusqu’à la 4K ; Mini et 1.5 gardent les coûts bas"
-      ]
-    ],
-    "limits": [
-      [
-        "These public versions refuse photos with a recognizable person",
-        "Ces versions publiques refusent les photos où l’on reconnaît une personne"
-      ],
-      [
-        "No reference clips here, only images and audio",
-        "Pas de clips de référence ici, seulement des images et de l’audio"
-      ]
-    ],
-    "facts": [
-      ["2.0: 4 to 15 s; 1.5 Pro: 4 to 12 s", "2.0 : 4 à 15 s ; 1.5 Pro : 4 à 12 s"],
-      ["Native sound on every version", "Son natif sur toutes les versions"],
-      ["2.0 up to 4K, Fast and Mini up to 720p", "2.0 jusqu’à la 4K, Fast et Mini jusqu’à 720p"]
-    ],
     "needs": ["with-sound", "character-references", "animate-image"],
     "url": "https://seed.bytedance.com/en/seedance2_0",
-    "sources": [
-      "https://www.analyticsvidhya.com/blog/2026/02/what-is-seedance-2-0/",
-      "https://www.together.ai/models/seedance-2-0"
-    ],
     "nameFr": "Seedance 2.0 et 1.5"
   },
   {
@@ -3431,33 +1784,8 @@
       "Google's video model with dialogue, effects and ambience generated in the same pass. Pick it for short, polished, realistic shots.",
       "Le modèle vidéo de Google, avec dialogues, bruitages et ambiance générés dans la même passe. Choisissez-le pour des plans courts, soignés et réalistes."
     ],
-    "strengths": [
-      [
-        "Sound, speech and effects synced to the picture",
-        "Son, voix et bruitages synchronisés avec l’image"
-      ],
-      ["Veo 3.1 goes up to 4K", "Veo 3.1 monte jusqu’à la 4K"],
-      [
-        "Fast versions cost half the Full price or less",
-        "Les versions Fast coûtent la moitié du prix des versions Full, voire moins"
-      ]
-    ],
-    "limits": [
-      ["8 s at most per clip", "8 s au maximum par clip"],
-      ["Veo 3 image to video is 8 s only", "Veo 3 en image vers vidéo ne fait que 8 s"],
-      ["No reference mode in this catalog", "Pas de mode références dans ce catalogue"]
-    ],
-    "facts": [
-      ["4, 6 or 8 s", "4, 6 ou 8 s"],
-      ["Native sound", "Son natif"],
-      ["Veo 3.1 up to 4K, Veo 3 up to 1080p", "Veo 3.1 jusqu’à la 4K, Veo 3 jusqu’à 1080p"]
-    ],
     "needs": ["cinematic", "with-sound"],
     "url": "https://deepmind.google/models/veo/",
-    "sources": [
-      "https://developers.googleblog.com/en/introducing-veo-3-1-and-new-creative-controls-in-the-gemini-api",
-      "https://deepmind.google/models/veo/"
-    ],
     "nameFr": "Veo 3 et 3.1"
   },
   {
@@ -3504,34 +1832,8 @@
       "Alibaba's August 2026 model, up to 30 s per clip with sound. Pick it for long shots at a mid-range price.",
       "Le modèle d’Alibaba d’août 2026, jusqu’à 30 s par clip avec le son. Choisissez-le pour des plans longs à prix moyen."
     ],
-    "strengths": [
-      ["Up to 30 s in one clip", "Jusqu’à 30 s en un seul clip"],
-      ["Sound generated with the picture", "Son généré avec l’image"],
-      [
-        "Text, image and reference modes at every level",
-        "Modes texte, image et références à chaque niveau"
-      ]
-    ],
-    "limits": [
-      [
-        "Standard and Prime stop at 1080p; 4K needs Pro or Prime Pro",
-        "Standard et Prime s’arrêtent à 1080p ; la 4K demande Pro ou Prime Pro"
-      ],
-      [
-        "Long clips add up: the price is per second",
-        "Les clips longs coûtent vite cher : le prix est à la seconde"
-      ]
-    ],
-    "facts": [
-      ["2 to 30 s, native sound", "2 à 30 s, son natif"],
-      ["Up to 1080p (Pro levels up to 4K)", "Jusqu’à 1080p (niveaux Pro jusqu’à la 4K)"]
-    ],
     "needs": ["long-shot", "with-sound"],
-    "url": "https://wan.video",
-    "sources": [
-      "https://datanorth.ai/news/alibaba-launches-wan3-0-video-model",
-      "https://thenextweb.com/news/alibaba-wan3-video-model-after-share-sale"
-    ]
+    "url": "https://wan.video"
   },
   {
     "slug": "wan-2",
@@ -3577,41 +1879,8 @@
       "Alibaba's earlier Wan line (2.2 to 2.7), cheaper than Wan 3.0 and with an editing mode. Pick it for 5 to 15 s clips on a budget.",
       "La gamme Wan précédente d’Alibaba (2.2 à 2.7), moins chère que Wan 3.0 et dotée d’un mode retouche. Choisissez-la pour des clips de 5 à 15 s à petit budget."
     ],
-    "strengths": [
-      [
-        "2.6 and 2.7 Enhanced generate sound with the picture",
-        "2.6 et 2.7 Enhanced génèrent le son avec l’image"
-      ],
-      [
-        "2.7 Edit changes an existing clip from plain instructions",
-        "2.7 Edit transforme un clip existant à partir de consignes simples"
-      ],
-      [
-        "2.6 Flash is among the cheapest image to video options",
-        "2.6 Flash compte parmi les options image vers vidéo les moins chères"
-      ]
-    ],
-    "limits": [
-      [
-        "Plain 2.7 text and image versions are silent here",
-        "Les versions 2.7 texte et image simples sont muettes ici"
-      ],
-      [
-        "The edit mode shows no price estimate before launch",
-        "Le mode retouche n’affiche pas d’estimation de prix avant lancement"
-      ]
-    ],
-    "facts": [
-      ["5 to 15 s (2.2: 5 or 8 s; 2.5: 5 or 10 s)", "5 à 15 s (2.2 : 5 ou 8 s ; 2.5 : 5 ou 10 s)"],
-      ["Up to 1080p", "Jusqu’à 1080p"],
-      ["Text, image, references and video to video", "Texte, image, références et vidéo vers vidéo"]
-    ],
     "needs": ["fast-cheap-video"],
-    "url": "https://wan.video",
-    "sources": [
-      "https://www.mindstudio.ai/blog/wan-2-7-ai-video-model-features-release-timeline",
-      "https://www.mindstudio.ai/models/wan-2-6"
-    ]
+    "url": "https://wan.video"
   },
   {
     "slug": "minimax-h3",
@@ -3656,38 +1925,8 @@
       "MiniMax's 2026 Hailuo models with stereo sound. H3 Max runs in private mode at a low price. Pick it for private, affordable clips.",
       "Les modèles Hailuo 2026 de MiniMax, avec son stéréo. H3 Max tourne en mode privé et coûte peu. Choisissez-le pour des clips privés et abordables."
     ],
-    "strengths": [
-      [
-        "H3 Max and Turbo run in private mode (no data kept)",
-        "H3 Max et Turbo tournent en mode privé (aucune donnée conservée)"
-      ],
-      [
-        "Turbo is among the cheapest clips with sound",
-        "Turbo fait partie des clips avec son les moins chers"
-      ],
-      [
-        "Multi-Angle makes product spins and bullet-time from one photo",
-        "Multi-Angle crée des rotations produit et du bullet time à partir d’une photo"
-      ]
-    ],
-    "limits": [
-      [
-        "H3 Max stops at 1080p; 2K needs the anonymized H3",
-        "H3 Max s’arrête à 1080p ; la 2K demande H3, anonymisé"
-      ],
-      ["Clips start at 5 s", "Les clips commencent à 5 s"]
-    ],
-    "facts": [
-      ["5 to 15 s, native sound", "5 à 15 s, son natif"],
-      ["H3 Max: 480p to 1080p; H3: 768p or 2K", "H3 Max : 480p à 1080p ; H3 : 768p ou 2K"],
-      ["Max versions private, plain H3 anonymized", "Versions Max privées, H3 simple anonymisé"]
-    ],
     "needs": ["fast-cheap-video", "with-sound", "character-references"],
-    "url": "https://hailuoai.video",
-    "sources": [
-      "https://openrouter.ai/minimax/hailuo-3-max",
-      "https://fal.ai/learn/tools/what-is-h3-max-camera-controls"
-    ]
+    "url": "https://hailuoai.video"
   },
   {
     "slug": "grok-imagine-video",
@@ -3733,38 +1972,8 @@
       "xAI's video model, every version running in private mode, with sound and any length from 1 to 15 s. Pick it to animate an image privately.",
       "Le modèle vidéo de xAI, toutes versions en mode privé, avec son et toute durée de 1 à 15 s. Choisissez-le pour animer une image en privé."
     ],
-    "strengths": [
-      [
-        "Private mode on every version: nothing is kept",
-        "Mode privé sur toutes les versions : rien n’est conservé"
-      ],
-      ["Any length from 1 to 15 s, by the second", "Toute durée de 1 à 15 s, à la seconde près"],
-      [
-        "1.5 Lite is among the cheapest clips with sound",
-        "1.5 Lite fait partie des clips avec son les moins chers"
-      ]
-    ],
-    "limits": [
-      [
-        "1.0 reference mode is silent and stops at 10 s",
-        "Le mode références 1.0 est muet et s’arrête à 10 s"
-      ],
-      [
-        "The edit mode shows no price estimate before launch",
-        "Le mode retouche n’affiche pas d’estimation de prix avant lancement"
-      ]
-    ],
-    "facts": [
-      ["1 to 15 s, native sound", "1 à 15 s, son natif"],
-      ["1.5 up to 1080p, 1.0 up to 720p", "1.5 jusqu’à 1080p, 1.0 jusqu’à 720p"],
-      ["Text, image, references and video to video", "Texte, image, références et vidéo vers vidéo"]
-    ],
     "needs": ["animate-image", "with-sound", "fast-cheap-video"],
     "url": "https://x.ai/news/grok-imagine-api",
-    "sources": [
-      "https://www.buildfastwithai.com/blogs/grok-imagine-video-1-5-review-2026",
-      "https://vercel.com/ai-gateway/models/grok-imagine-video/about"
-    ],
     "nameFr": "Grok Imagine vidéo"
   },
   {
@@ -3802,33 +2011,8 @@
       "Google's 2026 model that makes and edits video from text, images, references or footage. Pick it for short clips you want to refine by editing.",
       "Le modèle 2026 de Google qui crée et retouche des vidéos à partir de texte, d’images ou d’un clip. Choisissez-le pour des clips courts à affiner par retouches."
     ],
-    "strengths": [
-      ["One family for generating and editing", "Une seule famille pour générer et retoucher"],
-      ["Version 1.1 goes from 360p to 4K", "La version 1.1 va de 360p à la 4K"],
-      ["Mid-range price per second", "Prix moyen à la seconde"]
-    ],
-    "limits": [
-      ["10 s at most per clip", "10 s au maximum par clip"],
-      [
-        "The catalog offers no sound switch for this family",
-        "Le catalogue ne propose pas de réglage du son pour cette famille"
-      ],
-      [
-        "The edit mode shows no price estimate before launch",
-        "Le mode retouche n’affiche pas d’estimation de prix avant lancement"
-      ]
-    ],
-    "facts": [
-      ["4, 6, 8 or 10 s", "4, 6, 8 ou 10 s"],
-      ["1.1 up to 4K", "1.1 jusqu’à la 4K"],
-      ["Text, image, references and video to video", "Texte, image, références et vidéo vers vidéo"]
-    ],
     "needs": [],
-    "url": "https://deepmind.google/models/gemini-omni/",
-    "sources": [
-      "https://www.etvbharat.com/en/technology/google-gemini-omni-1-dot-1-flash-google-flow-enn26082900548",
-      "https://mezha.ua/en/news/google-presents-gemini-omni-flash-model-311433/"
-    ]
+    "url": "https://deepmind.google/models/gemini-omni/"
   },
   {
     "slug": "happyhorse",
@@ -3865,32 +2049,8 @@
       "Alibaba's 2026 model that generates picture and sound together, with lip-sync in seven languages including French. Pick it for talking characters.",
       "Le modèle 2026 d’Alibaba : image et son ensemble, synchro labiale en sept langues dont le français. Choisissez-le pour des personnages qui parlent."
     ],
-    "strengths": [
-      [
-        "Lip-sync in 7 languages, French included",
-        "Synchronisation labiale en 7 langues, dont le français"
-      ],
-      [
-        "Ranked first on the Artificial Analysis video arena at launch (April 2026)",
-        "Classé premier de l’arène vidéo Artificial Analysis à son lancement (avril 2026)"
-      ],
-      ["Same price for 1.0 and 1.1", "Même prix pour 1.0 et 1.1"]
-    ],
-    "limits": [
-      ["Mid-range price, not a budget option", "Prix moyen, pas une option économique"],
-      ["1080p at most", "1080p au maximum"]
-    ],
-    "facts": [
-      ["3 to 15 s, native sound", "3 à 15 s, son natif"],
-      ["720p or 1080p", "720p ou 1080p"],
-      ["Text, image, references and video to video", "Texte, image, références et vidéo vers vidéo"]
-    ],
     "needs": ["with-sound", "character-references"],
-    "url": "https://fal.ai/happyhorse",
-    "sources": [
-      "https://datanorth.ai/news/alibaba-launches-happyhorse-video-model",
-      "https://www.cometapi.com/models/aliyun/happy-horse-1-1/"
-    ]
+    "url": "https://fal.ai/happyhorse"
   },
   {
     "slug": "pixverse",
@@ -3934,35 +2094,8 @@
       "PixVerse C1 is an April 2026 model aimed at action and effects shots, with sound, at a low price per second. Pick it for cheap clips with sound.",
       "PixVerse C1, sorti en avril 2026, vise l’action et les effets, avec son, à petit prix à la seconde. Choisissez-le pour des clips économiques avec son."
     ],
-    "strengths": [
-      [
-        "C1 is among the cheapest clips with sound",
-        "C1 fait partie des clips avec son les moins chers"
-      ],
-      [
-        "Transition mode joins a first and a last frame",
-        "Le mode transition relie une première et une dernière image"
-      ],
-      ["Wide choice of formats, 21:9 included", "Large choix de formats, 21:9 compris"]
-    ],
-    "limits": [
-      ["1080p at most", "1080p au maximum"],
-      [
-        "V5.6 costs more than C1 and does less",
-        "V5.6 coûte plus cher que C1 pour un résultat moindre"
-      ]
-    ],
-    "facts": [
-      ["C1: 3 to 15 s; V5.6: 5 or 8 s", "C1 : 3 à 15 s ; V5.6 : 5 ou 8 s"],
-      ["Native sound", "Son natif"],
-      ["360p to 1080p", "360p à 1080p"]
-    ],
     "needs": ["fast-cheap-video", "with-sound"],
-    "url": "https://docs.platform.pixverse.ai/c1-released-2067883m0",
-    "sources": [
-      "https://docs.platform.pixverse.ai/c1-released-2067883m0",
-      "https://runware.ai/models/pixverse-v5-6"
-    ]
+    "url": "https://docs.platform.pixverse.ai/c1-released-2067883m0"
   },
   {
     "slug": "runway",
@@ -3984,34 +2117,8 @@
       "Runway's Gen-4.5 for realistic, controlled camera work from text or an image. Pick it for silent shots you will score or narrate yourself.",
       "Gen-4.5 de Runway, pour un rendu réaliste et des mouvements de caméra maîtrisés. Choisissez-le pour des plans muets que vous sonoriserez vous-même."
     ],
-    "strengths": [
-      ["Any length from 2 to 10 s", "Toute durée de 2 à 10 s"],
-      [
-        "Gen-4 Turbo is among the cheaper image to video options",
-        "Gen-4 Turbo compte parmi les options image vers vidéo les moins chères"
-      ]
-    ],
-    "limits": [
-      [
-        "No sound in this catalog: add music or narration afterwards",
-        "Pas de son dans ce catalogue : ajoutez musique ou narration ensuite"
-      ],
-      ["10 s at most", "10 s au maximum"]
-    ],
-    "facts": [
-      ["2 to 10 s", "2 à 10 s"],
-      [
-        "Text or image to video (Turbo: image only)",
-        "Texte ou image vers vidéo (Turbo : image seulement)"
-      ],
-      ["Silent", "Muet"]
-    ],
     "needs": ["cinematic"],
-    "url": "https://runwayml.com/research/introducing-runway-gen-4.5",
-    "sources": [
-      "https://imagine.art/blogs/runway-gen-4-5-overview",
-      "https://runwayml.com/research/introducing-runway-gen-4.5"
-    ]
+    "url": "https://runwayml.com/research/introducing-runway-gen-4.5"
   },
   {
     "slug": "ltx",
@@ -4049,27 +2156,8 @@
       "Lightricks' open-weight models that make picture and sound together, up to 20 s and up to 4K. Pick them for long, sharp clips at a fair price.",
       "Les modèles à poids ouverts de Lightricks : image et son ensemble, jusqu’à 20 s et en 4K. Choisissez-les pour des clips longs et nets à prix raisonnable."
     ],
-    "strengths": [
-      ["Up to 20 s on the Fast versions", "Jusqu’à 20 s sur les versions Fast"],
-      ["Up to 2160p (4K) on 2.5 Fast and 2.3", "Jusqu’à 2160p (4K) sur 2.5 Fast et 2.3"],
-      ["2.3 Fast is among the cheapest at 1080p", "2.3 Fast compte parmi les moins chers en 1080p"],
-      ["2.5 adds native multi-shot scenes", "2.5 ajoute des scènes multiplans natives"]
-    ],
-    "limits": [
-      ["Pro and Full stop at 10 s", "Pro et Full s’arrêtent à 10 s"],
-      ["Clips start at 6 s", "Les clips commencent à 6 s"]
-    ],
-    "facts": [
-      ["6 to 20 s (Fast), 6 to 10 s (Pro, Full)", "6 à 20 s (Fast), 6 à 10 s (Pro, Full)"],
-      ["Native sound", "Son natif"],
-      ["720p to 2160p", "720p à 2160p"]
-    ],
     "needs": ["long-shot", "fast-cheap-video", "with-sound"],
-    "url": "https://ltx.io/model",
-    "sources": [
-      "https://comfyui-wiki.com/en/news/2026-08-11-ltx-2-5-open-weights-release",
-      "https://rits.shanghai.nyu.edu/ai/ltx-2-3-sharper-video-native-portrait-and-cleaner-audio-in-lightricks-latest-open-source-model/"
-    ]
+    "url": "https://ltx.io/model"
   },
   {
     "slug": "vidu",
@@ -4082,30 +2170,8 @@
       "ShengShu's January 2026 model for short stories: 16 s, several camera angles and sound in one pass. Pick it for a small scene with dialogue.",
       "Le modèle de ShengShu (janvier 2026) pour les récits courts : 16 s, plusieurs angles et le son en une passe. Choisissez-le pour une petite scène dialoguée."
     ],
-    "strengths": [
-      [
-        "Switches camera angles inside one generation",
-        "Change d’angle de caméra dans une seule génération"
-      ],
-      [
-        "Dialogue, effects and music generated with the picture",
-        "Dialogues, bruitages et musique générés avec l’image"
-      ]
-    ],
-    "limits": [
-      ["Mid-range to high price per second", "Prix moyen à élevé à la seconde"],
-      ["No reference mode here", "Pas de mode références ici"]
-    ],
-    "facts": [
-      ["3 to 16 s, native sound", "3 à 16 s, son natif"],
-      ["360p to 1080p", "360p à 1080p"]
-    ],
     "needs": ["with-sound", "cinematic"],
-    "url": "https://www.vidu.com",
-    "sources": [
-      "https://www.atlascloud.ai/blog/ai-updates/vidu-q3-ai-video-generator-now-on-atlas-cloud-create-16s-cinematic-with-native-audio-sync",
-      "https://developer.puter.com/ai/vidu/vidu-q3/"
-    ]
+    "url": "https://www.vidu.com"
   },
   {
     "slug": "longcat",
@@ -4132,26 +2198,8 @@
       "Meituan's open-source model built for long clips, running in private mode. Pick it for the lowest price per second or a 30 s silent shot.",
       "Le modèle open source de Meituan conçu pour les clips longs, en mode privé. Choisissez-le pour le prix à la seconde le plus bas ou un plan muet de 30 s."
     ],
-    "strengths": [
-      [
-        "Distilled is the cheapest video in the catalog per second",
-        "Distilled est la vidéo la moins chère du catalogue à la seconde"
-      ],
-      ["Up to 30 s per clip", "Jusqu’à 30 s par clip"],
-      ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"]
-    ],
-    "limits": [["Silent", "Muet"], ["720p only", "720p seulement"]],
-    "facts": [
-      ["5, 10, 15, 20 or 30 s", "5, 10, 15, 20 ou 30 s"],
-      ["720p, no sound", "720p, sans son"],
-      ["Text or image to video", "Texte ou image vers vidéo"]
-    ],
     "needs": ["fast-cheap-video", "long-shot"],
-    "url": "https://huggingface.co/meituan-longcat/LongCat-Video",
-    "sources": [
-      "https://huggingface.co/meituan-longcat/LongCat-Video",
-      "https://www.caixinglobal.com/2025-10-28/tech-brief-oct-28-meituan-releases-open-source-video-generation-model-102376386.html"
-    ]
+    "url": "https://huggingface.co/meituan-longcat/LongCat-Video"
   },
   {
     "slug": "ovi",
@@ -4164,28 +2212,8 @@
       "An open-source model that animates an image into a 5 s clip with speech and sound, in private mode. Pick it for a cheap, private talking shot.",
       "Un modèle open source qui anime une image en un clip de 5 s avec voix et son, en mode privé. Choisissez-le pour un plan parlant privé et bon marché."
     ],
-    "strengths": [
-      ["Speech and sound generated with the picture", "Voix et son générés avec l’image"],
-      ["Among the cheapest clips with sound", "Parmi les clips avec son les moins chers"],
-      ["Private mode", "Mode privé"]
-    ],
-    "limits": [
-      ["5 s only, from an image", "5 s seulement, à partir d’une image"],
-      [
-        "Lower resolution than recent commercial models",
-        "Résolution plus basse que les modèles commerciaux récents"
-      ]
-    ],
-    "facts": [
-      ["5 s, native sound", "5 s, son natif"],
-      ["Image to video only", "Image vers vidéo uniquement"]
-    ],
     "needs": [],
-    "url": "https://github.com/character-ai/Ovi",
-    "sources": [
-      "https://github.com/character-ai/Ovi",
-      "https://blog.fal.ai/ovi-is-now-available-on-fal/"
-    ]
+    "url": "https://github.com/character-ai/Ovi"
   },
   {
     "slug": "flux-3-video",
@@ -4207,28 +2235,8 @@
       "Black Forest Labs' first video model (August 2026), with sound and clips up to 20 s. Pick it to link two images or for a long shot with sound.",
       "Le premier modèle vidéo de Black Forest Labs (août 2026), avec son et clips jusqu’à 20 s. Choisissez-le pour relier deux images ou pour un plan long sonorisé."
     ],
-    "strengths": [
-      [
-        "Speech, effects and ambience generated with the picture",
-        "Voix, bruitages et ambiance générés avec l’image"
-      ],
-      ["Up to 20 s per clip", "Jusqu’à 20 s par clip"],
-      ["First and last frame mode", "Mode première et dernière image"]
-    ],
-    "limits": [
-      ["Mid-range to high price per second", "Prix moyen à élevé à la seconde"],
-      ["1080p at most", "1080p au maximum"]
-    ],
-    "facts": [
-      ["5, 10, 15 or 20 s, native sound", "5, 10, 15 ou 20 s, son natif"],
-      ["720p or 1080p", "720p ou 1080p"]
-    ],
     "needs": ["with-sound", "long-shot"],
     "url": "https://bfl.ai/models/flux-3-video",
-    "sources": [
-      "https://help.scenario.com/articles/2415759054-flux-3-video-the-essentials",
-      "https://pixverse.ai/en/blog/flux-3-review"
-    ],
     "nameFr": "FLUX 3 vidéo"
   },
   {
@@ -4242,27 +2250,8 @@
       "Not a generator: it enlarges and sharpens a clip you already have. Pick it to bring a finished 720p shot up to a higher resolution.",
       "Pas un générateur : il agrandit et affine un clip que vous avez déjà. Choisissez-le pour monter en résolution un plan 720p terminé."
     ],
-    "strengths": [
-      ["2x or 4x enlargement of your own clip", "Agrandissement x2 ou x4 de votre propre clip"],
-      [
-        "Keeps your edit, changes only the sharpness",
-        "Garde votre montage, ne change que la netteté"
-      ]
-    ],
-    "limits": [
-      [
-        "Cannot be quoted before launch: the price depends on the clip",
-        "Pas de devis avant lancement : le prix dépend du clip"
-      ],
-      ["Adds no sound and no motion", "N’ajoute ni son ni mouvement"]
-    ],
-    "facts": [["2x or 4x", "x2 ou x4"], ["Length follows your clip", "La durée suit votre clip"]],
     "needs": [],
-    "url": "https://www.topazlabs.com/topaz-video",
-    "sources": [
-      "https://www.topazlabs.com/topaz-video",
-      "https://docs.magnific.com/api-reference/video/video-upscaler-topaz/overview"
-    ]
+    "url": "https://www.topazlabs.com/topaz-video"
   },
   {
     "slug": "kokoro",
@@ -4275,31 +2264,8 @@
       "A small open-source voice model, private and by far the cheapest. Sub Rosa uses it by default for narration.",
       "Un petit modèle de voix open source, privé et de loin le moins cher. Sub Rosa l’utilise par défaut pour la narration."
     ],
-    "strengths": [
-      [
-        "Cheapest voice in the catalog by a wide margin",
-        "La voix la moins chère du catalogue, de loin"
-      ],
-      ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"],
-      ["54 voices across 8 languages", "54 voix réparties sur 8 langues"]
-    ],
-    "limits": [
-      ["Only one French voice (ff_siwis)", "Une seule voix française (ff_siwis)"],
-      ["Less expressive than the larger models", "Moins expressif que les grands modèles"]
-    ],
-    "facts": [
-      ["54 voices", "54 voix"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["cheap-voice", "narration"],
-    "url": "https://huggingface.co/hexgrad/Kokoro-82M",
-    "sources": [
-      "https://huggingface.co/hexgrad/Kokoro-82M",
-      "https://docs.venice.ai/overview/pricing"
-    ]
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M"
   },
   {
     "slug": "chatterbox-hd",
@@ -4312,30 +2278,8 @@
       "Resemble AI's expressive voice model, here in private mode. Pick it for expressive narration that stays private.",
       "Le modèle de voix expressif de Resemble AI, ici en mode privé. Choisissez-le pour une narration expressive qui reste privée."
     ],
-    "strengths": [
-      ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"],
-      [
-        "Designed for emotional range, from flat to dramatic",
-        "Conçu pour la palette émotionnelle, du neutre au dramatique"
-      ]
-    ],
-    "limits": [
-      ["9 voices only", "9 voix seulement"],
-      ["Mid-range price per character", "Prix moyen au caractère"]
-    ],
-    "facts": [
-      ["9 voices, WAV output", "9 voix, sortie WAV"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["expressive-voice"],
-    "url": "https://www.resemble.ai/chatterbox/",
-    "sources": [
-      "https://www.resemble.ai/chatterbox/",
-      "https://huggingface.co/ResembleAI/chatterbox/blob/refs%2Fpr%2F1/README.md"
-    ]
+    "url": "https://www.resemble.ai/chatterbox/"
   },
   {
     "slug": "elevenlabs-tts",
@@ -4348,27 +2292,8 @@
       "ElevenLabs' fast multilingual voice model, with 21 polished voices. Pick it for natural narration in French or another of its 32 languages.",
       "Le modèle de voix rapide et multilingue d’ElevenLabs, avec 21 voix soignées. Choisissez-le pour une narration naturelle dans l’une de ses 32 langues."
     ],
-    "strengths": [
-      ["32 languages, French included", "32 langues, dont le français"],
-      ["Built for low latency", "Conçu pour une faible latence"]
-    ],
-    "limits": [
-      ["Mid-range price per character", "Prix moyen au caractère"],
-      ["Anonymized, not private", "Anonymisé, pas privé"]
-    ],
-    "facts": [
-      ["21 voices", "21 voix"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["narration"],
-    "url": "https://elevenlabs.io/docs/models",
-    "sources": [
-      "https://elevenlabs.io/docs/models",
-      "https://docs.typingmind.com/changelog/typingmind/eleven-turbo-v2.5-and-eleven-turbo-v2"
-    ]
+    "url": "https://elevenlabs.io/docs/models"
   },
   {
     "slug": "gemini-flash-tts",
@@ -4381,34 +2306,8 @@
       "Google's April 2026 voice model, steered with tags like [whispers] written into the text. Pick it when delivery matters more than price.",
       "Le modèle de voix de Google (avril 2026), piloté par des balises comme [whispers] dans le texte. Choisissez-le quand l’interprétation compte plus que le prix."
     ],
-    "strengths": [
-      [
-        "More than 200 audio tags for tone, pace and accent",
-        "Plus de 200 balises audio pour le ton, le rythme et l’accent"
-      ],
-      ["70+ languages", "Plus de 70 langues"],
-      ["30 voices", "30 voix"]
-    ],
-    "limits": [
-      [
-        "The dearest voice in the catalog per character",
-        "La voix la plus chère du catalogue au caractère"
-      ],
-      ["Anonymized, not private", "Anonymisé, pas privé"]
-    ],
-    "facts": [
-      ["30 voices", "30 voix"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["expressive-voice"],
-    "url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-tts",
-    "sources": [
-      "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-tts",
-      "https://datanorth.ai/news/google-gemini-3-1-flash-tts-release"
-    ]
+    "url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-tts"
   },
   {
     "slug": "gradium-tts",
@@ -4421,27 +2320,8 @@
       "A voice model from Gradium built for accurate pronunciation and low latency. Pick it for tricky names and terms read clearly.",
       "Un modèle de voix de Gradium conçu pour une prononciation précise et une faible latence. Choisissez-le pour lire clairement des noms et termes difficiles."
     ],
-    "strengths": [
-      [
-        "Gradium reports strong results on hard-to-pronounce sentences",
-        "Gradium annonce de bons résultats sur les phrases difficiles à prononcer"
-      ],
-      ["12 voices", "12 voix"]
-    ],
-    "limits": [
-      ["Mid-range price per character", "Prix moyen au caractère"],
-      ["Anonymized, not private", "Anonymisé, pas privé"]
-    ],
-    "facts": [
-      ["12 voices", "12 voix"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": [],
-    "url": "https://gradium.ai",
-    "sources": ["https://gradium.ai/blog/gradium-tts-latency-and-accuracy"]
+    "url": "https://gradium.ai"
   },
   {
     "slug": "inworld-tts",
@@ -4454,28 +2334,8 @@
       "Inworld's January 2026 voice model: expressive, 15 languages, and the second cheapest voice here. Pick it for good quality on a budget.",
       "Le modèle de voix d’Inworld (janvier 2026) : expressif, 15 langues, deuxième voix la moins chère ici. Choisissez-le pour une bonne qualité à petit budget."
     ],
-    "strengths": [
-      ["Second cheapest voice in the catalog", "Deuxième voix la moins chère du catalogue"],
-      ["15 languages, French included", "15 langues, dont le français"],
-      ["14 voices", "14 voix"]
-    ],
-    "limits": [
-      ["Anonymized, not private", "Anonymisé, pas privé"],
-      ["WAV output only", "Sortie WAV uniquement"]
-    ],
-    "facts": [
-      ["14 voices", "14 voix"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["cheap-voice", "narration"],
-    "url": "https://inworld.ai/tts",
-    "sources": [
-      "https://docs.inworld.ai/release-notes/tts",
-      "https://blog.fal.ai/inworld-tts-1-5-max-now-available-on-fal"
-    ]
+    "url": "https://inworld.ai/tts"
   },
   {
     "slug": "minimax-speech",
@@ -4488,27 +2348,8 @@
       "MiniMax's high-fidelity voice model for voice-overs and audiobooks, in 30+ languages. Pick it for long, steady reading with character voices.",
       "La voix haute fidélité de MiniMax pour voix off et livres audio, en plus de 30 langues. Choisissez-la pour une lecture longue et régulière avec des voix typées."
     ],
-    "strengths": [
-      ["More than 30 languages, French included", "Plus de 30 langues, dont le français"],
-      ["15 character voices (calm, deep, lively...)", "15 voix typées (calme, grave, enjouée…)"]
-    ],
-    "limits": [
-      ["Among the dearest voices per character", "Parmi les voix les plus chères au caractère"],
-      [
-        "Voice cloning is not offered in Sub Rosa",
-        "Le clonage de voix n’est pas proposé dans Sub Rosa"
-      ]
-    ],
-    "facts": [
-      ["15 voices", "15 voix"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["narration"],
-    "url": "https://www.minimax.io/news/speech-02-series",
-    "sources": ["https://www.minimax.io/news/speech-02-series"]
+    "url": "https://www.minimax.io/news/speech-02-series"
   },
   {
     "slug": "orpheus-tts",
@@ -4521,24 +2362,8 @@
       "An open-source English voice model that can laugh, sigh or gasp on cue, running in private mode. Pick it for lively English dialogue.",
       "Un modèle de voix anglais open source qui sait rire, soupirer ou haleter sur commande, en mode privé. Choisissez-le pour des dialogues anglais vivants."
     ],
-    "strengths": [
-      ["Tags like <laugh> and <sigh> in the text", "Balises comme <laugh> et <sigh> dans le texte"],
-      ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"]
-    ],
-    "limits": [["English voices only", "Voix anglaises uniquement"], ["8 voices", "8 voix"]],
-    "facts": [
-      ["8 voices, WAV output", "8 voix, sortie WAV"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["expressive-voice"],
-    "url": "https://github.com/canopyai/Orpheus-TTS",
-    "sources": [
-      "https://github.com/canopyai/Orpheus-TTS",
-      "https://www.segmind.com/models/orpheus-3b-0.1"
-    ]
+    "url": "https://github.com/canopyai/Orpheus-TTS"
   },
   {
     "slug": "qwen3-tts",
@@ -4560,27 +2385,8 @@
       "Alibaba's open-source voice models, in 10 languages and running in private mode. Pick them for private narration in French or Asian languages.",
       "Les modèles de voix open source d’Alibaba, en 10 langues et en mode privé. Choisissez-les pour une narration privée en français ou en langues asiatiques."
     ],
-    "strengths": [
-      ["Private mode: nothing is kept", "Mode privé : rien n’est conservé"],
-      ["10 languages, French included", "10 langues, dont le français"]
-    ],
-    "limits": [
-      ["9 voices", "9 voix"],
-      ["Dearer than Kokoro or Inworld", "Plus cher que Kokoro ou Inworld"]
-    ],
-    "facts": [
-      ["9 voices, MP3 output", "9 voix, sortie MP3"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["narration"],
-    "url": "https://github.com/QwenLM/Qwen3-TTS",
-    "sources": [
-      "https://github.com/QwenLM/Qwen3-TTS",
-      "https://simonwillison.net/2026/Jan/22/qwen3-tts"
-    ]
+    "url": "https://github.com/QwenLM/Qwen3-TTS"
   },
   {
     "slug": "xai-tts",
@@ -4593,25 +2399,8 @@
       "xAI's voice model with 26 voices, 20 languages and inline tags for pauses, laughter or whispers. Pick it for expressive speech at a low price.",
       "Le modèle de voix de xAI, avec 26 voix, 20 langues et des balises pour les pauses, rires ou chuchotements. Choisissez-le pour une voix expressive à petit prix."
     ],
-    "strengths": [
-      ["Third cheapest voice in the catalog", "Troisième voix la moins chère du catalogue"],
-      ["Inline speech tags for delivery", "Balises dans le texte pour l’interprétation"],
-      ["26 voices", "26 voix"]
-    ],
-    "limits": [["Anonymized, not private", "Anonymisé, pas privé"]],
-    "facts": [
-      ["26 voices", "26 voix"],
-      [
-        "Up to 5,000 characters per request in Sub Rosa",
-        "Jusqu’à 5 000 caractères par requête dans Sub Rosa"
-      ]
-    ],
     "needs": ["cheap-voice", "expressive-voice"],
-    "url": "https://docs.x.ai/developers/model-capabilities/audio/text-to-speech",
-    "sources": [
-      "https://www.atlascloud.ai/ko/models/xai/tts-v1",
-      "https://docs.x.ai/developers/model-capabilities/audio/text-to-speech"
-    ]
+    "url": "https://docs.x.ai/developers/model-capabilities/audio/text-to-speech"
   },
   {
     "slug": "seed-audio",
@@ -4624,31 +2413,8 @@
       "ByteDance's audio model: you describe the voice, the performance and the background in one prompt. Pick it for a voiced scene with ambience.",
       "Le modèle audio de ByteDance : vous décrivez la voix, l’interprétation et le fond sonore dans un seul prompt. Choisissez-le pour une scène parlée avec ambiance."
     ],
-    "strengths": [
-      [
-        "Voice, effects and ambience from one description",
-        "Voix, bruitages et ambiance à partir d’une seule description"
-      ],
-      ["20 languages, French included", "20 langues, dont le français"],
-      ["Billed by the second of audio", "Facturé à la seconde d’audio"]
-    ],
-    "limits": [
-      [
-        "No preset voices: the voice is described in the prompt",
-        "Pas de voix prédéfinies : la voix se décrit dans le prompt"
-      ],
-      [
-        "Listed with the music models in Sub Rosa, not with the voices",
-        "Rangé avec les modèles de musique dans Sub Rosa, pas avec les voix"
-      ]
-    ],
-    "facts": [["Speed 0.5x to 2x", "Vitesse de 0,5x à 2x"], ["MP3 or WAV", "MP3 ou WAV"]],
     "needs": ["expressive-voice"],
-    "url": "https://seed.bytedance.com/en/blog/from-speech-to-audio-creation-introducing-the-seed-audio-1-0-audio-creation-model",
-    "sources": [
-      "https://seed.bytedance.com/en/blog/from-speech-to-audio-creation-introducing-the-seed-audio-1-0-audio-creation-model",
-      "https://help.scenario.com/articles/7490394523-seed-audio-1-0-the-essentials"
-    ]
+    "url": "https://seed.bytedance.com/en/blog/from-speech-to-audio-creation-introducing-the-seed-audio-1-0-audio-creation-model"
   },
   {
     "slug": "minimax-music",
@@ -4674,27 +2440,8 @@
       "MiniMax's song models: you write the lyrics, they sing them over a full arrangement. Sub Rosa's agent tries them first for songs.",
       "Les modèles de chansons de MiniMax : vous écrivez les paroles, ils les chantent sur un arrangement complet. L’agent de Sub Rosa les essaie en premier."
     ],
-    "strengths": [
-      [
-        "Sung vocals that follow verse and chorus tags",
-        "Voix chantées qui suivent les balises couplet et refrain"
-      ],
-      [
-        "Flat price per song, low for a full track",
-        "Prix fixe par chanson, bas pour un morceau complet"
-      ]
-    ],
-    "limits": [
-      ["Lyrics are required in Sub Rosa", "Les paroles sont obligatoires dans Sub Rosa"],
-      [
-        "2.6 takes 1,000 characters of lyrics at most",
-        "2.6 accepte 1 000 caractères de paroles au maximum"
-      ]
-    ],
-    "facts": [["Priced per song", "Prix par chanson"], ["MP3 output", "Sortie MP3"]],
     "needs": ["song-with-lyrics"],
-    "url": "https://www.minimax.io/news/music-26",
-    "sources": ["https://www.minimax.io/news/music-26", "https://docs.venice.ai/overview/pricing"]
+    "url": "https://www.minimax.io/news/music-26"
   },
   {
     "slug": "ace-step",
@@ -4707,25 +2454,8 @@
       "An open-source music model, the cheapest here, with optional lyrics. Sub Rosa's Studio workflows use it by default for music.",
       "Un modèle musical open source, le moins cher ici, avec paroles facultatives. Les workflows du Studio de Sub Rosa l’utilisent par défaut pour la musique."
     ],
-    "strengths": [
-      ["Cheapest music model in the catalog", "Le modèle musical le moins cher du catalogue"],
-      ["Lyrics optional: song or instrumental", "Paroles facultatives : chanson ou instrumental"],
-      ["Lossless FLAC output", "Sortie FLAC sans perte"]
-    ],
-    "limits": [
-      ["60 s minimum per track", "60 s minimum par morceau"],
-      [
-        "Less polished vocals than paid song models",
-        "Voix moins abouties que celles des modèles de chansons payants"
-      ]
-    ],
-    "facts": [["60 to 210 s", "60 à 210 s"], ["Lyrics optional", "Paroles facultatives"]],
     "needs": ["instrumental-score", "song-with-lyrics"],
-    "url": "https://ace-step.github.io/ace-step-v1.5.github.io/",
-    "sources": [
-      "https://arxiv.org/html/2602.00744v1",
-      "https://comfyui-wiki.com/en/news/2026-01-23-ace-step-1-5-music-generation"
-    ]
+    "url": "https://ace-step.github.io/ace-step-v1.5.github.io/"
   },
   {
     "slug": "elevenlabs-music",
@@ -4747,31 +2477,8 @@
       "ElevenLabs' music models, trained on licensed catalogs. Pick them for a polished score when budget allows.",
       "Les modèles musicaux d’ElevenLabs, entraînés sur des catalogues sous licence. Choisissez-les pour une musique soignée si le budget suit."
     ],
-    "strengths": [
-      [
-        "Trained on licensed music, per ElevenLabs",
-        "Entraîné sur de la musique sous licence, selon ElevenLabs"
-      ],
-      ["Long tracks, up to 10 minutes", "Morceaux longs, jusqu’à 10 minutes"],
-      [
-        "v2 and v2.5 can add vocals from the description",
-        "v2 et v2.5 peuvent ajouter des voix d’après la description"
-      ]
-    ],
-    "limits": [
-      [
-        "The dearest music model, priced per minute",
-        "Le modèle musical le plus cher, facturé à la minute"
-      ],
-      ["No lyrics field in Sub Rosa", "Pas de champ de paroles dans Sub Rosa"]
-    ],
-    "facts": [["Up to 600 s", "Jusqu’à 600 s"], ["No lyrics", "Sans paroles"]],
     "needs": ["instrumental-score"],
-    "url": "https://elevenlabs.io/music",
-    "sources": [
-      "https://musicbusinessworldwide.com/elevenlabs-launched-music-v2-5-shortly-after-announcing-its-umg-licensing-deal",
-      "https://docs.venice.ai/overview/pricing"
-    ]
+    "url": "https://elevenlabs.io/music"
   },
   {
     "slug": "lyria",
@@ -4784,28 +2491,8 @@
       "Google's music model for structured songs up to 3 minutes from one prompt. Pick it for a full piece with intro, verses and outro at a flat price.",
       "Le modèle musical de Google pour des morceaux structurés jusqu’à 3 minutes. Choisissez-le pour une pièce complète avec intro, couplets et fin, à prix fixe."
     ],
-    "strengths": [
-      [
-        "Follows song structure (intro, verse, chorus, bridge)",
-        "Suit la structure (intro, couplet, refrain, pont)"
-      ],
-      ["Flat price per track", "Prix fixe par morceau"],
-      ["Long prompts accepted (5,000 characters)", "Prompts longs acceptés (5 000 caractères)"]
-    ],
-    "limits": [
-      ["No lyrics field in Sub Rosa", "Pas de champ de paroles dans Sub Rosa"],
-      [
-        "Every track carries Google's SynthID watermark",
-        "Chaque morceau porte le filigrane SynthID de Google"
-      ]
-    ],
-    "facts": [["Up to 3 min", "Jusqu’à 3 min"], ["MP3 output", "Sortie MP3"]],
     "needs": ["instrumental-score"],
-    "url": "https://deepmind.google/models/lyria/",
-    "sources": [
-      "https://blog.google/innovation-and-ai/technology/developers-tools/lyria-3-developers/",
-      "https://mezha.net/eng/news/google_releases_lyria/"
-    ]
+    "url": "https://deepmind.google/models/lyria/"
   },
   {
     "slug": "stable-audio",
@@ -4818,23 +2505,8 @@
       "Stability AI's fast audio model for instrumentals, ambient beds and short cues. Pick it for background music of an exact length.",
       "Le modèle audio rapide de Stability AI pour instrumentaux, nappes d’ambiance et courts motifs. Choisissez-le pour une musique de fond à la durée exacte."
     ],
-    "strengths": [
-      ["Any length from 5 to 180 s, in 5 s steps", "Toute durée de 5 à 180 s, par pas de 5 s"],
-      [
-        "Good for ambient textures as well as music",
-        "Bon pour les textures d’ambiance comme pour la musique"
-      ]
-    ],
-    "limits": [
-      ["No lyrics, no vocals", "Ni paroles ni voix"],
-      ["Flat price, dear for very short cues", "Prix fixe, cher pour des motifs très courts"]
-    ],
-    "facts": [["5 to 180 s", "5 à 180 s"], ["WAV output", "Sortie WAV"]],
     "needs": ["instrumental-score"],
-    "url": "https://stability.ai/news/stability-ai-introduces-stable-audio-25-the-first-audio-model-built-for-enterprise-sound-production-at-scale",
-    "sources": [
-      "https://stability.ai/news/stability-ai-introduces-stable-audio-25-the-first-audio-model-built-for-enterprise-sound-production-at-scale"
-    ]
+    "url": "https://stability.ai/news/stability-ai-introduces-stable-audio-25-the-first-audio-model-built-for-enterprise-sound-production-at-scale"
   },
   {
     "slug": "sonilo-music",
@@ -4847,19 +2519,8 @@
       "Music from a model trained on professionally licensed catalogs, cleared for commercial use. Pick it when the track will be published.",
       "Un modèle musical entraîné sur des catalogues sous licence professionnelle, utilisable commercialement. Choisissez-le quand le morceau sera publié."
     ],
-    "strengths": [
-      ["Commercial use cleared, per Sonilo", "Utilisation commerciale autorisée, selon Sonilo"],
-      ["Exact length from 1 to 600 s", "Durée exacte de 1 à 600 s"],
-      ["Billed by the second", "Facturé à la seconde"]
-    ],
-    "limits": [["No lyrics, no vocals", "Ni paroles ni voix"], ["M4A output", "Sortie M4A"]],
-    "facts": [["1 to 600 s", "1 à 600 s"]],
     "needs": ["instrumental-score"],
-    "url": "https://sonilo.ai",
-    "sources": [
-      "https://www.layer.ai/models/sonilo-v1-1-text-to-music",
-      "https://technode.global/prnasia/sonilo-refines-its-video-to-music-model-with-v1-1-update/"
-    ]
+    "url": "https://sonilo.ai"
   },
   {
     "slug": "elevenlabs-sound-effects",
@@ -4872,24 +2533,8 @@
       "ElevenLabs' sound effects model for foley and ambience from a short description. Pick it for clean, film-ready effects.",
       "Le modèle de bruitages d’ElevenLabs, pour effets et ambiances à partir d’une courte description. Choisissez-le pour des effets nets, prêts pour un film."
     ],
-    "strengths": [
-      [
-        "Can make seamless loops for ambience",
-        "Peut produire des boucles sans raccord pour les ambiances"
-      ],
-      ["Billed by the second", "Facturé à la seconde"]
-    ],
-    "limits": [
-      ["22 s at most per sound in Sub Rosa", "22 s au maximum par son dans Sub Rosa"],
-      ["Short prompts only (450 characters)", "Prompts courts seulement (450 caractères)"]
-    ],
-    "facts": [["1 to 22 s", "1 à 22 s"], ["MP3 output", "Sortie MP3"]],
     "needs": ["sound-effects"],
-    "url": "https://elevenlabs.io/sound-effects",
-    "sources": [
-      "https://the-decoder.com/elevenlabs-releases-version-2-of-its-ai-sound-effects-model-with-longer-clips-and-better-audio-quality/",
-      "https://elevenlabs.io/docs/overview/capabilities/sound-effects"
-    ]
+    "url": "https://elevenlabs.io/sound-effects"
   },
   {
     "slug": "mmaudio",
@@ -4902,26 +2547,8 @@
       "An open-source model that turns a text description into sound effects. Pick it for the cheapest effects, up to 30 s.",
       "Un modèle open source qui transforme une description en bruitages. Choisissez-le pour les effets les moins chers, jusqu’à 30 s."
     ],
-    "strengths": [
-      [
-        "Cheapest sound effects in the catalog per second",
-        "Les bruitages les moins chers du catalogue à la seconde"
-      ],
-      ["Up to 30 s per sound", "Jusqu’à 30 s par son"]
-    ],
-    "limits": [
-      [
-        "Less refined than ElevenLabs on complex sounds",
-        "Moins fin qu’ElevenLabs sur les sons complexes"
-      ]
-    ],
-    "facts": [["1 to 30 s", "1 à 30 s"], ["WAV output", "Sortie WAV"]],
     "needs": ["sound-effects"],
-    "url": "https://github.com/hkchengrex/MMAudio",
-    "sources": [
-      "https://github.com/hkchengrex/MMAudio",
-      "https://www.atlascloud.ai/fr/models/atlascloud/mmaudio-v2"
-    ]
+    "url": "https://github.com/hkchengrex/MMAudio"
   },
   {
     "slug": "sonilo-sound-effects",
@@ -4934,20 +2561,7 @@
       "Sound effects from a model built on licensed catalogs, cleared for commercial use. Pick it when the effects go into published work.",
       "Des bruitages issus d’un modèle bâti sur des catalogues sous licence, utilisables commercialement. Choisissez-le quand les effets iront dans un travail publié."
     ],
-    "strengths": [
-      ["Commercial use cleared, per Sonilo", "Utilisation commerciale autorisée, selon Sonilo"],
-      [
-        "Control over type, texture and intensity",
-        "Contrôle du type, de la texture et de l’intensité"
-      ]
-    ],
-    "limits": [["22 s at most per sound in Sub Rosa", "22 s au maximum par son dans Sub Rosa"]],
-    "facts": [["1 to 22 s in Sub Rosa", "1 à 22 s dans Sub Rosa"], ["MP3 output", "Sortie MP3"]],
     "needs": ["sound-effects"],
-    "url": "https://sonilo.ai",
-    "sources": [
-      "https://www.layer.ai/models/sonilo-v1-1-text-to-sound-effects",
-      "https://help.scenario.com/articles/4687923546-sonilo-v1-1-video-to-video-the-essentials"
-    ]
+    "url": "https://sonilo.ai"
   }
 ]

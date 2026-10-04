@@ -1,5 +1,7 @@
 import { number, t } from "../lib/i18n";
 import type { Copy } from "../pages/docs-content";
+import benchmarkData from "./benchmarks.json";
+import indexData from "./details/index.json";
 import familyData from "./families.json";
 import snapshotData from "./snapshot.json";
 
@@ -48,13 +50,9 @@ export type Family = {
   pick: string;
   variants?: { id: string; note: Copy }[];
   summary: Copy;
-  strengths: Copy[];
-  limits: Copy[];
-  facts: Copy[];
   needs: string[];
   /** Empty when no page is fit to link from a public site. */
   url: string;
-  sources: string[];
 };
 
 export const snapshot = snapshotData as { checkedAt: string; models: SnapshotModel[] };
@@ -352,3 +350,208 @@ export const displayName = (model: SnapshotModel) => {
   const name = model.name ?? model.id;
   return model.id.startsWith("e2ee-") && !/e2ee/i.test(name) ? `${name} E2EE` : name;
 };
+
+// ---------------------------------------------------------------------------
+// Depth: benchmarks, version history and the per-family detail chunks.
+
+export type Benchmark = {
+  id: string;
+  name: string;
+  publisher: string;
+  category: Category;
+  unit: string;
+  scale: [number, number];
+  higherIsBetter: boolean;
+  url: string;
+  measures: Copy;
+  howToRead: Copy;
+};
+
+export type Score = {
+  benchmark: string;
+  model: string;
+  external?: boolean;
+  value: number;
+  date: string;
+  url: string;
+  kind: "independent" | "vendor";
+};
+
+export type Release = {
+  version: string;
+  date: string;
+  ids: string[];
+  external?: boolean;
+  changes: Copy[];
+  source: string;
+};
+
+export type SpecRow = {
+  version: string;
+  ids: string[];
+  params: string | null;
+  activeParams: string | null;
+  openWeights: boolean | null;
+  license: string | null;
+  maxOutput: number | null;
+  inputs: string[];
+  outputs: string[];
+  languages: Copy | null;
+  source: string;
+};
+
+export type FamilyDetail = {
+  slug: string;
+  strengths: Copy[];
+  limits: Copy[];
+  facts: Copy[];
+  differentiator: Copy;
+  signature: Copy[];
+  releases: Release[];
+  specs: SpecRow[];
+  useCases: { title: Copy; prompt: Copy; why: Copy }[];
+  rivals: { slug: string; verdict: Copy }[];
+  sources: string[];
+};
+
+/** The light index every catalog page can read without a detail chunk. */
+export type FamilyIndex = {
+  slug: string;
+  releases: { version: string; date: string; inCatalog: boolean }[];
+};
+
+export const benchmarks = (benchmarkData as unknown as { benchmarks: Benchmark[] }).benchmarks;
+export const scores = (benchmarkData as unknown as { scores: Score[] }).scores;
+const releaseIndex = new Map(
+  (indexData as unknown as { families: FamilyIndex[] }).families.map((entry) => [
+    entry.slug,
+    entry,
+  ]),
+);
+export const familyReleases = (slug: string) => releaseIndex.get(slug)?.releases ?? [];
+
+export const benchmarkById = (id: string) => benchmarks.find((item) => item.id === id);
+/** The benchmarks of a kind of work that have independent scores, the one covering the most families first. */
+export function benchmarksFor(category: Category) {
+  const coverage = (id: string) =>
+    new Set(
+      scores
+        .filter(
+          (score) => score.benchmark === id && score.kind === "independent" && !score.external,
+        )
+        .map((score) => familyOfModel(score.model)?.slug),
+    ).size;
+  return benchmarks
+    .filter((item) => item.category === category && coverage(item.id) > 0)
+    .sort((a, b) => coverage(b.id) - coverage(a.id));
+}
+
+/** "753 Md" in French, "753B" in English: parameter counts as each language writes them. */
+export function parameterCount(value: string) {
+  const match = value.trim().match(/^([\d.,]+)\s*([KMBT])$/i);
+  if (!match) return value;
+  const amount = Number(match[1].replace(",", "."));
+  const unit = match[2].toUpperCase();
+  if (t("en", "fr") === "en") return `${match[1]}${unit}`;
+  if (unit === "T") return `${number(amount * 1000, 0)} Md`;
+  if (unit === "B") return `${number(amount, 1)} Md`;
+  return `${number(amount, 1)} ${unit === "M" ? "M" : "k"}`;
+}
+
+/** Joins abilities into one phrase: "Reads images, uses Sub Rosa’s tools". */
+export const phraseList = (items: string[]) =>
+  items
+    .map((item, index) => (index === 0 ? item : item.charAt(0).toLowerCase() + item.slice(1)))
+    .join(", ");
+
+const better = (benchmark: Benchmark) => (a: number, b: number) =>
+  benchmark.higherIsBetter ? b - a : a - b;
+
+/** The catalog models measured on a benchmark, best first, one independent score per model. */
+export function leaderboard(benchmarkId: string) {
+  const benchmark = benchmarkById(benchmarkId);
+  if (!benchmark) return [];
+  const latest = new Map<string, Score>();
+  for (const score of scores) {
+    if (score.benchmark !== benchmarkId || score.kind !== "independent" || score.external) continue;
+    const seen = latest.get(score.model);
+    if (!seen || seen.date < score.date) latest.set(score.model, score);
+  }
+  const order = better(benchmark);
+  return [...latest.values()].sort((a, b) => order(a.value, b.value));
+}
+
+/** A family's best showing on a benchmark: the score, its model and its rank among catalog models. */
+export function familyStanding(family: Family, benchmarkId: string) {
+  const board = leaderboard(benchmarkId);
+  const index = board.findIndex((score) => family.ids.includes(score.model));
+  if (index < 0) return null;
+  return { score: board[index], rank: index + 1, of: board.length };
+}
+
+/** The benchmark that best describes a family: the headline one of its kind it is measured on. */
+export function headlineBenchmark(family: Family) {
+  return benchmarksFor(family.category).find((benchmark) => familyStanding(family, benchmark.id));
+}
+
+/** Every score of a family, its external predecessors included, for the version chart. */
+export function familyScores(
+  family: Family,
+  detail: FamilyDetail | undefined,
+  benchmarkId: string,
+) {
+  const labels = new Set(
+    (detail?.releases ?? [])
+      .filter((release) => release.external)
+      .map((release) => release.version),
+  );
+  return scores.filter(
+    (score) =>
+      score.benchmark === benchmarkId &&
+      (family.ids.includes(score.model) || (score.external && labels.has(score.model))),
+  );
+}
+
+export const latestRelease = (slug: string) => {
+  const list = familyReleases(slug).filter((release) => release.inCatalog);
+  return list[list.length - 1];
+};
+
+/** "June 2026" or "17 June 2026", in the reader's language; a bare month stays a month. */
+export function releaseDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1, 12));
+  return new Intl.DateTimeFormat(t("en", "fr"), {
+    year: "numeric",
+    month: "long",
+    ...(day ? { day: "numeric" } : {}),
+    timeZone: "UTC",
+  }).format(date);
+}
+
+export function formatScore(benchmark: Benchmark, value: number) {
+  return benchmark.unit === "%"
+    ? `${number(value, 1)} %`.replace(" %", t("%", " %"))
+    : number(value, 0);
+}
+
+/** A model's price in credits, in the unit its kind of work is priced in (per page, image, second…). */
+export function creditsPerUnit(model: SnapshotModel | undefined): number | null {
+  if (!model) return null;
+  if (model.usdPerSecond) return model.usdPerSecond * 100;
+  if (model.credits !== undefined) return model.credits;
+  if (model.usdPerMillion) return (model.usdPerMillion[1] * 700) / 10_000;
+  if (model.usdPerMillionCharacters !== undefined)
+    return (model.usdPerMillionCharacters * 3000) / 10_000;
+  if (model.usdPerMinute !== undefined) return model.usdPerMinute * 6000;
+  if (model.usdPerTrack !== undefined) return model.usdPerTrack * 100;
+  if (model.usdPerMinuteOfMusic !== undefined) return model.usdPerMinuteOfMusic * 100;
+  if (model.usdPerAudioSecond !== undefined) return model.usdPerAudioSecond * 1000;
+  return null;
+}
+
+export const creditsLabel = (value: number) =>
+  t(
+    `${number(value, value < 1 ? 2 : 1)} credits`,
+    `${number(value, value < 1 ? 2 : 1)} ${value < 2 ? "crédit" : "crédits"}`,
+  );
