@@ -78,10 +78,30 @@ export const refreshAssistantNote = (id: string) =>
   invoke<AssistantReference>("assistant_reference_refresh_note", { id });
 export const prepareAssistantDraft = (description: string, answers: AssistantAnswer[]) =>
   invoke<AssistantDraft>("assistant_draft", { request: { description, answers } });
-export const startAssistantChat = (assistantId: string, content: string) =>
-  invoke<AgentTaskDto>("assistant_chat_start", { request: { assistantId, content } });
-export const sendAssistantChat = (taskId: string, content: string) =>
-  invoke<AgentTaskDto>("assistant_chat_send", { request: { taskId, content } });
+/** Files and images sent with a turn; the stored message keeps readable
+ * markers for them (`[Image: name]`, `[File: name]`). */
+export interface AssistantTurnAttachment {
+  kind: "image" | "text";
+  name: string;
+  data: string;
+}
+
+export const startAssistantChat = (
+  assistantId: string,
+  content: string,
+  attachments?: AssistantTurnAttachment[],
+) =>
+  invoke<AgentTaskDto>("assistant_chat_start", {
+    request: { assistantId, content, ...(attachments?.length ? { attachments } : {}) },
+  });
+export const sendAssistantChat = (
+  taskId: string,
+  content: string,
+  attachments?: AssistantTurnAttachment[],
+) =>
+  invoke<AgentTaskDto>("assistant_chat_send", {
+    request: { taskId, content, ...(attachments?.length ? { attachments } : {}) },
+  });
 export const getAssistantChatDefinition = (taskId: string) =>
   invoke<AssistantDefinition>("assistant_chat_definition", { request: { taskId } });
 export const getAssistantChat = (taskId: string) =>
@@ -89,8 +109,10 @@ export const getAssistantChat = (taskId: string) =>
 export const listAssistantChats = (assistantId: string) =>
   invoke<AgentTaskDto[]>("assistant_chat_list", { request: { assistantId } });
 
-export const retryAssistantChat = (taskId: string) =>
-  invoke<AgentTaskDto>("assistant_chat_retry", { request: { taskId } });
+export const retryAssistantChat = (taskId: string, attachments?: AssistantTurnAttachment[]) =>
+  invoke<AgentTaskDto>("assistant_chat_retry", {
+    request: { taskId, ...(attachments?.length ? { attachments } : {}) },
+  });
 export const applyAssistantRevision = (taskId: string) =>
   invoke<AgentTaskDto>("assistant_chat_apply_revision", { request: { taskId } });
 
