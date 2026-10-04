@@ -151,4 +151,4 @@ models.sort((a, b) => a.id.localeCompare(b.id));
 
 const snapshot = { checkedAt: new Date().toISOString().slice(0, 10), models };
 await writeFile(output, `${JSON.stringify(snapshot, null, 1)}\n`);
-console.log(`${models.length} models written to ${output}`);
+process.stdout.write(`${models.length} models written to ${output}\n`);
