@@ -5509,3 +5509,88 @@
     transition: none;
   }
 }
+
+/* ── Assistants ─────────────────────────────────────────────────────────── */
+
+/* An assistant's face: its picture, or its initial on two hues derived from
+   its id (stable on every device, stored nowhere). */
+.mobile-assistant-avatar {
+  --avatar-size: 40px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background:
+    radial-gradient(circle at 25% 20%, oklch(0.62 0.13 var(--avatar-hue-a)), transparent 70%),
+    linear-gradient(
+      140deg,
+      oklch(0.5 0.12 var(--avatar-hue-a)),
+      oklch(0.36 0.1 var(--avatar-hue-b))
+    );
+  color: white;
+  font-size: calc(var(--avatar-size) * 0.4);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+.mobile-assistant-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mobile-avatar-sheet-face {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--sp-2);
+}
+
+.mobile-avatar-sheet .mobile-sheet-title {
+  text-align: center;
+}
+
+.mobile-avatar-sheet-item {
+  justify-content: flex-start;
+  gap: var(--sp-3);
+}
+
+.mobile-avatar-sheet-item svg {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.mobile-avatar-sheet-item:disabled {
+  opacity: 0.5;
+}
+
+.mobile-avatar-sheet-price .mobile-avatar-sheet-cost {
+  flex: none;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.mobile-avatar-sheet-grid {
+  min-height: 0;
+  overflow-y: auto;
+  padding-block: var(--sp-2);
+}
+
+.mobile-avatar-sheet-busy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-5) 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-action-sheet-cancel:disabled {
+  opacity: 0.5;
+}
