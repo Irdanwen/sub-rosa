@@ -25,10 +25,20 @@ async fn resume_batch(pool: &SqlitePool, root: &Path) -> Result<(), AppError> {
             .get("extraction_cursor");
     let mut scanned = 0;
     let mut extracted = 0;
+    let mut wrapped = false;
     while scanned < MAX_SCAN && extracted < MAX_EXTRACT {
         let rows = query("SELECT * FROM assistant_references WHERE status='queued' AND id>? ORDER BY id LIMIT 32")
             .bind(cursor.as_str()).fetch_all(pool).await?;
         if rows.is_empty() {
+            // A checkpoint left by a sweep that ran out of budget hides any
+            // row added since whose id sorts below it (ids are random). Go
+            // round once from the start while budget remains, so a reference
+            // just added is reached by the sweep its command asked for.
+            if !cursor.is_empty() && !wrapped {
+                wrapped = true;
+                cursor = String::new();
+                continue;
+            }
             // Revisit earlier missing files on the next sweep. Retaining a
             // cursor at the scan budget also lets later local rows make progress.
             save_cursor(pool, "").await?;
@@ -156,6 +166,51 @@ mod tests {
             get(&pool, "remote-0000").await.unwrap().text,
             "Arrived later"
         );
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_reference_added_below_a_saved_checkpoint_is_reached_in_the_same_sweep() {
+        let directory = tempfile::tempdir().unwrap();
+        let pool = sqlx_sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx_sqlite::SqliteConnectOptions::new()
+                    .filename(directory.path().join("references.sqlite"))
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        crate::db::migrations::run_migrations(&pool).await.unwrap();
+        let assistant = save(
+            &pool,
+            AssistantDefinition {
+                name: "Reader".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // A checkpoint a budget-limited sweep left behind, with a missing
+        // file still ahead of it.
+        save_cursor(&pool, "m").await.unwrap();
+        query("INSERT INTO assistant_references(id,assistant_id,name,format,file_name,created_at,updated_at) VALUES('p-missing',?,'Pending','txt',?,'now','now')")
+            .bind(&assistant.id).bind(format!("{}.txt", uuid::Uuid::new_v4())).execute(&pool).await.unwrap();
+        // The avatar just chosen: an id that sorts below the checkpoint, its
+        // file already on disk.
+        let name = format!("{}.png", uuid::Uuid::new_v4());
+        std::fs::write(directory.path().join(&name), [0u8; 4]).unwrap();
+        query("INSERT INTO assistant_references(id,assistant_id,name,format,file_name,created_at,updated_at) VALUES('a-new',?,'Avatar','png',?,'now','now')")
+            .bind(&assistant.id).bind(&name).execute(&pool).await.unwrap();
+        resume_batch(&pool, directory.path()).await.unwrap();
+        assert_ne!(get(&pool, "a-new").await.unwrap().status, "queued");
+        let cursor: String =
+            query("SELECT extraction_cursor FROM assistant_reference_progress WHERE id=1")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .get("extraction_cursor");
+        assert!(cursor.is_empty());
         pool.close().await;
     }
 }

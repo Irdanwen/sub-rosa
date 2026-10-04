@@ -50,8 +50,13 @@ les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; 
   sur celui de l'appelant : un tour d'assistant qui porte une image passe sur
   un modèle texte qui lit les images (`assistants::runtime::vision_model_for`)
   quand celui de l'assistant ne le fait pas, à confidentialité égale, sinon
-  l'image est refusée. `assistant_chat_start/send/retry` transmettent leur
-  `TurnClaim` au tour lancé (`agent_lite::run_claimed`).
+  l'image est refusée ; le catalogue vient de `recent_media_catalog` (5 min),
+  pas de trois lectures réseau par tour. `assistant_chat_start/send/retry`
+  transmettent leur `TurnClaim` au tour lancé (`agent_lite::run_claimed`).
+- `references/worker.rs` reboucle une fois depuis le début quand son point de
+  reprise ne laisse plus de ligne devant lui : une référence ajoutée dont l'id
+  trie en dessous (un avatar) est traitée par le balayage que sa commande a
+  demandé, au lieu d'attendre une remise à zéro.
 - L'avatar d'assistant (CONTEXT.md) : monogramme dérivé de l'id, ou une
   référence image. Aucune colonne nouvelle : `account::sync::apply` refuse
   les colonnes inconnues, un appareil pas à jour rejetterait l'assistant.

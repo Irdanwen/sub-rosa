@@ -335,6 +335,26 @@ fn text_prices(pricing: &serde_json::Value) -> Vec<TextPriceDto> {
         .collect()
 }
 
+/// The last catalog fetched, and when. For a decision taken inside a turn
+/// (which models exist and read images), where three network reads per turn
+/// would be paid for nothing: prices are not what such a caller reads.
+static RECENT_CATALOG: tokio::sync::Mutex<Option<(std::time::Instant, MediaCatalogDto)>> =
+    tokio::sync::Mutex::const_new(None);
+
+/// The catalog as fetched within `max_age`, else fetched now. Concurrent
+/// callers wait for one fetch rather than each starting their own.
+pub async fn recent_media_catalog(max_age: Duration) -> Result<MediaCatalogDto, AppError> {
+    let mut slot = RECENT_CATALOG.lock().await;
+    if let Some((fetched_at, catalog)) = slot.as_ref() {
+        if fetched_at.elapsed() <= max_age {
+            return Ok(catalog.clone());
+        }
+    }
+    let catalog = carpe_diem_media_catalog().await?;
+    *slot = Some((std::time::Instant::now(), catalog.clone()));
+    Ok(catalog)
+}
+
 #[tauri::command]
 pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
     let Some((credential_base, key)) = settings::credentials() else {
