@@ -68,7 +68,7 @@
         "Contexte de 1M de jetons sur GLM 5.2 et 5.3, assez pour de longs documents"
       ],
       [
-        "Mid-range price for its level; Flash versions cost a fraction",
+        "Mid-range price for its level; Flash versions cost a fraction of that",
         "Prix moyen pour son niveau ; les versions Flash coûtent une fraction de ce prix"
       ]
     ],
@@ -83,7 +83,7 @@
       ]
     ],
     "facts": [
-      ["GLM 5.2: 1M token context, text in", "GLM 5.2 : contexte de 1M de jetons, entrée texte"],
+      ["GLM 5.2: 1M token context, text input", "GLM 5.2 : contexte de 1M de jetons, entrée texte"],
       [
         "Tool calling, reasoning effort, JSON schema output",
         "Appel d’outils, effort de raisonnement, sortie en schéma JSON"
@@ -231,7 +231,7 @@
       }
     ],
     "summary": [
-      "Low-cost open models with 1M context and good reasoning; V4.1 Flash adds image reading. Pick it to do a lot for little.",
+      "Low-cost open models with 1M context and good reasoning; V4.1 Flash adds image reading. Pick it to do a lot for very little.",
       "Des modèles ouverts bon marché, contexte de 1M, bon raisonnement ; V4.1 Flash lit aussi les images. Pour faire beaucoup à petit prix."
     ],
     "strengths": [
@@ -294,7 +294,7 @@
       {
         "id": "claude-opus-5-5",
         "note": [
-          "Near Fable 5.1 level for most tasks, about twice the Sonnet price",
+          "Close to Fable 5.1 on most tasks, about twice the Sonnet price",
           "Proche de Fable 5.1 sur la plupart des tâches, environ deux fois le prix de Sonnet"
         ]
       },
@@ -431,7 +431,7 @@
         "Anonymisé, pas privé : la politique de conservation d’OpenAI s’applique"
       ],
       [
-        "Pro versions of GPT-5.4 and 5.5 cost many times more than anything else",
+        "Pro versions of GPT-5.4 and 5.5 cost far more than anything else",
         "Les versions Pro de GPT-5.4 et 5.5 coûtent bien plus que tout le reste"
       ],
       [
@@ -482,12 +482,12 @@
     "limits": [
       ["Text only, 128K context", "Texte seul, contexte de 128K"],
       [
-        "The encrypted version has no tool calling, so no Sub Rosa agent tools",
+        "The encrypted version has no tool calling, so none of Sub Rosa's agent tools",
         "La version chiffrée n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
       ]
     ],
     "facts": [
-      ["117B parameter mixture of experts", "Mélange d’experts de 117 milliards de paramètres"],
+      ["117B-parameter mixture of experts", "Mélange d’experts de 117 milliards de paramètres"],
       ["128K token context", "Contexte de 128K jetons"]
     ],
     "needs": ["fast-cheap"],
@@ -763,13 +763,13 @@
         "Les anciens modèles 2507, Next et Coder sont en retrait par rapport aux 3.6 à 3.8"
       ],
       [
-        "Qwen 2.5 7B (encrypted) has no tool calling, so no Sub Rosa agent tools",
+        "Qwen 2.5 7B (encrypted) has no tool calling, so none of Sub Rosa's agent tools",
         "Qwen 2.5 7B (chiffré) n’a pas d’appel d’outils, donc pas d’outils de l’agent"
       ]
     ],
     "facts": [
       [
-        "Qwen 3.8 27B: 262K context, vision, tools",
+        "Qwen 3.8 27B: 262K context, vision, tool calling",
         "Qwen 3.8 27B : contexte de 262K, vision, outils"
       ],
       ["Open weights", "Poids ouverts"]
@@ -818,7 +818,7 @@
         "Petits modèles : moins fiables que les grands sur un raisonnement long"
       ],
       [
-        "Short replies: 8K tokens max out on Gemma 4",
+        "Short replies: 8K tokens of output at most on Gemma 4",
         "Réponses courtes : 8K jetons maximum en sortie sur Gemma 4"
       ]
     ],
@@ -876,7 +876,7 @@
         "Ancienne génération : ni vision, ni mode raisonnement"
       ],
       [
-        "Hermes 3 has no tool calling, so no Sub Rosa agent tools",
+        "Hermes 3 has no tool calling, so none of Sub Rosa's agent tools",
         "Hermes 3 n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
       ],
       [
@@ -983,7 +983,7 @@
     ],
     "strengths": [
       [
-        "Very fast output: over 1,000 tokens per second per Inception",
+        "Very fast output: over 1,000 tokens per second, according to Inception",
         "Sortie très rapide : plus de 1 000 jetons par seconde selon Inception"
       ],
       [
@@ -1020,7 +1020,7 @@
       {
         "id": "xiaomi-mimo-v2-5",
         "note": [
-          "Previous version, output over five times dearer than Flash",
+          "Previous version, with output over five times dearer than on Flash",
           "Version précédente, dont la sortie coûte plus de cinq fois plus cher que sur Flash"
         ]
       }
@@ -1145,7 +1145,7 @@
     "strengths": [
       ["Reads images and audio as well as text", "Lit les images et l’audio en plus du texte"],
       [
-        "Tool calling and adjustable thinking, private mode",
+        "Tool calling and adjustable reasoning, private mode",
         "Appel d’outils et raisonnement réglable, mode privé"
       ]
     ],
@@ -1293,7 +1293,7 @@
       }
     ],
     "summary": [
-      "Open models that the community altered to remove refusals. Pick one for unfiltered creative work.",
+      "Open models altered by the community to remove refusals. Pick one for unfiltered creative work.",
       "Des modèles ouverts modifiés par la communauté pour supprimer les refus. Pour un travail créatif sans filtre."
     ],
     "strengths": [
@@ -1312,7 +1312,7 @@
         "Supprimer les refus peut réduire la justesse et le jugement"
       ],
       [
-        "The encrypted Gemma has no tool calling, so no Sub Rosa agent tools",
+        "The encrypted Gemma has no tool calling, so none of Sub Rosa's agent tools",
         "La Gemma chiffrée n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
       ]
     ],
@@ -1377,7 +1377,7 @@
       {
         "id": "fal-ai/wizper",
         "note": [
-          "fal's faster serving of Whisper v3, same price",
+          "Whisper v3 served faster by fal, same price",
           "Whisper v3 servi plus vite par fal, même prix"
         ]
       }
@@ -1519,7 +1519,7 @@
         "Parmi les familles chères : environ 5 crédits pour Nano Banana 2"
       ],
       [
-        "Anonymized, not private: Google's own retention policy applies",
+        "Anonymized, not private: Google's retention policy applies",
         "Anonymisé, pas privé : la politique de conservation de Google s’applique"
       ]
     ],
@@ -1588,7 +1588,7 @@
         "Le prix monte avec la qualité et la résolution : environ 1,5 crédit au minimum"
       ],
       [
-        "Anonymized, not private: OpenAI's own retention policy applies",
+        "Anonymized, not private: OpenAI's retention policy applies",
         "Anonymisé, pas privé : la politique de conservation d’OpenAI s’applique"
       ]
     ],
@@ -1694,7 +1694,7 @@
       {
         "id": "qwen-image",
         "note": [
-          "First generation, used by the Sub Rosa agent for text and adherence",
+          "First generation, used by the Sub Rosa agent for text and prompt adherence",
           "Première génération, utilisée par l’agent de Sub Rosa pour le texte"
         ]
       },
@@ -1730,7 +1730,7 @@
         "Anonymisé, pas privé : la politique d’Alibaba Cloud s’applique"
       ],
       [
-        "Five versions on sale: older ones are rarely the better buy",
+        "Five versions in the catalog: the older ones are rarely the better buy",
         "Cinq versions au catalogue : les anciennes sont rarement le meilleur choix"
       ]
     ],
@@ -2003,7 +2003,7 @@
       }
     ],
     "summary": [
-      "Krea's own model, built for aesthetics and expressive styles rather than literal prompts. Turbo is fast and runs in private mode.",
+      "Krea's own model, built for aesthetics and expressive styles rather than literal prompt following. Turbo is fast and runs in private mode.",
       "Le modèle maison de Krea, pensé pour l’esthétique et les styles expressifs plus que pour la lecture littérale. Turbo est rapide et privé."
     ],
     "strengths": [
@@ -2184,7 +2184,7 @@
     ],
     "limits": [
       [
-        "Anonymized, not private: Meta's own retention policy applies",
+        "Anonymized, not private: Meta's retention policy applies",
         "Anonymisé, pas privé : la politique de conservation de Meta s’applique"
       ],
       [
@@ -2392,7 +2392,7 @@
       }
     ],
     "summary": [
-      "Utility models rather than generators. The upscaler enlarges an image x2 to x4, with an optional enhance pass.",
+      "Utility models rather than generators. The upscaler enlarges an image 2x to 4x, with an optional enhance pass.",
       "Des outils plutôt que des générateurs. L’agrandisseur agrandit une image de x2 à x4, avec une passe d’amélioration en option."
     ],
     "strengths": [
@@ -2413,8 +2413,8 @@
       ]
     ],
     "facts": [
-      ["Scale x2 to x4, optional enhance", "Échelle x2 à x4, amélioration en option"],
-      ["x4 costs more than x2", "x4 coûte plus cher que x2"],
+      ["Scale 2x to 4x, optional enhance", "Échelle x2 à x4, amélioration en option"],
+      ["4x costs more than 2x", "x4 coûte plus cher que x2"],
       [
         "Upscaler private; background remover anonymized",
         "Agrandisseur privé ; détourage anonymisé"
@@ -2586,7 +2586,7 @@
         "Plus cher que Qwen ou Seedream : environ 5 crédits la retouche"
       ],
       [
-        "Anonymized, not private: Google's own retention policy applies",
+        "Anonymized, not private: Google's retention policy applies",
         "Anonymisé, pas privé : la politique de conservation de Google s’applique"
       ]
     ],
@@ -2613,7 +2613,7 @@
     "ids": ["ideogram-v4-5-edit"],
     "pick": "ideogram-v4-5-edit",
     "summary": [
-      "Ideogram's precise editor, the one the Retouch tab starts on: paint a zone, describe the change, the rest of the pixels stay put.",
+      "Ideogram's precise editor, the one the Retouch tab opens with: paint a zone, describe the change, the rest of the pixels stay put.",
       "L’éditeur précis d’Ideogram, celui qu’ouvre l’onglet Retouche : peignez une zone, décrivez le changement, le reste ne bouge pas."
     ],
     "strengths": [
@@ -2697,7 +2697,7 @@
         "Environ 4 crédits pour 2.5, bien plus pour les anciennes versions"
       ],
       [
-        "Anonymized, not private: OpenAI's own retention policy applies",
+        "Anonymized, not private: OpenAI's retention policy applies",
         "Anonymisé, pas privé : la politique de conservation d’OpenAI s’applique"
       ]
     ],
@@ -2733,7 +2733,7 @@
       }
     ],
     "summary": [
-      "Photoreal edits that keep faces, outfits and products recognizable. FLUX 3 is the newest and cheaper of the two.",
+      "Photoreal edits that keep faces, outfits and products recognizable. FLUX 3 is the newer and cheaper of the two.",
       "Des retouches photoréalistes qui gardent visages, tenues et produits reconnaissables. FLUX 3 est le plus récent et le moins cher des deux."
     ],
     "strengths": [
@@ -2890,7 +2890,7 @@
     ],
     "limits": [
       [
-        "Anonymized, not private: Meta's own retention policy applies",
+        "Anonymized, not private: Meta's retention policy applies",
         "Anonymisé, pas privé : la politique de conservation de Meta s’applique"
       ]
     ],
@@ -3080,7 +3080,7 @@
         "Son, dialogues et ambiance générés avec l’image (sauf Turbo)"
       ],
       [
-        "Motion control variants transfer a real performance to your character",
+        "Motion Control versions transfer a real performance to your character",
         "Les variantes Motion Control transfèrent un vrai mouvement à votre personnage"
       ],
       [
@@ -3094,11 +3094,11 @@
         "La 4K coûte environ deux fois et demie le prix de Pro à la seconde ; sa version références exige une image de départ"
       ],
       [
-        "Turbo and Motion Control variants have no sound",
+        "Turbo and Motion Control versions have no sound",
         "Les variantes Turbo et Motion Control n’ont pas de son"
       ],
       [
-        "Motion control length follows your source clip; no quote before launch",
+        "Motion Control length follows your source clip; no quote before launch",
         "La durée de Motion Control suit votre clip source ; pas de devis avant lancement"
       ]
     ],
@@ -3168,7 +3168,7 @@
     ],
     "limits": [
       [
-        "Refer to each reference in the prompt by its tag (@Element1, @Image1)",
+        "Name each reference in the prompt by its tag (@Element1, @Image1)",
         "Désignez chaque référence dans le prompt par son repère (@Element1, @Image1)"
       ],
       [
@@ -3291,7 +3291,7 @@
         "Parmi les plus chers à la seconde ; la version privée US coûte environ le double"
       ],
       [
-        "Public versions refuse photos with a recognisable person",
+        "Public versions refuse photos with a recognizable person",
         "Les versions publiques refusent les photos où l’on reconnaît une personne"
       ],
       [
@@ -3374,7 +3374,7 @@
     ],
     "limits": [
       [
-        "These public versions refuse photos with a recognisable person",
+        "These public versions refuse photos with a recognizable person",
         "Ces versions publiques refusent les photos où l’on reconnaît une personne"
       ],
       [
@@ -3484,7 +3484,7 @@
       {
         "id": "wan-3-0-prime-text-to-video",
         "note": [
-          "Prime: Alibaba's faster tier, about 40 % dearer",
+          "Prime: Alibaba's faster tier, about 40% dearer",
           "Prime : le palier plus rapide d’Alibaba, environ 40 % plus cher"
         ]
       },
@@ -3947,7 +3947,10 @@
     ],
     "limits": [
       ["1080p at most", "1080p au maximum"],
-      ["V5.6 costs more than C1 for less", "V5.6 coûte plus cher que C1 pour un résultat moindre"]
+      [
+        "V5.6 costs more than C1 and does less",
+        "V5.6 coûte plus cher que C1 pour un résultat moindre"
+      ]
     ],
     "facts": [
       ["C1: 3 to 15 s; V5.6: 5 or 8 s", "C1 : 3 à 15 s ; V5.6 : 5 ou 8 s"],
@@ -4043,7 +4046,7 @@
       }
     ],
     "summary": [
-      "Lightricks' open-weights models that make picture and sound together, up to 20 s and up to 4K. Pick them for long, sharp clips at a fair price.",
+      "Lightricks' open-weight models that make picture and sound together, up to 20 s and up to 4K. Pick them for long, sharp clips at a fair price.",
       "Les modèles à poids ouverts de Lightricks : image et son ensemble, jusqu’à 20 s et en 4K. Choisissez-les pour des clips longs et nets à prix raisonnable."
     ],
     "strengths": [
