@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { readableModelName } from "../../lib/model-names";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t, intlLocale } from "../../lib/i18n";
@@ -222,7 +223,7 @@ function MediaCard({ id, initial }: { id: string; initial?: AssistantMediaPropos
       {proposal ? (
         <>
           <div className="assistant-media-heading">
-            <strong>{proposal.model}</strong>
+            <strong>{readableModelName(proposal.model)}</strong>
             <span role="status">{statusLabel(proposal.status)}</span>
           </div>
           <p>{proposal.prompt}</p>
@@ -260,7 +261,7 @@ function MediaCard({ id, initial }: { id: string; initial?: AssistantMediaPropos
               </span>
               <button
                 type="button"
-                className="button primary"
+                className="assistant-media-generate"
                 disabled={busy}
                 onClick={() => void execute()}
               >

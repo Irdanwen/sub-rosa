@@ -381,14 +381,29 @@ async fn run_turn(
         None
     };
     let default_model = crate::providers::generation_model();
-    let model = Some(
-        snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.definition.model.as_str())
-            .filter(|model| !model.is_empty())
-            .or(model)
-            .unwrap_or(default_model.as_str()),
-    );
+    let resolved = snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.definition.model.as_str())
+        .filter(|model| !model.is_empty())
+        .or(model)
+        .unwrap_or(default_model.as_str());
+    // An assistant's own model wins over the caller's, so a photo sent to a
+    // text-only assistant would be refused or ignored. Route that one turn to
+    // a model that reads images, as the Chat tab does before it calls. Only
+    // for an assistant: the Chat tab has already chosen, and asking the
+    // catalog costs a round trip.
+    let vision_route =
+        if snapshot.is_some() && attachments.iter().any(|entry| entry.kind == "image") {
+            crate::carpe_diem::media::carpe_diem_media_catalog()
+                .await
+                .ok()
+                .and_then(|catalog| {
+                    crate::assistants::runtime::vision_model_for(&catalog.models, resolved)
+                })
+        } else {
+            None
+        };
+    let model = Some(vision_route.as_deref().unwrap_or(resolved));
     let system_prompt = match &snapshot {
         Some(snapshot) => {
             crate::assistants::runtime::system_prompt(snapshot, memory_block.as_deref())

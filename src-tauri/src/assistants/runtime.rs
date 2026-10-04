@@ -58,6 +58,28 @@ fn encode_snapshot(snapshot: &AssistantSnapshot) -> Result<String, AppError> {
     Ok(json)
 }
 
+/// The model an image turn should run on when `current` cannot read images:
+/// the first available text model that can. `None` keeps `current`, which is
+/// also the answer when the catalog names no such model.
+pub fn vision_model_for(
+    models: &[crate::carpe_diem::media::MediaModelDto],
+    current: &str,
+) -> Option<String> {
+    let reads_images = |entry: &crate::carpe_diem::media::MediaModelDto| {
+        entry.supports_vision || entry.traits.iter().any(|value| value.contains("vision"))
+    };
+    if models
+        .iter()
+        .any(|entry| entry.id == current && reads_images(entry))
+    {
+        return None;
+    }
+    models
+        .iter()
+        .find(|entry| entry.media_type == "text" && !entry.offline && reads_images(entry))
+        .map(|entry| entry.id.clone())
+}
+
 pub async fn reference_image(
     app: &AppHandle,
     snapshot: &AssistantSnapshot,
@@ -614,6 +636,46 @@ mod tests {
     }
 
     use super::*;
+
+    fn text_model(id: &str, vision: bool) -> crate::carpe_diem::media::MediaModelDto {
+        crate::carpe_diem::media::MediaModelDto {
+            id: id.into(),
+            media_type: "text".into(),
+            name: id.into(),
+            tier: None,
+            privacy: None,
+            offline: false,
+            voices: vec![],
+            constraints: None,
+            model_sets: vec![],
+            traits: vec![],
+            supports_vision: vision,
+            pricing: None,
+            cost_credits: None,
+        }
+    }
+
+    #[test]
+    fn a_photo_sent_to_a_text_only_assistant_runs_on_a_model_that_reads_it() {
+        let models = vec![
+            text_model("words-only", false),
+            text_model("eyes", true),
+            text_model("more-eyes", true),
+        ];
+        assert_eq!(
+            vision_model_for(&models, "words-only").as_deref(),
+            Some("eyes")
+        );
+        // A model that already reads images, or a catalog without one, keeps
+        // the assistant's own model.
+        assert_eq!(vision_model_for(&models, "more-eyes"), None);
+        assert_eq!(vision_model_for(&models[..1], "words-only"), None);
+        // Unknown (the default) counts as text-only, like the Chat tab.
+        assert_eq!(vision_model_for(&models, "").as_deref(), Some("eyes"));
+        let mut offline = text_model("offline-eyes", true);
+        offline.offline = true;
+        assert_eq!(vision_model_for(&[offline], "words-only"), None);
+    }
 
     fn private_snapshot() -> AssistantSnapshot {
         AssistantSnapshot {

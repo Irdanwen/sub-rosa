@@ -13,6 +13,9 @@ type StackHeaderProps = {
   leading?: ReactNode;
   /** Large iOS-style title on root screens; compact inline title when pushed. */
   large?: boolean;
+  /** What the compact title shows in place of its text, such as a face beside
+   * a name. `title` still names the screen. */
+  titleContent?: ReactNode;
 };
 
 export function StackHeader({
@@ -22,6 +25,7 @@ export function StackHeader({
   trailing,
   leading,
   large,
+  titleContent,
 }: StackHeaderProps) {
   // A large title puts its actions on the title's own row, the way the
   // platform does. Rendering the compact row anyway left the buttons floating
@@ -59,7 +63,11 @@ export function StackHeader({
         ) : (
           <span className="mobile-stack-header-spacer" />
         )}
-        {title ? (
+        {titleContent ? (
+          <h1 className="mobile-stack-header-title" aria-label={title || undefined}>
+            {titleContent}
+          </h1>
+        ) : title ? (
           <h1 className="mobile-stack-header-title">{title}</h1>
         ) : (
           // A screen whose page is its own title keeps the row's shape with

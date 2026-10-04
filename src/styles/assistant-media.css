@@ -53,3 +53,27 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+/* The one control here that spends credits: it reads as the action. */
+.assistant-media-generate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 var(--sp-6);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+.assistant-media-generate:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (pointer: coarse) {
+  .assistant-media-generate {
+    min-height: 44px;
+  }
+}
