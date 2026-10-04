@@ -1432,7 +1432,10 @@
         "Anonymized, not private: ElevenLabs' retention policy applies",
         "Anonymisé, pas privé : la politique de conservation d’ElevenLabs s’applique"
       ],
-      ["Costs about 1.6 times Parakeet or Whisper", "Coûte environ 1,6 fois le prix de Parakeet ou de Whisper"]
+      [
+        "Costs about 1.6 times Parakeet or Whisper",
+        "Coûte environ 1,6 fois le prix de Parakeet ou de Whisper"
+      ]
     ],
     "facts": [["90+ languages", "Plus de 90 langues"]],
     "needs": ["multilingual"],
@@ -2849,7 +2852,10 @@
         "Directable changes to angle, light and color",
         "Changements dirigés d’angle, de lumière et de couleur"
       ],
-      ["Style transfer across many art styles", "Transfert de style, avec de nombreux styles artistiques au choix"]
+      [
+        "Style transfer across many art styles",
+        "Transfert de style, avec de nombreux styles artistiques au choix"
+      ]
     ],
     "limits": [
       ["One image per edit: no combining", "Une image par retouche : pas d’assemblage"],
