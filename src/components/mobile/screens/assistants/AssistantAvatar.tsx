@@ -205,8 +205,9 @@ export function AvatarSheet({
   };
 
   const unit = pricing?.unitCost;
-  const priceOf = (count: number) =>
-    unit === undefined ? t("Price unknown") : formatCredits(unit * count);
+  // No price, no generation: the sheet promises the price before the spend.
+  const priced = unit !== undefined;
+  const priceOf = (count: number) => (priced ? formatCredits(unit * count) : t("Price unknown"));
   const title =
     step.kind === "price"
       ? t("Generate an avatar")
@@ -291,7 +292,7 @@ export function AvatarSheet({
                   className="mobile-sheet-item mobile-action-sheet-item"
                   onClick={() => void reset()}
                 >
-                  <span className="mobile-sheet-item-title">{t("Back to the initial")}</span>
+                  <span className="mobile-sheet-item-title">{t("Use the initial instead")}</span>
                 </button>
               </li>
             ) : null}
@@ -308,11 +309,17 @@ export function AvatarSheet({
                 },
               )}
             </p>
+            {!priced ? (
+              <p className="mobile-sheet-error" role="alert">
+                {t("The price of this model is not known right now, so nothing can be generated.")}
+              </p>
+            ) : null}
             <ul className="mobile-sheet-list">
               <li>
                 <button
                   type="button"
                   className="mobile-sheet-item mobile-avatar-sheet-price"
+                  disabled={!priced}
                   onClick={() => void generate(1)}
                 >
                   <span className="mobile-sheet-item-title">{t("One avatar")}</span>
@@ -323,6 +330,7 @@ export function AvatarSheet({
                 <button
                   type="button"
                   className="mobile-sheet-item mobile-avatar-sheet-price"
+                  disabled={!priced}
                   onClick={() => void generate(2)}
                 >
                   <span className="mobile-sheet-item-title">{t("Two to choose from")}</span>

@@ -65,3 +65,24 @@ Native tests cover permission filtering, snapshot retention, revision conflicts,
 document extraction and the single-use paid claim. Frontend tests cover creation
 and consent-only execution. Visual checks cover desktop and phone layouts; actual
 hardware and live paid provider checks must be reported separately from mocked QA.
+
+## Addendum (2026-10-04): the phone surface
+
+- An assistant's face is its initials on hues derived from its id, or one of its
+  image references (`avatar_ref`), generated after the price is shown, taken from
+  the gallery or from Photos. A chosen colour was rejected: it needs a new
+  synchronised column, and `account::sync::apply` makes a device that has not
+  updated refuse every row that carries one.
+- An assistant's conversation on the phone accepts attachments for the turn
+  that sends them, as the Chat tab does; the stored message keeps only markers.
+  An image turn on an assistant whose own model reads no images runs on a text
+  model that does, chosen among models as private as the assistant's own; when
+  there is none the image is refused rather than carried, with the whole
+  conversation, to a less private model. The snapshot's model otherwise wins
+  over the caller's, which left the image refused or ignored.
+- The command that writes a turn hands its turn claim to the run it spawns, so
+  a resume sweep cannot start that turn in between without its attachments.
+- Unsaved edits are a device-local draft, never synchronised. Edits written
+  before a newer save are still offered back, laid over that newer revision,
+  with a notice that saving them replaces it; a save that meets a conflict does
+  the same rather than discarding what was typed.

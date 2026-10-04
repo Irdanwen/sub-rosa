@@ -643,10 +643,11 @@ export function AgentSessionScreen({
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the new content is the trigger, not an input.
   useEffect(() => {
     if (!pinnedRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, []);
+  }, [task?.messages.length, stage, streamed]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;

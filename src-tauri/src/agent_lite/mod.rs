@@ -116,6 +116,16 @@ fn validate_turn_attachments(
             "This message was interrupted. Attach your files again and send a new message.",
         ));
     }
+    // An image travels inline, never as an address the provider would fetch.
+    if attachments
+        .iter()
+        .any(|entry| entry.kind == "image" && !entry.data.starts_with("data:image/"))
+    {
+        return Err(AppError::new(
+            "agent_lite_attachment_invalid",
+            "This image could not be read. Attach it again.",
+        ));
+    }
     Ok(())
 }
 
@@ -131,6 +141,19 @@ pub async fn agent_lite_run(
     app: AppHandle,
     request: AgentLiteRunRequest,
 ) -> Result<crate::domain::types::AgentTaskDto, AppError> {
+    let claim = TurnClaim::try_hold(&request.task_id)
+        .ok_or_else(|| AppError::new("agent_lite_running", "This chat is already running."))?;
+    run_claimed(app, request, claim).await
+}
+
+/// A turn whose claim the caller already holds: a command that persisted the
+/// message hands its claim over instead of dropping it, so a resume sweep in
+/// between cannot start the turn without its attachments.
+pub(crate) async fn run_claimed(
+    app: AppHandle,
+    request: AgentLiteRunRequest,
+    _claim: TurnClaim,
+) -> Result<crate::domain::types::AgentTaskDto, AppError> {
     let repos = crate::commands::repositories(&app).await?;
     let task_id = request.task_id;
     let model = request.model.filter(|value| !value.trim().is_empty());
@@ -141,8 +164,6 @@ pub async fn agent_lite_run(
     // window, the persisted user message is what lets `resume_interrupted_turns`
     // pick the turn back up.
     let _background = crate::ios_background::BackgroundTask::begin("agent-lite-turn");
-    let _claim = TurnClaim::try_hold(&task_id)
-        .ok_or_else(|| AppError::new("agent_lite_running", "This chat is already running."))?;
     let current = repos.get_agent_task(&task_id).await?;
     if !current
         .messages

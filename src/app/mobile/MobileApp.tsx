@@ -1,5 +1,10 @@
-import { AssistantsScreen } from "../../components/assistants/AssistantsDialog";
 import { handOffImagePrompt } from "../../lib/studio/prompt-handoff";
+import { AssistantChatScreen } from "../../components/mobile/screens/assistants/AssistantChatScreen";
+import { AssistantCreator } from "../../components/mobile/screens/assistants/AssistantCreator";
+import { AssistantEditor } from "../../components/mobile/screens/assistants/AssistantEditor";
+import { AssistantHistory } from "../../components/mobile/screens/assistants/AssistantHistory";
+import { AssistantReferencesScreen } from "../../components/mobile/screens/assistants/AssistantReferencesScreen";
+import { AssistantsHome } from "../../components/mobile/screens/assistants/AssistantsHome";
 import { useAccountLibrarySync } from "../useAccountLibrarySync";
 import { t } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
@@ -174,10 +179,6 @@ export function MobileApp() {
   /** Text waiting for the next fresh chat screen (`chat?q=`, a Shortcuts
    * action), and whether it may be sent without a tap. */
   const [pendingChat, setPendingChat] = useState<{ text: string; send: boolean } | null>(null);
-  // The Assistants tab: which conversation a notification asked for, and a key
-  // that remounts the library onto it.
-  const [assistantTaskId, setAssistantTaskId] = useState<string | undefined>(undefined);
-  const [assistantEpoch, setAssistantEpoch] = useState(0);
   /** A link to open the Import sheet on: a video page this phone cannot
    * read, which the sheet offers to send to a computer (ADR-0054). */
   const [importLink, setImportLink] = useState<string | null>(null);
@@ -208,9 +209,14 @@ export function MobileApp() {
   const screenRef = useRef<HTMLDivElement | null>(null);
   // The screen wrapper is keyed by tab and depth, so it remounts on every move
   // through the stack and takes the scroll position with it. This puts it back.
-  // Off on the agent tab: the conversation places its own scroll, pinning to
-  // the last message, and two owners of `scrollTop` is a fight you can see.
-  useScrollRestoration(`${nav.tab}:${nav.depth}`, screenRef, nav.tab !== "agent");
+  // Off on a conversation (the agent tab, an assistant's chat): it places its
+  // own scroll, pinning to the last message, and two owners of `scrollTop` is
+  // a fight you can see.
+  useScrollRestoration(
+    `${nav.tab}:${nav.depth}`,
+    screenRef,
+    nav.tab !== "agent" && nav.top?.view !== "assistant-chat",
+  );
   const edgeSwipe = useRef<{
     x: number;
     y: number;
@@ -492,9 +498,18 @@ export function MobileApp() {
         if (destination.query) setPendingChat({ text: destination.query, send: false });
         break;
       case "assistant":
-        setAssistantTaskId(destination.taskId);
-        setAssistantEpoch((epoch) => epoch + 1);
-        nav.switchTab("assistants");
+        // The conversation lands on top of the tab's own stack, so back
+        // returns to the library rather than out of the tab.
+        if (nav.tab !== "assistants") nav.switchTab("assistants");
+        // Already on screen: re-pushing it would make Back land on itself.
+        if (
+          !(
+            nav.tab === "assistants" &&
+            nav.top?.view === "assistant-chat" &&
+            nav.top.taskId === destination.taskId
+          )
+        )
+          nav.push({ view: "assistant-chat", taskId: destination.taskId });
         break;
       case "assistants":
         nav.switchTab("assistants");
@@ -979,6 +994,61 @@ export function MobileApp() {
         }}
       />
     );
+  } else if (top?.view === "assistant-chat") {
+    screen = (
+      <AssistantChatScreen
+        assistantId={top.assistantId}
+        taskId={top.taskId}
+        onBack={nav.pop}
+        onEdit={(assistantId) => nav.push({ view: "assistant-editor", assistantId })}
+        onConversationChange={(taskId, assistantId) =>
+          nav.replaceTop({
+            view: "assistant-chat",
+            assistantId: assistantId ?? top.assistantId,
+            taskId: taskId ?? undefined,
+          })
+        }
+      />
+    );
+  } else if (top?.view === "assistant-editor") {
+    screen = (
+      <AssistantEditor
+        assistantId={top.assistantId}
+        onBack={nav.pop}
+        onSaved={(assistant) =>
+          nav.replaceTop({ view: "assistant-editor", assistantId: assistant.id })
+        }
+        onTry={(assistantId) => nav.push({ view: "assistant-chat", assistantId })}
+        onOpenReferences={(assistantId, assistantName) =>
+          nav.push({ view: "assistant-references", assistantId, assistantName })
+        }
+        onDeleted={() => nav.switchTab("assistants")}
+      />
+    );
+  } else if (top?.view === "assistant-create") {
+    screen = (
+      <AssistantCreator
+        initialIdea={top.idea}
+        onBack={nav.pop}
+        onDrafted={() => nav.replaceTop({ view: "assistant-editor" })}
+        onWriteMyself={() => nav.replaceTop({ view: "assistant-editor" })}
+      />
+    );
+  } else if (top?.view === "assistant-references") {
+    screen = (
+      <AssistantReferencesScreen
+        assistantId={top.assistantId}
+        assistantName={top.assistantName}
+        onBack={nav.pop}
+      />
+    );
+  } else if (top?.view === "assistant-history") {
+    screen = (
+      <AssistantHistory
+        onBack={nav.pop}
+        onOpenConversation={(taskId) => nav.push({ view: "assistant-chat", taskId })}
+      />
+    );
   } else if (top?.view === "studio-retouch") {
     screen = <RetouchScreen artifactId={top.artifactId} rootId={top.rootId} onBack={nav.pop} />;
   } else if (top?.view === "dictation") {
@@ -1061,12 +1131,13 @@ export function MobileApp() {
         break;
       case "assistants":
         screen = (
-          <div className="mobile-screen-root">
-            <AssistantsScreen
-              key={`assistants-${assistantEpoch}`}
-              initialTaskId={assistantTaskId}
-            />
-          </div>
+          <AssistantsHome
+            onOpenChat={(assistantId) => nav.push({ view: "assistant-chat", assistantId })}
+            onOpenConversation={(taskId) => nav.push({ view: "assistant-chat", taskId })}
+            onCreate={(idea) => nav.push({ view: "assistant-create", idea })}
+            onEdit={(assistantId) => nav.push({ view: "assistant-editor", assistantId })}
+            onOpenHistory={() => nav.push({ view: "assistant-history" })}
+          />
         );
         break;
       case "agent":

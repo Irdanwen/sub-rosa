@@ -13,6 +13,8 @@ export type EditorDraft = {
   definition: AssistantDefinition;
   /** The saved revision the edits started from; 0 for a new assistant. */
   baseRevision: number;
+  /** Written by the guided creator: a fresh draft, not edits to offer back. */
+  drafted?: boolean;
 };
 
 /** The guided creator's answers so far. */
@@ -54,19 +56,18 @@ function remove(key: string) {
 }
 
 /**
- * The unsaved edits of an assistant (`""` for a new one), when they still
- * apply: edits written against an older revision are dropped, since the
- * assistant has been saved since (here or on another device) and restoring
- * them would silently undo that save.
+ * The unsaved edits of an assistant (`""` for a new one). `stale` says the
+ * assistant has been saved since they were written (here or on another
+ * device): they are still offered, never dropped unasked, and the editor says
+ * that saving them replaces the newer version.
  */
-export function readEditorDraft(id: string, savedRevision: number): EditorDraft | null {
+export function readEditorDraft(
+  id: string,
+  savedRevision: number,
+): (EditorDraft & { stale: boolean }) | null {
   const draft = read<EditorDraft>(keyOf(id));
   if (!draft?.definition || typeof draft.baseRevision !== "number") return null;
-  if (draft.baseRevision !== savedRevision) {
-    remove(keyOf(id));
-    return null;
-  }
-  return draft;
+  return { ...draft, stale: draft.baseRevision !== savedRevision };
 }
 
 export function writeEditorDraft(id: string, draft: EditorDraft) {

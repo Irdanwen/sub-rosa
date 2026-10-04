@@ -242,6 +242,13 @@ A file or dated copy of a selected note attached to one assistant. Attaching a
 note does not grant access to the note corpus. Refreshing a copy is explicit;
 existing conversations retain their snapshot.
 
+**Assistant avatar**:
+An assistant's face: its initials on two hues derived from its id (the same on
+every device, stored nowhere), or a picture. A picture is always one of the
+assistant's image references (`avatar_ref`), whether it was generated, taken
+from the gallery or from Photos, so the face adds no synchronised field.
+_Avoid_: profile picture, colour setting (there is none to set).
+
 **Generation proposal**:
 The parameters an assistant prepares for an image, edit, upscale, video, music
 or spoken-audio generation. A local durable record, consumed once only by the

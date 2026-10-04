@@ -33,7 +33,17 @@ export type MobileRoute =
   | { view: "dictation"; autoStart?: boolean }
   | { view: "settings-section"; section: SettingsSection }
   /** A retouch session, opened on the image that was picked. */
-  | { view: "studio-retouch"; artifactId: string; rootId?: string };
+  | { view: "studio-retouch"; artifactId: string; rootId?: string }
+  /** A conversation with an assistant: a new one with `assistantId`, or the
+   * one `taskId` names (kept current as the screen moves between them). */
+  | { view: "assistant-chat"; assistantId?: string; taskId?: string }
+  /** An assistant's settings; a new assistant without an id. */
+  | { view: "assistant-editor"; assistantId?: string }
+  /** The guided creator, optionally from a template's idea. */
+  | { view: "assistant-create"; idea?: string }
+  | { view: "assistant-references"; assistantId: string; assistantName?: string }
+  /** Every conversation with an assistant. */
+  | { view: "assistant-history" };
 
 export type MobileNav = {
   tab: MobileTab;

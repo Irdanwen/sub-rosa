@@ -97,6 +97,25 @@ fn lost_attachment_payloads_are_rejected_before_a_request_can_be_built() {
 }
 
 #[test]
+fn an_image_travels_inline_never_as_an_address_to_fetch() {
+    let image = |data: &str| AgentLiteAttachment {
+        kind: "image".into(),
+        name: "photo.jpg".into(),
+        data: data.into(),
+    };
+    let marker = "Look\n[Image: photo.jpg]";
+    assert!(validate_turn_attachments(marker, &[image("data:image/jpeg;base64,AA")]).is_ok());
+    for address in [
+        "https://example.com/photo.jpg",
+        "file:///etc/passwd",
+        "data:text/html,x",
+    ] {
+        let error = validate_turn_attachments(marker, &[image(address)]).unwrap_err();
+        assert_eq!(error.code, "agent_lite_attachment_invalid");
+    }
+}
+
+#[test]
 fn rate_limit_detail_matches_sidecar_and_direct_provider_wording() {
     // The June API sidecar's message for an upstream 429 / 503.
     assert!(is_rate_limit_detail("upstream_rate_limited"));
