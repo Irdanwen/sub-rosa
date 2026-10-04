@@ -10,6 +10,7 @@
     "build:website": "pnpm --filter @subrosa/website build",
     "test:cloud": "cargo test --manifest-path subrosa-cloud/Cargo.toml --workspace --locked",
     "website:releases": "node website/scripts/update-releases.mjs",
+    "website:models": "node website/scripts/update-models.mjs",
     "dev": "vite",
     "tauri": "tauri",
     "tauri:dev": "node scripts/tauri-dev.mjs",

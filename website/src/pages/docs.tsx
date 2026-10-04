@@ -69,6 +69,11 @@ export function Documentation({ path, locale }: { path: string; locale: SiteLoca
               {t("Choose a download", "Choisir un téléchargement")} ↗
             </a>
           )}
+          {["carpe-diem-key", "studio-media", "agent"].includes(guide.slug) && (
+            <a className="button docs-article-action" href={href("/models")}>
+              {t("Compare the models", "Comparer les modèles")} ↗
+            </a>
+          )}
           {guide.slug === "account" && (
             <a className="button primary docs-article-action" href={href("/account")}>
               {t("Go to your account", "Accéder à votre compte")} ↗
@@ -166,6 +171,14 @@ export function Documentation({ path, locale }: { path: string; locale: SiteLoca
           </label>
           <p className="docs-search-hint">
             {t("Search stays in your browser.", "La recherche reste dans votre navigateur.")}
+          </p>
+          <p className="docs-search-hint">
+            <a href={href("/models")}>
+              {t(
+                "Not sure which model to pick? See the model catalog.",
+                "Vous hésitez entre les modèles ? Consultez le catalogue.",
+              )}
+            </a>
           </p>
         </div>
       </section>
