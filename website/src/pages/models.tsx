@@ -87,7 +87,13 @@ function FamilyCard({ family, locale }: { family: Family; locale: SiteLocale }) 
 function CatalogHome({ locale }: { locale: SiteLocale }) {
   const href = (target: string) => localizedSiteHref(target, locale);
   const [tab, setTab] = useState<Category>("text");
-  const [filter, setFilter] = useState<Category | "all">("all");
+  // The grid follows the kind of work chosen above, so a phone shows twenty
+  // families rather than a hundred; the select still opens the whole catalog.
+  const [filter, setFilter] = useState<Category | "all">("text");
+  const chooseTab = (next: Category) => {
+    setTab(next);
+    setFilter(next);
+  };
   const [privateOnly, setPrivateOnly] = useState(false);
   const [query, setQuery] = useState("");
   const covered = families.reduce((count, family) => count + family.ids.length, 0);
@@ -175,7 +181,7 @@ function CatalogHome({ locale }: { locale: SiteLocale }) {
                 type="button"
                 key={category.id}
                 aria-pressed={tab === category.id}
-                onClick={() => setTab(category.id)}
+                onClick={() => chooseTab(category.id)}
               >
                 {read(category.title)}
               </button>
@@ -315,8 +321,14 @@ function CatalogHome({ locale }: { locale: SiteLocale }) {
         <section className="models-section" aria-labelledby="models-all">
           <p className="eyebrow">{t("The whole catalog", "Tout le catalogue")}</p>
           <h2 id="models-all">
-            {t("Every family, side by side.", "Toutes les familles, côte à côte.")}
+            {t("Every family, one card each.", "Toutes les familles, une carte chacune.")}
           </h2>
+          <p className="models-lede">
+            {t(
+              "Showing the kind of work chosen above. Pick “All kinds” to see the whole catalog.",
+              "Le type de travail choisi plus haut est affiché. Choisissez « Tous les types » pour voir tout le catalogue.",
+            )}
+          </p>
           <div className="models-filters">
             <label className="models-search">
               <span className="sr-only">{t("Search models", "Rechercher un modèle")}</span>

@@ -78,6 +78,43 @@ describe("model catalog", () => {
     expect(unpriced.length).toBeLessThanOrEqual(3);
   });
 
+  it("keeps the prices written in prose within reach of the snapshot", () => {
+    // A number typed into a sentence does not refresh with the snapshot, so
+    // every "about N credits" must still match one model of its family.
+    const perModel = (model: (typeof snapshot.models)[number]) =>
+      model.usdPerSecond !== undefined
+        ? model.usdPerSecond * 100
+        : (model.credits ??
+          (model.usdPerMillionCharacters !== undefined
+            ? (model.usdPerMillionCharacters * 3000) / 10000
+            : undefined));
+    const drift: string[] = [];
+    let checked = 0;
+    for (const family of families) {
+      const prices = family.ids
+        .map((id) => snapshot.models.find((model) => model.id === id))
+        .map((model) => (model ? perModel(model) : undefined))
+        .filter((value): value is number => value !== undefined);
+      if (!prices.length) continue;
+      const sentences = [family.summary, ...family.strengths, ...family.limits, ...family.facts];
+      for (const [sentence] of sentences)
+        for (const match of sentence.matchAll(
+          /about (\d+(?:\.\d+)?)(?: to (\d+(?:\.\d+)?))? credits?/g,
+        )) {
+          checked += 1;
+          const low = Number(match[1]);
+          const high = Number(match[2] ?? match[1]);
+          const near = prices.some((price) => price >= low * 0.7 && price <= high * 1.3);
+          if (!near)
+            drift.push(
+              `${family.slug}: "${match[0]}" vs ${prices.map((p) => p.toFixed(1)).join("/")}`,
+            );
+        }
+    }
+    expect(drift).toEqual([]);
+    expect(checked).toBeGreaterThan(20);
+  });
+
   it("writes every sentence in both languages without typographic dashes", () => {
     for (const [en, fr] of copy()) {
       expect(en.trim(), fr).not.toBe("");

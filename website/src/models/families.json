@@ -52,12 +52,12 @@
     ],
     "summary": [
       "Sub Rosa's default chat model: an open model from Z.ai with strong reasoning and tool use, in private mode.",
-      "Le modèle de chat par défaut de Sub Rosa : un modèle ouvert de Z.ai, solide en raisonnement et en outils, en mode privé."
+      "Le modèle de chat par défaut de Sub Rosa : un modèle ouvert de Z.ai, solide en raisonnement et en usage d’outils, en mode privé."
     ],
     "strengths": [
       [
         "Default in Sub Rosa: strong reasoning, tool use and structured output",
-        "Par défaut dans Sub Rosa : raisonnement, outils et sortie structurée solides"
+        "Par défaut dans Sub Rosa : raisonnement, usage d’outils et sortie structurée solides"
       ],
       [
         "Private mode on every version: zero data retention",
@@ -69,7 +69,7 @@
       ],
       [
         "Mid-range price for its level; Flash versions cost a fraction",
-        "Prix moyen pour son niveau ; les versions Flash coûtent une fraction"
+        "Prix moyen pour son niveau ; les versions Flash coûtent une fraction de ce prix"
       ]
     ],
     "limits": [
@@ -132,7 +132,7 @@
         "id": "kimi-k2-7-code",
         "note": [
           "Built on K2.6 for coding, always thinks",
-          "Bâti sur K2.6 pour le code, réfléchit toujours"
+          "Bâti sur K2.6 pour le code, raisonne toujours"
         ]
       },
       {
@@ -150,7 +150,7 @@
     "strengths": [
       [
         "Sub Rosa switches to K2.6 when you attach an image",
-        "Sub Rosa passe sur K2.6 quand vous joignez une image"
+        "Sub Rosa bascule sur K2.6 quand vous joignez une image"
       ],
       [
         "Ranked the leading open-weight model by Artificial Analysis at release",
@@ -219,7 +219,7 @@
         "id": "deepseek-v4-flash",
         "note": [
           "Among the cheapest capable models in the catalog, text only",
-          "Parmi les modèles capables les moins chers du catalogue, texte seul"
+          "Parmi les modèles performants les moins chers du catalogue, texte seul"
         ]
       },
       {
@@ -252,7 +252,7 @@
       ],
       [
         "V4.1 Flash is the newest version: prefer it for new work",
-        "V4.1 Flash est la version la plus récente : préférez-la pour un nouveau travail"
+        "V4.1 Flash est la version la plus récente : préférez-la pour tout nouveau travail"
       ]
     ],
     "facts": [
@@ -389,7 +389,7 @@
         "id": "openai-gpt-6-astra",
         "note": [
           "OpenAI's most capable model, about four times the Sol price",
-          "Le modèle le plus capable d’OpenAI, environ quatre fois le prix de Sol"
+          "Le modèle le plus performant d’OpenAI, environ quatre fois le prix de Sol"
         ]
       },
       {
@@ -473,7 +473,7 @@
     ],
     "summary": [
       "OpenAI's open-weight model, run in private mode: cheap, quick, with adjustable reasoning. Good for everyday questions.",
-      "Le modèle à poids ouverts d’OpenAI, en mode privé : bon marché, rapide, raisonnement réglable. Bien pour les questions courantes."
+      "Le modèle à poids ouverts d’OpenAI, en mode privé : bon marché, rapide, raisonnement réglable. Convient aux questions courantes."
     ],
     "strengths": [
       ["Very low price, private mode", "Prix très bas, mode privé"],
@@ -514,7 +514,7 @@
         "id": "gemini-3-5-flash-lite",
         "note": [
           "Cheapest Gemini, for quick questions and summaries",
-          "Le Gemini le moins cher, pour questions rapides et résumés"
+          "Le Gemini le moins cher, pour les questions rapides et les résumés"
         ]
       },
       {
@@ -760,7 +760,7 @@
     "limits": [
       [
         "Older 2507, Next and Coder models trail the 3.6 to 3.8 ones",
-        "Les anciens modèles 2507, Next et Coder sont en retrait sur les 3.6 à 3.8"
+        "Les anciens modèles 2507, Next et Coder sont en retrait par rapport aux 3.6 à 3.8"
       ],
       [
         "Qwen 2.5 7B (encrypted) has no tool calling, so no Sub Rosa agent tools",
@@ -861,7 +861,7 @@
     ],
     "summary": [
       "Meta's older open Llama models and the Hermes 3 fine-tune, in private mode. Newer families do better for the price.",
-      "Les anciens modèles ouverts Llama de Meta et Hermes 3, en mode privé. Les familles récentes font mieux pour le prix."
+      "Les anciens modèles ouverts Llama de Meta et Hermes 3, en mode privé. Les familles récentes font mieux à prix égal."
     ],
     "strengths": [
       ["Private mode, well-known behavior", "Mode privé, comportement bien connu"],
@@ -881,7 +881,7 @@
       ],
       [
         "Llama 3.3 70B costs more than newer, stronger models",
-        "Llama 3.3 70B coûte plus que des modèles plus récents et plus forts"
+        "Llama 3.3 70B coûte plus cher que des modèles plus récents et plus forts"
       ]
     ],
     "facts": [
@@ -1021,7 +1021,7 @@
         "id": "xiaomi-mimo-v2-5",
         "note": [
           "Previous version, output over five times dearer than Flash",
-          "Version précédente, sortie plus de cinq fois plus chère que Flash"
+          "Version précédente, dont la sortie coûte plus de cinq fois plus cher que sur Flash"
         ]
       }
     ],
@@ -1146,7 +1146,7 @@
       ["Reads images and audio as well as text", "Lit les images et l’audio en plus du texte"],
       [
         "Tool calling and adjustable thinking, private mode",
-        "Appel d’outils et réflexion réglable, mode privé"
+        "Appel d’outils et raisonnement réglable, mode privé"
       ]
     ],
     "limits": [
@@ -1198,7 +1198,7 @@
     "limits": [
       [
         "No reasoning mode: weak on hard problems and code",
-        "Pas de mode raisonnement : faibles sur les problèmes durs et le code"
+        "Pas de mode raisonnement : faibles sur les problèmes difficiles et le code"
       ],
       ["128K context and short replies", "Contexte de 128K et réponses courtes"]
     ],
@@ -1432,7 +1432,7 @@
         "Anonymized, not private: ElevenLabs' retention policy applies",
         "Anonymisé, pas privé : la politique de conservation d’ElevenLabs s’applique"
       ],
-      ["Costs about 1.6 times Parakeet or Whisper", "Coûte environ 1,6 fois Parakeet ou Whisper"]
+      ["Costs about 1.6 times Parakeet or Whisper", "Coûte environ 1,6 fois le prix de Parakeet ou de Whisper"]
     ],
     "facts": [["90+ languages", "Plus de 90 langues"]],
     "needs": ["multilingual"],
@@ -1728,7 +1728,7 @@
       ],
       [
         "Five versions on sale: older ones are rarely the better buy",
-        "Cinq versions en vente : les anciennes sont rarement le meilleur choix"
+        "Cinq versions au catalogue : les anciennes sont rarement le meilleur choix"
       ]
     ],
     "facts": [
@@ -1762,7 +1762,7 @@
         "id": "seedream-v4",
         "note": [
           "Listed as Seedream V4.5: the previous generation, same price as Lite",
-          "Affiché Seedream V4.5 : la génération précédente, même prix que Lite"
+          "Affiché « Seedream V4.5 » : la génération précédente, même prix que Lite"
         ]
       }
     ],
@@ -1809,7 +1809,7 @@
         "id": "ideogram-v4",
         "note": [
           "Previous version, dearer at about 3 credits",
-          "Version précédente, plus chère à environ 3 crédits"
+          "Version précédente, plus chère (environ 3 crédits)"
         ]
       }
     ],
@@ -1965,7 +1965,7 @@
       ],
       [
         "First released in 2025: newer families often follow prompts better",
-        "Sorti en 2025 : des familles plus récentes suivent souvent mieux"
+        "Sorti en 2025 : des familles plus récentes suivent souvent mieux les consignes"
       ]
     ],
     "facts": [["Prompts up to 3,000 characters", "Consignes jusqu’à 3 000 caractères"]],
@@ -2001,7 +2001,7 @@
     ],
     "summary": [
       "Krea's own model, built for aesthetics and expressive styles rather than literal prompts. Turbo is fast and runs in private mode.",
-      "Le modèle maison de Krea, pensé pour l’esthétique et les styles expressifs plus que la lecture littérale. Turbo est rapide et privé."
+      "Le modèle maison de Krea, pensé pour l’esthétique et les styles expressifs plus que pour la lecture littérale. Turbo est rapide et privé."
     ],
     "strengths": [
       [
@@ -2099,7 +2099,7 @@
     ],
     "summary": [
       "Alibaba Wan's image models with a thinking mode for complex scenes. Use the standard one for drafts, Pro for final product shots.",
-      "Les modèles d’image Wan d’Alibaba, avec un mode réflexion pour les scènes complexes. Standard pour l’ébauche, Pro pour le rendu final."
+      "Les modèles d’image Wan d’Alibaba, avec un mode raisonnement pour les scènes complexes. Standard pour l’ébauche, Pro pour le rendu final."
     ],
     "strengths": [
       [
@@ -2186,7 +2186,7 @@
       ],
       [
         "Its planning and web search features live in Meta's apps, not here",
-        "Sa planification et sa recherche web vivent dans les applis Meta, pas ici"
+        "Sa planification et sa recherche web n’existent que dans les applis Meta, pas ici"
       ]
     ],
     "facts": [["Prompts up to 10,000 characters", "Consignes jusqu’à 10 000 caractères"]],
@@ -2215,7 +2215,7 @@
       ],
       [
         "Versatile across styles, with few content filters",
-        "Polyvalent selon les styles, avec peu de filtres de contenu"
+        "Polyvalent d’un style à l’autre, avec peu de filtres de contenu"
       ]
     ],
     "limits": [
@@ -2253,7 +2253,7 @@
       ],
       [
         "Fine for quick illustrations and mood images",
-        "Convient aux illustrations rapides et images d’ambiance"
+        "Convient aux illustrations rapides et aux images d’ambiance"
       ]
     ],
     "limits": [
@@ -2411,7 +2411,7 @@
     ],
     "facts": [
       ["Scale x2 to x4, optional enhance", "Échelle x2 à x4, amélioration en option"],
-      ["x4 costs more than x2", "x4 coûte plus que x2"],
+      ["x4 costs more than x2", "x4 coûte plus cher que x2"],
       [
         "Upscaler private; background remover anonymized",
         "Agrandisseur privé ; détourage anonymisé"
@@ -2512,7 +2512,7 @@
     ],
     "summary": [
       "ByteDance's editors keep lighting, color and the subject's look while changing what you ask. Seedream 5 Lite is the second \"Automatic\" choice.",
-      "Les éditeurs de ByteDance gardent lumière, couleurs et apparence du sujet en changeant ce que vous demandez. Seedream 5 Lite est le 2e choix « Automatique »."
+      "Les éditeurs de ByteDance gardent lumière, couleurs et apparence du sujet en changeant ce que vous demandez. Seedream 5 Lite est le deuxième choix « Automatique »."
     ],
     "strengths": [
       ["Preserves subject, lighting and color tone", "Préserve sujet, lumière et tonalité"],
@@ -2842,14 +2842,14 @@
     ],
     "summary": [
       "Luma's reasoning editor, good at camera angle, lighting and style changes on a single image.",
-      "L’éditeur raisonné de Luma, à l’aise pour changer l’angle, la lumière ou le style d’une seule image."
+      "L’éditeur de Luma qui raisonne, à l’aise pour changer l’angle, la lumière ou le style d’une seule image."
     ],
     "strengths": [
       [
         "Directable changes to angle, light and color",
         "Changements dirigés d’angle, de lumière et de couleur"
       ],
-      ["Style transfer across many art styles", "Transfert de style vers de nombreux styles"]
+      ["Style transfer across many art styles", "Transfert de style, avec de nombreux styles artistiques au choix"]
     ],
     "limits": [
       ["One image per edit: no combining", "Une image par retouche : pas d’assemblage"],
@@ -2908,7 +2908,7 @@
     "pick": "wan-2-7-pro-edit",
     "summary": [
       "Alibaba Wan's professional editor for complex, multi-element changes and restyling.",
-      "L’éditeur professionnel de Wan (Alibaba) pour les changements complexes à plusieurs éléments et les changements de style."
+      "L’éditeur professionnel de Wan (Alibaba) pour les retouches complexes à plusieurs éléments et les changements de style."
     ],
     "strengths": [
       [
@@ -3041,8 +3041,8 @@
       {
         "id": "kling-v3-4k-text-to-video",
         "note": [
-          "4K output, among the dearest per second; needs a starting image",
-          "Sortie 4K, parmi les plus chères à la seconde ; exige une image de départ"
+          "4K output, among the dearest per second; with references, a starting image is required",
+          "Sortie 4K, parmi les plus chères à la seconde ; avec des références, une image de départ est exigée"
         ]
       },
       {
@@ -3084,8 +3084,8 @@
     ],
     "limits": [
       [
-        "4K costs about two and a half times Pro per second and needs a starting image",
-        "La 4K coûte environ deux fois et demie Pro à la seconde et exige une image de départ"
+        "4K costs about two and a half times Pro per second; its reference version needs a starting image",
+        "La 4K coûte environ deux fois et demie le prix de Pro à la seconde ; sa version références exige une image de départ"
       ],
       [
         "Turbo and Motion Control variants have no sound",
@@ -3141,7 +3141,7 @@
         "id": "kling-o3-4k-reference-to-video",
         "note": [
           "4K output, about three times Pro per second",
-          "Sortie 4K, environ trois fois Pro à la seconde"
+          "Sortie 4K, environ trois fois le prix de Pro à la seconde"
         ]
       }
     ],
@@ -3355,7 +3355,7 @@
     "strengths": [
       [
         "Lip-synced speech in several languages, generated with the picture",
-        "Paroles synchronisées aux lèvres en plusieurs langues, générées avec l’image"
+        "Paroles synchronisées avec les lèvres en plusieurs langues, générées avec l’image"
       ],
       [
         "Reference mode takes several images and audio clips",
@@ -3433,7 +3433,7 @@
       ["Veo 3.1 goes up to 4K", "Veo 3.1 monte jusqu’à la 4K"],
       [
         "Fast versions cost half the Full price or less",
-        "Les versions Fast coûtent la moitié du prix Full, voire moins"
+        "Les versions Fast coûtent la moitié du prix des versions Full, voire moins"
       ]
     ],
     "limits": [
@@ -3513,7 +3513,7 @@
       ],
       [
         "Long clips add up: the price is per second",
-        "Les clips longs coûtent vite : le prix est à la seconde"
+        "Les clips longs coûtent vite cher : le prix est à la seconde"
       ]
     ],
     "facts": [
@@ -3712,7 +3712,7 @@
         "id": "grok-imagine-video-to-video-private",
         "note": [
           "Restyles or edits a clip you supply",
-          "Restyle ou retouche un clip que vous fournissez"
+          "Change le style d’un clip que vous fournissez, ou le retouche"
         ]
       },
       {
@@ -3926,7 +3926,7 @@
     ],
     "summary": [
       "PixVerse C1 is an April 2026 model aimed at action and effects shots, with sound, at a low price per second. Pick it for cheap clips with sound.",
-      "PixVerse C1, sorti en avril 2026, vise l’action et les effets, avec son, à petit prix à la seconde. Choisissez-le pour des clips avec son économiques."
+      "PixVerse C1, sorti en avril 2026, vise l’action et les effets, avec son, à petit prix à la seconde. Choisissez-le pour des clips économiques avec son."
     ],
     "strengths": [
       [
@@ -3941,7 +3941,7 @@
     ],
     "limits": [
       ["1080p at most", "1080p au maximum"],
-      ["V5.6 costs more than C1 for less", "V5.6 coûte plus que C1 pour moins"]
+      ["V5.6 costs more than C1 for less", "V5.6 coûte plus cher que C1 pour un résultat moindre"]
     ],
     "facts": [
       ["C1: 3 to 15 s; V5.6: 5 or 8 s", "C1 : 3 à 15 s ; V5.6 : 5 ou 8 s"],
@@ -4115,7 +4115,7 @@
         "id": "longcat-text-to-video",
         "note": [
           "Full quality: still cheap, about three times Distilled",
-          "Qualité complète : toujours bon marché, environ trois fois Distilled"
+          "Qualité complète : toujours bon marché, environ trois fois le prix de Distilled"
         ]
       }
     ],
@@ -4231,10 +4231,10 @@
     "pick": "topaz-video-upscale",
     "summary": [
       "Not a generator: it enlarges and sharpens a clip you already have. Pick it to bring a finished 720p shot up to a higher resolution.",
-      "Pas un générateur : il agrandit et affine un clip que vous avez déjà. Choisissez-le pour faire monter un plan 720p terminé en résolution."
+      "Pas un générateur : il agrandit et affine un clip que vous avez déjà. Choisissez-le pour monter en résolution un plan 720p terminé."
     ],
     "strengths": [
-      ["2x or 4x enlargement of your own clip", "Agrandissement 2x ou 4x de votre propre clip"],
+      ["2x or 4x enlargement of your own clip", "Agrandissement x2 ou x4 de votre propre clip"],
       [
         "Keeps your edit, changes only the sharpness",
         "Garde votre montage, ne change que la netteté"
@@ -4247,7 +4247,7 @@
       ],
       ["Adds no sound and no motion", "N’ajoute ni son ni mouvement"]
     ],
-    "facts": [["2x or 4x", "2x ou 4x"], ["Length follows your clip", "La durée suit votre clip"]],
+    "facts": [["2x or 4x", "x2 ou x4"], ["Length follows your clip", "La durée suit votre clip"]],
     "needs": [],
     "url": "https://www.topazlabs.com/topaz-video",
     "sources": [
@@ -4276,7 +4276,7 @@
     ],
     "limits": [
       ["Only one French voice (ff_siwis)", "Une seule voix française (ff_siwis)"],
-      ["Less expressive than the larger models", "Moins expressif que les gros modèles"]
+      ["Less expressive than the larger models", "Moins expressif que les grands modèles"]
     ],
     "facts": [
       ["54 voices", "54 voix"],
@@ -4481,7 +4481,7 @@
     ],
     "strengths": [
       ["More than 30 languages, French included", "Plus de 30 langues, dont le français"],
-      ["15 character voices (calm, deep, lively...)", "15 voix typées (calme, grave, enjouée...)"]
+      ["15 character voices (calm, deep, lively...)", "15 voix typées (calme, grave, enjouée…)"]
     ],
     "limits": [
       ["Among the dearest voices per character", "Parmi les voix les plus chères au caractère"],
@@ -4543,7 +4543,7 @@
         "id": "tts-qwen3-0-6b",
         "note": [
           "Smaller 0.6B model, about a fifth cheaper",
-          "Modèle plus petit (0.6B), environ un cinquième moins cher"
+          "Modèle plus petit (0,6B), environ un cinquième moins cher"
         ]
       }
     ],
@@ -4707,7 +4707,7 @@
       ["60 s minimum per track", "60 s minimum par morceau"],
       [
         "Less polished vocals than paid song models",
-        "Voix moins abouties que les modèles de chansons payants"
+        "Voix moins abouties que celles des modèles de chansons payants"
       ]
     ],
     "facts": [["60 to 210 s", "60 à 210 s"], ["Lyrics optional", "Paroles facultatives"]],
@@ -4861,7 +4861,7 @@
     "pick": "elevenlabs-sound-effects-v2",
     "summary": [
       "ElevenLabs' sound effects model for foley and ambience from a short description. Pick it for clean, film-ready effects.",
-      "Le modèle de bruitages d’ElevenLabs, pour bruitages et ambiances à partir d’une courte description. Choisissez-le pour des effets nets, prêts pour un film."
+      "Le modèle de bruitages d’ElevenLabs, pour effets et ambiances à partir d’une courte description. Choisissez-le pour des effets nets, prêts pour un film."
     ],
     "strengths": [
       [
