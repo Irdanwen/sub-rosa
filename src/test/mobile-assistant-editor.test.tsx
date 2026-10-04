@@ -105,7 +105,7 @@ describe("the assistant editor on the phone", () => {
     );
     await user.type(await screen.findByRole("textbox", { name: "Name" }), "!");
     await waitFor(() => expect(readEditorDraft("a1", 3)).not.toBeNull());
-    await user.click(screen.getByRole("button", { name: "Assistants" }));
+    await user.click(screen.getByRole("button", { name: "Back" }));
     const sheet = await screen.findByRole("dialog", { name: "Save your changes?" });
     expect(onBack).not.toHaveBeenCalled();
     await user.click(within(sheet).getByRole("button", { name: "Discard changes" }));

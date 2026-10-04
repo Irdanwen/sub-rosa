@@ -67,7 +67,7 @@ export function AssistantEditor({
   /** A new assistant was saved for the first time and now has an id. */
   onSaved?: (assistant: AssistantDefinition) => void;
   onTry: (assistantId: string) => void;
-  onOpenReferences: (assistantId: string) => void;
+  onOpenReferences: (assistantId: string, assistantName: string) => void;
   onDeleted: () => void;
 }) {
   const draftKey = assistantId ?? "";
@@ -194,7 +194,7 @@ export function AssistantEditor({
   if (!draft) {
     return (
       <div className="mobile-screen-root">
-        <StackHeader title={t("Assistant")} onBack={onBack} backLabel={t("Assistants")} />
+        <StackHeader title={t("Assistant")} onBack={onBack} backLabel={t("Back")} />
         <div className="mobile-scroll">
           {error ? (
             <p className="mobile-dictation-error" role="alert">
@@ -267,7 +267,7 @@ export function AssistantEditor({
       <StackHeader
         title={title}
         onBack={() => (dirty ? setSheet("leave") : leave(false))}
-        backLabel={t("Assistants")}
+        backLabel={t("Back")}
         trailing={
           <button
             type="button"
@@ -357,7 +357,9 @@ export function AssistantEditor({
           <SettingsLinkRow
             label={t("References")}
             value={saved ? (referenceCount ?? "") : ""}
-            onClick={() => (saved ? onOpenReferences(saved.id) : setSheet("save-first"))}
+            onClick={() =>
+              saved ? onOpenReferences(saved.id, saved.name) : setSheet("save-first")
+            }
           />
           <SettingsToggleRow
             label={t("Access my notes")}

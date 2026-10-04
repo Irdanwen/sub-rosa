@@ -114,7 +114,9 @@ export function AssistantChatScreen({
   const pinnedRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const ownerId = assistantId ?? snapshot?.id ?? null;
+  // Who this conversation is with. Kept through "new chat", which forgets the
+  // conversation's own version of the assistant but not the assistant.
+  const ownerId = assistantId ?? snapshot?.id ?? assistant?.id ?? null;
   const shown = snapshot ?? assistant;
 
   const setBusy = useCallback((value: boolean) => {
@@ -416,7 +418,7 @@ export function AssistantChatScreen({
       <StackHeader
         title={name}
         onBack={onBack}
-        backLabel={t("Assistants")}
+        backLabel={t("Back")}
         titleContent={
           <button
             type="button"

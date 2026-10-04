@@ -36,6 +36,26 @@ les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; 
   les curseurs locaux d'extraction et de découverte des fichiers à synchroniser
   entre deux lancements iOS, sans les exporter ni les synchroniser.
 
+## Assistants sur téléphone (2026-10-04, v1.85.0)
+
+- Le téléphone n'affiche plus `AssistantsSurface` (le composant desktop, resté
+  intact) : ses écrans vivent dans `src/components/mobile/screens/assistants/`
+  (bibliothèque, chat, éditeur, créateur, références, historique, avatar) et
+  sont des vues de la pile de l'onglet (`nav.ts`, rendues dans `MobileApp`).
+  La destination de notification `assistant` pousse `assistant-chat`.
+- La saisie est commune à l'onglet Chat (`ChatComposer`), comme les bulles,
+  la frappe progressive, la copie et le journal d'activité (`ChatParts`).
+  `assistant_chat_start/send/retry` acceptent des `attachments` optionnels.
+- Dans `agent_lite::run_turn`, le modèle de l'instantané d'un assistant prime
+  sur celui de l'appelant : un tour d'assistant qui porte une image passe sur
+  un modèle texte qui lit les images (`assistants::runtime::vision_model_for`)
+  quand celui de l'assistant ne le fait pas.
+- L'avatar d'assistant (CONTEXT.md) : monogramme dérivé de l'id, ou une
+  référence image. Aucune colonne nouvelle : `account::sync::apply` refuse
+  les colonnes inconnues, un appareil pas à jour rejetterait l'assistant.
+- Les brouillons de l'éditeur et du créateur sont dans `localStorage`
+  (`src/lib/assistant-draft.ts`) et ne sont jamais synchronisés.
+
 ## Correctif de configuration Hermes Windows (2026-09-21, v1.70.2)
 
 `render_context_mcp_entry` dans `src-tauri/src/hermes_bridge.rs` échappe

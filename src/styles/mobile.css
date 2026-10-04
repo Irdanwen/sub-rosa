@@ -5718,7 +5718,7 @@
 }
 
 .mobile-assistant-flow-title {
-  margin: var(--sp-2) 0 0;
+  margin: var(--sp-4) 0 0;
   padding: 0;
   font-family: var(--font-serif);
   font-size: var(--fs-2xl);
@@ -5794,7 +5794,8 @@
 
 .mobile-assistant-flow-chip[aria-pressed="true"] {
   border-color: var(--primary);
-  background: color-mix(in oklch, var(--primary) 14%, var(--card));
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .mobile-assistant-flow-footer {
@@ -5934,4 +5935,104 @@
 .mobile-assistant-reference-status[data-status="failed"] {
   background: color-mix(in oklch, var(--destructive) 14%, transparent);
   color: var(--destructive);
+}
+
+/* The Assistants tab. */
+.mobile-assistant-row {
+  align-items: center;
+}
+
+.mobile-assistants-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8) var(--sp-6) var(--sp-6);
+  text-align: center;
+}
+
+.mobile-assistants-empty h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.mobile-assistants-empty p {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+.mobile-assistants-empty-cta {
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-8);
+}
+
+.mobile-assistants-none {
+  margin: 0;
+  padding: var(--sp-6) var(--sp-4);
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  text-align: center;
+}
+
+.mobile-assistants-section {
+  margin-top: var(--sp-6);
+}
+
+.mobile-assistants-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+/* Ideas scroll sideways: a row of cards a thumb flicks through, never a
+   second list competing with the assistants above. */
+.mobile-assistants-ideas {
+  display: flex;
+  gap: var(--sp-3);
+  /* Bleeds to the screen's edges so a card scrolls in from the side. */
+  margin: 0 calc(-1 * var(--mobile-gutter));
+  padding: var(--sp-2) var(--mobile-gutter) var(--sp-6);
+  scroll-padding-inline: var(--mobile-gutter);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.mobile-assistants-ideas::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-assistants-idea {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  width: 168px;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+  scroll-snap-align: start;
+}
+
+.mobile-assistants-idea strong {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-assistants-idea-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
 }
