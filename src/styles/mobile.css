@@ -5594,3 +5594,83 @@
 .mobile-action-sheet-cancel:disabled {
   opacity: 0.5;
 }
+
+/* The chat header names who is speaking: a face and a name, together one
+   control that opens the assistant. */
+.mobile-assistant-chat-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+.mobile-assistant-chat-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A conversation not begun yet: who you are about to talk to. */
+.mobile-assistant-chat-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-8) var(--sp-4) var(--sp-4);
+  text-align: center;
+}
+
+.mobile-assistant-chat-hero h2 {
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.mobile-assistant-chat-hero p {
+  margin: 0;
+  max-width: 32ch;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+.mobile-assistant-settings {
+  display: grid;
+  gap: var(--sp-3);
+  min-height: 0;
+  margin: var(--sp-3) 0 0;
+  overflow-y: auto;
+}
+
+.mobile-assistant-settings > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-assistant-settings dt {
+  color: var(--muted-foreground);
+}
+
+.mobile-assistant-settings dd {
+  margin: 0;
+  text-align: right;
+}
+
+.mobile-assistant-settings-instructions {
+  flex-direction: column;
+}
+
+.mobile-assistant-settings .mobile-assistant-settings-instructions dd {
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
