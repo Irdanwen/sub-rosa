@@ -304,12 +304,28 @@ pub fn system_prompt(snapshot: &AssistantSnapshot, memory: Option<&str>) -> Stri
 pub struct StartRequest {
     pub assistant_id: String,
     pub content: String,
+    /// Files and images for this turn, as the phone's composer attaches them.
+    /// Optional, so a caller that never sends any is unchanged.
+    #[serde(default)]
+    pub attachments: Option<Vec<crate::agent_lite::AgentLiteAttachment>>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendRequest {
     pub task_id: String,
     pub content: String,
+    #[serde(default)]
+    pub attachments: Option<Vec<crate::agent_lite::AgentLiteAttachment>>,
+}
+/// A retry carries the failed turn's attachments again: the stored message
+/// keeps only their markers, and a turn with markers and no payload fails
+/// closed rather than answering without the file.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetryRequest {
+    pub task_id: String,
+    #[serde(default)]
+    pub attachments: Option<Vec<crate::agent_lite::AgentLiteAttachment>>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -333,14 +349,18 @@ fn validate_content(content: &str) -> Result<&str, AppError> {
     Ok(content)
 }
 
-fn schedule(app: AppHandle, task_id: String) {
+fn schedule(
+    app: AppHandle,
+    task_id: String,
+    attachments: Option<Vec<crate::agent_lite::AgentLiteAttachment>>,
+) {
     tauri::async_runtime::spawn(async move {
         let _ = crate::agent_lite::agent_lite_run(
             app,
             crate::agent_lite::AgentLiteRunRequest {
                 task_id,
                 model: None,
-                attachments: None,
+                attachments,
             },
         )
         .await;
@@ -378,7 +398,7 @@ pub async fn assistant_chat_start(
         .await?;
     tx.commit().await?;
     let task = repos.get_agent_task(&id).await?;
-    schedule(app, id);
+    schedule(app, id, request.attachments);
     Ok(task)
 }
 
@@ -420,7 +440,7 @@ pub async fn assistant_chat_send(
     tx.commit().await?;
     let task = repos.get_agent_task(&request.task_id).await?;
     drop(_claim);
-    schedule(app, request.task_id);
+    schedule(app, request.task_id, request.attachments);
     Ok(task)
 }
 
@@ -499,7 +519,7 @@ pub async fn assistant_chat_archive_list(
 #[tauri::command]
 pub async fn assistant_chat_retry(
     app: AppHandle,
-    request: TaskRequest,
+    request: RetryRequest,
 ) -> Result<AgentTaskDto, AppError> {
     let repos = crate::commands::repositories(&app).await?;
     require_snapshot(&repos.pool, &request.task_id).await?;
@@ -522,7 +542,7 @@ pub async fn assistant_chat_retry(
         .await?;
     let task = repos.get_agent_task(&request.task_id).await?;
     drop(_claim);
-    schedule(app, request.task_id);
+    schedule(app, request.task_id, request.attachments);
     Ok(task)
 }
 
@@ -572,6 +592,27 @@ pub async fn assistant_chat_apply_revision(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_turn_takes_attachments_and_an_older_caller_still_parses() {
+        // The phone's composer sends files and images with the turn.
+        let start: StartRequest = serde_json::from_value(serde_json::json!({
+            "assistantId": "a", "content": "Look [Image: cat.jpg]",
+            "attachments": [{ "kind": "image", "name": "cat.jpg", "data": "data:image/jpeg;base64,AA" }]
+        }))
+        .expect("start with attachments");
+        let attached = start.attachments.expect("attachments");
+        assert_eq!(attached.len(), 1);
+        assert_eq!(attached[0].kind, "image");
+        // A caller that never attaches anything is unchanged.
+        let send: SendRequest =
+            serde_json::from_value(serde_json::json!({ "taskId": "t", "content": "Hi" }))
+                .expect("send without attachments");
+        assert!(send.attachments.is_none());
+        let retry: RetryRequest =
+            serde_json::from_value(serde_json::json!({ "taskId": "t" })).expect("retry");
+        assert!(retry.attachments.is_none());
+    }
+
     use super::*;
 
     fn private_snapshot() -> AssistantSnapshot {

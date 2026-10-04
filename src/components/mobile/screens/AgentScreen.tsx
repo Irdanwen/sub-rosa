@@ -14,7 +14,6 @@ import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconBubble3 } from "central-icons/IconBubble3";
-import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconBarsTwo } from "central-icons/IconBarsTwo";
@@ -27,15 +26,12 @@ import { IconImageSparkle } from "central-icons/IconImageSparkle";
 import { IconNoteText } from "central-icons/IconNoteText";
 import { IconSparklesSoft } from "central-icons/IconSparklesSoft";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
-import { IconMicrophone } from "central-icons/IconMicrophone";
-import { IconPaperclip1 } from "central-icons/IconPaperclip1";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { chatBlocksToClipboardText } from "../../../lib/chat-blocks";
 import { friendlyErrorMessage, messageFromError } from "../../../lib/errors";
 import { hapticImpact, hapticNotify, hapticSelection } from "../../../lib/haptics";
-import { useKeyboardInset } from "../../../lib/keyboard-inset";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
 import { fetchMediaCatalog, formatCredits, modelsOfType } from "../../../lib/studio/catalog";
 import { ensureNotificationPermission } from "../../../lib/notifications";
@@ -55,8 +51,6 @@ import {
   forkAgentTask,
   getAgentTask,
   listSessionFolders,
-  mobileDictationStart,
-  mobileDictationStop,
   removeSessionFromFolder,
   sendAgentMessage,
   setAgentTaskModel,
@@ -64,6 +58,7 @@ import {
 import { readableModelName } from "../../../lib/model-names";
 import { BrandMark } from "../../brand/Marks";
 import { ChatAmbient } from "../ChatAmbient";
+import { ChatComposer } from "../ChatComposer";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
@@ -478,7 +473,6 @@ export function AgentSessionScreen({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [attachments, setAttachments] = useState<AgentLiteAttachment[]>([]);
   const [animatingId, setAnimatingId] = useState<string | null>(null);
-  const [dictating, setDictating] = useState(false);
   const knownIdsRef = useRef<Set<string> | null>(null);
   const taskIdRef = useRef<string | undefined>(sessionId);
   const taskRevisionRef = useRef(0);
@@ -492,9 +486,7 @@ export function AgentSessionScreen({
   // never fought; a "jump to latest" pill appears instead.
   const pinnedRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
-  const attachInputRef = useRef<HTMLInputElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const keyboardInset = useKeyboardInset();
   const credits = useCarpeDiemCredits();
   // Last status stage felt through the Taptic Engine, so each stage of the
   // run (thinking -> searching notes -> searching web) ticks exactly once.
@@ -656,7 +648,7 @@ export function AgentSessionScreen({
   useEffect(() => {
     if (!pinnedRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [task?.messages.length, stage, streamed]);
+  }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -665,15 +657,6 @@ export function AgentSessionScreen({
     pinnedRef.current = pinned;
     setShowJump(!pinned);
   }, []);
-
-  // Grow the composer with its content (up to a few lines, then scroll) so
-  // multi-line drafts stay visible instead of hiding above a one-row box.
-  useEffect(() => {
-    const el = chatInputRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
-  }, [draft]);
 
   // Replies that arrive during this visit type themselves out; history that
   // loads with the screen renders instantly.
@@ -737,53 +720,6 @@ export function AgentSessionScreen({
     },
     [onOpenSession],
   );
-
-  const addAttachment = useCallback((file: File) => {
-    const isImage = file.type.startsWith("image/");
-    if (isImage) {
-      void downscaleImageFile(file)
-        .then((data) => {
-          setAttachments((current) => [...current, { kind: "image", name: file.name, data }]);
-        })
-        .catch(() => setError(t("This image could not be read.")));
-      return;
-    }
-    if (file.size > 512 * 1024) {
-      setError(t("Text files up to 512 KB can be attached."));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setAttachments((current) => [
-          ...current,
-          { kind: "text", name: file.name, data: reader.result as string },
-        ]);
-      }
-    };
-    reader.readAsText(file);
-  }, []);
-
-  const toggleDictation = useCallback(async () => {
-    if (dictating) {
-      setDictating(false);
-      try {
-        const result = await mobileDictationStop({ style: "standard" });
-        setDraft((current) => (current ? `${current} ${result.text}` : result.text));
-        hapticNotify("success");
-      } catch (err) {
-        setError(messageFromError(err));
-      }
-      return;
-    }
-    try {
-      await mobileDictationStart();
-      setDictating(true);
-      hapticImpact("medium");
-    } catch (err) {
-      setError(messageFromError(err));
-    }
-  }, [dictating]);
 
   const send = useCallback(async () => {
     const content = draft.trim();
@@ -1122,147 +1058,59 @@ export function AgentSessionScreen({
           <IconArrowDown size={16} />
         </button>
       ) : null}
-      <div
-        className="mobile-chat-composer-stack"
-        data-keyboard={keyboardInset > 0 ? "true" : undefined}
-        style={{ marginBottom: keyboardInset }}
-      >
-        {attachments.length > 0 ? (
-          <div className="mobile-chat-attachments">
-            {attachments.map((entry, index) => (
-              <button
-                key={`${entry.name}-${index}`}
-                type="button"
-                className="mobile-chat-attachment"
-                aria-label={t("Remove {name}", { name: entry.name })}
-                onClick={() => setAttachments((current) => current.filter((_, i) => i !== index))}
-              >
-                {entry.kind === "image" ? (
-                  <img src={entry.data} alt={entry.name} />
-                ) : (
-                  <span className="mobile-chat-attachment-file">{entry.name}</span>
-                )}
-                <span className="mobile-chat-attachment-remove" aria-hidden>
-                  x
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {showHero && openers.length > 0 ? (
-          // An empty chat with only a placeholder makes the user invent the
-          // capability. These name what it can actually do: read a note in
-          // full, look back over a week, make a picture, remember. Once
-          // something is typed, only the picture stays: it takes the draft
-          // with it, where the others would replace it.
-          <fieldset className="mobile-chat-suggestions" aria-label={t("Suggestions")}>
-            {openers.map((suggestion) => (
-              <button
-                key={suggestion.id}
-                type="button"
-                className="mobile-chat-suggestion"
-                onClick={() => {
-                  hapticSelection();
-                  if (suggestion.id === "image") {
-                    onGenerateImage?.(draft.trim());
-                    return;
-                  }
-                  setDraft(suggestion.prompt);
-                  chatInputRef.current?.focus();
-                }}
-              >
-                {suggestion.icon}
-                {suggestion.label}
-              </button>
-            ))}
-          </fieldset>
-        ) : null}
-        <div className="mobile-chat-composer-card">
-          <input
-            ref={attachInputRef}
-            type="file"
-            accept="image/*,.txt,.md,.csv,.json,text/plain"
-            multiple
-            hidden
-            onChange={(event) => {
-              for (const file of Array.from(event.target.files ?? [])) {
-                addAttachment(file);
-              }
-              event.target.value = "";
-            }}
-          />
-          <textarea
-            ref={chatInputRef}
-            className="mobile-chat-input"
-            value={draft}
-            placeholder={t("Ask anything, privately…")}
-            rows={1}
-            onChange={(event) => setDraft(event.target.value)}
-            onPaste={(event) => {
-              // Pasting an image (long-press > Paste on iOS) attaches it
-              // instead of dropping it: textareas cannot hold images.
-              const files = Array.from(event.clipboardData?.items ?? [])
-                .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-                .map((item) => item.getAsFile())
-                .filter((file): file is File => file !== null);
-              if (files.length === 0) return;
-              event.preventDefault();
-              for (const file of files) {
-                addAttachment(
-                  file.name
-                    ? file
-                    : new File([file], `pasted-${Date.now()}.png`, { type: file.type }),
-                );
-              }
-            }}
-          />
-          <div className="mobile-chat-composer-row">
-            <button
-              type="button"
-              className="mobile-composer-bare"
-              aria-label={t("Attach a file")}
-              onClick={() => attachInputRef.current?.click()}
-            >
-              <IconPaperclip1 size={19} />
-            </button>
-            <button
-              type="button"
-              className="mobile-composer-model"
-              onClick={() => setPickerOpen(true)}
-              aria-label={t("Choose model, {model}", { model: activeModelLabel })}
-            >
-              <IconSparklesSoft size={15} aria-hidden />
-              <span className="mobile-composer-model-name">{activeModelLabel}</span>
-              <IconChevronDownSmall size={14} aria-hidden />
-            </button>
-            <span className="mobile-composer-spacer" />
-            {/* One round button that changes with the field: the microphone
-                while there is nothing to send, the arrow once there is. */}
-            {hasDraft && !dictating ? (
-              <button
-                type="button"
-                className="mobile-chat-send"
-                aria-label={t("Send")}
-                disabled={running || loadingTask || taskLoadFailed}
-                onClick={() => void send()}
-              >
-                <IconArrowUp size={20} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="mobile-chat-send"
-                data-mic="true"
-                data-active={dictating ? "true" : undefined}
-                aria-label={dictating ? t("Stop dictation") : t("Dictate")}
-                onClick={() => void toggleDictation()}
-              >
-                <IconMicrophone size={20} />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <ChatComposer
+        draft={draft}
+        onDraftChange={setDraft}
+        attachments={attachments}
+        onAttachmentsChange={setAttachments}
+        placeholder={t("Ask anything, privately…")}
+        canSend={!running && !loadingTask && !taskLoadFailed}
+        onSend={() => void send()}
+        onError={setError}
+        inputRef={chatInputRef}
+        above={
+          showHero && openers.length > 0 ? (
+            // An empty chat with only a placeholder makes the user invent the
+            // capability. These name what it can actually do: read a note in
+            // full, look back over a week, make a picture, remember. Once
+            // something is typed, only the picture stays: it takes the draft
+            // with it, where the others would replace it.
+            <fieldset className="mobile-chat-suggestions" aria-label={t("Suggestions")}>
+              {openers.map((suggestion) => (
+                <button
+                  key={suggestion.id}
+                  type="button"
+                  className="mobile-chat-suggestion"
+                  onClick={() => {
+                    hapticSelection();
+                    if (suggestion.id === "image") {
+                      onGenerateImage?.(draft.trim());
+                      return;
+                    }
+                    setDraft(suggestion.prompt);
+                    chatInputRef.current?.focus();
+                  }}
+                >
+                  {suggestion.icon}
+                  {suggestion.label}
+                </button>
+              ))}
+            </fieldset>
+          ) : null
+        }
+        chip={
+          <button
+            type="button"
+            className="mobile-composer-model"
+            onClick={() => setPickerOpen(true)}
+            aria-label={t("Choose model, {model}", { model: activeModelLabel })}
+          >
+            <IconSparklesSoft size={15} aria-hidden />
+            <span className="mobile-composer-model-name">{activeModelLabel}</span>
+            <IconChevronDownSmall size={14} aria-hidden />
+          </button>
+        }
+      />
       {pickerOpen ? (
         <ModelSheet
           title={t("Chat model")}
@@ -1327,36 +1175,6 @@ function CopyReplyButton({ text }: { text: string }) {
       {copied ? t("Copied") : t("Copy")}
     </button>
   );
-}
-
-/** Camera photos are far larger than vision models need; cap the long edge
- * and re-encode as JPEG so requests stay fast and within body limits. Loads
- * through a data URL (not a blob URL): the app CSP allows `data:` images
- * only, and WKWebView decodes HEIC natively along the same path. */
-async function downscaleImageFile(file: File, maxDim = 2048): Promise<string> {
-  const original = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      typeof reader.result === "string"
-        ? resolve(reader.result)
-        : reject(new Error("file read failed"));
-    reader.onerror = () => reject(new Error("file read failed"));
-    reader.readAsDataURL(file);
-  });
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const element = new Image();
-    element.onload = () => resolve(element);
-    element.onerror = () => reject(new Error("image decode failed"));
-    element.src = original;
-  });
-  const scale = Math.min(1, maxDim / Math.max(image.width, image.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.width * scale));
-  canvas.height = Math.max(1, Math.round(image.height * scale));
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("canvas unavailable");
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.85);
 }
 
 /** Openers for an empty chat. Each one exercises a different tool, so the
