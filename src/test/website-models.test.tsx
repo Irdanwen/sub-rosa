@@ -11,7 +11,25 @@ import {
   snapshot,
 } from "../../website/src/models/catalog";
 import { loadModelCatalog } from "../../website/src/models/loader";
+import { benchmarks, type FamilyDetail } from "../../website/src/models/catalog";
+import { categoryGuides } from "../../website/src/models/categories";
+import { guide } from "../../website/src/models/guide";
 import { defaults, needs } from "../../website/src/models/needs";
+
+const detailFiles = Object.values(
+  import.meta.glob<{ families: FamilyDetail[] }>(
+    ["../../website/src/models/details/*.json", "!../../website/src/models/details/index.json"],
+    {
+      eager: true,
+      import: "default",
+    },
+  ),
+).flatMap((file) => file.families ?? []);
+const detailFor = (slug: string) => {
+  const found = detailFiles.find((detail) => detail.slug === slug);
+  if (!found) throw new Error(`no detail for ${slug}`);
+  return found;
+};
 
 // Search embeddings serve Sub Rosa's memory and are never chosen by a person.
 const chosenByPeople = snapshot.models.filter((model) => model.type !== "embedding");
@@ -21,14 +39,32 @@ const copy = () =>
   [
     ...families.flatMap((family) => [
       family.summary,
-      ...family.strengths,
-      ...family.limits,
-      ...family.facts,
       ...(family.variants ?? []).map((variant) => variant.note),
     ]),
     ...needs.flatMap((need) => [need.question, need.why, need.alternative?.why ?? ["x", "x"]]),
     ...defaults.flatMap((item) => [item.task, item.why]),
     ...categories.flatMap((category) => [category.title, category.description]),
+    ...detailFiles.flatMap((detail) => [
+      ...detail.strengths,
+      ...detail.limits,
+      ...detail.facts,
+      detail.differentiator,
+      ...detail.signature,
+      ...detail.releases.flatMap((release) => release.changes),
+      ...detail.useCases.flatMap((useCase) => [useCase.title, useCase.prompt, useCase.why]),
+      ...detail.rivals.map((rival) => rival.verdict),
+    ]),
+    ...guide.flatMap((section) => [
+      section.title,
+      section.intro,
+      ...section.terms.flatMap((term) => [term.title, ...term.body]),
+    ]),
+    ...Object.values(categoryGuides).flatMap((item) => [
+      item.differs,
+      item.priceAxis,
+      ...item.criteria.map((criterion) => criterion.text),
+    ]),
+    ...benchmarks.flatMap((benchmark) => [benchmark.measures, benchmark.howToRead]),
   ] as (readonly [string, string])[];
 
 describe("model catalog", () => {
@@ -51,9 +87,9 @@ describe("model catalog", () => {
     for (const family of families) {
       expect(family.ids).toContain(family.pick);
       for (const variant of family.variants ?? []) expect(family.ids).toContain(variant.id);
-      expect(family.strengths.length).toBeGreaterThanOrEqual(2);
-      expect(family.limits.length).toBeGreaterThanOrEqual(1);
-      expect(family.sources.length).toBeGreaterThanOrEqual(1);
+      expect(detailFor(family.slug).strengths.length).toBeGreaterThanOrEqual(2);
+      expect(detailFor(family.slug).limits.length).toBeGreaterThanOrEqual(1);
+      expect(detailFor(family.slug).sources.length).toBeGreaterThanOrEqual(1);
       if (family.url) expect(family.url).toMatch(/^https:\/\//);
     }
     for (const need of needs) {
@@ -96,7 +132,8 @@ describe("model catalog", () => {
         .map((model) => (model ? perModel(model) : undefined))
         .filter((value): value is number => value !== undefined);
       if (!prices.length) continue;
-      const sentences = [family.summary, ...family.strengths, ...family.limits, ...family.facts];
+      const detail = detailFor(family.slug);
+      const sentences = [family.summary, ...detail.strengths, ...detail.limits, ...detail.facts];
       for (const [sentence] of sentences)
         for (const match of sentence.matchAll(
           /about (\d+(?:\.\d+)?)(?: to (\d+(?:\.\d+)?))? credits?/g,
@@ -140,7 +177,7 @@ describe("model catalog", () => {
     expect(home).toContain("Choisissez le bon modèle.");
     expect(home).toContain("/fr/models/glm");
     const page = renderToString(<App initialPath="/fr/models/glm" />);
-    expect(page).toContain("Notre choix dans cette famille");
+    expect(page).toContain("Ce qui le distingue");
     expect(page).toContain("zai-org-glm-5-2");
     const missing = renderToString(<App initialPath="/fr/models/nothing-here" />);
     expect(missing).toContain("Ce modèle est introuvable.");

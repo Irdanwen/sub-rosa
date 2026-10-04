@@ -1,0 +1,1744 @@
+{
+  "families": [
+    {
+      "slug": "glm",
+      "releases": [
+        {
+          "version": "GLM 4.6",
+          "date": "2025-09-30",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 4.7",
+          "date": "2025-12-22",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 4.7 Flash",
+          "date": "2026-01-19",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 5",
+          "date": "2026-02-11",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 5 Turbo",
+          "date": "2026-03-15",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 5V Turbo",
+          "date": "2026-04-01",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 5.1",
+          "date": "2026-04-07",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 5.2",
+          "date": "2026-06-16",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 5.3",
+          "date": "2026-08-18",
+          "inCatalog": true
+        },
+        {
+          "version": "GLM 5.3 Flash",
+          "date": "2026-08-26",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "kimi",
+      "releases": [
+        {
+          "version": "Kimi K2 Thinking",
+          "date": "2025-11-06",
+          "inCatalog": false
+        },
+        {
+          "version": "Kimi K2.5",
+          "date": "2026-01-27",
+          "inCatalog": true
+        },
+        {
+          "version": "Kimi K2.6",
+          "date": "2026-04-20",
+          "inCatalog": true
+        },
+        {
+          "version": "Kimi K2.7 Code",
+          "date": "2026-06-12",
+          "inCatalog": true
+        },
+        {
+          "version": "Kimi K3",
+          "date": "2026-07-16",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "deepseek",
+      "releases": [
+        {
+          "version": "DeepSeek V3.2",
+          "date": "2025-12-01",
+          "inCatalog": true
+        },
+        {
+          "version": "DeepSeek V4 (April 2026)",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "DeepSeek V4 Flash 0731",
+          "date": "2026-07-31",
+          "inCatalog": true
+        },
+        {
+          "version": "DeepSeek V4 Pro 0813",
+          "date": "2026-08-13",
+          "inCatalog": true
+        },
+        {
+          "version": "DeepSeek V4.1 Flash",
+          "date": "2026-09-10",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "claude",
+      "releases": [
+        {
+          "version": "Claude Sonnet 4.5",
+          "date": "2025-09-29",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Opus 4.5",
+          "date": "2025-11-24",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Opus 4.6",
+          "date": "2026-02-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Sonnet 4.6",
+          "date": "2026-02-17",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Opus 4.7",
+          "date": "2026-04-16",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Opus 4.8",
+          "date": "2026-05-28",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Fable 5",
+          "date": "2026-06-09",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Sonnet 5",
+          "date": "2026-06-30",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Opus 5",
+          "date": "2026-07",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Fable 5.1",
+          "date": "2026-09-01",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Opus 5.5",
+          "date": "2026-09-22",
+          "inCatalog": true
+        },
+        {
+          "version": "Claude Sonnet 5.5",
+          "date": "2026-09-28",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "gpt",
+      "releases": [
+        {
+          "version": "GPT-4o mini",
+          "date": "2024-07",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT-4o",
+          "date": "2024-11",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT-5.2",
+          "date": "2025-12",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT-5.3 Codex",
+          "date": "2026-02",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT-5.4",
+          "date": "2026-03",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT-5.5",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT-5.6",
+          "date": "2026-07",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT-6",
+          "date": "2026-09",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT-6.1 Sol",
+          "date": "2026-09",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "gpt-oss",
+      "releases": [
+        {
+          "version": "gpt-oss-120b",
+          "date": "2025-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "gemini",
+      "releases": [
+        {
+          "version": "Gemini 3 Flash Preview",
+          "date": "2025-12-17",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini 3.1 Pro Preview",
+          "date": "2026-02",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini 3.5 Flash",
+          "date": "2026-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini 3.6 Flash",
+          "date": "2026-07",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini 3.5 Flash-Lite",
+          "date": "2026-07",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini 3.7 Flash",
+          "date": "2026-08",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini 3.8 Flash",
+          "date": "2026-09",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini 4 Argon",
+          "date": "2026-09",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "grok",
+      "releases": [
+        {
+          "version": "Grok 4.20",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok 4.3",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok 4.5",
+          "date": "2026-07-08",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok 4.6",
+          "date": "2026-08",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok 4.7",
+          "date": "2026-09-21",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "qwen",
+      "releases": [
+        {
+          "version": "Qwen3.5 397B A17B",
+          "date": "2026-02-16",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.6 Plus",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.7 Max",
+          "date": "2026-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.7 Plus",
+          "date": "2026-06-01",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.8 Flash",
+          "date": "2026-08",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.8 Max",
+          "date": "2026-09",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "qwen-open",
+      "releases": [
+        {
+          "version": "Qwen2.5 7B",
+          "date": "2024-09-19",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3 2507 and Coder",
+          "date": "2025-07",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3 Next and Qwen3 VL",
+          "date": "2025-09",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.5 small models",
+          "date": "2026-02",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.5 9B",
+          "date": "2026-03",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.6",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.8 2.4T A95B",
+          "date": "2026-08",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen3.8 27B",
+          "date": "2026-08-14",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "gemma",
+      "releases": [
+        {
+          "version": "Gemma 3 27B",
+          "date": "2025-03",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemma 4",
+          "date": "2026-04",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "llama",
+      "releases": [
+        {
+          "version": "Llama 3.1",
+          "date": "2024-07-23",
+          "inCatalog": false
+        },
+        {
+          "version": "Hermes 3 (Llama 3.1 405B)",
+          "date": "2024-08",
+          "inCatalog": true
+        },
+        {
+          "version": "Llama 3.2 3B",
+          "date": "2024-09-25",
+          "inCatalog": true
+        },
+        {
+          "version": "Llama 3.3 70B",
+          "date": "2024-12-06",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "mistral",
+      "releases": [
+        {
+          "version": "Mistral Small 3",
+          "date": "2025-01-30",
+          "inCatalog": false
+        },
+        {
+          "version": "Mistral Small 3.1",
+          "date": "2025-03-17",
+          "inCatalog": false
+        },
+        {
+          "version": "Mistral Small 3.2",
+          "date": "2025-06-20",
+          "inCatalog": true
+        },
+        {
+          "version": "Mistral Small 4",
+          "date": "2026-03-16",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "minimax",
+      "releases": [
+        {
+          "version": "MiniMax M2.5",
+          "date": "2026-02",
+          "inCatalog": true
+        },
+        {
+          "version": "MiniMax M2.7",
+          "date": "2026-03-18",
+          "inCatalog": true
+        },
+        {
+          "version": "MiniMax M3",
+          "date": "2026-06-01",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "mercury",
+      "releases": [
+        {
+          "version": "Mercury 2",
+          "date": "2026-02-24",
+          "inCatalog": true
+        },
+        {
+          "version": "Mercury 2.5",
+          "date": "2026-10-01",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "mimo",
+      "releases": [
+        {
+          "version": "MiMo-V2-Flash",
+          "date": "2025-12-16",
+          "inCatalog": false
+        },
+        {
+          "version": "MiMo-V2.5",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "MiMo-V2.6-Flash",
+          "date": "2026-09-21",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "nemotron",
+      "releases": [
+        {
+          "version": "Nemotron 3 Nano 30B A3B",
+          "date": "2025-12-15",
+          "inCatalog": true
+        },
+        {
+          "version": "Nemotron 3 Ultra 550B A55B",
+          "date": "2026-06-04",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "inkling",
+      "releases": [
+        {
+          "version": "Inkling",
+          "date": "2026-07-15",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "seed",
+      "releases": [
+        {
+          "version": "Seed 2.0 Lite",
+          "date": "2026-03",
+          "inCatalog": false
+        },
+        {
+          "version": "Seed 2.1 Turbo",
+          "date": "2026-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "aion",
+      "releases": [
+        {
+          "version": "Aion 2.0",
+          "date": "2026-02-23",
+          "inCatalog": false
+        },
+        {
+          "version": "Aion 3.0",
+          "date": "2026-07",
+          "inCatalog": true
+        },
+        {
+          "version": "Aion 3.5",
+          "date": "2026-09",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "venice-uncensored",
+      "releases": [
+        {
+          "version": "Dolphin Mistral 24B Venice Edition (Venice Uncensored 1.1)",
+          "date": "2025-06-12",
+          "inCatalog": false
+        },
+        {
+          "version": "Venice Uncensored Role Play",
+          "date": "2026-02",
+          "inCatalog": true
+        },
+        {
+          "version": "Venice Uncensored 1.2",
+          "date": "2026-04",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "uncensored",
+      "releases": [
+        {
+          "version": "GLM 4.7 Flash Heretic",
+          "date": "2026-01",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemma 4 Uncensored",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemma 4 26B A4B Uncensored (enclave)",
+          "date": "2026-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Abliterated Large V2",
+          "date": "2026-10",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "parakeet",
+      "releases": [
+        {
+          "version": "Parakeet TDT 0.6B v2",
+          "date": "2025-04-15",
+          "inCatalog": false
+        },
+        {
+          "version": "Parakeet TDT 0.6B v3",
+          "date": "2025-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "whisper",
+      "releases": [
+        {
+          "version": "Whisper large v2",
+          "date": "2022-12-05",
+          "inCatalog": false
+        },
+        {
+          "version": "Whisper large v3",
+          "date": "2023-11",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "scribe",
+      "releases": [
+        {
+          "version": "Scribe v1",
+          "date": "2025-02-26",
+          "inCatalog": false
+        },
+        {
+          "version": "Scribe v2",
+          "date": "2026-01-09",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "xai-stt",
+      "releases": [
+        {
+          "version": "Grok Speech to Text (1.0)",
+          "date": "2026-04-17",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok Voice Transcribe 2.0",
+          "date": "2026-09-18",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "nano-banana",
+      "releases": [
+        {
+          "version": "Nano Banana (Gemini 2.5 Flash Image)",
+          "date": "2025-08",
+          "inCatalog": false
+        },
+        {
+          "version": "Nano Banana Pro (Gemini 3 Pro Image)",
+          "date": "2025-11-20",
+          "inCatalog": true
+        },
+        {
+          "version": "Nano Banana 2 (Gemini 3.1 Flash Image)",
+          "date": "2026-02-26",
+          "inCatalog": true
+        },
+        {
+          "version": "Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
+          "date": "2026-06-30",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "nano-banana-edit",
+      "releases": [
+        {
+          "version": "Nano Banana (Gemini 2.5 Flash Image)",
+          "date": "2025-08",
+          "inCatalog": false
+        },
+        {
+          "version": "Nano Banana Pro (edit)",
+          "date": "2025-11-20",
+          "inCatalog": true
+        },
+        {
+          "version": "Nano Banana 2 (edit)",
+          "date": "2026-02-26",
+          "inCatalog": true
+        },
+        {
+          "version": "Nano Banana 2 Lite (edit)",
+          "date": "2026-06-30",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "gpt-image",
+      "releases": [
+        {
+          "version": "GPT Image 1.5",
+          "date": "2025-12-16",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT Image 2",
+          "date": "2026-04-21",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT Image 2.5 Flare and Sunburst",
+          "date": "2026-09-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "gpt-image-edit",
+      "releases": [
+        {
+          "version": "GPT Image 1.5 (edit)",
+          "date": "2025-12-16",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT Image 2 (edit)",
+          "date": "2026-04-21",
+          "inCatalog": true
+        },
+        {
+          "version": "GPT Image 2.5 Flare and Sunburst (edit)",
+          "date": "2026-09-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "flux",
+      "releases": [
+        {
+          "version": "FLUX.2 [pro]",
+          "date": "2025-11-25",
+          "inCatalog": true
+        },
+        {
+          "version": "FLUX.2 [max]",
+          "date": "2025-12",
+          "inCatalog": true
+        },
+        {
+          "version": "FLUX 3 Image",
+          "date": "2026-07-23",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "flux-edit",
+      "releases": [
+        {
+          "version": "FLUX.1 Kontext [pro]",
+          "date": "2025-05",
+          "inCatalog": false
+        },
+        {
+          "version": "FLUX.2 [max] (edit)",
+          "date": "2025-12-16",
+          "inCatalog": true
+        },
+        {
+          "version": "FLUX 3 Image (edit)",
+          "date": "2026-07-23",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "qwen-image",
+      "releases": [
+        {
+          "version": "Qwen-Image",
+          "date": "2025-08-04",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 2.0",
+          "date": "2026-02-10",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 2.0 Pro",
+          "date": "2026-04-22",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 3.0 and 3.0 Pro",
+          "date": "2026-07-21",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "qwen-image-edit",
+      "releases": [
+        {
+          "version": "Qwen-Image-Edit",
+          "date": "2025-08",
+          "inCatalog": false
+        },
+        {
+          "version": "Qwen-Image-Edit-2511",
+          "date": "2025-11",
+          "inCatalog": false
+        },
+        {
+          "version": "Qwen-Image 2.0 (edit)",
+          "date": "2026-03-03",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 2.0 Pro (edit)",
+          "date": "2026-04-22",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 3.0 and 3.0 Pro (edit)",
+          "date": "2026-07-21",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "seedream",
+      "releases": [
+        {
+          "version": "Seedream 4.0",
+          "date": "2025-09",
+          "inCatalog": true
+        },
+        {
+          "version": "Seedream 4.5",
+          "date": "2025-12",
+          "inCatalog": false
+        },
+        {
+          "version": "Seedream 5.0 Lite",
+          "date": "2026-02-13",
+          "inCatalog": true
+        },
+        {
+          "version": "Seedream 5.0 Pro",
+          "date": "2026-07-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "seedream-edit",
+      "releases": [
+        {
+          "version": "SeedEdit 3.0",
+          "date": "2025-06",
+          "inCatalog": false
+        },
+        {
+          "version": "Seedream 4.0 (edit)",
+          "date": "2025-09",
+          "inCatalog": true
+        },
+        {
+          "version": "Seedream 5.0 Lite (edit)",
+          "date": "2026-02-13",
+          "inCatalog": true
+        },
+        {
+          "version": "Seedream 5.0 Pro (edit)",
+          "date": "2026-07-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "ideogram",
+      "releases": [
+        {
+          "version": "Ideogram 4.0",
+          "date": "2026-06",
+          "inCatalog": true
+        },
+        {
+          "version": "Ideogram 4.5",
+          "date": "2026-09",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "ideogram-edit",
+      "releases": [
+        {
+          "version": "Ideogram 4.5 (retouch)",
+          "date": "2026-09",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "recraft",
+      "releases": [
+        {
+          "version": "Recraft V4 and V4 Pro",
+          "date": "2026-02-17",
+          "inCatalog": true
+        },
+        {
+          "version": "Recraft V4.1",
+          "date": "2026-05-14",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "grok-imagine",
+      "releases": [
+        {
+          "version": "Grok Imagine Image",
+          "date": "2026-01",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok Imagine Image Quality",
+          "date": "2026-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok Imagine Image 2.0",
+          "date": "2026-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "grok-imagine-edit",
+      "releases": [
+        {
+          "version": "Grok Imagine Image (edit)",
+          "date": "2026-01",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok Imagine Image Quality (edit)",
+          "date": "2026-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok Imagine Image 2.0 (edit)",
+          "date": "2026-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "hunyuan-image",
+      "releases": [
+        {
+          "version": "HunyuanImage 3.0",
+          "date": "2025-09-28",
+          "inCatalog": true
+        },
+        {
+          "version": "HunyuanImage 3.0 Instruct",
+          "date": "2026-01",
+          "inCatalog": false
+        },
+        {
+          "version": "HunyuanImage 3.5 (Preview)",
+          "date": "2026-09",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "krea",
+      "releases": [
+        {
+          "version": "Krea 2 Medium and Large",
+          "date": "2026-05-12",
+          "inCatalog": true
+        },
+        {
+          "version": "Krea 2 Turbo",
+          "date": "2026-06-03",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "luma-uni",
+      "releases": [
+        {
+          "version": "Luma Uni-1 and Uni-1 Max",
+          "date": "2026-05",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "luma-uni-edit",
+      "releases": [
+        {
+          "version": "Luma Uni-1 and Uni-1 Max (edit)",
+          "date": "2026-05",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "wan-image",
+      "releases": [
+        {
+          "version": "Wan 2.6 Image",
+          "date": "2025-12",
+          "inCatalog": false
+        },
+        {
+          "version": "Wan 2.7 and 2.7 Pro",
+          "date": "2026-04",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "wan-image-edit",
+      "releases": [
+        {
+          "version": "Wan 2.6 Image",
+          "date": "2025-12",
+          "inCatalog": false
+        },
+        {
+          "version": "Wan 2.7 Pro (edit)",
+          "date": "2026-04",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "imagineart",
+      "releases": []
+    },
+    {
+      "slug": "muse-image",
+      "releases": [
+        {
+          "version": "Muse Image",
+          "date": "2026-07-07",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "muse-image-edit",
+      "releases": [
+        {
+          "version": "Muse Image (edit)",
+          "date": "2026-07-07",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "chroma",
+      "releases": [
+        {
+          "version": "Chroma1-HD",
+          "date": "2025-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "sd35",
+      "releases": [
+        {
+          "version": "Stable Diffusion 3.5 Large",
+          "date": "2024-10-22",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "z-image",
+      "releases": [
+        {
+          "version": "Z-Image-Turbo",
+          "date": "2025-11",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "anime-wai",
+      "releases": []
+    },
+    {
+      "slug": "lustify",
+      "releases": []
+    },
+    {
+      "slug": "image-tools",
+      "releases": []
+    },
+    {
+      "slug": "firered-edit",
+      "releases": [
+        {
+          "version": "FireRed-Image-Edit 1.0",
+          "date": "2026-02",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "qwen-edit-uncensored",
+      "releases": []
+    },
+    {
+      "slug": "kling-v3",
+      "releases": [
+        {
+          "version": "Kling 2.1",
+          "date": "2025-05",
+          "inCatalog": false
+        },
+        {
+          "version": "Kling 2.6",
+          "date": "2025-12",
+          "inCatalog": false
+        },
+        {
+          "version": "Kling 3.0",
+          "date": "2026-02-05",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "kling-o3",
+      "releases": [
+        {
+          "version": "Kling 2.6",
+          "date": "2025-12",
+          "inCatalog": false
+        },
+        {
+          "version": "Kling 3.0 Omni (O3)",
+          "date": "2026-02",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "kling-2",
+      "releases": [
+        {
+          "version": "Kling 2.1",
+          "date": "2025-05",
+          "inCatalog": false
+        },
+        {
+          "version": "Kling 2.6",
+          "date": "2025-12",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "seedance-2-5",
+      "releases": [
+        {
+          "version": "Seedance 2.0",
+          "date": "2026-02-12",
+          "inCatalog": false
+        },
+        {
+          "version": "Seedance 2.5",
+          "date": "2026-07-31",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "seedance-2",
+      "releases": [
+        {
+          "version": "Seedance 1.0",
+          "date": "2025-06",
+          "inCatalog": false
+        },
+        {
+          "version": "Seedance 1.5 Pro",
+          "date": "2025-12",
+          "inCatalog": true
+        },
+        {
+          "version": "Seedance 2.0",
+          "date": "2026-02-12",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "veo",
+      "releases": [
+        {
+          "version": "Veo 1",
+          "date": "2024-05",
+          "inCatalog": false
+        },
+        {
+          "version": "Veo 2",
+          "date": "2024-12",
+          "inCatalog": false
+        },
+        {
+          "version": "Veo 3",
+          "date": "2025-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Veo 3.1",
+          "date": "2025-10-15",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "wan-3",
+      "releases": [
+        {
+          "version": "Wan 2.7",
+          "date": "2026-04",
+          "inCatalog": false
+        },
+        {
+          "version": "Wan 3.0",
+          "date": "2026-08-24",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "wan-2",
+      "releases": [
+        {
+          "version": "Wan 2.2",
+          "date": "2025-07",
+          "inCatalog": true
+        },
+        {
+          "version": "Wan 2.5 preview",
+          "date": "2025-09",
+          "inCatalog": true
+        },
+        {
+          "version": "Wan 2.6",
+          "date": "2025-12",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "minimax-h3",
+      "releases": [
+        {
+          "version": "Hailuo 02",
+          "date": "2025-06-18",
+          "inCatalog": false
+        },
+        {
+          "version": "Hailuo 2.3",
+          "date": "2025-10-28",
+          "inCatalog": false
+        },
+        {
+          "version": "MiniMax H3",
+          "date": "2026-07-31",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "grok-imagine-video",
+      "releases": [
+        {
+          "version": "Grok Imagine video",
+          "date": "2026-01-28",
+          "inCatalog": true
+        },
+        {
+          "version": "Grok Imagine video 1.5",
+          "date": "2026-05-30",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "gemini-omni-flash",
+      "releases": [
+        {
+          "version": "Gemini Omni Flash",
+          "date": "2026-05-19",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini Omni 1.1 Flash",
+          "date": "2026-08-27",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "happyhorse",
+      "releases": [
+        {
+          "version": "HappyHorse 1.0",
+          "date": "2026-04-27",
+          "inCatalog": true
+        },
+        {
+          "version": "HappyHorse 1.1",
+          "date": "2026-06-28",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "pixverse",
+      "releases": [
+        {
+          "version": "PixVerse V5.6",
+          "date": "2026-01",
+          "inCatalog": true
+        },
+        {
+          "version": "PixVerse V6",
+          "date": "2026-03-30",
+          "inCatalog": false
+        },
+        {
+          "version": "PixVerse C1",
+          "date": "2026-04-07",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "runway",
+      "releases": [
+        {
+          "version": "Runway Gen-4",
+          "date": "2025-03-31",
+          "inCatalog": true
+        },
+        {
+          "version": "Runway Gen-4.5",
+          "date": "2025-12-01",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "ltx",
+      "releases": [
+        {
+          "version": "LTX-2",
+          "date": "2026-01",
+          "inCatalog": false
+        },
+        {
+          "version": "LTX-2.3",
+          "date": "2026-03-05",
+          "inCatalog": true
+        },
+        {
+          "version": "LTX-2.5",
+          "date": "2026-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "vidu",
+      "releases": [
+        {
+          "version": "Vidu Q3",
+          "date": "2026-01-30",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "longcat",
+      "releases": [
+        {
+          "version": "LongCat-Video",
+          "date": "2025-10-27",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "ovi",
+      "releases": [
+        {
+          "version": "Ovi",
+          "date": "2025-10-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Ovi 1.1",
+          "date": "2025-11-10",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "flux-3-video",
+      "releases": [
+        {
+          "version": "FLUX 3 video",
+          "date": "2026-08-04",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "topaz-video-upscale",
+      "releases": []
+    },
+    {
+      "slug": "kokoro",
+      "releases": [
+        {
+          "version": "Kokoro v0.19",
+          "date": "2024-12-25",
+          "inCatalog": false
+        },
+        {
+          "version": "Kokoro v1.0",
+          "date": "2025-01-27",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "chatterbox-hd",
+      "releases": [
+        {
+          "version": "Chatterbox HD",
+          "date": "2025-05",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "elevenlabs-tts",
+      "releases": [
+        {
+          "version": "Multilingual v2",
+          "date": "2023-08",
+          "inCatalog": false
+        },
+        {
+          "version": "Turbo v2.5",
+          "date": "2024-07",
+          "inCatalog": true
+        },
+        {
+          "version": "Flash v2.5",
+          "date": "2024-12-18",
+          "inCatalog": false
+        },
+        {
+          "version": "Eleven v3",
+          "date": "2025-06-03",
+          "inCatalog": false
+        },
+        {
+          "version": "Eleven v4",
+          "date": "2026-09-28",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "gemini-flash-tts",
+      "releases": [
+        {
+          "version": "Gemini 3.1 Flash TTS",
+          "date": "2026-04-15",
+          "inCatalog": true
+        },
+        {
+          "version": "Gemini 3.8 Flash TTS",
+          "date": "2026-09-22",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "gradium-tts",
+      "releases": [
+        {
+          "version": "Gradium TTS",
+          "date": "2026-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "inworld-tts",
+      "releases": [
+        {
+          "version": "TTS-1.5 Max",
+          "date": "2026-01-21",
+          "inCatalog": true
+        },
+        {
+          "version": "Realtime TTS-2",
+          "date": "2026-08-31",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "minimax-speech",
+      "releases": [
+        {
+          "version": "Speech-02 HD",
+          "date": "2025-04-02",
+          "inCatalog": true
+        },
+        {
+          "version": "Speech 2.6",
+          "date": "2025-10-29",
+          "inCatalog": false
+        },
+        {
+          "version": "Speech 2.8",
+          "date": "2026-01-23",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "orpheus-tts",
+      "releases": [
+        {
+          "version": "Orpheus 3B 0.1 finetuned",
+          "date": "2025-03",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "qwen3-tts",
+      "releases": [
+        {
+          "version": "Qwen3 TTS",
+          "date": "2026-01-22",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "xai-tts",
+      "releases": [
+        {
+          "version": "xAI TTS",
+          "date": "2026-04",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "seed-audio",
+      "releases": []
+    },
+    {
+      "slug": "minimax-music",
+      "releases": [
+        {
+          "version": "Music 2.0",
+          "date": "2025-10-29",
+          "inCatalog": true
+        },
+        {
+          "version": "Music 2.5",
+          "date": "2026-01-16",
+          "inCatalog": true
+        },
+        {
+          "version": "Music 2.6",
+          "date": "2026-04",
+          "inCatalog": true
+        },
+        {
+          "version": "Music 3.0",
+          "date": "2026-07-16",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "ace-step",
+      "releases": [
+        {
+          "version": "ACE-Step v1",
+          "date": "2025-05",
+          "inCatalog": false
+        },
+        {
+          "version": "ACE-Step 1.5",
+          "date": "2026-01",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "elevenlabs-music",
+      "releases": [
+        {
+          "version": "Eleven Music v1",
+          "date": "2025-08-05",
+          "inCatalog": true
+        },
+        {
+          "version": "Music v2",
+          "date": "2026-05-26",
+          "inCatalog": true
+        },
+        {
+          "version": "Music v2.5",
+          "date": "2026-09-14",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "lyria",
+      "releases": [
+        {
+          "version": "Lyria 3 Pro",
+          "date": "2026-03-25",
+          "inCatalog": true
+        },
+        {
+          "version": "Lyria 3.5",
+          "date": "2026-09-03",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "stable-audio",
+      "releases": [
+        {
+          "version": "Stable Audio Open 1.0",
+          "date": "2024-07-19",
+          "inCatalog": false
+        },
+        {
+          "version": "Stable Audio 2.5",
+          "date": "2025-09-10",
+          "inCatalog": true
+        },
+        {
+          "version": "Stable Audio 3.0",
+          "date": "2026-05-20",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "sonilo-music",
+      "releases": []
+    },
+    {
+      "slug": "elevenlabs-sound-effects",
+      "releases": []
+    },
+    {
+      "slug": "mmaudio",
+      "releases": [
+        {
+          "version": "MMAudio",
+          "date": "2024-12-19",
+          "inCatalog": false
+        }
+      ]
+    },
+    {
+      "slug": "sonilo-sound-effects",
+      "releases": []
+    }
+  ]
+}

@@ -1,0 +1,566 @@
+{
+  "families": [
+    {
+      "slug": "parakeet",
+      "differentiator": [
+        "Parakeet is a small 600M open model from NVIDIA that transcribes 25 European languages with automatic language detection, punctuation and word timestamps. It is built to be fast and cheap, with accuracy that trails the best paid services.",
+        "Parakeet est un petit modèle ouvert de NVIDIA, de 600 M de paramètres, qui transcrit 25 langues européennes avec détection automatique de la langue, ponctuation et horodatage des mots. Il est conçu pour être rapide et économique, avec une précision en retrait des meilleurs services payants."
+      ],
+      "signature": [
+        ["600M parameters, CC-BY-4.0", "600 M de paramètres, CC-BY-4.0"],
+        ["25 European languages, auto detection", "25 langues européennes, détection automatique"],
+        ["Word timestamps and punctuation built in", "Horodatage des mots et ponctuation intégrés"]
+      ],
+      "releases": [
+        {
+          "version": "Parakeet TDT 0.6B v2",
+          "date": "2025-04-15",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "English-only FastConformer-TDT model with punctuation and timestamps",
+              "Modèle FastConformer-TDT en anglais seul avec ponctuation et horodatage"
+            ]
+          ],
+          "source": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2"
+        },
+        {
+          "version": "Parakeet TDT 0.6B v3",
+          "date": "2025-08",
+          "ids": ["nvidia/parakeet-tdt-0.6b-v3"],
+          "external": false,
+          "changes": [
+            [
+              "Expands from English only to 25 European languages",
+              "Passe de l’anglais seul à 25 langues européennes"
+            ],
+            [
+              "Automatic language detection and up to 3 hours of audio with local attention",
+              "Détection automatique de la langue et jusqu’à 3 heures d’audio avec attention locale"
+            ]
+          ],
+          "source": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Parakeet TDT 0.6B v3",
+          "ids": ["nvidia/parakeet-tdt-0.6b-v3"],
+          "params": "0.6B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "CC-BY-4.0",
+          "maxOutput": null,
+          "inputs": ["audio"],
+          "outputs": ["text"],
+          "languages": ["25 European languages", "25 langues européennes"],
+          "source": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Dictate notes in French or English",
+            "Dicter des notes en français ou en anglais"
+          ],
+          "prompt": [
+            "Transcribe this two-minute voice memo with punctuation and capital letters. The language may switch between French and English.",
+            "Transcrivez ce mémo vocal de deux minutes avec ponctuation et majuscules. La langue peut passer du français à l’anglais."
+          ],
+          "why": [
+            "It detects the language itself and punctuates by default.",
+            "Il détecte la langue tout seul et ponctue par défaut."
+          ]
+        },
+        {
+          "title": [
+            "Transcribe a long meeting cheaply",
+            "Transcrire une longue réunion à petit prix"
+          ],
+          "prompt": [
+            "Transcribe this 90-minute team meeting with a timestamp on every sentence.",
+            "Transcrivez cette réunion d’équipe de 90 minutes avec un horodatage sur chaque phrase."
+          ],
+          "why": [
+            "It handles up to 3 hours of audio and is among the cheapest options.",
+            "Il gère jusqu’à 3 heures d’audio et compte parmi les options les moins chères."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "whisper",
+          "verdict": [
+            "Whisper covers 99 languages at the same price, where Parakeet covers 25.",
+            "Whisper couvre 99 langues au même prix, là où Parakeet en couvre 25."
+          ]
+        },
+        {
+          "slug": "scribe",
+          "verdict": [
+            "Scribe is more accurate on the Artificial Analysis test but costs more and is anonymized.",
+            "Scribe est plus précis sur le test d’Artificial Analysis, mais coûte plus cher et reste anonymisé."
+          ]
+        },
+        {
+          "slug": "xai-stt",
+          "verdict": [
+            "xAI is cheaper and more accurate on that test, but anonymized.",
+            "xAI est moins cher et plus précis sur ce test, mais anonymisé."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+        "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2",
+        "https://artificialanalysis.ai/speech-to-text"
+      ],
+      "strengths": [
+        [
+          "Default in Sub Rosa for dictation and meetings",
+          "Par défaut dans Sub Rosa pour la dictée et les réunions"
+        ],
+        [
+          "Cheapest private option, tied with Whisper",
+          "L’option privée la moins chère, à égalité avec Whisper"
+        ],
+        ["Detects the language and adds punctuation", "Détecte la langue et ajoute la ponctuation"]
+      ],
+      "limits": [
+        [
+          "Covers 25 European languages only: for others, pick Whisper",
+          "Ne couvre que 25 langues européennes : pour les autres, prenez Whisper"
+        ]
+      ],
+      "facts": [
+        [
+          "25 European languages, French and English included",
+          "25 langues européennes, dont le français et l’anglais"
+        ]
+      ]
+    },
+    {
+      "slug": "whisper",
+      "differentiator": [
+        "Whisper is OpenAI's open speech model, trained on 5 million hours of audio and covering 99 languages, the widest range here. Large v3 cut errors by 10% to 20% compared with large v2, and Wizper serves the same weights faster.",
+        "Whisper est le modèle vocal ouvert d’OpenAI, entraîné sur 5 millions d’heures d’audio et couvrant 99 langues, la plus large couverture ici. Large v3 a réduit les erreurs de 10 % à 20 % par rapport à large v2, et Wizper sert les mêmes poids plus vite."
+      ],
+      "signature": [
+        ["99 languages, Apache 2.0", "99 langues, Apache 2.0"],
+        ["1.55B parameters, large v3", "1,55 Md de paramètres, large v3"],
+        ["Wizper: same weights, served faster", "Wizper : mêmes poids, servi plus vite"]
+      ],
+      "releases": [
+        {
+          "version": "Whisper large v2",
+          "date": "2022-12-05",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Open multilingual speech model with 1.55B parameters",
+              "Modèle vocal multilingue ouvert de 1,55 Md de paramètres"
+            ]
+          ],
+          "source": "https://huggingface.co/openai/whisper-large-v2"
+        },
+        {
+          "version": "Whisper large v3",
+          "date": "2023-11",
+          "ids": ["openai/whisper-large-v3"],
+          "external": false,
+          "changes": [
+            ["128 mel frequency bins instead of 80", "128 bandes mel au lieu de 80"],
+            [
+              "New Cantonese language token and 10% to 20% fewer errors than large v2",
+              "Nouveau jeton pour le cantonais et 10 % à 20 % d’erreurs en moins que large v2"
+            ]
+          ],
+          "source": "https://huggingface.co/openai/whisper-large-v3"
+        },
+        {
+          "version": "Wizper (Whisper v3, fal edition)",
+          "date": null,
+          "ids": ["fal-ai/wizper"],
+          "external": false,
+          "changes": [
+            [
+              "Whisper v3 large with optimized serving: same word error rate, twice the speed, per fal",
+              "Whisper v3 large avec service optimisé : même taux d’erreur, vitesse doublée, selon fal"
+            ]
+          ],
+          "source": "https://fal.ai/models/fal-ai/wizper"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Whisper large v3",
+          "ids": ["openai/whisper-large-v3", "fal-ai/wizper"],
+          "params": "1.55B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["audio"],
+          "outputs": ["text"],
+          "languages": ["99 languages", "99 langues"],
+          "source": "https://huggingface.co/openai/whisper-large-v3"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Transcribe an interview in a less common language",
+            "Transcrire un entretien dans une langue moins courante"
+          ],
+          "prompt": [
+            "Transcribe this interview recorded in Polish, then give me an English translation below it.",
+            "Transcrivez cet entretien enregistré en polonais, puis donnez-moi une traduction en anglais en dessous."
+          ],
+          "why": [
+            "It covers 99 languages, more than any other option here.",
+            "Il couvre 99 langues, plus que toute autre option ici."
+          ]
+        },
+        {
+          "title": ["Get a transcript back quickly", "Récupérer vite une transcription"],
+          "prompt": [
+            "Transcribe this 20-minute podcast episode as plain text, no timestamps.",
+            "Transcrivez cet épisode de podcast de 20 minutes en texte brut, sans horodatage."
+          ],
+          "why": [
+            "Wizper returns the same transcript faster, per fal.",
+            "Wizper rend la même transcription plus vite, selon fal."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "parakeet",
+          "verdict": [
+            "Parakeet is smaller and punctuates by default, for 25 languages only.",
+            "Parakeet est plus petit et ponctue par défaut, pour 25 langues seulement."
+          ]
+        },
+        {
+          "slug": "scribe",
+          "verdict": [
+            "Scribe adds speaker labels and sound tags, is more accurate on the Artificial Analysis test, and costs more.",
+            "Scribe ajoute les locuteurs et les étiquettes de sons, est plus précis sur le test d’Artificial Analysis, et coûte plus cher."
+          ]
+        },
+        {
+          "slug": "xai-stt",
+          "verdict": [
+            "xAI is cheaper and more accurate on that test, with 25+ languages.",
+            "xAI est moins cher et plus précis sur ce test, avec plus de 25 langues."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/openai/whisper-large-v3",
+        "https://huggingface.co/openai/whisper-large-v2",
+        "https://fal.ai/models/fal-ai/wizper",
+        "https://artificialanalysis.ai/speech-to-text",
+        "https://en.wikipedia.org/wiki/Whisper_(speech_recognition_system)"
+      ],
+      "strengths": [
+        [
+          "Best multilingual accuracy in Sub Rosa's suggestions",
+          "La meilleure précision multilingue des suggestions de Sub Rosa"
+        ],
+        ["Close to 100 languages", "Près de 100 langues"],
+        ["Same low price as Parakeet, private mode", "Même petit prix que Parakeet, mode privé"]
+      ],
+      "limits": [
+        [
+          "Can invent text over long silences or noise",
+          "Peut inventer du texte sur les longs silences ou le bruit"
+        ]
+      ],
+      "facts": [["Whisper Large V3, open weights", "Whisper Large V3, poids ouverts"]]
+    },
+    {
+      "slug": "scribe",
+      "differentiator": [
+        "Scribe is ElevenLabs' transcription model with the lowest word error rate on the Artificial Analysis test among these four. It labels speakers and non-speech sounds, detects entities and takes up to 100 key terms to spell correctly, at a higher price.",
+        "Scribe est le modèle de transcription d’ElevenLabs, au taux d’erreur le plus bas sur le test d’Artificial Analysis parmi ces quatre. Il identifie les locuteurs et les sons hors parole, détecte des entités et accepte jusqu’à 100 termes clés à bien orthographier, à un prix plus élevé."
+      ],
+      "signature": [
+        ["Over 90 languages, mixed in one file", "Plus de 90 langues, mélangées dans un fichier"],
+        ["Keyterm prompting for up to 100 terms", "Termes clés : jusqu’à 100 termes à respecter"],
+        ["Entity detection and sound tags", "Détection d’entités et étiquettes de sons"]
+      ],
+      "releases": [
+        {
+          "version": "Scribe v1",
+          "date": "2025-02-26",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "99 languages, speaker diarization, word timestamps and audio event tagging",
+              "99 langues, identification des locuteurs, horodatage des mots et étiquetage des événements sonores"
+            ]
+          ],
+          "source": "https://elevenlabs.io/blog/meet-scribe"
+        },
+        {
+          "version": "Scribe v2",
+          "date": "2026-01-09",
+          "ids": ["elevenlabs/scribe-v2"],
+          "external": false,
+          "changes": [
+            [
+              "Better stability on long audio, pauses and silences",
+              "Meilleure stabilité sur l’audio long, les pauses et les silences"
+            ],
+            [
+              "Keyterm prompting (up to 100 terms), entity detection and automatic mixed-language transcription",
+              "Termes clés (jusqu’à 100), détection d’entités et transcription automatique de langues mêlées"
+            ]
+          ],
+          "source": "https://elevenlabs.io/blog/introducing-scribe-v2"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Scribe v2",
+          "ids": ["elevenlabs/scribe-v2"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["audio"],
+          "outputs": ["text"],
+          "languages": ["90+ languages", "Plus de 90 langues"],
+          "source": "https://elevenlabs.io/docs/overview/models"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Transcribe a panel with several speakers",
+            "Transcrire une table ronde à plusieurs voix"
+          ],
+          "prompt": [
+            "Transcribe this panel discussion, label each speaker, and note laughter or applause in brackets.",
+            "Transcrivez cette table ronde, identifiez chaque locuteur et notez les rires ou applaudissements entre crochets."
+          ],
+          "why": [
+            "It labels speakers and tags non-speech sounds.",
+            "Il identifie les locuteurs et signale les sons hors parole."
+          ]
+        },
+        {
+          "title": [
+            "Get product names spelled correctly",
+            "Obtenir des noms de produits bien orthographiés"
+          ],
+          "prompt": [
+            "Transcribe this sales call. Spell correctly: Sub Rosa, Carpe Diem, Kubernetes, Aurélien Dufresne.",
+            "Transcrivez cet appel commercial. Orthographiez correctement : Sub Rosa, Carpe Diem, Kubernetes, Aurélien Dufresne."
+          ],
+          "why": [
+            "Keyterm prompting steers rare names and jargon.",
+            "Les termes clés guident les noms rares et le jargon."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "whisper",
+          "verdict": [
+            "Whisper is private and cheaper, with a higher error rate on the Artificial Analysis test.",
+            "Whisper est privé et moins cher, avec un taux d’erreur plus élevé sur le test d’Artificial Analysis."
+          ]
+        },
+        {
+          "slug": "parakeet",
+          "verdict": [
+            "Parakeet is private and cheaper but covers 25 languages.",
+            "Parakeet est privé et moins cher, mais couvre 25 langues."
+          ]
+        },
+        {
+          "slug": "xai-stt",
+          "verdict": [
+            "xAI is cheaper, with similar accuracy on that test.",
+            "xAI est moins cher, avec une précision voisine sur ce test."
+          ]
+        }
+      ],
+      "sources": [
+        "https://elevenlabs.io/blog/introducing-scribe-v2",
+        "https://elevenlabs.io/blog/meet-scribe",
+        "https://elevenlabs.io/docs/overview/models",
+        "https://artificialanalysis.ai/speech-to-text",
+        "https://www.mindstudio.ai/models/elevenlabs-scribe-v2",
+        "https://elevenlabs.io/speech-to-text-api"
+      ],
+      "strengths": [
+        [
+          "Over 90 languages with automatic detection",
+          "Plus de 90 langues avec détection automatique"
+        ],
+        [
+          "Labels non-speech sounds, per ElevenLabs",
+          "Signale les sons hors parole, selon ElevenLabs"
+        ]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: ElevenLabs' retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation d’ElevenLabs s’applique"
+        ],
+        [
+          "Costs about 1.6 times Parakeet or Whisper",
+          "Coûte environ 1,6 fois le prix de Parakeet ou de Whisper"
+        ]
+      ],
+      "facts": [["90+ languages", "Plus de 90 langues"]]
+    },
+    {
+      "slug": "xai-stt",
+      "differentiator": [
+        "xAI's speech to text is the cheapest in the catalog, at $0.10 per hour in batch. It covers 25+ languages, labels speakers, handles multichannel audio and formats numbers and entities. Version 2.0 roughly halves its error rate.",
+        "La reconnaissance vocale de xAI est la moins chère du catalogue, à 0,10 $ l’heure en lot. Elle couvre plus de 25 langues, identifie les locuteurs, gère l’audio multicanal et met en forme les nombres et entités. La version 2.0 divise à peu près son taux d’erreur par deux."
+      ],
+      "signature": [
+        ["$0.10 per hour in batch, per xAI", "0,10 $ l’heure en lot, selon xAI"],
+        [
+          "25+ languages, diarization, multichannel",
+          "Plus de 25 langues, identification des locuteurs, audio multicanal"
+        ],
+        ["Formats numbers, currencies and emails", "Met en forme nombres, devises et e-mails"]
+      ],
+      "releases": [
+        {
+          "version": "Grok Speech to Text (1.0)",
+          "date": "2026-04-17",
+          "ids": ["stt-xai-v1"],
+          "external": false,
+          "changes": [
+            [
+              "Standalone speech to text API with batch and streaming, speaker labels, timestamps and multichannel audio",
+              "API autonome de reconnaissance vocale en lot et en flux, avec locuteurs, horodatage et audio multicanal"
+            ],
+            [
+              "Inverse text normalization for numbers, currencies and email addresses",
+              "Normalisation inverse du texte pour nombres, devises et adresses e-mail"
+            ]
+          ],
+          "source": "https://x.ai/news/grok-stt-and-tts-apis"
+        },
+        {
+          "version": "Grok Voice Transcribe 2.0",
+          "date": "2026-09-18",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Twice as accurate as 1.0 at the same price, per xAI",
+              "Deux fois plus précis que 1.0 au même prix, selon xAI"
+            ],
+            [
+              "Multilingual error rate on short phrases down from 20.6% to 6.8% across 19 languages",
+              "Taux d’erreur multilingue sur phrases courtes passé de 20,6 % à 6,8 % sur 19 langues"
+            ]
+          ],
+          "source": "https://x.ai/news/grok-voice-transcribe-2"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Grok Speech to Text 1.0",
+          "ids": ["stt-xai-v1"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["audio"],
+          "outputs": ["text"],
+          "languages": ["25+ languages", "Plus de 25 langues"],
+          "source": "https://x.ai/news/grok-stt-and-tts-apis"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Transcribe a phone call with names and amounts",
+            "Transcrire un appel avec noms et montants"
+          ],
+          "prompt": [
+            "Transcribe this customer call on two channels, format the amounts and email addresses, and label the agent and the customer.",
+            "Transcrivez cet appel client sur deux canaux, mettez en forme les montants et adresses e-mail, et identifiez le conseiller et le client."
+          ],
+          "why": [
+            "It handles multichannel audio and entity formatting, per xAI.",
+            "Il gère l’audio multicanal et la mise en forme des entités, selon xAI."
+          ]
+        },
+        {
+          "title": [
+            "Transcribe a large archive on a small budget",
+            "Transcrire un gros volume d’archives à petit prix"
+          ],
+          "prompt": [
+            "Transcribe these 40 recorded lectures as plain text, one file per lecture.",
+            "Transcrivez ces 40 cours enregistrés en texte brut, un fichier par cours."
+          ],
+          "why": [
+            "The per-hour price is the lowest here.",
+            "Le prix à l’heure est le plus bas ici."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "scribe",
+          "verdict": [
+            "Scribe covers 90+ languages and sound tags, at a higher price.",
+            "Scribe couvre plus de 90 langues et les étiquettes de sons, à un prix plus élevé."
+          ]
+        },
+        {
+          "slug": "whisper",
+          "verdict": [
+            "Whisper is private, open and covers 99 languages.",
+            "Whisper est privé, ouvert et couvre 99 langues."
+          ]
+        },
+        {
+          "slug": "parakeet",
+          "verdict": [
+            "Parakeet is private and equally cheap, for 25 European languages.",
+            "Parakeet est privé et tout aussi bon marché, pour 25 langues européennes."
+          ]
+        }
+      ],
+      "sources": [
+        "https://x.ai/news/grok-stt-and-tts-apis",
+        "https://x.ai/news/grok-voice-transcribe-2",
+        "https://artificialanalysis.ai/speech-to-text/models/grok-stt",
+        "https://docs.x.ai/developers/model-capabilities/audio/speech-to-text"
+      ],
+      "strengths": [
+        ["Lowest price per minute here", "Le prix à la minute le plus bas ici"],
+        ["25+ languages, per xAI", "Plus de 25 langues, selon xAI"]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: xAI's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation de xAI s’applique"
+        ],
+        [
+          "Newer and less tested than Parakeet or Whisper",
+          "Plus récent et moins éprouvé que Parakeet ou Whisper"
+        ]
+      ],
+      "facts": [["25+ languages", "Plus de 25 langues"]]
+    }
+  ]
+}

@@ -78,6 +78,35 @@ only allows the site's own origin, so the catalog is frozen at build time.
   English and French, with the sources each claim came from.
 - `src/models/needs.ts` answers "what should I use for…" and lists the app's
   defaults.
+- `src/models/details/<kind>.json` holds each family's depth: what sets it
+  apart, its dated version history (what each version changed), specs per
+  version, strengths and limits, use cases with prompts, rivals and sources.
+  One chunk per kind of work, loaded only by the pages that need it
+  (`src/models/details.ts`); `details/index.json` is the light release index
+  the hub and kind pages read without a chunk.
+- `src/models/benchmarks.json` registers each benchmark (what it measures,
+  how to read it, its scale) and every score with its date, source and kind:
+  `independent` (a third party testing every model the same way) or `vendor`
+  (announced by the maker, shown apart). Elo ratings are drawn as dots on an
+  axis, never as bars from zero.
+- `src/models/guide.ts` is "Understanding models" (`/models/guide`), the
+  vocabulary every page links to; `src/models/categories.ts` says what
+  separates the models of each kind (`/models/<kind>`).
+
+Pages: the hub, one page per kind (quality against price, leaderboards,
+release timeline, sortable table), one page per family, the comparator
+(`/models/compare?m=a,b,c`, the choice lives in the address) and the guide.
+Charts are plain HTML and CSS in `src/models/charts.tsx`: they prerender,
+work without JavaScript, keep their text legible on a phone, and every chart
+has its numbers in a table under it.
+
+Rules for adding depth: no source, no claim. A date that cannot be read at a
+page is left out ("date not published"); a date deduced from a repository or
+an API listing is kept to the month. Scores carry the date they were read.
+`src/test/website-models-data.test.tsx` enforces it: every family has its
+difference, history, use cases and rivals; every date is ISO and in order;
+every score is sourced, dated, on its benchmark's scale and tied to a real
+model; every page renders without NaN or undefined.
 
 After refreshing the snapshot, run `pnpm vitest run src/test/website-models.test.tsx`:
 it fails until every new model sits in a family and every retired one is gone,

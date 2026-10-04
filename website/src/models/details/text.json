@@ -1,0 +1,4621 @@
+{
+  "families": [
+    {
+      "slug": "glm",
+      "differentiator": [
+        "GLM is an open-weights family with a steady release cadence: six versions in under a year, from 357B to 753B parameters, and a 320B Flash tier that keeps a 1M context window at a fraction of the price. Most versions ship under the permissive MIT license.",
+        "GLM est une famille à poids ouverts au rythme de sortie régulier : six versions en moins d’un an, de 357 Md à 753 Md de paramètres, et un palier Flash de 320 Md qui garde un contexte de 1M pour une fraction du prix. La plupart des versions sortent sous licence MIT."
+      ],
+      "signature": [
+        ["Open weights, MIT on most versions", "Poids ouverts, MIT sur la plupart des versions"],
+        ["753B MoE with 40B active parameters", "MoE de 753 Md, 40 Md de paramètres actifs"],
+        ["Flash tier: 1M context, reads images", "Palier Flash : contexte 1M, lit les images"]
+      ],
+      "releases": [
+        {
+          "version": "GLM 4.6",
+          "date": "2025-09-30",
+          "ids": ["zai-org-glm-4.6"],
+          "external": false,
+          "changes": [
+            [
+              "357B-parameter mixture of experts (32B active) with a 200K context window, under the MIT license.",
+              "MoE de 357 Md de paramètres (32 Md actifs) avec contexte de 200k, sous licence MIT."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-4-6"
+        },
+        {
+          "version": "GLM 4.7",
+          "date": "2025-12-22",
+          "ids": ["zai-org-glm-4.7"],
+          "external": false,
+          "changes": [
+            [
+              "Same 357B MoE size, now listed as a reasoning model with extended thinking.",
+              "Même taille de MoE de 357 Md, désormais classé comme modèle de raisonnement avec réflexion étendue."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-4-7"
+        },
+        {
+          "version": "GLM 4.7 Flash",
+          "date": "2026-01-19",
+          "ids": ["zai-org-glm-4.7-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Small tier: 31.2B total and 3B active parameters, MIT weights, priced at $0.07 per million input tokens.",
+              "Palier léger : 31,2 Md de paramètres au total dont 3 Md actifs, poids MIT, à 0,07 $ le million de jetons en entrée."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-4-7-flash"
+        },
+        {
+          "version": "GLM 5",
+          "date": "2026-02-11",
+          "ids": ["zai-org-glm-5"],
+          "external": false,
+          "changes": [
+            [
+              "Jump to 744B parameters (40B active), still with a 200K context and the MIT license.",
+              "Saut à 744 Md de paramètres (40 Md actifs), toujours avec un contexte de 200k et la licence MIT."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-5"
+        },
+        {
+          "version": "GLM 5 Turbo",
+          "date": "2026-03-15",
+          "ids": ["z-ai-glm-5-turbo"],
+          "external": false,
+          "changes": [
+            [
+              "Proprietary, hosted-only variant with undisclosed size and a 200K context.",
+              "Variante propriétaire, uniquement hébergée, de taille non divulguée, avec un contexte de 200k."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-5-turbo"
+        },
+        {
+          "version": "GLM 5V Turbo",
+          "date": "2026-04-01",
+          "ids": ["z-ai-glm-5v-turbo"],
+          "external": false,
+          "changes": [
+            [
+              "Adds image and video input to the Turbo line, with text output.",
+              "Ajoute l’entrée image et vidéo à la gamme Turbo, avec une sortie texte."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-5v-turbo"
+        },
+        {
+          "version": "GLM 5.1",
+          "date": "2026-04-07",
+          "ids": ["zai-org-glm-5-1"],
+          "external": false,
+          "changes": [
+            [
+              "Refresh of the 744B MoE (40B active), 200K context, MIT license, replacing GLM 5.",
+              "Mise à jour du MoE de 744 Md (40 Md actifs), contexte de 200k, licence MIT, qui remplace GLM 5."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-5-1"
+        },
+        {
+          "version": "GLM 5.2",
+          "date": "2026-06-16",
+          "ids": ["zai-org-glm-5-2", "e2ee-glm-5-2-p"],
+          "external": false,
+          "changes": [
+            [
+              "753B parameters (40B active) and a 1M token context window, five times the previous 200K.",
+              "753 Md de paramètres (40 Md actifs) et contexte de 1M de jetons, cinq fois les 200k précédents."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-5-2"
+        },
+        {
+          "version": "GLM 5.3",
+          "date": "2026-08-18",
+          "ids": ["z-ai-glm-5-3", "e2ee-glm-5-3-p"],
+          "external": false,
+          "changes": [
+            [
+              "Same base model as GLM 5.2, with gains from post-training only: about 50% better on Z.ai’s own Code Bench.",
+              "Même modèle de base que GLM 5.2, avec des gains issus du seul post-entraînement : environ 50 % de mieux sur le Code Bench de Z.ai."
+            ],
+            [
+              "Moves from MIT to a custom GLM 5.3 license with commercial restrictions.",
+              "Passe de la licence MIT à une licence GLM 5.3 propre, avec des restrictions commerciales."
+            ]
+          ],
+          "source": "https://huggingface.co/zai-org/GLM-5.3"
+        },
+        {
+          "version": "GLM 5.3 Flash",
+          "date": "2026-08-26",
+          "ids": ["z-ai-glm-5-3-flash", "e2ee-glm-5-3-flash"],
+          "external": false,
+          "changes": [
+            [
+              "320B MoE with 18B active parameters, 1M context, accepts images, MIT license.",
+              "MoE de 320 Md avec 18 Md de paramètres actifs, contexte 1M, accepte les images, licence MIT."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/glm-5-3-flash"
+        }
+      ],
+      "specs": [
+        {
+          "version": "GLM 5.3 Flash",
+          "ids": ["z-ai-glm-5-3-flash", "e2ee-glm-5-3-flash"],
+          "params": "320B",
+          "activeParams": "18B",
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/glm-5-3-flash"
+        },
+        {
+          "version": "GLM 5.3",
+          "ids": ["z-ai-glm-5-3", "e2ee-glm-5-3-p"],
+          "params": "753B",
+          "activeParams": "40B",
+          "openWeights": true,
+          "license": "GLM 5.3 License (commercial restrictions)",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/glm-5-3"
+        },
+        {
+          "version": "GLM 5.2",
+          "ids": ["zai-org-glm-5-2", "e2ee-glm-5-2-p"],
+          "params": "753B",
+          "activeParams": "40B",
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/glm-5-2"
+        },
+        {
+          "version": "GLM 5.1",
+          "ids": ["zai-org-glm-5-1"],
+          "params": "744B",
+          "activeParams": "40B",
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/glm-5-1"
+        },
+        {
+          "version": "GLM 5V Turbo",
+          "ids": ["z-ai-glm-5v-turbo"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/glm-5v-turbo"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Reading a long contract", "Lire un long contrat"],
+          "prompt": [
+            "Here is a 90-page supplier contract. List every clause that lets the supplier raise prices or end the agreement early, with the page number and a one-line plain-English summary.",
+            "Voici un contrat fournisseur de 90 pages. Listez chaque clause qui permet au fournisseur d’augmenter les prix ou de résilier plus tôt, avec le numéro de page et un résumé d’une ligne en langage simple."
+          ],
+          "why": [
+            "GLM 5.2 and 5.3 take a 1M token context, so a long document fits in one message.",
+            "GLM 5.2 et 5.3 acceptent un contexte de 1M de jetons : un long document tient dans un seul message."
+          ]
+        },
+        {
+          "title": ["Cheap batch work with images", "Traitement économique d’images par lots"],
+          "prompt": [
+            "For each screenshot I attach, say which app it shows and write one sentence describing the error message, if any.",
+            "Pour chaque capture d’écran jointe, dites quelle application elle montre et rédigez une phrase décrivant le message d’erreur, s’il y en a un."
+          ],
+          "why": [
+            "GLM 5.3 Flash reads images and costs $0.15 per million input tokens.",
+            "GLM 5.3 Flash lit les images et coûte 0,15 $ le million de jetons en entrée."
+          ]
+        },
+        {
+          "title": [
+            "Fixing a bug across several files",
+            "Corriger un bogue réparti sur plusieurs fichiers"
+          ],
+          "prompt": [
+            "The checkout total is wrong when a discount code and a gift card are both used. Find the cause in the code I pasted and propose a minimal fix.",
+            "Le total du paiement est faux quand un code promo et une carte cadeau sont utilisés ensemble. Trouvez la cause dans le code collé et proposez un correctif minimal."
+          ],
+          "why": [
+            "GLM 5.3 was tuned after pre-training for coding work, per its model card.",
+            "GLM 5.3 a été affiné pour le code après le pré-entraînement, selon sa fiche de modèle."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "kimi",
+          "verdict": [
+            "Kimi K3 scores about the same (44 vs 45) but costs roughly twice as much per token.",
+            "Kimi K3 obtient à peu près le même score (44 contre 45) mais coûte environ deux fois plus cher au jeton."
+          ]
+        },
+        {
+          "slug": "deepseek",
+          "verdict": [
+            "DeepSeek V4.1 Flash is cheaper still; GLM 5.3 scores higher on the Artificial Analysis index.",
+            "DeepSeek V4.1 Flash est encore moins cher ; GLM 5.3 obtient un meilleur score à l’indice d’Artificial Analysis."
+          ]
+        },
+        {
+          "slug": "qwen",
+          "verdict": [
+            "Qwen 3.8 Max matches GLM 5.3 on the index (45) but its weights are closed.",
+            "Qwen 3.8 Max égale GLM 5.3 à l’indice (45) mais ses poids sont fermés."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/glm-5-3",
+        "https://artificialanalysis.ai/models/glm-5-3-flash",
+        "https://artificialanalysis.ai/models/glm-5-2",
+        "https://artificialanalysis.ai/models/glm-5-1",
+        "https://artificialanalysis.ai/models/glm-5",
+        "https://artificialanalysis.ai/models/glm-4-7",
+        "https://artificialanalysis.ai/models/glm-4-7-flash",
+        "https://artificialanalysis.ai/models/glm-4-6",
+        "https://artificialanalysis.ai/models/glm-5-turbo",
+        "https://artificialanalysis.ai/models/glm-5v-turbo",
+        "https://huggingface.co/zai-org/GLM-5.3",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://rits.shanghai.nyu.edu/ai/glm-5-2-z-ais-open-weights-coder-beats-gpt-5-5-at-1-6-the-cost/",
+        "https://datanorth.ai/news/z-ai-releases-glm-5-3",
+        "https://huggingface.co/zai-org/GLM-5.2"
+      ],
+      "strengths": [
+        [
+          "Default in Sub Rosa: strong reasoning, tool use and structured output",
+          "Par défaut dans Sub Rosa : raisonnement, usage d’outils et sortie structurée solides"
+        ],
+        [
+          "Private mode on every version: zero data retention",
+          "Mode privé sur toutes les versions : aucune conservation des données"
+        ],
+        [
+          "1M token context on GLM 5.2 and 5.3, enough for long documents",
+          "Contexte de 1M de jetons sur GLM 5.2 et 5.3, assez pour de longs documents"
+        ],
+        [
+          "Mid-range price for its level; Flash versions cost a fraction of that",
+          "Prix moyen pour son niveau ; les versions Flash coûtent une fraction de ce prix"
+        ]
+      ],
+      "limits": [
+        [
+          "GLM 5.2, 5.1 and 5.3 read text only: attach an image and pick another model",
+          "GLM 5.2, 5.1 et 5.3 ne lisent que le texte : pour une image, prenez un autre modèle"
+        ],
+        [
+          "GLM 5 Turbo and 5V Turbo are anonymized, not private",
+          "GLM 5 Turbo et 5V Turbo sont anonymisés, pas privés"
+        ]
+      ],
+      "facts": [
+        [
+          "GLM 5.2: 1M token context, text input",
+          "GLM 5.2 : contexte de 1M de jetons, entrée texte"
+        ],
+        [
+          "Tool calling, reasoning effort, JSON schema output",
+          "Appel d’outils, effort de raisonnement, sortie en schéma JSON"
+        ],
+        ["Images: GLM 5.3 Flash and GLM 5V Turbo", "Images : GLM 5.3 Flash et GLM 5V Turbo"],
+        ["Open weights (MIT license) for GLM 5.2", "Poids ouverts (licence MIT) pour GLM 5.2"]
+      ]
+    },
+    {
+      "slug": "kimi",
+      "differentiator": [
+        "Kimi is built for long agent runs that chain many tool calls, and its open models are multimodal from K2.5 on (text, image, video in). K3 is the largest open model in the catalog at 2.8T parameters, with a 1M context window.",
+        "Kimi vise les longues tâches d’agent qui enchaînent les appels d’outils, et ses modèles ouverts sont multimodaux dès K2.5 (texte, image, vidéo en entrée). K3 est le plus grand modèle ouvert du catalogue, avec 2,8 T de paramètres et un contexte de 1M."
+      ],
+      "signature": [
+        ["1T MoE, then 2.8T with K3", "MoE de 1 T, puis 2,8 T avec K3"],
+        ["Reads images and video", "Lit les images et la vidéo"],
+        ["Open weights, modified licenses", "Poids ouverts, licences modifiées"]
+      ],
+      "releases": [
+        {
+          "version": "Kimi K2 Thinking",
+          "date": "2025-11-06",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Introduced the 1T-parameter MoE (32B active) with a 256K context, text only, as a reasoning model.",
+              "Introduit le MoE de 1 T de paramètres (32 Md actifs) avec contexte de 256k, texte seul, comme modèle de raisonnement."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/kimi-k2-thinking"
+        },
+        {
+          "version": "Kimi K2.5",
+          "date": "2026-01-27",
+          "ids": ["kimi-k2-5"],
+          "external": false,
+          "changes": [
+            [
+              "Adds image and video input to the same 1T MoE, still 256K context.",
+              "Ajoute l’entrée image et vidéo au même MoE de 1 T, toujours avec un contexte de 256k."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/kimi-k2-5"
+        },
+        {
+          "version": "Kimi K2.6",
+          "date": "2026-04-20",
+          "ids": ["kimi-k2-6", "e2ee-kimi-k2-6"],
+          "external": false,
+          "changes": [
+            [
+              "Same architecture as K2.5 with a higher index score (27 vs 23 on Artificial Analysis).",
+              "Même architecture que K2.5 avec un meilleur score à l’indice (27 contre 23 chez Artificial Analysis)."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/kimi-k2-6"
+        },
+        {
+          "version": "Kimi K2.7 Code",
+          "date": "2026-06-12",
+          "ids": ["kimi-k2-7-code"],
+          "external": false,
+          "changes": [
+            [
+              "Coding-focused version of the 1T MoE, accepts text, image and video, always reasons.",
+              "Version du MoE de 1 T orientée code, accepte texte, image et vidéo, raisonne toujours."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/kimi-k2-7-code"
+        },
+        {
+          "version": "Kimi K3",
+          "date": "2026-07-16",
+          "ids": ["kimi-k3", "kimi-k3-fast-api", "e2ee-kimi-k3-p"],
+          "external": false,
+          "changes": [
+            [
+              "New architecture with Kimi Delta Attention and Attention Residuals, about 2.5 times K2’s scaling efficiency per the model card.",
+              "Nouvelle architecture avec Kimi Delta Attention et Attention Residuals, environ 2,5 fois l’efficacité d’échelle de K2 selon la fiche de modèle."
+            ],
+            [
+              "2.8T parameters (104B active) and a 1M token context, up from 1T and 256K.",
+              "2,8 T de paramètres (104 Md actifs) et contexte de 1M de jetons, contre 1 T et 256k."
+            ]
+          ],
+          "source": "https://huggingface.co/moonshotai/Kimi-K3"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Kimi K3",
+          "ids": ["kimi-k3", "kimi-k3-fast-api", "e2ee-kimi-k3-p"],
+          "params": "2.8T",
+          "activeParams": "104B",
+          "openWeights": true,
+          "license": "Kimi K3 License (commercial use with restrictions)",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/kimi-k3"
+        },
+        {
+          "version": "Kimi K2.7 Code",
+          "ids": ["kimi-k2-7-code"],
+          "params": "1T",
+          "activeParams": "32B",
+          "openWeights": true,
+          "license": "Modified MIT",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/kimi-k2-7-code"
+        },
+        {
+          "version": "Kimi K2.6",
+          "ids": ["kimi-k2-6", "e2ee-kimi-k2-6"],
+          "params": "1T",
+          "activeParams": "32B",
+          "openWeights": true,
+          "license": "Modified MIT",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/kimi-k2-6"
+        },
+        {
+          "version": "Kimi K2.5",
+          "ids": ["kimi-k2-5"],
+          "params": "1T",
+          "activeParams": "32B",
+          "openWeights": true,
+          "license": "Modified MIT",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/kimi-k2-5"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "A long research task with many steps",
+            "Une longue recherche en plusieurs étapes"
+          ],
+          "prompt": [
+            "Search my notes for every mention of the Lisbon supplier, then draft a one-page timeline of what was promised and when, and flag anything that conflicts.",
+            "Cherchez dans mes notes chaque mention du fournisseur de Lisbonne, puis rédigez une chronologie d’une page de ce qui a été promis et quand, et signalez les contradictions."
+          ],
+          "why": [
+            "Kimi is tuned for tasks that chain many tool calls in a row.",
+            "Kimi est conçu pour les tâches qui enchaînent de nombreux appels d’outils."
+          ]
+        },
+        {
+          "title": [
+            "Describing a chart or screenshot",
+            "Décrire un graphique ou une capture d’écran"
+          ],
+          "prompt": [
+            "This is a screenshot of our sales dashboard. Which region fell the most month over month, and what would you check first?",
+            "Voici une capture de notre tableau de bord des ventes. Quelle région a le plus baissé d’un mois à l’autre, et que vérifieriez-vous en premier ?"
+          ],
+          "why": [
+            "K2.6 and K3 accept images; Sub Rosa switches to K2.6 when you attach one.",
+            "K2.6 et K3 acceptent les images ; Sub Rosa bascule sur K2.6 quand vous en joignez une."
+          ]
+        },
+        {
+          "title": ["Writing and reviewing code", "Écrire et relire du code"],
+          "prompt": [
+            "Write a Python script that renames every photo in a folder to its capture date, then explain how to undo it.",
+            "Écrivez un script Python qui renomme chaque photo d’un dossier selon sa date de prise de vue, puis expliquez comment annuler."
+          ],
+          "why": [
+            "K2.7 Code is the coding-focused version and always reasons before answering.",
+            "K2.7 Code est la version orientée code et raisonne toujours avant de répondre."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "glm",
+          "verdict": [
+            "GLM 5.3 scores a point higher on the index (45 vs 44) at a lower token price.",
+            "GLM 5.3 obtient un point de plus à l’indice (45 contre 44) pour un prix au jeton plus bas."
+          ]
+        },
+        {
+          "slug": "deepseek",
+          "verdict": [
+            "DeepSeek costs far less per token; Kimi leads on the index and reads images.",
+            "DeepSeek coûte bien moins cher au jeton ; Kimi mène à l’indice et lit les images."
+          ]
+        },
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen’s open models come in many sizes; Kimi K3 is a single very large model.",
+            "Les modèles ouverts de Qwen existent en de nombreuses tailles ; Kimi K3 est un unique très grand modèle."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/kimi-k3",
+        "https://artificialanalysis.ai/models/kimi-k2-7-code",
+        "https://artificialanalysis.ai/models/kimi-k2-6",
+        "https://artificialanalysis.ai/models/kimi-k2-5",
+        "https://artificialanalysis.ai/models/kimi-k2-thinking",
+        "https://huggingface.co/moonshotai/Kimi-K3",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://artificialanalysis.ai/articles/kimi-k2-6-the-new-leading-open-weights-model",
+        "https://rits.shanghai.nyu.edu/ai/kimi-k3-open-weights-ship-2-8t-parameters-1-4-tb-to-run/",
+        "https://huggingface.co/moonshotai/Kimi-K2.6"
+      ],
+      "strengths": [
+        [
+          "Sub Rosa switches to K2.6 when you attach an image",
+          "Sub Rosa bascule sur K2.6 quand vous joignez une image"
+        ],
+        [
+          "Ranked the leading open-weight model by Artificial Analysis at release",
+          "Classé meilleur modèle à poids ouverts par Artificial Analysis à sa sortie"
+        ],
+        [
+          "Excels at long tasks that chain many tool calls",
+          "Excelle sur les longues tâches qui enchaînent les appels d’outils"
+        ],
+        [
+          "Private mode, and a version listed as end-to-end encrypted",
+          "Mode privé, et une version annoncée chiffrée de bout en bout"
+        ]
+      ],
+      "limits": [
+        [
+          "K3 and K3 Fast are among the dearer open models per token",
+          "K3 et K3 Fast comptent parmi les modèles ouverts les plus chers au jeton"
+        ],
+        ["K2.6 context stops at 256K tokens", "Le contexte de K2.6 s’arrête à 256K jetons"]
+      ],
+      "facts": [
+        [
+          "K2.6: 256K context, vision, tool calling",
+          "K2.6 : contexte de 256K, vision, appel d’outils"
+        ],
+        [
+          "K3: 1M context, several images per message",
+          "K3 : contexte de 1M, plusieurs images par message"
+        ],
+        ["Open weights", "Poids ouverts"]
+      ]
+    },
+    {
+      "slug": "deepseek",
+      "differentiator": [
+        "DeepSeek competes on price and speed: its Flash tier is a 552B mixture of experts with only 16B active parameters, a 1M context window and MIT weights, at $0.30 per million input tokens. The Pro tier goes to 1.6T parameters for harder problems.",
+        "DeepSeek joue sur le prix et la vitesse : son palier Flash est un MoE de 552 Md avec seulement 16 Md de paramètres actifs, un contexte de 1M et des poids MIT, à 0,30 $ le million de jetons en entrée. Le palier Pro monte à 1,6 T de paramètres pour les problèmes plus difficiles."
+      ],
+      "signature": [
+        ["Flash tier at $0.30 per million input", "Palier Flash à 0,30 $ le million en entrée"],
+        ["1M context, MIT weights", "Contexte de 1M, poids MIT"],
+        ["Pro tier: 1.6T MoE, 49B active", "Palier Pro : MoE de 1,6 T, 49 Md actifs"]
+      ],
+      "releases": [
+        {
+          "version": "DeepSeek V3.2",
+          "date": "2025-12-01",
+          "ids": ["deepseek-v3.2"],
+          "external": false,
+          "changes": [
+            [
+              "685B mixture of experts (37B active) with a 128K context, MIT license.",
+              "MoE de 685 Md (37 Md actifs) avec contexte de 128k, licence MIT."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/deepseek-v3-2"
+        },
+        {
+          "version": "DeepSeek V4 (April 2026)",
+          "date": "2026-04",
+          "ids": ["deepseek-v4-flash", "deepseek-v4-pro", "e2ee-deepseek-v4-flash"],
+          "external": false,
+          "changes": [
+            [
+              "V4 generation: the Pro model has 1.6T parameters (49B active) and a 1M token context, up from 128K.",
+              "Génération V4 : le modèle Pro compte 1,6 T de paramètres (49 Md actifs) et un contexte de 1M de jetons, contre 128k."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/deepseek-v4-pro-0424"
+        },
+        {
+          "version": "DeepSeek V4 Flash 0731",
+          "date": "2026-07-31",
+          "ids": ["deepseek-v4-flash-0731", "deepseek-v4-flash-0731-fast"],
+          "external": false,
+          "changes": [
+            [
+              "Flash tier of 284B parameters with 13B active, 1M context, text only, scoring 34 on the Artificial Analysis index.",
+              "Palier Flash de 284 Md de paramètres dont 13 Md actifs, contexte 1M, texte seul, score de 34 à l’indice d’Artificial Analysis."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/deepseek-v4-flash-0731"
+        },
+        {
+          "version": "DeepSeek V4 Pro 0813",
+          "date": "2026-08-13",
+          "ids": ["deepseek-v4-pro-0813"],
+          "external": false,
+          "changes": [
+            [
+              "Refreshed 1.6T Pro model, scoring 36 on the index against 30 for the April Pro.",
+              "Modèle Pro de 1,6 T mis à jour, score de 36 à l’indice contre 30 pour le Pro d’avril."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/deepseek-v4-pro"
+        },
+        {
+          "version": "DeepSeek V4.1 Flash",
+          "date": "2026-09-10",
+          "ids": ["deepseek-v4-1-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Larger Flash: 552B parameters (16B active), now accepts images, and cuts cache memory to about a quarter via a new attention design.",
+              "Flash plus grand : 552 Md de paramètres (16 Md actifs), accepte désormais les images, et réduit la mémoire de cache à environ un quart grâce à une nouvelle conception de l’attention."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/deepseek-v4-1-flash"
+        }
+      ],
+      "specs": [
+        {
+          "version": "DeepSeek V4.1 Flash",
+          "ids": ["deepseek-v4-1-flash"],
+          "params": "552B",
+          "activeParams": "16B",
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/deepseek-v4-1-flash"
+        },
+        {
+          "version": "DeepSeek V4 Pro 0813",
+          "ids": ["deepseek-v4-pro-0813"],
+          "params": "1.6T",
+          "activeParams": "49B",
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/deepseek-v4-pro"
+        },
+        {
+          "version": "DeepSeek V4 Flash 0731",
+          "ids": ["deepseek-v4-flash-0731", "deepseek-v4-flash-0731-fast"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/deepseek-v4-flash-0731"
+        },
+        {
+          "version": "DeepSeek V3.2",
+          "ids": ["deepseek-v3.2"],
+          "params": "685B",
+          "activeParams": "37B",
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/deepseek-v3-2"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["High-volume summaries on a budget", "Résumés en grand nombre à petit prix"],
+          "prompt": [
+            "Summarize each of these 40 customer emails in two sentences and tag it as billing, bug or feature request.",
+            "Résumez chacun de ces 40 e-mails clients en deux phrases et étiquetez-le : facturation, bogue ou demande de fonctionnalité."
+          ],
+          "why": [
+            "V4.1 Flash costs $0.30 per million input tokens and answers fast.",
+            "V4.1 Flash coûte 0,30 $ le million de jetons en entrée et répond vite."
+          ]
+        },
+        {
+          "title": ["Working through a hard problem", "Venir à bout d’un problème difficile"],
+          "prompt": [
+            "Here are the constraints for our delivery planning. Find a schedule that satisfies all of them and explain why it works.",
+            "Voici les contraintes de notre planning de livraisons. Trouvez un calendrier qui les respecte toutes et expliquez pourquoi il fonctionne."
+          ],
+          "why": [
+            "The Pro tier is a reasoning model with 1.6T parameters.",
+            "Le palier Pro est un modèle de raisonnement de 1,6 T de paramètres."
+          ]
+        },
+        {
+          "title": ["Reading a very long file", "Lire un fichier très long"],
+          "prompt": [
+            "Read this 400-page report and list the five decisions it asks the board to make.",
+            "Lisez ce rapport de 400 pages et listez les cinq décisions qu’il demande au conseil de prendre."
+          ],
+          "why": [
+            "Every V4 model takes a 1M token context.",
+            "Tous les modèles V4 acceptent un contexte de 1M de jetons."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "glm",
+          "verdict": [
+            "GLM 5.3 scores higher on the index (45 vs 39) but costs more per token.",
+            "GLM 5.3 obtient un meilleur score à l’indice (45 contre 39) mais coûte plus cher au jeton."
+          ]
+        },
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen’s open line spans many sizes down to phones; DeepSeek stays at large sizes.",
+            "La gamme ouverte de Qwen couvre de nombreuses tailles jusqu’aux téléphones ; DeepSeek reste sur de grandes tailles."
+          ]
+        },
+        {
+          "slug": "kimi",
+          "verdict": [
+            "Kimi K3 reads images and ranks near GLM, but at several times DeepSeek’s price.",
+            "Kimi K3 lit les images et se classe près de GLM, mais à plusieurs fois le prix de DeepSeek."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/deepseek-v4-1-flash",
+        "https://artificialanalysis.ai/models/deepseek-v4-pro",
+        "https://artificialanalysis.ai/models/deepseek-v4-pro-0424",
+        "https://artificialanalysis.ai/models/deepseek-v4-flash-0731",
+        "https://artificialanalysis.ai/models/deepseek-v3-2",
+        "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://thenextweb.com/news/deepseek-v4-1-flash-launch-v4-pro-retired-price-cut",
+        "https://propakistani.pk/2026/09/11/deepseek-v4-1-flash-launches-with-lower-prices-and-native-vision/"
+      ],
+      "strengths": [
+        ["Very low price per token, private mode", "Prix au jeton très bas, mode privé"],
+        [
+          "1M token context on every V4 version",
+          "Contexte de 1M de jetons sur toutes les versions V4"
+        ],
+        [
+          "Tool calling and adjustable reasoning effort",
+          "Appel d’outils et effort de raisonnement réglable"
+        ]
+      ],
+      "limits": [
+        [
+          "Only V4.1 Flash reads images, and its maker says it lags on complex images",
+          "Seul V4.1 Flash lit les images, et son éditeur reconnaît un retard sur les images complexes"
+        ],
+        [
+          "V4.1 Flash is the newest version: prefer it for new work",
+          "V4.1 Flash est la version la plus récente : préférez-la pour tout nouveau travail"
+        ]
+      ],
+      "facts": [
+        ["1M token context (V3.2: 160K)", "Contexte de 1M de jetons (V3.2 : 160K)"],
+        ["Vision on V4.1 Flash only", "Vision sur V4.1 Flash uniquement"],
+        ["Open weights", "Poids ouverts"]
+      ]
+    },
+    {
+      "slug": "claude",
+      "differentiator": [
+        "Claude pairs a 1M token window and 128K output with adaptive thinking that always runs on the top tiers, and every current model reads images. Three tiers cover the range: Sonnet 5.5 at $2 per million input tokens, Opus 5.5 at $4, and Fable 5.1 at $10.",
+        "Claude associe un contexte de 1M de jetons et 128k de sortie à une réflexion adaptative toujours active sur les paliers hauts, et tous les modèles actuels lisent les images. Trois paliers couvrent la gamme : Sonnet 5.5 à 2 $ le million de jetons en entrée, Opus 5.5 à 4 $ et Fable 5.1 à 10 $."
+      ],
+      "signature": [
+        ["1M context, 128K output", "Contexte de 1M, sortie de 128k"],
+        ["Adaptive thinking, effort setting", "Réflexion adaptative, réglage d’effort"],
+        ["Three tiers: Sonnet, Opus, Fable", "Trois paliers : Sonnet, Opus, Fable"]
+      ],
+      "releases": [
+        {
+          "version": "Claude Sonnet 4.5",
+          "date": "2025-09-29",
+          "ids": ["claude-sonnet-4-5"],
+          "external": false,
+          "changes": [
+            [
+              "Anthropic’s coding and agent model of the time: 77.2% on SWE-bench Verified, 200K context, $3 / $15 per million tokens.",
+              "Le modèle de code et d’agents d’Anthropic à l’époque : 77,2 % à SWE-bench Verified, contexte de 200k, 3 $ / 15 $ le million de jetons."
+            ]
+          ],
+          "source": "https://www.anthropic.com/news/claude-sonnet-4-5"
+        },
+        {
+          "version": "Claude Opus 4.5",
+          "date": "2025-11-24",
+          "ids": ["claude-opus-4-5"],
+          "external": false,
+          "changes": [
+            [
+              "Opus tier at $5 / $25 per million tokens, 200K context.",
+              "Palier Opus à 5 $ / 25 $ le million de jetons, contexte de 200k."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-opus-4-5"
+        },
+        {
+          "version": "Claude Opus 4.6",
+          "date": "2026-02-05",
+          "ids": ["claude-opus-4-6"],
+          "external": false,
+          "changes": [
+            [
+              "Context window grows from 200K to 1M tokens.",
+              "La fenêtre de contexte passe de 200k à 1M de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-opus-4-6"
+        },
+        {
+          "version": "Claude Sonnet 4.6",
+          "date": "2026-02-17",
+          "ids": ["claude-sonnet-4-6"],
+          "external": false,
+          "changes": [
+            [
+              "Sonnet gets the 1M token context window.",
+              "Sonnet reçoit la fenêtre de contexte de 1M de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-sonnet-4-6"
+        },
+        {
+          "version": "Claude Opus 4.7",
+          "date": "2026-04-16",
+          "ids": ["claude-opus-4-7"],
+          "external": false,
+          "changes": [
+            [
+              "Introduces the current tokenizer, per Anthropic’s documentation.",
+              "Introduit le système de découpage en jetons actuel, selon la documentation d’Anthropic."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-opus-4-7"
+        },
+        {
+          "version": "Claude Opus 4.8",
+          "date": "2026-05-28",
+          "ids": ["claude-opus-4-8", "claude-opus-4-8-fast"],
+          "external": false,
+          "changes": [
+            [
+              "Scores 42 on the Artificial Analysis index, up from 41 for Opus 4.7.",
+              "Obtient 42 à l’indice d’Artificial Analysis, contre 41 pour Opus 4.7."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-opus-4-8"
+        },
+        {
+          "version": "Claude Fable 5",
+          "date": "2026-06-09",
+          "ids": ["claude-fable-5"],
+          "external": false,
+          "changes": [
+            [
+              "New top tier above Opus, priced at $10 / $50 per million tokens.",
+              "Nouveau palier au-dessus d’Opus, à 10 $ / 50 $ le million de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-fable-5"
+        },
+        {
+          "version": "Claude Sonnet 5",
+          "date": "2026-06-30",
+          "ids": ["claude-sonnet-5"],
+          "external": false,
+          "changes": [
+            [
+              "Fifth-generation Sonnet at $2 / $10 per million tokens, with reasoning.",
+              "Sonnet de cinquième génération à 2 $ / 10 $ le million de jetons, avec raisonnement."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-sonnet-5"
+        },
+        {
+          "version": "Claude Opus 5",
+          "date": "2026-07",
+          "ids": ["claude-opus-5", "claude-opus-5-fast"],
+          "external": false,
+          "changes": [
+            [
+              "Opus at $5 / $25 per million tokens, scoring 51 on the Artificial Analysis index.",
+              "Opus à 5 $ / 25 $ le million de jetons, avec un score de 51 à l’indice d’Artificial Analysis."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-opus-5"
+        },
+        {
+          "version": "Claude Fable 5.1",
+          "date": "2026-09-01",
+          "ids": ["claude-fable-5-1"],
+          "external": false,
+          "changes": [
+            [
+              "Refresh of the top tier, scoring 53 on the index against 50 for Fable 5.",
+              "Mise à jour du palier supérieur, score de 53 à l’indice contre 50 pour Fable 5."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/claude-fable-5-1"
+        },
+        {
+          "version": "Claude Opus 5.5",
+          "date": "2026-09-22",
+          "ids": ["claude-opus-5-5", "claude-opus-5-5-fast"],
+          "external": false,
+          "changes": [
+            [
+              "About 40% lower cost on typical workloads and 30% faster output than Opus 5, with a list price cut to $4 / $20.",
+              "Environ 40 % de coût en moins sur les charges de travail typiques et une sortie 30 % plus rapide qu’Opus 5, avec un prix catalogue baissé à 4 $ / 20 $."
+            ],
+            [
+              "Better agentic coding and knowledge work: Terminal-Bench 4.0 at 66.4% against 52.3% for Opus 5.",
+              "Meilleures performances en code agentique et en travail de connaissance : Terminal-Bench 4.0 à 66,4 % contre 52,3 % pour Opus 5."
+            ]
+          ],
+          "source": "https://www.anthropic.com/news/claude-opus-5-5"
+        },
+        {
+          "version": "Claude Sonnet 5.5",
+          "date": "2026-09-28",
+          "ids": ["claude-sonnet-5-5"],
+          "external": false,
+          "changes": [
+            [
+              "Scores 56 on the Artificial Analysis index, up from 38 for Sonnet 5, at the same $2 / $10 price.",
+              "Obtient 56 à l’indice d’Artificial Analysis, contre 38 pour Sonnet 5, au même prix de 2 $ / 10 $."
+            ],
+            [
+              "Adaptive thinking with a lowest setting that turns off up-front thinking.",
+              "Réflexion adaptative avec un réglage minimal qui supprime la réflexion initiale."
+            ]
+          ],
+          "source": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Claude Sonnet 5.5",
+          "ids": ["claude-sonnet-5-5"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 128000,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview"
+        },
+        {
+          "version": "Claude Opus 5.5",
+          "ids": ["claude-opus-5-5", "claude-opus-5-5-fast"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 128000,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://platform.claude.com/docs/en/models/opus-5-5/overview"
+        },
+        {
+          "version": "Claude Fable 5.1",
+          "ids": ["claude-fable-5-1"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 128000,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://platform.claude.com/docs/en/models/overview"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Polishing a document", "Peaufiner un document"],
+          "prompt": [
+            "Rewrite this project update for a non-technical board: keep it under 200 words, lead with the decision we need, and keep every number.",
+            "Réécrivez ce point d’avancement pour un conseil non technique : moins de 200 mots, commencez par la décision attendue et gardez tous les chiffres."
+          ],
+          "why": [
+            "Sonnet 5.5 is Anthropic’s speed and quality pick, at $2 per million input tokens.",
+            "Sonnet 5.5 est le choix vitesse et qualité d’Anthropic, à 2 $ le million de jetons en entrée."
+          ]
+        },
+        {
+          "title": ["A long coding task", "Une longue tâche de code"],
+          "prompt": [
+            "Read the repository I attached, add pagination to the orders list, update the tests, and tell me what you changed.",
+            "Lisez le dépôt joint, ajoutez la pagination à la liste des commandes, mettez les tests à jour et dites-moi ce que vous avez changé."
+          ],
+          "why": [
+            "Opus 5.5 is built for long agentic coding and knowledge work.",
+            "Opus 5.5 est conçu pour le code agentique au long cours et le travail de connaissance."
+          ]
+        },
+        {
+          "title": ["Questions about a scanned page", "Questions sur une page scannée"],
+          "prompt": [
+            "This is a photo of a restaurant receipt. Split the total among four people, with the wine only on two of them.",
+            "Voici la photo d’une addition de restaurant. Partagez le total entre quatre personnes, le vin ne concernant que deux d’entre elles."
+          ],
+          "why": [
+            "Every current Claude model accepts images.",
+            "Tous les modèles Claude actuels acceptent les images."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gpt",
+          "verdict": [
+            "GPT-6 Astra scores 53 on the index against 58 for Opus 5.5, with a different price ladder.",
+            "GPT-6 Astra obtient 53 à l’indice contre 58 pour Opus 5.5, avec une échelle de prix différente."
+          ]
+        },
+        {
+          "slug": "gemini",
+          "verdict": [
+            "Gemini 4 Argon reaches 53 on the index and Gemini Flash tiers cost less.",
+            "Gemini 4 Argon atteint 53 à l’indice et les paliers Flash de Gemini coûtent moins cher."
+          ]
+        },
+        {
+          "slug": "grok",
+          "verdict": [
+            "Grok 4.7 scores 46 on the index, well below Opus 5.5 at 58.",
+            "Grok 4.7 obtient 46 à l’indice, bien en dessous d’Opus 5.5 à 58."
+          ]
+        }
+      ],
+      "sources": [
+        "https://platform.claude.com/docs/en/models/opus-5-5/overview",
+        "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+        "https://platform.claude.com/docs/en/models/overview",
+        "https://www.anthropic.com/news/claude-opus-5-5",
+        "https://www.anthropic.com/news/claude-sonnet-4-5",
+        "https://artificialanalysis.ai/models/claude-sonnet-5-5",
+        "https://artificialanalysis.ai/models/claude-opus-5-5",
+        "https://artificialanalysis.ai/models/claude-fable-5-1",
+        "https://artificialanalysis.ai/models/claude-fable-5",
+        "https://artificialanalysis.ai/models/claude-opus-5",
+        "https://artificialanalysis.ai/models/claude-sonnet-5",
+        "https://artificialanalysis.ai/models/claude-opus-4-8",
+        "https://artificialanalysis.ai/models/claude-opus-4-7",
+        "https://artificialanalysis.ai/models/claude-opus-4-6",
+        "https://artificialanalysis.ai/models/claude-opus-4-5",
+        "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://aiweekly.co/fr/alerts/anthropic-sort-claude-opus-55-40-moins-cher-quopus-5",
+        "https://tech.ifeng.com/c/8wp16Vi4lWz",
+        "https://thezvi.substack.com/p/claude-fable-5-and-mythos-5-the-system"
+      ],
+      "strengths": [
+        [
+          "Clear writing and polished documents (Sonnet 5.5)",
+          "Rédaction claire et documents soignés (Sonnet 5.5)"
+        ],
+        [
+          "Strong at coding and long multi-step agent tasks",
+          "Fort en code et en longues tâches d’agent à plusieurs étapes"
+        ],
+        [
+          "Reads images, several per message, with tool calling",
+          "Lit les images, plusieurs par message, avec appel d’outils"
+        ]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: Anthropic's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation d’Anthropic s’applique"
+        ],
+        [
+          "Dear per token; Fable and Fast versions are among the dearest",
+          "Cher au jeton ; Fable et les versions Fast comptent parmi les plus chers"
+        ]
+      ],
+      "facts": [
+        ["1M token context (4.5 versions: 198K)", "Contexte de 1M de jetons (versions 4.5 : 198K)"],
+        [
+          "Vision, tool calling, adjustable reasoning effort",
+          "Vision, appel d’outils, effort de raisonnement réglable"
+        ]
+      ]
+    },
+    {
+      "slug": "gpt",
+      "differentiator": [
+        "OpenAI’s line is split into three named tiers since GPT-5.6: Sol for demanding coding and agent work, Terra in the middle, Luna for cheap, fast, high-volume tasks at $0.10 per million input tokens. GPT-6 raises the window to 1.05M tokens with 128K output.",
+        "La gamme d’OpenAI est découpée en trois paliers nommés depuis GPT-5.6 : Sol pour le code et les agents exigeants, Terra au milieu, Luna pour les tâches rapides et nombreuses à 0,10 $ le million de jetons en entrée. GPT-6 porte la fenêtre à 1,05M de jetons avec 128k en sortie."
+      ],
+      "signature": [
+        ["Sol, Terra and Luna tiers", "Paliers Sol, Terra et Luna"],
+        ["1.05M context, 128K output (GPT-6)", "Contexte de 1,05M, sortie de 128k (GPT-6)"],
+        ["Pro variants for harder problems", "Variantes Pro pour les problèmes difficiles"]
+      ],
+      "releases": [
+        {
+          "version": "GPT-4o mini",
+          "date": "2024-07",
+          "ids": ["openai-gpt-4o-mini-2024-07-18"],
+          "external": false,
+          "changes": [
+            [
+              "Small, cheap model with 128K context at $0.15 per million input tokens.",
+              "Petit modèle bon marché, contexte de 128k, à 0,15 $ le million de jetons en entrée."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-4o-mini"
+        },
+        {
+          "version": "GPT-4o",
+          "date": "2024-11",
+          "ids": ["openai-gpt-4o-2024-11-20"],
+          "external": false,
+          "changes": [
+            [
+              "November 2024 snapshot of GPT-4o: text and image in, 128K context, non-reasoning.",
+              "Version de novembre 2024 de GPT-4o : texte et image en entrée, contexte de 128k, sans raisonnement."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-4o"
+        },
+        {
+          "version": "GPT-5.2",
+          "date": "2025-12",
+          "ids": ["openai-gpt-52"],
+          "external": false,
+          "changes": [
+            [
+              "Reasoning model with a 400K context window at $1.75 / $14 per million tokens.",
+              "Modèle de raisonnement avec fenêtre de 400k à 1,75 $ / 14 $ le million de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-5-2"
+        },
+        {
+          "version": "GPT-5.3 Codex",
+          "date": "2026-02",
+          "ids": ["openai-gpt-53-codex"],
+          "external": false,
+          "changes": [
+            [
+              "Coding-specialized version, 400K context, scoring 33 on the Artificial Analysis index.",
+              "Version spécialisée en code, contexte de 400k, score de 33 à l’indice d’Artificial Analysis."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-5-3-codex"
+        },
+        {
+          "version": "GPT-5.4",
+          "date": "2026-03",
+          "ids": ["openai-gpt-54", "openai-gpt-54-pro", "openai-gpt-54-mini"],
+          "external": false,
+          "changes": [
+            [
+              "1M token context window on the main model, and a mini tier with a 400K window at $0.75 per million input tokens.",
+              "Fenêtre de contexte de 1M de jetons sur le modèle principal, et palier mini avec fenêtre de 400k à 0,75 $ le million de jetons en entrée."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-5-4"
+        },
+        {
+          "version": "GPT-5.5",
+          "date": "2026-04",
+          "ids": ["openai-gpt-55", "openai-gpt-55-pro"],
+          "external": false,
+          "changes": [
+            [
+              "Priced at $5 / $30 per million tokens; scores 38 on the index.",
+              "Facturé 5 $ / 30 $ le million de jetons ; score de 38 à l’indice."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-5-5"
+        },
+        {
+          "version": "GPT-5.6",
+          "date": "2026-07",
+          "ids": [
+            "openai-gpt-56-sol",
+            "openai-gpt-56-sol-pro",
+            "openai-gpt-56-terra",
+            "openai-gpt-56-terra-pro",
+            "openai-gpt-56-luna",
+            "openai-gpt-56-luna-pro"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Splits the line into three named tiers: Sol ($4 / $20), Terra ($2 / $12) and Luna ($0.20 / $1.20), all with 1M context.",
+              "Découpe la gamme en trois paliers nommés : Sol (4 $ / 20 $), Terra (2 $ / 12 $) et Luna (0,20 $ / 1,20 $), tous avec contexte de 1M."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-5-6-terra"
+        },
+        {
+          "version": "GPT-6",
+          "date": "2026-09",
+          "ids": [
+            "openai-gpt-6-astra",
+            "openai-gpt-6-astra-pro",
+            "openai-gpt-6-sol",
+            "openai-gpt-6-luna"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "Adds Astra as the top tier ($10 / $50) alongside Sol and Luna, with a 1.05M window and 128K output.",
+              "Ajoute Astra comme palier supérieur (10 $ / 50 $) à côté de Sol et Luna, avec une fenêtre de 1,05M et 128k en sortie."
+            ],
+            [
+              "GPT-6 Luna costs $0.10 per million input tokens, half of GPT-5.6 Luna.",
+              "GPT-6 Luna coûte 0,10 $ le million de jetons en entrée, moitié moins que GPT-5.6 Luna."
+            ]
+          ],
+          "source": "https://developers.openai.com/api/docs/models/gpt-6-astra"
+        },
+        {
+          "version": "GPT-6.1 Sol",
+          "date": "2026-09",
+          "ids": ["openai-gpt-61-sol"],
+          "external": false,
+          "changes": [
+            [
+              "Sol refresh at $2 / $10 per million tokens, scoring 52 on the index against 48 for GPT-6 Sol.",
+              "Mise à jour de Sol à 2 $ / 10 $ le million de jetons, score de 52 à l’indice contre 48 pour GPT-6 Sol."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-6-1-sol"
+        }
+      ],
+      "specs": [
+        {
+          "version": "GPT-6.1 Sol",
+          "ids": ["openai-gpt-61-sol"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/gpt-6-1-sol"
+        },
+        {
+          "version": "GPT-6 Astra",
+          "ids": ["openai-gpt-6-astra", "openai-gpt-6-astra-pro"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 128000,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://developers.openai.com/api/docs/models/gpt-6-astra"
+        },
+        {
+          "version": "GPT-6 Sol",
+          "ids": ["openai-gpt-6-sol"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 128000,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://developers.openai.com/api/docs/models/gpt-6-sol"
+        },
+        {
+          "version": "GPT-6 Luna",
+          "ids": ["openai-gpt-6-luna"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 128000,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://developers.openai.com/api/docs/models/gpt-6-luna"
+        },
+        {
+          "version": "GPT-5.6 Terra",
+          "ids": ["openai-gpt-56-terra", "openai-gpt-56-terra-pro"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/gpt-5-6-terra"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Triaging a pile of tickets cheaply",
+            "Trier une pile de tickets à moindre coût"
+          ],
+          "prompt": [
+            "Read these 200 support tickets and sort them into billing, login, bug and other. Give me a count per group.",
+            "Lisez ces 200 tickets de support et classez-les en facturation, connexion, bogue et autre. Donnez-moi le nombre par groupe."
+          ],
+          "why": [
+            "GPT-6 Luna is priced for high-volume tasks, $0.10 per million input tokens.",
+            "GPT-6 Luna est conçu pour les gros volumes, à 0,10 $ le million de jetons en entrée."
+          ]
+        },
+        {
+          "title": ["An agent that edits a codebase", "Un agent qui modifie du code"],
+          "prompt": [
+            "In this repo, replace the old date library with the standard one, run the tests and fix what breaks.",
+            "Dans ce dépôt, remplacez l’ancienne bibliothèque de dates par la bibliothèque standard, lancez les tests et corrigez ce qui casse."
+          ],
+          "why": [
+            "Sol is described by OpenAI as built for complex coding and agentic workflows.",
+            "OpenAI présente Sol comme conçu pour le code complexe et les flux agentiques."
+          ]
+        },
+        {
+          "title": ["Research on a hard question", "Recherche sur une question difficile"],
+          "prompt": [
+            "Compare three ways to fund a small community library, with costs, risks and a recommendation for a town of 8,000 people.",
+            "Comparez trois façons de financer une petite bibliothèque communale, avec coûts, risques et une recommandation pour une ville de 8 000 habitants."
+          ],
+          "why": [
+            "Astra is the top tier for complex reasoning and research.",
+            "Astra est le palier supérieur pour le raisonnement complexe et la recherche."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "claude",
+          "verdict": [
+            "Claude Opus 5.5 leads the index (58) over GPT-6 Astra (53), at less than half Astra’s price.",
+            "Claude Opus 5.5 mène l’indice (58) devant GPT-6 Astra (53), à moins de la moitié du prix d’Astra."
+          ]
+        },
+        {
+          "slug": "gemini",
+          "verdict": [
+            "Gemini 4 Argon matches Astra at 53 on the index.",
+            "Gemini 4 Argon égale Astra avec 53 à l’indice."
+          ]
+        },
+        {
+          "slug": "grok",
+          "verdict": [
+            "Grok 4.7 scores 46, below GPT-6.1 Sol at 52.",
+            "Grok 4.7 obtient 46, sous GPT-6.1 Sol à 52."
+          ]
+        }
+      ],
+      "sources": [
+        "https://developers.openai.com/api/docs/models/gpt-6-astra",
+        "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "https://artificialanalysis.ai/models/gpt-6-astra",
+        "https://artificialanalysis.ai/models/gpt-6-1-sol",
+        "https://artificialanalysis.ai/models/gpt-6-sol",
+        "https://artificialanalysis.ai/models/gpt-6-luna",
+        "https://artificialanalysis.ai/models/gpt-5-6-terra",
+        "https://artificialanalysis.ai/models/gpt-5-6-sol",
+        "https://artificialanalysis.ai/models/gpt-5-6-luna",
+        "https://artificialanalysis.ai/models/gpt-5-5",
+        "https://artificialanalysis.ai/models/gpt-5-4",
+        "https://artificialanalysis.ai/models/gpt-5-4-mini",
+        "https://artificialanalysis.ai/models/gpt-5-3-codex",
+        "https://artificialanalysis.ai/models/gpt-5-2",
+        "https://artificialanalysis.ai/models/gpt-4o",
+        "https://artificialanalysis.ai/models/gpt-4o-mini",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://datanorth.ai/news/openai-launches-gpt-6-sol-and-luna",
+        "https://www.eesel.ai/blog/gpt-5-6",
+        "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
+      ],
+      "strengths": [
+        [
+          "GPT-6.1 Sol: near Astra results at a quarter of its price",
+          "GPT-6.1 Sol : des résultats proches d’Astra pour un quart de son prix"
+        ],
+        [
+          "Over 1M token context, vision and tool calling on GPT-6",
+          "Plus de 1M de jetons de contexte, vision et outils sur GPT-6"
+        ],
+        [
+          "A tier for every budget, from Luna to Astra Pro",
+          "Un palier pour chaque budget, de Luna à Astra Pro"
+        ]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: OpenAI's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation d’OpenAI s’applique"
+        ],
+        [
+          "Pro versions of GPT-5.4 and 5.5 cost far more than anything else",
+          "Les versions Pro de GPT-5.4 et 5.5 coûtent bien plus que tout le reste"
+        ],
+        [
+          "GPT-4o and GPT-5.2 are older: prefer GPT-6",
+          "GPT-4o et GPT-5.2 sont anciens : préférez GPT-6"
+        ]
+      ],
+      "facts": [
+        ["GPT-6: 1.05M token context", "GPT-6 : contexte de 1,05M de jetons"],
+        [
+          "Vision, tool calling, reasoning effort",
+          "Vision, appel d’outils, effort de raisonnement"
+        ],
+        [
+          "\"Pro\" versions think longer on hard tasks",
+          "Les versions « Pro » réfléchissent plus longtemps"
+        ]
+      ]
+    },
+    {
+      "slug": "gpt-oss",
+      "differentiator": [
+        "gpt-oss is OpenAI’s open-weights model: 117B parameters with only 5.1B active, small enough for a single 80 GB GPU, under the permissive Apache 2.0 license. It is older and far less capable than GPT-6, but very fast and cheap to run.",
+        "gpt-oss est le modèle à poids ouverts d’OpenAI : 117 Md de paramètres dont seulement 5,1 Md actifs, assez compact pour un seul GPU de 80 Go, sous licence Apache 2.0. Il est plus ancien et bien moins capable que GPT-6, mais très rapide et peu coûteux à faire tourner."
+      ],
+      "signature": [
+        ["Apache 2.0 open weights", "Poids ouverts, licence Apache 2.0"],
+        ["117B MoE, 5.1B active", "MoE de 117 Md, 5,1 Md actifs"],
+        ["Low, medium or high reasoning", "Raisonnement faible, moyen ou élevé"]
+      ],
+      "releases": [
+        {
+          "version": "gpt-oss-120b",
+          "date": "2025-08",
+          "ids": ["openai-gpt-oss-120b", "e2ee-gpt-oss-120b-p"],
+          "external": false,
+          "changes": [
+            [
+              "First open-weights OpenAI model in the catalog: 117B mixture of experts, 131K context, adjustable reasoning effort, Apache 2.0.",
+              "Premier modèle à poids ouverts d’OpenAI du catalogue : MoE de 117 Md, contexte de 131k, effort de raisonnement réglable, Apache 2.0."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gpt-oss-120b"
+        }
+      ],
+      "specs": [
+        {
+          "version": "gpt-oss-120b",
+          "ids": ["openai-gpt-oss-120b", "e2ee-gpt-oss-120b-p"],
+          "params": "117B",
+          "activeParams": "5.1B",
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://huggingface.co/openai/gpt-oss-120b"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Quick answers at low cost", "Réponses rapides à faible coût"],
+          "prompt": [
+            "Turn these meeting bullets into a short follow-up email to the client, polite and under 120 words.",
+            "Transformez ces points de réunion en un court e-mail de suivi au client, poli et de moins de 120 mots."
+          ],
+          "why": [
+            "It generates about 190 tokens per second, per Artificial Analysis.",
+            "Il génère environ 190 jetons par seconde, selon Artificial Analysis."
+          ]
+        },
+        {
+          "title": ["Structured extraction", "Extraction structurée"],
+          "prompt": [
+            "From this invoice text, extract supplier, date, total and VAT as a JSON object.",
+            "À partir du texte de cette facture, extrayez le fournisseur, la date, le total et la TVA sous forme d’objet JSON."
+          ],
+          "why": [
+            "It supports function calling and structured output.",
+            "Il prend en charge l’appel de fonctions et la sortie structurée."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gemma",
+          "verdict": [
+            "Gemma 4 31B scores 15 on the index against 12, and also accepts images.",
+            "Gemma 4 31B obtient 15 à l’indice contre 12, et accepte aussi les images."
+          ]
+        },
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen’s open line goes much higher (Qwen3.8 27B reaches 34) and offers more sizes.",
+            "La gamme ouverte de Qwen monte bien plus haut (Qwen3.8 27B atteint 34) et propose plus de tailles."
+          ]
+        },
+        {
+          "slug": "glm",
+          "verdict": [
+            "GLM 5.3 Flash scores 42, far above, with a 1M context.",
+            "GLM 5.3 Flash obtient 42, bien au-dessus, avec un contexte de 1M."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/gpt-oss-120b",
+        "https://artificialanalysis.ai/models/gpt-oss-20b",
+        "https://huggingface.co/openai/gpt-oss-120b",
+        "https://artificialanalysis.ai/leaderboards/models"
+      ],
+      "strengths": [
+        ["Very low price, private mode", "Prix très bas, mode privé"],
+        ["Adjustable reasoning depth", "Profondeur de raisonnement réglable"]
+      ],
+      "limits": [
+        ["Text only, 128K context", "Texte seul, contexte de 128K"],
+        [
+          "The encrypted version has no tool calling, so none of Sub Rosa's agent tools",
+          "La version chiffrée n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
+        ]
+      ],
+      "facts": [
+        ["117B-parameter mixture of experts", "Mélange d’experts de 117 milliards de paramètres"],
+        ["128K token context", "Contexte de 128K jetons"]
+      ]
+    },
+    {
+      "slug": "gemini",
+      "differentiator": [
+        "Gemini’s Flash line is the fast, low-priced end of the market: Gemini 3.8 Flash outputs over 230 tokens per second at $0.75 per million input tokens, with a 1M window that takes text, images, speech and video. Output is text only.",
+        "La gamme Flash de Gemini occupe le bout rapide et économique du marché : Gemini 3.8 Flash sort plus de 230 jetons par seconde à 0,75 $ le million en entrée, avec une fenêtre de 1M qui accepte texte, images, parole et vidéo. La sortie est du texte seul."
+      ],
+      "signature": [
+        ["Flash: over 230 tokens per second", "Flash : plus de 230 jetons par seconde"],
+        ["Takes speech and video as input", "Accepte la parole et la vidéo en entrée"],
+        ["1M context on every version", "Contexte de 1M sur toutes les versions"]
+      ],
+      "releases": [
+        {
+          "version": "Gemini 3 Flash Preview",
+          "date": "2025-12-17",
+          "ids": ["gemini-3-flash-preview"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced the Gemini 3 Flash tier: 1M context, text, image, speech and video input, $0.50 / $3 per million tokens.",
+              "Introduit le palier Gemini 3 Flash : contexte de 1M, entrée texte, image, parole et vidéo, 0,50 $ / 3 $ le million de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gemini-3-flash"
+        },
+        {
+          "version": "Gemini 3.1 Pro Preview",
+          "date": "2026-02",
+          "ids": ["gemini-3-1-pro-preview"],
+          "external": false,
+          "changes": [
+            [
+              "Pro tier preview at $2 / $12 per million tokens, a reasoning model scoring 30 on the index.",
+              "Préversion du palier Pro à 2 $ / 12 $ le million de jetons, modèle de raisonnement avec un score de 30 à l’indice."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gemini-3-1-pro-preview"
+        },
+        {
+          "version": "Gemini 3.5 Flash",
+          "date": "2026-05",
+          "ids": ["gemini-3-5-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Reasoning Flash model scoring 33 on the index, priced at $1.50 / $9 per million tokens.",
+              "Modèle Flash de raisonnement avec un score de 33 à l’indice, facturé 1,50 $ / 9 $ le million de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gemini-3-5-flash"
+        },
+        {
+          "version": "Gemini 3.6 Flash",
+          "date": "2026-07",
+          "ids": ["gemini-3-6-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Price drops to $0.75 / $3.75 per million tokens, with a score of 34 on the index.",
+              "Le prix tombe à 0,75 $ / 3,75 $ le million de jetons, avec un score de 34 à l’indice."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gemini-3-6-flash"
+        },
+        {
+          "version": "Gemini 3.5 Flash-Lite",
+          "date": "2026-07",
+          "ids": ["gemini-3-5-flash-lite"],
+          "external": false,
+          "changes": [
+            [
+              "Cheapest tier at $0.30 / $2.50 per million tokens, over 320 tokens per second.",
+              "Palier le moins cher à 0,30 $ / 2,50 $ le million de jetons, plus de 320 jetons par seconde."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gemini-3-5-flash-lite"
+        },
+        {
+          "version": "Gemini 3.7 Flash",
+          "date": "2026-08",
+          "ids": ["gemini-3-7-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Index score rises to 39 at the same $0.75 / $3.75 price.",
+              "Le score à l’indice monte à 39 au même prix de 0,75 $ / 3,75 $."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gemini-3-7-flash"
+        },
+        {
+          "version": "Gemini 3.8 Flash",
+          "date": "2026-09",
+          "ids": ["gemini-3-8-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Index score of 41 at the same price; Google positions it for long-horizon software engineering and agents.",
+              "Score de 41 à l’indice au même prix ; Google le destine à l’ingénierie logicielle de longue haleine et aux agents."
+            ]
+          ],
+          "source": "https://ai.google.dev/gemini-api/docs/models"
+        },
+        {
+          "version": "Gemini 4 Argon",
+          "date": "2026-09",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Next-generation flagship, not in the catalog yet: 53 on the index at $2 / $10 per million tokens.",
+              "Modèle phare de la génération suivante, pas encore au catalogue : 53 à l’indice à 2 $ / 10 $ le million de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gemini-4-argon"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Gemini 3.8 Flash",
+          "ids": ["gemini-3-8-flash"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "audio", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/gemini-3-8-flash"
+        },
+        {
+          "version": "Gemini 3.7 Flash",
+          "ids": ["gemini-3-7-flash"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "audio", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/gemini-3-7-flash"
+        },
+        {
+          "version": "Gemini 3.5 Flash-Lite",
+          "ids": ["gemini-3-5-flash-lite"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "audio", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/gemini-3-5-flash-lite"
+        },
+        {
+          "version": "Gemini 3.1 Pro Preview",
+          "ids": ["gemini-3-1-pro-preview"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "audio", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/gemini-3-1-pro-preview"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Summarizing a recorded meeting", "Résumer une réunion enregistrée"],
+          "prompt": [
+            "Listen to this meeting recording and list the decisions, who owns each action and any date mentioned.",
+            "Écoutez cet enregistrement de réunion et listez les décisions, le responsable de chaque action et les dates mentionnées."
+          ],
+          "why": [
+            "Gemini models accept speech and video directly as input.",
+            "Les modèles Gemini acceptent directement la parole et la vidéo en entrée."
+          ]
+        },
+        {
+          "title": ["Fast answers at scale", "Réponses rapides en volume"],
+          "prompt": [
+            "Classify each of these 500 product reviews as positive, neutral or negative and give a one-line reason.",
+            "Classez chacun de ces 500 avis produits comme positif, neutre ou négatif et donnez une raison en une ligne."
+          ],
+          "why": [
+            "Flash-Lite is the cheapest tier, $0.30 per million input tokens.",
+            "Flash-Lite est le palier le moins cher, 0,30 $ le million de jetons en entrée."
+          ]
+        },
+        {
+          "title": ["Understanding a video", "Comprendre une vidéo"],
+          "prompt": [
+            "Watch this product demo and write a step-by-step help article with a screenshot description for each step.",
+            "Regardez cette démonstration de produit et rédigez un article d’aide pas à pas avec une description de capture pour chaque étape."
+          ],
+          "why": [
+            "Video input is supported across the Gemini versions in the catalog.",
+            "L’entrée vidéo est prise en charge sur les versions Gemini du catalogue."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "claude",
+          "verdict": [
+            "Claude Sonnet 5.5 scores 56 against 41 for Gemini 3.8 Flash, at a higher price.",
+            "Claude Sonnet 5.5 obtient 56 contre 41 pour Gemini 3.8 Flash, à un prix plus élevé."
+          ]
+        },
+        {
+          "slug": "gpt",
+          "verdict": [
+            "GPT-6 Luna is cheaper still ($0.10 input) but only scores 38.",
+            "GPT-6 Luna est encore moins cher (0,10 $ en entrée) mais n’obtient que 38."
+          ]
+        },
+        {
+          "slug": "grok",
+          "verdict": [
+            "Grok 4.7 scores 46 but costs more and does not match Flash speed.",
+            "Grok 4.7 obtient 46 mais coûte plus cher et n’égale pas la vitesse de Flash."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/gemini-3-8-flash",
+        "https://artificialanalysis.ai/models/gemini-3-7-flash",
+        "https://artificialanalysis.ai/models/gemini-3-6-flash",
+        "https://artificialanalysis.ai/models/gemini-3-5-flash",
+        "https://artificialanalysis.ai/models/gemini-3-5-flash-lite",
+        "https://artificialanalysis.ai/models/gemini-3-flash",
+        "https://artificialanalysis.ai/models/gemini-3-1-pro-preview",
+        "https://artificialanalysis.ai/models/gemini-4-argon",
+        "https://ai.google.dev/gemini-api/docs/models",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://datanorth.ai/news/google-launches-gemini-3-8-flash-gemini-3-8-flash-cyber",
+        "https://deepmind.google/models/gemini/flash/"
+      ],
+      "strengths": [
+        [
+          "Reads images, audio and video, not only text",
+          "Lit les images, l’audio et la vidéo, pas seulement le texte"
+        ],
+        [
+          "1M token context for long documents",
+          "Contexte de 1M de jetons pour les longs documents"
+        ],
+        [
+          "3.8 Flash is built for coding and agents at a moderate price",
+          "3.8 Flash est conçu pour le code et les agents à prix modéré"
+        ]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: Google's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation de Google s’applique"
+        ],
+        [
+          "The Pro and 3 Flash models are previews and may change",
+          "Les modèles Pro et 3 Flash sont des préversions et peuvent changer"
+        ]
+      ],
+      "facts": [
+        ["1M token context", "Contexte de 1M de jetons"],
+        ["Input: text, image, audio, video", "Entrée : texte, image, audio, vidéo"],
+        ["Tool calling and JSON schema output", "Appel d’outils et sortie en schéma JSON"]
+      ]
+    },
+    {
+      "slug": "grok",
+      "differentiator": [
+        "Grok emphasizes long context and low output prices: Grok 4.7 takes a 500K window and text plus images for $2 / $6 per million tokens, well under the other frontier models. The earlier Grok 4.20 and 4.3 reach 1M tokens or more and are cheaper still.",
+        "Grok mise sur le long contexte et des prix de sortie bas : Grok 4.7 accepte une fenêtre de 500k, texte et images, pour 2 $ / 6 $ le million de jetons, bien sous les autres modèles de pointe. Les anciens Grok 4.20 et 4.3 montent à 1M de jetons ou plus et coûtent encore moins."
+      ],
+      "signature": [
+        ["$2 in, $6 out per million tokens", "2 $ en entrée, 6 $ en sortie par million"],
+        ["Reads text and images", "Lit le texte et les images"],
+        ["Multi-agent variant (Grok 4.20)", "Variante multi-agents (Grok 4.20)"]
+      ],
+      "releases": [
+        {
+          "version": "Grok 4.20",
+          "date": "2026-04",
+          "ids": ["grok-4-20", "grok-4-20-multi-agent"],
+          "external": false,
+          "changes": [
+            [
+              "Reasoning model with text and image input at $1.25 / $2.50 per million tokens, plus a multi-agent variant.",
+              "Modèle de raisonnement avec entrée texte et image à 1,25 $ / 2,50 $ le million de jetons, plus une variante multi-agents."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/grok-4-20"
+        },
+        {
+          "version": "Grok 4.3",
+          "date": "2026-04",
+          "ids": ["grok-4-3"],
+          "external": false,
+          "changes": [
+            [
+              "1M token context at the same $1.25 / $2.50 price, scoring 25 on the index.",
+              "Contexte de 1M de jetons au même prix de 1,25 $ / 2,50 $, score de 25 à l’indice."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/grok-4-3"
+        },
+        {
+          "version": "Grok 4.5",
+          "date": "2026-07-08",
+          "ids": ["grok-4-5"],
+          "external": false,
+          "changes": [
+            [
+              "Moves to a 500K window and $2 / $6 pricing, scoring 39 on the index against 25 for Grok 4.3.",
+              "Passe à une fenêtre de 500k et à 2 $ / 6 $, score de 39 à l’indice contre 25 pour Grok 4.3."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/grok-4-5"
+        },
+        {
+          "version": "Grok 4.6",
+          "date": "2026-08",
+          "ids": ["grok-4-6"],
+          "external": false,
+          "changes": [
+            [
+              "Index score rises to 44 at the same price and window.",
+              "Le score à l’indice monte à 44 au même prix et avec la même fenêtre."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/grok-4-6"
+        },
+        {
+          "version": "Grok 4.7",
+          "date": "2026-09-21",
+          "ids": ["grok-4-7"],
+          "external": false,
+          "changes": [
+            [
+              "Index score of 46, described by xAI as its most capable model, with a May 2026 knowledge cutoff.",
+              "Score de 46 à l’indice, présenté par xAI comme son modèle le plus capable, avec des connaissances arrêtées à mai 2026."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/grok-4-7"
+        },
+        {
+          "version": "Grok Build 0.1",
+          "date": null,
+          "ids": ["grok-build-0-1"],
+          "external": false,
+          "changes": [
+            [
+              "Experimental compact model with a 256K window at $2 per million input tokens, per xAI’s model list. Release date not published.",
+              "Modèle compact expérimental avec fenêtre de 256k à 2 $ le million de jetons en entrée, selon la liste de modèles de xAI. Date de sortie non publiée."
+            ]
+          ],
+          "source": "https://docs.x.ai/docs/models"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Grok 4.7",
+          "ids": ["grok-4-7"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/grok-4-7"
+        },
+        {
+          "version": "Grok 4.6",
+          "ids": ["grok-4-6"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/grok-4-6"
+        },
+        {
+          "version": "Grok 4.3",
+          "ids": ["grok-4-3"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/grok-4-3"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Reading a large archive", "Lire de grandes archives"],
+          "prompt": [
+            "Here are two years of customer emails. Find the five complaints that come up most and quote one example of each.",
+            "Voici deux ans d’e-mails clients. Trouvez les cinq réclamations les plus fréquentes et citez un exemple de chacune."
+          ],
+          "why": [
+            "A 500K token window holds a very large pile of text in one go.",
+            "Une fenêtre de 500k jetons contient en une fois un très gros volume de texte."
+          ]
+        },
+        {
+          "title": ["Describing a photo", "Décrire une photo"],
+          "prompt": [
+            "This photo shows my garden wall with a crack. Describe the crack and say whether I should call a mason.",
+            "Cette photo montre le mur de mon jardin avec une fissure. Décrivez-la et dites si je dois appeler un maçon."
+          ],
+          "why": [
+            "Grok 4.7 accepts images next to text.",
+            "Grok 4.7 accepte les images en plus du texte."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "claude",
+          "verdict": [
+            "Claude Sonnet 5.5 scores 56 against 46, at a higher output price.",
+            "Claude Sonnet 5.5 obtient 56 contre 46, avec un prix de sortie plus élevé."
+          ]
+        },
+        {
+          "slug": "gpt",
+          "verdict": [
+            "GPT-6 Sol costs more on output ($10 against $6) and scores 48, close to Grok 4.7 at 46.",
+            "GPT-6 Sol coûte plus cher en sortie (10 $ contre 6 $) et obtient 48, proche de Grok 4.7 à 46."
+          ]
+        },
+        {
+          "slug": "gemini",
+          "verdict": [
+            "Gemini 3.8 Flash is faster and cheaper but scores 41.",
+            "Gemini 3.8 Flash est plus rapide et moins cher mais obtient 41."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/grok-4-7",
+        "https://artificialanalysis.ai/models/grok-4-6",
+        "https://artificialanalysis.ai/models/grok-4-5",
+        "https://artificialanalysis.ai/models/grok-4-3",
+        "https://artificialanalysis.ai/models/grok-4-20",
+        "https://docs.x.ai/docs/models",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://christopheralarcon.com/blog/grok-4-7-explained/",
+        "https://docs.x.ai/developers/models"
+      ],
+      "strengths": [
+        [
+          "Private mode despite being a closed model",
+          "Mode privé alors qu’il s’agit d’un modèle fermé"
+        ],
+        ["Up to 2M tokens of context (Grok 4.20)", "Jusqu’à 2M de jetons de contexte (Grok 4.20)"],
+        [
+          "Can search posts on X as well as the web",
+          "Peut chercher dans les publications de X en plus du web"
+        ]
+      ],
+      "limits": [
+        [
+          "Independent tests rate Grok 4.7 only slightly above 4.6",
+          "Les tests indépendants placent Grok 4.7 à peine au-dessus de 4.6"
+        ],
+        [
+          "Grok 4.20 Multi-Agent cannot use Sub Rosa's agent tools",
+          "Grok 4.20 Multi-Agent ne peut pas utiliser les outils de l’agent Sub Rosa"
+        ]
+      ],
+      "facts": [
+        ["Grok 4.7: 500K token context", "Grok 4.7 : contexte de 500K jetons"],
+        ["Vision, tool calling, X search", "Vision, appel d’outils, recherche X"]
+      ]
+    },
+    {
+      "slug": "qwen",
+      "differentiator": [
+        "These are Alibaba’s hosted Qwen models, with a 1M token window from Plus and Max 3.7 on. Qwen 3.8 Max reaches 45 on the Artificial Analysis index at $2 / $6 per million tokens, while Plus tiers read images and video for $0.40 to $0.50 per million input tokens.",
+        "Ce sont les modèles Qwen hébergés d’Alibaba, avec une fenêtre de 1M de jetons dès Plus et Max 3.7. Qwen 3.8 Max atteint 45 à l’indice d’Artificial Analysis à 2 $ / 6 $ le million de jetons, tandis que les paliers Plus lisent images et vidéo pour 0,40 à 0,50 $ le million en entrée."
+      ],
+      "signature": [
+        ["Plus tiers read images and video", "Les paliers Plus lisent images et vidéo"],
+        ["Max 3.8 scores 45 on the index", "Max 3.8 obtient 45 à l’indice"],
+        ["Plus at $0.40 per million input", "Plus à 0,40 $ le million en entrée"]
+      ],
+      "releases": [
+        {
+          "version": "Qwen3.5 397B A17B",
+          "date": "2026-02-16",
+          "ids": ["qwen3-5-397b-a17b"],
+          "external": false,
+          "changes": [
+            [
+              "Open-weights 397B mixture of experts (17B active) under Apache 2.0, 262K context, reads images.",
+              "MoE à poids ouverts de 397 Md (17 Md actifs) sous Apache 2.0, contexte de 262k, lit les images."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-5-397b-a17b"
+        },
+        {
+          "version": "Qwen3.6 Plus",
+          "date": "2026-04",
+          "ids": ["qwen-3-6-plus"],
+          "external": false,
+          "changes": [
+            [
+              "Hosted proprietary tier with a 1M context, accepting text, image and video, at $0.50 / $3 per million tokens.",
+              "Palier propriétaire hébergé avec contexte de 1M, acceptant texte, image et vidéo, à 0,50 $ / 3 $ le million de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-6-plus"
+        },
+        {
+          "version": "Qwen3.7 Max",
+          "date": "2026-05",
+          "ids": ["qwen-3-7-max"],
+          "external": false,
+          "changes": [
+            [
+              "Top hosted tier, text only, 1M context, $2.50 / $7.50 per million tokens, scoring 29 on the index.",
+              "Palier hébergé supérieur, texte seul, contexte de 1M, 2,50 $ / 7,50 $ le million de jetons, score de 29 à l’indice."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-7-max"
+        },
+        {
+          "version": "Qwen3.7 Plus",
+          "date": "2026-06-01",
+          "ids": ["qwen-3-7-plus"],
+          "external": false,
+          "changes": [
+            [
+              "Plus tier cut to $0.40 / $1.60 per million tokens, with image and video input.",
+              "Palier Plus ramené à 0,40 $ / 1,60 $ le million de jetons, avec entrée image et vidéo."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-7-plus"
+        },
+        {
+          "version": "Qwen3.8 Flash",
+          "date": "2026-08",
+          "ids": ["qwen-3-8-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Flash tier of the 3.8 generation. Artificial Analysis lists a related open-weights Qwen3.8-Flash-Next (180B, 6B active) scoring 40 on the index.",
+              "Palier Flash de la génération 3.8. Artificial Analysis référence un Qwen3.8-Flash-Next voisin à poids ouverts (180 Md, 6 Md actifs) qui obtient 40 à l’indice."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-8-flash-next"
+        },
+        {
+          "version": "Qwen3.8 Max",
+          "date": "2026-09",
+          "ids": ["qwen-3-8-max"],
+          "external": false,
+          "changes": [
+            [
+              "Index score of 45 against 29 for Qwen3.7 Max, with image input added and a 984K window; $2 / $6 per million tokens.",
+              "Score de 45 à l’indice contre 29 pour Qwen3.7 Max, avec l’entrée image en plus et une fenêtre de 984k ; 2 $ / 6 $ le million de jetons."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-8-max"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Qwen3.8 Max",
+          "ids": ["qwen-3-8-max"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/qwen3-8-max"
+        },
+        {
+          "version": "Qwen3.7 Plus",
+          "ids": ["qwen-3-7-plus"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/qwen3-7-plus"
+        },
+        {
+          "version": "Qwen3.7 Max",
+          "ids": ["qwen-3-7-max"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/qwen3-7-max"
+        },
+        {
+          "version": "Qwen3.5 397B A17B",
+          "ids": ["qwen3-5-397b-a17b"],
+          "params": "397B",
+          "activeParams": "17B",
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/qwen3-5-397b-a17b"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Analyzing a screen recording", "Analyser un enregistrement d’écran"],
+          "prompt": [
+            "Watch this screen recording of the bug and write the steps to reproduce it, with the exact menu names.",
+            "Regardez cet enregistrement d’écran du bogue et rédigez les étapes pour le reproduire, avec les noms exacts des menus."
+          ],
+          "why": [
+            "Qwen Plus tiers accept video input at $0.40 per million input tokens.",
+            "Les paliers Qwen Plus acceptent la vidéo en entrée à 0,40 $ le million de jetons."
+          ]
+        },
+        {
+          "title": ["Complex multi-step reasoning", "Raisonnement complexe en plusieurs étapes"],
+          "prompt": [
+            "Plan a three-city trip with a train budget of 400 euros, two rest days and one museum day each. Show the cost per leg.",
+            "Planifiez un voyage dans trois villes avec un budget train de 400 euros, deux jours de repos et un jour de musée dans chacune. Montrez le coût de chaque trajet."
+          ],
+          "why": [
+            "Qwen3.8 Max is the strongest hosted Qwen, 45 on the index.",
+            "Qwen3.8 Max est le Qwen hébergé le plus performant, 45 à l’indice."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "glm",
+          "verdict": [
+            "GLM 5.3 matches Qwen3.8 Max at 45 and publishes its weights.",
+            "GLM 5.3 égale Qwen3.8 Max à 45 et publie ses poids."
+          ]
+        },
+        {
+          "slug": "gemini",
+          "verdict": [
+            "Gemini 3.8 Flash scores 41 and is much faster.",
+            "Gemini 3.8 Flash obtient 41 et est bien plus rapide."
+          ]
+        },
+        {
+          "slug": "grok",
+          "verdict": [
+            "Grok 4.7 costs the same per token ($2 / $6) and scores 46.",
+            "Grok 4.7 coûte autant au jeton (2 $ / 6 $) et obtient 46."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/qwen3-8-max",
+        "https://artificialanalysis.ai/models/qwen3-8-flash-next",
+        "https://artificialanalysis.ai/models/qwen3-7-max",
+        "https://artificialanalysis.ai/models/qwen3-7-plus",
+        "https://artificialanalysis.ai/models/qwen3-6-plus",
+        "https://artificialanalysis.ai/models/qwen3-5-397b-a17b",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://datanorth.ai/news/alibaba-releases-qwen3-8-max",
+        "https://www.alibabacloud.com/help/en/model-studio/models"
+      ],
+      "strengths": [
+        ["Reads images and video", "Lit les images et la vidéo"],
+        [
+          "1M token context on the 3.6 to 3.8 versions",
+          "Contexte de 1M de jetons sur les versions 3.6 à 3.8"
+        ],
+        ["Qwen 3.8 Flash costs very little per token", "Qwen 3.8 Flash coûte très peu au jeton"]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: Alibaba Cloud's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation d’Alibaba Cloud s’applique"
+        ],
+        [
+          "For private mode, use the open Qwen models instead",
+          "Pour le mode privé, prenez plutôt les modèles Qwen ouverts"
+        ]
+      ],
+      "facts": [
+        ["1M token context (3.5 397B: 128K)", "Contexte de 1M de jetons (3.5 397B : 128K)"],
+        ["Input: text, image, video", "Entrée : texte, image, vidéo"],
+        ["Tool calling", "Appel d’outils"]
+      ]
+    },
+    {
+      "slug": "qwen-open",
+      "differentiator": [
+        "Qwen’s open models cover many sizes, from phone-class 7B to a 2.4T flagship, mostly under Apache 2.0. The 3.8 generation brings a 27B model scoring 34 on the Artificial Analysis index.",
+        "Les modèles ouverts de Qwen couvrent de nombreuses tailles, du 7 Md pour téléphone au modèle phare de 2,4 T, le plus souvent sous Apache 2.0. La génération 3.8 apporte un modèle de 27 Md qui obtient 34 à l’indice d’Artificial Analysis,"
+      ],
+      "signature": [
+        ["Sizes from 7B to 2.4T", "Des tailles de 7 Md à 2,4 T"],
+        ["Apache 2.0 on most models", "Apache 2.0 sur la plupart des modèles"],
+        ["27B model with image and video input", "Modèle de 27 Md avec entrée image et vidéo"]
+      ],
+      "releases": [
+        {
+          "version": "Qwen2.5 7B",
+          "date": "2024-09-19",
+          "ids": ["e2ee-qwen-2-5-7b-p"],
+          "external": false,
+          "changes": [
+            [
+              "Dense 7B model of the Qwen2.5 family, Apache 2.0, up to 128K tokens of input and 8K of output.",
+              "Modèle dense de 7 Md de la famille Qwen2.5, Apache 2.0, jusqu’à 128k jetons en entrée et 8k en sortie."
+            ]
+          ],
+          "source": "https://qwenlm.github.io/blog/qwen2.5/"
+        },
+        {
+          "version": "Qwen3 2507 and Coder",
+          "date": "2025-07",
+          "ids": [
+            "qwen3-235b-a22b-instruct-2507",
+            "qwen3-235b-a22b-thinking-2507",
+            "qwen3-coder-480b-a35b-instruct-turbo"
+          ],
+          "external": false,
+          "changes": [
+            [
+              "235B mixture of experts (22B active) in instruct and thinking versions with a 256K window, plus a 480B coder model (35B active).",
+              "MoE de 235 Md (22 Md actifs) en versions instruct et thinking avec fenêtre de 256k, plus un modèle de code de 480 Md (35 Md actifs)."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-235b-a22b-instruct-2507"
+        },
+        {
+          "version": "Qwen3 Next and Qwen3 VL",
+          "date": "2025-09",
+          "ids": ["qwen3-next-80b", "qwen3-vl-235b-a22b", "e2ee-qwen3-vl-30b-a3b-p"],
+          "external": false,
+          "changes": [
+            [
+              "Next: 80B mixture of experts with only 3B active. VL: vision-language models that read images, 235B and 30B sizes.",
+              "Next : MoE de 80 Md avec seulement 3 Md actifs. VL : modèles vision-langage qui lisent les images, en tailles 235 Md et 30 Md."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-vl-235b-a22b-reasoning"
+        },
+        {
+          "version": "Qwen3.5 small models",
+          "date": "2026-02",
+          "ids": ["qwen3-5-35b-a3b"],
+          "external": false,
+          "changes": [
+            [
+              "35B mixture of experts with 3B active, 262K context, image input, Apache 2.0.",
+              "MoE de 35 Md avec 3 Md actifs, contexte de 262k, entrée image, Apache 2.0."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-5-35b-a3b"
+        },
+        {
+          "version": "Qwen3.5 9B",
+          "date": "2026-03",
+          "ids": ["qwen3-5-9b"],
+          "external": false,
+          "changes": [
+            [
+              "Dense 9.7B model reading text, images and video, with a 262K window.",
+              "Modèle dense de 9,7 Md lisant texte, images et vidéo, avec fenêtre de 262k."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-5-9b"
+        },
+        {
+          "version": "Qwen3.6",
+          "date": "2026-04",
+          "ids": ["qwen3-6-27b", "qwen3-6-35b-a3b", "e2ee-qwen3-6-35b-a3b"],
+          "external": false,
+          "changes": [
+            [
+              "27.8B dense and 36B mixture of experts (3B active) models, Apache 2.0, text, image and video input.",
+              "Modèles dense de 27,8 Md et MoE de 36 Md (3 Md actifs), Apache 2.0, entrée texte, image et vidéo."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-6-27b"
+        },
+        {
+          "version": "Qwen3.8 2.4T A95B",
+          "date": "2026-08",
+          "ids": ["qwen-3-8-2-4t-a95b"],
+          "external": false,
+          "changes": [
+            [
+              "Open-weights flagship: 2.4T parameters with 95B active, scoring 40 on the index, under the Qwen3.8-Max license.",
+              "Modèle phare à poids ouverts : 2,4 T de paramètres dont 95 Md actifs, score de 40 à l’indice, sous licence Qwen3.8-Max."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/qwen3-8-2-4t-a95b"
+        },
+        {
+          "version": "Qwen3.8 27B",
+          "date": "2026-08-14",
+          "ids": ["qwen-3-8-27b", "e2ee-qwen3-8-27b"],
+          "external": false,
+          "changes": [
+            [
+              "GPQA Diamond rises from 87.8 to 89.2 and SWE-bench Pro from 53.5 to 61.7 over Qwen3.6 27B, per the model card.",
+              "GPQA Diamond passe de 87,8 à 89,2 et SWE-bench Pro de 53,5 à 61,7 par rapport à Qwen3.6 27B, selon la fiche de modèle."
+            ],
+            [
+              "Adjustable thinking depth and stronger performance on long agent tasks.",
+              "Profondeur de réflexion réglable et meilleures performances sur les tâches d’agent de longue durée."
+            ]
+          ],
+          "source": "https://huggingface.co/Qwen/Qwen3.8-27B"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Qwen3.8 2.4T A95B",
+          "ids": ["qwen-3-8-2-4t-a95b"],
+          "params": "2.4T",
+          "activeParams": "95B",
+          "openWeights": true,
+          "license": "Qwen3.8-Max License (commercial use with conditions)",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/qwen3-8-2-4t-a95b"
+        },
+        {
+          "version": "Qwen3.8 27B",
+          "ids": ["qwen-3-8-27b", "e2ee-qwen3-8-27b"],
+          "params": "27B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/qwen3-8-27b"
+        },
+        {
+          "version": "Qwen3.6 35B A3B",
+          "ids": ["qwen3-6-35b-a3b", "e2ee-qwen3-6-35b-a3b"],
+          "params": "35B",
+          "activeParams": "3B",
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/qwen3-6-35b-a3b"
+        },
+        {
+          "version": "Qwen3 235B A22B 2507",
+          "ids": ["qwen3-235b-a22b-instruct-2507", "qwen3-235b-a22b-thinking-2507"],
+          "params": "235B",
+          "activeParams": "22B",
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/qwen3-235b-a22b-instruct-2507"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Running a model on your own machine",
+            "Faire tourner un modèle sur sa propre machine"
+          ],
+          "prompt": [
+            "Explain in plain words the difference between a mortgage with a fixed rate and one with a variable rate, with a numeric example.",
+            "Expliquez en mots simples la différence entre un prêt à taux fixe et un prêt à taux variable, avec un exemple chiffré."
+          ],
+          "why": [
+            "Qwen3.8 27B has open Apache 2.0 weights and is small enough to self-host.",
+            "Qwen3.8 27B a des poids ouverts sous Apache 2.0 et est assez petit pour être auto-hébergé."
+          ]
+        },
+        {
+          "title": ["Reading a diagram or a form", "Lire un schéma ou un formulaire"],
+          "prompt": [
+            "This is a scanned tax form. List each field and what is filled in, and mark the empty ones.",
+            "Voici un formulaire fiscal scanné. Listez chaque champ et ce qui est rempli, et signalez les champs vides."
+          ],
+          "why": [
+            "Qwen3 VL and the 3.6 and 3.8 models accept images.",
+            "Qwen3 VL et les modèles 3.6 et 3.8 acceptent les images."
+          ]
+        },
+        {
+          "title": ["Code generation", "Génération de code"],
+          "prompt": [
+            "Write a SQL query that returns the ten customers with the highest total orders in 2025, and explain it line by line.",
+            "Écrivez une requête SQL qui renvoie les dix clients ayant le plus fort total de commandes en 2025 et expliquez-la ligne par ligne."
+          ],
+          "why": [
+            "The Coder 480B model is tuned for programming tasks.",
+            "Le modèle Coder de 480 Md est conçu pour la programmation."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gemma",
+          "verdict": [
+            "Gemma 4 31B scores 15 on the index, about half of Qwen3.8 27B at 34.",
+            "Gemma 4 31B obtient 15 à l’indice, environ moitié moins que Qwen3.8 27B à 34."
+          ]
+        },
+        {
+          "slug": "gpt-oss",
+          "verdict": [
+            "gpt-oss-120b scores 12 and is older, but runs fast on one GPU.",
+            "gpt-oss-120b obtient 12 et est plus ancien, mais tourne vite sur un seul GPU."
+          ]
+        },
+        {
+          "slug": "deepseek",
+          "verdict": [
+            "DeepSeek V4.1 Flash scores 39 with a 1M window but is a much larger download.",
+            "DeepSeek V4.1 Flash obtient 39 avec une fenêtre de 1M mais c’est un téléchargement bien plus lourd."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/qwen3-8-2-4t-a95b",
+        "https://artificialanalysis.ai/models/qwen3-8-27b",
+        "https://artificialanalysis.ai/models/qwen3-6-27b",
+        "https://artificialanalysis.ai/models/qwen3-6-35b-a3b",
+        "https://artificialanalysis.ai/models/qwen3-5-35b-a3b",
+        "https://artificialanalysis.ai/models/qwen3-5-9b",
+        "https://artificialanalysis.ai/models/qwen3-235b-a22b-instruct-2507",
+        "https://artificialanalysis.ai/models/qwen3-235b-a22b-instruct-2507-reasoning",
+        "https://artificialanalysis.ai/models/qwen3-coder-480b-a35b-instruct",
+        "https://artificialanalysis.ai/models/qwen3-next-80b-a3b-reasoning",
+        "https://artificialanalysis.ai/models/qwen3-vl-235b-a22b-reasoning",
+        "https://huggingface.co/Qwen/Qwen3.8-27B",
+        "https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking",
+        "https://qwenlm.github.io/blog/qwen2.5/",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://www.deeplearning.ai/the-batch/qwen3-8-max-lands-with-a-bang"
+      ],
+      "strengths": [
+        ["Private mode on every version", "Mode privé sur toutes les versions"],
+        [
+          "Wide choice of sizes, from very cheap to very large",
+          "Large choix de tailles, du très bon marché au très grand"
+        ],
+        [
+          "Qwen 3.8 27B reads images and video, 262K context",
+          "Qwen 3.8 27B lit images et vidéo, contexte de 262K"
+        ]
+      ],
+      "limits": [
+        [
+          "Older 2507, Next and Coder models trail the 3.6 to 3.8 ones",
+          "Les anciens modèles 2507, Next et Coder sont en retrait par rapport aux 3.6 à 3.8"
+        ],
+        [
+          "Qwen 2.5 7B (encrypted) has no tool calling, so none of Sub Rosa's agent tools",
+          "Qwen 2.5 7B (chiffré) n’a pas d’appel d’outils, donc pas d’outils de l’agent"
+        ]
+      ],
+      "facts": [
+        [
+          "Qwen 3.8 27B: 262K context, vision, tool calling",
+          "Qwen 3.8 27B : contexte de 262K, vision, outils"
+        ],
+        ["Open weights", "Poids ouverts"]
+      ]
+    },
+    {
+      "slug": "gemma",
+      "differentiator": [
+        "Gemma is Google DeepMind’s small open family built from the same research as Gemini. Gemma 4 moves to the permissive Apache 2.0 license, a 256K context, configurable thinking, and image and video input, in a 31B dense and a 26B mixture of experts with only 3.8B active.",
+        "Gemma est la petite famille ouverte de Google DeepMind, issue des mêmes recherches que Gemini. Gemma 4 passe à la licence permissive Apache 2.0, avec un contexte de 256k, une réflexion configurable et l’entrée image et vidéo, en version dense de 31 Md et en MoE de 26 Md dont seulement 3,8 Md actifs."
+      ],
+      "signature": [
+        ["Apache 2.0 from Gemma 4", "Apache 2.0 depuis Gemma 4"],
+        ["26B MoE with 3.8B active", "MoE de 26 Md, 3,8 Md actifs"],
+        ["140+ languages in pre-training", "Plus de 140 langues au pré-entraînement"]
+      ],
+      "releases": [
+        {
+          "version": "Gemma 3 27B",
+          "date": "2025-03",
+          "ids": ["google-gemma-3-27b-it"],
+          "external": false,
+          "changes": [
+            [
+              "27.4B dense model with a 128K window and image input, under the Gemma license.",
+              "Modèle dense de 27,4 Md avec fenêtre de 128k et entrée image, sous licence Gemma."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/gemma-3-27b"
+        },
+        {
+          "version": "Gemma 4",
+          "date": "2026-04",
+          "ids": ["google-gemma-4-31b-it", "google-gemma-4-26b-a4b-it"],
+          "external": false,
+          "changes": [
+            [
+              "Apache 2.0 license, 256K context and configurable thinking modes, with native function calling and system prompts.",
+              "Licence Apache 2.0, contexte de 256k et modes de réflexion configurables, avec appel de fonctions et messages système natifs."
+            ],
+            [
+              "Adds video input; the 26B variant is a mixture of experts with 3.8B active parameters.",
+              "Ajoute l’entrée vidéo ; la variante de 26 Md est un MoE avec 3,8 Md de paramètres actifs."
+            ]
+          ],
+          "source": "https://huggingface.co/google/gemma-4-31b-it"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Gemma 4 31B",
+          "ids": ["google-gemma-4-31b-it"],
+          "params": "30.7B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": [
+            "140+ languages in pre-training",
+            "Plus de 140 langues au pré-entraînement"
+          ],
+          "source": "https://huggingface.co/google/gemma-4-31b-it"
+        },
+        {
+          "version": "Gemma 4 26B A4B",
+          "ids": ["google-gemma-4-26b-a4b-it"],
+          "params": "25.2B",
+          "activeParams": "3.8B",
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/gemma-4-26b-a4b"
+        },
+        {
+          "version": "Gemma 3 27B",
+          "ids": ["google-gemma-3-27b-it"],
+          "params": "27.4B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Gemma license",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/gemma-3-27b"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "A private assistant on your own hardware",
+            "Un assistant privé sur votre propre matériel"
+          ],
+          "prompt": [
+            "Summarize this 20-page report in five bullet points and list any figure that looks inconsistent.",
+            "Résumez ce rapport de 20 pages en cinq points et listez les chiffres qui paraissent incohérents."
+          ],
+          "why": [
+            "Gemma 4 has open Apache 2.0 weights, so it can run entirely offline.",
+            "Gemma 4 a des poids ouverts sous Apache 2.0 : il peut tourner entièrement hors ligne."
+          ]
+        },
+        {
+          "title": ["Multilingual rewriting", "Réécriture multilingue"],
+          "prompt": [
+            "Translate this product description into German, Spanish and Italian, keeping the tone friendly.",
+            "Traduisez cette description de produit en allemand, espagnol et italien en gardant un ton chaleureux."
+          ],
+          "why": [
+            "Google reports 140+ languages in pre-training and 35+ with native support.",
+            "Google indique plus de 140 langues au pré-entraînement et plus de 35 en prise en charge native."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen3.8 27B scores 34 on the index against 15 for Gemma 4 31B.",
+            "Qwen3.8 27B obtient 34 à l’indice contre 15 pour Gemma 4 31B."
+          ]
+        },
+        {
+          "slug": "gpt-oss",
+          "verdict": [
+            "gpt-oss-120b is larger, text only, and scores 12 against 15.",
+            "gpt-oss-120b est plus grand, texte seul, et obtient 12 contre 15."
+          ]
+        },
+        {
+          "slug": "deepseek",
+          "verdict": [
+            "DeepSeek is far larger and stronger but needs data-center hardware.",
+            "DeepSeek est bien plus grand et plus fort mais exige du matériel de centre de données."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/gemma-4-31b",
+        "https://artificialanalysis.ai/models/gemma-4-26b-a4b",
+        "https://artificialanalysis.ai/models/gemma-3-27b",
+        "https://huggingface.co/google/gemma-4-31b-it",
+        "https://artificialanalysis.ai/leaderboards/models",
+        "https://huggingface.co/google/gemma-4-31B-it",
+        "https://deepmind.google/models/gemma/"
+      ],
+      "strengths": [
+        [
+          "Among the cheapest models that read images",
+          "Parmi les modèles les moins chers qui lisent les images"
+        ],
+        [
+          "Private mode, tool calling, 256K context (Gemma 4)",
+          "Mode privé, appel d’outils, contexte de 256K (Gemma 4)"
+        ]
+      ],
+      "limits": [
+        [
+          "Small models: less reliable on long reasoning than large ones",
+          "Petits modèles : moins fiables que les grands sur un raisonnement long"
+        ],
+        [
+          "Short replies: 8K tokens of output at most on Gemma 4",
+          "Réponses courtes : 8K jetons maximum en sortie sur Gemma 4"
+        ]
+      ],
+      "facts": [
+        [
+          "Gemma 4: 256K context, image and video input",
+          "Gemma 4 : contexte de 256K, entrée image et vidéo"
+        ],
+        ["Open weights", "Poids ouverts"]
+      ]
+    },
+    {
+      "slug": "llama",
+      "differentiator": [
+        "Meta’s Llama line made open weights mainstream, and Hermes 3 shows what a community fine-tune adds on top. In the catalog these are older, dense, text-only models: predictable and cheap to run, but newer families score higher.",
+        "La famille Llama de Meta a popularisé les poids ouverts, et Hermes 3 montre ce qu’un affinage communautaire ajoute. Au catalogue, ce sont des modèles plus anciens, denses et texte seul : prévisibles et peu coûteux à faire tourner, mais les familles récentes font mieux."
+      ],
+      "signature": [
+        ["Dense open weights from 3B to 405B", "Poids ouverts denses de 3 Md à 405 Md"],
+        [
+          "Llama 3.3 70B matches 3.1 70B at lower cost",
+          "Llama 3.3 70B égale 3.1 70B à moindre coût"
+        ],
+        [
+          "Hermes 3 adds steerable system prompts",
+          "Hermes 3 ajoute un pilotage par message système"
+        ]
+      ],
+      "releases": [
+        {
+          "version": "Llama 3.1",
+          "date": "2024-07-23",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Introduced the 405B flagship and 128K context",
+              "Introduit le modèle phare 405 Md et le contexte de 128k"
+            ],
+            [
+              "Eight supported languages and better tool use",
+              "Huit langues prises en charge et un meilleur usage des outils"
+            ]
+          ],
+          "source": "https://ai.meta.com/blog/meta-llama-3-1/"
+        },
+        {
+          "version": "Hermes 3 (Llama 3.1 405B)",
+          "date": "2024-08",
+          "ids": ["hermes-3-llama-3.1-405b"],
+          "external": false,
+          "changes": [
+            [
+              "Nous Research fine-tune of Llama 3.1 405B with function calling and strong steerability through system prompts",
+              "Affinage de Llama 3.1 405B par Nous Research, avec appel de fonctions et un pilotage fin par message système"
+            ]
+          ],
+          "source": "https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-405B"
+        },
+        {
+          "version": "Llama 3.2 3B",
+          "date": "2024-09-25",
+          "ids": ["llama-3.2-3b"],
+          "external": false,
+          "changes": [
+            [
+              "Small models distilled from 3.1 8B and 70B, built for phones and edge devices",
+              "Petits modèles distillés de 3.1 8B et 70B, pensés pour téléphones et appareils légers"
+            ],
+            [
+              "Quantized variants for faster on-device decoding",
+              "Variantes quantifiées pour un décodage plus rapide sur l’appareil"
+            ]
+          ],
+          "source": "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct"
+        },
+        {
+          "version": "Llama 3.3 70B",
+          "date": "2024-12-06",
+          "ids": ["llama-3.3-70b"],
+          "external": false,
+          "changes": [
+            [
+              "70B model improved over 3.1 70B: IFEval 92.1 vs 87.5, MATH 77.0 vs 68.0",
+              "Modèle de 70 Md amélioré par rapport à 3.1 70B : IFEval 92,1 contre 87,5, MATH 77,0 contre 68,0"
+            ],
+            [
+              "Refined multilingual training and fewer false refusals",
+              "Entraînement multilingue affiné et moins de refus injustifiés"
+            ]
+          ],
+          "source": "https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Llama 3.3 70B",
+          "ids": ["llama-3.3-70b"],
+          "params": "70B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Llama 3.3 Community License",
+          "maxOutput": 4096,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": ["8 languages", "8 langues"],
+          "source": "https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct"
+        },
+        {
+          "version": "Llama 3.2 3B",
+          "ids": ["llama-3.2-3b"],
+          "params": "3.21B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Llama 3.2 Community License",
+          "maxOutput": 4096,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": ["8 languages", "8 langues"],
+          "source": "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct"
+        },
+        {
+          "version": "Hermes 3 405B",
+          "ids": ["hermes-3-llama-3.1-405b"],
+          "params": "406B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Llama 3.1 Community License",
+          "maxOutput": 16384,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-405B"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Cheap bulk text chores", "Tâches textuelles en volume à bas prix"],
+          "prompt": [
+            "Rewrite each of these 20 product descriptions in a friendly tone, under 40 words each. Keep the product names unchanged.",
+            "Réécrivez chacune de ces 20 descriptions de produit sur un ton chaleureux, en moins de 40 mots. Gardez les noms de produits tels quels."
+          ],
+          "why": [
+            "Llama 3.2 3B costs very little and handles simple rewriting.",
+            "Llama 3.2 3B coûte très peu et gère bien la réécriture simple."
+          ]
+        },
+        {
+          "title": ["Steerable character writing", "Écriture de personnages pilotée"],
+          "prompt": [
+            "You are Captain Mara, a sarcastic ship’s pilot. Stay in character and describe our arrival at a storm-wrecked harbor in four sentences.",
+            "Vous êtes la capitaine Mara, une pilote de navire sarcastique. Restez dans votre personnage et décrivez notre arrivée dans un port ravagé par la tempête en quatre phrases."
+          ],
+          "why": [
+            "Hermes 3 follows a persona set in the system prompt closely.",
+            "Hermes 3 suit de près un personnage fixé dans le message système."
+          ]
+        },
+        {
+          "title": ["General assistant on a budget", "Assistant généraliste économique"],
+          "prompt": [
+            "Summarize this email thread in five bullet points and list the decisions that are still open.",
+            "Résumez ce fil d’e-mails en cinq puces et listez les décisions encore ouvertes."
+          ],
+          "why": [
+            "Llama 3.3 70B is a solid mid-size all-rounder with tool calling.",
+            "Llama 3.3 70B est un généraliste solide de taille moyenne, avec appel d’outils."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gemma",
+          "verdict": [
+            "Newer Google open models that read images, where Llama 3.3 is text only.",
+            "Modèles ouverts plus récents de Google qui lisent les images, là où Llama 3.3 reste texte seul."
+          ]
+        },
+        {
+          "slug": "mistral",
+          "verdict": [
+            "Mistral Small is far cheaper, reads images and has a 256K context.",
+            "Mistral Small est bien moins cher, lit les images et offre un contexte de 256k."
+          ]
+        },
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen open models offer reasoning and larger context at similar prices.",
+            "Les modèles ouverts Qwen offrent raisonnement et plus grand contexte à prix voisins."
+          ]
+        }
+      ],
+      "sources": [
+        "https://ai.meta.com/blog/meta-llama-3-1/",
+        "https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct",
+        "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct",
+        "https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-405B",
+        "https://artificialanalysis.ai/models/llama-3-3-instruct-70b",
+        "https://api.venice.ai/api/v1/models?type=text"
+      ],
+      "strengths": [
+        ["Private mode, well-known behavior", "Mode privé, comportement bien connu"],
+        [
+          "Hermes 3 follows your system prompt and persona closely",
+          "Hermes 3 suit de près votre prompt système et votre personnage"
+        ]
+      ],
+      "limits": [
+        [
+          "Older generation: no vision, no reasoning mode",
+          "Ancienne génération : ni vision, ni mode raisonnement"
+        ],
+        [
+          "Hermes 3 has no tool calling, so none of Sub Rosa's agent tools",
+          "Hermes 3 n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
+        ],
+        [
+          "Llama 3.3 70B costs more than newer, stronger models",
+          "Llama 3.3 70B coûte plus cher que des modèles plus récents et plus forts"
+        ]
+      ],
+      "facts": [
+        ["128K token context", "Contexte de 128K jetons"],
+        ["Replies capped at 4K tokens (Llama)", "Réponses limitées à 4K jetons (Llama)"]
+      ]
+    },
+    {
+      "slug": "mistral",
+      "differentiator": [
+        "Mistral Small is a compact dense 24B model under Apache 2.0, tuned for low latency and clean function calling. It reads images and costs a fraction of larger models, but it has no reasoning mode, so hard problems are better sent elsewhere.",
+        "Mistral Small est un modèle dense compact de 24 Md sous licence Apache 2.0, réglé pour une faible latence et un appel de fonctions propre. Il lit les images et coûte une fraction des gros modèles, mais sans mode raisonnement : les problèmes difficiles sont à confier à d’autres."
+      ],
+      "signature": [
+        ["Dense 24B under Apache 2.0", "24 Md dense sous licence Apache 2.0"],
+        ["Latency-first design, reads images", "Pensé pour la latence, lit les images"],
+        [
+          "3.2 cut repetitive loops, firmer tool calls",
+          "3.2 réduit les boucles et fiabilise les appels d’outils"
+        ]
+      ],
+      "releases": [
+        {
+          "version": "Mistral Small 3",
+          "date": "2025-01-30",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "24B latency-optimized model, Apache 2.0, over 3x faster than Llama 3.3 70B on the same hardware, per Mistral",
+              "Modèle de 24 Md optimisé pour la latence, Apache 2.0, plus de 3 fois plus rapide que Llama 3.3 70B sur le même matériel, selon Mistral"
+            ]
+          ],
+          "source": "https://mistral.ai/news/mistral-small-3"
+        },
+        {
+          "version": "Mistral Small 3.1",
+          "date": "2025-03-17",
+          "ids": [],
+          "external": true,
+          "changes": [
+            ["Added image understanding", "Ajoute la compréhension des images"],
+            ["Context extended to 128K tokens", "Contexte porté à 128k jetons"]
+          ],
+          "source": "https://mistral.ai/news/mistral-small-3-1"
+        },
+        {
+          "version": "Mistral Small 3.2",
+          "date": "2025-06-20",
+          "ids": ["mistral-small-3-2-24b-instruct"],
+          "external": false,
+          "changes": [
+            [
+              "Better at following precise instructions: 84.78% vs 82.75% on the card’s test",
+              "Meilleur suivi des consignes précises : 84,78 % contre 82,75 % sur le test de la fiche"
+            ],
+            [
+              "Fewer infinite or repetitive generations, a more robust function calling template",
+              "Moins de générations infinies ou répétitives, un modèle d’appel de fonctions plus robuste"
+            ]
+          ],
+          "source": "https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506"
+        },
+        {
+          "version": "Mistral Small 4",
+          "date": "2026-03-16",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Mixture of experts with 119B total and 6.5B active parameters, 256K context, reasoning variant",
+              "Mélange d’experts de 119 Md au total et 6,5 Md actifs, contexte de 256k, variante avec raisonnement"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/mistral-small-4"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Mistral Small 3.2",
+          "ids": ["mistral-small-3-2-24b-instruct"],
+          "params": "24B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": 16384,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/mistral-small-3-2"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Quick extraction from photos", "Extraction rapide depuis des photos"],
+          "prompt": [
+            "Read this photo of a restaurant receipt and list each item with its price as a table, then give the total.",
+            "Lisez cette photo de ticket de restaurant et listez chaque article avec son prix dans un tableau, puis donnez le total."
+          ],
+          "why": [
+            "It accepts images and is among the cheapest models here.",
+            "Il accepte les images et figure parmi les modèles les moins chers."
+          ]
+        },
+        {
+          "title": ["Tool-driven workflows", "Flux de travail avec outils"],
+          "prompt": [
+            "Look up the three most recent notes about the Lyon project and draft a status update from them.",
+            "Cherchez les trois notes les plus récentes sur le projet Lyon et rédigez un point d’avancement à partir d’elles."
+          ],
+          "why": [
+            "Version 3.2 made function calling more robust.",
+            "La version 3.2 a rendu l’appel de fonctions plus robuste."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gemma",
+          "verdict": [
+            "Gemma is the closest open rival that also reads images, from a newer generation.",
+            "Gemma est le rival ouvert le plus proche qui lit aussi les images, d’une génération plus récente."
+          ]
+        },
+        {
+          "slug": "llama",
+          "verdict": [
+            "Llama 3.3 70B costs more and is text only, but it is a larger model.",
+            "Llama 3.3 70B coûte plus cher et reste texte seul, mais c’est un modèle plus grand."
+          ]
+        },
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen open models add reasoning where Mistral Small has none.",
+            "Les modèles ouverts Qwen ajoutent le raisonnement, absent de Mistral Small."
+          ]
+        }
+      ],
+      "sources": [
+        "https://mistral.ai/news/mistral-small-3",
+        "https://mistral.ai/news/mistral-small-3-1",
+        "https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+        "https://artificialanalysis.ai/models/mistral-small-3-2",
+        "https://artificialanalysis.ai/models/mistral-small-4",
+        "https://api.venice.ai/api/v1/models?type=text"
+      ],
+      "strengths": [
+        [
+          "One of the cheapest models in the catalog",
+          "L’un des modèles les moins chers du catalogue"
+        ],
+        [
+          "Reads images, tool calling, 256K context",
+          "Lit les images, appel d’outils, contexte de 256K"
+        ]
+      ],
+      "limits": [
+        [
+          "No reasoning mode: weaker on hard problems",
+          "Pas de mode raisonnement : plus faible sur les problèmes difficiles"
+        ]
+      ],
+      "facts": [
+        ["24B parameters, 256K context", "24 milliards de paramètres, contexte de 256K"],
+        ["Open weights", "Poids ouverts"]
+      ]
+    },
+    {
+      "slug": "minimax",
+      "differentiator": [
+        "MiniMax builds mixture-of-experts models aimed at coding and multi-step agent work, with only about 10B parameters active in the M2 line. M3 moves to 1M context and reads images and video, at a price that stays low.",
+        "MiniMax conçoit des modèles à mélange d’experts orientés vers le code et le travail d’agent en plusieurs étapes, avec environ 10 Md de paramètres actifs dans la lignée M2. M3 passe à 1M de contexte et lit images et vidéo, à un prix toujours bas."
+      ],
+      "signature": [
+        [
+          "Only 10B active of 230B in M2.5 and M2.7",
+          "Seulement 10 Md actifs sur 230 Md pour M2.5 et M2.7"
+        ],
+        ["Tuned for coding and agent loops", "Réglé pour le code et les boucles d’agent"],
+        ["M3: 1M context, text, image and video", "M3 : 1M de contexte, texte, image et vidéo"]
+      ],
+      "releases": [
+        {
+          "version": "MiniMax M2.5",
+          "date": "2026-02",
+          "ids": ["minimax-m25"],
+          "external": false,
+          "changes": [
+            [
+              "80.2% on SWE-bench Verified, per MiniMax, with stronger tool use and search",
+              "80,2 % sur SWE-bench Verified selon MiniMax, avec un meilleur usage des outils et de la recherche"
+            ],
+            [
+              "Plans the architecture of a project before writing code",
+              "Planifie l’architecture d’un projet avant d’écrire du code"
+            ]
+          ],
+          "source": "https://huggingface.co/MiniMaxAI/MiniMax-M2.5"
+        },
+        {
+          "version": "MiniMax M2.7",
+          "date": "2026-03-18",
+          "ids": ["minimax-m27"],
+          "external": false,
+          "changes": [
+            [
+              "Self-evolution: an internal version optimized its own coding scaffold over 100+ rounds",
+              "Auto-évolution : une version interne a optimisé son propre cadre de code sur plus de 100 cycles"
+            ],
+            [
+              "Agent Teams for multi-agent collaboration and broader tool calling",
+              "Agent Teams pour la collaboration multi-agents et un appel d’outils élargi"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/minimax-m2-7"
+        },
+        {
+          "version": "MiniMax M3",
+          "date": "2026-06-01",
+          "ids": ["minimax-m3-preview"],
+          "external": false,
+          "changes": [
+            [
+              "428B total and 23B active parameters with 1M context",
+              "428 Md de paramètres au total dont 23 Md actifs, contexte de 1M"
+            ],
+            [
+              "Native multimodal input (text, image, video) and sparse attention for 9x faster prefill, per MiniMax",
+              "Entrée multimodale native (texte, image, vidéo) et attention parcimonieuse, préremplissage 9 fois plus rapide selon MiniMax"
+            ]
+          ],
+          "source": "https://huggingface.co/MiniMaxAI/MiniMax-M3"
+        }
+      ],
+      "specs": [
+        {
+          "version": "MiniMax M3 (preview)",
+          "ids": ["minimax-m3-preview"],
+          "params": "428B",
+          "activeParams": "23B",
+          "openWeights": true,
+          "license": "MiniMax Community License",
+          "maxOutput": 65536,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/minimax-m3"
+        },
+        {
+          "version": "MiniMax M2.7",
+          "ids": ["minimax-m27"],
+          "params": "230B",
+          "activeParams": "10B",
+          "openWeights": true,
+          "license": "Non-commercial",
+          "maxOutput": 32768,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/minimax-m2-7"
+        },
+        {
+          "version": "MiniMax M2.5",
+          "ids": ["minimax-m25"],
+          "params": "230B",
+          "activeParams": "10B",
+          "openWeights": true,
+          "license": "Modified MIT",
+          "maxOutput": 32768,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://huggingface.co/MiniMaxAI/MiniMax-M2.5"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Fix a bug across several files",
+            "Corriger un bogue réparti sur plusieurs fichiers"
+          ],
+          "prompt": [
+            "Here are three files from my checkout flow and the error log. Find why the total sometimes shows twice the price, then propose a minimal fix.",
+            "Voici trois fichiers de mon tunnel de paiement et le journal d’erreurs. Trouvez pourquoi le total affiche parfois le double du prix, puis proposez un correctif minimal."
+          ],
+          "why": [
+            "The M2 line is tuned for coding and tool-driven repair loops at a low price.",
+            "La lignée M2 est réglée pour le code et les boucles de réparation avec outils, à bas prix."
+          ]
+        },
+        {
+          "title": [
+            "Read a whole long document with figures",
+            "Lire un long document avec figures"
+          ],
+          "prompt": [
+            "Read this 200-page report with its charts and list every figure that contradicts the executive summary.",
+            "Lisez ce rapport de 200 pages avec ses graphiques et listez chaque chiffre qui contredit le résumé exécutif."
+          ],
+          "why": [
+            "M3 accepts images and a 1M token context window.",
+            "M3 accepte les images et une fenêtre de 1M de jetons."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "glm",
+          "verdict": [
+            "GLM is the closest open coding and agent family, with larger flagships.",
+            "GLM est la famille ouverte la plus proche pour le code et les agents, avec des modèles phares plus grands."
+          ]
+        },
+        {
+          "slug": "kimi",
+          "verdict": [
+            "Kimi targets the same agent work and generally costs more.",
+            "Kimi vise le même travail d’agent et coûte en général plus cher."
+          ]
+        },
+        {
+          "slug": "deepseek",
+          "verdict": [
+            "DeepSeek competes on price and coding, with no image input in most versions.",
+            "DeepSeek rivalise sur le prix et le code, sans entrée d’image dans la plupart des versions."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/MiniMaxAI/MiniMax-M2.5",
+        "https://huggingface.co/MiniMaxAI/MiniMax-M2.7",
+        "https://huggingface.co/MiniMaxAI/MiniMax-M3",
+        "https://artificialanalysis.ai/models/minimax-m2-7",
+        "https://artificialanalysis.ai/models/minimax-m2-5",
+        "https://artificialanalysis.ai/models/minimax-m3",
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://www.minimax.io"
+      ],
+      "strengths": [
+        [
+          "Built for coding and multi-step agent tasks",
+          "Conçus pour le code et les tâches d’agent à plusieurs étapes"
+        ],
+        ["Low price, private mode, tool calling", "Prix bas, mode privé, appel d’outils"]
+      ],
+      "limits": [
+        ["M2.5 and M2.7 read text only", "M2.5 et M2.7 ne lisent que le texte"],
+        ["M3 is a preview and may change", "M3 est une préversion et peut changer"]
+      ],
+      "facts": [
+        ["M2.7: 198K context", "M2.7 : contexte de 198K"],
+        ["M3 preview: 512K context, vision", "M3 préversion : contexte de 512K, vision"]
+      ]
+    },
+    {
+      "slug": "mercury",
+      "differentiator": [
+        "Mercury models are diffusion language models: they refine many tokens in parallel instead of writing one at a time. That makes them several times faster than usual models, which suits voice agents and coding tools, while their intelligence scores stay modest.",
+        "Les modèles Mercury sont des modèles de langage par diffusion : ils affinent plusieurs jetons en parallèle au lieu d’écrire un par un. Ils sont donc bien plus rapides que la moyenne, ce qui convient aux agents vocaux et les outils de code, mais leur score d’intelligence reste modeste."
+      ],
+      "signature": [
+        ["Diffusion decoding, not token by token", "Décodage par diffusion, pas jeton par jeton"],
+        [
+          "Over 1,000 tokens per second, per Inception",
+          "Plus de 1 000 jetons par seconde selon Inception"
+        ],
+        [
+          "Tunable reasoning and parallel tool calls",
+          "Raisonnement réglable et appels d’outils en parallèle"
+        ]
+      ],
+      "releases": [
+        {
+          "version": "Mercury 2",
+          "date": "2026-02-24",
+          "ids": ["mercury-2"],
+          "external": false,
+          "changes": [
+            [
+              "Diffusion-based reasoning model with tool use and schema-aligned JSON, 128K context",
+              "Modèle de raisonnement par diffusion avec outils et JSON conforme au schéma, contexte de 128k"
+            ],
+            [
+              "Under 300 ms time to first token for voice use, per Inception",
+              "Moins de 300 ms avant le premier jeton pour la voix, selon Inception"
+            ]
+          ],
+          "source": "https://www.inceptionlabs.ai/blog"
+        },
+        {
+          "version": "Mercury 2.5",
+          "date": "2026-10-01",
+          "ids": ["mercury-2-5"],
+          "external": false,
+          "changes": [
+            ["Context grows from 128K to 260K tokens", "Le contexte passe de 128k à 260k jetons"],
+            [
+              "Tunable reasoning controls and parallel tool calls",
+              "Contrôles de raisonnement réglables et appels d’outils en parallèle"
+            ],
+            [
+              "About 1,107 tokens per second and 40% more intelligence than Mercury 2, per Inception",
+              "Environ 1 107 jetons par seconde et 40 % d’intelligence en plus que Mercury 2, selon Inception"
+            ]
+          ],
+          "source": "https://www.inceptionlabs.ai/blog/introducing-mercury-2-5"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Mercury 2.5",
+          "ids": ["mercury-2-5"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 65536,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/mercury-2-5"
+        },
+        {
+          "version": "Mercury 2",
+          "ids": ["mercury-2"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 50000,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/mercury-2"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Instant replies in a voice assistant",
+            "Réponses instantanées dans un assistant vocal"
+          ],
+          "prompt": [
+            "You are a phone assistant for a dental clinic. A caller asks to move Thursday’s 3 pm appointment to Friday morning. Answer in two short sentences and ask one clarifying question.",
+            "Vous êtes l’assistant téléphonique d’un cabinet dentaire. Un appelant veut déplacer son rendez-vous de jeudi 15 h à vendredi matin. Répondez en deux phrases courtes et posez une question de précision."
+          ],
+          "why": [
+            "Very low latency keeps a spoken exchange natural.",
+            "Une latence très basse garde l’échange oral naturel."
+          ]
+        },
+        {
+          "title": [
+            "Fast code edits in an editor",
+            "Modifications de code rapides dans un éditeur"
+          ],
+          "prompt": [
+            "Rename the function getUser to fetchUser in this file and update every call. Return only the changed code.",
+            "Renommez la fonction getUser en fetchUser dans ce fichier et mettez à jour chaque appel. Renvoyez uniquement le code modifié."
+          ],
+          "why": [
+            "Short, repetitive edits benefit from raw speed more than from deep reasoning.",
+            "Les modifications courtes et répétitives profitent de la vitesse plus que d’un raisonnement profond."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gemini",
+          "verdict": [
+            "Gemini Flash models are fast and score higher, with image input.",
+            "Les modèles Gemini Flash sont rapides et font mieux, avec l’entrée d’images."
+          ]
+        },
+        {
+          "slug": "gpt-oss",
+          "verdict": [
+            "gpt-oss is open and reasons deeper, but generates far more slowly.",
+            "gpt-oss est ouvert et raisonne plus profondément, mais génère bien plus lentement."
+          ]
+        },
+        {
+          "slug": "mistral",
+          "verdict": [
+            "Mistral Small is similarly cheap and reads images, without diffusion speed.",
+            "Mistral Small est aussi bon marché et lit les images, sans la vitesse de la diffusion."
+          ]
+        }
+      ],
+      "sources": [
+        "https://www.inceptionlabs.ai/blog",
+        "https://www.inceptionlabs.ai/blog/introducing-mercury-2-5",
+        "https://artificialanalysis.ai/models/mercury-2-5",
+        "https://artificialanalysis.ai/models/mercury-2",
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://www.testingcatalog.com/inception-launches-mercury-2-5-at-1-107-tokens-per-second/",
+        "https://www.inceptionlabs.ai/models"
+      ],
+      "strengths": [
+        [
+          "Very fast output: over 1,000 tokens per second, according to Inception",
+          "Sortie très rapide : plus de 1 000 jetons par seconde selon Inception"
+        ],
+        [
+          "Low price, tool calling, adjustable reasoning",
+          "Prix bas, appel d’outils, raisonnement réglable"
+        ]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: Inception's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation d’Inception s’applique"
+        ],
+        ["Text only, no image reading", "Texte seul, ne lit pas les images"]
+      ],
+      "facts": [
+        ["Mercury 2.5: 260K context", "Mercury 2.5 : contexte de 260K"],
+        ["Diffusion model, not word by word", "Modèle par diffusion, pas mot à mot"]
+      ]
+    },
+    {
+      "slug": "mimo",
+      "differentiator": [
+        "Xiaomi’s MiMo models are open, MIT-licensed mixture-of-experts models with a 1M token context that accept text, images, audio and video. The Flash variant keeps 15B active parameters, so it is very cheap while scoring high among open models.",
+        "Les modèles MiMo de Xiaomi sont ouverts, sous licence MIT, à mélange d’experts, avec 1M de jetons de contexte, et acceptent texte, images, audio et vidéo. La variante Flash garde 15 Md de paramètres actifs : très bon marché, avec un score élevé parmi les modèles ouverts."
+      ],
+      "signature": [
+        ["MIT license, open weights, 1M context", "Licence MIT, poids ouverts, contexte de 1M"],
+        ["Reads text, images, audio and video", "Lit texte, images, audio et vidéo"],
+        ["Flash: 309B total, only 15B active", "Flash : 309 Md au total, seulement 15 Md actifs"]
+      ],
+      "releases": [
+        {
+          "version": "MiMo-V2-Flash",
+          "date": "2025-12-16",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "309B total and 15B active parameters, 256K context, hybrid sliding-window attention and multi-token prediction",
+              "309 Md au total dont 15 Md actifs, contexte de 256k, attention hybride à fenêtre glissante et prédiction multi-jetons"
+            ],
+            [
+              "73.4% on SWE-bench Verified, per Xiaomi",
+              "73,4 % sur SWE-bench Verified selon Xiaomi"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/mimo-v2-flash"
+        },
+        {
+          "version": "MiMo-V2.5",
+          "date": "2026-04",
+          "ids": ["xiaomi-mimo-v2-5"],
+          "external": false,
+          "changes": [
+            [
+              "Native omnimodal encoders: vision and audio input on the V2-Flash backbone",
+              "Encodeurs omnimodaux natifs : entrée image et audio sur la base V2-Flash"
+            ],
+            [
+              "Context up to 1M tokens and post-training focused on agent work",
+              "Contexte jusqu’à 1M de jetons et post-entraînement axé sur le travail d’agent"
+            ]
+          ],
+          "source": "https://huggingface.co/XiaomiMiMo/MiMo-V2.5"
+        },
+        {
+          "version": "MiMo-V2.6-Flash",
+          "date": "2026-09-21",
+          "ids": ["xiaomi-mimo-v2-6-flash"],
+          "external": false,
+          "changes": [
+            [
+              "Higher Intelligence Index than V2.5-Pro (38 vs 26) at 309B total and 15B active",
+              "Indice d’intelligence plus élevé que V2.5-Pro (38 contre 26) avec 309 Md au total dont 15 Md actifs"
+            ],
+            [
+              "1M context, text and image input, very low price",
+              "Contexte de 1M, entrée texte et image, prix très bas"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/mimo-v2-6-flash"
+        }
+      ],
+      "specs": [
+        {
+          "version": "MiMo-V2.6-Flash",
+          "ids": ["xiaomi-mimo-v2-6-flash"],
+          "params": "309B",
+          "activeParams": "15B",
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": 131072,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/mimo-v2-6-flash"
+        },
+        {
+          "version": "MiMo-V2.5",
+          "ids": ["xiaomi-mimo-v2-5"],
+          "params": "310B",
+          "activeParams": "15B",
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": 65536,
+          "inputs": ["text", "image", "audio", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://huggingface.co/XiaomiMiMo/MiMo-V2.5"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Summarize a recorded video call", "Résumer un appel vidéo enregistré"],
+          "prompt": [
+            "Watch this recording of our product review and list the decisions made, who owns each one, and the deadlines mentioned.",
+            "Regardez cet enregistrement de notre revue produit et listez les décisions prises, leur responsable et les échéances citées."
+          ],
+          "why": [
+            "V2.5 accepts audio and video, and the context holds long recordings.",
+            "V2.5 accepte audio et vidéo, et le contexte contient de longs enregistrements."
+          ]
+        },
+        {
+          "title": [
+            "Cheap agent runs over many documents",
+            "Exécutions d’agent économiques sur de nombreux documents"
+          ],
+          "prompt": [
+            "Go through these 150 supplier contracts and flag any with an automatic renewal clause longer than 12 months.",
+            "Parcourez ces 150 contrats fournisseurs et signalez ceux dont la clause de reconduction tacite dépasse 12 mois."
+          ],
+          "why": [
+            "Flash combines a 1M context with a very low per-token price.",
+            "Flash associe un contexte de 1M à un prix par jeton très bas."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen open models are the nearest open rivals, with similar multimodal reach.",
+            "Les modèles ouverts Qwen sont les rivaux ouverts les plus proches, de portée multimodale voisine."
+          ]
+        },
+        {
+          "slug": "deepseek",
+          "verdict": [
+            "DeepSeek competes on price, but mostly without audio or video input.",
+            "DeepSeek rivalise sur le prix, mais le plus souvent sans entrée audio ou vidéo."
+          ]
+        },
+        {
+          "slug": "kimi",
+          "verdict": [
+            "Kimi suits long agent runs and costs more per token.",
+            "Kimi convient aux longues exécutions d’agent et coûte plus par jeton."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/models/mimo-v2-flash",
+        "https://huggingface.co/XiaomiMiMo/MiMo-V2.5",
+        "https://artificialanalysis.ai/models/mimo-v2-6-flash",
+        "https://artificialanalysis.ai/models/mimo-v2-6-pro",
+        "https://artificialanalysis.ai/models/mimo-v2-5-pro",
+        "https://mimo.xiaomi.com/",
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://openrouter.ai/xiaomi/mimo-v2.6-flash",
+        "https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL"
+      ],
+      "strengths": [
+        [
+          "Reads images, audio and video at a very low price",
+          "Lit images, audio et vidéo à très bas prix"
+        ],
+        [
+          "1M token context, tool calling, private mode",
+          "Contexte de 1M de jetons, appel d’outils, mode privé"
+        ]
+      ],
+      "limits": [
+        ["Less widely tested than the bigger families", "Moins éprouvé que les grandes familles"]
+      ],
+      "facts": [
+        ["1M token context", "Contexte de 1M de jetons"],
+        ["Input: text, image, audio, video", "Entrée : texte, image, audio, vidéo"],
+        ["Open weights (MIT license)", "Poids ouverts (licence MIT)"]
+      ]
+    },
+    {
+      "slug": "nemotron",
+      "differentiator": [
+        "Nemotron 3 is NVIDIA’s open family built on a hybrid Mamba and Transformer mixture-of-experts design, tuned with reinforcement learning on multi-step tool tasks. Ultra scales it to 550B parameters, and Nano keeps 3B active for speed and price.",
+        "Nemotron 3 est la famille ouverte de NVIDIA, bâtie sur une architecture hybride Mamba et Transformer à mélange d’experts, affinée par apprentissage par renforcement sur des tâches à outils. Ultra monte à 550 Md de paramètres et Nano garde 3 Md actifs pour la vitesse et le prix."
+      ],
+      "signature": [
+        [
+          "Hybrid Mamba, Transformer and MoE design",
+          "Architecture hybride Mamba, Transformer et MoE"
+        ],
+        [
+          "Trained with RL on tool and code tasks",
+          "Entraîné par RL sur des tâches d’outils et de code"
+        ],
+        [
+          "Ultra: 550B total, 55B active, open weights",
+          "Ultra : 550 Md au total, 55 Md actifs, poids ouverts"
+        ]
+      ],
+      "releases": [
+        {
+          "version": "Nemotron 3 Nano 30B A3B",
+          "date": "2025-12-15",
+          "ids": ["nvidia-nemotron-3-nano-30b-a3b"],
+          "external": false,
+          "changes": [
+            [
+              "Introduced the family: hybrid Mamba, Transformer and MoE with about 3.5B active parameters",
+              "Inaugure la famille : hybride Mamba, Transformer et MoE avec environ 3,5 Md de paramètres actifs"
+            ],
+            [
+              "Up to 1M token context and a switchable reasoning mode",
+              "Contexte jusqu’à 1M de jetons et mode raisonnement activable"
+            ]
+          ],
+          "source": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
+        },
+        {
+          "version": "Nemotron 3 Ultra 550B A55B",
+          "date": "2026-06-04",
+          "ids": ["nvidia-nemotron-3-ultra-550b-a55b"],
+          "external": false,
+          "changes": [
+            [
+              "550B total and 55B active parameters, the top of the family",
+              "550 Md de paramètres au total dont 55 Md actifs, le sommet de la famille"
+            ],
+            [
+              "Intelligence Index 23 versus 7 for Nano, with reasoning and 262K context",
+              "Indice d’intelligence de 23 contre 7 pour Nano, avec raisonnement et contexte de 262k"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/nvidia-nemotron-3-ultra-550b-a55b"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Nemotron 3 Ultra",
+          "ids": ["nvidia-nemotron-3-ultra-550b-a55b"],
+          "params": "550B",
+          "activeParams": "55B",
+          "openWeights": true,
+          "license": "OpenMDW",
+          "maxOutput": 32768,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/nvidia-nemotron-3-ultra-550b-a55b"
+        },
+        {
+          "version": "Nemotron 3 Nano",
+          "ids": ["nvidia-nemotron-3-nano-30b-a3b"],
+          "params": "30B",
+          "activeParams": "3.5B",
+          "openWeights": true,
+          "license": "NVIDIA Nemotron Open Model License",
+          "maxOutput": 16384,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": ["6 languages", "6 langues"],
+          "source": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Long multi-step agent task", "Longue tâche d’agent en plusieurs étapes"],
+          "prompt": [
+            "Audit this repository: list the five modules with the most duplicated logic, open each one, and propose a refactoring order with risks.",
+            "Faites l’audit de ce dépôt : listez les cinq modules à la logique la plus dupliquée, ouvrez chacun et proposez un ordre de refonte avec les risques."
+          ],
+          "why": [
+            "Ultra is trained for long tool-driven runs.",
+            "Ultra est entraîné pour de longues exécutions avec outils."
+          ]
+        },
+        {
+          "title": ["Cheap classification at scale", "Classification économique à grande échelle"],
+          "prompt": [
+            "Classify each of these 500 support messages as billing, bug, feature request or other, and return one label per line.",
+            "Classez chacun de ces 500 messages de support en facturation, bogue, demande de fonctionnalité ou autre, et renvoyez une étiquette par ligne."
+          ],
+          "why": [
+            "Nano is small, fast and among the cheapest models in the catalog.",
+            "Nano est petit, rapide et parmi les moins chers du catalogue."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gpt-oss",
+          "verdict": [
+            "gpt-oss is the other large open reasoning model, with a lower price at similar size.",
+            "gpt-oss est l’autre grand modèle ouvert de raisonnement, à prix plus bas pour une taille voisine."
+          ]
+        },
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen open models add image input where Nemotron stays text only.",
+            "Les modèles ouverts Qwen ajoutent l’entrée d’images là où Nemotron reste texte seul."
+          ]
+        },
+        {
+          "slug": "glm",
+          "verdict": [
+            "GLM scores higher on agent work and costs more.",
+            "GLM fait mieux sur le travail d’agent et coûte plus cher."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+        "https://developer.nvidia.com/blog/inside-nvidia-nemotron-3-techniques-tools-and-data-that-make-it-efficient-and-accurate/",
+        "https://artificialanalysis.ai/models/nvidia-nemotron-3-ultra-550b-a55b",
+        "https://artificialanalysis.ai/models/nvidia-nemotron-3-nano-30b-a3b",
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://pasqualepillitteri.it/en/news/3924/nemotron-3-ultra-nvidia-open-model",
+        "https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/"
+      ],
+      "strengths": [
+        [
+          "Ultra is built for long agent runs with many tool calls",
+          "Ultra est conçu pour de longues sessions d’agent avec beaucoup d’outils"
+        ],
+        ["Private mode, moderate price", "Mode privé, prix modéré"]
+      ],
+      "limits": [["Text only, no image reading", "Texte seul, ne lit pas les images"]],
+      "facts": [
+        [
+          "Ultra: 550B parameters, 55B active, 256K context here",
+          "Ultra : 550 milliards de paramètres, 55 actifs, contexte de 256K ici"
+        ],
+        ["Open weights", "Poids ouverts"]
+      ]
+    },
+    {
+      "slug": "seed",
+      "differentiator": [
+        "Seed is ByteDance’s proprietary model line. Seed 2.1 Turbo targets coding and long agent tasks and reads images and video, with a 256K context. It is anonymized rather than private, and ByteDance does not publish its size.",
+        "Seed est la gamme propriétaire de ByteDance. Seed 2.1 Turbo vise le code et les longues tâches d’agent, lit images et vidéo, avec un contexte de 256k. Il est anonymisé plutôt que privé, et ByteDance ne publie pas sa taille."
+      ],
+      "signature": [
+        [
+          "Built for coding and long agent runs",
+          "Conçu pour le code et les longues tâches d’agent"
+        ],
+        ["Reads text, images and video", "Lit texte, images et vidéo"],
+        ["Closed weights, parameters undisclosed", "Poids fermés, paramètres non publiés"]
+      ],
+      "releases": [
+        {
+          "version": "Seed 2.0 Lite",
+          "date": "2026-03",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Cost-efficient workhorse with text, image and video input and 262K context",
+              "Modèle polyvalent économique avec entrée texte, image et vidéo et contexte de 262k"
+            ]
+          ],
+          "source": "https://openrouter.ai/api/v1/models"
+        },
+        {
+          "version": "Seed 2.1 Turbo",
+          "date": "2026-08",
+          "ids": ["seed-2-1-turbo"],
+          "external": false,
+          "changes": [
+            [
+              "Aimed at end-to-end software delivery and multi-step agent tasks",
+              "Vise la livraison logicielle de bout en bout et les tâches d’agent en plusieurs étapes"
+            ],
+            [
+              "Stronger video understanding and long-context handling, per ByteDance",
+              "Meilleure compréhension vidéo et gestion des longs contextes, selon ByteDance"
+            ]
+          ],
+          "source": "https://openrouter.ai/api/v1/models"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Seed 2.1 Turbo",
+          "ids": ["seed-2-1-turbo"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 235929,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://openrouter.ai/api/v1/models"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Turn a design into a web page", "Transformer une maquette en page web"],
+          "prompt": [
+            "Here is a screenshot of a pricing page design. Write the HTML and CSS to reproduce it, with a responsive layout.",
+            "Voici la capture d’une maquette de page de tarifs. Écrivez le HTML et le CSS pour la reproduire, avec une mise en page adaptative."
+          ],
+          "why": [
+            "ByteDance highlights design-to-page generation and image input.",
+            "ByteDance met en avant la génération de pages à partir de maquettes et l’entrée d’images."
+          ]
+        },
+        {
+          "title": ["Long coding task with tests", "Longue tâche de code avec tests"],
+          "prompt": [
+            "Add CSV export to this invoices module, write tests for it, run them, and fix anything that fails.",
+            "Ajoutez l’export CSV à ce module de factures, écrivez les tests, lancez-les et corrigez ce qui échoue."
+          ],
+          "why": [
+            "It is described as built for end-to-end delivery and long-horizon agent work.",
+            "Il est décrit comme conçu pour la livraison de bout en bout et le travail d’agent de longue haleine."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "kimi",
+          "verdict": [
+            "Kimi is open and tuned for agent work too, with a private option.",
+            "Kimi est ouvert et réglé aussi pour le travail d’agent, avec une option privée."
+          ]
+        },
+        {
+          "slug": "glm",
+          "verdict": [
+            "GLM offers open weights and private variants for coding.",
+            "GLM propose des poids ouverts et des variantes privées pour le code."
+          ]
+        },
+        {
+          "slug": "qwen",
+          "verdict": [
+            "Qwen’s hosted models also read images and video with long context.",
+            "Les modèles Qwen hébergés lisent aussi images et vidéo avec un long contexte."
+          ]
+        }
+      ],
+      "sources": [
+        "https://seed.bytedance.com/en/seed2_1",
+        "https://seed.bytedance.com/en/seed2",
+        "https://openrouter.ai/api/v1/models/bytedance-seed/seed-2-1-turbo/endpoints",
+        "https://openrouter.ai/api/v1/models",
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://openrouter.ai/bytedance-seed/seed-2-1-turbo",
+        "https://seed.bytedance.com/en/"
+      ],
+      "strengths": [
+        [
+          "Built for coding and long multi-step tasks",
+          "Conçu pour le code et les longues tâches à plusieurs étapes"
+        ],
+        ["Reads images and video, tool calling", "Lit images et vidéo, appel d’outils"]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: ByteDance's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation de ByteDance s’applique"
+        ]
+      ],
+      "facts": [
+        ["256K token context", "Contexte de 256K jetons"],
+        ["Input: text, image, video", "Entrée : texte, image, vidéo"]
+      ]
+    },
+    {
+      "slug": "inkling",
+      "differentiator": [
+        "Inkling is a 975B mixture-of-experts model from Thinking Machines Lab, released with open weights as a broad, balanced base rather than a benchmark specialist. It takes text, images and audio, reasons on demand and supports tool calling.",
+        "Inkling est un modèle à mélange d’experts de 975 Md de Thinking Machines Lab, publié avec des poids ouverts comme base large et équilibrée plutôt que spécialiste de benchmarks. Il accepte texte, images et audio, raisonne à la demande et prend en charge l’appel d’outils."
+      ],
+      "signature": [
+        ["975B total, 41B active, Apache 2.0", "975 Md au total, 41 Md actifs, Apache 2.0"],
+        ["Text, image and audio input", "Entrée texte, image et audio"],
+        [
+          "77.6% on SWE-bench Verified, per its maker",
+          "77,6 % sur SWE-bench Verified selon son créateur"
+        ]
+      ],
+      "releases": [
+        {
+          "version": "Inkling",
+          "date": "2026-07-15",
+          "ids": ["inkling"],
+          "external": false,
+          "changes": [
+            [
+              "First open model from Thinking Machines Lab: 975B total and 41B active parameters, up to 1M context",
+              "Premier modèle ouvert de Thinking Machines Lab : 975 Md au total dont 41 Md actifs, jusqu’à 1M de contexte"
+            ],
+            [
+              "Multimodal input and balanced skills across reasoning, coding and tool use",
+              "Entrée multimodale et compétences équilibrées en raisonnement, code et usage d’outils"
+            ]
+          ],
+          "source": "https://thinkingmachines.ai/news/introducing-inkling/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Inkling",
+          "ids": ["inkling"],
+          "params": "975B",
+          "activeParams": "41B",
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": 65536,
+          "inputs": ["text", "image", "audio"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/models/inkling"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Ask about a screenshot and a voice memo",
+            "Interroger une capture et un mémo vocal"
+          ],
+          "prompt": [
+            "Here is a screenshot of our dashboard and a voice memo from my manager. List what she asks me to change and where on the screen.",
+            "Voici une capture de notre tableau de bord et un mémo vocal de ma responsable. Listez ce qu’elle me demande de changer et à quel endroit de l’écran."
+          ],
+          "why": [
+            "It accepts images and audio next to text in one request.",
+            "Il accepte images et audio avec le texte dans une même requête."
+          ]
+        },
+        {
+          "title": ["Fix a failing test with tools", "Corriger un test en échec avec des outils"],
+          "prompt": [
+            "Run the failing test in the payments module, read the stack trace, and patch the code so it passes without changing the test.",
+            "Lancez le test en échec du module paiements, lisez la trace d’erreur et corrigez le code pour qu’il passe sans modifier le test."
+          ],
+          "why": [
+            "It reaches 77.6% on SWE-bench Verified, per Thinking Machines Lab.",
+            "Il atteint 77,6 % sur SWE-bench Verified selon Thinking Machines Lab."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "qwen-open",
+          "verdict": [
+            "Qwen open models cost less and cover similar multimodal ground.",
+            "Les modèles ouverts Qwen coûtent moins cher et couvrent un terrain multimodal voisin."
+          ]
+        },
+        {
+          "slug": "kimi",
+          "verdict": [
+            "Kimi is a close open rival for agent and coding work.",
+            "Kimi est un rival ouvert proche pour le travail d’agent et le code."
+          ]
+        },
+        {
+          "slug": "mimo",
+          "verdict": [
+            "MiMo scores higher on the Artificial Analysis index at a lower price.",
+            "MiMo obtient un score plus élevé à l’indice d’Artificial Analysis, à prix plus bas."
+          ]
+        }
+      ],
+      "sources": [
+        "https://thinkingmachines.ai/news/introducing-inkling/",
+        "https://artificialanalysis.ai/models/inkling",
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://rits.shanghai.nyu.edu/ai/thinking-machines-releases-inkling-its-first-open-weight-model/",
+        "https://huggingface.co/thinkingmachines/Inkling-NVFP4"
+      ],
+      "strengths": [
+        ["Reads images and audio as well as text", "Lit les images et l’audio en plus du texte"],
+        [
+          "Tool calling and adjustable reasoning, private mode",
+          "Appel d’outils et raisonnement réglable, mode privé"
+        ]
+      ],
+      "limits": [
+        [
+          "Mid-range price; cheaper models cover everyday chat",
+          "Prix moyen ; des modèles moins chers suffisent au quotidien"
+        ],
+        ["No video input here", "Pas d’entrée vidéo ici"]
+      ],
+      "facts": [
+        ["512K token context", "Contexte de 512K jetons"],
+        ["975B parameters, 41B active", "975 milliards de paramètres, 41 actifs"],
+        ["Open weights (Apache 2.0)", "Poids ouverts (Apache 2.0)"]
+      ]
+    },
+    {
+      "slug": "venice-uncensored",
+      "differentiator": [
+        "Venice Uncensored started as Dolphin Mistral 24B, a Mistral Small fine-tune made with Cognitive Computations to refuse far less. Venice’s later versions keep that goal, add image input and a separate role play tune, and run in private mode.",
+        "Venice Uncensored est né de Dolphin Mistral 24B, un affinage de Mistral Small réalisé avec Cognitive Computations pour refuser bien moins. Les versions suivantes de Venice gardent cet objectif, ajoutent l’entrée d’images et une variante dédiée au jeu de rôle, en mode privé."
+      ],
+      "signature": [
+        ["Few refusals by design", "Peu de refus par conception"],
+        ["Started as a Mistral Small 24B fine-tune", "Né d’un affinage de Mistral Small 24B"],
+        ["Separate role play tune with images", "Variante jeu de rôle distincte, avec images"]
+      ],
+      "releases": [
+        {
+          "version": "Dolphin Mistral 24B Venice Edition (Venice Uncensored 1.1)",
+          "date": "2025-06-12",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Mistral Small 24B fine-tune under Apache 2.0, built to answer with minimal refusals",
+              "Affinage de Mistral Small 24B sous Apache 2.0, conçu pour répondre avec un minimum de refus"
+            ]
+          ],
+          "source": "https://huggingface.co/dphn/Dolphin-Mistral-24B-Venice-Edition"
+        },
+        {
+          "version": "Venice Uncensored Role Play",
+          "date": "2026-02",
+          "ids": ["venice-uncensored-role-play"],
+          "external": false,
+          "changes": [
+            [
+              "Tuned for immersive storytelling and character interaction",
+              "Réglé pour la narration immersive et les interactions de personnages"
+            ],
+            [
+              "128K context and image input, replies capped at 4,096 tokens",
+              "Contexte de 128k et entrée d’images, réponses plafonnées à 4 096 jetons"
+            ]
+          ],
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        },
+        {
+          "version": "Venice Uncensored 1.2",
+          "date": "2026-04",
+          "ids": ["venice-uncensored-1-2"],
+          "external": false,
+          "changes": [
+            [
+              "Improved capabilities over 1.1, per Venice, for open-ended exploration and role play",
+              "Capacités améliorées par rapport à 1.1 selon Venice, pour l’exploration libre et le jeu de rôle"
+            ],
+            [
+              "Accepts up to 10 images and calls tools",
+              "Accepte jusqu’à 10 images et appelle des outils"
+            ]
+          ],
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Venice Uncensored 1.2",
+          "ids": ["venice-uncensored-1-2"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": 8192,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        },
+        {
+          "version": "Venice Uncensored Role Play",
+          "ids": ["venice-uncensored-role-play"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": 4096,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Write dark fiction without refusals",
+            "Écrire de la fiction sombre sans refus"
+          ],
+          "prompt": [
+            "Write the opening scene of a noir thriller where a detective finds a body in a flooded cellar. Keep it gritty and do not soften the details.",
+            "Écrivez la scène d’ouverture d’un thriller noir où un détective découvre un corps dans une cave inondée. Restez âpre et n’adoucissez pas les détails."
+          ],
+          "why": [
+            "It is built to refuse far less on mature creative themes.",
+            "Il est conçu pour refuser bien moins sur les thèmes créatifs adultes."
+          ]
+        },
+        {
+          "title": ["Play a persistent character", "Incarner un personnage durable"],
+          "prompt": [
+            "You are Vesper, a witty smuggler captain. Stay in character, answer my questions as her, and start by greeting me aboard your ship.",
+            "Vous êtes Vesper, une capitaine contrebandière pleine d’esprit. Restez dans le personnage, répondez à mes questions comme elle et commencez par m’accueillir à bord de votre navire."
+          ],
+          "why": [
+            "The Role Play version is tuned for character work.",
+            "La version Role Play est réglée pour le travail sur les personnages."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "uncensored",
+          "verdict": [
+            "Community uncensored models are cheaper or larger, with less polished tuning.",
+            "Les modèles communautaires non censurés sont moins chers ou plus grands, avec un réglage moins soigné."
+          ]
+        },
+        {
+          "slug": "aion",
+          "verdict": [
+            "Aion costs more but uses several models for stronger plot structure.",
+            "Aion coûte plus cher mais utilise plusieurs modèles pour une meilleure structure d’intrigue."
+          ]
+        },
+        {
+          "slug": "mistral",
+          "verdict": [
+            "Mistral Small is the base lineage, with standard safety behavior.",
+            "Mistral Small est la lignée de base, avec le comportement de sécurité standard."
+          ]
+        }
+      ],
+      "sources": [
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://huggingface.co/dphn/Dolphin-Mistral-24B-Venice-Edition",
+        "https://huggingface.co/cognitivecomputations/Dolphin-Mistral-24B-Venice-Edition"
+      ],
+      "strengths": [
+        [
+          "Few refusals: built for unfiltered fiction and dialogue",
+          "Peu de refus : conçus pour la fiction et le dialogue sans filtre"
+        ],
+        ["Private mode, low price, reads images", "Mode privé, prix bas, lit les images"]
+      ],
+      "limits": [
+        [
+          "No reasoning mode: weak on hard problems and code",
+          "Pas de mode raisonnement : faibles sur les problèmes difficiles et le code"
+        ],
+        ["128K context and short replies", "Contexte de 128K et réponses courtes"]
+      ],
+      "facts": [
+        ["128K token context", "Contexte de 128K jetons"],
+        ["Vision and tool calling", "Vision et appel d’outils"]
+      ]
+    },
+    {
+      "slug": "aion",
+      "differentiator": [
+        "Aion is AionLabs’ storytelling system: several models cooperate on each reply, built on open GLM models, to keep plot structure, tension and character consistent in interactive fiction. 3.5 raises the context to 262K, and the mini versions cost about a quarter of the price.",
+        "Aion est le système de narration d’AionLabs : plusieurs modèles coopèrent sur chaque réponse, bâtis sur des modèles GLM ouverts, pour maintenir structure, tension et cohérence des personnages dans la fiction interactive. 3.5 porte le contexte à 262k, et les versions mini coûtent environ le quart du prix."
+      ],
+      "signature": [
+        [
+          "Several models write each reply together",
+          "Plusieurs modèles écrivent chaque réponse ensemble"
+        ],
+        ["Made for role play and storytelling", "Conçu pour le jeu de rôle et la narration"],
+        ["3.5: 262K context, 32K max reply", "3.5 : contexte de 262k, réponse de 32k max"]
+      ],
+      "releases": [
+        {
+          "version": "Aion 2.0",
+          "date": "2026-02-23",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Earlier AionLabs role-play model listed on OpenRouter",
+              "Modèle de jeu de rôle antérieur d’AionLabs, référencé sur OpenRouter"
+            ]
+          ],
+          "source": "https://openrouter.ai/api/v1/models"
+        },
+        {
+          "version": "Aion 3.0",
+          "date": "2026-07",
+          "ids": ["aion-labs-aion-3-0", "aion-labs-aion-3-0-mini"],
+          "external": false,
+          "changes": [
+            [
+              "Multi-model role-play and storytelling system with 131K context and 32K max reply",
+              "Système de narration et de jeu de rôle multi-modèles, contexte de 131k et réponse de 32k max"
+            ],
+            [
+              "Mini variant at about a quarter of the price",
+              "Variante mini à environ un quart du prix"
+            ]
+          ],
+          "source": "https://openrouter.ai/api/v1/models/aion-labs/aion-3.0/endpoints"
+        },
+        {
+          "version": "Aion 3.5",
+          "date": "2026-09",
+          "ids": ["aion-labs-aion-3-5", "aion-labs-aion-3-5-mini"],
+          "external": false,
+          "changes": [
+            [
+              "Context doubles from 131K to 262K tokens",
+              "Le contexte double, de 131k à 262k jetons"
+            ],
+            [
+              "Built on the GLM family, with a mini variant at the same price tier as 3.0 mini",
+              "Bâti sur la famille GLM, avec une variante mini au même niveau de prix que 3.0 mini"
+            ]
+          ],
+          "source": "https://openrouter.ai/api/v1/models/aion-labs/aion-3.5/endpoints"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Aion 3.5",
+          "ids": ["aion-labs-aion-3-5", "aion-labs-aion-3-5-mini"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 32768,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://openrouter.ai/api/v1/models/aion-labs/aion-3.5/endpoints"
+        },
+        {
+          "version": "Aion 3.0",
+          "ids": ["aion-labs-aion-3-0", "aion-labs-aion-3-0-mini"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 32768,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://openrouter.ai/api/v1/models/aion-labs/aion-3.0/endpoints"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Run an interactive fantasy story", "Mener une fiction interactive de fantasy"],
+          "prompt": [
+            "Narrate a dark fantasy story where I play a smuggler. Describe the scene, give me three choices, and wait for my answer before continuing.",
+            "Racontez une histoire de fantasy sombre où j’incarne un contrebandier. Décrivez la scène, donnez-moi trois choix et attendez ma réponse avant de continuer."
+          ],
+          "why": [
+            "The multi-model setup is built to keep tension and plot structure.",
+            "L’assemblage de plusieurs modèles est conçu pour garder tension et structure d’intrigue."
+          ]
+        },
+        {
+          "title": ["Keep a long campaign consistent", "Garder une longue campagne cohérente"],
+          "prompt": [
+            "Continue our campaign. Remember that Elara lost her sword in chapter two and distrusts the mayor. Write the next scene in the marketplace.",
+            "Continuez notre campagne. Rappelez-vous qu’Elara a perdu son épée au chapitre deux et se méfie du maire. Écrivez la prochaine scène au marché."
+          ],
+          "why": [
+            "A 262K context holds a long story history.",
+            "Un contexte de 262k contient l’historique d’une longue histoire."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "venice-uncensored",
+          "verdict": [
+            "Venice Uncensored is cheaper and private, and writes with fewer limits but less structure.",
+            "Venice Uncensored est moins cher et privé, et écrit avec moins de limites mais moins de structure."
+          ]
+        },
+        {
+          "slug": "uncensored",
+          "verdict": [
+            "Community uncensored models cost less and are private, with no multi-model storytelling.",
+            "Les modèles communautaires non censurés coûtent moins cher et sont privés, sans narration multi-modèles."
+          ]
+        },
+        {
+          "slug": "glm",
+          "verdict": [
+            "GLM is the base family; use it directly for general work.",
+            "GLM est la famille de base : utilisez-la directement pour le travail général."
+          ]
+        }
+      ],
+      "sources": [
+        "https://openrouter.ai/api/v1/models/aion-labs/aion-3.5/endpoints",
+        "https://openrouter.ai/api/v1/models/aion-labs/aion-3.0/endpoints",
+        "https://openrouter.ai/api/v1/models/aion-labs/aion-3.5-mini/endpoints",
+        "https://openrouter.ai/api/v1/models",
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://openrouter.ai/aion-labs/aion-3.5",
+        "https://www.aionlabs.ai/docs/models/"
+      ],
+      "strengths": [
+        [
+          "Stronger narrative structure, tension and conflict",
+          "Structure narrative, tension et conflits plus marqués"
+        ],
+        ["Handles mature and darker themes", "Aborde les thèmes adultes et sombres"]
+      ],
+      "limits": [
+        ["Anonymized, not private", "Anonymisé, pas privé"],
+        [
+          "Made for fiction, not for notes or research; Aion 3.5 is dear",
+          "Fait pour la fiction, pas pour les notes ou la recherche ; Aion 3.5 est cher"
+        ]
+      ],
+      "facts": [
+        ["Aion 3.5: 262K context", "Aion 3.5 : contexte de 262K"],
+        [
+          "Built on GLM models (3.0 Mini: DeepSeek)",
+          "Bâti sur des modèles GLM (3.0 Mini : DeepSeek)"
+        ]
+      ]
+    },
+    {
+      "slug": "uncensored",
+      "differentiator": [
+        "These are community fine-tunes of strong open models, with refusals removed by abliteration or similar methods. They cover a range from a cheap 30B reasoning model to a reasoner with a 1M context, and one runs inside an encrypted enclave.",
+        "Ce sont des affinages communautaires de bons modèles ouverts, dont les refus ont été retirés par ablitération ou méthode voisine. Ils vont d’un modèle de raisonnement bon marché de 30 Md à un modèle de raisonnement à contexte de 1M, et l’un tourne dans une enclave chiffrée."
+      ],
+      "signature": [
+        ["Refusals removed from strong open bases", "Refus retirés de bases ouvertes solides"],
+        ["Bases: GLM 4.7 Flash, Gemma 4, GLM 5.3", "Bases : GLM 4.7 Flash, Gemma 4, GLM 5.3"],
+        [
+          "One variant runs in an encrypted enclave",
+          "Une variante tourne dans une enclave chiffrée"
+        ]
+      ],
+      "releases": [
+        {
+          "version": "GLM 4.7 Flash Heretic",
+          "date": "2026-01",
+          "ids": ["olafangensan-glm-4.7-flash-heretic"],
+          "external": false,
+          "changes": [
+            [
+              "Community version of GLM 4.7 Flash, about 30B parameters, with refusals removed",
+              "Version communautaire de GLM 4.7 Flash, environ 30 Md de paramètres, sans refus"
+            ],
+            [
+              "Keeps the reasoning mode and tool calling of the base model",
+              "Garde le mode raisonnement et l’appel d’outils du modèle de base"
+            ]
+          ],
+          "source": "https://huggingface.co/Olafangensan/GLM-4.7-Flash-heretic"
+        },
+        {
+          "version": "Gemma 4 Uncensored",
+          "date": "2026-04",
+          "ids": ["gemma-4-uncensored"],
+          "external": false,
+          "changes": [
+            [
+              "Uncensored variant of Gemma 4 26B, a mixture of experts with 4B active, 256K context",
+              "Variante non censurée de Gemma 4 26B, mélange d’experts à 4 Md actifs, contexte de 256k"
+            ],
+            ["Reads images and calls tools", "Lit les images et appelle des outils"]
+          ],
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        },
+        {
+          "version": "Gemma 4 26B A4B Uncensored (enclave)",
+          "date": "2026-05",
+          "ids": ["e2ee-gemma-4-26b-a4b-uncensored-p"],
+          "external": false,
+          "changes": [
+            [
+              "Same family running in a trusted execution environment with hardware attestation",
+              "Même famille exécutée dans un environnement d’exécution de confiance avec attestation matérielle"
+            ],
+            ["64K context window, no tool calling", "Fenêtre de 64k, sans appel d’outils"]
+          ],
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        },
+        {
+          "version": "Abliterated Large V2",
+          "date": "2026-10",
+          "ids": ["abliteration-abliterated-model-large-v2"],
+          "external": false,
+          "changes": [
+            [
+              "Based on GLM 5.3, further abliterated and fine-tuned by Abliteration AI, with 1M context",
+              "Basé sur GLM 5.3, ablité et affiné par Abliteration AI, avec 1M de contexte"
+            ],
+            [
+              "Always reasons, with depth set to low, high or max",
+              "Raisonne toujours, avec une profondeur réglable : basse, haute ou max"
+            ]
+          ],
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Abliterated Large V2",
+          "ids": ["abliteration-abliterated-model-large-v2"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": 32768,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        },
+        {
+          "version": "Gemma 4 Uncensored",
+          "ids": ["gemma-4-uncensored", "e2ee-gemma-4-26b-a4b-uncensored-p"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": 8192,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://api.venice.ai/api/v1/models?type=text"
+        },
+        {
+          "version": "GLM 4.7 Flash Heretic",
+          "ids": ["olafangensan-glm-4.7-flash-heretic"],
+          "params": "30B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "MIT",
+          "maxOutput": 24000,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://huggingface.co/Olafangensan/GLM-4.7-Flash-heretic"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Frank discussion of a sensitive topic",
+            "Discussion franche d’un sujet sensible"
+          ],
+          "prompt": [
+            "Explain, for a novel I am writing, how a pickpocketing crew divides roles in a crowded station. Be specific about the psychology, not the law.",
+            "Expliquez, pour un roman que j’écris, comment une équipe de pickpockets se répartit les rôles dans une gare bondée. Soyez précis sur la psychologie, pas sur le droit."
+          ],
+          "why": [
+            "Refusals are removed, so mature fiction research gets an answer.",
+            "Les refus sont retirés : la recherche pour une fiction adulte obtient une réponse."
+          ]
+        },
+        {
+          "title": ["Hard reasoning without limits", "Raisonnement difficile sans garde-fous"],
+          "prompt": [
+            "Evaluate this red-team plan for our own web shop: list the attack paths in order of likelihood and what logs would reveal each one.",
+            "Évaluez ce plan d’équipe rouge pour notre propre boutique en ligne : listez les chemins d’attaque par probabilité et les journaux qui révéleraient chacun."
+          ],
+          "why": [
+            "Abliterated Large V2 always reasons and keeps a 1M context for long evidence.",
+            "Abliterated Large V2 raisonne toujours et garde 1M de contexte pour de longues pièces."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "venice-uncensored",
+          "verdict": [
+            "Venice Uncensored is a polished house tune, aimed at writing and role play.",
+            "Venice Uncensored est un réglage maison soigné, orienté écriture et jeu de rôle."
+          ]
+        },
+        {
+          "slug": "gemma",
+          "verdict": [
+            "Standard Gemma 4 is the same base with its normal refusals.",
+            "Gemma 4 standard est la même base avec ses refus habituels."
+          ]
+        },
+        {
+          "slug": "glm",
+          "verdict": [
+            "Standard GLM models share the base with standard refusals and wider support.",
+            "Les modèles GLM standard partagent la base avec les refus habituels et une prise en charge plus large."
+          ]
+        }
+      ],
+      "sources": [
+        "https://api.venice.ai/api/v1/models?type=text",
+        "https://huggingface.co/Olafangensan/GLM-4.7-Flash-heretic",
+        "https://huggingface.co/google/gemma-4-26B-A4B-it",
+        "https://huggingface.co/zai-org/GLM-4.7-Flash",
+        "https://docs.abliteration.ai/models"
+      ],
+      "strengths": [
+        [
+          "Few refusals on fiction and sensitive topics",
+          "Peu de refus sur la fiction et les sujets sensibles"
+        ],
+        [
+          "Gemma 4 Uncensored: private, cheap, reads images",
+          "Gemma 4 Uncensored : privé, bon marché, lit les images"
+        ]
+      ],
+      "limits": [
+        [
+          "Removing refusals can lower accuracy and judgment",
+          "Supprimer les refus peut réduire la justesse et le jugement"
+        ],
+        [
+          "The encrypted Gemma has no tool calling, so none of Sub Rosa's agent tools",
+          "La Gemma chiffrée n’a pas d’appel d’outils, donc pas d’outils de l’agent Sub Rosa"
+        ]
+      ],
+      "facts": [
+        [
+          "Gemma 4 Uncensored: 256K context, vision",
+          "Gemma 4 Uncensored : contexte de 256K, vision"
+        ],
+        ["Abliterated Large V2: 1M context", "Abliterated Large V2 : contexte de 1M"]
+      ]
+    }
+  ]
+}

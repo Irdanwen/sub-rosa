@@ -1,0 +1,1702 @@
+{
+  "families": [
+    {
+      "slug": "qwen-image-edit",
+      "differentiator": [
+        "Instruction-following edits from Alibaba that change what you ask for and leave the rest alone, with clean in-image text editing. The line began as an open 20B model and the current 3.0 versions are closed.",
+        "Des retouches d’Alibaba qui suivent la consigne : elles changent ce que vous demandez et laissent le reste intact, avec une édition propre du texte dans l’image. La gamme est née comme un modèle ouvert de 20 Md ; les versions 3.0 actuelles sont fermées."
+      ],
+      "signature": [
+        ["Changes what you ask, leaves the rest", "Change ce que vous demandez, pas le reste"],
+        [
+          "Clean text edits in Chinese and English",
+          "Édition de texte propre en chinois et en anglais"
+        ],
+        ["Early versions open, Apache 2.0", "Premières versions ouvertes, Apache 2.0"]
+      ],
+      "releases": [
+        {
+          "version": "Qwen-Image-Edit",
+          "date": "2025-08",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Semantic and appearance editing plus bilingual text editing on the 20B Qwen-Image base",
+              "Édition sémantique et d’apparence plus édition de texte bilingue sur la base Qwen-Image de 20 Md"
+            ]
+          ],
+          "source": "https://huggingface.co/Qwen/Qwen-Image-Edit"
+        },
+        {
+          "version": "Qwen-Image-Edit-2511",
+          "date": "2025-11",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Better consistency: less image drift, better character identity, built-in community LoRAs",
+              "Meilleure cohérence : moins de dérive de l’image, identité des personnages mieux tenue, LoRA communautaires intégrés"
+            ]
+          ],
+          "source": "https://huggingface.co/Qwen/Qwen-Image-Edit-2511"
+        },
+        {
+          "version": "Qwen-Image 2.0 (edit)",
+          "date": "2026-03-03",
+          "ids": ["qwen-image-2-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Edit model of the second generation, listed on the leaderboard on 2026-03-03",
+              "Modèle de retouche de la deuxième génération, inscrit au classement le 03/03/2026"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Qwen-Image 2.0 Pro (edit)",
+          "date": "2026-04-22",
+          "ids": ["qwen-image-2-pro-edit"],
+          "external": false,
+          "changes": [
+            ["Pro tier of the second generation", "Niveau Pro de la deuxième génération"]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Qwen-Image 3.0 and 3.0 Pro (edit)",
+          "date": "2026-07-21",
+          "ids": ["qwen-image-3-edit", "qwen-image-3-pro-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Third generation, closed and cloud-only",
+              "Troisième génération, fermée et uniquement dans le cloud"
+            ]
+          ],
+          "source": "https://www.drweb.de/qwen-image-3-0-ohne-gewichte-benchmarks/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Qwen-Image 3 edit",
+          "ids": ["qwen-image-3-edit", "qwen-image-3-pro-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://www.drweb.de/qwen-image-3-0-ohne-gewichte-benchmarks/"
+        },
+        {
+          "version": "Qwen-Image 2 edit",
+          "ids": ["qwen-image-2-edit", "qwen-image-2-pro-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Change the text on a flyer", "Changer le texte d’un flyer"],
+          "prompt": [
+            "Change the date on this flyer to 'March 14' and keep the same font, color and position.",
+            "Changez la date de ce flyer en « 14 mars » en gardant la même police, la même couleur et la même position."
+          ],
+          "why": [
+            "Text editing inside images is a stated strength of the line.",
+            "L’édition de texte dans l’image est une force annoncée de la gamme."
+          ]
+        },
+        {
+          "title": ["Swap one object", "Remplacer un objet"],
+          "prompt": [
+            "Replace the laptop on the desk with a stack of three books, same lighting and shadows.",
+            "Remplacez l’ordinateur portable sur le bureau par une pile de trois livres, avec la même lumière et les mêmes ombres."
+          ],
+          "why": ["It changes only what you name.", "Il ne change que ce que vous nommez."]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "seedream-edit",
+          "verdict": [
+            "Seedream preserves lighting and color tone across edits; Qwen is stronger on text.",
+            "Seedream préserve la lumière et les tons d’une retouche à l’autre ; Qwen est plus fort sur le texte."
+          ]
+        },
+        {
+          "slug": "gpt-image-edit",
+          "verdict": [
+            "GPT Image edits rank higher in the arena; Qwen edits are cheaper.",
+            "Les retouches GPT Image sont mieux classées dans l’arène ; celles de Qwen coûtent moins cher."
+          ]
+        },
+        {
+          "slug": "firered-edit",
+          "verdict": [
+            "FireRed is open and private and strong on portraits; Qwen 3 is closed but ranks higher.",
+            "FireRed est ouvert et privé, fort sur les portraits ; Qwen 3 est fermé mais mieux classé."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/Qwen/Qwen-Image-Edit",
+        "https://huggingface.co/Qwen/Qwen-Image-Edit-2511",
+        "https://www.drweb.de/qwen-image-3-0-ohne-gewichte-benchmarks/",
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://webkul.com/blog/qwen-image-2/",
+        "https://llm-stats.com/blog/research/qwen-image-3-0-launch"
+      ],
+      "strengths": [
+        [
+          "Changes what you ask, leaves the rest alone",
+          "Change ce que vous demandez, laisse le reste"
+        ],
+        ["Edits text in an image cleanly", "Retouche proprement le texte d’une image"],
+        ["About 2 to 2.6 credits an edit", "Environ 2 à 2,6 crédits la retouche"]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: Alibaba Cloud's policy applies",
+          "Anonymisé, pas privé : la politique d’Alibaba Cloud s’applique"
+        ],
+        [
+          "2 Pro is now dearer (about 5 credits) than 3 Pro",
+          "2 Pro est désormais plus cher (environ 5 crédits) que 3 Pro"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        ["Qwen Image 3 and 3 Pro: 1K or 2K output", "Qwen Image 3 et 3 Pro : sortie 1K ou 2K"]
+      ]
+    },
+    {
+      "slug": "seedream-edit",
+      "differentiator": [
+        "ByteDance's editors keep the lighting, color tone and the subject's look while changing what you ask, and can combine several images into one coherent scene.",
+        "Les retouches de ByteDance gardent la lumière, les tons et l’aspect du sujet tout en changeant ce que vous demandez, et savent combiner plusieurs images en une scène cohérente."
+      ],
+      "signature": [
+        ["Preserves subject, lighting and color", "Préserve sujet, lumière et couleur"],
+        ["Combines several images coherently", "Combine plusieurs images de façon cohérente"],
+        ["Fair price for the quality", "Prix correct pour la qualité"]
+      ],
+      "releases": [
+        {
+          "version": "SeedEdit 3.0",
+          "date": "2025-06",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Earlier ByteDance instruction editor, reference point for the line",
+              "Ancien éditeur par instruction de ByteDance, point de repère de la gamme"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Seedream 4.0 (edit)",
+          "date": "2025-09",
+          "ids": ["seedream-v4-edit"],
+          "external": false,
+          "changes": [
+            ["Edit model of the 4.0 generation", "Modèle de retouche de la génération 4.0"]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Seedream 5.0 Lite (edit)",
+          "date": "2026-02-13",
+          "ids": ["seedream-v5-lite-edit"],
+          "external": false,
+          "changes": [
+            ["Edit model of the 5.0 Lite tier", "Modèle de retouche du niveau Lite de la 5.0"]
+          ],
+          "source": "https://www.newsquawk.com/headlines/-bytedance-launches-seedream-50-lite-image-generation-model-which-is-first-with-online-search-capability"
+        },
+        {
+          "version": "Seedream 5.0 Pro (edit)",
+          "date": "2026-07-08",
+          "ids": ["seedream-v5-pro-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Flagship tier, ranked higher in the edit arena than the Lite",
+              "Niveau phare, mieux classé que la Lite dans l’arène de retouche"
+            ]
+          ],
+          "source": "https://www.heyuan110.com/posts/ai/2026-07-09-seedream-5-pro/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Seedream 5.0 Pro edit",
+          "ids": ["seedream-v5-pro-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://www.heyuan110.com/posts/ai/2026-07-09-seedream-5-pro/"
+        },
+        {
+          "version": "Seedream 5.0 Lite edit",
+          "ids": ["seedream-v5-lite-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://www.newsquawk.com/headlines/-bytedance-launches-seedream-50-lite-image-generation-model-which-is-first-with-online-search-capability"
+        },
+        {
+          "version": "Seedream 4.0 edit",
+          "ids": ["seedream-v4-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Relight a photo", "Rééclairer une photo"],
+          "prompt": [
+            "Make this living room photo look like early evening with warm lamp light, keeping the furniture and colors the same.",
+            "Donnez à cette photo de salon l’allure d’un début de soirée avec la lumière chaude des lampes, en gardant meubles et couleurs."
+          ],
+          "why": [
+            "It preserves color tone while changing the lighting.",
+            "Il préserve les tons en changeant l’éclairage."
+          ]
+        },
+        {
+          "title": ["Merge two images", "Fusionner deux images"],
+          "prompt": [
+            "Put the jacket from the first image on the model from the second image, same pose and background.",
+            "Mettez la veste de la première image sur le mannequin de la seconde, même pose et même arrière-plan."
+          ],
+          "why": [
+            "It combines references into one coherent scene.",
+            "Il combine les références en une scène cohérente."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "nano-banana-edit",
+          "verdict": [
+            "Nano Banana takes looser instructions but costs more.",
+            "Nano Banana accepte des consignes plus libres mais coûte plus cher."
+          ]
+        },
+        {
+          "slug": "gpt-image-edit",
+          "verdict": [
+            "GPT Image edits rank higher in the arena; Seedream preserves tone and lighting.",
+            "Les retouches GPT Image sont mieux classées dans l’arène ; Seedream préserve les tons et la lumière."
+          ]
+        },
+        {
+          "slug": "qwen-image-edit",
+          "verdict": [
+            "Qwen is stronger on text edits; Seedream on subject and light.",
+            "Qwen est plus fort sur les retouches de texte ; Seedream sur le sujet et la lumière."
+          ]
+        }
+      ],
+      "sources": [
+        "https://www.newsquawk.com/headlines/-bytedance-launches-seedream-50-lite-image-generation-model-which-is-first-with-online-search-capability",
+        "https://www.heyuan110.com/posts/ai/2026-07-09-seedream-5-pro/",
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://runware.ai/docs/models/bytedance-seedream-5-0-pro/guides",
+        "https://happycapy.ai/blog/seedream-4-5"
+      ],
+      "strengths": [
+        ["Preserves subject, lighting and color tone", "Préserve sujet, lumière et tonalité"],
+        [
+          "Combines several images into one coherent scene",
+          "Assemble plusieurs images en une scène cohérente"
+        ],
+        ["About 2.6 credits an edit", "Environ 2,6 crédits la retouche"]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: ByteDance's policy applies",
+          "Anonymisé, pas privé : la politique de ByteDance s’applique"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        ["Seedream 5 Pro: 1K or 2K output", "Seedream 5 Pro : sortie 1K ou 2K"]
+      ]
+    },
+    {
+      "slug": "nano-banana-edit",
+      "differentiator": [
+        "Conversational photo editing from Google: you describe the change in plain words and it keeps people recognizable. It is the Gemini family applied to retouching, strong on loose instructions and blending several photos.",
+        "La retouche conversationnelle de Google : vous décrivez la modification en langage courant et les personnes restent reconnaissables. C’est la famille Gemini appliquée à la retouche, à l’aise avec les consignes floues et la fusion de plusieurs photos."
+      ],
+      "signature": [
+        [
+          "Understands loose, plain-language edits",
+          "Comprend les consignes floues en langage courant"
+        ],
+        [
+          "Blends photos, keeps people recognizable",
+          "Fusionne des photos, personnes reconnaissables"
+        ],
+        ["2 and Pro edit up to 4K", "La 2 et la Pro retouchent jusqu’en 4K"]
+      ],
+      "releases": [
+        {
+          "version": "Nano Banana (Gemini 2.5 Flash Image)",
+          "date": "2025-08",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Made natural-language photo editing mainstream",
+              "A popularisé la retouche photo en langage naturel"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Nano Banana Pro (edit)",
+          "date": "2025-11-20",
+          "ids": ["nano-banana-pro-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Gemini 3 Pro reasoning applied to edits, higher fidelity on complex changes",
+              "Le raisonnement de Gemini 3 Pro appliqué aux retouches, meilleure fidélité sur les changements complexes"
+            ]
+          ],
+          "source": "https://www.capcut.com/resource/google-expect-to-release-nano-banana-2-soon"
+        },
+        {
+          "version": "Nano Banana 2 (edit)",
+          "date": "2026-02-26",
+          "ids": ["nano-banana-2-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Pro-level edits at Flash speed with 4K output",
+              "Retouches de niveau Pro à la vitesse de Flash avec sortie 4K"
+            ]
+          ],
+          "source": "https://www.neowin.net/news/google-launches-nano-banana-2-pro-quality-at-flash-speeds/"
+        },
+        {
+          "version": "Nano Banana 2 Lite (edit)",
+          "date": "2026-06-30",
+          "ids": ["nano-banana-2-lite-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Cheapest edit version for quick fixes at 1K",
+              "Version de retouche la moins chère pour les corrections rapides en 1K"
+            ]
+          ],
+          "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite-image"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Nano Banana 2 edit",
+          "ids": ["nano-banana-2-edit", "nano-banana-pro-edit", "nano-banana-2-lite-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Change the weather", "Changer la météo"],
+          "prompt": [
+            "Make this street photo look like a rainy evening, with wet pavement and reflections, but keep the people and the shop signs unchanged.",
+            "Donnez à cette photo de rue l’allure d’une soirée pluvieuse, avec chaussée mouillée et reflets, sans changer les personnes ni les enseignes."
+          ],
+          "why": [
+            "It follows natural instructions and leaves the rest of the picture alone.",
+            "Il suit les consignes naturelles et laisse le reste de l’image intact."
+          ]
+        },
+        {
+          "title": ["Blend two photos", "Fusionner deux photos"],
+          "prompt": [
+            "Put the person from the first photo next to the dog from the second photo on a park bench, same lighting for both.",
+            "Placez la personne de la première photo à côté du chien de la seconde sur un banc de parc, avec la même lumière pour les deux."
+          ],
+          "why": [
+            "It blends references while keeping people recognizable.",
+            "Il fusionne les références en gardant les personnes reconnaissables."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gpt-image-edit",
+          "verdict": [
+            "GPT Image edits rank higher and replace text more reliably; Nano Banana is more conversational.",
+            "Les retouches GPT Image sont mieux classées et remplacent mieux le texte ; Nano Banana est plus conversationnel."
+          ]
+        },
+        {
+          "slug": "seedream-edit",
+          "verdict": [
+            "Seedream is cheaper and preserves lighting and color tone; Nano Banana handles vaguer instructions.",
+            "Seedream est moins cher et préserve la lumière et les tons ; Nano Banana gère des consignes plus vagues."
+          ]
+        },
+        {
+          "slug": "qwen-image-edit",
+          "verdict": [
+            "Qwen edits are cheaper and strong on text in images; Nano Banana is better at natural, open-ended requests.",
+            "Les retouches Qwen coûtent moins cher et sont solides sur le texte dans l’image ; Nano Banana répond mieux aux demandes naturelles et ouvertes."
+          ]
+        }
+      ],
+      "sources": [
+        "https://www.neowin.net/news/google-launches-nano-banana-2-pro-quality-at-flash-speeds/",
+        "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image",
+        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite-image",
+        "https://www.capcut.com/resource/google-expect-to-release-nano-banana-2-soon",
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://deepmind.google/models/gemini-image/",
+        "https://www.eesel.ai/blog/nano-banana-2-lite"
+      ],
+      "strengths": [
+        ["Understands loose, natural instructions", "Comprend des consignes libres et naturelles"],
+        [
+          "Blends several photos while keeping people recognizable",
+          "Mêle plusieurs photos en gardant les personnes reconnaissables"
+        ]
+      ],
+      "limits": [
+        [
+          "Dearer than Qwen or Seedream: about 5 credits an edit",
+          "Plus cher que Qwen ou Seedream : environ 5 crédits la retouche"
+        ],
+        [
+          "Anonymized, not private: Google's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation de Google s’applique"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        ["1K, 2K or 4K output (2 and Pro)", "Sortie 1K, 2K ou 4K (2 et Pro)"]
+      ]
+    },
+    {
+      "slug": "ideogram-edit",
+      "differentiator": [
+        "Ideogram's precise editor, the one Sub Rosa's Retouch tab opens with: you paint a zone, describe the change, and the untouched pixels stay as they were.",
+        "L’éditeur précis d’Ideogram, celui par lequel s’ouvre l’onglet Retouche de Sub Rosa : vous peignez une zone, décrivez le changement, et les pixels intacts restent tels quels."
+      ],
+      "signature": [
+        ["Paint a zone, change only that zone", "Peignez une zone : elle seule change"],
+        ["Untouched pixels are restored", "Les pixels intacts sont restaurés"],
+        [
+          "Strong on lettering and color fixes",
+          "Fort sur le lettrage et les corrections de couleur"
+        ]
+      ],
+      "releases": [
+        {
+          "version": "Ideogram 4.5 (retouch)",
+          "date": "2026-09",
+          "ids": ["ideogram-v4-5-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Scores 1064 on the image-edit arena, mid-table among the paid editors",
+              "Obtient 1064 sur l’arène de retouche, au milieu du classement parmi les éditeurs payants"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Ideogram 4.5 retouch",
+          "ids": ["ideogram-v4-5-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Fix lettering", "Corriger du lettrage"],
+          "prompt": [
+            "In the masked area, change the word 'SALE' to 'NEW' in the same red lettering.",
+            "Dans la zone masquée, changez le mot « SALE » en « NEW » avec le même lettrage rouge."
+          ],
+          "why": [
+            "It restores untouched pixels, so only the lettering changes.",
+            "Il restaure les pixels intacts : seul le lettrage change."
+          ]
+        },
+        {
+          "title": ["Change a product color", "Changer la couleur d’un produit"],
+          "prompt": [
+            "In the masked area, make the sofa deep green instead of beige, keep the fabric texture.",
+            "Dans la zone masquée, rendez le canapé vert profond au lieu de beige, en gardant la texture du tissu."
+          ],
+          "why": [
+            "Zone-based editing keeps framing and color stable across rounds.",
+            "L’édition par zone garde cadrage et couleur stables d’un tour à l’autre."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gpt-image-edit",
+          "verdict": [
+            "GPT Image ranks higher and costs far less per edit; Ideogram's zone control is more literal.",
+            "GPT Image est mieux classé et coûte bien moins cher par retouche ; le contrôle par zone d’Ideogram est plus littéral."
+          ]
+        },
+        {
+          "slug": "flux-edit",
+          "verdict": [
+            "FLUX keeps faces and products recognizable; Ideogram suits lettering and color fixes.",
+            "FLUX garde visages et produits reconnaissables ; Ideogram convient au lettrage et aux corrections de couleur."
+          ]
+        },
+        {
+          "slug": "seedream-edit",
+          "verdict": [
+            "Seedream is far cheaper and preserves lighting; Ideogram is stricter about untouched pixels.",
+            "Seedream coûte bien moins cher et préserve la lumière ; Ideogram est plus strict sur les pixels intacts."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://runware.ai/docs/models/ideogram-4-5-precise-edit.md"
+      ],
+      "strengths": [
+        [
+          "Restores untouched pixels, so framing and color hold across rounds",
+          "Restaure les pixels non touchés : cadrage et couleurs tiennent d’une passe à l’autre"
+        ],
+        [
+          "Strong on lettering, product and color fixes",
+          "Fort pour le lettrage, les produits et les corrections de couleur"
+        ]
+      ],
+      "limits": [
+        ["Dear: about 13 credits an edit", "Cher : environ 13 crédits la retouche"],
+        [
+          "Anonymized, not private: Ideogram's policy applies",
+          "Anonymisé, pas privé : la politique d’Ideogram s’applique"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        ["1K or 2K; low, medium or high quality", "1K ou 2K ; qualité basse, moyenne ou haute"]
+      ]
+    },
+    {
+      "slug": "gpt-image-edit",
+      "differentiator": [
+        "OpenAI's editors lead the Artificial Analysis image-edit arena. They keep reference details across successive edits and replace text inside images reliably; Sunburst is the more precise, Flare the faster one.",
+        "Les retouches d’OpenAI mènent l’arène de retouche d’images d’Artificial Analysis. Elles gardent les détails d’une référence au fil des retouches successives et remplacent le texte dans l’image de façon fiable ; Sunburst est plus précis, Flare plus rapide."
+      ],
+      "signature": [
+        ["Tops the image-edit arena", "En tête de l’arène de retouche"],
+        ["Reliable text replacement in images", "Remplacement de texte fiable dans l’image"],
+        ["Keeps details across repeated edits", "Garde les détails sur des retouches répétées"]
+      ],
+      "releases": [
+        {
+          "version": "GPT Image 1.5 (edit)",
+          "date": "2025-12-16",
+          "ids": ["gpt-image-1-5-edit"],
+          "external": false,
+          "changes": [
+            [
+              "More precise edits that keep details intact",
+              "Retouches plus précises qui gardent les détails intacts"
+            ]
+          ],
+          "source": "https://openai.com/index/new-chatgpt-images-is-here/"
+        },
+        {
+          "version": "GPT Image 2 (edit)",
+          "date": "2026-04-21",
+          "ids": ["gpt-image-2-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Reasoning before editing, better instruction following and text accuracy",
+              "Raisonnement avant la retouche, meilleur suivi des consignes et exactitude du texte"
+            ]
+          ],
+          "source": "https://datanorth.ai/news/openai-launches-gpt-image-2-with-99-text-accuracy"
+        },
+        {
+          "version": "GPT Image 2.5 Flare and Sunburst (edit)",
+          "date": "2026-09-08",
+          "ids": ["gpt-image-2-5-flare-edit", "gpt-image-2-5-sunburst-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Sharper editing precision, in-image comments in ChatGPT and up to 50% lower latency than 2.0",
+              "Précision d’édition accrue, commentaires dans l’image dans ChatGPT et latence jusqu’à 50 % plus basse que la 2.0"
+            ]
+          ],
+          "source": "https://letsdatascience.com/news/openai-introduces-chatgpt-images-25-with-new-editing-tools-19e7c138"
+        }
+      ],
+      "specs": [
+        {
+          "version": "GPT Image 2.5 edit",
+          "ids": ["gpt-image-2-5-flare-edit", "gpt-image-2-5-sunburst-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://letsdatascience.com/news/openai-introduces-chatgpt-images-25-with-new-editing-tools-19e7c138"
+        },
+        {
+          "version": "GPT Image 2 edit",
+          "ids": ["gpt-image-2-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://datanorth.ai/news/openai-launches-gpt-image-2-with-99-text-accuracy"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Fix a typo on a sign", "Corriger une faute sur un panneau"],
+          "prompt": [
+            "Replace the text on the shop sign with 'Boulangerie Martin' using the same lettering and color, and change nothing else.",
+            "Remplacez le texte de l’enseigne par « Boulangerie Martin » avec la même police et la même couleur, sans rien changer d’autre."
+          ],
+          "why": [
+            "Text replacement is its standout strength.",
+            "Le remplacement de texte est son point fort."
+          ]
+        },
+        {
+          "title": [
+            "Several rounds on one product shot",
+            "Plusieurs retouches d’une photo produit"
+          ],
+          "prompt": [
+            "Keep this sneaker exactly as it is, but put it on a concrete step in warm morning light.",
+            "Gardez cette sneaker exactement telle quelle, mais posez-la sur une marche en béton dans une lumière chaude du matin."
+          ],
+          "why": [
+            "It keeps reference details across successive edits.",
+            "Il garde les détails de la référence d’une retouche à l’autre."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "nano-banana-edit",
+          "verdict": [
+            "Nano Banana edits are more conversational but rank lower in the arena.",
+            "Les retouches Nano Banana sont plus conversationnelles mais moins bien classées dans l’arène."
+          ]
+        },
+        {
+          "slug": "seedream-edit",
+          "verdict": [
+            "Seedream is cheaper and good at lighting and color; GPT Image is more precise on small text.",
+            "Seedream est moins cher et bon sur la lumière et la couleur ; GPT Image est plus précis sur les petits textes."
+          ]
+        },
+        {
+          "slug": "ideogram-edit",
+          "verdict": [
+            "Ideogram's retouch paints a zone and restores the untouched pixels; GPT Image edits by instruction alone.",
+            "La retouche d’Ideogram peint une zone et restaure les pixels intacts ; GPT Image retouche par la seule consigne."
+          ]
+        }
+      ],
+      "sources": [
+        "https://openai.com/index/new-chatgpt-images-is-here/",
+        "https://datanorth.ai/news/openai-launches-gpt-image-2-with-99-text-accuracy",
+        "https://letsdatascience.com/news/openai-introduces-chatgpt-images-25-with-new-editing-tools-19e7c138",
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://docs.kanaries.net/articles/gpt-image-2-5",
+        "https://grida.co/docs/models/gpt-image-2.5"
+      ],
+      "strengths": [
+        [
+          "Keeps reference details across successive edits",
+          "Garde les détails de référence d’une retouche à l’autre"
+        ],
+        ["Reliable text replacement inside images", "Remplacement fiable du texte dans l’image"]
+      ],
+      "limits": [
+        [
+          "About 4 credits for 2.5, far more for older versions",
+          "Environ 4 crédits pour 2.5, bien plus pour les anciennes versions"
+        ],
+        [
+          "Anonymized, not private: OpenAI's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation d’OpenAI s’applique"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        [
+          "1K, 2K or 4K; low, medium or high quality",
+          "1K, 2K ou 4K ; qualité basse, moyenne ou haute"
+        ]
+      ]
+    },
+    {
+      "slug": "flux-edit",
+      "differentiator": [
+        "Black Forest Labs' editors for photoreal changes that keep faces, outfits and products recognizable. They work from reference images and edit locally without disturbing the surroundings.",
+        "Les retouches de Black Forest Labs pour des changements photoréalistes qui gardent visages, tenues et produits reconnaissables. Elles partent d’images de référence et retouchent localement sans perturber le reste."
+      ],
+      "signature": [
+        ["Keeps faces and products recognizable", "Garde visages et produits reconnaissables"],
+        ["Local edits, surroundings untouched", "Retouches locales, décor intact"],
+        ["FLUX 3 edit can output up to 4K", "La retouche FLUX 3 sort jusqu’en 4K"]
+      ],
+      "releases": [
+        {
+          "version": "FLUX.1 Kontext [pro]",
+          "date": "2025-05",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Introduced instruction-based editing with character consistency in the FLUX line",
+              "Introduit la retouche par instruction avec cohérence des personnages dans la gamme FLUX"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "FLUX.2 [max] (edit)",
+          "date": "2025-12-16",
+          "ids": ["flux-2-max-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Multi-reference editing in the same model as generation, at the highest FLUX.2 fidelity",
+              "Édition multiréférence dans le même modèle que la génération, avec la fidélité maximale de FLUX.2"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "FLUX 3 Image (edit)",
+          "date": "2026-07-23",
+          "ids": ["flux-3-image-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Edits with the first jointly trained image, video and audio FLUX",
+              "Retouche avec le premier FLUX entraîné conjointement sur image, vidéo et audio"
+            ]
+          ],
+          "source": "https://bfl.ai/blog"
+        }
+      ],
+      "specs": [
+        {
+          "version": "FLUX 3 edit",
+          "ids": ["flux-3-image-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://bfl.ai/blog"
+        },
+        {
+          "version": "FLUX.2 [max] edit",
+          "ids": ["flux-2-max-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Change an outfit", "Changer une tenue"],
+          "prompt": [
+            "Keep the woman's face and pose exactly, but dress her in a dark green wool coat and a cream scarf.",
+            "Gardez exactement le visage et la pose de la femme, mais habillez-la d’un manteau en laine vert foncé et d’une écharpe crème."
+          ],
+          "why": [
+            "It keeps faces recognizable while changing clothes.",
+            "Il garde les visages reconnaissables en changeant les vêtements."
+          ]
+        },
+        {
+          "title": ["Place a product in a scene", "Placer un produit dans une scène"],
+          "prompt": [
+            "Put this bottle on a marble bathroom shelf with soft window light, keep the label unchanged.",
+            "Posez ce flacon sur une étagère de salle de bain en marbre avec une lumière douce de fenêtre, étiquette inchangée."
+          ],
+          "why": [
+            "It keeps the product consistent across references.",
+            "Il garde le produit cohérent d’une référence à l’autre."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gpt-image-edit",
+          "verdict": [
+            "GPT Image edits rank higher and handle text better; FLUX keeps photoreal skin and materials.",
+            "Les retouches GPT Image sont mieux classées et gèrent mieux le texte ; FLUX conserve la peau et les matières photoréalistes."
+          ]
+        },
+        {
+          "slug": "seedream-edit",
+          "verdict": [
+            "Seedream preserves lighting and color tone at a similar price; FLUX is stronger on faces and outfits.",
+            "Seedream préserve la lumière et les tons à un prix proche ; FLUX est plus solide sur les visages et les tenues."
+          ]
+        },
+        {
+          "slug": "nano-banana-edit",
+          "verdict": [
+            "Nano Banana takes looser, conversational instructions; FLUX 3 edit is cheaper.",
+            "Nano Banana accepte des consignes plus libres et conversationnelles ; la retouche FLUX 3 coûte moins cher."
+          ]
+        }
+      ],
+      "sources": [
+        "https://bfl.ai/blog",
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://en.wikipedia.org/wiki/Flux_(text-to-image_model)",
+        "https://runware.ai/flux-3-image",
+        "https://www.hedra.com/models/image/black-forest-labs/flux2-max"
+      ],
+      "strengths": [
+        [
+          "Consistent characters and products across references",
+          "Personnages et produits cohérents d’une référence à l’autre"
+        ],
+        [
+          "Local edits without disturbing the surroundings",
+          "Retouches locales sans perturber le reste"
+        ]
+      ],
+      "limits": [
+        [
+          "FLUX 3 is days old: few independent reviews yet",
+          "FLUX 3 a quelques jours : peu d’avis indépendants pour l’instant"
+        ],
+        [
+          "Anonymized, not private: Black Forest Labs' policy applies",
+          "Anonymisé, pas privé : la politique de Black Forest Labs s’applique"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        [
+          "FLUX 3: 1K, 2K or 4K output, about 3 credits",
+          "FLUX 3 : sortie 1K, 2K ou 4K, environ 3 crédits"
+        ]
+      ]
+    },
+    {
+      "slug": "grok-imagine-edit",
+      "differentiator": [
+        "xAI's editors in private mode: the pick when the photo you edit should not be kept by anyone. Version 2.0 is the most recent; a cheaper version handles quick fixes.",
+        "Les retouches de xAI en mode privé : le choix quand la photo retouchée ne doit être conservée par personne. La version 2.0 est la plus récente ; une version moins chère gère les corrections rapides."
+      ],
+      "signature": [
+        ["Private mode: no data kept", "Mode privé : aucune donnée conservée"],
+        ["Cheap version for quick fixes", "Version économique pour les corrections rapides"],
+        ["2.0 edit ranks near the top", "La retouche 2.0 se classe près du sommet"]
+      ],
+      "releases": [
+        {
+          "version": "Grok Imagine Image (edit)",
+          "date": "2026-01",
+          "ids": ["grok-imagine-edit"],
+          "external": false,
+          "changes": [["Entry editor of the family", "Éditeur d’entrée de la famille"]],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Grok Imagine Image Quality (edit)",
+          "date": "2026-05",
+          "ids": ["grok-imagine-quality-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Quality tier, 1084 versus 1070 for the standard edit",
+              "Niveau qualité, 1084 contre 1070 pour la retouche standard"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Grok Imagine Image 2.0 (edit)",
+          "date": "2026-08",
+          "ids": ["grok-imagine-image-2-0-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Scores 1107 on the edit arena, level with Seedream 5 Pro",
+              "Obtient 1107 sur l’arène de retouche, à égalité avec Seedream 5 Pro"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Grok Imagine 2.0 edit",
+          "ids": ["grok-imagine-image-2-0-edit", "grok-imagine-quality-edit", "grok-imagine-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://docs.x.ai/docs/models"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Edit a private photo", "Retoucher une photo privée"],
+          "prompt": [
+            "Remove the stranger on the left of this family photo and fill the background naturally.",
+            "Retirez l’inconnu à gauche de cette photo de famille et complète l’arrière-plan de façon naturelle."
+          ],
+          "why": [
+            "Private mode means the provider keeps neither the photo nor the prompt.",
+            "Le mode privé signifie que le fournisseur ne garde ni la photo ni la consigne."
+          ]
+        },
+        {
+          "title": ["A quick fix", "Une correction rapide"],
+          "prompt": [
+            "Brighten this photo slightly and remove the red tint on the faces.",
+            "Éclaircissez légèrement cette photo et retirez la dominante rouge sur les visages."
+          ],
+          "why": [
+            "The cheap version is enough for simple corrections.",
+            "La version économique suffit pour des corrections simples."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gpt-image-edit",
+          "verdict": [
+            "GPT Image edits rank higher but are anonymized; Grok edits are private.",
+            "Les retouches GPT Image sont mieux classées mais anonymisées ; celles de Grok sont privées."
+          ]
+        },
+        {
+          "slug": "firered-edit",
+          "verdict": [
+            "FireRed is also private and cheaper, with open weights; Grok 2.0 ranks higher.",
+            "FireRed est aussi privé et moins cher, à poids ouverts ; Grok 2.0 est mieux classé."
+          ]
+        },
+        {
+          "slug": "qwen-edit-uncensored",
+          "verdict": [
+            "Qwen Edit Uncensored is private too but without content limits; Grok follows xAI's rules.",
+            "Qwen Edit Uncensored est aussi privé mais sans limites de contenu ; Grok suit les règles de xAI."
+          ]
+        }
+      ],
+      "sources": [
+        "https://docs.x.ai/docs/models",
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://llmgateway.io/models/grok-imagine-image-2-0",
+        "https://www.cometapi.com/grok-imagine-quality-mode-api/"
+      ],
+      "strengths": [
+        [
+          "Private mode: no data kept by the provider",
+          "Mode privé : rien n’est conservé par le fournisseur"
+        ],
+        [
+          "A cheap version for quick fixes, about 1.5 credits an edit",
+          "Une version bon marché pour les petites corrections, environ 1,5 crédit la retouche"
+        ]
+      ],
+      "limits": [
+        ["Tops out at 2K", "Plafonne à 2K"],
+        [
+          "2.0 edit costs about 3.6 credits, more than its generator",
+          "La retouche 2.0 coûte environ 3,6 crédits, plus que la génération"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        ["1K or 2K output", "Sortie 1K ou 2K"]
+      ]
+    },
+    {
+      "slug": "luma-uni-edit",
+      "differentiator": [
+        "Luma's reasoning editor, good at changing camera angle, lighting and style on a single image. It takes one source image per edit, so it does not combine photos.",
+        "L’éditeur à raisonnement de Luma, à l’aise pour changer l’angle de caméra, la lumière et le style d’une seule image. Il prend une image source par retouche : il ne combine pas les photos."
+      ],
+      "signature": [
+        ["Directable angle, light and color", "Angle, lumière et couleur pilotables"],
+        ["Style transfer across many styles", "Transfert de style vers de nombreux styles"],
+        ["One source image per edit", "Une seule image source par retouche"]
+      ],
+      "releases": [
+        {
+          "version": "Luma Uni-1 and Uni-1 Max (edit)",
+          "date": "2026-05",
+          "ids": ["luma-uni-1-edit", "luma-uni-1-max-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Natural-language editing from the same unified model as generation",
+              "Retouche en langage naturel avec le même modèle unifié que la génération"
+            ],
+            [
+              "Max tier scores 1070 versus 1039 for the base edit",
+              "Le niveau Max obtient 1070 contre 1039 pour la retouche de base"
+            ]
+          ],
+          "source": "https://lumalabs.ai/blog"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Luma Uni-1 edit",
+          "ids": ["luma-uni-1-edit", "luma-uni-1-max-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://lumalabs.ai/blog"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Change the camera angle", "Changer l’angle de caméra"],
+          "prompt": [
+            "Show this building from a low angle looking up, same style and colors.",
+            "Montrez ce bâtiment en contre-plongée, même style et mêmes couleurs."
+          ],
+          "why": [
+            "Camera and lighting changes are its stated strength.",
+            "Les changements de caméra et de lumière sont une force annoncée."
+          ]
+        },
+        {
+          "title": ["Restyle a photo", "Changer le style d’une photo"],
+          "prompt": [
+            "Turn this portrait into a Japanese woodblock print, keep the pose.",
+            "Transformez ce portrait en estampe japonaise, en gardant la pose."
+          ],
+          "why": [
+            "Style transfer across many art styles.",
+            "Transfert de style vers de nombreux styles."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gpt-image-edit",
+          "verdict": [
+            "GPT Image edits rank far higher and accept several images; Luma takes one.",
+            "Les retouches GPT Image sont bien mieux classées et acceptent plusieurs images ; Luma n’en prend qu’une."
+          ]
+        },
+        {
+          "slug": "wan-image-edit",
+          "verdict": [
+            "Wan is a pro editor for multi-element changes; Luma for angle and light.",
+            "Wan est un éditeur pro pour les changements multi-éléments ; Luma pour l’angle et la lumière."
+          ]
+        },
+        {
+          "slug": "seedream-edit",
+          "verdict": [
+            "Seedream combines images and keeps lighting; Luma restyles and re-angles.",
+            "Seedream combine des images et garde la lumière ; Luma change le style et l’angle."
+          ]
+        }
+      ],
+      "sources": [
+        "https://lumalabs.ai/blog",
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://lumalabs.ai/uni-1"
+      ],
+      "strengths": [
+        [
+          "Directable changes to angle, light and color",
+          "Changements dirigés d’angle, de lumière et de couleur"
+        ],
+        [
+          "Style transfer across many art styles",
+          "Transfert de style, avec de nombreux styles artistiques au choix"
+        ]
+      ],
+      "limits": [
+        ["One image per edit: no combining", "Une image par retouche : pas d’assemblage"],
+        [
+          "Anonymized, not private: Luma's policy applies",
+          "Anonymisé, pas privé : la politique de Luma s’applique"
+        ]
+      ],
+      "facts": [
+        ["Single source image", "Une seule image source"],
+        ["About 3 credits (Uni-1)", "Environ 3 crédits (Uni-1)"]
+      ]
+    },
+    {
+      "slug": "muse-image-edit",
+      "differentiator": [
+        "Meta's editor at about one credit: a cheap way to try a change or blend a few photos. It ranks sixth on the Artificial Analysis image-edit arena.",
+        "L’éditeur de Meta à environ un crédit : une façon économique d’essayer un changement ou de fusionner quelques photos. Il se classe sixième de l’arène de retouche d’Artificial Analysis."
+      ],
+      "signature": [
+        ["About 1 credit an edit", "Environ 1 crédit par retouche"],
+        ["Blends several references", "Fusionne plusieurs références"],
+        ["6th on the edit arena", "6e dans l’arène de retouche"]
+      ],
+      "releases": [
+        {
+          "version": "Muse Image (edit)",
+          "date": "2026-07-07",
+          "ids": ["muse-image-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Editing from the first Muse image model, scoring 1118 on the edit arena",
+              "Retouche du premier modèle d’images Muse, 1118 sur l’arène de retouche"
+            ]
+          ],
+          "source": "https://ai.meta.com/blog/"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Muse Image edit",
+          "ids": ["muse-image-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://ai.meta.com/blog/"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Try a change cheaply", "Essayer un changement à bas coût"],
+          "prompt": [
+            "Make the background of this portrait a soft blue studio backdrop.",
+            "Remplacez l’arrière-plan de ce portrait par un fond de studio bleu doux."
+          ],
+          "why": [
+            "At about one credit, trying several versions costs little.",
+            "À environ un crédit, tester plusieurs versions coûte peu."
+          ]
+        },
+        {
+          "title": ["Blend photos", "Fusionner des photos"],
+          "prompt": [
+            "Combine these three photos into one group picture on a beach at sunset.",
+            "Combinez ces trois photos en une photo de groupe sur une plage au coucher du soleil."
+          ],
+          "why": [
+            "It blends several references into one image.",
+            "Il fusionne plusieurs références en une seule image."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "gpt-image-edit",
+          "verdict": [
+            "GPT Image edits rank higher and handle text better, at a higher price.",
+            "Les retouches GPT Image sont mieux classées et gèrent mieux le texte, à un prix plus élevé."
+          ]
+        },
+        {
+          "slug": "seedream-edit",
+          "verdict": [
+            "Seedream is pricier but preserves lighting and tone more carefully.",
+            "Seedream coûte plus cher mais préserve plus soigneusement la lumière et les tons."
+          ]
+        },
+        {
+          "slug": "qwen-image-edit",
+          "verdict": [
+            "Qwen edits are stronger on in-image text.",
+            "Les retouches Qwen sont plus fortes sur le texte dans l’image."
+          ]
+        }
+      ],
+      "sources": [
+        "https://ai.meta.com/blog/",
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://about.fb.com/news/2026/07/introducing-muse-image/"
+      ],
+      "strengths": [
+        ["About 1 credit an edit", "Environ 1 crédit la retouche"],
+        ["Blends several references into one image", "Mêle plusieurs références en une image"]
+      ],
+      "limits": [
+        [
+          "Anonymized, not private: Meta's retention policy applies",
+          "Anonymisé, pas privé : la politique de conservation de Meta s’applique"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ]
+      ]
+    },
+    {
+      "slug": "wan-image-edit",
+      "differentiator": [
+        "Alibaba Wan's professional editor for complex, multi-element changes and restyling from plain instructions. It keeps detail when several elements change at once.",
+        "L’éditeur professionnel Wan d’Alibaba pour les changements complexes à plusieurs éléments et le changement de style à partir de consignes simples. Il garde le détail quand plusieurs éléments changent à la fois."
+      ],
+      "signature": [
+        ["Complex multi-element edits", "Retouches complexes multi-éléments"],
+        ["Restyles from plain instructions", "Change le style sur consigne simple"],
+        ["Pro-tier editor", "Éditeur de niveau Pro"]
+      ],
+      "releases": [
+        {
+          "version": "Wan 2.6 Image",
+          "date": "2025-12",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Previous generation, 1038 on the edit arena",
+              "Génération précédente, 1038 sur l’arène de retouche"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Wan 2.7 Pro (edit)",
+          "date": "2026-04",
+          "ids": ["wan-2-7-pro-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Pro editor scoring 1042 on the edit arena",
+              "Éditeur Pro, 1042 sur l’arène de retouche"
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Wan 2.7 Pro edit",
+          "ids": ["wan-2-7-pro-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Swap several elements", "Remplacer plusieurs éléments"],
+          "prompt": [
+            "Change the sofa to a green velvet one, the rug to a striped wool one and the wall color to warm white.",
+            "Remplacez le canapé par un canapé en velours vert, le tapis par un tapis rayé en laine et la couleur du mur par un blanc chaud."
+          ],
+          "why": [
+            "It keeps detail when several elements change.",
+            "Il garde le détail quand plusieurs éléments changent."
+          ]
+        },
+        {
+          "title": ["Restyle a product shot", "Changer le style d’une photo produit"],
+          "prompt": [
+            "Restyle this sneaker photo as a neon cyberpunk ad, keep the shoe's shape and logo.",
+            "Changez le style de cette photo de sneaker en publicité cyberpunk néon, en gardant la forme et le logo de la chaussure."
+          ],
+          "why": ["It restyles from plain instructions.", "Il change le style sur consigne simple."]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "seedream-edit",
+          "verdict": [
+            "Seedream is cheaper and preserves lighting and tone.",
+            "Seedream coûte moins cher et préserve la lumière et les tons."
+          ]
+        },
+        {
+          "slug": "qwen-image-edit",
+          "verdict": [
+            "Qwen edits are cheaper and stronger on text.",
+            "Les retouches Qwen coûtent moins cher et sont plus fortes sur le texte."
+          ]
+        },
+        {
+          "slug": "luma-uni-edit",
+          "verdict": [
+            "Luma is cheaper and good at angle and light, but one image only.",
+            "Luma coûte moins cher et change bien l’angle et la lumière, mais sur une seule image."
+          ]
+        }
+      ],
+      "sources": [
+        "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+        "https://www.eachlabs.ai/alibaba/wan-2-7/alibaba-wan-2-7-pro-text-to-image",
+        "https://help.scenario.com/articles/9990433066-wan-2-7-alibaba-s-new-image-generation-standard"
+      ],
+      "strengths": [
+        [
+          "Swaps elements and restyles from plain instructions",
+          "Remplace des éléments et change le style sur simple consigne"
+        ],
+        [
+          "Keeps detail on multi-element edits",
+          "Garde le détail sur les retouches à plusieurs éléments"
+        ]
+      ],
+      "limits": [
+        ["About 4.8 credits an edit", "Environ 4,8 crédits la retouche"],
+        [
+          "Anonymized, not private: Alibaba Cloud's policy applies",
+          "Anonymisé, pas privé : la politique d’Alibaba Cloud s’applique"
+        ]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        ["1K or 2K output", "Sortie 1K ou 2K"]
+      ]
+    },
+    {
+      "slug": "firered-edit",
+      "differentiator": [
+        "An open 20B editing model from Xiaohongshu's FireRed team, released under Apache 2.0 and run in private mode. It keeps a person's identity through edits and restores old photos.",
+        "Un modèle de retouche ouvert de 20 Md de l’équipe FireRed de Xiaohongshu, publié sous Apache 2.0 et exécuté en mode privé. Il garde l’identité d’une personne à travers les retouches et restaure les vieilles photos."
+      ],
+      "signature": [
+        ["Open 20B weights, Apache 2.0", "20 Md à poids ouverts, Apache 2.0"],
+        ["Keeps identity, restores old photos", "Garde l’identité, restaure les vieilles photos"],
+        ["Private mode at about 2 credits", "Mode privé pour environ 2 crédits"]
+      ],
+      "releases": [
+        {
+          "version": "FireRed-Image-Edit 1.0",
+          "date": "2026-02",
+          "ids": ["firered-image-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Native editing model built from a text-to-image foundation with Qwen-Image architecture",
+              "Modèle de retouche natif construit sur une base texte vers image d’architecture Qwen-Image"
+            ],
+            [
+              "Supports text-style preservation, restoration and multi-image edits such as virtual try-on",
+              "Prend en charge la préservation du style de texte, la restauration et les retouches multi-images comme l’essayage virtuel"
+            ]
+          ],
+          "source": "https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.0"
+        }
+      ],
+      "specs": [
+        {
+          "version": "FireRed-Image-Edit 1.0",
+          "ids": ["firered-image-edit"],
+          "params": "20B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.0"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["Restore an old photo", "Restaurer une vieille photo"],
+          "prompt": [
+            "Restore this scanned 1950s family photo: remove scratches and fading, keep everyone's face unchanged.",
+            "Restaurez cette photo de famille des années 1950 scannée : retirez les rayures et la décoloration, sans changer le visage de personne."
+          ],
+          "why": [
+            "Old-photo restoration is a stated feature.",
+            "La restauration de vieilles photos est une fonction annoncée."
+          ]
+        },
+        {
+          "title": ["A portrait edit", "Une retouche de portrait"],
+          "prompt": [
+            "Change the outfit to a navy blazer and keep the face and hairstyle exactly the same.",
+            "Changez la tenue en blazer bleu marine en gardant exactement le visage et la coiffure."
+          ],
+          "why": [
+            "It keeps identity through edits, in private mode.",
+            "Il garde l’identité à travers les retouches, en mode privé."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "qwen-edit-uncensored",
+          "verdict": [
+            "Qwen Edit Uncensored is also private but has no content limits and little documentation.",
+            "Qwen Edit Uncensored est aussi privé mais sans limites de contenu et peu documenté."
+          ]
+        },
+        {
+          "slug": "qwen-image-edit",
+          "verdict": [
+            "Qwen 3 edits rank higher but are closed and not private.",
+            "Les retouches Qwen 3 sont mieux classées mais fermées et non privées."
+          ]
+        },
+        {
+          "slug": "grok-imagine-edit",
+          "verdict": [
+            "Grok Imagine edits are private too, closed and rank higher.",
+            "Les retouches Grok Imagine sont aussi privées, fermées et mieux classées."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.0",
+        "https://docs.venice.ai/overview/models",
+        "https://github.com/FireRedTeam/FireRed-Image-Edit"
+      ],
+      "strengths": [
+        [
+          "Keeps a person's identity through edits",
+          "Garde l’identité d’une personne au fil des retouches"
+        ],
+        ["Restores old photos", "Restaure les photos anciennes"],
+        ["Private mode at about 2 credits", "Mode privé pour environ 2 crédits"]
+      ],
+      "limits": [
+        ["Short prompts only: 1,500 characters", "Consignes courtes seulement : 1 500 caractères"]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ],
+        ["Open weights, Apache 2.0 license", "Poids ouverts, licence Apache 2.0"]
+      ]
+    },
+    {
+      "slug": "qwen-edit-uncensored",
+      "differentiator": [
+        "A Qwen-based image editor without content restrictions, run in private mode for about 2 credits. It accepts edits other models refuse, and public documentation is thin.",
+        "Un éditeur d’images basé sur Qwen, sans restrictions de contenu, exécuté en mode privé pour environ 2 crédits. Il accepte des retouches que d’autres modèles refusent, et la documentation publique est maigre."
+      ],
+      "signature": [
+        ["Qwen-based, no content limits", "Basé sur Qwen, sans limites de contenu"],
+        ["Private mode, about 2 credits", "Mode privé, environ 2 crédits"],
+        ["Little public documentation", "Peu de documentation publique"]
+      ],
+      "releases": [
+        {
+          "version": "Qwen Edit Uncensored",
+          "date": null,
+          "ids": ["qwen-edit-uncensored"],
+          "external": false,
+          "changes": [
+            [
+              "Uncensored Qwen-based editor listed at $0.04 an edit on Venice",
+              "Éditeur non censuré basé sur Qwen, affiché à 0,04 $ la retouche chez Venice"
+            ]
+          ],
+          "source": "https://docs.venice.ai/overview/models"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Qwen Edit Uncensored",
+          "ids": ["qwen-edit-uncensored"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://docs.venice.ai/overview/models"
+        }
+      ],
+      "useCases": [
+        {
+          "title": ["A permissive edit", "Une retouche sans restriction"],
+          "prompt": [
+            "Change the lighting of this portrait to a dim, moody evening and keep the face unchanged.",
+            "Changez l’éclairage de ce portrait pour une soirée tamisée et sombre en gardant le visage inchangé."
+          ],
+          "why": [
+            "It does not apply the content limits other editors do.",
+            "Il n’applique pas les limites de contenu des autres éditeurs."
+          ]
+        },
+        {
+          "title": ["A private edit", "Une retouche privée"],
+          "prompt": [
+            "Blur the background of this personal photo and warm up the colors.",
+            "Floutez l’arrière-plan de cette photo personnelle et réchauffez les couleurs."
+          ],
+          "why": [
+            "Private mode keeps the photo from being retained.",
+            "Le mode privé évite que la photo soit conservée."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "firered-edit",
+          "verdict": [
+            "FireRed is open and documented, with strong portrait handling.",
+            "FireRed est ouvert et documenté, avec un bon traitement des portraits."
+          ]
+        },
+        {
+          "slug": "qwen-image-edit",
+          "verdict": [
+            "Qwen Image 3 edits are better documented and rank higher but are not private.",
+            "Les retouches Qwen Image 3 sont mieux documentées et mieux classées mais non privées."
+          ]
+        },
+        {
+          "slug": "grok-imagine-edit",
+          "verdict": [
+            "Grok Imagine edits are private but follow xAI's content rules.",
+            "Les retouches Grok Imagine sont privées mais suivent les règles de contenu de xAI."
+          ]
+        }
+      ],
+      "sources": ["https://docs.venice.ai/overview/models"],
+      "strengths": [
+        [
+          "Private mode: no data kept by the provider",
+          "Mode privé : rien n’est conservé par le fournisseur"
+        ],
+        ["Accepts edits other models refuse", "Accepte des retouches que d’autres modèles refusent"]
+      ],
+      "limits": [
+        ["Short prompts only: 1,500 characters", "Consignes courtes seulement : 1 500 caractères"],
+        ["Little public documentation", "Peu de documentation publique"]
+      ],
+      "facts": [
+        [
+          "Up to 3 images per edit in Sub Rosa, 5 MB each",
+          "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
+        ]
+      ]
+    }
+  ]
+}
