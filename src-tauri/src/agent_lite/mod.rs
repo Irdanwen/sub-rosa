@@ -415,7 +415,7 @@ async fn run_turn(
     // catalog costs a round trip.
     let vision_route =
         if snapshot.is_some() && attachments.iter().any(|entry| entry.kind == "image") {
-            crate::carpe_diem::media::carpe_diem_media_catalog()
+            crate::carpe_diem::media::recent_media_catalog(std::time::Duration::from_secs(300))
                 .await
                 .ok()
                 .and_then(|catalog| {
