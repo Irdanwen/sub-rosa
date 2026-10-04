@@ -1,5 +1,6 @@
 import { number, t, type SiteLocale } from "../../lib/i18n";
 import { eloWinShare, guide } from "../../models/guide";
+import { at } from "../../models/charts";
 import { read } from "../docs-content";
 import { catalogHref } from "./shared";
 
@@ -26,10 +27,7 @@ function ContextFigure() {
             <span className="chart-row-link">
               <span className="chart-label">{label}</span>
               <span className="chart-track" aria-hidden="true">
-                <span
-                  className="chart-bar"
-                  style={{ width: `${Math.max(1.5, value / 10_000)}%` }}
-                />
+                <span className={`chart-bar ${at.w(Math.max(1.5, value / 10_000))}`} />
               </span>
               <span className="chart-value">{number(value, 0)}</span>
             </span>
@@ -61,7 +59,7 @@ function EloFigure() {
                 {t(`${gap} points apart`, `${gap} points d’écart`)}
               </span>
               <span className="chart-track" aria-hidden="true">
-                <span className="chart-bar" style={{ width: `${eloWinShare(gap) * 100}%` }} />
+                <span className={`chart-bar ${at.w(eloWinShare(gap) * 100)}`} />
               </span>
               <span className="chart-value">{number(eloWinShare(gap) * 100, 0)} %</span>
             </span>
