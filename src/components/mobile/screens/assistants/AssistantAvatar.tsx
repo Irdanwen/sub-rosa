@@ -343,12 +343,12 @@ export function AvatarSheet({
               {t("Your gallery has no image yet. Generate one, or choose a photo.")}
             </p>
           ) : (
-            <AvatarGrid images={step.images} onPick={(image) => void adopt(image)} />
+            <GalleryImageGrid images={step.images} onPick={(image) => void adopt(image)} />
           )
         ) : null}
 
         {step.kind === "choose" ? (
-          <AvatarGrid images={step.images} onPick={(image) => void adopt(image)} />
+          <GalleryImageGrid images={step.images} onPick={(image) => void adopt(image)} />
         ) : null}
 
         {step.kind === "busy" ? (
@@ -385,7 +385,7 @@ export function AvatarSheet({
   );
 }
 
-function AvatarGrid({
+export function GalleryImageGrid({
   images,
   onPick,
 }: {

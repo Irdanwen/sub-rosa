@@ -5674,3 +5674,264 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A word in the header's trailing edge ("Save"), where the other screens put
+   an icon. */
+.mobile-header-text-button {
+  min-height: 44px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-header-text-button:disabled {
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+/* The guided creator: one question per screen, the next step pinned under it. */
+.mobile-assistant-flow-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6) var(--sp-8);
+}
+
+.mobile-assistant-flow-progress {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.mobile-assistant-flow-progress span {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--border);
+  transition: background-color var(--t-med) var(--ease-out);
+}
+
+.mobile-assistant-flow-progress span[data-done] {
+  background: var(--primary);
+}
+
+.mobile-assistant-flow-title {
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-medium);
+  line-height: 1.25;
+  color: var(--foreground);
+}
+
+.mobile-assistant-flow-lead {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+}
+
+.mobile-assistant-flow-note {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-assistant-flow-link {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-assistant-flow-field {
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--foreground);
+  resize: none;
+}
+
+.mobile-assistant-flow-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mobile-assistant-flow-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.mobile-assistant-flow-chip {
+  min-height: 40px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.mobile-assistant-flow-chip[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 14%, var(--card));
+}
+
+.mobile-assistant-flow-footer {
+  padding: var(--sp-3) var(--sp-6) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-subtle);
+  background: var(--background);
+}
+
+.mobile-assistant-flow-next {
+  width: 100%;
+}
+
+/* The editor: who the assistant is, then its settings rows. */
+.mobile-assistant-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-8);
+}
+
+.mobile-assistant-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border-radius: var(--r-xl);
+  background: var(--card);
+}
+
+.mobile-assistant-identity-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-assistant-identity-name,
+.mobile-assistant-identity-description {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  text-align: center;
+  resize: none;
+}
+
+.mobile-assistant-identity-name {
+  font-weight: var(--fw-medium);
+}
+
+.mobile-assistant-identity-description {
+  color: var(--muted-foreground);
+}
+
+/* A full-screen text: the instructions, or the opening message. */
+.mobile-assistant-page-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
+}
+
+.mobile-assistant-page-field {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--foreground);
+  line-height: 1.5;
+  resize: none;
+}
+
+.mobile-assistant-page-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.mobile-assistant-page-meta span {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-assistant-page-meta[data-over] span {
+  color: var(--destructive);
+}
+
+.mobile-assistant-references {
+  padding: var(--sp-2) var(--sp-4) var(--sp-8);
+}
+
+.mobile-assistant-reference-row {
+  align-items: center;
+}
+
+.mobile-assistant-reference-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+}
+
+.mobile-assistant-reference-status {
+  flex: none;
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.mobile-assistant-reference-status[data-status="ready"] {
+  background: color-mix(in oklch, var(--primary) 14%, transparent);
+  color: var(--foreground);
+}
+
+.mobile-assistant-reference-status[data-status="failed"] {
+  background: color-mix(in oklch, var(--destructive) 14%, transparent);
+  color: var(--destructive);
+}
