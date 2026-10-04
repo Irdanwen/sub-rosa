@@ -137,6 +137,8 @@ describe("model catalog depth", () => {
       setWebsiteLocale(path.startsWith("/fr") ? "fr" : "en");
       const html = renderToString(<App initialPath={path} />);
       expect(html, path).not.toMatch(/NaN|undefined|Infinity|\[object Object\]/);
+      // The site's CSP (style-src 'self') refuses style attributes: charts carry geometry as classes.
+      expect(html, path).not.toMatch(/ style="/);
     }
     setWebsiteLocale("fr");
     const glm = renderToString(<App initialPath="/fr/models/glm" />);

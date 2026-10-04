@@ -128,7 +128,7 @@ export function ComparePage({ query, locale }: { query: string; locale: SiteLoca
 
       {chosen.length >= 1 && (
         <div className="models-table-wrap compare-table">
-          <table style={{ "--compare-columns": chosen.length } as React.CSSProperties}>
+          <table className={`compare-cols-${chosen.length}`}>
             <thead>
               <tr>
                 <th scope="col">

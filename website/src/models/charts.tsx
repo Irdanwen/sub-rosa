@@ -1,6 +1,17 @@
 import type { ReactNode } from "react";
 import { number, t } from "../lib/i18n";
 
+/** Geometry travels as classes, never as style attributes: the site's CSP
+ * (`style-src 'self'`) refuses inline styles in the prerendered HTML, and
+ * the charts must read before any script runs. Positions snap to half a
+ * percent; the matching rules are generated at the end of style.css. */
+const step = (value: number) => Math.round(Math.min(100, Math.max(0, value)) * 2);
+export const at = {
+  x: (value: number) => `at-x-${step(value)}`,
+  y: (value: number) => `at-y-${step(value)}`,
+  w: (value: number) => `at-w-${step(value)}`,
+};
+
 /** Charts are plain HTML and CSS: they prerender, read without JavaScript, keep
  * their text at reading size on a phone, and every value is also in the table
  * the reader can open under the chart. One accent marks the family the page is
@@ -95,10 +106,7 @@ export function BarChart({
                 {row.sub && <small>{row.sub}</small>}
               </span>
               <span className="chart-track" aria-hidden="true">
-                <span
-                  className="chart-bar"
-                  style={{ width: `${Math.max(1.5, (row.value / top) * 100)}%` }}
-                />
+                <span className={`chart-bar ${at.w(Math.max(1.5, (row.value / top) * 100))}`} />
               </span>
               <span className="chart-value">{row.display}</span>
             </Mark>
@@ -118,7 +126,7 @@ export function DotChart({
   const span = Math.max(...values) - Math.min(...values) || 1;
   const low = Math.min(...values) - span * 0.08;
   const high = Math.max(...values) + span * 0.08;
-  const at = (value: number) => ((value - low) / (high - low)) * 100;
+  const place = (value: number) => ((value - low) / (high - low)) * 100;
   const ticks = niceTicks(low, high, 4);
   return (
     <ChartFrame
@@ -138,9 +146,9 @@ export function DotChart({
               </span>
               <span className="chart-axis" aria-hidden="true">
                 {ticks.map((tick) => (
-                  <span className="chart-grid" key={tick} style={{ left: `${at(tick)}%` }} />
+                  <span className={`chart-grid ${at.x(place(tick))}`} key={tick} />
                 ))}
-                <span className="chart-dot" style={{ left: `${at(row.value)}%` }} />
+                <span className={`chart-dot ${at.x(place(row.value))}`} />
               </span>
               <span className="chart-value">{row.display}</span>
             </Mark>
@@ -151,7 +159,7 @@ export function DotChart({
         <span />
         <span className="chart-scale-axis">
           {ticks.map((tick) => (
-            <span key={tick} style={{ left: `${at(tick)}%` }}>
+            <span key={tick} className={at.x(place(tick))}>
               {number(tick, 0)}
             </span>
           ))}
@@ -228,10 +236,7 @@ export function ScatterChart({
           {yTicks.map((tick) => (
             <span
               key={`y${tick}`}
-              className="chart-hline"
-              style={{
-                top: `${higherIsBetter ? (1 - (tick - y0) / (y1 - y0)) * 100 : ((tick - y0) / (y1 - y0)) * 100}%`,
-              }}
+              className={`chart-hline ${at.y(higherIsBetter ? (1 - (tick - y0) / (y1 - y0)) * 100 : ((tick - y0) / (y1 - y0)) * 100)}`}
             >
               <span>{number(tick, tick < 10 ? 1 : 0)}</span>
             </span>
@@ -239,8 +244,7 @@ export function ScatterChart({
           {xTicks.map((tick) => (
             <span
               key={`x${tick}`}
-              className="chart-vline"
-              style={{ left: `${((Math.log10(tick) - x0) / (x1 - x0)) * 100}%` }}
+              className={`chart-vline ${at.x(((Math.log10(tick) - x0) / (x1 - x0)) * 100)}`}
             >
               <span>{number(tick, tick < 1 ? 2 : 0)}</span>
             </span>
@@ -260,14 +264,13 @@ export function ScatterChart({
                 </span>
               </>
             );
-            const style = { left: `${left(point)}%`, top: `${top(point)}%` };
+            const spot = `${at.x(left(point))} ${at.y(top(point))}`;
             const edge = left(point) > 66 ? " is-end" : "";
             const name = `${point.label}: ${point.yDisplay}, ${point.xDisplay}`;
             return point.href ? (
               <a
-                className={`chart-hit${edge}`}
+                className={`chart-hit${edge} ${spot}`}
                 href={point.href}
-                style={style}
                 key={point.key}
                 aria-label={name}
               >
@@ -276,8 +279,7 @@ export function ScatterChart({
             ) : (
               <button
                 type="button"
-                className={`chart-hit${edge}`}
-                style={style}
+                className={`chart-hit${edge} ${spot}`}
                 key={point.key}
                 aria-label={name}
               >
@@ -288,8 +290,7 @@ export function ScatterChart({
           {placed.map((point) => (
             <span
               key={`label-${point.key}`}
-              className={`chart-label-layer${left(point) > 66 ? " is-end" : ""}${point.focus ? " is-focus" : ""}`}
-              style={{ left: `${left(point)}%`, top: `${top(point)}%` }}
+              className={`chart-label-layer${left(point) > 66 ? " is-end" : ""}${point.focus ? " is-focus" : ""} ${at.x(left(point))} ${at.y(top(point))}`}
               aria-hidden="true"
             >
               {point.label}
@@ -370,9 +371,8 @@ export function TrendChart({
             return (
               <button
                 type="button"
-                className={`chart-hit${px(point) > 70 ? " is-end" : px(point) < 30 ? " is-start" : ""}`}
+                className={`chart-hit${px(point) > 70 ? " is-end" : px(point) < 30 ? " is-start" : ""} ${at.x(px(point))} ${at.y(py(point))}`}
                 key={point.key}
-                style={{ left: `${px(point)}%`, top: `${py(point)}%` }}
                 aria-label={`${point.label}, ${point.date}: ${point.display}`}
               >
                 <span
