@@ -359,7 +359,7 @@ export const needs: Need[] = [
     alternative: {
       slug: "anime-wai",
       why: [
-        "Specialised in anime and manga, private and cheap.",
+        "Specialized in anime and manga, private and cheap.",
         "Spécialisé anime et manga, privé et bon marché.",
       ],
     },
@@ -483,7 +483,7 @@ export const needs: Need[] = [
     alternative: {
       slug: "grok-imagine-video",
       why: [
-        "Every version private, with sound, from 1 to 15 s.",
+        "Every version is private, with sound, from 1 to 15 s.",
         "Toutes les versions sont privées, avec le son, de 1 à 15 s.",
       ],
     },
@@ -520,7 +520,7 @@ export const needs: Need[] = [
     alternative: {
       slug: "seedance-2",
       why: [
-        "References and audio in, a synced scene out; no recognisable faces in photos.",
+        "References and audio in, a synced scene out; no recognizable faces in photos.",
         "Références et audio en entrée, une scène synchronisée en sortie ; pas de visages reconnaissables sur photo.",
       ],
     },
