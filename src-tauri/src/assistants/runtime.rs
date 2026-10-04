@@ -59,8 +59,10 @@ fn encode_snapshot(snapshot: &AssistantSnapshot) -> Result<String, AppError> {
 }
 
 /// The model an image turn should run on when `current` cannot read images:
-/// the first available text model that can. `None` keeps `current`, which is
-/// also the answer when the catalog names no such model.
+/// the first available text model, by name as the Chat tab lists them, that
+/// reads images and is as private as `current`. `None` keeps `current`: an
+/// image is then refused in the open rather than carried, with the whole
+/// conversation, to a model less private than the one the assistant names.
 pub fn vision_model_for(
     models: &[crate::carpe_diem::media::MediaModelDto],
     current: &str,
@@ -68,15 +70,16 @@ pub fn vision_model_for(
     let reads_images = |entry: &crate::carpe_diem::media::MediaModelDto| {
         entry.supports_vision || entry.traits.iter().any(|value| value.contains("vision"))
     };
-    if models
-        .iter()
-        .any(|entry| entry.id == current && reads_images(entry))
-    {
+    let own = models.iter().find(|entry| entry.id == current);
+    if own.is_some_and(reads_images) {
         return None;
     }
+    let privacy = own.and_then(|entry| entry.privacy.as_deref());
     models
         .iter()
-        .find(|entry| entry.media_type == "text" && !entry.offline && reads_images(entry))
+        .filter(|entry| entry.media_type == "text" && !entry.offline && reads_images(entry))
+        .filter(|entry| privacy.map_or(true, |wanted| entry.privacy.as_deref() == Some(wanted)))
+        .min_by(|a, b| a.name.cmp(&b.name))
         .map(|entry| entry.id.clone())
 }
 
@@ -375,18 +378,25 @@ fn schedule(
     app: AppHandle,
     task_id: String,
     attachments: Option<Vec<crate::agent_lite::AgentLiteAttachment>>,
+    claim: crate::agent_lite::TurnClaim,
 ) {
     tauri::async_runtime::spawn(async move {
-        let _ = crate::agent_lite::agent_lite_run(
+        let _ = crate::agent_lite::run_claimed(
             app,
             crate::agent_lite::AgentLiteRunRequest {
                 task_id,
                 model: None,
                 attachments,
             },
+            claim,
         )
         .await;
     });
+}
+
+fn claim_turn(task_id: &str) -> Result<crate::agent_lite::TurnClaim, AppError> {
+    crate::agent_lite::TurnClaim::try_hold(task_id)
+        .ok_or_else(|| AppError::new("agent_lite_running", "This chat is already running."))
 }
 
 #[tauri::command]
@@ -402,6 +412,9 @@ pub async fn assistant_chat_start(
         references: super::list_references(&repos.pool, &request.assistant_id).await?,
     };
     let id = uuid::Uuid::new_v4().to_string();
+    // Held from before the row exists until the turn runs: a resume sweep
+    // never sees this conversation unclaimed.
+    let claim = claim_turn(&id)?;
     let now = chrono::Utc::now().to_rfc3339();
     let json = encode_snapshot(&snapshot)?;
     // The sweep must never see a queued conversation without its restrictions.
@@ -420,7 +433,7 @@ pub async fn assistant_chat_start(
         .await?;
     tx.commit().await?;
     let task = repos.get_agent_task(&id).await?;
-    schedule(app, id, request.attachments);
+    schedule(app, id, request.attachments, claim);
     Ok(task)
 }
 
@@ -432,8 +445,7 @@ pub async fn assistant_chat_send(
     let content = validate_content(&request.content)?;
     let repos = crate::commands::repositories(&app).await?;
     require_snapshot(&repos.pool, &request.task_id).await?;
-    let _claim = crate::agent_lite::TurnClaim::try_hold(&request.task_id)
-        .ok_or_else(|| AppError::new("agent_lite_running", "This chat is already running."))?;
+    let claim = claim_turn(&request.task_id)?;
     let task = repos.get_agent_task(&request.task_id).await?;
     if matches!(
         task.status,
@@ -461,8 +473,7 @@ pub async fn assistant_chat_send(
         .bind(&now).bind(&request.task_id).execute(&mut *tx).await?;
     tx.commit().await?;
     let task = repos.get_agent_task(&request.task_id).await?;
-    drop(_claim);
-    schedule(app, request.task_id, request.attachments);
+    schedule(app, request.task_id, request.attachments, claim);
     Ok(task)
 }
 
@@ -545,8 +556,7 @@ pub async fn assistant_chat_retry(
 ) -> Result<AgentTaskDto, AppError> {
     let repos = crate::commands::repositories(&app).await?;
     require_snapshot(&repos.pool, &request.task_id).await?;
-    let _claim = crate::agent_lite::TurnClaim::try_hold(&request.task_id)
-        .ok_or_else(|| AppError::new("agent_lite_running", "This chat is already running."))?;
+    let claim = claim_turn(&request.task_id)?;
     let task = repos.get_agent_task(&request.task_id).await?;
     if task.status != AgentTaskStatus::Failed
         || !task
@@ -563,8 +573,7 @@ pub async fn assistant_chat_retry(
         .update_agent_task_status(&request.task_id, AgentTaskStatus::Queued, None, None)
         .await?;
     let task = repos.get_agent_task(&request.task_id).await?;
-    drop(_claim);
-    schedule(app, request.task_id, request.attachments);
+    schedule(app, request.task_id, request.attachments, claim);
     Ok(task)
 }
 
@@ -670,11 +679,33 @@ mod tests {
         // the assistant's own model.
         assert_eq!(vision_model_for(&models, "more-eyes"), None);
         assert_eq!(vision_model_for(&models[..1], "words-only"), None);
-        // Unknown (the default) counts as text-only, like the Chat tab.
+        // Unknown counts as text-only, like the Chat tab.
         assert_eq!(vision_model_for(&models, "").as_deref(), Some("eyes"));
         let mut offline = text_model("offline-eyes", true);
         offline.offline = true;
         assert_eq!(vision_model_for(&[offline], "words-only"), None);
+    }
+
+    #[test]
+    fn a_photo_never_moves_a_private_assistant_to_a_less_private_model() {
+        let with = |id: &str, vision: bool, privacy: &str| {
+            let mut model = text_model(id, vision);
+            model.privacy = Some(privacy.into());
+            model
+        };
+        let models = vec![
+            with("private-words", false, "private"),
+            with("anon-eyes", true, "anonymized"),
+            with("private-eyes-b", true, "private"),
+            with("private-eyes-a", true, "private"),
+        ];
+        // The same privacy, the first by name.
+        assert_eq!(
+            vision_model_for(&models, "private-words").as_deref(),
+            Some("private-eyes-a")
+        );
+        // No private model reads images: the assistant keeps its own.
+        assert_eq!(vision_model_for(&models[..2], "private-words"), None);
     }
 
     fn private_snapshot() -> AssistantSnapshot {

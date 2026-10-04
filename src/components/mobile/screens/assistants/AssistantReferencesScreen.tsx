@@ -36,6 +36,9 @@ import { GalleryImageGrid } from "./AssistantAvatar";
 /** How often a reference still being prepared is looked at again, while this
  * screen is open; the preparation itself runs in the Rust process. */
 const PREPARING_POLL_MS = 1500;
+/** After this long a reference still preparing is waiting on something else
+ * (a synchronised file not downloaded yet): the list stops asking. */
+const PREPARING_POLL_LIMIT_MS = 2 * 60_000;
 
 const IMAGE = /^(image|png|jpe?g|webp|gif|avif|heic)/i;
 
@@ -61,11 +64,16 @@ export function AssistantReferencesScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only the newest answer counts: a slow read must not put back a list that
+  // a later one already replaced.
+  const request = useRef(0);
   const refresh = useCallback(async () => {
+    const mine = ++request.current;
     try {
-      setReferences(await listAssistantReferences(assistantId));
+      const rows = await listAssistantReferences(assistantId);
+      if (mine === request.current) setReferences(rows);
     } catch (err) {
-      setError(messageFromError(err));
+      if (mine === request.current) setError(messageFromError(err));
     }
   }, [assistantId]);
 
@@ -78,8 +86,10 @@ export function AssistantReferencesScreen({
   const preparing = references?.some((reference) => reference.status === "queued") ?? false;
   useEffect(() => {
     if (!preparing) return;
+    const started = Date.now();
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refresh();
+      if (Date.now() - started > PREPARING_POLL_LIMIT_MS) window.clearInterval(timer);
+      else if (document.visibilityState === "visible") void refresh();
     }, PREPARING_POLL_MS);
     return () => window.clearInterval(timer);
   }, [preparing, refresh]);

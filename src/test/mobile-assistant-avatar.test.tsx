@@ -182,7 +182,7 @@ describe("changing an assistant's avatar", () => {
         onClose={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Back to the initial" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use the initial instead" }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(saved).toEqual([expect.objectContaining({ avatar_ref: null })]);
     expect(invoke).not.toHaveBeenCalledWith("assistant_reference_delete", expect.anything());
@@ -210,5 +210,16 @@ describe("changing an assistant's avatar", () => {
       /still being prepared/,
     );
     expect(invoke).not.toHaveBeenCalledWith("assistant_save", expect.anything());
+  });
+
+  it("a picture that could not become the avatar leaves no reference behind", async () => {
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "assistant_reference_from_artifact") return { id: "ref-x", status: "failed" };
+      return null;
+    });
+    await expect(adoptAvatar(assistant, "x.png", async () => undefined)).rejects.toThrow(
+      /could not be prepared/,
+    );
+    expect(invoke).toHaveBeenCalledWith("assistant_reference_delete", { id: "ref-x" });
   });
 });

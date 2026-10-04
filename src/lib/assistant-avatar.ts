@@ -7,9 +7,11 @@
 import {
   addAssistantArtifact,
   type AssistantDefinition,
+  deleteAssistantReference,
   listAssistantReferences,
   saveAssistant,
 } from "./assistants";
+import { t } from "./i18n";
 import { saveArtifactFromBase64 } from "./studio/artifacts";
 import { defaultImageModel, estimateCostCredits } from "./studio/catalog";
 import { downscaleDataUrl } from "./studio/downscale";
@@ -78,7 +80,7 @@ export async function generateAvatars(
   };
   if (model.constraints?.aspectRatios?.includes("1:1")) body.aspect_ratio = "1:1";
   const images = await generateImages(model.id, body);
-  if (images.length === 0) throw new Error("The backend returned no image.");
+  if (images.length === 0) throw new Error(t("The backend returned no image."));
   const saved: StudioArtifact[] = [];
   for (const base64 of images) {
     saved.push(
@@ -97,15 +99,17 @@ export async function photoToGallery(file: File): Promise<StudioArtifact> {
   const read = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () =>
-      typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("read"));
-    reader.onerror = () => reject(new Error("read"));
+      typeof reader.result === "string"
+        ? resolve(reader.result)
+        : reject(new Error(t("This image could not be read.")));
+    reader.onerror = () => reject(new Error(t("This image could not be read.")));
     reader.readAsDataURL(file);
   });
   let dataUrl = await downscaleDataUrl(read, { maxEdge: AVATAR_EDGE, maxBytes: AVATAR_BYTES });
   if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(dataUrl))
     dataUrl = await reencodeAsJpeg(dataUrl);
   const match = /^data:image\/(png|jpe?g|webp);base64,(.*)$/i.exec(dataUrl);
-  if (!match) throw new Error("This image could not be read.");
+  if (!match) throw new Error(t("This image could not be read."));
   const extension = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
   return saveArtifactFromBase64(match[2], extension, { kind: "image", model: "", prompt: "" });
 }
@@ -134,9 +138,18 @@ export async function adoptAvatar(
     const listed = await listAssistantReferences(assistant.id);
     status = listed.find((entry) => entry.id === reference.id)?.status ?? status;
   }
-  if (status !== "ready")
-    throw new Error("The image is still being prepared. Try again in a moment.");
-  return saveAssistant({ ...assistant, avatar_ref: reference.id });
+  try {
+    if (status === "failed")
+      throw new Error(t("This image could not be prepared. Choose another one."));
+    if (status !== "ready")
+      throw new Error(t("The image is still being prepared. Try again in a moment."));
+    return await saveAssistant({ ...assistant, avatar_ref: reference.id });
+  } catch (cause) {
+    // A reference that did not become the avatar was made only for it: it
+    // goes, rather than piling up among the references at every retry.
+    await deleteAssistantReference(reference.id).catch(() => undefined);
+    throw cause;
+  }
 }
 
 /** Back to the initial. The image stays among the references. */

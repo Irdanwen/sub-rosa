@@ -361,6 +361,20 @@ describe("mobile chat model persistence", () => {
     expect(tauriMocks.agentLiteRun).not.toHaveBeenCalled();
   });
 
+  it("follows the reply as it streams in, while the reader is at the end", async () => {
+    render(<AgentSessionScreen sessionId="task-1" />);
+    await screen.findByRole("button", { name: /^Choose model/ });
+    await waitFor(() => expect(tauriMocks.getAgentTask).toHaveBeenCalled());
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    scrollTo.mockClear();
+    await act(async () => {
+      eventListeners.get("agent-lite://delta")?.({
+        payload: { taskId: "task-1", text: "Here is" } as unknown as AgentTaskDto,
+      });
+    });
+    expect(scrollTo).toHaveBeenCalled();
+  });
+
   it("does not replace native completion with a stale history response", async () => {
     let resolveLoad: (task: AgentTaskDto) => void = () => {};
     tauriMocks.getAgentTask.mockImplementationOnce(

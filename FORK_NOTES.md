@@ -49,12 +49,16 @@ les synchronisations soutenables. Règle : **préférer l'ajout de fichiers** ; 
 - Dans `agent_lite::run_turn`, le modèle de l'instantané d'un assistant prime
   sur celui de l'appelant : un tour d'assistant qui porte une image passe sur
   un modèle texte qui lit les images (`assistants::runtime::vision_model_for`)
-  quand celui de l'assistant ne le fait pas.
+  quand celui de l'assistant ne le fait pas, à confidentialité égale, sinon
+  l'image est refusée. `assistant_chat_start/send/retry` transmettent leur
+  `TurnClaim` au tour lancé (`agent_lite::run_claimed`).
 - L'avatar d'assistant (CONTEXT.md) : monogramme dérivé de l'id, ou une
   référence image. Aucune colonne nouvelle : `account::sync::apply` refuse
   les colonnes inconnues, un appareil pas à jour rejetterait l'assistant.
 - Les brouillons de l'éditeur et du créateur sont dans `localStorage`
-  (`src/lib/assistant-draft.ts`) et ne sont jamais synchronisés.
+  (`src/lib/assistant-draft.ts`) et ne sont jamais synchronisés ; un brouillon
+  écrit avant un enregistrement plus récent est reproposé, rebasé, avec un
+  avertissement (jamais supprimé sans le dire).
 
 ## Correctif de configuration Hermes Windows (2026-09-21, v1.70.2)
 

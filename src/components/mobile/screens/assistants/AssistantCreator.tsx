@@ -39,13 +39,20 @@ export function AssistantCreator({
     if (initialIdea !== undefined) return { ...START, idea: initialIdea };
     return readCreatorDraft() ?? START;
   });
-  const [restored] = useState(
+  const [restored, setRestored] = useState(
     () => initialIdea === undefined && Boolean(readCreatorDraft()?.idea.trim()),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const keyboardInset = useKeyboardInset();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const questions = assistantQuestions();
   const question = state.step >= 0 ? questions[state.step] : undefined;
   const last = state.step === questions.length - 1;
@@ -88,6 +95,7 @@ export function AssistantCreator({
       );
       writeEditorDraft("", {
         baseRevision: 0,
+        drafted: true,
         definition: {
           ...emptyAssistant(),
           name: result.name,
@@ -98,12 +106,16 @@ export function AssistantCreator({
         },
       });
       clearCreatorDraft();
+      // Left while the draft was being written (a swipe back, another tab):
+      // it waits in the editor's new draft, and nothing navigates from here,
+      // since the shell would move whichever tab is now in front.
+      if (!mounted.current) return;
       hapticImpact("light");
       onDrafted();
     } catch (err) {
-      setError(messageFromError(err));
+      if (mounted.current) setError(messageFromError(err));
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -165,6 +177,7 @@ export function AssistantCreator({
                   onClick={() => {
                     clearCreatorDraft();
                     setState(START);
+                    setRestored(false);
                     fieldRef.current?.focus();
                   }}
                 >

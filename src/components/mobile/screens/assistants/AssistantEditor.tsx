@@ -10,6 +10,7 @@ import {
   type AssistantDefinition,
   type AssistantTool,
   deleteAssistant,
+  duplicateAssistant,
   emptyAssistant,
   listAssistantReferences,
   listAssistants,
@@ -20,7 +21,8 @@ import {
   readEditorDraft,
   writeEditorDraft,
 } from "../../../../lib/assistant-draft";
-import { messageFromError } from "../../../../lib/errors";
+import { useAccountSyncUpdated } from "../../../../lib/account-sync-events";
+import { errorCode, messageFromError } from "../../../../lib/errors";
 import { hapticNotify } from "../../../../lib/haptics";
 import { intlLocale, t } from "../../../../lib/i18n";
 import { useKeyboardInset } from "../../../../lib/keyboard-inset";
@@ -40,6 +42,7 @@ import { AssistantAvatar, AvatarSheet } from "./AssistantAvatar";
 import { toolLabel } from "./AssistantChatScreen";
 
 /** What the definition accepts, in bytes (`assistants::save`). */
+const NAME_LIMIT = 200;
 const INSTRUCTIONS_LIMIT = 64_000;
 const OPENING_LIMIT = 8_000;
 const DESCRIPTION_LIMIT = 4_000;
@@ -51,6 +54,15 @@ const bytes = (text: string) => new TextEncoder().encode(text).length;
 const sortTools = (tools: AssistantTool[]) => [...new Set(tools)].sort();
 
 type Sheet = "model" | "avatar" | "save-first" | "leave" | "delete" | null;
+/** What "save first" was asked for, done once the save succeeds. */
+type Intent = "avatar" | "references";
+/** Why edits are on screen that were not typed in this visit. */
+type Restored = "edits" | "stale" | null;
+
+/** The unsaved edits, laid over a newer saved version. */
+function rebase(edits: AssistantDefinition, onto: AssistantDefinition): AssistantDefinition {
+  return { ...edits, revision: onto.revision, updated_at: onto.updated_at };
+}
 type Page = "instructions" | "opening" | null;
 
 export function AssistantEditor({
@@ -73,7 +85,9 @@ export function AssistantEditor({
   const draftKey = assistantId ?? "";
   const [saved, setSaved] = useState<AssistantDefinition | null>(null);
   const [draft, setDraft] = useState<AssistantDefinition | null>(null);
-  const [restored, setRestored] = useState(false);
+  const [restored, setRestored] = useState<Restored>(null);
+  const [intent, setIntent] = useState<Intent | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [referenceCount, setReferenceCount] = useState<number | null>(null);
   const [models, setModels] = useState<VeniceModelDto[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -83,6 +97,15 @@ export function AssistantEditor({
   const [error, setError] = useState<string | null>(null);
   const keyboardInset = useKeyboardInset();
   const leaving = useRef(false);
+  // Navigation after an await only while this screen is still the one shown:
+  // the shell's push and replace act on whichever tab is current.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,11 +121,18 @@ export function AssistantEditor({
         }
         const base = found ?? emptyAssistant();
         const stored = readEditorDraft(draftKey, base.revision);
-        const differs = stored && JSON.stringify(stored.definition) !== JSON.stringify(base);
+        const edits = stored
+          ? stored.stale
+            ? rebase(stored.definition, base)
+            : stored.definition
+          : null;
+        const differs = edits && JSON.stringify(edits) !== JSON.stringify(base);
         setSaved(found);
-        setDraft(differs && stored ? stored.definition : base);
-        // A creator's draft is new by nature; only edits are "restored".
-        setRestored(Boolean(differs && found));
+        setDraft(differs && edits ? edits : base);
+        // A creator's fresh draft is not something to offer back.
+        setRestored(
+          differs && stored && !stored.drafted ? (stored.stale ? "stale" : "edits") : null,
+        );
       } catch (err) {
         if (!cancelled) setError(messageFromError(err));
       }
@@ -140,31 +170,72 @@ export function AssistantEditor({
     return () => window.clearTimeout(timer);
   }, [draft, dirty, draftKey, base.revision]);
 
+  // Saved elsewhere (another device, the desktop): take the new version as
+  // the base, keep what is being typed on top of it, and say so.
+  const latest = useRef({ saved, draft });
+  latest.current = { saved, draft };
+  const takeNewerBase = useCallback(async () => {
+    if (!assistantId) return;
+    const fresh = (await listAssistants()).find((entry) => entry.id === assistantId);
+    const { saved: current, draft: edits } = latest.current;
+    if (!fresh || !mounted.current || !current || current.revision === fresh.revision) return;
+    const untouched = !edits || JSON.stringify(edits) === JSON.stringify(current);
+    setSaved(fresh);
+    setDraft(untouched || !edits ? fresh : rebase(edits, fresh));
+    if (!untouched) setRestored("stale");
+  }, [assistantId]);
+  useAccountSyncUpdated(takeNewerBase);
+
   const patch = useCallback((value: Partial<AssistantDefinition>) => {
     setDraft((current) => (current ? { ...current, ...value } : current));
   }, []);
 
   const save = async (): Promise<AssistantDefinition | null> => {
     if (!draft || busy) return null;
+    const sent = { ...draft, tools: sortTools(draft.tools) };
     setBusy(true);
     setError(null);
     try {
-      const result = await saveAssistant({ ...draft, tools: sortTools(draft.tools) });
+      const result = await saveAssistant(sent);
       clearEditorDraft(draftKey);
       if (!saved) clearEditorDraft("");
       setSaved(result);
-      setDraft(result);
-      setRestored(false);
+      // Anything typed while the save was in flight stays, on the new base.
+      setDraft((current) =>
+        !current ||
+        JSON.stringify({ ...current, tools: sortTools(current.tools) }) === JSON.stringify(sent)
+          ? result
+          : { ...rebase(current, result), id: result.id, created_at: result.created_at },
+      );
+      setRestored(null);
       hapticNotify("success");
-      if (!saved) onSaved?.(result);
+      if (!saved && mounted.current) onSaved?.(result);
       return result;
     } catch (err) {
-      setError(messageFromError(err));
+      if (errorCode(err) === "assistant_conflict") {
+        // Saved elsewhere since this version was opened: the edits stay, on
+        // top of the newer version, and the next save replaces it knowingly.
+        await takeNewerBase().catch(() => undefined);
+        setError(
+          t(
+            "This assistant was saved elsewhere since. Save again to replace that version with yours.",
+          ),
+        );
+      } else setError(messageFromError(err));
       hapticNotify("error");
       return null;
     } finally {
       setBusy(false);
     }
+  };
+
+  const saveThen = async (next: Intent | "try" | "leave") => {
+    const result = await save();
+    if (!result || !mounted.current) return;
+    if (next === "avatar") setSheet("avatar");
+    else if (next === "references") onOpenReferences(result.id, result.name);
+    else if (next === "try") onTry(result.id);
+    else leave(false);
   };
 
   const leave = (discard: boolean) => {
@@ -178,7 +249,18 @@ export function AssistantEditor({
   const discardRestored = () => {
     clearEditorDraft(draftKey);
     setDraft(base);
-    setRestored(false);
+    setRestored(null);
+  };
+
+  const duplicate = async () => {
+    if (!saved) return;
+    try {
+      await duplicateAssistant(saved.id);
+      hapticNotify("success");
+      if (mounted.current) setNotice(t("A copy was added to your assistants."));
+    } catch (err) {
+      if (mounted.current) setError(messageFromError(err));
+    }
   };
 
   const modelEntries = useMemo(
@@ -208,7 +290,12 @@ export function AssistantEditor({
     );
   }
 
-  const canSave = dirty && Boolean(draft.name.trim()) && !busy;
+  const tooLong =
+    bytes(draft.name) > NAME_LIMIT ||
+    bytes(draft.description) > DESCRIPTION_LIMIT ||
+    bytes(draft.instructions) > INSTRUCTIONS_LIMIT ||
+    bytes(draft.opening_message) > OPENING_LIMIT;
+  const canSave = dirty && Boolean(draft.name.trim()) && !busy && !tooLong;
   const title = saved ? draft.name.trim() || t("Assistant") : t("New assistant");
   const modelName = draft.model
     ? readableModelName(draft.model, models.find((entry) => entry.id === draft.model)?.name)
@@ -218,7 +305,7 @@ export function AssistantEditor({
     const instructions = page === "instructions";
     const value = instructions ? draft.instructions : draft.opening_message;
     const limit = instructions ? INSTRUCTIONS_LIMIT : OPENING_LIMIT;
-    const used = bytes(value);
+    const over = bytes(value) > limit;
     return (
       <div className="mobile-screen-root">
         <StackHeader
@@ -247,14 +334,16 @@ export function AssistantEditor({
               )
             }
           />
-          <p className="mobile-assistant-page-meta" data-over={used > limit ? "true" : undefined}>
+          <p className="mobile-assistant-page-meta" data-over={over ? "true" : undefined}>
             {instructions
               ? t(
                   "Changes apply to new conversations. Existing conversations keep the version they started with.",
                 )
               : null}
-            <span>
-              {used.toLocaleString(intlLocale())} / {limit.toLocaleString(intlLocale())}
+            <span role={over ? "alert" : undefined}>
+              {over
+                ? t("Too long to save. Shorten it a little.")
+                : t("{count} characters", { count: value.length.toLocaleString(intlLocale()) })}
             </span>
           </p>
         </div>
@@ -285,7 +374,11 @@ export function AssistantEditor({
       >
         {restored ? (
           <p className="mobile-assistant-flow-note" role="status">
-            {t("Your unsaved changes were restored.")}{" "}
+            {restored === "stale"
+              ? t(
+                  "Your unsaved changes were restored. This assistant was saved elsewhere since: saving replaces that version.",
+                )
+              : t("Your unsaved changes were restored.")}{" "}
             <button type="button" className="mobile-assistant-flow-link" onClick={discardRestored}>
               {t("Discard them")}
             </button>
@@ -297,12 +390,29 @@ export function AssistantEditor({
           </p>
         ) : null}
 
+        {notice ? (
+          <p className="mobile-assistant-flow-note" role="status">
+            {notice}
+          </p>
+        ) : null}
+        {tooLong ? (
+          <p className="mobile-dictation-error" role="alert">
+            {t("Something is too long to save. Shorten it, then save.")}
+          </p>
+        ) : null}
+
         <section className="mobile-assistant-identity">
           <button
             type="button"
             className="mobile-assistant-identity-face"
             aria-label={t("Change the avatar")}
-            onClick={() => setSheet(saved && !dirty ? "avatar" : "save-first")}
+            onClick={() => {
+              if (saved && !dirty) setSheet("avatar");
+              else {
+                setIntent("avatar");
+                setSheet("save-first");
+              }
+            }}
           >
             <AssistantAvatar assistant={draft} size={84} />
             <span>{t("Edit")}</span>
@@ -326,7 +436,7 @@ export function AssistantEditor({
           />
         </section>
 
-        <SettingsGroup title={t("Behaviour")}>
+        <SettingsGroup title={t("Behavior")}>
           <SettingsLinkRow label={t("Model")} value={modelName} onClick={() => setSheet("model")} />
           <SettingsLinkRow
             label={t("Instructions")}
@@ -357,9 +467,13 @@ export function AssistantEditor({
           <SettingsLinkRow
             label={t("References")}
             value={saved ? (referenceCount ?? "") : ""}
-            onClick={() =>
-              saved ? onOpenReferences(saved.id, saved.name) : setSheet("save-first")
-            }
+            onClick={() => {
+              if (saved) onOpenReferences(saved.id, saved.name);
+              else {
+                setIntent("references");
+                setSheet("save-first");
+              }
+            }}
           />
           <SettingsToggleRow
             label={t("Access my notes")}
@@ -399,12 +513,14 @@ export function AssistantEditor({
         {saved ? (
           <SettingsGroup>
             <SettingsActionRow
-              label={dirty ? t("Save, then try it") : t("Try it")}
-              disabled={busy || !draft.name.trim()}
-              onClick={async () => {
-                const ready = dirty ? await save() : saved;
-                if (ready) onTry(ready.id);
-              }}
+              label={dirty ? t("Save and try it") : t("Try it")}
+              disabled={busy || !draft.name.trim() || (dirty && !canSave)}
+              onClick={() => (dirty ? void saveThen("try") : onTry(saved.id))}
+            />
+            <SettingsActionRow
+              label={t("Duplicate")}
+              disabled={busy}
+              onClick={() => void duplicate()}
             />
             <SettingsActionRow
               label={t("Delete assistant")}
@@ -443,19 +559,18 @@ export function AssistantEditor({
       {sheet === "save-first" ? (
         <ActionSheet
           title={saved ? t("Save your changes first") : t("Save your assistant first")}
-          subtitle={t("A picture and references belong to a saved assistant.")}
-          actions={
-            draft.name.trim()
-              ? [
-                  {
-                    label: t("Save"),
-                    onAction: () => void save(),
-                  },
-                ]
-              : []
+          subtitle={
+            !draft.name.trim()
+              ? t("Give your assistant a name, then save it to add a picture or references.")
+              : saved
+                ? t("Save your changes, then change the picture.")
+                : t("Save your assistant to add a picture or references.")
           }
-          closeLabel={draft.name.trim() ? t("Cancel") : t("OK")}
-          onClose={() => setSheet(null)}
+          actions={
+            canSave ? [{ label: t("Save"), onAction: () => void saveThen(intent ?? "avatar") }] : []
+          }
+          closeLabel={canSave ? t("Cancel") : t("OK")}
+          onClose={() => setSheet((current) => (current === "save-first" ? null : current))}
         />
       ) : null}
       {sheet === "leave" ? (
@@ -463,14 +578,11 @@ export function AssistantEditor({
           title={t("Save your changes?")}
           subtitle={t("They stay on this device until you save or discard them.")}
           actions={[
-            ...(draft.name.trim()
+            ...(canSave
               ? [
                   {
                     label: t("Save"),
-                    onAction: () =>
-                      void save().then((result) => {
-                        if (result) leave(false);
-                      }),
+                    onAction: () => void saveThen("leave"),
                   },
                 ]
               : []),
@@ -495,7 +607,7 @@ export function AssistantEditor({
                   .then(() => {
                     leaving.current = true;
                     clearEditorDraft(draftKey);
-                    onDeleted();
+                    if (mounted.current) onDeleted();
                   })
                   .catch((err) => setError(messageFromError(err))),
             },

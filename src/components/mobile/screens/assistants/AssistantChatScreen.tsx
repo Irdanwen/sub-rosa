@@ -81,11 +81,13 @@ export function AssistantChatScreen({
   onEdit: (assistantId: string) => void;
   /** The conversation on screen changed (created, switched, or a new one
    * begun), so the shell can bring it back after a tab switch. */
-  onConversationChange?: (taskId: string | null) => void;
+  onConversationChange?: (taskId: string | null, assistantId: string | null) => void;
 }) {
   // The assistant as it is now (header, new conversations), and the version
   // this conversation was started with (what it actually runs on).
   const [assistant, setAssistant] = useState<AssistantDefinition | null>(null);
+  // The assistant was asked for and is gone (deleted, here or elsewhere).
+  const [missing, setMissing] = useState(false);
   const [snapshot, setSnapshot] = useState<AssistantDefinition | null>(null);
   const [task, setTask] = useState<AgentTaskDto | null>(null);
   const [history, setHistory] = useState<AgentTaskDto[]>([]);
@@ -177,7 +179,9 @@ export function AssistantChatScreen({
   const readAssistant = useCallback(async (id: string) => {
     try {
       const found = (await listAssistants()).find((entry) => entry.id === id) ?? null;
-      if (mountedRef.current) setAssistant(found);
+      if (!mountedRef.current) return;
+      setAssistant(found);
+      setMissing(!found);
     } catch {
       // The header falls back to the conversation's own version.
     }
@@ -226,6 +230,9 @@ export function AssistantChatScreen({
     });
     const unlistenDone = listen<AgentTaskDto>(AGENT_LITE_DONE_EVENT, ({ payload }) => {
       if (!mountedRef.current || payload.id !== activeIdRef.current) return;
+      // A read started before this completion would put the turn back to
+      // "running" when it answers late; the completion is the newer word.
+      epochRef.current += 1;
       setTask(payload);
       setBusy(false);
       setStreamed("");
@@ -298,7 +305,7 @@ export function AssistantChatScreen({
       setBusy(next ? awaitingReply(next) : false);
       pinnedRef.current = true;
       if (!next) setSnapshot(null);
-      onConversationChange?.(next?.id ?? null);
+      onConversationChange?.(next?.id ?? null, ownerIdRef.current);
       if (next) {
         setLoading(true);
         void readTask(next.id);
@@ -335,7 +342,7 @@ export function AssistantChatScreen({
       if (!mountedRef.current || epochRef.current !== epoch) return;
       activeIdRef.current = result.id;
       setTask(result);
-      if (!id) onConversationChange?.(result.id);
+      if (!id) onConversationChange?.(result.id, ownerIdRef.current);
       // A reply that finished before the new id reached this screen was
       // announced to nobody: the row has it.
       await readTask(result.id);
@@ -410,7 +417,9 @@ export function AssistantChatScreen({
     ...(newerSettings
       ? [{ label: t("Apply current assistant settings"), onAction: () => void applyRevision() }]
       : []),
-    ...(ownerId ? [{ label: t("Edit assistant"), onAction: () => onEdit(ownerId) }] : []),
+    ...(ownerId && !missing
+      ? [{ label: t("Edit assistant"), onAction: () => onEdit(ownerId) }]
+      : []),
   ];
 
   return (
@@ -423,7 +432,8 @@ export function AssistantChatScreen({
           <button
             type="button"
             className="mobile-assistant-chat-title"
-            disabled={!ownerId}
+            aria-label={t("Edit {name}", { name })}
+            disabled={!ownerId || missing}
             onClick={() => ownerId && onEdit(ownerId)}
           >
             {shown ? <AssistantAvatar assistant={shown} size={28} /> : null}
@@ -435,7 +445,7 @@ export function AssistantChatScreen({
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label={t("New chat")}
+              aria-label={t("New conversation")}
               disabled={running || !task || !assistant}
               onClick={() => open(null)}
             >
@@ -444,7 +454,7 @@ export function AssistantChatScreen({
             <button
               type="button"
               className="mobile-icon-button"
-              aria-label={t("More")}
+              aria-label={t("More options")}
               disabled={menu.length === 0}
               onClick={() => setSheet("menu")}
             >
@@ -464,6 +474,14 @@ export function AssistantChatScreen({
         }}
       >
         {loading ? <Spinner aria-label={t("Loading")} /> : null}
+        {missing && !task && !loading ? (
+          <div className="mobile-chat-error" role="alert">
+            <p className="mobile-dictation-error">{t("This assistant no longer exists.")}</p>
+            <button type="button" className="mobile-chat-retry" onClick={onBack}>
+              {t("Back to assistants")}
+            </button>
+          </div>
+        ) : null}
         {!task && !loading && shown ? (
           <div className="mobile-assistant-chat-hero">
             <AssistantAvatar assistant={shown} size={72} />
@@ -573,7 +591,7 @@ export function AssistantChatScreen({
         <OptionSheet
           title={t("Conversations with {name}", { name })}
           options={[
-            { value: "", label: t("New chat") },
+            { value: "", label: t("New conversation") },
             ...history.map((entry) => ({
               value: entry.id,
               label: `${entry.title.trim() || entry.prompt.trim() || t("Conversation")} · ${formatNoteTime(entry.updatedAt)}`,

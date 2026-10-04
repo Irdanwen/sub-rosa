@@ -76,7 +76,13 @@ hardware and live paid provider checks must be reported separately from mocked Q
 - An assistant's conversation on the phone accepts attachments for the turn
   that sends them, as the Chat tab does; the stored message keeps only markers.
   An image turn on an assistant whose own model reads no images runs on a text
-  model that does. The snapshot's model otherwise wins over the caller's, which
-  left the image refused or ignored.
-- Unsaved edits are a device-local draft, never synchronised and never applied
-  over a revision saved since they were written.
+  model that does, chosen among models as private as the assistant's own; when
+  there is none the image is refused rather than carried, with the whole
+  conversation, to a less private model. The snapshot's model otherwise wins
+  over the caller's, which left the image refused or ignored.
+- The command that writes a turn hands its turn claim to the run it spawns, so
+  a resume sweep cannot start that turn in between without its attachments.
+- Unsaved edits are a device-local draft, never synchronised. Edits written
+  before a newer save are still offered back, laid over that newer revision,
+  with a notice that saving them replaces it; a save that meets a conflict does
+  the same rather than discarding what was typed.

@@ -4,7 +4,7 @@
 
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccountSyncUpdated } from "../../../../lib/account-sync-events";
 import {
   type AssistantConversation,
@@ -54,16 +54,21 @@ export function AssistantsHome({
   const [query, setQuery] = useState("");
   const [sheet, setSheet] = useState<Sheet>(null);
   const [error, setError] = useState<string | null>(null);
+  // The library could not be read at all: not the same as having none.
+  const [failed, setFailed] = useState(false);
+  const loadedOnce = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
       const [definitions, archive] = await Promise.all([listAssistants(), listAssistantArchive()]);
+      loadedOnce.current = true;
       setAssistants(definitions);
       setConversations(archive);
       setError(null);
+      setFailed(false);
     } catch (err) {
       setError(messageFromError(err));
-      setAssistants((current) => current ?? []);
+      if (!loadedOnce.current) setFailed(true);
     }
   }, []);
 
@@ -155,11 +160,16 @@ export function AssistantsHome({
       ) : null}
       <PullToRefresh className="mobile-list-scroll" onRefresh={refresh}>
         {error ? (
-          <p className="mobile-dictation-error" role="alert">
-            {error}
-          </p>
+          <div className="mobile-chat-error" role="alert">
+            <p className="mobile-dictation-error">{error}</p>
+            {failed ? (
+              <button type="button" className="mobile-chat-retry" onClick={() => void refresh()}>
+                {t("Try again")}
+              </button>
+            ) : null}
+          </div>
         ) : null}
-        {assistants === null ? (
+        {failed ? null : assistants === null ? (
           <ul className="mobile-note-list" aria-hidden>
             {[0, 1, 2].map((row) => (
               <li key={row} className="mobile-skeleton-row">
@@ -236,7 +246,7 @@ export function AssistantsHome({
           </section>
         ) : null}
 
-        {!query.trim() ? (
+        {!query.trim() && !failed ? (
           <section className="mobile-assistants-section" aria-label={t("Start from an idea")}>
             <h2 className="mobile-list-section-title">{t("Start from an idea")}</h2>
             <div className="mobile-assistants-ideas">

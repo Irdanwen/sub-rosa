@@ -149,7 +149,7 @@ describe("an assistant's chat on the phone", () => {
         },
       }),
     );
-    expect(onConversationChange).toHaveBeenCalledWith("t9");
+    expect(onConversationChange).toHaveBeenCalledWith("t9", "a1");
   });
 
   it("finds an older conversation in a sheet, not a drop-down", async () => {
@@ -159,7 +159,7 @@ describe("an assistant's chat on the phone", () => {
     render(<AssistantChatScreen assistantId="a1" onBack={vi.fn()} onEdit={vi.fn()} />);
     await screen.findByRole("heading", { name: "Plume", level: 2 });
     expect(screen.queryByRole("combobox")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("button", { name: "More options" }));
     await user.click(await screen.findByRole("button", { name: "Conversations" }));
     const sheet = await screen.findByRole("dialog", { name: "Conversations with Plume" });
     await user.click(within(sheet).getByRole("button", { name: /^Lisbon letter/ }));
@@ -219,7 +219,7 @@ describe("an assistant's chat on the phone", () => {
     const user = userEvent.setup();
     render(<AssistantChatScreen taskId="t1" onBack={vi.fn()} onEdit={vi.fn()} />);
     await screen.findByText("Dear friend,");
-    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("button", { name: "More options" }));
     await user.click(
       await screen.findByRole("button", { name: "Apply current assistant settings" }),
     );
@@ -234,7 +234,71 @@ describe("an assistant's chat on the phone", () => {
     const user = userEvent.setup();
     render(<AssistantChatScreen assistantId="a1" onBack={vi.fn()} onEdit={onEdit} />);
     await screen.findByRole("heading", { name: "Plume", level: 2 });
-    await user.click(screen.getByRole("button", { name: "Plume" }));
+    await user.click(screen.getByRole("button", { name: "Edit Plume" }));
     expect(onEdit).toHaveBeenCalledWith("a1");
+  });
+
+  it("a new conversation from a reopened one keeps who it is with", async () => {
+    backend({ chats: [task()], conversation: task() });
+    const onConversationChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AssistantChatScreen
+        taskId="t1"
+        onBack={vi.fn()}
+        onEdit={vi.fn()}
+        onConversationChange={onConversationChange}
+      />,
+    );
+    await screen.findByText("Dear friend,");
+    await user.click(screen.getByRole("button", { name: "New conversation" }));
+    expect(onConversationChange).toHaveBeenLastCalledWith(null, "a1");
+    expect(screen.getByPlaceholderText("Message Plume…")).toBeTruthy();
+  });
+
+  it("an assistant that no longer exists says so and offers a way back", async () => {
+    backend();
+    invoke.mockImplementation(async (command: string) => (command === "assistant_list" ? [] : []));
+    const onBack = vi.fn();
+    const user = userEvent.setup();
+    render(<AssistantChatScreen assistantId="gone" onBack={onBack} onEdit={vi.fn()} />);
+    expect(await screen.findByText("This assistant no longer exists.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Back to assistants" }));
+    expect(onBack).toHaveBeenCalled();
+  });
+
+  it("a late read never puts a finished turn back to running", async () => {
+    backend({ chats: [task()], conversation: task() });
+    let answer: (value: unknown) => void = () => {};
+    const user = userEvent.setup();
+    render(<AssistantChatScreen taskId="t1" onBack={vi.fn()} onEdit={vi.fn()} />);
+    await screen.findByText("Dear friend,");
+    // The next read of the row hangs, then answers with the turn still live.
+    const running = task({
+      status: "running",
+      messages: [
+        ...task().messages,
+        { id: "u2", role: "user", content: "More", createdAt: "x" },
+      ] as AgentTaskDto["messages"],
+    });
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "assistant_chat_history")
+        return new Promise((resolve) => {
+          answer = resolve;
+        });
+      if (command === "assistant_chat_definition") return plume;
+      return [];
+    });
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    const done = task({
+      messages: [
+        ...running.messages,
+        { id: "a2", role: "assistant", content: "Yours,", createdAt: "y" },
+      ] as AgentTaskDto["messages"],
+    });
+    emitDone(done);
+    await act(async () => answer(running));
+    await user.type(screen.getByPlaceholderText("Message Plume…"), "Thanks");
+    expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled();
   });
 });

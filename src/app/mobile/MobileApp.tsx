@@ -209,9 +209,14 @@ export function MobileApp() {
   const screenRef = useRef<HTMLDivElement | null>(null);
   // The screen wrapper is keyed by tab and depth, so it remounts on every move
   // through the stack and takes the scroll position with it. This puts it back.
-  // Off on the agent tab: the conversation places its own scroll, pinning to
-  // the last message, and two owners of `scrollTop` is a fight you can see.
-  useScrollRestoration(`${nav.tab}:${nav.depth}`, screenRef, nav.tab !== "agent");
+  // Off on a conversation (the agent tab, an assistant's chat): it places its
+  // own scroll, pinning to the last message, and two owners of `scrollTop` is
+  // a fight you can see.
+  useScrollRestoration(
+    `${nav.tab}:${nav.depth}`,
+    screenRef,
+    nav.tab !== "agent" && nav.top?.view !== "assistant-chat",
+  );
   const edgeSwipe = useRef<{
     x: number;
     y: number;
@@ -496,7 +501,15 @@ export function MobileApp() {
         // The conversation lands on top of the tab's own stack, so back
         // returns to the library rather than out of the tab.
         if (nav.tab !== "assistants") nav.switchTab("assistants");
-        nav.push({ view: "assistant-chat", taskId: destination.taskId });
+        // Already on screen: re-pushing it would make Back land on itself.
+        if (
+          !(
+            nav.tab === "assistants" &&
+            nav.top?.view === "assistant-chat" &&
+            nav.top.taskId === destination.taskId
+          )
+        )
+          nav.push({ view: "assistant-chat", taskId: destination.taskId });
         break;
       case "assistants":
         nav.switchTab("assistants");
@@ -988,10 +1001,10 @@ export function MobileApp() {
         taskId={top.taskId}
         onBack={nav.pop}
         onEdit={(assistantId) => nav.push({ view: "assistant-editor", assistantId })}
-        onConversationChange={(taskId) =>
+        onConversationChange={(taskId, assistantId) =>
           nav.replaceTop({
             view: "assistant-chat",
-            assistantId: top.assistantId,
+            assistantId: assistantId ?? top.assistantId,
             taskId: taskId ?? undefined,
           })
         }

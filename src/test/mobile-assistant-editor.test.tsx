@@ -74,9 +74,13 @@ describe("the assistant editor on the phone", () => {
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Plume de voyage");
   });
 
-  it("drops edits written against a revision saved over since", async () => {
+  it("offers back edits written before a newer save, and says saving replaces it", async () => {
     backend();
-    writeEditorDraft("a1", { baseRevision: 2, definition: { ...plume, name: "Stale" } });
+    writeEditorDraft("a1", {
+      baseRevision: 2,
+      definition: { ...plume, name: "Older", revision: 2 },
+    });
+    const user = userEvent.setup();
     render(
       <AssistantEditor
         assistantId="a1"
@@ -86,8 +90,70 @@ describe("the assistant editor on the phone", () => {
         onDeleted={vi.fn()}
       />,
     );
-    expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Plume");
-    expect(screen.queryByText("Your unsaved changes were restored.")).toBeNull();
+    expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Older");
+    expect(screen.getByText(/saved elsewhere since/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    // Rebased on the revision that exists, so the save is not a conflict.
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("assistant_save", {
+        definition: expect.objectContaining({ name: "Older", revision: 3 }),
+      }),
+    );
+  });
+
+  it("a conflicting save keeps the edits and takes the newer version as its base", async () => {
+    let revision = 3;
+    backend({
+      assistant_list: () => [{ ...plume, revision, name: "Renamed elsewhere" }],
+      assistant_save: (args) => {
+        const definition = args.definition as AssistantDefinition;
+        if (definition.revision !== revision)
+          throw { code: "assistant_conflict", message: "conflict" };
+        return { ...definition, revision: revision + 1 };
+      },
+    });
+    const user = userEvent.setup();
+    render(
+      <AssistantEditor
+        assistantId="a1"
+        onBack={vi.fn()}
+        onTry={vi.fn()}
+        onOpenReferences={vi.fn()}
+        onDeleted={vi.fn()}
+      />,
+    );
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    await user.clear(name);
+    await user.type(name, "Mine");
+    revision = 5;
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/Save again to replace that version/)).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Mine");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenLastCalledWith("assistant_save", {
+        definition: expect.objectContaining({ name: "Mine", revision: 5 }),
+      }),
+    );
+  });
+
+  it("a creator's fresh draft opens as new, not as restored edits", async () => {
+    backend();
+    writeEditorDraft("", {
+      baseRevision: 0,
+      drafted: true,
+      definition: { ...emptyAssistant(), name: "Drafted" },
+    });
+    render(
+      <AssistantEditor
+        onBack={vi.fn()}
+        onTry={vi.fn()}
+        onOpenReferences={vi.fn()}
+        onDeleted={vi.fn()}
+      />,
+    );
+    expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Drafted");
+    expect(screen.queryByText(/restored/)).toBeNull();
   });
 
   it("asks before leaving with changes, and discarding forgets them", async () => {

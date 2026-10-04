@@ -5530,7 +5530,8 @@
       oklch(0.5 0.12 var(--avatar-hue-a)),
       oklch(0.36 0.1 var(--avatar-hue-b))
     );
-  color: white;
+  /* Light ink on the gradient in both themes: the hues are always deep. */
+  color: var(--sr-cream-raised);
   font-size: calc(var(--avatar-size) * 0.4);
   font-weight: var(--fw-medium);
   letter-spacing: 0.02em;
@@ -5564,7 +5565,8 @@
   color: var(--muted-foreground);
 }
 
-.mobile-avatar-sheet-item:disabled {
+.mobile-avatar-sheet-item:disabled,
+.mobile-avatar-sheet-price:disabled {
   opacity: 0.5;
 }
 
@@ -5744,7 +5746,7 @@
 
 .mobile-assistant-flow-link {
   align-self: flex-start;
-  min-height: 32px;
+  min-height: 44px;
   padding: 0;
   border: 0;
   background: none;
@@ -5780,7 +5782,7 @@
 }
 
 .mobile-assistant-flow-chip {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 var(--sp-4);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
