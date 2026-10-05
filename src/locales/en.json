@@ -4368,6 +4368,7 @@
   "Written in English, the language these music models follow best.": "Written in English, the language these music models follow best.",
   "Written in English, the language these video models follow best.": "Written in English, the language these video models follow best.",
   "Written into every shot": "Written into every shot",
+  "Written into every shot on {models}": "Written into every shot on {models}",
   "Written to {path} ({files} files). Attach the folder's files to your report.": "Written to {path} ({files} files). Attach the folder's files to your report.",
   "Written with the previous method.": "Written with the previous method.",
   "Wrote {directory} with {count} files next to the timeline.": "Wrote {directory} with {count} files next to the timeline.",

@@ -187,7 +187,7 @@ export function ProjectScript({
             </button>
           ) : null}
         </section>
-        <ProjectDirection document={document} editDocument={editDocument} />
+        <ProjectDirection document={document} catalog={catalog} editDocument={editDocument} />
         <section aria-labelledby={`${scoreSwitch}-picture`}>
           <h3 id={`${scoreSwitch}-picture`}>{t("Picture")}</h3>
           <label className="project-field">

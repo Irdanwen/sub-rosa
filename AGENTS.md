@@ -322,6 +322,39 @@ catalog section). The essentials:
   fails on a long line), and never `biome check --unsafe`, which strips
   non-null assertions and breaks the typecheck.
 
+
+## A film project's prompts (fork addition, 2026-10-05)
+
+Every prompt the film project sends (a shot's video prompt, its AI rewrite,
+the script reading, bible references, the opening image) follows the person's
+prompt bible: blocks `[OVERALL] [REFERENCES] [SUBJECT] [SHOT] [DIALOGUE]
+[SOUND] [STYLE] [NEGATIVE]`, rendered per video family. Read
+[ADR-0074](docs/adr/0074-project-prompts-are-blocks-rendered-per-family.md)
+and the "Film direction", "Prompt block", "Family profile" and "Dialogue mode"
+entries of [CONTEXT.md](CONTEXT.md) before touching any of it. The essentials:
+
+- **One composer.** `src/lib/studio/prompt/compose.ts` writes every project
+  shot's prompt, and the shot card previews exactly what it writes. Never
+  build a video prompt anywhere else, and never restate a family's budget or
+  timing in code: `src/lib/studio/direction/vocabulary.json` (the words) and
+  `profiles.json` (each family's budget, labels, timing, sound, languages)
+  are the only sources, read by Rust through `include_str!`.
+- **What never goes.** Over budget, the composer drops sound, then long
+  descriptors, optional negatives, lens details and the mood. It never drops a
+  reference's role sentence, the subject, the framing, the movement, the
+  action or a spoken line. `[STYLE]` and the genre/mood are identical on every
+  shot of a family.
+- **Family rules are measured, not guessed.** Seedance keeps `<Image 1>` and
+  opens a reference prompt with "Refer to"; Kling never gets a number; a line
+  is native only where the family speaks its language (H3: French), else it is
+  dubbed and the render silenced with `audio: false` or muted in the montage.
+  Budgets marked `budgetMeasured: false` are starting values.
+- **Versions.** The reader is `shotlist-v4`, the rewrite `studio-rewrite-v4`
+  (`SHOT_REWRITE_VERSION` in TypeScript is tested equal). Bump them when a
+  prompt changes; the composer's version never enters a take's signature.
+- Labels a person reads for vocabulary ids live in `direction/labels.ts` as
+  literal `t()` calls; a new id needs its label and its French.
+
 ---
 
 # June — Agent Instructions

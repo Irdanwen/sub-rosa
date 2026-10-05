@@ -6,6 +6,8 @@ import { RECIPES, recipe as findRecipe } from "../../lib/studio/direction/vocabu
 import { lockedStyle, lockedTone } from "../../lib/studio/prompt/compose";
 import { familyProfile } from "../../lib/studio/prompt/profiles";
 import type { ProjectDocument } from "../../lib/studio/projects";
+import type { MediaCatalog } from "../../lib/studio/types";
+import { routeModels } from "../../lib/studio/workflow/compile";
 import { VocabularySelect } from "./VocabularySelect";
 
 /**
@@ -44,9 +46,11 @@ export function directionFromRecipe(id: string): FilmDirection | undefined {
  */
 export function ProjectDirection({
   document,
+  catalog,
   editDocument,
 }: {
   document: ProjectDocument;
+  catalog: MediaCatalog;
   editDocument: (change: (previous: ProjectDocument) => ProjectDocument) => void;
 }) {
   const id = useId();
@@ -63,13 +67,26 @@ export function ProjectDirection({
     next[index] = value ?? "";
     set({ moods: next.filter(Boolean).slice(0, 2) });
   };
-  const profile = familyProfile(
-    document.settings.videoModelId ? { id: document.settings.videoModelId } : undefined,
-  );
-  const tone = lockedTone(direction, profile);
-  const style = lockedStyle(direction, profile);
+  // The families the shots will actually render on: the wording is per
+  // family, so the preview says what each of them receives.
+  const routing = routeModels(catalog, document.settings.videoModelId || undefined);
+  const families = new Map<string, { names: string[]; tone: string; style: string }>();
+  for (const model of [routing.text, routing.reference, routing.fromImage]) {
+    if (!model) continue;
+    const profile = familyProfile(model);
+    const tone = lockedTone(direction, profile);
+    const style = lockedStyle(direction, profile);
+    const key = `${tone}\n${style}`;
+    const seen = families.get(key);
+    if (seen) {
+      if (!seen.names.includes(model.name)) seen.names.push(model.name);
+    } else families.set(key, { names: [model.name], tone, style });
+  }
+  const previews = [...families.values()].filter((item) => item.tone || item.style);
   const proposal = document.filmDirectionProposal;
-  const proposed = proposal ? lockedTone({ ...proposal }, { ...profile, budgetWords: 200 }) : "";
+  const proposed = proposal
+    ? lockedTone({ ...proposal }, { ...familyProfile(undefined), budgetWords: 200 })
+    : "";
   const settle = (accept: boolean) =>
     editDocument((previous) => ({
       ...previous,
@@ -274,13 +291,17 @@ export function ProjectDirection({
           </span>
         </label>
       </details>
-      {tone || style ? (
-        <div className="project-direction-preview">
-          <span className="project-field-heading">{t("Written into every shot")}</span>
-          {tone ? <code>{tone}</code> : null}
-          {style ? <code>{style}</code> : null}
+      {previews.map((preview) => (
+        <div key={preview.names.join()} className="project-direction-preview">
+          <span className="project-field-heading">
+            {previews.length > 1
+              ? t("Written into every shot on {models}", { models: preview.names.join(", ") })
+              : t("Written into every shot")}
+          </span>
+          {preview.tone ? <code>{preview.tone}</code> : null}
+          {preview.style ? <code>{preview.style}</code> : null}
         </div>
-      ) : null}
+      ))}
     </section>
   );
 }

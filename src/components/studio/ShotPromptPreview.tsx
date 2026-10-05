@@ -20,7 +20,8 @@ export function ShotPromptPreview({
   modelName?: string;
 }) {
   return (
-    <details className="project-prompt-preview" open={!overridden && lints.length > 0}>
+    // Open while it is the prompt that renders: it is what the take is paid for.
+    <details className="project-prompt-preview" open={!overridden}>
       <summary>
         {overridden ? t("Composed prompt, replaced by yours") : t("Composed prompt")}
         <span

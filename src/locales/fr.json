@@ -4368,6 +4368,7 @@
   "Written in English, the language these music models follow best.": "Rédigé en anglais, la langue que ces modèles de musique suivent le mieux.",
   "Written in English, the language these video models follow best.": "Rédigé en anglais, la langue que ces modèles vidéo suivent le mieux.",
   "Written into every shot": "Écrit dans chaque plan",
+  "Written into every shot on {models}": "Écrit dans chaque plan sur {models}",
   "Written to {path} ({files} files). Attach the folder's files to your report.": "Enregistré dans {path} ({files} fichiers). Joignez les fichiers du dossier à votre rapport.",
   "Written with the previous method.": "Écrit avec l'ancienne méthode.",
   "Wrote {directory} with {count} files next to the timeline.": "{directory} écrit avec {count} fichiers à côté de la timeline.",
