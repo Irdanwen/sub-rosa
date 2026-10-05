@@ -569,7 +569,11 @@ export function ProjectShots({
                   value={mode}
                   onChange={(event) => {
                     const next = event.target.value as ProjectShot["mode"];
-                    update({ mode: next, continues: next === "continuation" });
+                    update({
+                      mode: next,
+                      continues: next === "continuation",
+                      modeSource: undefined,
+                    });
                     setReferenceError("");
                   }}
                 >

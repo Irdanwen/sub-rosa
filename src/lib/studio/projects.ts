@@ -107,6 +107,8 @@ export interface ProjectDocument {
   score?: ProjectScore;
   /** Genre, mood, look and light, written into every shot's prompt (ADR-0074). */
   filmDirection?: FilmDirection;
+  /** The reading's own take on genre, moods and pacing, waiting to be accepted. */
+  filmDirectionProposal?: Pick<FilmDirection, "genre" | "moods" | "pacing">;
 }
 export interface ProjectSummary {
   id: string;

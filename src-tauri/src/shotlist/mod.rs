@@ -20,6 +20,7 @@
 
 pub mod chunk;
 pub mod prompts;
+pub mod vocabulary;
 
 use crate::db::repositories::Repositories;
 use crate::domain::types::{AppError, FilmListItemDto, ShotListDto};
@@ -62,6 +63,35 @@ pub struct Shot {
     /// Whether this shot carries straight on from the one before it.
     #[serde(default)]
     pub continues: bool,
+    /// The prompt bible's camera, as vocabulary ids (ADR-0074). Absent on a
+    /// reading made before them, and for an id the vocabulary does not have.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lens: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movement: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amplitude: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<String>,
+    /// How the line is said, as vocabulary ids.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pace: Option<String>,
+    /// The line is heard, not said on screen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub voiceover: bool,
+    /// Sounds synchronous with the action, in English.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub effects: String,
 }
 
 /// Somebody or somewhere the script names, described.
@@ -83,6 +113,19 @@ pub struct CastMember {
     pub traits: String,
 }
 
+/// The film's genre, moods and pacing, as the reader proposes them. A
+/// proposal: the project shows it and waits for the person to accept it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposedDirection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub moods: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pacing: Option<String>,
+}
+
 /// What one reading returns: who is in the film, and the shots.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
@@ -91,6 +134,11 @@ pub struct Reading {
     pub cast: Vec<CastMember>,
     #[serde(default)]
     pub shots: Vec<Shot>,
+    /// The language the lines are spoken in, a two-letter code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<ProposedDirection>,
 }
 
 /// The kinds a cast member can be. A model inventing a fourth gets the one
@@ -325,12 +373,19 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
         .shot_list(note_id)
         .await?
         .ok_or_else(|| AppError::new("shotlist_cancelled", "That breakdown was stopped."))?;
-    if row.prompt_version != SHOTLIST_PROMPT_VERSION
-        || row.script_hash.as_deref() != Some(script_hash(&script).as_str())
-    {
+    if row.script_hash.as_deref() != Some(script_hash(&script).as_str()) {
         return Err(AppError::new(
             "shotlist_source_changed",
             "Your script changed. Start the breakdown again to use the latest version.",
+        ));
+    }
+    // An update between two launches changed how scripts are read. The parts
+    // paid for were asked the old questions, so they are not mixed with new
+    // ones; saying so beats blaming a script nobody touched.
+    if row.prompt_version != SHOTLIST_PROMPT_VERSION {
+        return Err(AppError::new(
+            "shotlist_reader_updated",
+            "Sub Rosa now reads scripts in more detail. Start the breakdown again to use it.",
         ));
     }
     let chunks = chunk::chunk_script(&script, chunk::CHUNK_BUDGET_CHARS);
@@ -354,7 +409,7 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
         }
         let text = completion(
             &row.model,
-            prompts::MAP_SYSTEM,
+            &prompts::map_system(),
             &prompts::map_user_message(index, chunk_count, chunk),
             "shotlist_map_failed",
         )
@@ -372,9 +427,15 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
 
     let mut shots: Vec<Shot> = Vec::new();
     let mut cast: Vec<CastMember> = Vec::new();
+    let mut language: Option<String> = None;
+    let mut direction: Option<ProposedDirection> = None;
     for part in &parts {
         let reading = parse_reading(part);
         shots.extend(reading.shots);
+        // The first part read the opening of the film: its take on the
+        // language and the direction is the one kept.
+        language = language.or(reading.language);
+        direction = direction.or(reading.direction);
         // A later part naming somebody an earlier one already described does
         // not get to redescribe them: the first description is the one every
         // shot before it was written against.
@@ -392,7 +453,15 @@ async fn run(app: &AppHandle, note_id: &str) -> Result<(), AppError> {
         ));
     }
     let row = repos
-        .finish_shot_list(note_id, &Reading { cast, shots })
+        .finish_shot_list(
+            note_id,
+            &Reading {
+                cast,
+                shots,
+                language,
+                direction,
+            },
+        )
         .await?;
     if !still_ours(row.as_ref()) {
         return Ok(());
@@ -437,8 +506,8 @@ fn parse_reading_checked(raw: &str) -> Result<Reading, AppError> {
         slice_between(raw, '[', ']')
             .and_then(|slice| serde_json::from_str::<Vec<Shot>>(slice).ok())
             .map(|shots| Reading {
-                cast: Vec::new(),
                 shots,
+                ..Reading::default()
             })
     } else {
         None
@@ -454,16 +523,62 @@ fn parse_reading_checked(raw: &str) -> Result<Reading, AppError> {
     for shot in &mut reading.shots {
         shot.motion = normalized_motion(&shot.motion);
         shot.characters.retain(|name| !name.trim().is_empty());
+        normalize_vocabulary(shot);
+    }
+    reading.language = reading
+        .language
+        .as_deref()
+        .map(|code| code.trim().to_ascii_lowercase())
+        .filter(|code| code.len() == 2 && code.chars().all(|c| c.is_ascii_lowercase()));
+    if let Some(direction) = reading.direction.as_mut() {
+        direction.genre = vocabulary::known("genres", direction.genre.as_deref());
+        direction.pacing = vocabulary::known("pacings", direction.pacing.as_deref());
+        direction.moods = direction
+            .moods
+            .iter()
+            .filter_map(|mood| vocabulary::known("moods", Some(mood)))
+            .take(2)
+            .collect();
+    }
+    if reading.direction.as_ref().is_some_and(|direction| {
+        direction.genre.is_none() && direction.moods.is_empty() && direction.pacing.is_none()
+    }) {
+        reading.direction = None;
     }
     reading.cast.retain(|member| !member.name.trim().is_empty());
     for member in &mut reading.cast {
         member.kind = normalized_kind(&member.kind);
         member.name = member.name.trim().to_string();
         // Bounded for the same reason the bible bounds its own: traits are
-        // restated on every shot of every film.
-        member.traits = member.traits.trim().chars().take(300).collect();
+        // restated on every shot of every film. Forty-five words of the
+        // prompt bible's descriptor fit with room to spare.
+        member.traits = member.traits.trim().chars().take(MAX_TRAIT_CHARS).collect();
     }
     Ok(reading)
+}
+
+/// The longest frozen descriptor kept: forty-five words with room to spare.
+pub const MAX_TRAIT_CHARS: usize = 450;
+
+/// Keeps the ids the vocabulary has and drops the rest: a field the model
+/// filled with an invented phrase writes nothing rather than nonsense.
+fn normalize_vocabulary(shot: &mut Shot) {
+    shot.size = vocabulary::known("shotSizes", shot.size.as_deref());
+    shot.lens = vocabulary::known("lenses", shot.lens.as_deref());
+    shot.depth = vocabulary::known("depths", shot.depth.as_deref());
+    shot.angle = vocabulary::known("angles", shot.angle.as_deref());
+    shot.movement = vocabulary::known("movements", shot.movement.as_deref());
+    shot.amplitude = vocabulary::known("amplitudes", shot.amplitude.as_deref());
+    shot.speed = vocabulary::known("speeds", shot.speed.as_deref());
+    shot.transition = vocabulary::known("transitions", shot.transition.as_deref());
+    shot.tone = vocabulary::known("tones", shot.tone.as_deref());
+    shot.pace = vocabulary::known("paces", shot.pace.as_deref());
+    // A static camera has no amplitude and no speed to keep.
+    if shot.movement.as_deref() == Some("static") {
+        shot.amplitude = None;
+        shot.speed = None;
+    }
+    shot.effects = shot.effects.trim().chars().take(200).collect();
 }
 
 /// The outermost balanced-looking slice between two delimiters, or nothing.
@@ -620,7 +735,69 @@ mod tests {
         let raw = format!(
             "{{\"cast\":[{{\"name\":\"X\",\"kind\":\"character\",\"traits\":\"{long}\"}}],\"shots\":[{{\"action\":\"a\"}}]}}"
         );
-        assert_eq!(parse_reading(&raw).cast[0].traits.chars().count(), 300);
+        assert_eq!(
+            parse_reading(&raw).cast[0].traits.chars().count(),
+            MAX_TRAIT_CHARS
+        );
+    }
+
+    #[test]
+    fn a_reading_keeps_the_vocabulary_it_knows_and_drops_what_it_invented() {
+        let raw = r#"{"language":"FR","direction":{"genre":"intimate-drama","moods":["melancholic","intimate","tense"],"pacing":"glacial"},
+            "cast":[],"shots":[{"action":"Léa unfolds the letter","size":"Close-Up","lens":"85mm","depth":"shallow","angle":"eye-level",
+            "movement":"push-in","amplitude":"small","speed":"very-slow","transition":"dissolve","tone":"calm","pace":"slow",
+            "voiceover":true,"effects":" paper rustling "},
+            {"action":"She waits","size":"very tight","movement":"static","amplitude":"large","speed":"fast"}]}"#;
+        let reading = parse_reading(raw);
+        let first = &reading.shots[0];
+        assert_eq!(first.size.as_deref(), Some("close-up"));
+        assert_eq!(first.movement.as_deref(), Some("push-in"));
+        assert_eq!(first.speed.as_deref(), Some("very-slow"));
+        assert_eq!(first.transition.as_deref(), Some("dissolve"));
+        assert_eq!(first.tone.as_deref(), Some("calm"));
+        assert!(first.voiceover);
+        assert_eq!(first.effects, "paper rustling");
+        let second = &reading.shots[1];
+        // An invented size writes nothing; a static camera keeps no move.
+        assert_eq!(second.size, None);
+        assert_eq!(second.amplitude, None);
+        assert_eq!(second.speed, None);
+        assert_eq!(reading.language.as_deref(), Some("fr"));
+        let direction = reading.direction.expect("a proposed direction");
+        assert_eq!(direction.genre.as_deref(), Some("intimate-drama"));
+        // Two moods at most, and an invented pacing is dropped.
+        assert_eq!(direction.moods, vec!["melancholic", "intimate"]);
+        assert_eq!(direction.pacing, None);
+    }
+
+    #[test]
+    fn a_reading_from_before_the_vocabulary_still_reads() {
+        let raw = r#"{"cast":[],"shots":[{"action":"Nera turns","camera":"slow push in"}]}"#;
+        let reading = parse_reading(raw);
+        assert_eq!(reading.shots[0].camera, "slow push in");
+        assert_eq!(reading.shots[0].size, None);
+        assert!(reading.direction.is_none());
+        // What is not there is not written back: an old reading round-trips.
+        let json = serde_json::to_string(&reading.shots[0]).unwrap();
+        assert!(!json.contains("size") && !json.contains("voiceover"));
+    }
+
+    #[test]
+    fn the_reader_is_given_every_id_it_may_use() {
+        let system = prompts::map_system();
+        for id in [
+            "medium-close-up",
+            "85mm",
+            "push-in",
+            "very-slow",
+            "fade-black",
+            "whisper",
+            "intimate-drama",
+            "rupture",
+        ] {
+            assert!(system.contains(id), "{id} missing from the reader's prompt");
+        }
+        assert!(system.contains("twenty-five to forty-five words"));
     }
 
     #[test]

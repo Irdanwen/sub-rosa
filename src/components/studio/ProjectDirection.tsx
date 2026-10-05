@@ -61,12 +61,37 @@ export function ProjectDirection({
   );
   const tone = lockedTone(direction, profile);
   const style = lockedStyle(direction, profile);
+  const proposal = document.filmDirectionProposal;
+  const proposed = proposal ? lockedTone({ ...proposal }, { ...profile, budgetWords: 200 }) : "";
+  const settle = (accept: boolean) =>
+    editDocument((previous) => ({
+      ...previous,
+      filmDirection:
+        accept && previous.filmDirectionProposal
+          ? { ...previous.filmDirection, ...previous.filmDirectionProposal, recipe: undefined }
+          : previous.filmDirection,
+      filmDirectionProposal: undefined,
+    }));
   return (
     <section aria-labelledby={`${id}-direction`} className="project-direction">
       <h3 id={`${id}-direction`}>{t("Film direction")}</h3>
       <p className="project-muted">
         {t("Chosen once for the whole film and written into every shot, so the shots match.")}
       </p>
+      {proposal && proposed ? (
+        <div className="project-direction-preview" role="status">
+          <span className="project-field-heading">{t("Proposed from your script")}</span>
+          <code>{proposed}</code>
+          <span className="project-actions">
+            <button type="button" className="btn btn-primary" onClick={() => settle(true)}>
+              {t("Apply")}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => settle(false)}>
+              {t("Dismiss")}
+            </button>
+          </span>
+        </div>
+      ) : null}
       <label className="project-field">
         {t("Start from a recipe")}
         <select

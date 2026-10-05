@@ -16,12 +16,7 @@ import {
   type VeniceModelDto,
 } from "../../lib/tauri";
 import { listArtifacts } from "../../lib/studio/artifacts";
-import {
-  BIBLE_KINDS,
-  BIBLE_ROLE_LABELS,
-  type BibleKind,
-  type BibleRole,
-} from "../../lib/studio/bible";
+import { BIBLE_ROLE_LABELS, type BibleRole } from "../../lib/studio/bible";
 import { foldLiveRender, nodeTarget, type LiveRender } from "../../lib/studio/project-activity";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
 import {
@@ -43,6 +38,7 @@ import {
   shotSeconds,
 } from "../../lib/studio/project-production";
 import { appendTakes, type TakeToPlace } from "../../lib/studio/project-montage";
+import { landReading, rerouteImportedShots } from "../../lib/studio/project-reading";
 import {
   acceptProposal,
   emptyScore,
@@ -61,7 +57,6 @@ import {
   listArtifactMetadata,
   montageArtifacts,
   newProject,
-  newShot,
   organizeArtifact,
   projectDocumentFits,
   projectError,
@@ -76,7 +71,6 @@ import {
   type StudioProject,
 } from "../../lib/studio/projects";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
-import type { Shot } from "../../lib/studio/workflow/compile";
 import type { Workflow } from "../../lib/studio/workflow/schema";
 import {
   estimateNodeCost,
@@ -219,7 +213,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   }, []);
   const edit = (change: (previous: StudioProject) => StudioProject) => {
     if (!current.current || !writer.current) return Promise.resolve();
-    const next = change(current.current);
+    const changed = change(current.current);
+    const next = { ...changed, document: rerouteImportedShots(changed.document, catalog) };
     if (!projectDocumentFits(next.document)) {
       const cause = new Error(t("This film is too large to save. Reduce its script or LUTs."));
       report(cause);
@@ -555,42 +550,19 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         return;
       }
       try {
-        const parsed: unknown = JSON.parse(row.shotsJson);
-        const body =
-          parsed && typeof parsed === "object" && !Array.isArray(parsed)
-            ? (parsed as Record<string, unknown>)
-            : undefined;
-        const shots = Array.isArray(parsed)
-          ? (parsed as Shot[])
-          : Array.isArray(body?.shots)
-            ? (body.shots as Shot[])
-            : [];
-        const cast = Array.isArray(body?.cast)
-          ? body.cast.flatMap((entry) => {
-              if (!entry || typeof entry !== "object") return [];
-              const member = entry as Record<string, unknown>;
-              const name = typeof member.name === "string" ? member.name.trim() : "";
-              if (!name || !BIBLE_KINDS.includes(member.kind as BibleKind)) return [];
-              return [
-                {
-                  name,
-                  kind: member.kind as BibleKind,
-                  traits: typeof member.traits === "string" ? member.traits : "",
-                },
-              ];
-            })
-          : [];
+        const { shots, cast, language, direction } = landReading(row.shotsJson);
         await edit((previous) => ({
           ...previous,
           document: {
             ...previous.document,
-            shots: shots.map((shot, index) => ({
-              ...newShot(index),
-              ...shot,
-              id: crypto.randomUUID(),
-              title: shot.scene || t("Shot {number}", { number: index + 1 }),
-              mode: shot.continues ? "continuation" : "text",
-            })),
+            shots,
+            // The language is a fact about the script; the direction is a
+            // reading of it, so it waits for the person to accept it.
+            filmDirection:
+              language && !previous.document.filmDirection?.dialogueLanguage
+                ? { ...previous.document.filmDirection, dialogueLanguage: language }
+                : previous.document.filmDirection,
+            filmDirectionProposal: previous.document.filmDirection?.genre ? undefined : direction,
             bible: [
               ...previous.document.bible,
               ...cast
