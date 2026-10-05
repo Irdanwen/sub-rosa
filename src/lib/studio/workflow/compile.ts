@@ -38,6 +38,7 @@ import {
 } from "../bible";
 import type { FilmDirection } from "../direction/types";
 import { type ComposedPrompt, composeShotPrompt } from "../prompt/compose";
+import { guessLanguage } from "../prompt/subject";
 import type { CameraMove, DialogueMode, ShotFraming } from "../direction/types";
 import type { ReferenceRole } from "../kling";
 import {
@@ -666,6 +667,24 @@ export function planShots(
 }
 
 /**
+ * The direction with the lines' language, guessed from every line together
+ * when nobody set it: one short line ("Encore ?") guesses badly, a film's
+ * worth of them does not, and a French line spoken by an English model costs
+ * a take.
+ */
+function withLinesLanguage(
+  direction: FilmDirection | undefined,
+  shots: readonly Shot[],
+): FilmDirection | undefined {
+  if (direction?.dialogueLanguage) return direction;
+  const lines = shots
+    .map((shot) => shot.dialogue.trim())
+    .filter(Boolean)
+    .join(" ");
+  return lines ? { ...direction, dialogueLanguage: guessLanguage(lines) } : direction;
+}
+
+/**
  * Which engine speaks.
  *
  * Not by price: nothing in this catalogue publishes one for speech, so
@@ -757,7 +776,7 @@ export function compileShotList(input: CompileInput): CompileResult {
     input.catalog,
     aspectRatio,
     input.videoModelId,
-    input.filmDirection,
+    withLinesLanguage(input.filmDirection, shots),
   );
   notes.push(...routingNotes);
   const shotIds = shots.map((shot, index) => shot.id ?? String(index + 1));

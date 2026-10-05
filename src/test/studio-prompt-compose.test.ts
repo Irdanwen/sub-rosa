@@ -9,6 +9,7 @@ import {
   resolveDialogue,
 } from "../lib/studio/prompt/compose";
 import { familyProfile } from "../lib/studio/prompt/profiles";
+import { guessLanguage } from "../lib/studio/prompt/subject";
 import { seedancePromptAdvice } from "../lib/studio/seedance";
 import { type Shot, shotReferences } from "../lib/studio/workflow/compile";
 
@@ -348,5 +349,15 @@ describe("the vocabulary", () => {
   it("knows which movements shake and which looks are drawn", () => {
     expect(vocabularyEntry("movements", "handheld")?.shaky).toBe(true);
     expect(vocabularyEntry("looks", "animation-3d")?.animated).toBe(true);
+  });
+});
+
+describe("the lines' language", () => {
+  it("reads French from its typography and its common words, not only its accents", () => {
+    expect(guessLanguage("Encore ?")).toBe("fr");
+    expect(guessLanguage("Il y a quelqu'un ?")).toBe("fr");
+    expect(guessLanguage("Où es-tu")).toBe("fr");
+    expect(guessLanguage("Get in.")).toBe("en");
+    expect(guessLanguage("Is anyone there?")).toBe("en");
   });
 });

@@ -88,7 +88,7 @@ export function stateLine(state: string | undefined): string {
 }
 
 const FRENCH_WORDS = new Set(
-  "le la les un une des du de et est pas je tu il elle nous vous ils elles que qui ne mais avec pour sur dans ce cette mon ma mes ton ta son sa où ça c'est".split(
+  "le la les un une des du de et est pas je tu il elle nous vous ils elles que qui ne mais avec pour sur dans ce cette mon ma mes ton ta son sa où ça c'est encore oui non merci bonjour toujours rien jamais".split(
     " ",
   ),
 );
@@ -101,6 +101,8 @@ const FRENCH_WORDS = new Set(
 export function guessLanguage(text: string): string {
   const tokens = text.toLowerCase().match(/[a-zà-ÿœ']+/g) ?? [];
   if (/[àâçéèêëîïôûùüÿœ]/i.test(text)) return "fr";
+  // French typography puts a space before ? ! : ; ("Encore ?").
+  if (/\S\s[?!;:]/.test(text) || /«|»/.test(text)) return "fr";
   const french = tokens.filter((token) => FRENCH_WORDS.has(token)).length;
   return tokens.length > 0 && french / tokens.length >= 0.2 ? "fr" : "en";
 }
