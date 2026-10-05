@@ -277,6 +277,51 @@ section of [FORK_NOTES.md](FORK_NOTES.md). The essentials:
 - **`note-lab.html`** mounts the note editor alone, with no sidecar and a fake
   Tauri bridge, for driving the surface in a browser. It is not a build input.
 
+## The model catalog on the website (fork addition, 2026-10-05)
+
+`website/` publishes a reference catalog of every model a person can pick in
+the app: `/models` (hub), `/models/<kind>` (eight kinds of work), one page per
+family (98), `/models/compare?m=a,b,c` and `/models/guide` ("Understanding
+models"). The how-to lives in [`website/README.md`](website/README.md) (Model
+catalog section). The essentials:
+
+- **The data is frozen, never fetched.** The site's CSP only allows its own
+  origin. `pnpm website:models` writes `website/src/models/snapshot.json` from
+  Carpe Diem's public catalog and price table (video prices from the free
+  `/video/quote`, with `CARPE_DIEM_API_KEY`). `families.json` is the core
+  (names, summary, ids, needs); `details/<kind>.json` holds each family's
+  depth (what sets it apart, dated versions, specs, strengths, use cases,
+  rivals, sources), one chunk per kind loaded by `models/details.ts`;
+  `benchmarks.json` registers each benchmark and every score.
+- **No source, no claim.** Every score carries its date, URL and `kind`
+  (`independent` or `vendor`, shown apart). A release date deduced from a
+  repository or an API listing is kept to the month; one no page states is
+  `null` and reads "date not published", never a placeholder. Weights are
+  called closed only when a page says so. E2EE is worded as the provider's
+  stated policy, as `src/lib/model-privacy.ts` does. Removing a claim beats
+  softening it.
+- **The tests are the gate.** `src/test/website-models.test.tsx` and
+  `website-models-data.test.tsx` fail until every pickable model sits in one
+  family with a dated release, every score is sourced and on its benchmark's
+  scale, every price written in prose stays near the snapshot, the copy has
+  both languages with no typographic dash, and no catalog page renders a
+  `style` attribute.
+- **Charts are HTML and CSS, without style attributes.** The VPS CSP
+  (`style-src 'self'`) refuses them in the prerendered HTML; geometry travels
+  as `at-x-N` / `at-y-N` / `at-w-N` classes (`at` in `models/charts.tsx`,
+  rules generated at the end of `style.css`). The dev server has no CSP, so
+  only a sweep of the production pages shows a regression. Elo ratings are
+  dots on an axis, never bars from zero; one accent on a quiet gray, a pair
+  validated with the dataviz checker in both themes.
+- **Weight budget.** The catalog is its own chunk, and its depth is one chunk
+  per kind: the main bundle stays at its size and a catalog page loads at
+  most about 110 KB of data (gzip). `main.tsx` and the prerender load the
+  chunks a page needs before its first render, because the site mounts with
+  `createRoot`, not hydration.
+- **Editing the JSON by hand:** run `pnpm biome format --write` on it (CI
+  fails on a long line), and never `biome check --unsafe`, which strips
+  non-null assertions and breaks the typecheck.
+
 ---
 
 # June — Agent Instructions
