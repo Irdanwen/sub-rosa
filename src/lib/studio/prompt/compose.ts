@@ -192,6 +192,37 @@ export function lockedStyle(direction: FilmDirection | undefined, profile: Famil
   return sentence(joinClauses(parts));
 }
 
+/**
+ * The film's look for a bible reference: the film look, the palette and the
+ * texture, never the light, which a reference keeps even.
+ */
+export function referenceStyle(direction: FilmDirection | undefined): string {
+  if (!direction) return "";
+  return joinClauses([
+    write("looks", direction.look),
+    write("palettes", direction.palette),
+    write("textures", direction.texture),
+  ]);
+}
+
+/** The film's whole [STYLE], for an image model that has no word budget to keep. */
+export function fullStyle(direction: FilmDirection | undefined): string {
+  return lockedStyle(direction, { ...familyProfile(undefined), budgetWords: 1000 });
+}
+
+/** A shot's frame in the bible's words, for the image that opens it. */
+export function framingWords(shot: Shot, direction: FilmDirection | undefined): string {
+  const framing = { ...direction?.shotDefaults?.framing, ...shot.framing };
+  return sentence(
+    joinClauses([
+      write("shotSizes", framing.size),
+      write("lenses", framing.lens),
+      write("depths", framing.depth),
+      write("angles", framing.angle),
+    ]),
+  );
+}
+
 /** The film's genre and moods, as every shot of it opens. */
 export function lockedTone(direction: FilmDirection | undefined, profile: FamilyProfile): string {
   if (!direction) return "";

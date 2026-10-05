@@ -10,6 +10,7 @@ import {
   type BibleRole,
 } from "../../lib/studio/bible";
 import { pickPortraitModel, portraitPrompt } from "../../lib/studio/bible/portrait";
+import { descriptorFormula, traitLints } from "../../lib/studio/prompt/lint";
 import {
   defaultEditModel,
   estimateCostCredits,
@@ -51,6 +52,7 @@ export function ProjectBible({
   live = [],
   now = Date.now(),
   fresh,
+  referenceStyle,
 }: {
   entries: ProjectBibleEntry[];
   onChange: (entries: ProjectBibleEntry[]) => void;
@@ -66,6 +68,8 @@ export function ProjectBible({
   now?: number;
   /** Files that just arrived, revealed once. */
   fresh?: ReadonlySet<string>;
+  /** The film's look, so a reference is drawn the way the shots will be. */
+  referenceStyle?: string;
 }) {
   const [selected, setSelected] = useState(entries[0]?.id);
   const [global, setGlobal] = useState<ProjectBibleEntry[]>([]);
@@ -125,11 +129,11 @@ export function ProjectBible({
     ? estimateCostCredits(drawingModel, { multiplier: catalog.priceMultiplier })
     : undefined;
   const prompt = entry
-    ? (referencePromptOf(entry, activeRole) ?? portraitPrompt(entry, activeRole))
+    ? (referencePromptOf(entry, activeRole) ?? portraitPrompt(entry, activeRole, referenceStyle))
     : "";
   const setPrompt = (value: string) =>
     entry && update({ imagePrompts: { ...entry.imagePrompts, [activeRole]: value } });
-  /** Cut the sheet's portrait and profile out as references of their own. */
+  /** Cut the sheet's portrait, profile and outfit out as references of their own. */
   const cutViews = async (sheetArtifactId: string) => {
     const sheet = artifacts.find((item) => item.id === sheetArtifactId);
     if (!entry || !sheet) return;
@@ -311,10 +315,21 @@ export function ProjectBible({
               <textarea
                 aria-label={t("Invariant traits")}
                 maxLength={600}
-                rows={3}
+                rows={4}
                 value={entry.traits}
+                placeholder={descriptorFormula(entry.kind)}
                 onChange={(event) => update({ traits: event.target.value })}
               />
+              <span className="project-field-hint">
+                {t("Pasted unchanged into every shot this entry appears in. {count} words.", {
+                  count: entry.traits.trim().split(/\s+/).filter(Boolean).length,
+                })}
+              </span>
+              {traitLints(entry).map((lint) => (
+                <span key={lint.id} className="project-field-hint project-lint">
+                  {lint.message}
+                </span>
+              ))}
             </label>
             <label className="project-field">
               {t("Private notes")}
@@ -368,7 +383,7 @@ export function ProjectBible({
                       >
                         {cutting === ref.artifactId
                           ? t("Cutting...")
-                          : t("Cut out the portrait and profile")}
+                          : t("Cut out the portrait, profile and outfit")}
                       </button>
                     ) : null}
                     <div className="project-actions">

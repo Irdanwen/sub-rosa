@@ -39,6 +39,7 @@ import {
 } from "../../lib/studio/project-production";
 import { appendTakes, type TakeToPlace } from "../../lib/studio/project-montage";
 import { landReading, rerouteImportedShots } from "../../lib/studio/project-reading";
+import { referenceStyle } from "../../lib/studio/prompt/compose";
 import {
   acceptProposal,
   emptyScore,
@@ -838,7 +839,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     try {
       await writer.current?.flush();
       const version = epoch.current;
-      const workflow = compileBibleReference(entry, role, catalog, target.name);
+      const workflow = compileBibleReference(
+        entry,
+        role,
+        catalog,
+        target.name,
+        referenceStyle(target.document.filmDirection),
+      );
       const estimate = await quoteProject(workflow, catalog);
       if (current.current?.id !== target.id || epoch.current !== version)
         throw new Error(
@@ -1587,6 +1594,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           {section === "bible" ? (
             <ProjectBible
               entries={project.document.bible}
+              referenceStyle={referenceStyle(project.document.filmDirection)}
               onChange={(bible) =>
                 editDocument((document) => {
                   const renamed = new Map(

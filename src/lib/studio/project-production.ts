@@ -13,6 +13,7 @@ import {
   pickMusicModel,
   resolveShotDuration,
   routeModels,
+  shotReferences,
 } from "./workflow/compile";
 import {
   cueNodeId,
@@ -31,7 +32,7 @@ import {
 } from "./workflow/cost";
 import { validateWorkflow } from "./workflow/validator";
 import type { FilmDirection } from "./direction/types";
-import { resolveDialogue } from "./prompt/compose";
+import { type ComposedPrompt, composeShotPrompt, resolveDialogue } from "./prompt/compose";
 import { canSilence, rendersAudio } from "./prompt/profiles";
 import { guessLanguage } from "./prompt/subject";
 import type { Workflow, WorkflowNode } from "./workflow/schema";
@@ -268,6 +269,29 @@ export function shotVideoModel(
       );
 }
 
+/**
+ * The prompt the compiler will write for a shot, for the surfaces that show
+ * it or improve it: the same model, seconds, references and direction, so
+ * what is previewed is what renders.
+ */
+export function composeProjectShot(
+  shot: ProjectShot,
+  document: ProjectDocument,
+  catalog: MediaCatalog,
+): ComposedPrompt {
+  const model = shotVideoModel(shot, document, catalog);
+  const mode = shot.mode === "continuation" ? "continuation" : shot.mode;
+  return composeShotPrompt({
+    shot,
+    direction: projectDirection(document),
+    bible: document.bible,
+    model,
+    mode,
+    seconds: resolveShotDuration(shot, model).seconds,
+    references: mode === "reference" ? shotReferences(shot, document.bible, model) : [],
+  });
+}
+
 /** How long a shot's take runs, as the compiler will ask for it. */
 export function shotSeconds(
   shot: ProjectShot,
@@ -336,9 +360,10 @@ export function compileBibleReference(
   role: BibleRole,
   catalog: MediaCatalog,
   name: string,
+  style?: string,
 ): Workflow {
   if (role === "voice") throw new Error(t("Choose an image reference role."));
-  const prompt = referencePromptOf(entry, role)?.trim() || portraitPrompt(entry, role);
+  const prompt = referencePromptOf(entry, role)?.trim() || portraitPrompt(entry, role, style);
   const target = `bible-${entry.id}-${role}`;
   const base = { id: crypto.randomUUID(), name, createdAt: Date.now(), updatedAt: Date.now() };
   // A sheet drawn from the portrait keeps the face the person already chose;

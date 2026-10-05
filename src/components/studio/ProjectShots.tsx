@@ -6,14 +6,19 @@ import { acceptsOpeningFrameWithReferences, videoDirection } from "../../lib/stu
 import { maxVideoReferences } from "../../lib/studio/seedance";
 import { effectiveVideoConstraints } from "../../lib/studio/model-constraints";
 import { resolveShotDuration, shotReferences } from "../../lib/studio/workflow/compile";
-import { shotVideoModel } from "../../lib/studio/project-production";
+import { composeProjectShot, shotVideoModel } from "../../lib/studio/project-production";
+import { shotLints } from "../../lib/studio/prompt/lint";
 import {
   newShot,
   shotSignature,
   type ProjectDocument,
   type ProjectShot,
 } from "../../lib/studio/projects";
-import { rewriteReferences, rewriteTargetModel } from "../../lib/studio/studio-rewrite";
+import {
+  rewriteReferences,
+  rewriteTargetModel,
+  SHOT_REWRITE_VERSION,
+} from "../../lib/studio/studio-rewrite";
 import { formatElapsed } from "../../lib/studio/async-job";
 import { darkroomSeed, darkroomVars } from "../../lib/studio/darkroom";
 import type { LiveRender } from "../../lib/studio/project-activity";
@@ -25,6 +30,8 @@ import { GalleryPicker } from "./GalleryPicker";
 import { OpeningComposer } from "./OpeningComposer";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 import { MediaViewer } from "./MediaViewer";
+import { ShotCameraFields, ShotLineFields, ShotSoundFields } from "./ShotDirectionFields";
+import { ShotPromptPreview } from "./ShotPromptPreview";
 
 /** "16:9" as a number, or undefined for anything that is not a ratio. */
 export function ratioOf(value: string | undefined): number | undefined {
@@ -116,6 +123,14 @@ export function ProjectShots({
   const models = modelsFor(mode);
   const model = modelOf(shot);
   const timing = shot ? resolveShotDuration(shot, model) : undefined;
+  const composed = shot ? composeProjectShot(shot, document, catalog) : undefined;
+  // Prompts AI wrote with an earlier method. One written by hand is the
+  // person's own and is never offered for replacement.
+  const olderPrompts = document.shots.filter(
+    (item) =>
+      item.prompt?.trim() && item.promptOptimizedFor && item.promptVersion !== SHOT_REWRITE_VERSION,
+  );
+  const olderPrompt = shot ? olderPrompts.includes(shot) : false;
   /** "5 s", said the way a person reads it. */
   const secondsLabel = (seconds: number) =>
     t("{seconds} s", { seconds: seconds.toLocaleString(intlLocale()) });
@@ -182,6 +197,37 @@ export function ProjectShots({
             {t("Add shot")}
           </button>
         </div>
+        {olderPrompts.length > 0 ? (
+          <p className="project-warning">
+            {olderPrompts.length === 1
+              ? t("One prompt was written with the previous method.")
+              : t("{count} prompts were written with the previous method.", {
+                  count: olderPrompts.length,
+                })}{" "}
+            <button
+              type="button"
+              className="project-field-reset"
+              disabled={busy}
+              onClick={() =>
+                onChange(
+                  document.shots.map((item) =>
+                    olderPrompts.includes(item)
+                      ? {
+                          ...item,
+                          prompt: undefined,
+                          promptOptimizedFor: undefined,
+                          promptSeconds: undefined,
+                          promptVersion: undefined,
+                        }
+                      : item,
+                  ),
+                )
+              }
+            >
+              {t("Use the composed prompts")}
+            </button>
+          </p>
+        ) : null}
         {document.shots.map((item, number) => {
           const thumbnail = artifacts.find((artifact) => artifact.id === item.openingArtifactId);
           const rowWait = waitFor(item.id);
@@ -377,14 +423,7 @@ export function ProjectShots({
                     onChange={(event) => update({ action: event.target.value })}
                   />
                 </label>
-                <label className="project-field">
-                  {t("Camera")}
-                  <textarea
-                    aria-label={t("Camera")}
-                    value={shot.camera}
-                    onChange={(event) => update({ camera: event.target.value })}
-                  />
-                </label>
+                <ShotCameraFields shot={shot} document={document} update={update} />
               </div>
               <details>
                 <summary>{t("Dialogue and speaker")}</summary>
@@ -403,7 +442,17 @@ export function ProjectShots({
                     onChange={(event) => update({ dialogue: event.target.value })}
                   />
                 </label>
+                <ShotLineFields shot={shot} update={update} />
               </details>
+              <ShotSoundFields shot={shot} update={update} />
+              {composed ? (
+                <ShotPromptPreview
+                  composed={composed}
+                  lints={shotLints(shot, document.filmDirection)}
+                  overridden={Boolean(shot.prompt?.trim())}
+                  modelName={model?.name}
+                />
+              ) : null}
               <div className="project-field">
                 <span className="project-field-heading">{t("Video prompt")}</span>
                 <AiRewrite
@@ -414,13 +463,33 @@ export function ProjectShots({
                     <textarea
                       aria-label={t("Video prompt")}
                       rows={5}
-                      value={shot.prompt ?? shot.action}
-                      onChange={(event) => update({ prompt: event.target.value })}
-                      placeholder={t("Describe the action and camera movement")}
+                      value={shot.prompt ?? ""}
+                      onChange={(event) => update({ prompt: event.target.value || undefined })}
+                      placeholder={t(
+                        "Leave empty to render the composed prompt, or improve it with AI.",
+                      )}
                     />
                   }
                   status={
-                    shot.promptOptimizedFor ? (
+                    olderPrompt ? (
+                      <span className="ai-field-stale">
+                        {t("Written with the previous method.")}{" "}
+                        <button
+                          type="button"
+                          className="project-field-reset"
+                          onClick={() =>
+                            update({
+                              prompt: undefined,
+                              promptOptimizedFor: undefined,
+                              promptSeconds: undefined,
+                              promptVersion: undefined,
+                            })
+                          }
+                        >
+                          {t("Use the composed prompt")}
+                        </button>
+                      </span>
+                    ) : shot.promptOptimizedFor ? (
                       shot.promptOptimizedFor === model?.id ? (
                         shot.promptSeconds !== undefined &&
                         timing &&
@@ -461,12 +530,19 @@ export function ProjectShots({
                   }
                   onAccept={(prompt) =>
                     update({
-                      prompt,
+                      prompt: prompt || undefined,
                       promptOptimizedFor: prompt ? model?.id : undefined,
                       promptSeconds: prompt ? timing?.seconds : undefined,
+                      promptVersion: prompt ? SHOT_REWRITE_VERSION : undefined,
                     })
                   }
-                  hint={t("Written in English, the language these video models follow best.")}
+                  hint={
+                    composed?.dialogue.mode === "native" && composed.dialogue.language !== "en"
+                      ? t(
+                          "Written in English, except the line the model speaks in its own language.",
+                        )
+                      : t("Written in English, the language these video models follow best.")
+                  }
                   request={() =>
                     shot.prompt?.trim() || shot.action.trim() || shot.title.trim()
                       ? {
@@ -474,6 +550,8 @@ export function ProjectShots({
                           text: shot.prompt ?? "",
                           modelId: writingModelId,
                           context: {
+                            composed: composed?.text,
+                            dialogueMode: composed?.dialogue.mode,
                             targetModel: rewriteTargetModel(model),
                             mode,
                             title: shot.title,
@@ -501,7 +579,10 @@ export function ProjectShots({
                             // reads it rather than guessing from the order.
                             references:
                               mode === "reference"
-                                ? rewriteReferences(model, shotReferences(shot, document.bible))
+                                ? rewriteReferences(
+                                    model,
+                                    shotReferences(shot, document.bible, model),
+                                  )
                                 : undefined,
                           },
                         }

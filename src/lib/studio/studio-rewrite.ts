@@ -87,7 +87,17 @@ export interface StudioRewriteContext {
   /** The shot's reference images as the render receives them, one line per
    * mention, so the rewrite names each the way the target model reads it. */
   references?: RewriteReference[];
+  /** The app's composed prompt for a project shot (ADR-0074): improved, never replaced. */
+  composed?: string;
+  /** How the shot's line will be heard. */
+  dialogueMode?: "native" | "dubbed" | "none";
+  /** The film's look, palette, light and texture, kept by an opening image. */
+  style?: string;
 }
+
+/** The rewrite version a prompt is written with. Kept equal to Rust's
+ * `STUDIO_AI_PROMPT_VERSION` by `studio-prompt-version.test.ts`. */
+export const SHOT_REWRITE_VERSION = "studio-rewrite-v4";
 
 export interface StudioRewriteInput {
   kind: StudioRewriteKind;

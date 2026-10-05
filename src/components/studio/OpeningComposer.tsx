@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { framingWords, fullStyle } from "../../lib/studio/prompt/compose";
 import { t } from "../../lib/i18n";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import {
@@ -226,7 +227,12 @@ export function OpeningComposer({
                     targetModel: rewriteTargetModel(model),
                     title: shot.title,
                     action: shot.action,
-                    camera: shot.camera,
+                    // The frame the shot will be filmed in, so the still it
+                    // opens on is already framed that way.
+                    camera: [framingWords(shot, document.filmDirection), shot.camera]
+                      .filter(Boolean)
+                      .join(" "),
+                    style: fullStyle(document.filmDirection) || undefined,
                     aspectRatio: document.settings.aspectRatio,
                     slots: slots.map(({ label, kind, role }) => ({ label, kind, role })),
                     entries: document.bible

@@ -23,6 +23,7 @@ import { bibleImageJobSource } from "../image-job-recovery";
 import type { MediaCatalog, MediaModel, StudioArtifact } from "../types";
 import { addBibleRef } from "./index";
 import type { BibleEntry, BibleKind, BibleRole } from "./types";
+import { traitsWithoutName } from "../prompt/subject";
 
 /**
  * What each role has to show, in the words a generator understands.
@@ -75,13 +76,18 @@ export function canGenerate(role: BibleRole): boolean {
  * the reference and the prompts disagree from the first frame.
  */
 export function portraitPrompt(entry: BibleEntry, role: BibleRole, style?: string): string {
-  const traits = entry.traits.trim().replace(/\.$/, "");
+  const traits = traitsWithoutName(entry);
+  const look = style?.trim().replace(/\.$/, "");
   return [
     `${KIND_SUBJECT[entry.kind]}: ${entry.name}.`,
     traits ? `${traits}.` : "",
     ROLE_FRAMING[role],
-    style?.trim() ? `${style.trim()}.` : "",
-    "Photographic, consistent lighting, no text, no watermark.",
+    // The film's look, so an animated film's references are drawn the way
+    // its shots will be; the light stays even, because a reference is
+    // matched against every shot whatever its light.
+    look
+      ? `${look}. Even, consistent lighting, no text, no watermark.`
+      : "Photographic, consistent lighting, no text, no watermark.",
   ]
     .filter(Boolean)
     .join(" ");
