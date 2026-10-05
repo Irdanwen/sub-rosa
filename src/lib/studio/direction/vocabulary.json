@@ -1,0 +1,1117 @@
+{
+  "version": "prompt-bible-1",
+  "genres": [
+    {
+      "id": "intimate-drama",
+      "write": "intimate drama"
+    },
+    {
+      "id": "thriller",
+      "write": "psychological thriller"
+    },
+    {
+      "id": "noir",
+      "write": "film noir"
+    },
+    {
+      "id": "scifi-grounded",
+      "write": "grounded sci-fi"
+    },
+    {
+      "id": "scifi-epic",
+      "write": "epic sci-fi"
+    },
+    {
+      "id": "fantasy-dark",
+      "write": "dark fantasy"
+    },
+    {
+      "id": "fantasy-high",
+      "write": "high fantasy"
+    },
+    {
+      "id": "horror",
+      "write": "slow-burn horror"
+    },
+    {
+      "id": "action",
+      "write": "grounded action"
+    },
+    {
+      "id": "comedy",
+      "write": "light comedy"
+    },
+    {
+      "id": "romance",
+      "write": "romantic drama"
+    },
+    {
+      "id": "western",
+      "write": "modern western"
+    },
+    {
+      "id": "documentary",
+      "write": "observational documentary style"
+    },
+    {
+      "id": "product",
+      "write": "premium product commercial"
+    },
+    {
+      "id": "music-video",
+      "write": "music video"
+    },
+    {
+      "id": "animation-3d",
+      "write": "3D animated film",
+      "animated": true
+    },
+    {
+      "id": "animation-2d",
+      "write": "2D hand-drawn animation",
+      "animated": true
+    }
+  ],
+  "moods": [
+    {
+      "id": "melancholic",
+      "write": "melancholic, quiet"
+    },
+    {
+      "id": "tense",
+      "write": "tense, oppressive"
+    },
+    {
+      "id": "nostalgic",
+      "write": "nostalgic, warm"
+    },
+    {
+      "id": "contemplative",
+      "write": "contemplative, serene"
+    },
+    {
+      "id": "unsettling",
+      "write": "unsettling, eerie"
+    },
+    {
+      "id": "euphoric",
+      "write": "euphoric, vibrant"
+    },
+    {
+      "id": "intimate",
+      "write": "intimate, tender"
+    },
+    {
+      "id": "epic",
+      "write": "epic, grand"
+    },
+    {
+      "id": "mysterious",
+      "write": "mysterious"
+    },
+    {
+      "id": "urgent",
+      "write": "urgent, frantic"
+    },
+    {
+      "id": "fatalistic",
+      "write": "fatalistic"
+    },
+    {
+      "id": "confident",
+      "write": "premium, confident"
+    },
+    {
+      "id": "honest",
+      "write": "observational, honest"
+    },
+    {
+      "id": "whimsical",
+      "write": "whimsical, warm"
+    }
+  ],
+  "pacings": [
+    {
+      "id": "slow",
+      "write": "slow, deliberate pacing"
+    },
+    {
+      "id": "steady",
+      "write": "steady, natural pacing"
+    },
+    {
+      "id": "builds",
+      "write": "pacing builds from calm to intense"
+    },
+    {
+      "id": "fast",
+      "write": "fast-paced, brisk energy"
+    },
+    {
+      "id": "rupture",
+      "write": "quiet restraint, then sudden explosive release"
+    }
+  ],
+  "shotSizes": [
+    {
+      "id": "extreme-wide",
+      "write": "extreme wide shot"
+    },
+    {
+      "id": "wide",
+      "write": "wide shot"
+    },
+    {
+      "id": "full",
+      "write": "full shot"
+    },
+    {
+      "id": "medium-long",
+      "write": "medium-long shot"
+    },
+    {
+      "id": "medium",
+      "write": "medium shot"
+    },
+    {
+      "id": "medium-close-up",
+      "write": "medium close-up"
+    },
+    {
+      "id": "close-up",
+      "write": "close-up"
+    },
+    {
+      "id": "extreme-close-up",
+      "write": "extreme close-up"
+    },
+    {
+      "id": "insert",
+      "write": "macro insert shot"
+    },
+    {
+      "id": "over-the-shoulder",
+      "write": "over-the-shoulder shot"
+    },
+    {
+      "id": "two-shot",
+      "write": "two-shot"
+    },
+    {
+      "id": "pov",
+      "write": "POV shot"
+    }
+  ],
+  "lenses": [
+    {
+      "id": "16mm",
+      "write": "16mm ultra-wide lens"
+    },
+    {
+      "id": "24mm",
+      "write": "24mm wide-angle lens"
+    },
+    {
+      "id": "35mm",
+      "write": "35mm lens"
+    },
+    {
+      "id": "50mm",
+      "write": "50mm lens"
+    },
+    {
+      "id": "85mm",
+      "write": "85mm portrait lens"
+    },
+    {
+      "id": "135mm",
+      "write": "135mm telephoto, compressed background"
+    },
+    {
+      "id": "macro",
+      "write": "100mm macro lens"
+    },
+    {
+      "id": "anamorphic",
+      "write": "anamorphic lens, horizontal lens flares"
+    }
+  ],
+  "depths": [
+    {
+      "id": "shallow",
+      "write": "shallow depth of field"
+    },
+    {
+      "id": "deep",
+      "write": "deep focus"
+    }
+  ],
+  "angles": [
+    {
+      "id": "eye-level",
+      "write": "eye-level"
+    },
+    {
+      "id": "low",
+      "write": "low angle"
+    },
+    {
+      "id": "high",
+      "write": "high angle"
+    },
+    {
+      "id": "overhead",
+      "write": "top-down overhead shot"
+    },
+    {
+      "id": "dutch",
+      "write": "Dutch angle"
+    },
+    {
+      "id": "ground",
+      "write": "ground-level shot"
+    }
+  ],
+  "movements": [
+    {
+      "id": "static",
+      "write": "static shot, locked-off camera",
+      "still": true
+    },
+    {
+      "id": "push-in",
+      "write": "push-in"
+    },
+    {
+      "id": "pull-out",
+      "write": "pull-out"
+    },
+    {
+      "id": "pan-left",
+      "write": "pan left"
+    },
+    {
+      "id": "pan-right",
+      "write": "pan right"
+    },
+    {
+      "id": "tilt-up",
+      "write": "tilt up"
+    },
+    {
+      "id": "tilt-down",
+      "write": "tilt down"
+    },
+    {
+      "id": "lateral",
+      "write": "lateral tracking shot"
+    },
+    {
+      "id": "follow",
+      "write": "follow shot from behind"
+    },
+    {
+      "id": "leading",
+      "write": "leading shot, camera moving backward"
+    },
+    {
+      "id": "orbit",
+      "write": "orbit 90 degrees around the subject"
+    },
+    {
+      "id": "crane",
+      "write": "crane up, rising shot"
+    },
+    {
+      "id": "handheld",
+      "write": "handheld, subtle shake",
+      "shaky": true
+    },
+    {
+      "id": "gimbal",
+      "write": "smooth gimbal shot"
+    },
+    {
+      "id": "drone",
+      "write": "aerial drone shot"
+    },
+    {
+      "id": "fpv",
+      "write": "FPV fly-through",
+      "shaky": true
+    },
+    {
+      "id": "dolly-zoom",
+      "write": "dolly zoom"
+    },
+    {
+      "id": "rack-focus",
+      "write": "rack focus from foreground to background"
+    }
+  ],
+  "amplitudes": [
+    {
+      "id": "imperceptible",
+      "write": "barely perceptible"
+    },
+    {
+      "id": "small",
+      "write": "small amplitude"
+    },
+    {
+      "id": "medium",
+      "write": "medium amplitude"
+    },
+    {
+      "id": "large",
+      "write": "large amplitude"
+    }
+  ],
+  "speeds": [
+    {
+      "id": "very-slow",
+      "write": "very slow speed"
+    },
+    {
+      "id": "slow",
+      "write": "slow speed"
+    },
+    {
+      "id": "steady",
+      "write": "steady speed"
+    },
+    {
+      "id": "fast",
+      "write": "fast speed"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "hard-cut",
+      "write": "hard cut"
+    },
+    {
+      "id": "dissolve",
+      "write": "slow dissolve",
+      "fadeSeconds": 1
+    },
+    {
+      "id": "fade-black",
+      "write": "fade to black",
+      "fadeSeconds": 1
+    },
+    {
+      "id": "axial-cut",
+      "write": "cut in on the same axis"
+    },
+    {
+      "id": "match-cut",
+      "write": "match cut on the movement"
+    },
+    {
+      "id": "continue",
+      "write": "seamlessly continue from the last frame of the previous shot"
+    }
+  ],
+  "tones": [
+    {
+      "id": "calm",
+      "write": "calm, even tone"
+    },
+    {
+      "id": "whisper",
+      "write": "whispering"
+    },
+    {
+      "id": "breaking",
+      "write": "voice slightly breaking, holding back tears"
+    },
+    {
+      "id": "cold",
+      "write": "cold, flat tone"
+    },
+    {
+      "id": "sharp",
+      "write": "sharp, commanding"
+    },
+    {
+      "id": "tender",
+      "write": "soft, tender"
+    },
+    {
+      "id": "ironic",
+      "write": "dry, ironic"
+    },
+    {
+      "id": "anxious",
+      "write": "anxious, hesitant"
+    },
+    {
+      "id": "contained-anger",
+      "write": "low voice, barely controlled anger"
+    },
+    {
+      "id": "cheerful",
+      "write": "bright, cheerful"
+    },
+    {
+      "id": "tired",
+      "write": "tired, breathy"
+    }
+  ],
+  "paces": [
+    {
+      "id": "slow",
+      "write": "slow pace"
+    },
+    {
+      "id": "measured",
+      "write": "measured pace"
+    },
+    {
+      "id": "natural",
+      "write": "natural pace"
+    },
+    {
+      "id": "rapid",
+      "write": "rapid pace"
+    }
+  ],
+  "ambiences": [
+    {
+      "id": "quiet-interior",
+      "write": "quiet room tone, faint clock ticking"
+    },
+    {
+      "id": "old-house",
+      "write": "old house creaks, muffled wind outside"
+    },
+    {
+      "id": "lake",
+      "write": "light wind, distant birds, gentle water"
+    },
+    {
+      "id": "city-night",
+      "write": "distant traffic hum, occasional siren far away"
+    },
+    {
+      "id": "cafe",
+      "write": "soft chatter, cutlery clinks"
+    },
+    {
+      "id": "forest",
+      "write": "leaves rustling, distant woodpecker"
+    },
+    {
+      "id": "scifi",
+      "write": "low electrical hum, ventilation"
+    },
+    {
+      "id": "tension",
+      "write": "low rumble, a single heartbeat"
+    },
+    {
+      "id": "rain-night",
+      "write": "rain on pavement, distant jazz trumpet"
+    },
+    {
+      "id": "eerie-silence",
+      "write": "near silence, a distant creak, a muffled thud"
+    },
+    {
+      "id": "light-wind",
+      "write": "light wind"
+    },
+    {
+      "id": "studio",
+      "write": "a subtle whoosh"
+    },
+    {
+      "id": "real",
+      "write": "real ambient sound only"
+    }
+  ],
+  "music": [
+    {
+      "id": "none",
+      "write": "No background music. Only ambience and action sounds.",
+      "silent": true
+    },
+    {
+      "id": "discreet",
+      "write": "soft solo piano, very low in the mix"
+    },
+    {
+      "id": "strings",
+      "write": "slow melancholic strings"
+    },
+    {
+      "id": "electronic",
+      "write": "pulsing synth, dark and minimal"
+    },
+    {
+      "id": "percussion",
+      "write": "tense percussion building up"
+    },
+    {
+      "id": "light",
+      "write": "light playful music, low in the mix"
+    }
+  ],
+  "looks": [
+    {
+      "id": "film-35",
+      "write": "35mm film look, Kodak Vision3 500T"
+    },
+    {
+      "id": "film-16",
+      "write": "16mm film, visible grain"
+    },
+    {
+      "id": "digital",
+      "write": "shot on ARRI Alexa, clean digital cinema"
+    },
+    {
+      "id": "super-8",
+      "write": "Super 8 home movie"
+    },
+    {
+      "id": "vhs",
+      "write": "VHS footage"
+    },
+    {
+      "id": "documentary",
+      "write": "natural available light, documentary realism"
+    },
+    {
+      "id": "commercial",
+      "write": "high-end commercial lighting, polished"
+    },
+    {
+      "id": "black-white",
+      "write": "high-contrast black and white"
+    },
+    {
+      "id": "animation-3d",
+      "write": "Pixar-style 3D animation",
+      "animated": true
+    },
+    {
+      "id": "animation-2d",
+      "write": "2D hand-drawn animation",
+      "animated": true
+    },
+    {
+      "id": "stop-motion",
+      "write": "claymation stop-motion",
+      "animated": true
+    }
+  ],
+  "palettes": [
+    {
+      "id": "teal-amber",
+      "write": "teal and amber palette"
+    },
+    {
+      "id": "desaturated",
+      "write": "desaturated, muted colors"
+    },
+    {
+      "id": "warm",
+      "write": "warm golden tones"
+    },
+    {
+      "id": "cold",
+      "write": "cold blue tones"
+    },
+    {
+      "id": "mono-accent",
+      "write": "monochrome with a single red accent"
+    },
+    {
+      "id": "pastel",
+      "write": "soft pastel palette"
+    },
+    {
+      "id": "neon",
+      "write": "saturated neon magenta and cyan"
+    },
+    {
+      "id": "earth",
+      "write": "earthy browns and ochres"
+    }
+  ],
+  "lightSources": [
+    {
+      "id": "window",
+      "write": "window light"
+    },
+    {
+      "id": "practical",
+      "write": "practical lamp"
+    },
+    {
+      "id": "candle",
+      "write": "candlelight"
+    },
+    {
+      "id": "overcast",
+      "write": "overcast daylight"
+    },
+    {
+      "id": "streetlights",
+      "write": "streetlights"
+    },
+    {
+      "id": "moonlight",
+      "write": "moonlight"
+    },
+    {
+      "id": "neon",
+      "write": "neon signs"
+    },
+    {
+      "id": "studio",
+      "write": "soft studio key light, dark background"
+    },
+    {
+      "id": "sun",
+      "write": "direct sunlight"
+    },
+    {
+      "id": "available",
+      "write": "available light"
+    }
+  ],
+  "lightDirections": [
+    {
+      "id": "left",
+      "write": "from camera left"
+    },
+    {
+      "id": "right",
+      "write": "from camera right"
+    },
+    {
+      "id": "back",
+      "write": "backlight"
+    },
+    {
+      "id": "top",
+      "write": "top light"
+    },
+    {
+      "id": "under",
+      "write": "under light"
+    }
+  ],
+  "lightQualities": [
+    {
+      "id": "soft",
+      "write": "soft diffused light"
+    },
+    {
+      "id": "hard",
+      "write": "hard direct light"
+    },
+    {
+      "id": "dappled",
+      "write": "dappled light through leaves"
+    }
+  ],
+  "lightMoments": [
+    {
+      "id": "golden",
+      "write": "golden hour"
+    },
+    {
+      "id": "blue",
+      "write": "blue hour"
+    },
+    {
+      "id": "midday",
+      "write": "harsh midday sun"
+    },
+    {
+      "id": "night",
+      "write": "night"
+    }
+  ],
+  "lightContrasts": [
+    {
+      "id": "low-key",
+      "write": "low-key"
+    },
+    {
+      "id": "high-key",
+      "write": "high-key"
+    }
+  ],
+  "lightEffects": [
+    {
+      "id": "volumetric",
+      "write": "volumetric light shafts"
+    },
+    {
+      "id": "rim",
+      "write": "rim light on the hair"
+    },
+    {
+      "id": "flare",
+      "write": "lens flare"
+    },
+    {
+      "id": "haze",
+      "write": "volumetric haze"
+    },
+    {
+      "id": "blinds",
+      "write": "light through venetian blinds"
+    }
+  ],
+  "textures": [
+    {
+      "id": "fine-grain",
+      "write": "fine film grain"
+    },
+    {
+      "id": "heavy-grain",
+      "write": "heavy grain"
+    },
+    {
+      "id": "halation",
+      "write": "soft highlight halation"
+    },
+    {
+      "id": "softness",
+      "write": "natural lens softness"
+    },
+    {
+      "id": "crisp",
+      "write": "crisp detail"
+    },
+    {
+      "id": "motion-blur",
+      "write": "natural motion blur"
+    }
+  ],
+  "negatives": [
+    {
+      "id": "subtitles",
+      "write": "No subtitles."
+    },
+    {
+      "id": "watermark",
+      "write": "No watermark."
+    },
+    {
+      "id": "logo",
+      "write": "No logo."
+    },
+    {
+      "id": "extra-characters",
+      "write": "No extra characters. No duplicated people."
+    },
+    {
+      "id": "face",
+      "write": "No face distortion."
+    },
+    {
+      "id": "hands",
+      "write": "No extra fingers. No twisted limbs."
+    },
+    {
+      "id": "cuts",
+      "write": "No cuts. No scene change."
+    },
+    {
+      "id": "shake",
+      "write": "No camera shake. No sudden camera movement."
+    },
+    {
+      "id": "costume",
+      "write": "No costume changes."
+    },
+    {
+      "id": "live-action",
+      "write": "No photorealistic live-action."
+    },
+    {
+      "id": "cartoon",
+      "write": "No cartoon style."
+    },
+    {
+      "id": "anachronism",
+      "write": "No modern objects. No smartphones."
+    },
+    {
+      "id": "text",
+      "write": "No readable text in the background."
+    },
+    {
+      "id": "music",
+      "write": "No background music, no score, no instrumental."
+    },
+    {
+      "id": "lips",
+      "write": "No lip movement. Lips stay closed."
+    },
+    {
+      "id": "eyes",
+      "write": "Normal human eyes."
+    },
+    {
+      "id": "slow-motion",
+      "write": "No slow motion."
+    }
+  ],
+  "recipes": [
+    {
+      "id": "intimate-drama",
+      "genre": "intimate-drama",
+      "moods": ["melancholic", "intimate"],
+      "pacing": "slow",
+      "shot": {
+        "size": "close-up",
+        "lens": "85mm",
+        "depth": "shallow",
+        "angle": "eye-level"
+      },
+      "move": {
+        "kind": "push-in",
+        "amplitude": "small",
+        "speed": "slow"
+      },
+      "light": {
+        "source": "window",
+        "direction": "left",
+        "quality": "soft",
+        "contrast": "low-key"
+      },
+      "palette": "desaturated",
+      "look": "film-35",
+      "texture": "fine-grain",
+      "ambience": "quiet-interior",
+      "music": "none"
+    },
+    {
+      "id": "thriller",
+      "genre": "thriller",
+      "moods": ["tense"],
+      "pacing": "builds",
+      "shot": {
+        "size": "medium-close-up",
+        "lens": "35mm",
+        "angle": "dutch"
+      },
+      "move": {
+        "kind": "handheld",
+        "amplitude": "small",
+        "speed": "steady"
+      },
+      "light": {
+        "direction": "top",
+        "quality": "hard",
+        "contrast": "low-key"
+      },
+      "palette": "cold",
+      "look": "digital",
+      "texture": "crisp",
+      "ambience": "tension",
+      "music": "none"
+    },
+    {
+      "id": "noir",
+      "genre": "noir",
+      "moods": ["mysterious", "fatalistic"],
+      "pacing": "steady",
+      "shot": {
+        "size": "medium",
+        "lens": "50mm",
+        "angle": "low"
+      },
+      "move": {
+        "kind": "static"
+      },
+      "light": {
+        "quality": "hard",
+        "contrast": "low-key",
+        "effects": ["blinds"]
+      },
+      "look": "black-white",
+      "texture": "heavy-grain",
+      "ambience": "rain-night",
+      "music": "none"
+    },
+    {
+      "id": "scifi",
+      "genre": "scifi-epic",
+      "moods": ["contemplative", "epic"],
+      "pacing": "slow",
+      "shot": {
+        "size": "extreme-wide",
+        "lens": "24mm",
+        "depth": "deep"
+      },
+      "move": {
+        "kind": "crane",
+        "amplitude": "medium",
+        "speed": "slow"
+      },
+      "light": {
+        "direction": "back",
+        "effects": ["rim", "haze"]
+      },
+      "palette": "teal-amber",
+      "look": "digital",
+      "texture": "crisp",
+      "ambience": "scifi",
+      "music": "none"
+    },
+    {
+      "id": "horror",
+      "genre": "horror",
+      "moods": ["unsettling"],
+      "pacing": "slow",
+      "shot": {
+        "size": "wide",
+        "lens": "24mm"
+      },
+      "move": {
+        "kind": "push-in",
+        "amplitude": "imperceptible",
+        "speed": "very-slow"
+      },
+      "light": {
+        "source": "practical",
+        "contrast": "low-key"
+      },
+      "palette": "desaturated",
+      "look": "film-16",
+      "texture": "heavy-grain",
+      "ambience": "eerie-silence",
+      "music": "none"
+    },
+    {
+      "id": "action",
+      "genre": "action",
+      "moods": ["urgent"],
+      "pacing": "fast",
+      "shot": {
+        "size": "medium",
+        "lens": "35mm",
+        "angle": "ground"
+      },
+      "move": {
+        "kind": "lateral",
+        "amplitude": "large",
+        "speed": "fast"
+      },
+      "light": {
+        "source": "sun",
+        "moment": "midday",
+        "quality": "hard"
+      },
+      "palette": "earth",
+      "look": "digital",
+      "texture": "motion-blur",
+      "ambience": "real",
+      "music": "none"
+    },
+    {
+      "id": "romance",
+      "genre": "romance",
+      "moods": ["intimate", "nostalgic"],
+      "pacing": "slow",
+      "shot": {
+        "size": "two-shot",
+        "lens": "85mm",
+        "depth": "shallow"
+      },
+      "move": {
+        "kind": "orbit",
+        "amplitude": "small",
+        "speed": "slow"
+      },
+      "light": {
+        "direction": "back",
+        "moment": "golden",
+        "effects": ["rim"]
+      },
+      "palette": "warm",
+      "look": "film-35",
+      "texture": "halation",
+      "ambience": "light-wind",
+      "music": "none"
+    },
+    {
+      "id": "product",
+      "genre": "product",
+      "moods": ["confident"],
+      "pacing": "steady",
+      "shot": {
+        "size": "insert",
+        "lens": "macro"
+      },
+      "move": {
+        "kind": "orbit",
+        "amplitude": "small",
+        "speed": "slow"
+      },
+      "light": {
+        "source": "studio",
+        "quality": "soft"
+      },
+      "look": "commercial",
+      "texture": "crisp",
+      "ambience": "studio",
+      "music": "none"
+    },
+    {
+      "id": "documentary",
+      "genre": "documentary",
+      "moods": ["honest"],
+      "pacing": "steady",
+      "shot": {
+        "size": "medium",
+        "lens": "35mm"
+      },
+      "move": {
+        "kind": "handheld",
+        "amplitude": "small",
+        "speed": "steady"
+      },
+      "light": {
+        "source": "available",
+        "quality": "soft"
+      },
+      "look": "documentary",
+      "texture": "fine-grain",
+      "ambience": "real",
+      "music": "none"
+    },
+    {
+      "id": "animation-3d",
+      "genre": "animation-3d",
+      "moods": ["whimsical"],
+      "pacing": "fast",
+      "shot": {
+        "size": "medium",
+        "lens": "35mm"
+      },
+      "move": {
+        "kind": "gimbal",
+        "amplitude": "small",
+        "speed": "steady"
+      },
+      "light": {
+        "quality": "soft",
+        "contrast": "high-key"
+      },
+      "palette": "pastel",
+      "look": "animation-3d",
+      "ambience": "light-wind",
+      "music": "none"
+    }
+  ]
+}

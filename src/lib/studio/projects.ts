@@ -10,6 +10,7 @@ import type { StudioArtifact } from "./types";
 import type { Shot } from "./workflow/compile";
 import { createEditorDocument, type EditorDocument } from "./editor/document";
 import type { ProjectScore } from "./score";
+import type { FilmDirection } from "./direction/types";
 
 export interface ProjectShot extends Shot {
   id: string;
@@ -28,6 +29,10 @@ export interface ProjectShot extends Shot {
   /** The seconds that prompt was paced for. Also a label: a new duration
    * asks for a new rewrite, it does not invalidate a take. */
   promptSeconds?: number;
+  /** The rewrite version that wrote `prompt`, so an older method can say so. */
+  promptVersion?: string;
+  /** The mode was set by the script reading, not chosen: routing may change it. */
+  modeSource?: "import";
 }
 export interface ProjectBibleEntry extends BibleEntry {
   originId?: string;
@@ -100,6 +105,8 @@ export interface ProjectDocument {
   timeline: EditorDocument;
   /** The film's music, when it has been composed (ADR-0067). */
   score?: ProjectScore;
+  /** Genre, mood, look and light, written into every shot's prompt (ADR-0074). */
+  filmDirection?: FilmDirection;
 }
 export interface ProjectSummary {
   id: string;
@@ -260,6 +267,8 @@ export function shotSignature(
     imageCandidates: _images,
     promptOptimizedFor: _optimizedFor,
     promptSeconds: _pacedFor,
+    promptVersion: _version,
+    modeSource: _modeSource,
     ...input
   } = shot;
   const previous =
@@ -270,6 +279,9 @@ export function shotSignature(
     input,
     settings: project.settings,
     bible: project.bible,
+    // Added only when set, so a project without a direction keeps the
+    // signatures its takes were rendered under.
+    ...(project.filmDirection ? { filmDirection: project.filmDirection } : {}),
     ...(shot.mode === "continuation"
       ? {
           predecessor: {

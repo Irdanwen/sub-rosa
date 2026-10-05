@@ -429,3 +429,22 @@ describe("reference clips and audio (the seedance edit/extend/stitch inputs)", (
     ).toBeUndefined();
   });
 });
+
+describe("a silent render", () => {
+  it("switches the sound off only on a model that publishes the switch", () => {
+    // Measured 2026-10-05 against /video/quote: `audio` is a boolean the
+    // operator validates ("Expected boolean, received string").
+    const switchable = m("kling-v3-pro-text-to-video", { audio: true, audio_configurable: true });
+    expect(
+      videoRequestBody({ target: switchable, prompt: "Nera speaks.", silent: true })?.audio,
+    ).toBe(false);
+    // No switch published: an unknown key would fail the render, so it stays out.
+    const fixed = m("minimax-h3-text-to-video", { audio: true });
+    expect(
+      videoRequestBody({ target: fixed, prompt: "Nera speaks.", silent: true }),
+    ).not.toHaveProperty("audio");
+    expect(videoRequestBody({ target: switchable, prompt: "Nera speaks." })).not.toHaveProperty(
+      "audio",
+    );
+  });
+});

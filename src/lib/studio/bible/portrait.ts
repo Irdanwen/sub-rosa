@@ -45,6 +45,8 @@ export const SHEET_LAYOUT =
 const ROLE_FRAMING: Record<BibleRole, string> = {
   portrait: "Head and shoulders, facing the camera, neutral expression, even light.",
   profile: "Head and shoulders in profile, the same person, the same light.",
+  outfit:
+    "Full body, front view, neutral pose, plain background, the whole outfit visible from head to shoes.",
   sheet: SHEET_LAYOUT,
   wide: "Wide establishing shot of the whole place, no people.",
   medium: "Medium shot of the place at eye level, no people.",

@@ -44,6 +44,8 @@ export interface EditorClip {
   /** Frames of the original fade already consumed by a head/tail trim. */
   fadeInOffset?: number;
   fadeOutOffset?: number;
+  /** A take whose model spoke its own line: the music dips under it too. */
+  speaks?: boolean;
 }
 export interface EditorTrack {
   id: string;

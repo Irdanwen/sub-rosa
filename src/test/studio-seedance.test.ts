@@ -116,9 +116,9 @@ describe("referenceMention", () => {
     expect(referenceMention(seedance, "video", 2)).toBe("<Video 2>");
     expect(referenceMention(seedance, "audio", 3)).toBe("<Audio 3>");
     expect(referenceMention(model("grok-imagine-reference-to-video-private"), "image", 2)).toBe(
-      "image 2",
+      "Image 2",
     );
-    expect(referenceMention(undefined, "image", 1)).toBe("image 1");
+    expect(referenceMention(undefined, "image", 1)).toBe("Image 1");
   });
 
   it("uses the caps the API itself refused over, above and below the default", () => {

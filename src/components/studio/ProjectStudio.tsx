@@ -37,10 +37,12 @@ import {
   compileOpeningImage,
   compileBibleReference,
   compileProjectWithNotes,
+  shotSound,
   productionBudget,
   quoteProject,
   shotSeconds,
 } from "../../lib/studio/project-production";
+import { appendTakes, type TakeToPlace } from "../../lib/studio/project-montage";
 import {
   acceptProposal,
   emptyScore,
@@ -1064,13 +1066,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     if (!target) return;
     setBusy(true);
     try {
-      const selected: Array<{
-        title: string;
-        artifactId: string;
-        seconds: number;
-        parentId?: string;
-        parentHandoffSeconds?: number;
-      }> = [];
+      const selected: TakeToPlace[] = [];
       for (const shot of target.document.shots) {
         const artifact = artifacts.find((item) => item.id === shot.activeTakeId);
         if (!artifact) continue;
@@ -1085,47 +1081,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           seconds,
           parentId: artifact.parentId,
           parentHandoffSeconds: artifact.parentHandoffSeconds,
+          transition: shot.transition,
+          ...shotSound(shot, target.document, catalog),
         });
       }
       if (current.current?.id !== target.id) return;
-      await edit((previous) => {
-        const timeline = structuredClone(previous.document.timeline);
-        const picture = timeline.tracks.find((track) => track.id === "picture");
-        if (!picture || picture.locked || picture.hidden)
-          throw new Error(t("Unlock and show the picture track before appending takes."));
-        const rate = fps(timeline);
-        let start = Math.max(
-          0,
-          ...timeline.clips
-            .filter((clip) => clip.trackId === "picture")
-            .map((clip) => clip.start + clip.duration),
-        );
-        for (const [index, item] of selected.entries()) {
-          const next = selected[index + 1];
-          const handoff = next?.parentHandoffSeconds;
-          const outSeconds =
-            next?.parentId === item.artifactId &&
-            typeof handoff === "number" &&
-            Number.isFinite(handoff) &&
-            handoff > 0
-              ? Math.min(item.seconds, handoff)
-              : item.seconds;
-          const sourceDuration = Math.max(1, Math.round(item.seconds * rate));
-          const duration = Math.max(1, Math.min(sourceDuration, Math.round(outSeconds * rate)));
-          timeline.clips.push(
-            createEditorClip({
-              name: item.title,
-              artifactId: item.artifactId,
-              trackId: "picture",
-              start,
-              duration,
-              sourceDuration,
-            }),
-          );
-          start += duration;
-        }
-        return { ...previous, document: { ...previous.document, timeline } };
-      });
+      await edit((previous) => ({
+        ...previous,
+        document: {
+          ...previous.document,
+          timeline: appendTakes(previous.document.timeline, selected),
+        },
+      }));
       setSection("montage");
     } catch (cause) {
       report(cause);

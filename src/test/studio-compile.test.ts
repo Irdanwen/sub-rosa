@@ -163,7 +163,7 @@ describe("what the app decides, and the model never does", () => {
     expect(planned[0].model.mediaType).toBe("referenceToVideo");
     expect(planned[0].references).toEqual(["nera.png"]);
     // The traits ride on the prompt, because nothing carries between renders.
-    expect(planned[0].prompt).toContain("Nera: green coat.");
+    expect(planned[0].prompt).toContain("Nera, green coat.");
   });
 
   it("matches a legacy bible name with surrounding spaces before a paid render", () => {
@@ -213,7 +213,7 @@ describe("compiling", () => {
     try {
       const result = compileShotList({
         name: "Concert",
-        shots: [shot({ scene: "", dialogue: "Encore ?" })],
+        shots: [shot({ scene: "", dialogue: "Encore ?", dialogueMode: "dubbed" })],
         catalog,
         withScore: true,
         gateBeforeAssemble: true,
@@ -278,7 +278,14 @@ describe("compiling", () => {
   it("renders a spoken line in the speaker's own voice, and lets it reach the film", () => {
     const { workflow } = compileShotList({
       name: "F",
-      shots: [shot({ characters: ["Nera"], dialogue: "Get in.", speaker: "Nera" })],
+      shots: [
+        shot({
+          characters: ["Nera"],
+          dialogue: "Get in.",
+          speaker: "Nera",
+          dialogueMode: "dubbed",
+        }),
+      ],
       bible: [nera],
       catalog,
     });
@@ -299,8 +306,8 @@ describe("compiling", () => {
     const { workflow } = compileShotList({
       name: "F",
       shots: [
-        shot({ motion: "low", dialogue: "First." }),
-        shot({ motion: "high", dialogue: "Second." }),
+        shot({ motion: "low", dialogue: "First.", dialogueMode: "dubbed" }),
+        shot({ motion: "high", dialogue: "Second.", dialogueMode: "dubbed" }),
       ],
       catalog,
     });
@@ -487,7 +494,7 @@ describe("choosing the engines", () => {
       models: [...catalog.models, model("other-tts", "tts", { constraints: undefined })],
     };
     const result = compileShotList({
-      shots: [shot({ dialogue: "It is time.", speaker: "Nera" })],
+      shots: [shot({ dialogue: "It is time.", speaker: "Nera", dialogueMode: "dubbed" })],
       bible: [nera],
       catalog: voices,
       name: "Voice",
@@ -710,7 +717,9 @@ describe("editable project shots", () => {
       "nera-side.png": { subject: "Nera" },
       "alley.png": { scene: true },
     });
-    expect(String(video?.params.prompt).startsWith("Refer to @Element1 for Nera.")).toBe(true);
+    // One sentence per mention: the element's two views share @Element1.
+    expect(String(video?.params.prompt)).toContain("@Element1 is Nera: face and hair.");
+    expect(String(video?.params.prompt)).toContain("@Image1 is Alley: keep the layout.");
   });
 
   it("routes an inherited Kling text default to its reference arm", () => {
@@ -734,7 +743,9 @@ describe("editable project shots", () => {
       name: "Concert",
       catalog,
       withScore: true,
-      shots: [shot({ id: "payment", dialogue: "Encore ?", speaker: "Serveur" })],
+      shots: [
+        shot({ id: "payment", dialogue: "Encore ?", speaker: "Serveur", dialogueMode: "dubbed" }),
+      ],
     });
     const graph = result.workflow;
     if (!graph) throw new Error("Expected workflow");
@@ -799,5 +810,32 @@ describe("resolveShotDuration", () => {
       duration: "12",
       seconds: 12,
     });
+  });
+});
+
+describe("lines the video model speaks itself", () => {
+  it("leaves no voice node for a line the model renders, and silences a dubbed one it can", () => {
+    const speaking = model("kling-v3-standard-text-to-video", "video", {
+      constraints: {
+        durations: ["5s"],
+        aspect_ratios: ["16:9"],
+        audio: true,
+        audio_configurable: true,
+      },
+    });
+    const compileWith = (dialogueMode: "auto" | "dubbed") =>
+      compileShotList({
+        name: "Film",
+        catalog: { ...catalog, models: [speaking, ...catalog.models.slice(3)] },
+        shots: [shot({ dialogue: "Get in.", speaker: "Nera", dialogueMode })],
+      });
+    const native = compileWith("auto").workflow;
+    expect(native?.nodes.some((node) => node.type === "tts")).toBe(false);
+    expect(String(native?.nodes.find((node) => node.type === "video")?.params.prompt)).toContain(
+      'Nera: "Get in."',
+    );
+    const dubbed = compileWith("dubbed").workflow;
+    expect(dubbed?.nodes.some((node) => node.type === "tts")).toBe(true);
+    expect(dubbed?.nodes.find((node) => node.type === "video")?.params.silent).toBe(true);
   });
 });

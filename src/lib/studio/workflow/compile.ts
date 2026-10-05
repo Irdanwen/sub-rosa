@@ -28,14 +28,17 @@ import { t } from "../../i18n";
 
 import {
   type BibleEntry,
+  DEFAULT_REFERENCE_IMAGES,
   describeReferences,
-  invariantLine,
+  MAX_REFERENCE_IMAGES,
   referenceRoleOf,
   referenceStack,
-  shotPrompt,
   type StackedReference,
   voiceReference,
 } from "../bible";
+import type { FilmDirection } from "../direction/types";
+import { type ComposedPrompt, composeShotPrompt } from "../prompt/compose";
+import type { CameraMove, DialogueMode, ShotFraming } from "../direction/types";
 import type { ReferenceRole } from "../kling";
 import {
   estimateCostCredits,
@@ -76,6 +79,23 @@ export interface Shot {
   motion: string;
   /** Carries straight on from the shot before it, same place, no cut in time. */
   continues: boolean;
+  /** Shot size, lens, depth and angle, as prompt vocabulary ids. */
+  framing?: ShotFraming;
+  /** The one camera movement, with its amplitude and speed. */
+  move?: CameraMove;
+  /** How the montage joins it to the shot before (a vocabulary id). */
+  transition?: string;
+  /** How a character differs from their descriptor in this shot, by name. */
+  states?: Record<string, string>;
+  /** Spoken by the video model, laid in afterwards, or decided by the model. */
+  dialogueMode?: DialogueMode;
+  /** The speaker's tone and delivery, as vocabulary ids. */
+  tone?: string;
+  pace?: string;
+  /** The line is heard, not said on screen. */
+  voiceover?: boolean;
+  /** Sounds synchronous with the action, in English ("paper rustling"). */
+  effects?: string;
 }
 
 const LEVEL_X = 320;
@@ -136,6 +156,8 @@ export interface CompileInput {
   }>;
   /** Stop for approval after the shots, before the film is cut together. */
   gateBeforeAssemble?: boolean;
+  /** The film's genre, mood, look and light: every shot's prompt opens and closes with it. */
+  filmDirection?: FilmDirection;
 }
 
 export interface CompileResult {
@@ -411,24 +433,47 @@ export function routeModels(catalog: MediaCatalog, preferredId?: string): Routin
   };
 }
 
-/**
- * The references a shot in reference mode sends, described, in the order
- * sent: the ones the person picked when they picked any, otherwise the stack
- * the bible builds from the shot's characters and place. What the compiler
- * plans and what the shot's AI rewrite is told are this one list, so the
- * prompt names the images the render actually receives.
- */
-export function shotReferences(
-  shot: Pick<Shot, "characters" | "location" | "referenceArtifactIds">,
+/** The bible entries a shot involves: who is in it, where, what it handles, and the look. */
+function castOf(
+  shot: Pick<Shot, "characters" | "location" | "action" | "scene">,
   bible: readonly BibleEntry[],
-): StackedReference[] {
-  if (shot.referenceArtifactIds) return describeReferences(shot.referenceArtifactIds, bible);
+) {
   const byName = new Map(bible.map((entry) => [entry.name.trim().toLowerCase(), entry]));
   const characters = shot.characters
     .map((name) => byName.get(name.trim().toLowerCase()))
     .filter((entry): entry is BibleEntry => entry !== undefined);
   const location = byName.get(shot.location.trim().toLowerCase());
-  return referenceStack({ characters, location });
+  // A prop rides when the shot names it: "Léa unfolds the letter".
+  const text = `${shot.action} ${shot.scene}`.toLowerCase();
+  const props = bible.filter((entry) => {
+    const name = entry.name.trim().toLowerCase();
+    return entry.kind === "prop" && name.length > 0 && text.includes(name);
+  });
+  const looks = bible.filter((entry) => entry.kind === "look").slice(0, 1);
+  return { characters, location, props, looks };
+}
+
+/**
+ * The references a shot in reference mode sends, described, in the order
+ * sent: the ones the person picked when they picked any, otherwise the stack
+ * the bible builds from the shot's characters, place, props and look. What the
+ * compiler plans and what the shot's AI rewrite is told are this one list, so
+ * the prompt names the images the render actually receives.
+ *
+ * Four or five images by default, the prompt bible's figure: past that their
+ * influence thins out. Three characters or more get the model's whole cap.
+ */
+export function shotReferences(
+  shot: Pick<Shot, "characters" | "location" | "referenceArtifactIds"> &
+    Partial<Pick<Shot, "action" | "scene">>,
+  bible: readonly BibleEntry[],
+  model?: Pick<MediaModel, "id">,
+): StackedReference[] {
+  if (shot.referenceArtifactIds) return describeReferences(shot.referenceArtifactIds, bible);
+  const cast = castOf({ ...shot, action: shot.action ?? "", scene: shot.scene ?? "" }, bible);
+  const cap = model ? maxVideoReferences(model) : MAX_REFERENCE_IMAGES;
+  const max = cast.characters.length >= 3 ? cap : Math.min(DEFAULT_REFERENCE_IMAGES, cap);
+  return referenceStack({ ...cast, max });
 }
 
 /**
@@ -457,6 +502,8 @@ interface PlannedShot {
   /** What each reference shows, in the same order (see `referenceRoleOf`). */
   referenceRoles: (ReferenceRole | undefined)[];
   prompt: string;
+  /** The composed prompt, kept even when a hand-written one overrides it. */
+  composed: ComposedPrompt;
   duration: string;
   aspectRatio: string;
 }
@@ -476,20 +523,16 @@ export function planShots(
   catalog: MediaCatalog,
   aspectRatio: string,
   videoModelId?: string,
+  filmDirection?: FilmDirection,
 ): { planned: PlannedShot[]; notes: string[]; errors: string[] } {
   const routing = routeModels(catalog, videoModelId);
   const errors: string[] = [];
   const notes: string[] = [];
-  const byName = new Map(bible.map((entry) => [entry.name.trim().toLowerCase(), entry]));
   const planned: PlannedShot[] = [];
 
   shots.forEach((shot, index) => {
-    const characters = shot.characters
-      .map((name) => byName.get(name.trim().toLowerCase()))
-      .filter((entry): entry is BibleEntry => entry !== undefined);
-    const location = byName.get(shot.location.trim().toLowerCase());
     const chained = shot.mode ? shot.mode === "continuation" : shot.continues && index > 0;
-    const stack = chained ? [] : referenceStack({ characters, location });
+    const stack = chained ? [] : shotReferences(shot, bible);
 
     const explicit = shot.mode !== undefined || shot.modelId !== undefined;
     const mode = shot.mode ?? (chained ? "continuation" : stack.length ? "reference" : "text");
@@ -529,7 +572,7 @@ export function planShots(
       refuse(t("Select an opening image before generating video."));
       return;
     }
-    const described = mode === "reference" ? shotReferences(shot, bible) : [];
+    const described = mode === "reference" ? shotReferences(shot, bible, model) : [];
     const references = described.map((reference) => reference.artifactId);
     if (explicit && mode === "reference" && references.length === 0) {
       refuse(t("Select at least one reference image."));
@@ -549,7 +592,7 @@ export function planShots(
     }
 
     const constraints = effectiveVideoConstraints(model);
-    const { duration, supported } = resolveShotDuration(shot, model);
+    const { duration, seconds, supported } = resolveShotDuration(shot, model);
     if (!supported) {
       refuse(t("Choose a duration supported by this model."));
       return;
@@ -577,10 +620,23 @@ export function planShots(
       );
     }
 
-    const invariants = [
-      ...characters.map(invariantLine),
-      ...(location ? [invariantLine(location)] : []),
-    ].filter(Boolean);
+    const composed = composeShotPrompt({
+      shot,
+      direction: filmDirection,
+      bible,
+      model,
+      mode,
+      seconds,
+      references: described,
+    });
+    if (composed.dialogue.downgraded) {
+      notes.push(
+        t("Shot {number}: {model} does not speak this line's language, so it is dubbed.", {
+          number: index + 1,
+          model: model.name,
+        }),
+      );
+    }
 
     planned.push({
       shot,
@@ -588,16 +644,8 @@ export function planShots(
       chained,
       references,
       referenceRoles: described.map(referenceRoleOf),
-      prompt:
-        shot.prompt?.trim() ||
-        shotPrompt({
-          subject: shot.scene ? `${shot.scene}.` : "",
-          action: shot.action,
-          camera: shot.camera,
-          invariants,
-          stack: described,
-          model,
-        }).prompt,
+      prompt: shot.prompt?.trim() || composed.text,
+      composed,
       duration,
       aspectRatio: ratio,
     });
@@ -692,7 +740,14 @@ export function compileShotList(input: CompileInput): CompileResult {
     planned,
     notes: routingNotes,
     errors,
-  } = planShots(shots, input.bible ?? [], input.catalog, aspectRatio, input.videoModelId);
+  } = planShots(
+    shots,
+    input.bible ?? [],
+    input.catalog,
+    aspectRatio,
+    input.videoModelId,
+    input.filmDirection,
+  );
   notes.push(...routingNotes);
   const shotIds = shots.map((shot, index) => shot.id ?? String(index + 1));
   if (new Set(shotIds).size !== shotIds.length)
@@ -795,6 +850,7 @@ export function compileShotList(input: CompileInput): CompileResult {
           duration: entry.duration,
           aspectRatio: entry.aspectRatio,
           ...referenceRolesParam(entry.references, entry.referenceRoles),
+          ...(entry.composed.silenceAudio ? { silent: true } : {}),
         },
       ),
     );
@@ -804,7 +860,9 @@ export function compileShotList(input: CompileInput): CompileResult {
     // A spoken line, in the speaker's own voice, placed on the shot it belongs
     // to. Only the compiler knows which shot that is, so it says so here - the
     // cut cannot work it out from a graph.
-    if (entry.shot.dialogue.trim() && tts) {
+    // A line the video model speaks itself is already in the clip; voicing it
+    // again would say it twice.
+    if (entry.shot.dialogue.trim() && tts && entry.composed.dialogue.mode !== "native") {
       const speaker = (input.bible ?? []).find(
         (candidate) => candidate.name.toLowerCase() === entry.shot.speaker.trim().toLowerCase(),
       );

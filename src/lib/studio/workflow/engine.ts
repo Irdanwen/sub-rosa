@@ -875,6 +875,8 @@ async function executeNode(
         // A workflow runs unattended: the attestation rides on any seedance
         // render built from a photo, exactly as the studios send it.
         consent: true,
+        // Written by the film compiler when the shot's line is dubbed.
+        silent: params.silent === true,
       });
       if (!body) {
         throw new Error(

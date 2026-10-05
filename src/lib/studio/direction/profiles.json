@@ -1,0 +1,139 @@
+{
+  "version": "family-profiles-1",
+  "note": "How each video family is written to. Matched by substring on the lowercased model id, first match wins, so longer stems come first. Read by the webview (src/lib/studio/prompt/profiles.ts) and by Rust (src-tauri/src/studio_ai/prompts.rs). budgetMeasured false marks a starting value still to be measured on real renders. rendersAudio is the fallback when the catalog publishes no audio flag; the catalog's own flag wins. The unmeasured 200 is the length of the prompt bible's own worked example.",
+  "profiles": [
+    {
+      "family": "seedance-2-5",
+      "match": ["seedance-2-5"],
+      "budgetWords": 200,
+      "budgetMeasured": false,
+      "labels": true,
+      "timecodes": "brackets",
+      "rendersAudio": true,
+      "dialogueLangs": ["en"],
+      "dialogueSyntax": "seedance"
+    },
+    {
+      "family": "seedance-2",
+      "match": ["seedance-2"],
+      "budgetWords": 60,
+      "budgetMeasured": true,
+      "labels": false,
+      "timecodes": "brackets",
+      "rendersAudio": true,
+      "dialogueLangs": [],
+      "dialogueSyntax": "seedance"
+    },
+    {
+      "family": "seedance",
+      "match": ["seedance"],
+      "budgetWords": 60,
+      "budgetMeasured": true,
+      "labels": false,
+      "timecodes": "words",
+      "rendersAudio": false,
+      "dialogueLangs": [],
+      "dialogueSyntax": "plain"
+    },
+    {
+      "family": "kling",
+      "match": ["kling"],
+      "budgetWords": 100,
+      "budgetMeasured": true,
+      "labels": false,
+      "timecodes": "words",
+      "rendersAudio": true,
+      "dialogueLangs": ["en"],
+      "dialogueSyntax": "kling"
+    },
+    {
+      "family": "veo",
+      "match": ["veo"],
+      "budgetWords": 150,
+      "budgetMeasured": true,
+      "labels": true,
+      "timecodes": "brackets",
+      "rendersAudio": true,
+      "dialogueLangs": ["en"],
+      "dialogueSyntax": "veo"
+    },
+    {
+      "family": "minimax-h3",
+      "match": ["minimax-h3"],
+      "budgetWords": 200,
+      "budgetMeasured": false,
+      "labels": true,
+      "timecodes": "label",
+      "rendersAudio": true,
+      "dialogueLangs": ["fr", "en"],
+      "dialogueSyntax": "h3"
+    },
+    {
+      "family": "hailuo",
+      "match": ["hailuo", "minimax"],
+      "budgetWords": 100,
+      "budgetMeasured": true,
+      "labels": false,
+      "timecodes": "words",
+      "rendersAudio": false,
+      "dialogueLangs": [],
+      "dialogueSyntax": "plain"
+    },
+    {
+      "family": "wan-3",
+      "match": ["wan-3"],
+      "budgetWords": 200,
+      "budgetMeasured": false,
+      "labels": true,
+      "timecodes": "label",
+      "firstLine": "Generate single shot.",
+      "rendersAudio": true,
+      "dialogueLangs": ["en"],
+      "dialogueSyntax": "wan"
+    },
+    {
+      "family": "wan",
+      "match": ["wan-"],
+      "budgetWords": 100,
+      "budgetMeasured": true,
+      "labels": false,
+      "timecodes": "words",
+      "rendersAudio": false,
+      "dialogueLangs": ["en"],
+      "dialogueSyntax": "wan"
+    },
+    {
+      "family": "ltx",
+      "match": ["ltx"],
+      "budgetWords": 200,
+      "budgetMeasured": true,
+      "labels": false,
+      "timecodes": "words",
+      "rendersAudio": true,
+      "dialogueLangs": ["en"],
+      "dialogueSyntax": "plain"
+    },
+    {
+      "family": "sora",
+      "match": ["sora"],
+      "budgetWords": 120,
+      "budgetMeasured": true,
+      "labels": false,
+      "timecodes": "words",
+      "rendersAudio": true,
+      "dialogueLangs": ["en"],
+      "dialogueSyntax": "plain"
+    }
+  ],
+  "default": {
+    "family": "default",
+    "match": [],
+    "budgetWords": 80,
+    "budgetMeasured": true,
+    "labels": false,
+    "timecodes": "words",
+    "rendersAudio": false,
+    "dialogueLangs": [],
+    "dialogueSyntax": "plain"
+  }
+}

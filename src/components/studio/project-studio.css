@@ -965,3 +965,33 @@
     grid-column: 1;
   }
 }
+
+/* Film direction (ADR-0074): the opening and closing every shot carries. */
+.project-direction > .project-field + .project-field,
+.project-direction-more > .project-field {
+  margin-top: var(--sp-3);
+}
+.project-direction-more {
+  margin-top: var(--sp-4);
+}
+.project-direction-more > summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+.project-direction-preview {
+  display: grid;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+.project-direction-preview code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

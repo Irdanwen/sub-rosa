@@ -39,17 +39,23 @@ export function gainAt(stops: readonly GainStop[], seconds: number): number {
 /**
  * The dip each clip gets at a timeline frame: 1 for anything that does not
  * duck, the music level under the dialogue windows for what does. The lines
- * are the audible clips on the dialogue track.
+ * are the audible clips on the dialogue track, and the takes marked as
+ * speaking their own line.
  */
 export function dialogueDuck(doc: EditorDocument): (clip: EditorClip, frame: number) => number {
   const rate = fps(doc);
   const dialogue = doc.tracks.find((track) => track.id === "dialogue");
-  const windows =
-    dialogue && !dialogue.muted && !dialogue.hidden
-      ? doc.clips
-          .filter((clip) => clip.trackId === dialogue.id && clip.artifactId)
-          .map((clip) => ({ start: clip.start / rate, end: (clip.start + clip.duration) / rate }))
-      : [];
+  const audible = new Set(doc.tracks.filter((track) => !track.muted).map((track) => track.id));
+  const windows = doc.clips
+    .filter(
+      (clip) =>
+        clip.artifactId &&
+        // The lines on the dialogue track, and the takes whose model spoke
+        // its own line (ADR-0074): a voice is a voice wherever it sits.
+        ((dialogue && !dialogue.muted && !dialogue.hidden && clip.trackId === dialogue.id) ||
+          (clip.speaks && audible.has(clip.trackId))),
+    )
+    .map((clip) => ({ start: clip.start / rate, end: (clip.start + clip.duration) / rate }));
   const stops = duckStops(windows, { durationSeconds: durationFrames(doc) / rate });
   const ducking = new Set(doc.tracks.filter(ducksUnderDialogue).map((track) => track.id));
   return (clip, frame) => (ducking.has(clip.trackId) ? gainAt(stops, frame / rate) : 1);
