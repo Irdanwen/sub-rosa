@@ -30,8 +30,8 @@ pub const KINDS: [&str; 4] = ["character", "location", "prop", "look"];
 /// voice donor rather than as a picture. `sheet` is a character sheet: one
 /// image holding nine views of a character, used to compose frames and never
 /// sent to a video model (ADR-0066).
-pub const ROLES: [&str; 7] = [
-    "portrait", "profile", "sheet", "wide", "medium", "detail", "voice",
+pub const ROLES: [&str; 8] = [
+    "portrait", "profile", "outfit", "sheet", "wide", "medium", "detail", "voice",
 ];
 
 #[derive(Clone, Debug, Deserialize)]

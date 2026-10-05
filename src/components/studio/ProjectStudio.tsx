@@ -16,12 +16,7 @@ import {
   type VeniceModelDto,
 } from "../../lib/tauri";
 import { listArtifacts } from "../../lib/studio/artifacts";
-import {
-  BIBLE_KINDS,
-  BIBLE_ROLE_LABELS,
-  type BibleKind,
-  type BibleRole,
-} from "../../lib/studio/bible";
+import { BIBLE_ROLE_LABELS, type BibleRole } from "../../lib/studio/bible";
 import { foldLiveRender, nodeTarget, type LiveRender } from "../../lib/studio/project-activity";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
 import {
@@ -37,10 +32,14 @@ import {
   compileOpeningImage,
   compileBibleReference,
   compileProjectWithNotes,
+  shotSound,
   productionBudget,
   quoteProject,
   shotSeconds,
 } from "../../lib/studio/project-production";
+import { appendTakes, type TakeToPlace } from "../../lib/studio/project-montage";
+import { landReading, rerouteImportedShots } from "../../lib/studio/project-reading";
+import { referenceStyle } from "../../lib/studio/prompt/compose";
 import {
   acceptProposal,
   emptyScore,
@@ -59,7 +58,6 @@ import {
   listArtifactMetadata,
   montageArtifacts,
   newProject,
-  newShot,
   organizeArtifact,
   projectDocumentFits,
   projectError,
@@ -74,7 +72,6 @@ import {
   type StudioProject,
 } from "../../lib/studio/projects";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
-import type { Shot } from "../../lib/studio/workflow/compile";
 import type { Workflow } from "../../lib/studio/workflow/schema";
 import {
   estimateNodeCost,
@@ -217,7 +214,8 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
   }, []);
   const edit = (change: (previous: StudioProject) => StudioProject) => {
     if (!current.current || !writer.current) return Promise.resolve();
-    const next = change(current.current);
+    const changed = change(current.current);
+    const next = { ...changed, document: rerouteImportedShots(changed.document, catalog) };
     if (!projectDocumentFits(next.document)) {
       const cause = new Error(t("This film is too large to save. Reduce its script or LUTs."));
       report(cause);
@@ -553,42 +551,19 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
         return;
       }
       try {
-        const parsed: unknown = JSON.parse(row.shotsJson);
-        const body =
-          parsed && typeof parsed === "object" && !Array.isArray(parsed)
-            ? (parsed as Record<string, unknown>)
-            : undefined;
-        const shots = Array.isArray(parsed)
-          ? (parsed as Shot[])
-          : Array.isArray(body?.shots)
-            ? (body.shots as Shot[])
-            : [];
-        const cast = Array.isArray(body?.cast)
-          ? body.cast.flatMap((entry) => {
-              if (!entry || typeof entry !== "object") return [];
-              const member = entry as Record<string, unknown>;
-              const name = typeof member.name === "string" ? member.name.trim() : "";
-              if (!name || !BIBLE_KINDS.includes(member.kind as BibleKind)) return [];
-              return [
-                {
-                  name,
-                  kind: member.kind as BibleKind,
-                  traits: typeof member.traits === "string" ? member.traits : "",
-                },
-              ];
-            })
-          : [];
+        const { shots, cast, language, direction } = landReading(row.shotsJson);
         await edit((previous) => ({
           ...previous,
           document: {
             ...previous.document,
-            shots: shots.map((shot, index) => ({
-              ...newShot(index),
-              ...shot,
-              id: crypto.randomUUID(),
-              title: shot.scene || t("Shot {number}", { number: index + 1 }),
-              mode: shot.continues ? "continuation" : "text",
-            })),
+            shots,
+            // The language is a fact about the script; the direction is a
+            // reading of it, so it waits for the person to accept it.
+            filmDirection:
+              language && !previous.document.filmDirection?.dialogueLanguage
+                ? { ...previous.document.filmDirection, dialogueLanguage: language }
+                : previous.document.filmDirection,
+            filmDirectionProposal: previous.document.filmDirection?.genre ? undefined : direction,
             bible: [
               ...previous.document.bible,
               ...cast
@@ -864,7 +839,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     try {
       await writer.current?.flush();
       const version = epoch.current;
-      const workflow = compileBibleReference(entry, role, catalog, target.name);
+      const workflow = compileBibleReference(
+        entry,
+        role,
+        catalog,
+        target.name,
+        referenceStyle(target.document.filmDirection),
+      );
       const estimate = await quoteProject(workflow, catalog);
       if (current.current?.id !== target.id || epoch.current !== version)
         throw new Error(
@@ -1064,13 +1045,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
     if (!target) return;
     setBusy(true);
     try {
-      const selected: Array<{
-        title: string;
-        artifactId: string;
-        seconds: number;
-        parentId?: string;
-        parentHandoffSeconds?: number;
-      }> = [];
+      const selected: TakeToPlace[] = [];
       for (const shot of target.document.shots) {
         const artifact = artifacts.find((item) => item.id === shot.activeTakeId);
         if (!artifact) continue;
@@ -1085,47 +1060,18 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           seconds,
           parentId: artifact.parentId,
           parentHandoffSeconds: artifact.parentHandoffSeconds,
+          transition: shot.transition,
+          ...shotSound(shot, target.document, catalog),
         });
       }
       if (current.current?.id !== target.id) return;
-      await edit((previous) => {
-        const timeline = structuredClone(previous.document.timeline);
-        const picture = timeline.tracks.find((track) => track.id === "picture");
-        if (!picture || picture.locked || picture.hidden)
-          throw new Error(t("Unlock and show the picture track before appending takes."));
-        const rate = fps(timeline);
-        let start = Math.max(
-          0,
-          ...timeline.clips
-            .filter((clip) => clip.trackId === "picture")
-            .map((clip) => clip.start + clip.duration),
-        );
-        for (const [index, item] of selected.entries()) {
-          const next = selected[index + 1];
-          const handoff = next?.parentHandoffSeconds;
-          const outSeconds =
-            next?.parentId === item.artifactId &&
-            typeof handoff === "number" &&
-            Number.isFinite(handoff) &&
-            handoff > 0
-              ? Math.min(item.seconds, handoff)
-              : item.seconds;
-          const sourceDuration = Math.max(1, Math.round(item.seconds * rate));
-          const duration = Math.max(1, Math.min(sourceDuration, Math.round(outSeconds * rate)));
-          timeline.clips.push(
-            createEditorClip({
-              name: item.title,
-              artifactId: item.artifactId,
-              trackId: "picture",
-              start,
-              duration,
-              sourceDuration,
-            }),
-          );
-          start += duration;
-        }
-        return { ...previous, document: { ...previous.document, timeline } };
-      });
+      await edit((previous) => ({
+        ...previous,
+        document: {
+          ...previous.document,
+          timeline: appendTakes(previous.document.timeline, selected),
+        },
+      }));
       setSection("montage");
     } catch (cause) {
       report(cause);
@@ -1648,6 +1594,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           {section === "bible" ? (
             <ProjectBible
               entries={project.document.bible}
+              referenceStyle={referenceStyle(project.document.filmDirection)}
               onChange={(bible) =>
                 editDocument((document) => {
                   const renamed = new Map(

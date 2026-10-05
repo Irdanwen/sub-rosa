@@ -20,7 +20,7 @@ import {
   videoDirectionFromId,
   type VideoDirection,
 } from "../catalog";
-import { maxReferenceVideos, maxVideoReferences } from "../seedance";
+import { maxReferenceVideos, maxVideoReferences, maxReferenceAudio } from "../seedance";
 
 export type WorkflowNodeType =
   | "textInput"
@@ -254,6 +254,13 @@ function videoClipCapacity(params: Record<string, unknown>): number | undefined 
   return id === "" ? undefined : maxReferenceVideos({ id });
 }
 
+/** Reference audio (a voice's timbre), once a model is in hand: open until
+ * then, like the clips, and zero on a model that takes none. */
+function videoAudioCapacity(params: Record<string, unknown>): number | undefined {
+  const id = modelIdOf(params);
+  return id === "" ? undefined : maxReferenceAudio({ id });
+}
+
 /** Reference photos are the reference-to-video contract; `videoRequestBody`
  * fills `reference_image_urls` for no other direction, so wiring them onto a
  * text- or image-to-video model dropped them in silence at submit. */
@@ -462,6 +469,17 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         multi: true,
         max: 10,
         maxFor: videoClipCapacity,
+      },
+      {
+        // A voice for the render to follow (`reference_audio_urls`): the
+        // timbre of a line the model speaks itself. Never the only reference;
+        // the request builder drops it when nothing visual rides with it.
+        id: "referenceAudio",
+        label: "Reference audio",
+        kind: "audio",
+        multi: true,
+        max: 10,
+        maxFor: videoAudioCapacity,
       },
     ],
     output: "video",

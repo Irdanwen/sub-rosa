@@ -219,10 +219,16 @@ describe("rewriteTargetModel", () => {
     });
   });
 
-  it("passes the published character limit and the plain syntax elsewhere", () => {
+  it("passes the published character limit, the family's budget and the plain syntax elsewhere", () => {
     expect(
       rewriteTargetModel(model("kling-2-6", { constraints: { promptCharacterLimit: 2500 } })),
-    ).toMatchObject({ charLimit: 2500, wordLimit: undefined, referenceMention: "image {n}" });
+    ).toMatchObject({ charLimit: 2500, wordLimit: 100, referenceMention: "Image {n}" });
     expect(rewriteTargetModel(undefined)).toBeUndefined();
+  });
+
+  it("gives an image model no video budget", () => {
+    expect(rewriteTargetModel(model("flux-2-pro", { mediaType: "image" }))).toMatchObject({
+      wordLimit: undefined,
+    });
   });
 });

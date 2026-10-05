@@ -13,6 +13,7 @@ import {
   pickMusicModel,
   resolveShotDuration,
   routeModels,
+  shotReferences,
 } from "./workflow/compile";
 import {
   cueNodeId,
@@ -30,6 +31,10 @@ import {
   type WorkflowCostEstimate,
 } from "./workflow/cost";
 import { validateWorkflow } from "./workflow/validator";
+import type { FilmDirection } from "./direction/types";
+import { type ComposedPrompt, composeShotPrompt, resolveDialogue } from "./prompt/compose";
+import { canSilence, rendersAudio } from "./prompt/profiles";
+import { guessLanguage } from "./prompt/subject";
 import type { Workflow, WorkflowNode } from "./workflow/schema";
 
 export function compileProjectWithNotes(
@@ -66,6 +71,7 @@ export function compileProjectWithNotes(
     bible: document.bible,
     catalog,
     ...document.settings,
+    filmDirection: projectDirection(document),
     withScore: onlyShotId ? false : document.settings.withScore,
     score: onlyShotId ? undefined : scoreCues(document, catalog),
   });
@@ -116,6 +122,36 @@ export function compileProjectWithNotes(
   const validation = validateWorkflow(compiled);
   if (!validation.ok) throw new Error(validation.errors.map((error) => error.message).join("\n"));
   return { workflow: compiled, notes: [...result.warnings, ...result.notes] };
+}
+
+/**
+ * The film's direction as the compiler reads it: the stored one, with the
+ * lines' language guessed from the whole script when nobody set it. A whole
+ * script guesses far better than one short line ("Encore ?").
+ */
+export function projectDirection(document: ProjectDocument): FilmDirection | undefined {
+  const stored = document.filmDirection;
+  if (stored?.dialogueLanguage || !document.script.trim()) return stored;
+  return { ...stored, dialogueLanguage: guessLanguage(document.script) };
+}
+
+/**
+ * What a shot's take sounds like in the montage: whether the model spoke its
+ * line (the music dips under it), and whether the take carries a voice the
+ * dubbed line would double (the montage mutes it).
+ */
+export function shotSound(
+  shot: ProjectShot,
+  document: ProjectDocument,
+  catalog: MediaCatalog,
+): { speaks: boolean; mute: boolean } {
+  const model = shotVideoModel(shot, document, catalog);
+  const dialogue = resolveDialogue(shot, projectDirection(document), model);
+  const audible = rendersAudio(model);
+  return {
+    speaks: dialogue.mode === "native",
+    mute: audible && dialogue.mode === "dubbed" && !canSilence(model),
+  };
 }
 
 /** The score's cues as the compiler takes them: written, timed, placed. */
@@ -233,6 +269,29 @@ export function shotVideoModel(
       );
 }
 
+/**
+ * The prompt the compiler will write for a shot, for the surfaces that show
+ * it or improve it: the same model, seconds, references and direction, so
+ * what is previewed is what renders.
+ */
+export function composeProjectShot(
+  shot: ProjectShot,
+  document: ProjectDocument,
+  catalog: MediaCatalog,
+): ComposedPrompt {
+  const model = shotVideoModel(shot, document, catalog);
+  const mode = shot.mode === "continuation" ? "continuation" : shot.mode;
+  return composeShotPrompt({
+    shot,
+    direction: projectDirection(document),
+    bible: document.bible,
+    model,
+    mode,
+    seconds: resolveShotDuration(shot, model).seconds,
+    references: mode === "reference" ? shotReferences(shot, document.bible, model) : [],
+  });
+}
+
 /** How long a shot's take runs, as the compiler will ask for it. */
 export function shotSeconds(
   shot: ProjectShot,
@@ -301,9 +360,10 @@ export function compileBibleReference(
   role: BibleRole,
   catalog: MediaCatalog,
   name: string,
+  style?: string,
 ): Workflow {
   if (role === "voice") throw new Error(t("Choose an image reference role."));
-  const prompt = referencePromptOf(entry, role)?.trim() || portraitPrompt(entry, role);
+  const prompt = referencePromptOf(entry, role)?.trim() || portraitPrompt(entry, role, style);
   const target = `bible-${entry.id}-${role}`;
   const base = { id: crypto.randomUUID(), name, createdAt: Date.now(), updatedAt: Date.now() };
   // A sheet drawn from the portrait keeps the face the person already chose;

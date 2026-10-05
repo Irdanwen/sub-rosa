@@ -62,6 +62,7 @@ describe("openInputPorts on a video node", () => {
       "endFrame",
       "references",
       "referenceClips",
+      "referenceAudio",
     ]);
   });
 
@@ -75,14 +76,17 @@ describe("openInputPorts on a video node", () => {
 
   it("closes the frames on a reference-to-video model", () => {
     // The full tier keeps its clips; the public one publishes no video input.
+    // A voice to follow rides on the seedance reference variants (ADR-0074).
     expect(portIds({ model: "seedance-2-0-reference-to-video" })).toEqual([
       "prompt",
       "references",
       "referenceClips",
+      "referenceAudio",
     ]);
     expect(portIds({ model: "seedance-2-5-reference-to-video-basic" })).toEqual([
       "prompt",
       "references",
+      "referenceAudio",
     ]);
   });
 

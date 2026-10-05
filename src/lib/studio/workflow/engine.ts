@@ -849,6 +849,17 @@ async function executeNode(
         if (oversize) throw new Error(oversize);
       }
 
+      // A voice to follow travels inline too, read out of the gallery.
+      const referenceAudio: string[] = [];
+      for (const voice of (ports.get("referenceAudio") ?? []).filter(
+        (output): output is Extract<NodeOutput, { kind: "audio" }> => output.kind === "audio",
+      )) {
+        if (!voice.artifactId) throw new Error("A reference voice must come from the gallery.");
+        referenceAudio.push(
+          await requireStorage(context, "read reference audio").readMedia(voice.artifactId),
+        );
+      }
+
       // The body comes from the one place that knows each variant's contract
       // (which fields exist, which enums are valid, that image-to-video
       // rejects aspect_ratio, when the seedance attestation rides along).
@@ -869,12 +880,15 @@ async function executeNode(
         referenceRoles: referenceRolesOf(params, references),
         referenceVideos,
         referenceVideoSeconds,
+        referenceAudio,
         duration: stringParam(params, "duration"),
         aspectRatio: stringParam(params, "aspectRatio"),
         resolution: stringParam(params, "resolution"),
         // A workflow runs unattended: the attestation rides on any seedance
         // render built from a photo, exactly as the studios send it.
         consent: true,
+        // Written by the film compiler when the shot's line is dubbed.
+        silent: params.silent === true,
       });
       if (!body) {
         throw new Error(

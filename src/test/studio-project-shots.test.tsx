@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { SHOT_REWRITE_VERSION } from "../lib/studio/studio-rewrite";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { ProjectShots } from "../components/studio/ProjectShots";
@@ -53,7 +54,7 @@ describe("a shot's AI-written prompt", () => {
     backend: "carpe-diem",
     models: [video("kling-2-6", "Kling 2.6"), video("wan-2-5", "Wan 2.5")],
   };
-  function renderShot(modelId: string) {
+  function renderShot(modelId: string, promptVersion: string | null = SHOT_REWRITE_VERSION) {
     const document = newProject().document;
     document.shots = [
       {
@@ -63,6 +64,7 @@ describe("a shot's AI-written prompt", () => {
         prompt: "Marie runs through the rain.",
         modelId,
         promptOptimizedFor: "kling-2-6",
+        promptVersion: promptVersion ?? undefined,
       },
     ];
     render(
@@ -83,6 +85,20 @@ describe("a shot's AI-written prompt", () => {
     renderShot("kling-2-6");
     expect(screen.getByText("Optimized for Kling 2.6")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Improve with AI/ })).toBeInTheDocument();
+  });
+
+  it("says when AI wrote it with the previous method, and offers the composed prompt", () => {
+    renderShot("kling-2-6", null);
+    expect(screen.getByText(/One prompt was written with the previous method/)).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Use the composed prompt" }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows the prompt the take renders from, block by block", () => {
+    renderShot("kling-2-6");
+    expect(screen.getByText(/Composed prompt, replaced by yours/)).toBeInTheDocument();
+    expect(screen.getByText(/No dialogue\./)).toBeInTheDocument();
   });
 
   it("warns when the shot now renders with another model", () => {

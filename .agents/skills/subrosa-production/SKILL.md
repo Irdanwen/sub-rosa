@@ -21,8 +21,9 @@ You can build the first two. You cannot start the third.
 
 You have two tools, `bible` and `shots`. Between them you can name a cast, give
 them traits and references, and turn a script into a shot list. What happens
-next is in **Studio > Workflows > From a script**, where the user sees the
-figure before anything is spent. Say that plainly. Do not imply you are about
+next is in the **Studio's film project** (Studio > Project): the person sets the
+film's direction, checks each shot's composed prompt, and sees the figure
+before anything is spent. Say that plainly. Do not imply you are about
 to make the film.
 
 ## The bible is what stops a character drifting
@@ -36,13 +37,22 @@ So a bible entry is worth more than it looks:
 
 - `name` is what the script calls them. Use the script's spelling exactly, or
   the shot list will not match them up.
-- `traits` is what must not drift, and nothing else. "Green wool coat, scar
-  over the left brow, a head shorter than Kell" is right. Their backstory is
-  not: it costs prompt budget and changes nothing on screen.
+- `traits` is the **frozen descriptor**, pasted unchanged into every shot:
+  25 to 45 English words, without the name, in this order for a person - age
+  and build; face and one distinctive mark; hair; clothes top to bottom, each
+  with material and color; accessories with their side. "a 30-year-old woman,
+  slim build, oval face, green eyes, small scar above the left eyebrow,
+  shoulder-length dark brown wavy hair worn loose, navy wool coat, mustard
+  knitted scarf, silver ring on the right hand" is right. A place: period,
+  materials, layout, one fixed light source. An object: material, color, shape,
+  condition, one unique detail. Never a feeling, a backstory or a vague
+  adjective (beautiful, mysterious): they change nothing on screen.
 - References are attached in **roles**, and the order matters. `portrait` first
-  is the identity the model holds. Then `profile`, then the location's `wide`,
-  `medium`, `detail`. A `voice` reference is a speech artifact the character's
-  lines are then spoken in.
+  is the identity the model holds, then `outfit` (a full body view; it takes the
+  profile's place), then the location's `wide`, `medium`, `detail`, a prop's
+  `detail`, and one `look` image for color and light only. A `voice` reference
+  is a speech artifact: a line the video model speaks itself follows its timbre,
+  and a dubbed line is spoken in it.
 
 A location is an entry too, and so is a prop that has to look like itself, and
 so is the overall `look`.
@@ -68,26 +78,35 @@ app resolves those. What the shot list does carry:
 If the shot list gets a name wrong, fix the note or the bible entry so they
 agree, and read it again.
 
-## Prompt discipline, if you are writing one by hand
+## Prompt discipline
 
-These video models drop clauses past roughly sixty words, and you do not get to
-choose which. Structure: subject, action, camera, style, constraints. Restate
-the invariant traits. Reference the images the way the family reads them
-(`<Image 1>` for seedance, plain "image 1" elsewhere).
+The app writes every shot's prompt itself, from the prompt bible's blocks, in
+this order (ADR-0074): **[OVERALL]** genre, at most two moods, the seconds the
+app resolved, pacing, "Single continuous shot."; **[REFERENCES]** one sentence
+per image saying what it is for ("Image 1 is Léa: face and hair."); **[SUBJECT]**
+the frozen descriptors; **[SHOT]** size, lens, angle, then **one** camera
+movement with its amplitude and its speed, then the action as one to three
+physical events (a body part, a verb, a speed, never a named feeling);
+**[DIALOGUE]** the line or "No dialogue."; **[SOUND]** effects, ambience, no
+music; **[STYLE]** look, palette, light (source, direction, quality), texture;
+**[NEGATIVE]** only the risks this shot runs. The film's genre, moods and style
+are identical on every shot.
 
-Adjacent beats in one place go in **one** generation separated by
-`Lens switch.` - one render holds the lighting and the geography across them in
-a way two renders cannot, however carefully the second one is prompted.
+Each family is written its own way (`src/lib/studio/direction/profiles.json`):
+labels or prose, its own word budget (Seedance 2.0: sixty), a time range on the
+shot label only where the family reads it. Kling never gets a number: its own
+`shot 1, 3s` notation cuts to a new shot. A Seedance reference prompt opens with
+"Refer to <Image 1> for ...", because that opening routes the request. Mentions
+are `<Image 1>` for Seedance, `@Element1` and `@Image1` for Kling, "Image 1"
+elsewhere. One project shot is one continuous take: never write a cut or
+"Lens switch."; transitions are fades in the montage.
 
-Pace the action over the seconds the take will actually run, which the app
-resolves (`resolveShotDuration`: the shot's own duration, or its motion snapped
-to the model's list). A beat every two and a half seconds or so, at most five,
-on whole seconds: 5 s is two beats (0-3, 3-5), 10 s is four. Veo and Seedance 2
-read the ranges written as `[00:00-00:03]` segments after one sentence of setup;
-every other family, Kling included, gets the beats as ordered sentences with
-the pace in words, because a bracketed time reads there as text or, in Kling's
-own `shot 1, 3s` notation, as a cut. "Improve with AI" does this for you and
-marks the prompt stale when the duration changes.
+A line is spoken by the video model only in a language its family speaks
+(MiniMax H3 speaks French; the others English at most); otherwise it is dubbed
+and the prompt shows the speaker speaking without quoting the line.
+
+If you must write a prompt by hand, keep that order and those rules. "Improve
+with AI" improves the composed prompt and keeps its blocks.
 
 ## What costs money, and what does not
 

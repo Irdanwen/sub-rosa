@@ -70,6 +70,12 @@ export interface VideoRequestInputs {
   resolution?: string;
   /** Whether the face-media attestation has been given. */
   consent?: boolean;
+  /**
+   * Render without sound. Sent only to a model that publishes the switch
+   * (`audio_configurable`): a dubbed line is laid in afterwards, and the
+   * model's own voice under it would speak the line twice.
+   */
+  silent?: boolean;
 }
 
 /**
@@ -95,6 +101,7 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
     aspectRatio,
     resolution,
     consent,
+    silent,
   } = inputs;
 
   const upscale = isVideoUpscaleModel(target.id);
@@ -125,6 +132,7 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
   if (pickedDuration) body.duration = pickedDuration;
   if (pickedAspect) body.aspect_ratio = pickedAspect;
   if (pickedResolution) body.resolution = pickedResolution;
+  if (silent && target.constraints?.audio_configurable) body.audio = false;
 
   if (isVideoToVideoModel(target.id)) {
     if (!sourceVideo) return undefined;

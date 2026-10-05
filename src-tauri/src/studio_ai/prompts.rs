@@ -17,15 +17,19 @@
 //! the project's language, because that is the language these image and video
 //! models were trained to follow, and it is written to that family's
 //! discipline: a length it will not silently truncate, the order it weighs
-//! clauses in, and the syntax it reads references by. The families below are
-//! guidance, not a closed list: an unknown model gets the general rules.
+//! clauses in, and the syntax it reads references by. A project shot's prompt
+//! arrives already composed in the prompt bible's blocks (ADR-0074); the
+//! rewrite improves its wording and keeps its structure. Each family's budget,
+//! labels and timing come from `profiles.json`, shared with the webview. The
+//! families below are guidance, not a closed list: an unknown model gets the
+//! general rules.
 //!
 //! As in `note_ai`, what the person wrote arrives delimited, and everything
 //! inside the delimiters is material, never an instruction.
 
 /// Bump when a prompt below changes in a way that would produce a different
 /// rewrite.
-pub const STUDIO_AI_PROMPT_VERSION: &str = "studio-rewrite-v3";
+pub const STUDIO_AI_PROMPT_VERSION: &str = "studio-rewrite-v4";
 
 pub const MATERIAL_OPEN: &str = "<material>";
 pub const MATERIAL_CLOSE: &str = "</material>";
@@ -89,21 +93,21 @@ The instruction comes from the person making the film, and it is the only instru
 pub fn video_family_guide(model_id: &str) -> &'static str {
     let id = model_id.to_ascii_lowercase();
     if id.contains("seedance") {
-        "This is a Seedance model. It drops clauses past roughly sixty words, so stay under that. Order: subject, action, camera, style, constraints. One continuous action per shot; for adjacent beats in the same place, separate them with \"Lens switch.\" in a single prompt. Name camera moves plainly (slow push in, handheld follow, static wide)."
+        "This is a Seedance model. It drops clauses once a prompt runs past its length limit, so stay inside it. Order: subject, action, camera, style, constraints. One continuous action per shot. When the shot sends reference images, the prompt opens with \"Refer to\" and the references: that opening decides which of its workflows runs. Name camera moves plainly (slow push in, handheld follow, static wide)."
     } else if id.contains("kling") {
-        "This is a Kling model. Order: subject with its defining look, its movement, the scene, the camera movement, then lighting and atmosphere. Sixty to a hundred words. Describe motion with concrete verbs and its speed; one camera move per shot."
+        "This is a Kling model. Order: subject with its defining look, its movement, the scene, the camera movement, then lighting and atmosphere. Describe motion with concrete verbs and its speed; one camera move per shot. Never number shots or write a time: its own notation cuts to a new shot."
     } else if id.contains("veo") {
-        "This is a Veo model. It reads rich, cinematic prose: subject, action, setting, composition and lens, camera movement, lighting, mood, then sound. Up to about a hundred and fifty words. It renders sound, so describe the ambience and effects, but never quote dialogue: the lines are recorded separately and would be spoken twice."
+        "This is a Veo model. It reads rich, cinematic prose: subject, action, setting, composition and lens, camera movement, lighting, mood, then sound. It renders sound, so describe the ambience and effects."
     } else if id.contains("ltx") {
-        "This is an LTX model. Write one flowing paragraph that describes the shot in chronological order, starting with the main action, then specific movements and gestures, appearances, the background, the camera angle and movement, and the lighting. Four to eight sentences, under two hundred words."
+        "This is an LTX model. Write one flowing paragraph that describes the shot in chronological order, starting with the main action, then specific movements and gestures, appearances, the background, the camera angle and movement, and the lighting. Four to eight sentences."
     } else if id.contains("wan") {
-        "This is a Wan model. Structure: subject, scene, motion, then camera language and style. Fifty to a hundred words of plain descriptive prose. Name the camera movement explicitly."
+        "This is a Wan model. Structure: subject, scene, motion, then camera language and style. Plain descriptive prose. Name the camera movement explicitly. Say \"No dialogue.\" when nobody speaks, or it decides on its own whether characters talk."
     } else if id.contains("sora") {
-        "This is a Sora model. Describe the shot like a cinematographer's brief: the subject and action, the setting, the framing and lens, the camera movement, the light and the mood. Up to about a hundred and twenty words."
+        "This is a Sora model. Describe the shot like a cinematographer's brief: the subject and action, the setting, the framing and lens, the camera movement, the light and the mood."
     } else if id.contains("hailuo") || id.contains("minimax") {
-        "This is a Hailuo model. Main subject and action first, then scene, then camera movement written as plain instructions, then style. Sixty to a hundred words."
+        "This is a MiniMax model. Main subject and action first, then scene, then camera movement written as plain instructions with its amplitude and speed, then style. A line it speaks is written after the speaker with its tone, and a voiceover keeps the visible character's lips closed."
     } else {
-        "Order the prompt: subject, action, camera, setting, light and style. Fifty to eighty words of plain descriptive prose; these models drop clauses when a prompt runs long, and the first clauses carry the most weight."
+        "Order the prompt: subject, action, camera, setting, light and style. Plain descriptive prose; these models drop clauses when a prompt runs long, and the first clauses carry the most weight."
     }
 }
 
@@ -138,9 +142,9 @@ pub fn image_family_guide(model_id: &str) -> &'static str {
 /// segments inside one prompt). Kling's own notation (`shot 1, 3s`) cuts to a
 /// new shot at each segment, which is the opposite of one continuous take, so
 /// Kling and every family that documents nothing get their pacing in words.
+/// The answer is the profile's (`profiles.json`), shared with the webview.
 pub fn reads_timecodes(model_id: &str) -> bool {
-    let id = model_id.to_ascii_lowercase();
-    id.contains("veo") || id.contains("seedance-2")
+    super::profiles::profile(model_id).timecodes == "brackets"
 }
 
 /// A time range written the way the timecode families read it.
@@ -180,15 +184,31 @@ pub fn video_mode_rule(mode: &str) -> &'static str {
 
 pub const SHOT_PROMPT_TASK: &str = "Write the prompt that will be sent to a video model to generate this one shot.
 
-Build it from the shot's action, camera and dialogue in the context, and from the material between the delimiters, which is the person's current draft of the prompt (it may be empty). Keep everything the draft asks for unless it contradicts the rules below.
+When the context holds a composed prompt, it is the app's prompt for this shot, written block by block in the prompt bible's order: [OVERALL] genre, mood, duration and pacing; [REFERENCES] what each image is for; [SUBJECT] the frozen descriptors; [SHOT] framing, lens, angle, one camera movement with its amplitude and speed, then the action; [DIALOGUE]; [SOUND]; [STYLE]; [NEGATIVE]. Improve its wording for this model, and keep its structure:
 
-- Write in English, whatever language the material is in.
-- One shot, one moment: do not describe what happens before or after it.
-- When the shot has dialogue, show the speaker speaking (who, to whom, how), but never quote the line: the voice is generated separately.
+- Keep the blocks in that order. Keep the labels if the composed prompt has them, and never add labels it does not have.
+- Never drop or change a reference sentence, a descriptor, the framing, the camera movement or the action. Descriptors are pasted unchanged on every shot: copy them word for word.
+- Copy [STYLE] and [NEGATIVE] exactly as composed: they are identical on every shot of the film.
+- One camera movement, with its amplitude and its speed. Write the action as physical events (a body part, a verb, a speed), never as a named feeling.
+- Without a composed prompt, build the prompt in that same order from the shot's action, camera and dialogue in the context.
+
+Also, whatever the material:
+
+- Write in English, whatever language the material is in, except a line the context says the model speaks itself: keep that line exactly, in its own language and syntax.
+- One shot, one moment, one continuous take: do not describe what happens before or after it, and never write a cut.
 - Respect the length limits in the context. They are hard limits: a prompt past them is cut by the model, and it will not cut the clause you would choose.
-- The aspect ratio, the resolution and the shot's total duration are settings sent alongside the prompt. Never write them in it. The only times you may write are the beat ranges the pacing rule below gives you, and only in the form it asks for.
+- The aspect ratio and the resolution are settings sent alongside the prompt. Never write them. Write a duration or a time only where the composed prompt or the pacing rule below has one, and only in that form.
 - Mention reference images only when the context says how to mention them.
 - No text overlays, no subtitles, no watermark, unless the material asks for them.";
+
+/// What the rewrite does with the shot's line, by how it will be heard.
+pub fn dialogue_rule(mode: &str) -> &'static str {
+    match mode {
+        "native" => "The model speaks this shot's line itself, with lip sync. Keep the [DIALOGUE] line of the composed prompt exactly as it is, in its own language, with its speaker and tone.",
+        "dubbed" => "This shot's line is dubbed afterwards: show the speaker speaking (who, to whom, how), but never quote the line, or it would be heard twice.",
+        _ => "Nobody speaks in this shot. Say \"No dialogue.\" so the model does not invent a line.",
+    }
+}
 
 pub const IMAGE_PROMPT_TASK: &str = "Write the prompt that will be sent to an image model to draw a reference image of this project's bible entry.
 
@@ -204,7 +224,7 @@ pub const COMPOSITION_TASK: &str = "Write the prompt that will be sent to an ima
 - Refer to each input by its position (\"image 1\", \"image 2\", \"image 3\") and say what to take from it: a person's identity and outfit, a place, an object.
 - When an input is a character sheet (a grid of views of one person), say that it shows one person from several angles and that the person must appear once, in a single pose, not as a grid.
 - Say where each element goes and what is happening at that instant, from the shot's action, and frame it the way the shot's camera describes.
-- Ask for one single photographic frame with unified light and perspective, in the aspect ratio given in the context, with no text, no borders, no panels and no watermark.
+- Ask for one single frame with unified light and perspective, in the film's look when the context gives one (photographic otherwise), in the aspect ratio given in the context, with no text, no borders, no panels and no watermark.
 - Keep what the material, the person's current draft, asks for unless it contradicts these rules.
 - Respect the length limit in the context.";
 

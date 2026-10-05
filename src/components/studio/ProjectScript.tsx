@@ -7,6 +7,7 @@ import type { VeniceModelDto } from "../../lib/tauri";
 import { Switch } from "../ui/Switch";
 import { AiRewrite } from "./AiRewrite";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
+import { ProjectDirection } from "./ProjectDirection";
 
 /** A labelled model choice that can always go back to the app's own pick. */
 export function ModelField({
@@ -186,6 +187,7 @@ export function ProjectScript({
             </button>
           ) : null}
         </section>
+        <ProjectDirection document={document} catalog={catalog} editDocument={editDocument} />
         <section aria-labelledby={`${scoreSwitch}-picture`}>
           <h3 id={`${scoreSwitch}-picture`}>{t("Picture")}</h3>
           <label className="project-field">

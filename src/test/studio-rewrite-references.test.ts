@@ -58,7 +58,7 @@ describe("the references a shot rewrite is told about", () => {
 
   it("leaves out what a flat family's cap drops from the request", () => {
     const lines = rewriteReferences({ id: "gemini-omni-flash-reference-to-video" }, stack);
-    expect(lines.map((line) => line.mention)).toEqual(["image 1", "image 2", "image 3"]);
+    expect(lines.map((line) => line.mention)).toEqual(["Image 1", "Image 2", "Image 3"]);
   });
 
   it("describes images picked from the gallery by the entry holding them", () => {

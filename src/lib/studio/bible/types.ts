@@ -7,9 +7,10 @@ export type BibleKind = (typeof BIBLE_KINDS)[number];
 /**
  * The roles a reference can play.
  *
- * Five image roles are the ordered stack a reference-to-video model wants:
- * the identity anchor first, then the other angles, then the place it happens
- * in. `voice` is the odd one out - it points at an audio artifact and rides as
+ * Six image roles are the ordered stack a reference-to-video model wants:
+ * the identity anchor first, then the other angles and the outfit (a full
+ * body view, so the clothes hold without a multi-view board), then the place
+ * it happens in. `voice` is the odd one out - it points at an audio artifact and rides as
  * a voice donor rather than as a picture. `sheet` is a character sheet, nine
  * views of one character in a 3 by 3 grid: it feeds image composition and is
  * cut into a portrait and a profile, but never rides to a video model, which
@@ -18,6 +19,7 @@ export type BibleKind = (typeof BIBLE_KINDS)[number];
 export const BIBLE_ROLES = [
   "portrait",
   "profile",
+  "outfit",
   "sheet",
   "wide",
   "medium",
@@ -48,6 +50,9 @@ export const BIBLE_ROLE_LABELS: Record<BibleRole, string> = {
   get profile() {
     return t("Profile");
   },
+  get outfit() {
+    return t("Outfit, full body");
+  },
   get sheet() {
     return t("Character sheet 3×3");
   },
@@ -67,7 +72,7 @@ export const BIBLE_ROLE_LABELS: Record<BibleRole, string> = {
 
 /** Which roles make sense for a kind, in the order a surface should offer them. */
 export const ROLES_BY_KIND: Record<BibleKind, readonly BibleRole[]> = {
-  character: ["portrait", "profile", "sheet", "detail", "voice"],
+  character: ["portrait", "profile", "outfit", "sheet", "detail", "voice"],
   location: ["wide", "medium", "detail"],
   prop: ["detail", "portrait"],
   look: ["wide", "medium", "detail"],

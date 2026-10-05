@@ -76,8 +76,9 @@ describe("the sheet role", () => {
 });
 
 describe("cutting a sheet", () => {
-  it("keeps the middle row's front and profile views", () => {
+  it("keeps the middle row's front and profile views, and the full body outfit", () => {
     expect(SHEET_CUTS).toEqual([
+      { cell: 0, role: "outfit" },
       { cell: 3, role: "portrait" },
       { cell: 5, role: "profile" },
     ]);

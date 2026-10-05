@@ -201,6 +201,9 @@ export async function fetchVideoQuotes(
           const value = node.params[param];
           if (typeof value === "string" && value !== "") body[field] = value;
         }
+        // A silent render can price differently from one with sound; the
+        // compiler only marks it silent on a model that has the switch.
+        if (node.params.silent === true) body.audio = false;
         try {
           const response = await Promise.race([
             mediaJson<{ quote?: number }>(VIDEO_QUOTE_PATH, body),

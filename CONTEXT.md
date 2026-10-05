@@ -567,6 +567,34 @@ What every cue of a score shares, written once: genre, instruments, tempo range,
 colour. Sent ahead of each cue's own prompt.
 _Avoid_: style (the bible's `look` is the visual style).
 
+**Film direction**:
+What a film decides once and every shot restates word for word: genre, at most
+two moods, pacing, film look, palette, light, texture, ambience, music inside
+the shots (none by default: the score is laid in the montage), period and the
+lines' language. Stored on the project (`filmDirection`), filled by hand or from
+a **recipe**, and proposed by the reading for the person to accept
+([ADR-0074](docs/adr/0074-project-prompts-are-blocks-rendered-per-family.md)).
+_Avoid_: direction alone (a model's **direction** is text, image, reference or
+video), style (the bible's `look`), look (a bible kind).
+
+**Prompt block**:
+One of the prompt bible's parts of a shot's prompt, in its order: overall,
+references, subject, shot, dialogue, sound, style, negative. A shot's prompt is
+composed from blocks and rendered per **family profile**: labelled or in prose,
+to the family's word budget, never losing the subject, the framing or the
+action. _Avoid_: section, field.
+
+**Family profile**:
+How one video family is written to: word budget, labels, how it takes time, the
+sound it renders and the languages it speaks a line in. One shared file
+(`direction/profiles.json`) read by the webview and Rust.
+
+**Dialogue mode**:
+How a shot's line is heard: **native** (the video model speaks it, with lip
+sync, only in a language its family speaks) or **dubbed** (a voice laid in
+afterwards; the take renders silent or is muted in the montage). `auto` picks
+native when it can. _Avoid_: voice (a bible role and a TTS setting).
+
 ### The bible (fork)
 
 **Bible**:
@@ -586,19 +614,25 @@ a name, **invariant traits**, and references.
 what must not drift between shots - the palette, the wardrobe, the relative
 height. Restated on the prompt of *every* shot, because nothing carries over
 between separately generated clips. This restating is the difference between a
-character and a resemblance.
+character and a resemblance. Written as the prompt bible's **frozen
+descriptor**: 25 to 45 English words without the name, in a fixed order (for a
+person: age and build, face and one distinctive mark, hair, clothes top to
+bottom with material and color, accessories with their side), never a feeling.
+A shot that changes it says so in a **state line** ("State in this scene: coat
+unbuttoned") rather than rewriting it.
 
 **Bible reference**:
 a pointer at a gallery artifact standing in for part of an entry, in a **role**:
-`portrait`, `profile`, `wide`, `medium`, `detail` or `voice`. Never a copy of
-the file. Their **order** is load bearing: the first image is what a
+`portrait`, `profile`, `outfit` (a full body view), `wide`, `medium`, `detail`
+or `voice`. Never a copy of the file. A shot's prompt gives each image it sends
+its role in words ("Image 2 is Léa's outfit only"). Their **order** is load bearing: the first image is what a
 reference-to-video model treats as the identity to hold.
 
 **Character sheet**:
 the `sheet` reference of a character - one square image holding nine views of
 them in a fixed 3 by 3 grid. It is drawn from the character's portrait when
-there is one, composes opening images, and is cut into a `portrait` and a
-`profile`. It is **never** part of the reference stack sent to a video model,
+there is one, composes opening images, and is cut into a `portrait`, a
+`profile` and an `outfit`. It is **never** part of the reference stack sent to a video model,
 which would film the grid ([ADR-0066](docs/adr/0066-a-character-sheet-composes-frames-and-never-reaches-video.md)).
 _Avoid_: turnaround, model sheet, planche (in code and docs).
 

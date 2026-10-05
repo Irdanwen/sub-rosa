@@ -155,8 +155,8 @@ export function maxReferenceVideoSeconds(model: Pick<MediaModel, "id"> | undefin
  * How to name a reference inside a prompt.
  *
  * Seedance wants `<Image 1>` and kling `@Element1` (see `klingMention`);
- * everything else has no documented syntax at all, so plain positional prose
- * ("image 1") is the honest fallback — it reads naturally to any
+ * everything else reads plain positional prose, capitalised the way the
+ * prompt bible writes it for Wan and MiniMax ("Image 1"), the honest fallback — it reads naturally to any
  * instruction-following model without pretending a contract exists. Indexes are 1-based, matching what the numbering shows on screen.
  */
 export function referenceMention(
@@ -166,10 +166,8 @@ export function referenceMention(
 ): string {
   const position = Math.max(1, Math.trunc(index));
   if (kind === "image" && takesKlingReferences(model)) return klingMention(position);
-  if (!model || !isSeedanceModel(model.id)) {
-    return `${kind} ${position}`;
-  }
   const label = kind === "image" ? "Image" : kind === "video" ? "Video" : "Audio";
+  if (!model || !isSeedanceModel(model.id)) return `${label} ${position}`;
   return `<${label} ${position}>`;
 }
 

@@ -14,6 +14,7 @@
 //! the shot and what about them must not drift. The frontend knows all of
 //! that; it sends it, and `prompts` turns it into instructions.
 
+pub mod profiles;
 pub mod prompts;
 
 use crate::domain::types::AppError;
@@ -142,6 +143,13 @@ pub struct StudioRewriteContext {
     pub scenes: Vec<String>,
     /// A reference shot's images, as the render receives them.
     pub references: Vec<ContextReference>,
+    /// The app's own prompt for a project shot, in the prompt bible's blocks
+    /// (ADR-0074). The rewrite improves its wording and keeps its structure.
+    pub composed: Option<String>,
+    /// `native`, `dubbed` or `none`: how the shot's line will be heard.
+    pub dialogue_mode: Option<String>,
+    /// The film's look, palette, light and texture (the bible's [STYLE]).
+    pub style: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -365,14 +373,22 @@ fn shot_seconds(duration: Option<&str>) -> Option<u32> {
     (1.0..=600.0).contains(&seconds).then_some(seconds as u32)
 }
 
-/// A beat every two and a half seconds or so, at most five: enough to pace a
-/// long take, few enough that each beat still gets a whole clause within the
-/// family's word budget. Whole-second boundaries, the only ones the timecode
-/// families read.
-pub(crate) fn beat_ranges(seconds: u32) -> Vec<(u32, u32)> {
-    let count = ((seconds as f32 / 2.5).round() as u32)
-        .clamp(1, 5)
-        .min(seconds);
+/// The physical events an action is written as, the reader's "one to three"
+/// (ADR-0074): split where one event ends and the next begins.
+pub(crate) fn action_events(action: &str) -> usize {
+    action
+        .split([';', ',', '.'])
+        .flat_map(|part| part.split(" then "))
+        .filter(|part| !part.trim().is_empty())
+        .count()
+        .clamp(1, 3)
+}
+
+/// One beat per physical event of the action, at most three, never shorter
+/// than two seconds: the prompt bible's one to three actions per short shot.
+/// Whole-second boundaries, the only ones the timecode families read.
+pub(crate) fn beat_ranges(seconds: u32, events: usize) -> Vec<(u32, u32)> {
+    let count = (events as u32).clamp(1, 3).min((seconds / 2).max(1));
     (0..count)
         .map(|index| {
             let edge = |at: u32| ((at * seconds) as f32 / count as f32).round() as u32;
@@ -447,18 +463,52 @@ fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
             push_line(&mut lines, "Action", present(&context.action));
             push_line(&mut lines, "Camera", present(&context.camera));
             push_line(&mut lines, "Speaker", present(&context.speaker));
+            let dialogue_mode = context
+                .dialogue_mode
+                .as_deref()
+                .map(str::trim)
+                .filter(|mode| !mode.is_empty())
+                .unwrap_or(if present(&context.dialogue).is_some() {
+                    "dubbed"
+                } else {
+                    "none"
+                });
             push_line(
                 &mut lines,
-                "Dialogue (do not quote it)",
+                if dialogue_mode == "native" {
+                    "Dialogue (spoken by the model: keep it as composed)"
+                } else {
+                    "Dialogue (dubbed afterwards: do not quote it)"
+                },
                 present(&context.dialogue),
             );
+            if let Some(composed) = context
+                .composed
+                .as_deref()
+                .map(str::trim)
+                .filter(|composed| !composed.is_empty())
+            {
+                lines.push(format!(
+                    "Composed prompt (improve its wording, keep its blocks):\n{}",
+                    composed
+                        .chars()
+                        .take(MAX_MATERIAL_CHARS)
+                        .collect::<String>()
+                ));
+            }
             // The app owns the clock: it resolves the shot's seconds and cuts
-            // them into beats, and the model only fills them.
+            // them into beats, one per physical event, and the model only
+            // fills them.
             let seconds = shot_seconds(context.duration.as_deref());
-            let ranges = seconds.map(beat_ranges).unwrap_or_default();
+            let events = action_events(context.action.as_deref().unwrap_or_default());
+            let ranges = seconds
+                .map(|seconds| beat_ranges(seconds, events))
+                .unwrap_or_default();
             let timecodes = prompts::reads_timecodes(target_id);
             if let Some(seconds) = seconds {
-                lines.push(format!("Duration: {seconds} seconds (do not write it)."));
+                lines.push(format!(
+                    "Duration: {seconds} seconds (write it only where the composed prompt does)."
+                ));
             }
             if ranges.len() > 1 {
                 let listed: Vec<String> = ranges
@@ -488,9 +538,10 @@ fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
                 .map(|seconds| prompts::pacing_rule(seconds, ranges.len(), timecodes))
                 .unwrap_or_default();
             let task = format!(
-                "{}\n\n{}\n\n{}\n\n{}",
+                "{}\n\n{}\n\n{}\n\n{}\n\n{}",
                 prompts::SHOT_PROMPT_TASK,
                 prompts::video_mode_rule(mode),
+                prompts::dialogue_rule(dialogue_mode),
                 prompts::video_family_guide(target_id),
                 pacing
             );
@@ -557,6 +608,11 @@ fn compose(request: &StudioRewriteRequest) -> (String, String, u32, f32) {
             push_line(&mut lines, "Action", present(&context.action));
             push_line(&mut lines, "Camera", present(&context.camera));
             push_line(&mut lines, "Aspect ratio", present(&context.aspect_ratio));
+            push_line(
+                &mut lines,
+                "The film's look (keep it in the frame)",
+                present(&context.style),
+            );
             if let Some(block) = entries_block(&context.entries) {
                 lines.push(format!("Invariant traits (never change them):\n{block}"));
             }
@@ -797,12 +853,19 @@ mod tests {
     }
 
     #[test]
-    fn beats_are_cut_by_the_app_on_whole_seconds() {
-        assert_eq!(beat_ranges(3), vec![(0, 3)]);
-        assert_eq!(beat_ranges(5), vec![(0, 3), (3, 5)]);
-        assert_eq!(beat_ranges(10), vec![(0, 3), (3, 5), (5, 8), (8, 10)]);
-        assert_eq!(beat_ranges(15).len(), 5);
-        assert_eq!(beat_ranges(15).last(), Some(&(12, 15)));
+    fn beats_are_one_per_physical_event_on_whole_seconds() {
+        assert_eq!(beat_ranges(3, 1), vec![(0, 3)]);
+        assert_eq!(beat_ranges(5, 2), vec![(0, 3), (3, 5)]);
+        assert_eq!(beat_ranges(8, 3), vec![(0, 3), (3, 5), (5, 8)]);
+        // Never more than three, never shorter than two seconds.
+        assert_eq!(beat_ranges(15, 9).len(), 3);
+        assert_eq!(beat_ranges(3, 3), vec![(0, 3)]);
+        assert_eq!(
+            action_events("her shoulders drop, she lowers her eyes and exhales slowly"),
+            2
+        );
+        assert_eq!(action_events("Henri nods."), 1);
+        assert_eq!(action_events("a b; c d; e f; g h; i j"), 3);
         assert_eq!(shot_seconds(Some("8s")), Some(8));
         assert_eq!(shot_seconds(Some(" 5 ")), Some(5));
         assert_eq!(shot_seconds(Some("auto")), None);
@@ -830,7 +893,7 @@ mod tests {
     #[test]
     fn a_timed_shot_is_paced_in_words_for_kling() {
         let mut req = request(StudioRewriteKind::ShotPrompt, "");
-        req.context.action = Some("Henri locks the door.".into());
+        req.context.action = Some("Henri locks the door, then walks away.".into());
         req.context.duration = Some("10".into());
         req.context.target_model = Some(TargetModel {
             id: "kling-v3-4k-text-to-video".into(),
@@ -840,7 +903,7 @@ mod tests {
             reference_mention: None,
         });
         let (_, user, _, _) = compose(&req);
-        assert!(user.contains("Beats: from 0 to 3 seconds, from 3 to 5 seconds"));
+        assert!(user.contains("Beats: from 0 to 5 seconds, from 5 to 10 seconds"));
         assert!(user.contains("Never write the ranges as numbers or brackets"));
         assert!(!user.contains("[00:00"));
     }
@@ -928,6 +991,50 @@ mod tests {
     }
 
     #[test]
+    fn a_composed_prompt_is_improved_not_replaced() {
+        let mut req = request(StudioRewriteKind::ShotPrompt, "");
+        req.context.action = Some("Léa unfolds the letter.".into());
+        req.context.dialogue = Some("Il savait.".into());
+        req.context.dialogue_mode = Some("native".into());
+        req.context.composed = Some(
+            "[OVERALL] Intimate drama.\n[DIALOGUE] Léa (S1), says: [French] Il savait.".into(),
+        );
+        req.context.target_model = Some(TargetModel {
+            id: "minimax-h3-text-to-video".into(),
+            name: None,
+            char_limit: None,
+            word_limit: Some(200),
+            reference_mention: None,
+        });
+        let (_, user, _, _) = compose(&req);
+        assert!(user.contains("Composed prompt (improve its wording, keep its blocks):"));
+        assert!(user.contains("[DIALOGUE] Léa (S1), says: [French] Il savait."));
+        assert!(user.contains("keep it as composed"));
+        assert!(user.contains("Keep the [DIALOGUE] line of the composed prompt exactly"));
+        assert!(!user.contains("never quote the line"));
+        // A dubbed line is never quoted, and a silent shot says so.
+        req.context.dialogue_mode = Some("dubbed".into());
+        let (_, user, _, _) = compose(&req);
+        assert!(user.contains("never quote the line"));
+        req.context.dialogue = None;
+        req.context.dialogue_mode = None;
+        let (_, user, _, _) = compose(&req);
+        assert!(user.contains("Say \"No dialogue.\""));
+    }
+
+    #[test]
+    fn no_family_is_told_to_cut_a_shot_in_two() {
+        for id in [
+            "seedance-2-0-text-to-video",
+            "kling-v3-pro-text-to-video",
+            "veo3.1-full-text-to-video",
+        ] {
+            assert!(!prompts::video_family_guide(id).contains("Lens switch"));
+        }
+        assert_eq!(prompts::STUDIO_AI_PROMPT_VERSION, "studio-rewrite-v4");
+    }
+
+    #[test]
     fn a_text_to_video_prompt_restates_the_look() {
         assert!(prompts::video_mode_rule("text").contains("restate each character's invariant"));
         assert!(prompts::video_mode_rule("reference").contains("mention syntax"));
@@ -967,7 +1074,9 @@ mod tests {
                 role: role.map(Into::into),
             });
         }
+        req.context.style = Some("35mm film look, teal and amber palette.".into());
         let (_, user, _, _) = compose(&req);
+        assert!(user.contains("The film's look (keep it in the frame): 35mm film look"));
         assert!(user.contains("- image 1: Marie (character, a character sheet"));
         assert!(user.contains("- image 2: Kitchen (location, a view of the place)"));
         assert!(user.contains("- image 3: Knife (prop)"));

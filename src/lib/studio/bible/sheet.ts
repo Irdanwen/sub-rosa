@@ -5,7 +5,9 @@
  * `portrait.ts`). It never rides to a video model whole, which would film the
  * grid (ADR-0066), but two of its cells are exactly the stack's identity
  * anchors: the middle row's front view is a portrait and its last cell is a
- * profile. Cutting them out is free and keeps the face the sheet drew.
+ * profile, and the top left full body view is the outfit reference the prompt
+ * bible asks for next to the portrait. Cutting them out is free and keeps the
+ * face and the clothes the sheet drew.
  *
  * The cut is by position, which is why the layout is fixed: an equal grid
  * with thin gutters. Models draw that grid faithfully but add a margin around
@@ -18,6 +20,7 @@ import type { BibleRole } from "./types";
 
 /** The cells the app keeps, by index in reading order (0 is top left). */
 export const SHEET_CUTS: ReadonlyArray<{ cell: number; role: BibleRole }> = [
+  { cell: 0, role: "outfit" },
   { cell: 3, role: "portrait" },
   { cell: 5, role: "profile" },
 ];

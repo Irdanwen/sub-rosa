@@ -3,9 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorCode, friendlyErrorMessage } from "../errors";
 import { t } from "../i18n";
-import { isSeedanceModel } from "./catalog";
 import { referenceMention, referenceMentions } from "./seedance";
-import { referenceRoleOf, SEEDANCE_WORD_LIMIT, type StackedReference } from "./bible/prompt";
+import { referenceRoleOf, type StackedReference } from "./bible/prompt";
+import { familyProfile } from "./prompt/profiles";
 import type { MediaModel } from "./types";
 
 /**
@@ -87,7 +87,17 @@ export interface StudioRewriteContext {
   /** The shot's reference images as the render receives them, one line per
    * mention, so the rewrite names each the way the target model reads it. */
   references?: RewriteReference[];
+  /** The app's composed prompt for a project shot (ADR-0074): improved, never replaced. */
+  composed?: string;
+  /** How the shot's line will be heard. */
+  dialogueMode?: "native" | "dubbed" | "none";
+  /** The film's look, palette, light and texture, kept by an opening image. */
+  style?: string;
 }
+
+/** The rewrite version a prompt is written with. Kept equal to Rust's
+ * `STUDIO_AI_PROMPT_VERSION` by `studio-prompt-version.test.ts`. */
+export const SHOT_REWRITE_VERSION = "studio-rewrite-v4";
 
 export interface StudioRewriteInput {
   kind: StudioRewriteKind;
@@ -114,11 +124,14 @@ export function cancelStudioRewrite(requestId: string) {
   return invoke<void>("cancel_studio_rewrite", { requestId });
 }
 
+const VIDEO_TYPES = new Set(["video", "imageToVideo", "referenceToVideo"]);
+
 /**
  * What a rewrite needs to know about the model a prompt is for: its hard
- * length limits and how it reads references. The limits come from the
- * operator's catalog where it publishes them; the sixty words are the
- * Seedance families' own, already enforced by `shotPrompt`.
+ * length limits and how it reads references. The character limit comes from
+ * the operator's catalog where it publishes one; a video family's word budget
+ * is its profile's (`direction/profiles.json`), the same figure the composed
+ * prompt is built to.
  */
 export function rewriteTargetModel(model: MediaModel | undefined): RewriteTargetModel | undefined {
   if (!model) return undefined;
@@ -126,7 +139,7 @@ export function rewriteTargetModel(model: MediaModel | undefined): RewriteTarget
     id: model.id,
     name: model.name,
     charLimit: model.constraints?.promptCharacterLimit,
-    wordLimit: isSeedanceModel(model.id) ? SEEDANCE_WORD_LIMIT : undefined,
+    wordLimit: VIDEO_TYPES.has(model.mediaType) ? familyProfile(model).budgetWords : undefined,
     referenceMention: referenceMention(model, "image", 1).replace("1", "{n}"),
   };
 }
