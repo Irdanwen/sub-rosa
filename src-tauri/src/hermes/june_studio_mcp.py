@@ -41,7 +41,7 @@ TOOLS: list[dict[str, Any]] = [
             "The persistent identities of a production: characters, locations, props, "
             "the look. Actions: list, save (name + kind + traits, id to update), "
             "delete (id), attach (entryId + artifactId + role), detach (id). "
-            "Roles: portrait, profile, sheet, wide, medium, detail, voice. Their order "
+            "Roles: portrait, profile, outfit, sheet, wide, medium, detail, voice. Their order "
             "matters - the first image is the identity the model holds. A sheet is a "
             "3x3 grid of one character, for composing frames, never sent to video."
         ),
@@ -60,7 +60,11 @@ TOOLS: list[dict[str, Any]] = [
                 "name": {"type": "string"},
                 "traits": {
                     "type": "string",
-                    "description": "What must not drift between shots. Restated on every shot.",
+                    "description": (
+                        "The frozen descriptor pasted into every shot: 25-45 English words, "
+                        "no name, no feeling. A person: age, build, face and one mark, hair, "
+                        "clothes top to bottom with material and color, accessories with side."
+                    ),
                 },
                 "note": {"type": "string"},
                 "entryId": {"type": "string"},
