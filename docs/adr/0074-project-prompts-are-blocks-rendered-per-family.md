@@ -103,3 +103,22 @@ improves the composed prompt and keeps its blocks.
 - A breakdown interrupted by the update says the reader changed instead of
   blaming the script, and readings made before still land, their free camera
   note read for ids.
+
+## Measured on real renders (2026-10-05)
+
+One text-to-video shot (a night guard, a French line, a slow push-in,
+three physical events) composed for three families and rendered once each:
+
+| | MiniMax H3, native line | Kling V3, dubbed | Seedance 2.0, dubbed |
+| --- | --- | --- | --- |
+| One continuous take, no cut (scene detection) | yes | yes | yes |
+| No subtitles, no watermark | yes | yes | yes |
+| Sound | the line, transcribed as "Il y a quelqu'un ?" | none (`audio: false`) | none (`audio: false`) |
+| Descriptor held | yes, scar not legible | partly | yes, scar visible |
+| Frame and movement | yes | wider than asked | yes |
+| Action events rendered | 2 of 3 | 3 of 3 | 2 of 3 |
+
+The composed prompts ran 193 of 200 words on H3, 107 of 100 on Kling and 95
+of 60 on Seedance 2.0: in text mode a tight family keeps the whole
+descriptor, as the bible requires, and the overflow is shown on the shot
+card. Nothing in these three renders argues for changing a budget yet.
