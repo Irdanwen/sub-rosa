@@ -967,7 +967,7 @@
 }
 
 /* Film direction (ADR-0074): the opening and closing every shot carries. */
-.project-direction > .project-field + .project-field,
+.project-direction > * + .project-field,
 .project-direction-more > .project-field {
   margin-top: var(--sp-3);
 }
@@ -996,7 +996,14 @@
   overflow-wrap: anywhere;
 }
 
-/* A shot's camera in the vocabulary, and the prompt it composes. */
+/* A shot's camera in the vocabulary, and the prompt it composes. The action
+   keeps its own height beside the camera choices instead of stretching. */
+.project-two-columns:has(> .project-field-group) {
+  align-items: start;
+}
+.project-two-columns:has(> .project-field-group) textarea {
+  min-height: 9rem;
+}
 .project-field-group {
   display: grid;
   gap: var(--sp-3);

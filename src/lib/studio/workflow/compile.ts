@@ -51,7 +51,7 @@ import {
   requiresOpeningFrame,
   videoDirection,
 } from "../catalog";
-import { maxVideoReferences } from "../seedance";
+import { maxVideoReferences, takesReferenceAudio } from "../seedance";
 import { effectiveVideoConstraints } from "../model-constraints";
 import type { MediaCatalog, MediaModel } from "../types";
 import { defaultParams, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
@@ -504,6 +504,8 @@ interface PlannedShot {
   prompt: string;
   /** The composed prompt, kept even when a hand-written one overrides it. */
   composed: ComposedPrompt;
+  /** The speaker's voice, for a line the model speaks and a model that takes one. */
+  voiceArtifactId?: string;
   duration: string;
   aspectRatio: string;
 }
@@ -620,6 +622,13 @@ export function planShots(
       );
     }
 
+    const speaker = bible.find(
+      (entry) => entry.name.trim().toLowerCase() === shot.speaker.trim().toLowerCase(),
+    );
+    const donor =
+      mode === "reference" && described.length > 0 && takesReferenceAudio(model)
+        ? voiceReference(speaker)
+        : undefined;
     const composed = composeShotPrompt({
       shot,
       direction: filmDirection,
@@ -628,6 +637,7 @@ export function planShots(
       mode,
       seconds,
       references: described,
+      voice: donor && speaker ? { name: speaker.name } : undefined,
     });
     if (composed.dialogue.downgraded) {
       notes.push(
@@ -646,6 +656,7 @@ export function planShots(
       referenceRoles: described.map(referenceRoleOf),
       prompt: shot.prompt?.trim() || composed.text,
       composed,
+      voiceArtifactId: composed.dialogue.mode === "native" ? donor?.artifactId : undefined,
       duration,
       aspectRatio: ratio,
     });
@@ -833,6 +844,16 @@ export function compileShotList(input: CompileInput): CompileResult {
     for (const [order, artifactId] of entry.references.entries()) {
       const assetId = assetNode(artifactId, index * 2 + order);
       edges.push(edge(assetId, videoId, "references"));
+    }
+    if (entry.voiceArtifactId) {
+      const voiceId = `voice-${stableId}`;
+      nodes.push(
+        node(voiceId, "asset", entry.voiceArtifactId, 0, index + 0.75, {
+          artifactId: entry.voiceArtifactId,
+          assetKind: "audio",
+        }),
+      );
+      edges.push(edge(voiceId, videoId, "referenceAudio"));
     }
 
     nodes.push(

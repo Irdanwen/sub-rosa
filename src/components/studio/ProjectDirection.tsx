@@ -8,6 +8,13 @@ import { familyProfile } from "../../lib/studio/prompt/profiles";
 import type { ProjectDocument } from "../../lib/studio/projects";
 import { VocabularySelect } from "./VocabularySelect";
 
+/**
+ * Risks the composer does not derive from a shot on its own, offered once for
+ * the whole film. The rest (subtitles, extra characters, a costume change, a
+ * camera shake against a still camera...) are added where a shot risks them.
+ */
+const OPTIONAL_NEGATIVES = ["hands", "text", "eyes", "slow-motion", "face"] as const;
+
 /** A recipe, as the direction it fills in: everything the bible decides once per film. */
 export function directionFromRecipe(id: string): FilmDirection | undefined {
   const chosen = findRecipe(id);
@@ -213,9 +220,31 @@ export function ProjectDirection({
           label={t("Music inside the shots")}
           category="music"
           value={direction.music ?? "none"}
-          emptyLabel={t("No music in the shot")}
+          required
           onChange={(music) => set({ music: music ?? "none" })}
         />
+        <fieldset className="project-field">
+          <legend>{t("Also forbid in every shot")}</legend>
+          {OPTIONAL_NEGATIVES.map((id) => (
+            <label key={id} className="project-field-inline">
+              <span>{VOCABULARY_LABELS.negatives[id]}</span>
+              <input
+                type="checkbox"
+                checked={direction.negatives?.includes(id) ?? false}
+                onChange={(event) => {
+                  const current = direction.negatives ?? [];
+                  const negatives = event.target.checked
+                    ? [...current, id]
+                    : current.filter((item) => item !== id);
+                  set({ negatives: negatives.length ? negatives : undefined });
+                }}
+              />
+            </label>
+          ))}
+          <span className="project-field-hint">
+            {t("Only what you fear on this film: a long list dilutes the model's attention.")}
+          </span>
+        </fieldset>
         <label className="project-field">
           {t("Period")}
           <input

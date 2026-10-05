@@ -33,6 +33,7 @@ import type { Shot } from "../workflow/compile";
 import { negativeLines } from "./negative";
 import { canSilence, type FamilyProfile, familyProfile, rendersAudio } from "./profiles";
 import { referenceBlock } from "./references";
+import { referenceMention } from "../seedance";
 import { fullDescriptor, guessLanguage, languageName, shortDescriptor, stateLine } from "./subject";
 
 export type ShotMode = "text" | "image" | "reference" | "continuation";
@@ -90,6 +91,8 @@ export interface ComposeInput {
   seconds: number;
   /** The references the request carries, in the order sent. */
   references?: readonly StackedReference[];
+  /** A voice the request carries for the speaker, as `<Audio 1>`. */
+  voice?: { name: string };
 }
 
 export interface ComposedPrompt {
@@ -464,7 +467,18 @@ export function composeShotPrompt(input: ComposeInput): ComposedPrompt {
     {
       id: "references",
       label: "[REFERENCES]",
-      parts: references.sentences.map((reference) => ({ text: reference.text, tier: 0 })),
+      parts: [
+        ...references.sentences.map((reference) => ({ text: reference.text, tier: 0 as const })),
+        // The bible's audio role: a line the model speaks, in the voice it was given.
+        ...(input.voice && dialogue.mode === "native"
+          ? [
+              {
+                text: `${input.voice.name}'s voice timbre references ${referenceMention(input.model, "audio", 1)}.`,
+                tier: 0 as const,
+              },
+            ]
+          : []),
+      ],
     },
     subjectBlock(input, profile),
     shotBlock(input, profile),

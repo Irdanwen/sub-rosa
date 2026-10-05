@@ -765,6 +765,22 @@ export function ProjectShots({
                         {t("Choose opening image")}
                       </button>
                     </>
+                  ) : shot.openingArtifactId ? (
+                    // Wan, MiniMax and most reference families take references
+                    // or an opening image, never both: say so rather than
+                    // drop the image at submit.
+                    <p className="project-warning">
+                      {t(
+                        "This model takes references or an opening image, not both. Your opening image is not sent with references.",
+                      )}{" "}
+                      <button
+                        type="button"
+                        className="project-field-reset"
+                        onClick={() => update({ mode: "image", modeSource: undefined })}
+                      >
+                        {t("Start from the opening image instead")}
+                      </button>
+                    </p>
                   ) : null}
                   <h3>{t("Video references")}</h3>
                   <p className="project-muted">

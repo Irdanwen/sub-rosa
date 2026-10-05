@@ -839,3 +839,28 @@ describe("lines the video model speaks itself", () => {
     expect(dubbed?.nodes.find((node) => node.type === "video")?.params.silent).toBe(true);
   });
 });
+
+describe("a voice for a line the model speaks", () => {
+  it("rides as reference audio, named in the prompt, on a model that takes it", () => {
+    const seedance = model("seedance-2-5-reference-to-video", "referenceToVideo", {
+      constraints: { durations: ["5s"], aspect_ratios: ["16:9"], audio: true },
+    });
+    const result = compileShotList({
+      name: "Film",
+      catalog: { ...catalog, models: [seedance, ...catalog.models.slice(3)] },
+      bible: [nera],
+      shots: [shot({ characters: ["Nera"], speaker: "Nera", dialogue: "Get in." })],
+    });
+    const video = result.workflow?.nodes.find((node) => node.type === "video");
+    expect(String(video?.params.prompt)).toContain("Nera's voice timbre references <Audio 1>.");
+    const voice = result.workflow?.edges.find((edge) => edge.targetPort === "referenceAudio");
+    expect(voice).toBeDefined();
+    expect(result.workflow?.nodes.find((node) => node.id === voice?.source)?.params).toMatchObject({
+      artifactId: "nera.mp3",
+      assetKind: "audio",
+    });
+    expect(result.workflow?.nodes.some((node) => node.type === "tts")).toBe(false);
+    // The port exists and accepts it: the graph is one the Studio runs.
+    expect(result.workflow ? validateWorkflow(result.workflow).ok : false).toBe(true);
+  });
+});

@@ -15,6 +15,7 @@ export function VocabularySelect({
   emptyLabel,
   disabled,
   hint = true,
+  required = false,
 }: {
   label: string;
   category: VocabularyCategory;
@@ -24,6 +25,8 @@ export function VocabularySelect({
   emptyLabel?: string;
   disabled?: boolean;
   hint?: boolean;
+  /** Always one of the values: no empty choice. */
+  required?: boolean;
 }) {
   const labels = VOCABULARY_LABELS[category];
   const effect = value ? VOCABULARY_EFFECTS[category]?.[value] : undefined;
@@ -35,7 +38,7 @@ export function VocabularySelect({
         disabled={disabled}
         onChange={(event) => onChange(event.target.value || undefined)}
       >
-        <option value="">{emptyLabel ?? t("Not set")}</option>
+        {required ? null : <option value="">{emptyLabel ?? t("Not set")}</option>}
         {entries(category).map((item) => (
           <option key={item.id} value={item.id}>
             {labels[item.id] ?? item.id}
