@@ -6,10 +6,7 @@
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "ds": {
-      "offset": [
-        602.6666666666667,
-        -641.7681327160494
-      ],
+      "offset": [602.6666666666667, -641.7681327160494],
       "scale": 0.8223350253807107
     },
     "frontendVersion": "1.48.7"
@@ -18,24 +15,7 @@
   "id": "7e83a61c-87e6-43db-b836-8a684bbc8993",
   "last_link_id": 13,
   "last_node_id": 13,
-  "links": [
-    [
-      7,
-      7,
-      0,
-      8,
-      0,
-      "VIDEO"
-    ],
-    [
-      12,
-      11,
-      0,
-      7,
-      5,
-      "IMAGE"
-    ]
-  ],
+  "links": [[7, 7, 0, 8, 0, "VIDEO"], [12, 11, 0, 7, 5, "IMAGE"]],
   "nodes": [
     {
       "bgcolor": "#653",
@@ -123,9 +103,7 @@
       "order": 2,
       "outputs": [
         {
-          "links": [
-            7
-          ],
+          "links": [7],
           "localized_name": "VIDEO",
           "name": "VIDEO",
           "type": "VIDEO"
@@ -137,17 +115,11 @@
           "type": "STRING"
         }
       ],
-      "pos": [
-        388,
-        1090
-      ],
+      "pos": [388, 1090],
       "properties": {
         "Node name for S&R": "GeminiVideoOmniV2"
       },
-      "size": [
-        400,
-        296
-      ],
+      "size": [400, 296],
       "type": "GeminiVideoOmniV2",
       "widgets_values": [
         "Omni Flash 1.1",
@@ -227,22 +199,11 @@
           "type": "VIDEO"
         }
       ],
-      "pos": [
-        836,
-        1090
-      ],
+      "pos": [836, 1090],
       "properties": {},
-      "size": [
-        390,
-        126
-      ],
+      "size": [390, 126],
       "type": "SaveVideo",
-      "widgets_values": [
-        "video/Omni_Flash_1.1_i2v",
-        "auto",
-        "auto",
-        "auto"
-      ],
+      "widgets_values": ["video/Omni_Flash_1.1_i2v", "auto", "auto", "auto"],
       "widgets_values_named": {
         "codec": "auto",
         "filename_prefix": "video/Omni_Flash_1.1_i2v",
@@ -277,9 +238,7 @@
       "order": 0,
       "outputs": [
         {
-          "links": [
-            12
-          ],
+          "links": [12],
           "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE"
@@ -291,22 +250,13 @@
           "type": "MASK"
         }
       ],
-      "pos": [
-        50,
-        1090
-      ],
+      "pos": [50, 1090],
       "properties": {
         "Node name for S&R": "LoadImage"
       },
-      "size": [
-        290,
-        345.9375
-      ],
+      "size": [290, 345.9375],
       "type": "LoadImage",
-      "widgets_values": [
-        "blue_studio_car.png",
-        "image"
-      ],
+      "widgets_values": ["blue_studio_car.png", "image"],
       "widgets_values_named": {
         "image": "blue_studio_car.png",
         "upload": "image"
@@ -321,15 +271,9 @@
       "mode": 0,
       "order": 1,
       "outputs": [],
-      "pos": [
-        -330,
-        1090
-      ],
+      "pos": [-330, 1090],
       "properties": {},
-      "size": [
-        331.015625,
-        307.046875
-      ],
+      "size": [331.015625, 307.046875],
       "type": "MarkdownNote",
       "widgets_values": [
         "## Input Asset\n\n- [blue_studio_car.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/blue_studio_car.png) — required workflow input (`input/blue_studio_car.png`)\n\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
