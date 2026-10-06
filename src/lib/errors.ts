@@ -10,6 +10,12 @@ export function messageFromError(err: unknown) {
   return String(err);
 }
 
+/** A failed turn's stored `lastError`, in the app's language. The backend
+ * writes the English sentence; the catalog carries its translation. */
+export function taskErrorMessage(lastError: string | null | undefined) {
+  return lastError ? t(lastError) : null;
+}
+
 /** Shapes that mean "a programmer error leaked", not "something the user can
  * act on". Shown raw they read as a broken app; views swap in their fallback. */
 const DEVELOPER_ERROR_PATTERN =

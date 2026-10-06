@@ -483,6 +483,18 @@
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
   flex-shrink: 0;
+  display: flex;
+  min-width: 0;
+  max-width: 45%;
+  white-space: nowrap;
+}
+
+/* A search hit names its folder; a long name shortens, the time never does. */
+.mobile-note-row-folder {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
 }
 
 /* Duration reads as a fact about the recording, so it sits ahead of the

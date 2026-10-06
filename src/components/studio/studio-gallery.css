@@ -1,0 +1,204 @@
+/* The desktop gallery: a day-grouped grid of everything the Studio made,
+ * with the phone's folders, favourites and hidden items. */
+.studio-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  min-width: 0;
+}
+.studio-gallery-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.studio-gallery-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 220px;
+  flex: 0 1 320px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+.studio-gallery-search input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.studio-gallery-day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.studio-gallery-day h3 {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+.studio-gallery-grid,
+.studio-gallery-folders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--sp-5);
+}
+.studio-gallery-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+}
+.studio-gallery-open {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--muted);
+  cursor: pointer;
+}
+.studio-gallery-open > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.studio-gallery-open:active {
+  transform: scale(0.98);
+}
+.studio-gallery-open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.studio-gallery-sound {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--muted-foreground);
+}
+.studio-gallery-play,
+.studio-gallery-favorite {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: var(--screen-scrim);
+  color: var(--screen-foreground);
+}
+.studio-gallery-play {
+  bottom: var(--sp-3);
+  left: var(--sp-3);
+}
+.studio-gallery-favorite {
+  top: var(--sp-3);
+  right: var(--sp-3);
+}
+.studio-gallery-folder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.studio-gallery-folder-cover {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.studio-gallery-folder-cover > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.studio-gallery-folder-new {
+  justify-content: center;
+  align-items: center;
+  aspect-ratio: 1;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-lg);
+  color: var(--muted-foreground);
+}
+.studio-gallery-folder-name {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+.studio-gallery-folder-count {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+.studio-gallery-folder-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.studio-gallery-folder-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+.studio-gallery-file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.studio-gallery-file-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.studio-gallery-file-option[aria-pressed="true"] {
+  border-color: var(--border);
+  background: var(--muted);
+}
+@media (hover: hover) {
+  .studio-gallery-file-option:hover {
+    background: var(--muted);
+  }
+}
+.studio-gallery-file-new {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+.studio-gallery-file-new > input {
+  flex: 1;
+}

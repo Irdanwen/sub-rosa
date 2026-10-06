@@ -14,7 +14,7 @@ import {
   startAssistantChat,
 } from "../../lib/assistants";
 import { type AgentLiteDeltaDto, applyAgentLiteDelta } from "../../lib/agent-lite-delta";
-import { messageFromError } from "../../lib/errors";
+import { messageFromError, taskErrorMessage } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import { SimpleMarkdown } from "../../lib/simple-markdown";
 import {
@@ -100,7 +100,7 @@ export function AssistantChat({
         setTask(loaded);
         setBusy(isRunning(loaded));
         if (!isRunning(loaded)) setStream("");
-        setError(loaded.lastError ?? null);
+        setError(taskErrorMessage(loaded.lastError));
       } catch (err) {
         if (isCurrent(id, epoch) && request === taskRequest.current)
           setError(messageFromError(err));
@@ -129,7 +129,7 @@ export function AssistantChat({
             setTask(payload);
             setBusy(false);
             setStream("");
-            setError(payload.lastError ?? null);
+            setError(taskErrorMessage(payload.lastError));
             void refreshHistory().catch(() => undefined);
             void readDefinition(payload.id);
           }),
@@ -190,7 +190,7 @@ export function AssistantChat({
       if (!id) setConversationAssistant(null);
       setTask(result);
       setBusy(isRunning(result));
-      setError(result.lastError ?? null);
+      setError(taskErrorMessage(result.lastError));
       // Reconcile a completion emitted before a newly-created task ID reached us.
       await readTask(result.id);
       if (isCurrent(result.id, epoch)) await refreshHistory();
@@ -224,7 +224,7 @@ export function AssistantChat({
       if (action === "revision") setConversationAssistant(null);
       setTask(result);
       setBusy(isRunning(result));
-      setError(result.lastError ?? null);
+      setError(taskErrorMessage(result.lastError));
       await readTask(id);
     } catch (err) {
       if (isCurrent(id, epoch)) {
@@ -278,7 +278,7 @@ export function AssistantChat({
                 setTask(selected);
                 setConversationAssistant(null);
                 setBusy(isRunning(selected));
-                setError(selected.lastError ?? null);
+                setError(taskErrorMessage(selected.lastError));
                 setSteps([]);
                 setStream("");
                 void readTask(selected.id);
