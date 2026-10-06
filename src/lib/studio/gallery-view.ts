@@ -1,3 +1,4 @@
+import { intlLocale, t } from "../i18n";
 import { markOf, type StudioLibrary } from "./library";
 import type { ArtifactKind, StudioArtifact } from "./types";
 
@@ -77,4 +78,33 @@ export function filedOutOfView(
 
 function isKindView(view: GalleryView) {
   return view === "all" || view === "image" || view === "video" || view === "audio";
+}
+
+/** "Today", "Yesterday", then a written date. */
+export function dayLabel(createdAt: number): string {
+  const date = new Date(createdAt);
+  const today = new Date();
+  const startOf = (value: Date) =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((startOf(today) - startOf(date)) / 86_400_000);
+  if (days <= 0) return t("Today");
+  if (days === 1) return t("Yesterday");
+  return date.toLocaleDateString(intlLocale(), {
+    weekday: days < 7 ? "long" : undefined,
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  });
+}
+
+/** The visible files under their day, newest day first as they come. */
+export function groupByDay(items: StudioArtifact[]): [string, StudioArtifact[]][] {
+  const buckets = new Map<string, StudioArtifact[]>();
+  for (const item of items) {
+    const label = dayLabel(item.createdAt);
+    const bucket = buckets.get(label);
+    if (bucket) bucket.push(item);
+    else buckets.set(label, [item]);
+  }
+  return [...buckets.entries()];
 }

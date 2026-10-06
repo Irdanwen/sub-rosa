@@ -1,4 +1,4 @@
-import { intlLocale, t } from "../../../../lib/i18n";
+import { t } from "../../../../lib/i18n";
 import { IconPlay } from "central-icons-filled/IconPlay";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { useState } from "react";
@@ -21,22 +21,7 @@ function _kindLabel(kind: ArtifactKind): string {
   return labels[kind];
 }
 
-/** "Today", "Yesterday", then a written date. */
-export function dayLabel(createdAt: number): string {
-  const date = new Date(createdAt);
-  const today = new Date();
-  const startOf = (value: Date) =>
-    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
-  const days = Math.round((startOf(today) - startOf(date)) / 86_400_000);
-  if (days <= 0) return t("Today");
-  if (days === 1) return t("Yesterday");
-  return date.toLocaleDateString(intlLocale(), {
-    weekday: days < 7 ? "long" : undefined,
-    month: "short",
-    day: "numeric",
-    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
-  });
-}
+export { dayLabel } from "../../../../lib/studio/gallery-view";
 
 /**
  * The last few things made in this tab, under its form.

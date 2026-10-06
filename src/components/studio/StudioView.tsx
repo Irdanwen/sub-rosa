@@ -17,6 +17,7 @@ import { ProjectStudio } from "./ProjectStudio";
 import { AudioStudio, type AudioMode } from "./AudioStudio";
 import { StudioStart, type StudioDestination } from "./StudioStart";
 import { ImageStudio } from "./ImageStudio";
+import { StudioGalleryDesktop } from "./StudioGalleryDesktop";
 import { VideoStudio } from "./VideoStudio";
 import { useMediaCatalog } from "./useMediaCatalog";
 import {
@@ -49,7 +50,8 @@ type StudioTab =
   | "audio"
   | "bible"
   | "assemble"
-  | "workflows";
+  | "workflows"
+  | "gallery";
 
 const TAB_STORAGE_KEY = STUDIO_TAB_STORAGE_KEY;
 
@@ -69,7 +71,8 @@ function initialTab(): StudioTab {
       saved === "audio" ||
       saved === "assemble" ||
       saved === "bible" ||
-      saved === "workflows"
+      saved === "workflows" ||
+      saved === "gallery"
     ) {
       return saved;
     }
@@ -167,6 +170,7 @@ export function StudioView() {
               { value: "assemble", label: t("Assemble") },
               { value: "bible", label: t("Bible") },
               { value: "workflows", label: t("Workflows") },
+              { value: "gallery", label: t("Gallery") },
             ]}
           />
         </div>
@@ -199,6 +203,8 @@ export function StudioView() {
             </button>
           }
         />
+      ) : tab === "gallery" ? (
+        <StudioGalleryDesktop />
       ) : tab === "projects" ? (
         <ProjectStudio catalog={catalog} />
       ) : tab === "start" ? (
