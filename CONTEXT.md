@@ -821,6 +821,25 @@ While a retouch renders, the version being retouched stays on screen under the
 darkroom's grain: it is the image being worked on, not a preview of the
 result, so the darkroom's rule against previews holds.
 
+**Composition**:
+Several new images made from one source image at once: the same subject from
+other angles, with other expressions, in other places or light, or reframed
+for other screens. The **Compose** tab (and the phone's Compose mode) makes
+one. Each image is its own paid edit unless the pack has nine shots and the
+person asks for a **sheet**: one paid image drawn as a 3 by 3 grid and cut
+into nine. The results are ordinary gallery images, filed together in a new
+gallery folder; unlike a retouch they carry no lineage, because each is a
+new picture of the subject, not a version of the source.
+_Avoid_: variants (that is several tries of one retouch), batch, generation
+(that starts from a prompt, not an image).
+
+**Pack**:
+The list of images a composition makes: Angles, Character sheet, Expressions,
+Scenes, Light and seasons, Formats, or the person's own list (one image per
+line, nine at most). Each shot of a pack is an instruction written against the
+source as "image 1", after a sentence that holds the subject.
+_Avoid_: preset (that is a one-tap retouch instruction), template.
+
 ### Studio workflows (fork)
 
 **Port (workflow input)**:

@@ -2015,3 +2015,28 @@ Mac, et la bannière « service indisponible ». Deux causes distinctes.
 chauds de `account/sync.rs` ; un sync upstream qui y réintroduit
 `preserve(conn, c)` inconditionnel pour `c.deleted` ramène les 79 cartes.
 Le plafond B2 est une action de l'opérateur (Caps & Alerts), pas du code.
+
+## Le composer : plusieurs images à partir d'une seule (2026-10-06)
+
+- **Onglet Studio « Composer »** (`src/components/studio/compose/`) et mode
+  « Composer » du panneau Image sur téléphone (`RetouchLauncher
+  purpose="compose"`, écran poussé `ComposeScreen`, route `studio-compose`).
+  Les deux coquilles partagent `ComposeWorkspace` et `src/lib/studio/compose/`
+  (packs, plan, jobs).
+- **Une image = un job `/image/multi-edit`** construit par `buildEditRequest`
+  de la retouche (mêmes faits opérateur), la phrase d'identité en tête. Un
+  pack de neuf peut partir en **planche** : un seul job carré, découpé par
+  `cutSheetCells` (`bible/sheet.ts`, généralisé ; `cutSheet` de la bible
+  passe par lui).
+- **Durable (ADR-0018)** : source `compose:<groupe>`, contexte dans
+  `client_context` ; `recoverComposeJob` nomme l'image, découpe la planche
+  (marqueur local contre une double découpe), range tout dans le dossier de
+  galerie créé au lancement, puis acquitte. Branché dans
+  `recoverStandaloneImageJob`. Aucune commande Rust nouvelle.
+- Pas de lignée `edit` : une composition n'est pas une version de la source
+  (sinon elle apparaîtrait dans la session de retouche).
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/app/mobile/MobileApp.tsx`, `src/app/mobile/nav.ts` | Route `studio-compose`, écoute `OPEN_COMPOSE_EVENT` | Réappliquer |
+

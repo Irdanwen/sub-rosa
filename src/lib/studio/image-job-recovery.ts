@@ -9,6 +9,7 @@ import { isQueuedImageJobClaimed, registerDownloadedArtifactDurably } from "./ar
 import { addBibleRef, listBibleEntries } from "./bible";
 import { BIBLE_ROLES, type BibleRole } from "./bible/types";
 import type { MediaJob } from "./async-job";
+import { composeGroupOf, recoverComposeJob } from "./compose/jobs";
 import { recoverRetouchJob, retouchRootOf } from "./retouch/jobs";
 
 export const STUDIO_IMAGE_RECOVERED_EVENT = "subrosa:studio-image-recovered";
@@ -74,6 +75,13 @@ export async function recoverStandaloneImageJob(job: MediaJob): Promise<void> {
   if (retouchRootOf(job.source)) {
     const filed = job.status === "completed";
     await recoverRetouchJob(job);
+    if (filed) window.dispatchEvent(new Event(STUDIO_IMAGE_RECOVERED_EVENT));
+    return;
+  }
+  // A composition names its images, cuts a sheet and files them together.
+  if (composeGroupOf(job.source)) {
+    const filed = job.status === "completed";
+    await recoverComposeJob(job);
     if (filed) window.dispatchEvent(new Event(STUDIO_IMAGE_RECOVERED_EVENT));
     return;
   }

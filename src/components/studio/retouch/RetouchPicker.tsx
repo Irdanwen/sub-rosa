@@ -44,7 +44,14 @@ export function imageFilesOf(list: FileList | null | undefined): File[] {
   return [...(list ?? [])].filter((file) => file.type.startsWith("image/"));
 }
 
-export function RetouchPicker({ onOpen }: { onOpen: (artifact: StudioArtifact) => void }) {
+export function RetouchPicker({
+  onOpen,
+  sessions: showSessions = true,
+}: {
+  onOpen: (artifact: StudioArtifact) => void;
+  /** The retouch sessions to pick up again; the composer has none. */
+  sessions?: boolean;
+}) {
   const [images, setImages] = useState<StudioArtifact[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [importing, setImporting] = useState(false);
@@ -143,7 +150,7 @@ export function RetouchPicker({ onOpen }: { onOpen: (artifact: StudioArtifact) =
           </p>
         ) : null}
       </section>
-      {sessions.length > 0 ? (
+      {showSessions && sessions.length > 0 ? (
         <section className="retouch-picker-section">
           <h3>{t("Pick up where you left off")}</h3>
           <div className="retouch-picker-grid">

@@ -25,6 +25,7 @@ import {
   readStandaloneImageFailures,
   STUDIO_IMAGE_FAILED_EVENT,
 } from "../../lib/studio/image-job-recovery";
+import { OPEN_COMPOSE_EVENT } from "../../lib/studio/compose/jobs";
 import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
 
 // The workflow canvas pulls in @xyflow/react; only the Workflows tab pays
@@ -32,6 +33,12 @@ import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
 const WorkflowStudio = recoverableView(async () => {
   const module = await import("./WorkflowStudio");
   return { default: module.WorkflowStudio };
+});
+
+// The composer loads with its tab.
+const ComposeStudio = recoverableView(async () => {
+  const module = await import("./compose/ComposeStudio");
+  return { default: module.ComposeStudio };
 });
 
 // The retouch canvas and its tools load with the tab.
@@ -45,6 +52,7 @@ type StudioTab =
   | "start"
   | "image"
   | "retouch"
+  | "compose"
   | "video"
   | "audio"
   | "bible"
@@ -65,6 +73,7 @@ function initialTab(): StudioTab {
       saved === "projects" ||
       saved === "image" ||
       saved === "retouch" ||
+      saved === "compose" ||
       saved === "video" ||
       saved === "audio" ||
       saved === "assemble" ||
@@ -132,6 +141,20 @@ export function StudioView() {
     return () => window.removeEventListener(OPEN_RETOUCH_EVENT, onOpen);
   }, []);
 
+  // And to the Compose tab.
+  const [pendingCompose, setPendingCompose] = useState<string | undefined>(undefined);
+  const clearPendingCompose = useCallback(() => setPendingCompose(undefined), []);
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const artifactId = (event as CustomEvent<string>).detail;
+      if (typeof artifactId !== "string" || !artifactId) return;
+      setPendingCompose(artifactId);
+      setTab("compose");
+    };
+    window.addEventListener(OPEN_COMPOSE_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_COMPOSE_EVENT, onOpen);
+  }, []);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(TAB_STORAGE_KEY, tab);
@@ -162,6 +185,7 @@ export function StudioView() {
               { value: "start", label: t("Explore") },
               { value: "image", label: t("Image") },
               { value: "retouch", label: t("Retouch") },
+              { value: "compose", label: t("Compose") },
               { value: "video", label: t("Video") },
               { value: "audio", label: t("Audio") },
               { value: "assemble", label: t("Assemble") },
@@ -210,6 +234,12 @@ export function StudioView() {
           catalog={catalog}
           pendingArtifactId={pendingRetouch}
           onPendingApplied={clearPendingRetouch}
+        />
+      ) : tab === "compose" ? (
+        <ComposeStudio
+          catalog={catalog}
+          pendingArtifactId={pendingCompose}
+          onPendingApplied={clearPendingCompose}
         />
       ) : tab === "video" ? (
         <VideoStudio catalog={catalog} onAssembleChain={assembleChain} />
