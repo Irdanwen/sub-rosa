@@ -600,7 +600,7 @@ function NameDialog({
           </button>
           <button
             type="button"
-            className="btn btn-primary"
+            className="studio-primary-button"
             disabled={!name.trim()}
             onClick={submit}
           >
