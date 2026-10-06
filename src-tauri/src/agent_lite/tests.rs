@@ -608,3 +608,58 @@ fn a_replay_takes_back_exactly_what_the_failed_attempt_showed() {
         serde_json::json!({ "taskId": "t1", "text": "", "retract": 7 })
     );
 }
+
+#[test]
+fn a_spent_research_budget_asks_for_an_answer_before_giving_up() {
+    let mut budget = ToolBudget::default();
+    for _ in 0..MAX_TOOL_ROUNDS {
+        assert_eq!(budget.next_completion(), Completion::Research);
+        budget.ran_tools();
+    }
+    assert_eq!(
+        budget.next_completion(),
+        Completion::Answer {
+            nudge: true,
+            withhold_tools: false
+        }
+    );
+    assert_eq!(
+        budget.next_completion(),
+        Completion::Answer {
+            nudge: false,
+            withhold_tools: true
+        }
+    );
+    assert_eq!(budget.next_completion(), Completion::GiveUp);
+}
+
+#[test]
+fn a_replayed_completion_does_not_spend_a_research_round() {
+    // A stream replay or a vision fallback asks for another completion
+    // without running a tool, so the budget only moves when tools ran.
+    let mut budget = ToolBudget::default();
+    for _ in 0..MAX_TOOL_ROUNDS * 3 {
+        assert_eq!(budget.next_completion(), Completion::Research);
+    }
+}
+
+#[test]
+fn pages_read_in_earlier_rounds_shrink_and_the_newest_stays_whole() {
+    let page = "word ".repeat(2_000);
+    let mut messages = vec![
+        serde_json::json!({"role": "tool", "content": page.clone()}),
+        serde_json::json!({"role": "tool", "content": "a short note"}),
+        serde_json::json!({"role": "tool", "content": page.clone()}),
+    ];
+    let reads = [(0, 1), (2, 2)];
+    shorten_read_pages(&mut messages, &reads, 2);
+    let older = messages[0]["content"].as_str().unwrap();
+    assert!(older.chars().count() <= READ_PAGE_CHARS + 20);
+    assert!(older.ends_with("[truncated]"));
+    assert_eq!(messages[1]["content"], "a short note");
+    assert_eq!(messages[2]["content"].as_str().unwrap(), page);
+    // Shortening twice leaves the same text.
+    let once = messages[0].clone();
+    shorten_read_pages(&mut messages, &reads, 3);
+    assert_eq!(messages[0], once);
+}

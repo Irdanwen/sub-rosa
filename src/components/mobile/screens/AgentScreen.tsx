@@ -26,7 +26,7 @@ import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
-import { friendlyErrorMessage, messageFromError } from "../../../lib/errors";
+import { friendlyErrorMessage, messageFromError, taskErrorMessage } from "../../../lib/errors";
 import { hapticImpact, hapticNotify, hapticSelection } from "../../../lib/haptics";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
 import { fetchMediaCatalog, formatCredits, modelsOfType } from "../../../lib/studio/catalog";
@@ -523,7 +523,7 @@ export function AgentSessionScreen({
         loaded.status === "failed"
           ? missingAttachments
             ? interruptedAttachmentMessage()
-            : (loaded.lastError ?? null)
+            : taskErrorMessage(loaded.lastError)
           : null,
       );
       if (loaded.model) setModel(loaded.model);
@@ -626,7 +626,7 @@ export function AgentSessionScreen({
         event.payload.status === "failed"
           ? missingAttachments
             ? interruptedAttachmentMessage()
-            : (event.payload.lastError ?? null)
+            : taskErrorMessage(event.payload.lastError)
           : null,
       );
       // Fire the "reply is ready" haptic here, off the canonical completion
