@@ -16,6 +16,7 @@ export function ComposeScreen({ artifactId, onBack }: { artifactId: string; onBa
   const [source, setSource] = useState<StudioArtifact>();
   const [error, setError] = useState<string>();
   const [viewing, setViewing] = useState<{ items: StudioArtifact[]; index: number }>();
+  const [deleted, setDeleted] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +57,7 @@ export function ComposeScreen({ artifactId, onBack }: { artifactId: string; onBa
             source={source}
             layout="phone"
             onChangeSource={onBack}
+            hiddenIds={deleted}
             onOpenResult={(artifact, results) =>
               setViewing({ items: results, index: Math.max(0, results.indexOf(artifact)) })
             }
@@ -75,7 +77,9 @@ export function ComposeScreen({ artifactId, onBack }: { artifactId: string; onBa
           }
           onClose={() => setViewing(undefined)}
           onDelete={() => {
-            void deleteArtifact(current).finally(() => setViewing(undefined));
+            void deleteArtifact(current)
+              .then(() => setDeleted((ids) => new Set([...ids, current.id])))
+              .finally(() => setViewing(undefined));
           }}
           onUpscaled={() => undefined}
         />

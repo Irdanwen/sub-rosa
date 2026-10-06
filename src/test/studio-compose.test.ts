@@ -26,7 +26,11 @@ import {
   SHEET_CELLS,
   sheetable,
 } from "../lib/studio/compose/packs";
-import { compositionRequests, planComposition } from "../lib/studio/compose/plan";
+import {
+  compositionRequests,
+  largestResolution,
+  planComposition,
+} from "../lib/studio/compose/plan";
 import { recoverStandaloneImageJob } from "../lib/studio/image-job-recovery";
 import type { EditCaps } from "../lib/studio/retouch/request";
 
@@ -82,6 +86,20 @@ describe("a composition's plan", () => {
     expect(request.body.aspect_ratio).toBe("1:1");
     expect(String(request.body.prompt)).toContain("three by three grid");
     expect(String(request.body.prompt)).toContain("9. ");
+  });
+
+  it("draws a sheet as large as the model goes, a single shot at its own size", () => {
+    const sized: EditCaps = { ...caps, resolutions: ["1K", "2K"] };
+    const sheet = pack("character");
+    const [request] = compositionRequests(
+      planComposition(sheet, "sheet", sized, 10.8),
+      sheet,
+      sized,
+      "data:x",
+      { model: "m", resolution: "1K" },
+    );
+    expect(request.body.resolution).toBe("2K");
+    expect(largestResolution(["720p", "1080p", "480p"])).toBe("1080p");
   });
 
   it("makes a four-shot pack one by one even when a sheet was asked for", () => {
@@ -163,7 +181,12 @@ describe("a finished composition job", () => {
     expect(results).toEqual([{ group: "g1", jobId: "job-1", artifactIds: [id] }]);
   });
 
-  it("cuts a sheet into nine named images, once", async () => {
+  const filedIds = () =>
+    tauri.invoke.mock.calls
+      .filter(([command]) => command === "studio_library_mark")
+      .flatMap(([, args]) => (args as { request: { ids: string[] } }).request.ids);
+
+  it("cuts a sheet into nine named images, each filed as it is saved", async () => {
     cut.cells.mockResolvedValue(Array.from({ length: 9 }, (_, index) => `cell${index}`));
     const labels = pack("character").shots.map((shot) => shot.label);
     const sheet = job({ ...base, mode: "sheet", labels, of: 1 });
@@ -173,9 +196,41 @@ describe("a finished composition job", () => {
       [0, 1, 2, 3, 4, 5, 6, 7, 8],
     );
     expect(saved).toBe(9);
-    const marked = tauri.invoke.mock.calls.find(([command]) => command === "studio_library_mark");
-    const request = marked?.[1] as { request: { ids: string[] } } | undefined;
-    expect(request?.request.ids).toHaveLength(10);
+    expect(filedIds()).toHaveLength(10);
+    // A late observer finds the cut done: nothing is saved twice.
+    await recoverStandaloneImageJob(sheet);
+    expect(saved).toBe(9);
+  });
+
+  it("resumes a cut that stopped half way instead of saving the first cells again", async () => {
+    cut.cells.mockResolvedValue(Array.from({ length: 9 }, (_, index) => `cell${index}`));
+    const labels = pack("character").shots.map((shot) => shot.label);
+    const sheet = job({ ...base, mode: "sheet", labels, of: 1 }, { id: "job-resume" });
+    let calls = 0;
+    const save = tauri.invoke.getMockImplementation();
+    tauri.invoke.mockImplementation(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "carpe_diem_media_save_artifact" && ++calls === 4) throw new Error("killed");
+      return save?.(command, args);
+    });
+    await recoverStandaloneImageJob(sheet).catch(() => undefined);
+    expect(saved).toBe(3);
+    tauri.invoke.mockImplementation(async (command: string, args?: Record<string, unknown>) =>
+      save?.(command, args),
+    );
+    await recoverStandaloneImageJob(sheet);
+    expect(saved).toBe(9);
+  });
+
+  it("keeps a sheet it cannot cut as one image and says so once", async () => {
+    cut.cells.mockRejectedValue(new Error("The character sheet could not be read."));
+    const sheet = job(
+      { ...base, mode: "sheet", labels: pack("character").shots.map((s) => s.label), of: 1 },
+      { id: "job-uncut" },
+    );
+    await recoverStandaloneImageJob(sheet);
+    expect(readComposeFailures("g1")).toMatchObject([{ jobId: "job-uncut", label: "Sheet" }]);
+    expect(filedIds()).toEqual(["0192f1a0-7c3e-7d4b-9a10-2f9f5b8e4c01.png"]);
+    expect(tauri.invoke).toHaveBeenCalledWith("media_job_dismiss", { id: "job-uncut" });
   });
 
   it("records a failure and settles the row", async () => {

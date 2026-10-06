@@ -15,7 +15,6 @@ import {
 } from "../artifacts";
 import type { MediaJob } from "../async-job";
 import { cutSheetCells } from "../bible/sheet";
-import { markArtifacts } from "../library";
 import { saveArtifactMetadata } from "../projects";
 import type { StudioArtifact } from "../types";
 import type { EditRequest } from "../retouch/request";
@@ -52,6 +51,14 @@ export interface ComposeResultDetail {
   group: string;
   jobId: string;
   artifactIds: string[];
+}
+
+/** How far a sheet's cut got, by job: the file of each cell already saved
+ * and filed, by index. A cut that stops half way resumes from here instead
+ * of saving the first cells twice. */
+interface CutProgress {
+  cells: string[];
+  done: boolean;
 }
 
 export interface ComposeFailure {
@@ -145,7 +152,7 @@ export async function recoverComposeJob(job: MediaJob): Promise<boolean> {
       rememberFailure({
         jobId: job.id,
         group,
-        label: context?.labels[0] ?? "",
+        label: context?.mode === "sheet" ? t("Sheet") : (context?.labels[0] ?? ""),
         message: job.error?.trim()
           ? t(job.error.trim())
           : t("This image of the composition could not be made."),
@@ -165,18 +172,30 @@ export async function recoverComposeJob(job: MediaJob): Promise<boolean> {
         sourceArtifactId: context.sourceId,
       },
     );
-    const filed = context.mode === "sheet" ? await cutIntoImages(job.id, made, context) : [made];
-    if (context.mode === "separate" && context.labels[0])
-      await saveArtifactMetadata({ id: made.id, title: context.labels[0] }).catch(() => undefined);
-    if (context.collectionId)
-      await markArtifacts(filed, { collectionId: context.collectionId }).catch(() => undefined);
+    await saveArtifactMetadata({
+      id: made.id,
+      title: context.mode === "sheet" ? t("Sheet") : context.labels[0] || undefined,
+    }).catch(() => undefined);
+    await file(context, [made.fileName]);
+    let filed = [made.fileName];
+    if (context.mode === "sheet") {
+      try {
+        filed = [made.fileName, ...(await cutIntoImages(job.id, made, context))];
+      } catch {
+        // A sheet that cannot be read or cut is still a paid image: it stays
+        // in the folder, and the cut is reported once instead of retried at
+        // every launch.
+        rememberFailure({
+          jobId: job.id,
+          group,
+          label: t("Sheet"),
+          message: t("The sheet could not be cut. It is in the folder as one image."),
+        });
+        window.dispatchEvent(new Event(COMPOSE_FAILED_EVENT));
+      }
+    }
     await invoke("media_job_dismiss", { id: job.id });
-    forgetCut(job.id);
-    const detail: ComposeResultDetail = {
-      group,
-      jobId: job.id,
-      artifactIds: filed.map((item) => item.id),
-    };
+    const detail: ComposeResultDetail = { group, jobId: job.id, artifactIds: filed };
     window.dispatchEvent(new CustomEvent(COMPOSE_RESULT_EVENT, { detail }));
     return true;
   } finally {
@@ -184,22 +203,33 @@ export async function recoverComposeJob(job: MediaJob): Promise<boolean> {
   }
 }
 
-/** A sheet becomes nine images; the sheet itself stays with them. The cut is
- * remembered by job until the row is dismissed, so a crash between the two
- * does not cut the same sheet twice. */
+/** File gallery files in the composition's folder, if it has one. */
+async function file(context: ComposeJobContext, fileNames: string[]): Promise<void> {
+  if (!context.collectionId || fileNames.length === 0) return;
+  await invoke("studio_library_mark", {
+    request: { ids: fileNames, collectionId: context.collectionId },
+  }).catch(() => undefined);
+}
+
+/** A sheet becomes nine images, the sheet itself staying with them. Each cell
+ * is saved, named and filed before the next, and recorded by job, so a cut
+ * that stops half way (the app killed, a second observer) resumes where it
+ * stopped. Returns the cells' file names. */
 async function cutIntoImages(
   jobId: string,
   sheet: StudioArtifact,
   context: ComposeJobContext,
-): Promise<StudioArtifact[]> {
-  if (wasCut(jobId)) return [sheet];
-  const base64 = await readArtifactBase64(sheet);
-  const cells = await cutSheetCells(
-    `data:image/png;base64,${base64}`,
-    Array.from({ length: SHEET_CELLS }, (_, index) => index),
-  );
-  const images: StudioArtifact[] = [];
-  for (const [index, cell] of cells.entries()) {
+): Promise<string[]> {
+  const progress = readCut(jobId);
+  if (progress.done) return progress.cells.filter(Boolean);
+  let cells: string[] | undefined;
+  for (let index = 0; index < SHEET_CELLS; index++) {
+    if (progress.cells[index]) continue;
+    cells ??= await cutSheetCells(
+      `data:image/png;base64,${await readArtifactBase64(sheet)}`,
+      Array.from({ length: SHEET_CELLS }, (_, cell) => cell),
+    );
+    const cell = cells[index];
     if (!cell) continue;
     const label = context.labels[index] ?? "";
     const image = await saveArtifactFromBase64(cell, "png", {
@@ -209,11 +239,13 @@ async function cutIntoImages(
       sourceArtifactId: context.sourceId,
     });
     if (label) await saveArtifactMetadata({ id: image.id, title: label }).catch(() => undefined);
-    images.push(image);
+    await file(context, [image.fileName]);
+    progress.cells[index] = image.fileName;
+    writeCut(jobId, progress);
   }
-  rememberCut(jobId);
-  await saveArtifactMetadata({ id: sheet.id, title: t("Sheet") }).catch(() => undefined);
-  return [sheet, ...images];
+  progress.done = true;
+  writeCut(jobId, progress);
+  return progress.cells.filter(Boolean);
 }
 
 export function readComposeFailures(group?: string): ComposeFailure[] {
@@ -247,28 +279,32 @@ function rememberFailure(failure: ComposeFailure): void {
   writeJson(FAILURE_KEY, failures.slice(-MAX_FAILURES));
 }
 
-function readCuts(): string[] {
+function readCuts(): Record<string, CutProgress> {
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(CUT_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(CUT_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, CutProgress>)
+      : {};
   } catch {
-    return [];
+    return {};
   }
 }
 
-function wasCut(jobId: string): boolean {
-  return readCuts().includes(jobId);
+function readCut(jobId: string): CutProgress {
+  const found = readCuts()[jobId];
+  return {
+    cells: Array.isArray(found?.cells) ? [...found.cells] : [],
+    done: found?.done === true,
+  };
 }
 
-function rememberCut(jobId: string): void {
-  writeJson(CUT_KEY, [...readCuts().filter((id) => id !== jobId), jobId].slice(-50));
-}
-
-function forgetCut(jobId: string): void {
-  writeJson(
-    CUT_KEY,
-    readCuts().filter((id) => id !== jobId),
-  );
+/** Kept after the row is settled (a late observer must still find the cut
+ * done), bounded to the most recent sheets. */
+function writeCut(jobId: string, progress: CutProgress): void {
+  const all = readCuts();
+  delete all[jobId];
+  const kept = Object.entries(all).slice(-49);
+  writeJson(CUT_KEY, Object.fromEntries([...kept, [jobId, progress]]));
 }
 
 function writeJson(key: string, value: unknown): void {

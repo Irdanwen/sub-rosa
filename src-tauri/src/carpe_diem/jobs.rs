@@ -623,12 +623,12 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
                     }
                     // The finished row knows its file, which is where a tap
                     // on the notification should open.
-                    notify(app, &updated, true);
+                    notify(app, &updated, true).await;
                     emit(app, &repos.pool, updated).await;
                     return true;
                 }
             }
-            notify(app, job, true);
+            notify(app, job, true).await;
             true
         }
         // The render succeeded but the file did not reach the disk. The row
@@ -780,7 +780,7 @@ async fn fail(app: &AppHandle, id: &str, reason: &str, status: Option<u16>) {
             .await
         {
             emit(app, &repos.pool, job.clone()).await;
-            notify(app, &job, false);
+            notify(app, &job, false).await;
         }
     }
 }
@@ -792,23 +792,56 @@ async fn emit(app: &AppHandle, pool: &sqlx_sqlite::SqlitePool, job: MediaJobDto)
 /// The point of the whole exercise: a render that lands while the user is in
 /// another app still reaches them. Best-effort — permission is asked for in the
 /// UI when the generation is queued, and a refusal is not an error here.
-fn notify(app: &AppHandle, job: &MediaJobDto, success: bool) {
-    // On the desktop the result is in the window; a notification is only
-    // worth its interruption when the window is not in front and the wait
-    // was long enough that the user plausibly went elsewhere.
-    #[cfg(desktop)]
-    {
-        let elapsed = chrono::DateTime::parse_from_rfc3339(&job.created_at)
-            .ok()
-            .map(|created| {
-                (chrono::Utc::now() - created.with_timezone(&chrono::Utc))
-                    .to_std()
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
-        if !desktop_should_notify(crate::main_window_focus_state(app), elapsed) {
-            return;
-        }
+async fn notify(app: &AppHandle, job: &MediaJobDto, success: bool) {
+    // A composition is several jobs, one per image: one notification when the
+    // last of them lands, not one per image.
+    if composition_still_rendering(app, job).await {
+        return;
+    }
+    notify_now(app, job, success);
+}
+
+/// Whether another job of the same composition (`compose:<group>`) is still
+/// queued or rendering.
+async fn composition_still_rendering(app: &AppHandle, job: &MediaJobDto) -> bool {
+    let Some(source) = job.source.as_deref().filter(|s| is_composition(Some(s))) else {
+        return false;
+    };
+    let Ok(repos) = crate::commands::repositories(app).await else {
+        return false;
+    };
+    use sqlx::row::Row;
+    sqlx::query::query(
+        "SELECT COUNT(*) AS rendering FROM media_jobs WHERE source = ? AND id <> ? AND status IN ('queued', 'processing')",
+    )
+    .bind(source)
+    .bind(&job.id)
+    .fetch_one(&repos.pool)
+    .await
+    .ok()
+    .and_then(|row| row.try_get::<i64, _>("rendering").ok())
+    .is_some_and(|count| count > 0)
+}
+
+fn is_composition(source: Option<&str>) -> bool {
+    source.is_some_and(|source| source.starts_with("compose:"))
+}
+
+/// What a finished job's notification says. A composition's prompts are the
+/// app's own instructions to the model, never worth showing.
+fn notification_text(job: &MediaJobDto, success: bool) -> (&'static str, String) {
+    if is_composition(job.source.as_deref()) {
+        return if success {
+            (
+                "Your images are ready",
+                "Open Sub Rosa to see them.".to_string(),
+            )
+        } else {
+            (
+                "Your generation failed",
+                "Open Sub Rosa to see what happened.".to_string(),
+            )
+        };
     }
     let title = if success {
         match job.kind.as_str() {
@@ -833,6 +866,28 @@ fn notify(app: &AppHandle, job: &MediaJobDto, success: bool) {
     } else {
         body
     };
+    (title, body)
+}
+
+fn notify_now(app: &AppHandle, job: &MediaJobDto, success: bool) {
+    // On the desktop the result is in the window; a notification is only
+    // worth its interruption when the window is not in front and the wait
+    // was long enough that the user plausibly went elsewhere.
+    #[cfg(desktop)]
+    {
+        let elapsed = chrono::DateTime::parse_from_rfc3339(&job.created_at)
+            .ok()
+            .map(|created| {
+                (chrono::Utc::now() - created.with_timezone(&chrono::Utc))
+                    .to_std()
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        if !desktop_should_notify(crate::main_window_focus_state(app), elapsed) {
+            return;
+        }
+    }
+    let (title, body) = notification_text(job, success);
     let _ = app
         .notification()
         .builder()
@@ -905,6 +960,46 @@ fn definite_queue_rejection(status: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn finished(source: Option<&str>, prompt: &str) -> MediaJobDto {
+        MediaJobDto {
+            id: "j".into(),
+            kind: "image".into(),
+            model: "m".into(),
+            prompt: prompt.into(),
+            extension: "png".into(),
+            status: MediaJobStatus::Completed,
+            error: None,
+            error_status: None,
+            submission_confirmed: true,
+            artifact_path: None,
+            artifact_file_name: None,
+            artifact_bytes: None,
+            parent_artifact_id: None,
+            parent_handoff_seconds: None,
+            cost_credits: None,
+            source: source.map(str::to_string),
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_composition_never_shows_its_instruction_to_the_model() {
+        let job = finished(Some("compose:g1"), "Keep the subject of image 1 exactly");
+        assert_eq!(
+            notification_text(&job, true),
+            (
+                "Your images are ready",
+                "Open Sub Rosa to see them.".to_string()
+            )
+        );
+        let studio = finished(Some("studio"), "A lighthouse at dusk");
+        assert_eq!(
+            notification_text(&studio, true),
+            ("Your image is ready", "A lighthouse at dusk".to_string())
+        );
+    }
 
     #[test]
     fn only_explicit_queue_rejections_can_be_retried_after_a_new_quote() {

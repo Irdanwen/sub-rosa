@@ -41,7 +41,7 @@ export function ComposeStudio({
     setViewing({ items: results, index: Math.max(0, results.indexOf(artifact)) });
   }, []);
 
-  if (!source) return <RetouchPicker onOpen={setSource} sessions={false} />;
+  if (!source) return <RetouchPicker onOpen={setSource} purpose="compose" />;
   return (
     <>
       <ComposeWorkspace

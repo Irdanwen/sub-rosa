@@ -58,6 +58,10 @@
   grid-area: results;
 }
 .compose-packs {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: var(--sp-3);

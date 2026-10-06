@@ -4,7 +4,7 @@
 // so leaving the screen loses nothing: the images land in their gallery
 // folder whether or not this view is still open.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useArtifactPreview } from "../../../lib/artifact-media";
 import { friendlyErrorMessage } from "../../../lib/errors";
 import { t } from "../../../lib/i18n";
@@ -15,7 +15,9 @@ import {
   COMPOSE_RESULT_EVENT,
   type ComposeFailure,
   type ComposeResultDetail,
+  composeContextOf,
   dismissComposeFailure,
+  inFlightCompositions,
   readComposeFailures,
 } from "../../../lib/studio/compose/jobs";
 import {
@@ -41,6 +43,7 @@ export function ComposeWorkspace({
   layout,
   onChangeSource,
   onOpenResult,
+  hiddenIds,
 }: {
   catalog: MediaCatalog;
   source: StudioArtifact;
@@ -48,6 +51,8 @@ export function ComposeWorkspace({
   onChangeSource: () => void;
   /** Open one result among the others, in the shell's own viewer. */
   onOpenResult?: (artifact: StudioArtifact, results: StudioArtifact[]) => void;
+  /** Results deleted since they arrived, which the grid must not show. */
+  hiddenIds?: ReadonlySet<string>;
 }) {
   const models = useMemo(
     () => imageEditModels(catalog).filter((model) => !model.offline),
@@ -78,27 +83,37 @@ export function ComposeWorkspace({
   const [results, setResults] = useState<StudioArtifact[]>([]);
   const [failures, setFailures] = useState<ComposeFailure[]>([]);
 
+  /** The composition on screen, read by the listeners synchronously: a job
+   * can finish before `startComposition` has returned. */
+  const packsHeading = useId();
+  const groupRef = useRef<string | undefined>(undefined);
+  const settledRef = useRef<Set<string>>(new Set());
+  /** How the composition on screen was sent, not how the form reads now. */
+  const [sentMode, setSentMode] = useState<ComposeMode>("separate");
+
   // Results arrive one job at a time, from whichever observer filed them.
   useEffect(() => {
-    if (!group) return;
+    const settle = (jobId: string) => {
+      settledRef.current.add(jobId);
+      setWaiting((current) => {
+        if (!current.has(jobId)) return current;
+        const next = new Set(current);
+        next.delete(jobId);
+        return next;
+      });
+    };
     const onResult = (event: Event) => {
       const detail = (event as CustomEvent<ComposeResultDetail>).detail;
-      if (detail?.group !== group) return;
-      setWaiting((current) => {
-        const next = new Set(current);
-        next.delete(detail.jobId);
-        return next;
-      });
-      setResultIds((current) => [...current, ...detail.artifactIds]);
+      if (!detail || detail.group !== groupRef.current) return;
+      settle(detail.jobId);
+      setResultIds((current) => [...new Set([...current, ...detail.artifactIds])]);
     };
     const onFailed = () => {
-      const current = readComposeFailures(group);
-      setFailures(current);
-      setWaiting((pending) => {
-        const next = new Set(pending);
-        for (const failure of current) next.delete(failure.jobId);
-        return next;
-      });
+      const current = groupRef.current;
+      if (!current) return;
+      const found = readComposeFailures(current);
+      setFailures(found);
+      for (const failure of found) settle(failure.jobId);
     };
     window.addEventListener(COMPOSE_RESULT_EVENT, onResult);
     window.addEventListener(COMPOSE_FAILED_EVENT, onFailed);
@@ -106,7 +121,31 @@ export function ComposeWorkspace({
       window.removeEventListener(COMPOSE_RESULT_EVENT, onResult);
       window.removeEventListener(COMPOSE_FAILED_EVENT, onFailed);
     };
-  }, [group]);
+  }, []);
+
+  // Coming back to an image whose composition is still rendering picks it up
+  // again, instead of offering to pay for a second one.
+  useEffect(() => {
+    let cancelled = false;
+    void inFlightCompositions().then((jobs) => {
+      if (cancelled || groupRef.current) return;
+      const mine = jobs
+        .map((job) => ({ job, context: composeContextOf(job) }))
+        .filter((entry) => entry.context?.sourceId === source.id);
+      const latest = mine.at(-1)?.context;
+      if (!latest) return;
+      groupRef.current = latest.group;
+      setGroup(latest.group);
+      setSentMode(latest.mode);
+      setWaiting(
+        new Set(mine.filter((entry) => entry.context?.group === latest.group).map((e) => e.job.id)),
+      );
+      setFailures(readComposeFailures(latest.group));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [source.id]);
 
   useEffect(() => {
     if (resultIds.length === 0) return;
@@ -128,8 +167,14 @@ export function ComposeWorkspace({
     setResultIds([]);
     setResults([]);
     setFailures([]);
+    const next = crypto.randomUUID();
+    groupRef.current = next;
+    settledRef.current = new Set();
+    setGroup(next);
+    setSentMode(plan.mode);
     try {
       const started = await startComposition({
+        group: next,
         source,
         pack,
         plan,
@@ -142,8 +187,9 @@ export function ComposeWorkspace({
           aspectRatio: aspectRatio || undefined,
         },
       });
-      setGroup(started.group);
-      setWaiting(new Set(started.jobs.map((job) => job.id)));
+      setWaiting(
+        new Set(started.jobs.map((job) => job.id).filter((id) => !settledRef.current.has(id))),
+      );
       if (started.refused)
         setError(
           friendlyErrorMessage(started.refused, t("Some images of the composition were not sent.")),
@@ -155,7 +201,8 @@ export function ComposeWorkspace({
     }
   }, [model, busy, source, pack, plan, caps, unitCost, aspectRatio]);
 
-  const pending = waiting.size * (plan.mode === "sheet" ? SHEET_CELLS : 1);
+  const pending = waiting.size * (sentMode === "sheet" ? SHEET_CELLS : 1);
+  const shown = hiddenIds ? results.filter((artifact) => !hiddenIds.has(artifact.id)) : results;
   const canCompose = Boolean(model) && plan.jobs > 0 && !busy && waiting.size === 0;
 
   return (
@@ -168,8 +215,8 @@ export function ComposeWorkspace({
       </section>
 
       <section className="compose-form">
-        <h3>{t("What to make from it")}</h3>
-        <div className="compose-packs" role="group" aria-label={t("Pack")}>
+        <h3 id={packsHeading}>{t("What to make from it")}</h3>
+        <fieldset className="compose-packs" aria-labelledby={packsHeading}>
           {[...packs, customPack(customText)].map((entry) => (
             <button
               key={entry.id}
@@ -187,7 +234,7 @@ export function ComposeWorkspace({
               ) : null}
             </button>
           ))}
-        </div>
+        </fieldset>
 
         {packId === "custom" ? (
           <label className="compose-field">
@@ -249,7 +296,7 @@ export function ComposeWorkspace({
           </label>
           {!framed && plan.mode === "separate" && caps.aspectRatios.length > 0 ? (
             <label className="compose-field">
-              {t("Frame")}
+              {t("Image format")}
               <select
                 className="studio-input"
                 value={aspectRatio}
@@ -305,11 +352,11 @@ export function ComposeWorkspace({
           <h3>{t("Results")}</h3>
           <p className="compose-note">{t("They are filed together in a folder of the gallery.")}</p>
           <div className="compose-grid">
-            {results.map((artifact) => (
+            {shown.map((artifact) => (
               <ResultTile
                 key={artifact.id}
                 artifact={artifact}
-                onOpen={onOpenResult ? () => onOpenResult(artifact, results) : undefined}
+                onOpen={onOpenResult ? () => onOpenResult(artifact, shown) : undefined}
               />
             ))}
             {Array.from({ length: pending }, (_, index) => (

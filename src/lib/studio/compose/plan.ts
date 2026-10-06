@@ -4,7 +4,7 @@
 
 import { artifactDataUrl } from "../../artifact-media";
 import { intlLocale, t } from "../../i18n";
-import { saveCollection } from "../library";
+import { deleteCollection, saveCollection } from "../library";
 import { prepareSource } from "../retouch/canvas-io";
 import { buildEditRequest, type EditCaps, type EditRequest } from "../retouch/request";
 import type { MediaJob } from "../async-job";
@@ -73,13 +73,34 @@ export function compositionRequests(
       aspectRatio,
     });
   if (plan.mode === "sheet") {
-    // A sheet is square, whatever the source.
+    // A sheet is square, whatever the source, and drawn as large as the model
+    // goes: each image is a ninth of it (Ideogram prices 2K like 1K).
     const square = caps.aspectRatios.includes("1:1") ? "1:1" : undefined;
-    return [request(sheetPrompt(pack), square)];
+    return [
+      buildEditRequest(caps, {
+        model: settings.model,
+        prompt: sheetPrompt(pack),
+        images: [image],
+        resolution: largestResolution(caps.resolutions) ?? settings.resolution,
+        quality: settings.quality,
+        aspectRatio: square,
+      }),
+    ];
   }
   return plan.shots.map((shot) =>
     request(shotPrompt(shot), shot.aspectRatio ?? settings.aspectRatio),
   );
+}
+
+/** "2K" over "1K", "1080p" over "720p": the largest a model offers. */
+export function largestResolution(resolutions: string[]): string | undefined {
+  const size = (value: string) => {
+    const match = /^(\d+(?:\.\d+)?)\s*([kp]?)$/i.exec(value.trim());
+    if (!match) return 0;
+    const number = Number(match[1]);
+    return match[2].toLowerCase() === "k" ? number * 1000 : number;
+  };
+  return [...resolutions].sort((a, b) => size(b) - size(a))[0];
 }
 
 export interface StartedComposition {
@@ -92,6 +113,8 @@ export interface StartedComposition {
 
 /** Read the source, make the folder the results go to, and queue every job. */
 export async function startComposition(input: {
+  /** Made by the caller, so it listens for results before any job exists. */
+  group: string;
   source: StudioArtifact;
   pack: ComposePack;
   plan: CompositionPlan;
@@ -103,7 +126,7 @@ export async function startComposition(input: {
   if (plan.jobs === 0) throw new Error(t("This model cannot make any image of this pack."));
   const image = await prepareSource(await artifactDataUrl(source));
   const requests = compositionRequests(plan, pack, caps, image, settings);
-  const group = crypto.randomUUID();
+  const { group } = input;
   // Filing is a convenience: a folder that cannot be made leaves the images
   // in the gallery rather than stopping a paid composition.
   const collectionId = await saveCollection(collectionName(pack))
@@ -127,6 +150,9 @@ export async function startComposition(input: {
     }),
   );
   const jobs = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  // Nothing was accepted: no empty folder left behind.
+  if (jobs.length === 0 && collectionId)
+    await deleteCollection(collectionId).catch(() => undefined);
   const refused = results.find((result) => result.status === "rejected") as
     | PromiseRejectedResult
     | undefined;
