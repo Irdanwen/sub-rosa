@@ -96,9 +96,19 @@ describe("a composition's plan", () => {
       sheet,
       sized,
       "data:x",
-      { model: "m", resolution: "1K" },
+      { model: "ideogram-v4-5-edit", resolution: "1K" },
     );
     expect(request.body.resolution).toBe("2K");
+    // A model not measured to price every size alike keeps its own: the
+    // quote shown could not see the larger one.
+    const [other] = compositionRequests(
+      planComposition(sheet, "sheet", sized, 10.8),
+      sheet,
+      sized,
+      "data:x",
+      { model: "m", resolution: "1K" },
+    );
+    expect(other.body.resolution).toBe("1K");
     expect(largestResolution(["720p", "1080p", "480p"])).toBe("1080p");
   });
 

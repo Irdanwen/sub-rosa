@@ -182,6 +182,8 @@ export async function recoverComposeJob(job: MediaJob): Promise<boolean> {
       try {
         filed = [made.fileName, ...(await cutIntoImages(job.id, made, context))];
       } catch {
+        // Cells saved before the cut stopped are filed already; show them.
+        filed = [made.fileName, ...readCut(job.id).cells.filter(Boolean)];
         // A sheet that cannot be read or cut is still a paid image: it stays
         // in the folder, and the cut is reported once instead of retried at
         // every launch.

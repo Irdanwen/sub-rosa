@@ -132,7 +132,8 @@ export function ComposeWorkspace({
       const mine = jobs
         .map((job) => ({ job, context: composeContextOf(job) }))
         .filter((entry) => entry.context?.sourceId === source.id);
-      const latest = mine.at(-1)?.context;
+      // The list comes newest first.
+      const latest = mine[0]?.context;
       if (!latest) return;
       groupRef.current = latest.group;
       setGroup(latest.group);
@@ -141,6 +142,13 @@ export function ComposeWorkspace({
         new Set(mine.filter((entry) => entry.context?.group === latest.group).map((e) => e.job.id)),
       );
       setFailures(readComposeFailures(latest.group));
+      // A job may have finished between the read and now, its result heard
+      // by nobody: read again and keep only what is still rendering.
+      void inFlightCompositions().then((still) => {
+        if (cancelled || groupRef.current !== latest.group) return;
+        const live = new Set(still.map((job) => job.id));
+        setWaiting((current) => new Set([...current].filter((id) => live.has(id))));
+      });
     });
     return () => {
       cancelled = true;

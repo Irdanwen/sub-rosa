@@ -830,18 +830,13 @@ fn is_composition(source: Option<&str>) -> bool {
 /// What a finished job's notification says. A composition's prompts are the
 /// app's own instructions to the model, never worth showing.
 fn notification_text(job: &MediaJobDto, success: bool) -> (&'static str, String) {
+    // The last image of a composition says nothing about the others (some may
+    // have failed, some may have landed): one neutral word for the whole.
     if is_composition(job.source.as_deref()) {
-        return if success {
-            (
-                "Your images are ready",
-                "Open Sub Rosa to see them.".to_string(),
-            )
-        } else {
-            (
-                "Your generation failed",
-                "Open Sub Rosa to see what happened.".to_string(),
-            )
-        };
+        return (
+            "Your composition is finished",
+            "Open Sub Rosa to see the images.".to_string(),
+        );
     }
     let title = if success {
         match job.kind.as_str() {
@@ -990,9 +985,13 @@ mod tests {
         assert_eq!(
             notification_text(&job, true),
             (
-                "Your images are ready",
-                "Open Sub Rosa to see them.".to_string()
+                "Your composition is finished",
+                "Open Sub Rosa to see the images.".to_string()
             )
+        );
+        assert_eq!(
+            notification_text(&job, false).0,
+            "Your composition is finished"
         );
         let studio = finished(Some("studio"), "A lighthouse at dusk");
         assert_eq!(

@@ -74,14 +74,16 @@ export function compositionRequests(
     });
   if (plan.mode === "sheet") {
     // A sheet is square, whatever the source, and drawn as large as the model
-    // goes: each image is a ninth of it (Ideogram prices 2K like 1K).
+    // goes when that costs nothing more: each image is a ninth of it.
     const square = caps.aspectRatios.includes("1:1") ? "1:1" : undefined;
     return [
       buildEditRequest(caps, {
         model: settings.model,
         prompt: sheetPrompt(pack),
         images: [image],
-        resolution: largestResolution(caps.resolutions) ?? settings.resolution,
+        resolution: FLAT_PRICED_RESOLUTION.has(settings.model)
+          ? (largestResolution(caps.resolutions) ?? settings.resolution)
+          : settings.resolution,
         quality: settings.quality,
         aspectRatio: square,
       }),
@@ -91,6 +93,11 @@ export function compositionRequests(
     request(shotPrompt(shot), shot.aspectRatio ?? settings.aspectRatio),
   );
 }
+
+/** Edit models measured to cost the same at every resolution (Ideogram 4.5:
+ * 10.8 credits at 1K and 2K, 2026-10-02). The quote shown cannot see a
+ * resolution, so only these get the largest one for a sheet. */
+const FLAT_PRICED_RESOLUTION = new Set(["ideogram-v4-5-edit"]);
 
 /** "2K" over "1K", "1080p" over "720p": the largest a model offers. */
 export function largestResolution(resolutions: string[]): string | undefined {
