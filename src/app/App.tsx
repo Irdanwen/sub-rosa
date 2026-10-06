@@ -2676,7 +2676,8 @@ export function App() {
     if (firstNoteIntent === "record") {
       void handleStartMeetingDetectedRecording();
     } else {
-      void handlePickImportFile();
+      // A first note belongs to no project.
+      void handlePickImportFile(null);
     }
   }, [firstNoteIntent, appBlocked, handleStartMeetingDetectedRecording, handlePickImportFile]);
 
@@ -2891,7 +2892,13 @@ export function App() {
           setActiveAgentSession(undefined);
           setActiveView("agent");
         }}
-        onImportMedia={() => void handlePickImportFile()}
+        onImportMedia={() =>
+          // From the notes list the import lands in that list (no project);
+          // from a project it lands in that project.
+          void handlePickImportFile(
+            activeView === "notes" || activeView === "all-notes" ? null : undefined,
+          )
+        }
         onSelectAgentSession={(session) => {
           if (takeNewTabIntent()) {
             openTab({ view: "agent", agentSessionId: session.id });

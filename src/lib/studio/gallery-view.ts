@@ -57,6 +57,24 @@ function isFiled(library: StudioLibrary, collectionId: string | null | undefined
   return Boolean(collectionId && library.collections.some((folder) => folder.id === collectionId));
 }
 
+/** Whether a kind view is empty only because its files are all filed: there
+ * is a visible file of that kind in some folder. */
+export function filedOutOfView(
+  items: StudioArtifact[],
+  library: StudioLibrary,
+  view: GalleryView,
+): boolean {
+  if (!isKindView(view)) return false;
+  return items.some((item) => {
+    const mark = markOf(library, item);
+    if (mark?.hidden || !isFiled(library, mark?.collectionId)) return false;
+    if (view === "image") return item.kind === "image";
+    if (view === "video") return item.kind === "video";
+    if (view === "audio") return AUDIO_KINDS.includes(item.kind);
+    return true;
+  });
+}
+
 function isKindView(view: GalleryView) {
   return view === "all" || view === "image" || view === "video" || view === "audio";
 }

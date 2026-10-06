@@ -58,6 +58,7 @@ import {
 } from "../../../../lib/studio/library";
 import {
   AUDIO_KINDS,
+  filedOutOfView,
   type GalleryView,
   visibleArtifacts,
 } from "../../../../lib/studio/gallery-view";
@@ -526,7 +527,7 @@ export function StudioGallery({
                   ? t("Press and hold an item to add it to your favorites.")
                   : openCollection
                     ? t("This folder is empty. Press and hold an item to add it here.")
-                    : items.length > 0 && view !== "hidden" && view !== "collections"
+                    : filedOutOfView(items, library, view)
                       ? t("Everything here is in a folder. Open Folders, or search.")
                       : t("Nothing here yet.")}
             </p>

@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { visibleArtifacts } from "../lib/studio/gallery-view";
+import { filedOutOfView, visibleArtifacts } from "../lib/studio/gallery-view";
 import type { StudioLibrary, StudioMark } from "../lib/studio/library";
 import type { StudioArtifact } from "../lib/studio/types";
 
@@ -77,5 +77,12 @@ describe("the gallery views", () => {
   it("show a file whose folder was deleted elsewhere in the kind views", () => {
     const orphan = library([{ fileId: uuid(2), collectionId: "gone" }]);
     expect(visibleArtifacts(ITEMS, orphan, { view: "all" })).toEqual(ITEMS);
+  });
+
+  it("say a view is empty because of folders only when that is true", () => {
+    expect(filedOutOfView(ITEMS, filedTram, "video")).toBe(true);
+    expect(filedOutOfView(ITEMS, filedTram, "image")).toBe(false);
+    const hiddenAndFiled = library([{ fileId: uuid(2), collectionId: "board", hidden: true }]);
+    expect(filedOutOfView(ITEMS, hiddenAndFiled, "video")).toBe(false);
   });
 });
