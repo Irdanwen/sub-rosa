@@ -71,6 +71,9 @@ fn platform_specific(name: &str) -> bool {
         // share sheet later.
         "archive::export_archive",
         "note_export::export_note_markdown",
+        // Writes a file through the desktop save dialog; the phone has no
+        // workflow canvas to export from.
+        "studio_workflows::studio_workflow_export",
     ];
     PREFIXES.iter().any(|prefix| name.starts_with(prefix)) || NAMES.contains(&name)
 }

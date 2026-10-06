@@ -1,0 +1,288 @@
+{
+  "config": {},
+  "extra": {
+    "VHS_KeepIntermediate": true,
+    "VHS_MetadataImage": true,
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "ds": {
+      "offset": [602.6666666666667, -641.7681327160494],
+      "scale": 0.8223350253807107
+    },
+    "frontendVersion": "1.48.7"
+  },
+  "groups": [],
+  "id": "7e83a61c-87e6-43db-b836-8a684bbc8993",
+  "last_link_id": 13,
+  "last_node_id": 13,
+  "links": [[7, 7, 0, 8, 0, "VIDEO"], [12, 11, 0, 7, 5, "IMAGE"]],
+  "nodes": [
+    {
+      "bgcolor": "#653",
+      "color": "#432",
+      "flags": {},
+      "id": 7,
+      "inputs": [
+        {
+          "link": null,
+          "localized_name": "model",
+          "name": "model",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "model"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "prompt",
+          "name": "model.prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "model.prompt"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "resolution",
+          "name": "model.resolution",
+          "type": "COMBO",
+          "widget": {
+            "name": "model.resolution"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "aspect_ratio",
+          "name": "model.aspect_ratio",
+          "type": "COMBO",
+          "widget": {
+            "name": "model.aspect_ratio"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "task_type",
+          "name": "model.task_type",
+          "type": "COMBO",
+          "widget": {
+            "name": "model.task_type"
+          }
+        },
+        {
+          "link": 12,
+          "localized_name": "image_1",
+          "name": "model.images.image_1",
+          "shape": 7,
+          "type": "IMAGE"
+        },
+        {
+          "link": null,
+          "localized_name": "image_2",
+          "name": "model.images.image_2",
+          "shape": 7,
+          "type": "IMAGE"
+        },
+        {
+          "link": null,
+          "localized_name": "video_1",
+          "name": "model.videos.video_1",
+          "shape": 7,
+          "type": "VIDEO"
+        },
+        {
+          "link": null,
+          "localized_name": "seed",
+          "name": "model.seed",
+          "type": "INT",
+          "widget": {
+            "name": "model.seed"
+          }
+        }
+      ],
+      "mode": 0,
+      "order": 2,
+      "outputs": [
+        {
+          "links": [7],
+          "localized_name": "VIDEO",
+          "name": "VIDEO",
+          "type": "VIDEO"
+        },
+        {
+          "links": null,
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING"
+        }
+      ],
+      "pos": [388, 1090],
+      "properties": {
+        "Node name for S&R": "GeminiVideoOmniV2"
+      },
+      "size": [400, 296],
+      "type": "GeminiVideoOmniV2",
+      "widgets_values": [
+        "Omni Flash 1.1",
+        "Use @Image1 as the first frame, keep the car and the blue studio set exactly unchanged in the opening shot. SHOT ONE (0-1.8s), macro close-up on the side mirror: the blue bodywork and mirror glass reflecting the sweeping floor beam, a thin wisp of haze drifting past. HARD CUT. SHOT TWO (1.8-3.4s), side tracking shot gliding along the car's flank: reflections flowing across the doors, the beam light strobing over the door handles. HARD CUT. SHOT THREE (3.4-5s), wide from behind the car pulling back: the full car centered in the blue studio void, the man leaning on the hood, the floor beam completing one final sweep and settling. Photorealistic fashion car commercial, deep blue palette consistent across all three shots. Audio: a crystalline tick on each cut, a smooth electronic groove building, a final soft bass note as the beam settles. No text overlays, no black frames, no camera shake.\n",
+        "720p",
+        "16:9",
+        "image_to_video",
+        348812024,
+        "randomize",
+        "randomize"
+      ],
+      "widgets_values_named": {
+        "control_after_generate": "randomize",
+        "model": "Omni Flash 1.1",
+        "model.aspect_ratio": "16:9",
+        "model.prompt": "Use @Image1 as the first frame, keep the car and the blue studio set exactly unchanged in the opening shot. SHOT ONE (0-1.8s), macro close-up on the side mirror: the blue bodywork and mirror glass reflecting the sweeping floor beam, a thin wisp of haze drifting past. HARD CUT. SHOT TWO (1.8-3.4s), side tracking shot gliding along the car's flank: reflections flowing across the doors, the beam light strobing over the door handles. HARD CUT. SHOT THREE (3.4-5s), wide from behind the car pulling back: the full car centered in the blue studio void, the man leaning on the hood, the floor beam completing one final sweep and settling. Photorealistic fashion car commercial, deep blue palette consistent across all three shots. Audio: a crystalline tick on each cut, a smooth electronic groove building, a final soft bass note as the beam settles. No text overlays, no black frames, no camera shake.\n",
+        "model.resolution": "720p",
+        "model.seed": 348812024,
+        "model.task_type": "image_to_video"
+      }
+    },
+    {
+      "flags": {},
+      "id": 8,
+      "inputs": [
+        {
+          "link": 7,
+          "localized_name": "video",
+          "name": "video",
+          "type": "VIDEO"
+        },
+        {
+          "link": null,
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "format",
+          "name": "format",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "codec",
+          "name": "format.codec",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format.codec"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "codec",
+          "name": "codec",
+          "shape": 7,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "codec"
+          }
+        }
+      ],
+      "mode": 0,
+      "order": 3,
+      "outputs": [
+        {
+          "links": null,
+          "localized_name": "video",
+          "name": "video",
+          "type": "VIDEO"
+        }
+      ],
+      "pos": [836, 1090],
+      "properties": {},
+      "size": [390, 126],
+      "type": "SaveVideo",
+      "widgets_values": ["video/Omni_Flash_1.1_i2v", "auto", "auto", "auto"],
+      "widgets_values_named": {
+        "codec": "auto",
+        "filename_prefix": "video/Omni_Flash_1.1_i2v",
+        "format": "auto",
+        "format.codec": "auto"
+      }
+    },
+    {
+      "flags": {},
+      "id": 11,
+      "inputs": [
+        {
+          "link": null,
+          "localized_name": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          }
+        },
+        {
+          "link": null,
+          "localized_name": "choose file to upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          }
+        }
+      ],
+      "mode": 0,
+      "order": 0,
+      "outputs": [
+        {
+          "links": [12],
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE"
+        },
+        {
+          "links": null,
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK"
+        }
+      ],
+      "pos": [50, 1090],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "size": [290, 345.9375],
+      "type": "LoadImage",
+      "widgets_values": ["blue_studio_car.png", "image"],
+      "widgets_values_named": {
+        "image": "blue_studio_car.png",
+        "upload": "image"
+      }
+    },
+    {
+      "bgcolor": "#000",
+      "color": "#222",
+      "flags": {},
+      "id": 13,
+      "inputs": [],
+      "mode": 0,
+      "order": 1,
+      "outputs": [],
+      "pos": [-330, 1090],
+      "properties": {},
+      "size": [331.015625, 307.046875],
+      "type": "MarkdownNote",
+      "widgets_values": [
+        "## Input Asset\n\n- [blue_studio_car.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/blue_studio_car.png) — required workflow input (`input/blue_studio_car.png`)\n\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+      ],
+      "widgets_values_named": {
+        "text": "## Input Asset\n\n- [blue_studio_car.png](https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/input/blue_studio_car.png) — required workflow input (`input/blue_studio_car.png`)\n\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+      }
+    }
+  ],
+  "revision": 0,
+  "version": 0.4
+}

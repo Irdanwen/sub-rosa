@@ -83,6 +83,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0072](adr/0072-a-clean-remote-deletion-is-applied-not-reviewed.md) — a remote deletion whose parent is the local head, with nothing unsent and no child revised since, is applied like the device's own delete; only a divergent deletion becomes a review card, and answering a card whose tombstone is already the head sends nothing (the tombstone ping-pong and the replay resurrection of 2026-09-28)
 - [adr/0073](adr/0073-the-gallery-is-organised-in-synchronised-marks-apart-from-its-files.md) — the gallery's collections, favourites and hidden marks are two synchronised tables keyed by UUID (a mark by the file's UUID stem), apart from the file's provenance; deleting a gallery file now deletes it on every device
 - [adr/0074](adr/0074-project-prompts-are-blocks-rendered-per-family.md) — a film project's prompts follow the prompt bible's blocks, from one shared vocabulary and per-family profiles (labels, budget, timing, sound, languages); a line is spoken by the model only in a language its family speaks, otherwise dubbed and silenced; one project shot is one continuous take
+- [adr/0075](adr/0075-a-comfyui-workflow-is-translated-never-executed.md) — a ComfyUI file is translated into a native workflow (hosted models only) with a report of what changed, never executed; the workflow library lives in SQLite and a card shows the workflow's last real result
 
 ## Enforceable rules (spec/)
 

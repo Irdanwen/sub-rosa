@@ -54,7 +54,6 @@ import {
 import {
   applyPortOrder,
   chainOrderSuggestion,
-  createWorkflow,
   defaultParams,
   deleteWorkflow,
   edgesOnPort,
@@ -94,10 +93,25 @@ import {
   type WorkflowNode,
   type WorkflowNodeType,
 } from "../../lib/studio/workflow";
+import { invoke } from "@tauri-apps/api/core";
+import { workflowFileText } from "../../lib/studio/workflow/comfy/file";
+import {
+  coverArtifactOf,
+  coverOffer,
+  makeWorkflowCover,
+  sameWorkflow,
+} from "../../lib/studio/workflow/library";
+import {
+  blankWorkflow,
+  loadWorkflowLibrary,
+  setWorkflowCover,
+  workflowLibraryLoaded,
+} from "../../lib/studio/workflow/store";
 import { Dialog } from "../ui/Dialog";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
+import { type ImportedWorkflow, WorkflowLibrary } from "./WorkflowLibrary";
 import { AssetPreview } from "./AssetPreview";
 import { GalleryPicker } from "./GalleryPicker";
 import { NotePicker } from "./NotePicker";
@@ -968,8 +982,43 @@ function RunCostDialog({
   );
 }
 
+/**
+ * The Workflows tab. The library is read before anything is drawn: an editor
+ * that rendered on an empty cache would seed a first workflow over the ones
+ * already stored (ADR-0075).
+ */
 export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
+  const [ready, setReady] = useState(workflowLibraryLoaded);
+  useEffect(() => {
+    if (ready) return;
+    let cancelled = false;
+    void loadWorkflowLibrary().then(() => {
+      if (!cancelled) setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready]);
+  if (!ready) {
+    return (
+      <div className="studio-loading">
+        <Spinner aria-label={t("Loading")} />
+      </div>
+    );
+  }
+  return <WorkflowEditor catalog={catalog} />;
+}
+
+function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   const [workflows, setWorkflows] = useState<Workflow[]>(() => listWorkflows());
+  /** The library of cards, or the canvas of the workflow being edited. */
+  const [view, setView] = useState<"library" | "canvas">("library");
+  /** Focus follows the switch, or it falls back to the page body. */
+  const [leftCanvas, setLeftCanvas] = useState(false);
+  const libraryButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (view === "canvas") libraryButtonRef.current?.focus();
+  }, [view]);
 
   const [current, setCurrent] = useState<Workflow | undefined>(() => listWorkflows()[0]);
   const [flowNodes, setFlowNodes] = useState<StudioFlowNode[]>([]);
@@ -1010,7 +1059,10 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     (gateId: string, choice: string | undefined) => approveGateRef.current(gateId, choice),
     [],
   );
+  /** The last run's results as they arrive, read once the run is over. */
+  const runResultsRef = useRef<Map<string, NodeRunResult>>(new Map());
   const mirrorUpdate = useCallback((result: NodeRunResult) => {
+    runResultsRef.current.set(result.nodeId, result);
     setResults((currentResults) => {
       const next = new Map(currentResults);
       next.set(result.nodeId, result);
@@ -1127,14 +1179,19 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     [catalog, artifacts, onParamsChange, onRename, onRemove, onApproveGate],
   );
 
-  // First mount: open the most recent workflow, or seed from templates.
+  // First mount: open the most recent workflow, or seed from templates. Once:
+  // `hydrate` changes with the catalog, and running again would seed a new
+  // first workflow after the last was deleted, or switch the canvas.
+  const firstMountRef = useRef(false);
   useEffect(() => {
+    if (firstMountRef.current) return;
+    firstMountRef.current = true;
     const existing = listWorkflows();
     if (existing.length > 0) {
       hydrate(existing[0]);
       return;
     }
-    const seeded = createWorkflow("My first workflow");
+    const seeded = blankWorkflow("My first workflow");
     const template = templateWorkflows()[0];
     const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
     const workflow: Workflow = {
@@ -1163,6 +1220,10 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       const serialized = fromFlow(base, flowNodes, flowEdges);
+      // Opening a workflow redraws its canvas; that is not an edit, and
+      // saving it would move the card to the top with today's date.
+      const stored = listWorkflows().find((entry) => entry.id === serialized.id);
+      if (stored && sameWorkflow(stored, serialized)) return;
       saveWorkflow(serialized);
       currentRef.current = serialized;
       setWorkflows(listWorkflows());
@@ -1379,7 +1440,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
     (templateId: string) => {
       const template = templateWorkflows().find((entry) => entry.id === templateId);
       if (!template) return;
-      const workflow = createWorkflow(template.name);
+      const workflow = blankWorkflow(template.name);
       const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
       const cloned: Workflow = {
         ...workflow,
@@ -1398,6 +1459,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       saveWorkflow(cloned);
       setWorkflows(listWorkflows());
       hydrate(cloned);
+      setView("canvas");
     },
     [hydrate],
   );
@@ -1501,6 +1563,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       setRunning(true);
       setRunError(undefined);
       setResults(new Map());
+      runResultsRef.current = new Map();
       try {
         // Durable run (ADR-0021): state persists as rows, long renders ride
         // the Rust job pollers, and produced media lands in the gallery at
@@ -1513,6 +1576,14 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           },
           onUpdate: mirrorUpdate,
         });
+        // The run's own result becomes the library card's picture: free, and
+        // true to what the workflow makes.
+        const cover = coverArtifactOf(serialized, runResultsRef.current);
+        if (cover) {
+          void setWorkflowCover(serialized.id, cover)
+            .then(() => setWorkflows(listWorkflows()))
+            .catch(() => undefined);
+        }
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           // Cancelled on purpose; per-node statuses already reset.
@@ -1541,12 +1612,21 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       setRunError(undefined);
       setResults(new Map());
       runIdRef.current = entry.id;
+      runResultsRef.current = new Map();
       const mirrorsCanvas = current?.id === entry.workflowId;
       try {
         await resumeWorkflowRun(entry.id, {
           signal: controller.signal,
           onUpdate: mirrorsCanvas ? mirrorUpdate : undefined,
         });
+        // A resumed run's result is the card's picture too.
+        const cover =
+          mirrorsCanvas && current ? coverArtifactOf(current, runResultsRef.current) : undefined;
+        if (cover) {
+          void setWorkflowCover(entry.workflowId, cover)
+            .then(() => setWorkflows(listWorkflows()))
+            .catch(() => undefined);
+        }
         setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -1633,22 +1713,167 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
   }, [current, hydrate]);
 
   const newWorkflow = useCallback(() => {
-    const workflow = createWorkflow("Untitled workflow");
+    const workflow = blankWorkflow("Untitled workflow");
     saveWorkflow(workflow);
     setWorkflows(listWorkflows());
     hydrate(workflow);
+    setView("canvas");
   }, [hydrate]);
+
+  const openWorkflow = useCallback(
+    (workflow: Workflow) => {
+      hydrate(workflow);
+      setView("canvas");
+    },
+    [hydrate],
+  );
+
+  /** A file read and, for a ComfyUI one, translated and reviewed. */
+  const importWorkflow = useCallback(
+    (imported: ImportedWorkflow) => {
+      const workflow = saveWorkflow({
+        ...blankWorkflow(imported.name),
+        ...(imported.description ? { description: imported.description } : {}),
+        nodes: imported.nodes,
+        edges: imported.edges,
+        origin: "import",
+      });
+      setWorkflows(listWorkflows());
+      hydrate(workflow);
+      setView("canvas");
+    },
+    [hydrate],
+  );
+
+  const exportWorkflow = useCallback(async (workflow: Workflow) => {
+    await invoke<string | null>("studio_workflow_export", {
+      name: workflow.name,
+      contents: workflowFileText(workflow),
+    });
+  }, []);
+
+  const deleteFromLibrary = useCallback(
+    (workflow: Workflow) => {
+      deleteWorkflow(workflow.id);
+      const remaining = listWorkflows();
+      setWorkflows(remaining);
+      if (currentRef.current?.id === workflow.id) hydrate(remaining[0]);
+    },
+    [hydrate],
+  );
+
+  const makeCover = useCallback(
+    async (workflow: Workflow) => {
+      const offer = coverOffer(catalog);
+      if (!offer) return undefined;
+      const made = await makeWorkflowCover(workflow, offer);
+      setWorkflows(listWorkflows());
+      return made;
+    },
+    [catalog],
+  );
+
+  const productionBanners = (
+    <>
+      {!running && liveProductions.length > 0 ? (
+        <div className="studio-resume-banner">
+          {liveProductions.map((entry) => (
+            <div key={entry.id} className="studio-resume-row">
+              <span>
+                {t("Still producing:")} <strong>{entry.name || t("Untitled workflow")}</strong>
+                {t(". Its media lands in the gallery as it finishes.")}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {resumable.length > 0 ? (
+        <div className="studio-resume-banner">
+          {resumable.map((entry) => (
+            <div key={entry.id} className="studio-resume-row">
+              <span>
+                {entry.status === "failed" ? (
+                  <>
+                    {t("A production that stopped:")}{" "}
+                    <strong>{entry.name || t("Untitled workflow")}</strong>.{" "}
+                    {entry.error || t("A step failed.")}{" "}
+                    {t("Finished steps are kept; resuming retries the one that failed.")}
+                  </>
+                ) : entry.status === "awaitingGate" ? (
+                  <>
+                    {t("A production waiting on you:")}{" "}
+                    <strong>{entry.name || t("Untitled workflow")}</strong>
+                    {t(". Resume it to reach the gate and decide.")}
+                  </>
+                ) : (
+                  <>
+                    {t("An interrupted production:")}{" "}
+                    <strong>{entry.name || t("Untitled workflow")}</strong>
+                    {t(". Finished steps are kept; resuming only runs what is left.")}
+                  </>
+                )}
+              </span>
+              <span className="studio-resume-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={running}
+                  onClick={() => void dismissResumable(entry)}
+                >
+                  {t("Dismiss")}
+                </button>
+                <button
+                  type="button"
+                  className="studio-primary-button"
+                  disabled={running}
+                  onClick={() => void resume(entry)}
+                >
+                  {t("Resume")}
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+
+  if (view === "library") {
+    return (
+      <div className="studio-workflows">
+        {productionBanners}
+        {runError ? <p className="studio-error">{runError}</p> : null}
+        <WorkflowLibrary
+          catalog={catalog}
+          workflows={workflows}
+          templates={templateWorkflows()}
+          onOpen={openWorkflow}
+          onUseTemplate={applyTemplate}
+          onNew={newWorkflow}
+          onImported={importWorkflow}
+          onExport={exportWorkflow}
+          onDelete={deleteFromLibrary}
+          onMakeCover={makeCover}
+          autoFocus={leftCanvas}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="studio-workflows">
       <div className="studio-workflows-toolbar">
-        <Select
-          value={current?.id ?? null}
-          placeholder={t("Choose a workflow")}
-          ariaLabel={t("Workflow")}
-          onChange={(id) => hydrate(workflows.find((entry) => entry.id === id))}
-          options={workflows.map((entry) => ({ value: entry.id, label: entry.name }))}
-        />
+        <button
+          ref={libraryButtonRef}
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            setLeftCanvas(true);
+            setView("library");
+          }}
+        >
+          {t("Library")}
+        </button>
         <input
           className="studio-input studio-workflow-name"
           value={current?.name ?? ""}
@@ -1663,13 +1888,6 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
         <button type="button" className="btn btn-secondary" onClick={newWorkflow}>
           {t("New")}
         </button>
-        <Select
-          value={null}
-          placeholder={t("Templates")}
-          ariaLabel={t("Start from a template")}
-          onChange={applyTemplate}
-          options={templateWorkflows().map((entry) => ({ value: entry.id, label: entry.name }))}
-        />
         <Select
           value={null}
           placeholder={t("Add node")}
@@ -1731,66 +1949,7 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
           </button>
         </div>
       ) : null}
-      {!running && liveProductions.length > 0 ? (
-        <div className="studio-resume-banner">
-          {liveProductions.map((entry) => (
-            <div key={entry.id} className="studio-resume-row">
-              <span>
-                {t("Still producing:")} <strong>{entry.name || t("Untitled workflow")}</strong>
-                {t(". Its media lands in the gallery as it finishes.")}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {resumable.length > 0 ? (
-        <div className="studio-resume-banner">
-          {resumable.map((entry) => (
-            <div key={entry.id} className="studio-resume-row">
-              <span>
-                {entry.status === "failed" ? (
-                  <>
-                    {t("A production that stopped:")}{" "}
-                    <strong>{entry.name || t("Untitled workflow")}</strong>.{" "}
-                    {entry.error || t("A step failed.")}{" "}
-                    {t("Finished steps are kept; resuming retries the one that failed.")}
-                  </>
-                ) : entry.status === "awaitingGate" ? (
-                  <>
-                    {t("A production waiting on you:")}{" "}
-                    <strong>{entry.name || t("Untitled workflow")}</strong>
-                    {t(". Resume it to reach the gate and decide.")}
-                  </>
-                ) : (
-                  <>
-                    {t("An interrupted production:")}{" "}
-                    <strong>{entry.name || t("Untitled workflow")}</strong>
-                    {t(". Finished steps are kept; resuming only runs what is left.")}
-                  </>
-                )}
-              </span>
-              <span className="studio-resume-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={running}
-                  onClick={() => void dismissResumable(entry)}
-                >
-                  {t("Dismiss")}
-                </button>
-                <button
-                  type="button"
-                  className="studio-primary-button"
-                  disabled={running}
-                  onClick={() => void resume(entry)}
-                >
-                  {t("Resume")}
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      {productionBanners}
       {runError ? <p className="studio-error">{runError}</p> : null}
       {validation && (validation.errors.length > 0 || validation.warnings.length > 0) ? (
         <div className="studio-validation">

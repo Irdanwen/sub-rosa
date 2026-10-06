@@ -2016,6 +2016,30 @@ chauds de `account/sync.rs` ; un sync upstream qui y réintroduit
 `preserve(conn, c)` inconditionnel pour `c.deleted` ramène les 79 cartes.
 Le plafond B2 est une action de l'opérateur (Caps & Alerts), pas du code.
 
+## Bibliothèque de workflows et import ComfyUI (2026-10-06, ADR-0075)
+
+- **Bibliothèque** : table `studio_workflows` (migration 040, `studio_workflows.rs`,
+  commandes partagées list/save/delete/set_cover + `studio_workflow_export`
+  desktop seul, déclaré dans `tests/shared_commands.rs`). `workflow/store.ts`
+  garde une API synchrone sur un cache ; `loadWorkflowLibrary` migre
+  localStorage une fois et l'onglet Workflows attend ce chargement avant de
+  dessiner (sinon il sèmerait « My first workflow » par-dessus la vraie liste).
+- **Vue bibliothèque** (`WorkflowLibrary.tsx`) devant le canevas : cartes
+  (vignette = dernier vrai résultat via `coverArtifactOf` à la fin d'un run,
+  sinon croquis des étapes ; image IA sur demande, payante, masquée dans la
+  galerie), modèles intégrés (vignettes embarquées `src/assets/workflow-covers/`),
+  import par bouton ou glisser-déposer, export natif versionné.
+- **Import ComfyUI** (`workflow/comfy/`) : formats UI et API, table de
+  correspondance + heuristique de modèle par mots communs avec l'id du
+  catalogue, chaîne de diffusion locale reconstruite en un nœud image,
+  rapport traduit / ajusté / laissé de côté / fichiers à fournir avant
+  enregistrement. Les notes du fichier deviennent la description.
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/db/migrations.rs` | Migration `040_studio_workflows.sql` | Réappliquer |
+| `src/components/studio/WorkflowStudio.tsx` | Attente du chargement, vue bibliothèque, bouton Bibliothèque au lieu des deux listes déroulantes, couverture en fin de run | Réappliquer |
+
 ## Le composer : plusieurs images à partir d'une seule (2026-10-06)
 
 - **Onglet Studio « Composer »** (`src/components/studio/compose/`) et mode

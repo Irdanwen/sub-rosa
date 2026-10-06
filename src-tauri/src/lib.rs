@@ -96,6 +96,7 @@ pub mod studio_actions;
 pub mod studio_ai;
 pub mod studio_library;
 pub mod studio_project;
+pub mod studio_workflows;
 pub mod timeline;
 pub mod win_console;
 
@@ -527,6 +528,11 @@ pub fn run() {
             studio_library::studio_library_mark,
             studio_library::studio_collection_save,
             studio_library::studio_collection_delete,
+            studio_workflows::studio_workflow_list,
+            studio_workflows::studio_workflow_save,
+            studio_workflows::studio_workflow_delete,
+            studio_workflows::studio_workflow_set_cover,
+            studio_workflows::studio_workflow_export,
             carpe_diem::media::carpe_diem_media_save_poster,
             carpe_diem::media::carpe_diem_media_track_shape,
             studio_project::studio_artifact_organize,
@@ -814,6 +820,10 @@ pub fn run() {
         studio_library::studio_library_mark,
         studio_library::studio_collection_save,
         studio_library::studio_collection_delete,
+        studio_workflows::studio_workflow_list,
+        studio_workflows::studio_workflow_save,
+        studio_workflows::studio_workflow_delete,
+        studio_workflows::studio_workflow_set_cover,
         carpe_diem::media::carpe_diem_media_save_poster,
         carpe_diem::media::carpe_diem_media_track_shape,
         studio_project::studio_artifact_organize,

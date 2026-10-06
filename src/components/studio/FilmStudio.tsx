@@ -46,7 +46,7 @@ import {
   nodeCostMap,
 } from "../../lib/studio/workflow/cost";
 import type { Workflow } from "../../lib/studio/workflow/schema";
-import { createWorkflow, saveWorkflow } from "../../lib/studio/workflow/store";
+import { blankWorkflow, saveWorkflow } from "../../lib/studio/workflow/store";
 import { validateWorkflow } from "../../lib/studio/workflow/validator";
 import { type NodeRunResult, WorkflowRunError } from "../../lib/studio/workflow/engine";
 import {
@@ -444,7 +444,7 @@ export function FilmStudio({
       return;
     }
     const saved: Workflow = {
-      ...createWorkflow(workflow.name),
+      ...blankWorkflow(workflow.name),
       nodes: workflow.nodes,
       edges: workflow.edges,
     };
