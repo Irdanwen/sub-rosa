@@ -54,7 +54,6 @@ import {
 import {
   applyPortOrder,
   chainOrderSuggestion,
-  createWorkflow,
   defaultParams,
   deleteWorkflow,
   edgesOnPort,
@@ -96,8 +95,14 @@ import {
 } from "../../lib/studio/workflow";
 import { invoke } from "@tauri-apps/api/core";
 import { workflowFileText } from "../../lib/studio/workflow/comfy/file";
-import { coverArtifactOf, coverOffer, makeWorkflowCover } from "../../lib/studio/workflow/library";
 import {
+  coverArtifactOf,
+  coverOffer,
+  makeWorkflowCover,
+  sameWorkflow,
+} from "../../lib/studio/workflow/library";
+import {
+  blankWorkflow,
   loadWorkflowLibrary,
   setWorkflowCover,
   workflowLibraryLoaded,
@@ -1008,6 +1013,12 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   const [workflows, setWorkflows] = useState<Workflow[]>(() => listWorkflows());
   /** The library of cards, or the canvas of the workflow being edited. */
   const [view, setView] = useState<"library" | "canvas">("library");
+  /** Focus follows the switch, or it falls back to the page body. */
+  const [leftCanvas, setLeftCanvas] = useState(false);
+  const libraryButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (view === "canvas") libraryButtonRef.current?.focus();
+  }, [view]);
 
   const [current, setCurrent] = useState<Workflow | undefined>(() => listWorkflows()[0]);
   const [flowNodes, setFlowNodes] = useState<StudioFlowNode[]>([]);
@@ -1168,14 +1179,19 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     [catalog, artifacts, onParamsChange, onRename, onRemove, onApproveGate],
   );
 
-  // First mount: open the most recent workflow, or seed from templates.
+  // First mount: open the most recent workflow, or seed from templates. Once:
+  // `hydrate` changes with the catalog, and running again would seed a new
+  // first workflow after the last was deleted, or switch the canvas.
+  const firstMountRef = useRef(false);
   useEffect(() => {
+    if (firstMountRef.current) return;
+    firstMountRef.current = true;
     const existing = listWorkflows();
     if (existing.length > 0) {
       hydrate(existing[0]);
       return;
     }
-    const seeded = createWorkflow("My first workflow");
+    const seeded = blankWorkflow("My first workflow");
     const template = templateWorkflows()[0];
     const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
     const workflow: Workflow = {
@@ -1204,6 +1220,10 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       const serialized = fromFlow(base, flowNodes, flowEdges);
+      // Opening a workflow redraws its canvas; that is not an edit, and
+      // saving it would move the card to the top with today's date.
+      const stored = listWorkflows().find((entry) => entry.id === serialized.id);
+      if (stored && sameWorkflow(stored, serialized)) return;
       saveWorkflow(serialized);
       currentRef.current = serialized;
       setWorkflows(listWorkflows());
@@ -1420,7 +1440,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     (templateId: string) => {
       const template = templateWorkflows().find((entry) => entry.id === templateId);
       if (!template) return;
-      const workflow = createWorkflow(template.name);
+      const workflow = blankWorkflow(template.name);
       const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
       const cloned: Workflow = {
         ...workflow,
@@ -1592,12 +1612,21 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       setRunError(undefined);
       setResults(new Map());
       runIdRef.current = entry.id;
+      runResultsRef.current = new Map();
       const mirrorsCanvas = current?.id === entry.workflowId;
       try {
         await resumeWorkflowRun(entry.id, {
           signal: controller.signal,
           onUpdate: mirrorsCanvas ? mirrorUpdate : undefined,
         });
+        // A resumed run's result is the card's picture too.
+        const cover =
+          mirrorsCanvas && current ? coverArtifactOf(current, runResultsRef.current) : undefined;
+        if (cover) {
+          void setWorkflowCover(entry.workflowId, cover)
+            .then(() => setWorkflows(listWorkflows()))
+            .catch(() => undefined);
+        }
         setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -1684,7 +1713,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   }, [current, hydrate]);
 
   const newWorkflow = useCallback(() => {
-    const workflow = createWorkflow("Untitled workflow");
+    const workflow = blankWorkflow("Untitled workflow");
     saveWorkflow(workflow);
     setWorkflows(listWorkflows());
     hydrate(workflow);
@@ -1703,7 +1732,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   const importWorkflow = useCallback(
     (imported: ImportedWorkflow) => {
       const workflow = saveWorkflow({
-        ...createWorkflow(imported.name),
+        ...blankWorkflow(imported.name),
         ...(imported.description ? { description: imported.description } : {}),
         nodes: imported.nodes,
         edges: imported.edges,
@@ -1736,9 +1765,10 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   const makeCover = useCallback(
     async (workflow: Workflow) => {
       const offer = coverOffer(catalog);
-      if (!offer) return;
-      await makeWorkflowCover(workflow, offer);
+      if (!offer) return undefined;
+      const made = await makeWorkflowCover(workflow, offer);
       setWorkflows(listWorkflows());
+      return made;
     },
     [catalog],
   );
@@ -1824,6 +1854,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           onExport={exportWorkflow}
           onDelete={deleteFromLibrary}
           onMakeCover={makeCover}
+          autoFocus={leftCanvas}
         />
       </div>
     );
@@ -1832,7 +1863,15 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   return (
     <div className="studio-workflows">
       <div className="studio-workflows-toolbar">
-        <button type="button" className="btn btn-secondary" onClick={() => setView("library")}>
+        <button
+          ref={libraryButtonRef}
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            setLeftCanvas(true);
+            setView("library");
+          }}
+        >
           {t("Library")}
         </button>
         <input

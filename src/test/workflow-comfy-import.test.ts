@@ -153,15 +153,171 @@ describe("Sub Rosa's own file", () => {
       updatedAt: 0,
     };
     const read = readWorkflowFile(workflowFileText(original), catalog, "cover.json");
-    expect(read).toEqual({
-      kind: "subrosa",
-      workflow: { name: "Album cover", description: "Two steps", nodes: original.nodes, edges: [] },
+    if (read.kind !== "subrosa") throw new Error("not read as a Sub Rosa file");
+    expect(read.workflow).toMatchObject({
+      name: "Album cover",
+      description: "Two steps",
+      edges: [],
     });
+    // Fresh ids, so an import never collides with a workflow already here.
+    expect(read.workflow.nodes).toEqual([{ ...original.nodes[0], id: expect.any(String) }]);
+    expect(read.workflow.nodes[0].id).not.toBe("a");
   });
 
   it("refuses a file from a newer version rather than misreading it", () => {
     expect(() =>
       readWorkflowFile(JSON.stringify({ format: "subrosa-workflow", version: 99 }), catalog),
     ).toThrow(/newer version/);
+  });
+});
+
+describe("what the review found", () => {
+  const withAnime: MediaCatalog = {
+    ...catalog,
+    models: [
+      { id: "anime-xl", mediaType: "image", name: "Anime XL", offline: false },
+      ...catalog.models,
+      { id: "sora-2-image-to-video", mediaType: "imageToVideo", name: "Sora 2", offline: false },
+      { id: "wan-2-5-image-to-video", mediaType: "imageToVideo", name: "Wan 2.5", offline: false },
+    ],
+  };
+  const api = (nodes: Record<string, { class_type: string; inputs?: Record<string, unknown> }>) =>
+    translateComfy(nodes, withAnime);
+
+  it("never turns a local node into a paid one", () => {
+    const { workflow, report } = api({
+      "1": { class_type: "WanImageToVideo", inputs: { width: 832 } },
+      "2": { class_type: "FluxGuidance", inputs: { guidance: 3.5 } },
+      "3": { class_type: "WanVideoModelLoader", inputs: {} },
+    });
+    expect(workflow.nodes).toEqual([]);
+    expect(report.dropped.map((entry) => entry.comfyType).sort()).toEqual([
+      "FluxGuidance",
+      "WanImageToVideo",
+      "WanVideoModelLoader",
+    ]);
+  });
+
+  it("translates the hosted Wan node, and refuses to swap a provider the catalog lacks", () => {
+    const wan = api({ "1": { class_type: "WanImageToVideoApi", inputs: { prompt: "a fox" } } });
+    expect(wan.workflow.nodes[0].params.model).toBe("wan-2-5-image-to-video");
+    const minimax = api({
+      "1": { class_type: "MinimaxHailuoImageToVideoNode", inputs: { prompt: "a fox" } },
+    });
+    expect(minimax.workflow.nodes[0].params.model).toBeFalsy();
+    expect(minimax.report.adjusted.join("\n")).toMatch(/No hosted model matches/);
+  });
+
+  it("rebuilds a sampler with the app's default image model, not the catalog's first", () => {
+    const { workflow } = api({
+      "6": { class_type: "CLIPTextEncode", inputs: { text: "a lighthouse" } },
+      "3": { class_type: "KSampler", inputs: { positive: ["6", 0] } },
+    });
+    expect(workflow.nodes[0].params.model).toBe("gpt-image-2");
+  });
+
+  it("leaves muted and bypassed nodes out, and wires through a bypassed one", () => {
+    const ui = {
+      nodes: [
+        { id: 1, type: "LoadImage", mode: 0, inputs: [], widgets_values: ["car.png", "image"] },
+        {
+          id: 2,
+          type: "ImageScaleBy",
+          mode: 4,
+          inputs: [{ name: "image", link: 1, type: "IMAGE" }],
+        },
+        {
+          id: 3,
+          type: "KlingImage2VideoNode",
+          mode: 2,
+          inputs: [{ name: "start_frame", link: 2, type: "IMAGE" }],
+        },
+        { id: 4, type: "SaveImage", mode: 0, inputs: [{ name: "images", link: 2, type: "IMAGE" }] },
+      ],
+      links: [
+        [1, 1, 0, 2, 0, "IMAGE"],
+        [2, 2, 0, 4, 0, "IMAGE"],
+      ],
+    };
+    const { workflow, report } = translateComfy(ui, withAnime);
+    expect(workflow.nodes.map((node) => node.type).sort()).toEqual(["asset", "output"]);
+    expect(workflow.edges).toHaveLength(1);
+    expect(report.dropped.map((entry) => entry.reason)).toEqual([
+      "is bypassed in the file",
+      "is muted in the file",
+    ]);
+  });
+
+  it("reads an older file whose widget names do not line up, without misplacing the prompt", () => {
+    const ui = {
+      nodes: [
+        {
+          id: 7,
+          type: "GeminiVideoOmniV2",
+          mode: 0,
+          // Only the converted widget is listed, as older files do.
+          inputs: [
+            { name: "model.aspect_ratio", link: null, widget: { name: "model.aspect_ratio" } },
+          ],
+          widgets_values: [
+            "Omni Flash 1.1",
+            "A long prompt about a blue car in a studio",
+            "720p",
+            "16:9",
+          ],
+        },
+      ],
+      links: [],
+    };
+    const { workflow } = translateComfy(ui, catalog);
+    expect(workflow.nodes[0].params.prompt).toBe("A long prompt about a blue car in a studio");
+  });
+
+  it("lands only what a port takes: a number is not an opening frame", () => {
+    const ui = {
+      nodes: [
+        { id: 1, type: "LoadImage", mode: 0, inputs: [], widgets_values: ["car.png", "image"] },
+        {
+          id: 2,
+          type: "GeminiVideoOmniV2",
+          mode: 0,
+          inputs: [
+            { name: "width", link: 1, type: "INT" },
+            { name: "model.images.image_1", link: 2, type: "IMAGE" },
+          ],
+          widgets_values: [],
+        },
+      ],
+      links: [
+        [1, 1, 1, 2, 0, "INT"],
+        [2, 1, 0, 2, 1, "IMAGE"],
+      ],
+    };
+    const { workflow } = translateComfy(ui, catalog);
+    expect(workflow.edges.map((edge) => edge.targetPort)).toEqual(["openingFrame"]);
+  });
+
+  it("makes a malformed Sub Rosa file safe to open", () => {
+    const text = JSON.stringify({
+      format: "subrosa-workflow",
+      version: 1,
+      workflow: {
+        name: "Broken",
+        nodes: [{ id: "a", type: "textInput" }, null],
+        edges: [{ id: "e", source: "a", target: "missing" }],
+      },
+    });
+    const read = readWorkflowFile(text, catalog);
+    if (read.kind !== "subrosa") throw new Error("not read as a Sub Rosa file");
+    expect(read.workflow.nodes).toEqual([
+      {
+        id: expect.any(String),
+        type: "textInput",
+        label: "",
+        position: { x: 0, y: 0 },
+        params: {},
+      },
+    ]);
+    expect(read.workflow.edges).toEqual([]);
   });
 });

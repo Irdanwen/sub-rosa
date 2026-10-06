@@ -96,7 +96,8 @@ pub(crate) async fn list(pool: &SqlitePool) -> Result<Vec<StoredWorkflow>, Strin
 }
 
 /// Insert or replace one workflow. Its cover is kept: it belongs to the
-/// library, not to the graph the editor sends.
+/// library, not to the graph the editor sends. A save older than the row
+/// (two writes racing) is ignored rather than winning by arriving last.
 pub(crate) async fn save(pool: &SqlitePool, request: SaveWorkflowRequest) -> Result<(), String> {
     if !valid_id(&request.id) {
         return Err(INVALID.into());
@@ -123,7 +124,8 @@ pub(crate) async fn save(pool: &SqlitePool, request: SaveWorkflowRequest) -> Res
          VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, \
          definition = excluded.definition, format_version = excluded.format_version, \
-         updated_at = excluded.updated_at",
+         updated_at = excluded.updated_at \
+         WHERE excluded.updated_at >= studio_workflows.updated_at",
     )
     .bind(&request.id)
     .bind(&name)
@@ -303,6 +305,18 @@ mod tests {
             set_cover(&pool, "a", Some("../../etc")).await,
             Err(INVALID.to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn an_older_save_arriving_last_does_not_win() {
+        let (_dir, pool) = open().await;
+        let mut full = request("a", "Full", 20);
+        full.definition = r#"{"nodes":[{"id":"n"}],"edges":[]}"#.into();
+        save(&pool, full).await.unwrap();
+        save(&pool, request("a", "Empty", 10)).await.unwrap();
+        let row = &list(&pool).await.unwrap()[0];
+        assert_eq!(row.name, "Full");
+        assert!(row.definition.contains("\"n\""));
     }
 
     #[tokio::test]

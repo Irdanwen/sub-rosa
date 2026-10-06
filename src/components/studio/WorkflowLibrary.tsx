@@ -8,7 +8,7 @@ import { IconImport } from "central-icons/IconImport";
 import { IconImageSparkle } from "central-icons/IconImageSparkle";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconTrashCanSimple } from "central-icons/IconTrashCanSimple";
-import { useMemo, useRef, useState, type DragEvent } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifactIndex } from "../../lib/artifact-media";
 import { friendlyErrorMessage } from "../../lib/errors";
 import { formatCredits } from "../../lib/studio/catalog";
@@ -18,7 +18,8 @@ import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { MAX_WORKFLOW_FILE_BYTES, readWorkflowFile } from "../../lib/studio/workflow/comfy/file";
 import type { ComfyImport } from "../../lib/studio/workflow/comfy/translate";
 import { coverOffer, workflowMakes } from "../../lib/studio/workflow/library";
-import { NODE_SCHEMAS, type Workflow } from "../../lib/studio/workflow/schema";
+import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
+import type { Workflow } from "../../lib/studio/workflow/schema";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
@@ -59,6 +60,7 @@ export function WorkflowLibrary({
   onExport,
   onDelete,
   onMakeCover,
+  autoFocus = false,
 }: {
   catalog: MediaCatalog;
   workflows: Workflow[];
@@ -69,8 +71,14 @@ export function WorkflowLibrary({
   onImported: (workflow: ImportedWorkflow) => void;
   onExport: (workflow: Workflow) => Promise<void>;
   onDelete: (workflow: Workflow) => void;
-  onMakeCover: (workflow: Workflow) => Promise<void>;
+  onMakeCover: (workflow: Workflow) => Promise<StudioArtifact | undefined>;
+  /** Take focus on the heading: the person just left the canvas. */
+  autoFocus?: boolean;
 }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (autoFocus) headingRef.current?.focus();
+  }, [autoFocus]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string>();
   const [dragging, setDragging] = useState(false);
@@ -120,7 +128,9 @@ export function WorkflowLibrary({
     >
       <header className="workflow-library-head">
         <div>
-          <h2>{t("Workflow library")}</h2>
+          <h2 ref={headingRef} tabIndex={-1}>
+            {t("Workflow library")}
+          </h2>
           <p>
             {t(
               "Open a workflow, start from a template, or import a file. ComfyUI files are translated.",
@@ -196,11 +206,12 @@ export function WorkflowLibrary({
                       })}
                     </p>
                     <div className="workflow-card-actions">
-                      {offer && !cover ? (
+                      {offer && !workflow.coverArtifactId ? (
                         <button
                           type="button"
                           className="studio-icon-button"
                           disabled={covering === workflow.id}
+                          aria-busy={covering === workflow.id}
                           aria-label={t("Make a cover picture")}
                           title={
                             offer.credits !== undefined
@@ -212,6 +223,10 @@ export function WorkflowLibrary({
                           onClick={() => {
                             setCovering(workflow.id);
                             void onMakeCover(workflow)
+                              .then((made) => {
+                                // The card shows it now, not at the next launch.
+                                if (made) artifacts.remember(made);
+                              })
                               .catch((cause) =>
                                 setError(
                                   friendlyErrorMessage(cause, t("The picture could not be made.")),
@@ -331,7 +346,7 @@ function CardPicture({
     <span className="workflow-card-sketch" aria-hidden>
       {kinds.map((node) => (
         <span key={node.id} className="workflow-card-step" data-type={node.type}>
-          {NODE_SCHEMAS[node.type]?.label ?? node.type}
+          {nodeTypeLabel(node.type)}
         </span>
       ))}
     </span>
@@ -412,8 +427,9 @@ function ReportList({ title, items }: { title: string; items: string[] }) {
     <section>
       <h4>{title}</h4>
       <ul>
-        {items.map((item) => (
-          <li key={item}>{item}</li>
+        {items.map((item, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: two lines can read the same
+          <li key={index}>{item}</li>
         ))}
       </ul>
     </section>

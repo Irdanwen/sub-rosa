@@ -28,6 +28,9 @@ interface StoredWorkflow {
 let cache: Workflow[] = readLegacy();
 let loading: Promise<Workflow[]> | undefined;
 let loaded = false;
+/** Workflows whose last save did not reach the table; retried with the next
+ * save that does. */
+const unsaved = new Set<string>();
 
 function readLegacy(): Workflow[] {
   try {
@@ -60,7 +63,8 @@ function fromStored(row: StoredWorkflow): Workflow | undefined {
   }
 }
 
-function persist(workflow: Workflow): Promise<void> {
+/** Write one workflow to the table. Resolves whether it got there. */
+function persist(workflow: Workflow): Promise<boolean> {
   return invoke<void>("studio_workflow_save", {
     request: {
       id: workflow.id,
@@ -72,10 +76,27 @@ function persist(workflow: Workflow): Promise<void> {
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     },
-  }).catch(() => {
-    // The cache still holds it for this session, and `loadWorkflowLibrary`
-    // writes whatever the table lacks on the next launch.
-  });
+  }).then(
+    () => {
+      unsaved.delete(workflow.id);
+      retryUnsaved();
+      return true;
+    },
+    () => {
+      // The cache still holds it; the next save that reaches the table
+      // brings it along.
+      unsaved.add(workflow.id);
+      return false;
+    },
+  );
+}
+
+function retryUnsaved(): void {
+  for (const id of [...unsaved]) {
+    const workflow = cache.find((entry) => entry.id === id);
+    unsaved.delete(id);
+    if (workflow) void persist(workflow);
+  }
 }
 
 function sorted(workflows: Workflow[]): Workflow[] {
@@ -92,12 +113,17 @@ export function loadWorkflowLibrary(): Promise<Workflow[]> {
     // What is only in the cache: local storage not moved yet, or a save made
     // while the table was being read.
     const pending = cache.filter((workflow) => !known.has(workflow.id));
-    await Promise.all(pending.map(persist));
+    const written = await Promise.all(pending.map(persist));
     cache = sorted([...stored, ...pending]);
-    try {
-      window.localStorage.removeItem(LEGACY_KEY);
-    } catch {
-      // Left behind, it is moved again harmlessly: ids are kept.
+    // Local storage goes only once everything in it reached the table: a
+    // failed write leaves it for the next launch to move again (ids are
+    // kept, so moving twice is harmless).
+    if (written.every(Boolean)) {
+      try {
+        window.localStorage.removeItem(LEGACY_KEY);
+      } catch {
+        // Left behind, it is moved again harmlessly.
+      }
     }
     loaded = true;
     return cache;
@@ -120,9 +146,19 @@ export function listWorkflows(): Workflow[] {
   return sorted(cache);
 }
 
-/** Upserts by id, refreshing updatedAt. Returns the stored copy. */
+/** Upserts by id, refreshing updatedAt. Returns the stored copy. What the
+ * library keeps beside the graph (its picture, where it came from) survives
+ * a save from an editor that never knew about it. */
 export function saveWorkflow(workflow: Workflow): Workflow {
-  const updated: Workflow = { ...workflow, updatedAt: Date.now() };
+  const previous = cache.find((existing) => existing.id === workflow.id);
+  const updated: Workflow = {
+    ...workflow,
+    coverArtifactId: workflow.coverArtifactId ?? previous?.coverArtifactId,
+    origin: workflow.origin ?? previous?.origin,
+    // Strictly newer than what the table holds: two saves in the same
+    // millisecond must not tie, or the older could win.
+    updatedAt: Math.max(Date.now(), (previous?.updatedAt ?? 0) + 1),
+  };
   cache = [updated, ...cache.filter((existing) => existing.id !== workflow.id)];
   void persist(updated);
   return updated;
@@ -133,6 +169,21 @@ export function deleteWorkflow(id: string): void {
   void invoke("studio_workflow_delete", { id }).catch(() => {
     // Gone from this session; a failed delete shows again next launch.
   });
+}
+
+/** An empty workflow, not stored yet: pass it to `saveWorkflow` once it has
+ * its graph, so the table never races an empty row against the full one. */
+export function blankWorkflow(name: string): Workflow {
+  const now = Date.now();
+  return {
+    id: crypto.randomUUID(),
+    name,
+    nodes: [],
+    edges: [],
+    createdAt: now,
+    updatedAt: now,
+    origin: "mine",
+  };
 }
 
 /** Creates, persists, and returns an empty workflow. */

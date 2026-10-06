@@ -6,7 +6,7 @@ import { saveArtifactFromBase64 } from "../artifacts";
 import { defaultImageModel, estimateCostCredits } from "../catalog";
 import { generateImages } from "../generate-image";
 import { markArtifacts } from "../library";
-import type { MediaCatalog, MediaModel } from "../types";
+import type { MediaCatalog, MediaModel, StudioArtifact } from "../types";
 import type { NodeRunResult } from "./engine";
 import { nodeLabel, type Workflow } from "./schema";
 import { setWorkflowCover } from "./store";
@@ -49,7 +49,13 @@ export function workflowMakes(workflow: Pick<Workflow, "nodes">): string {
   if (videos) parts.push(videos === 1 ? t("1 video") : t("{count} videos", { count: videos }));
   if (images) parts.push(images === 1 ? t("1 image") : t("{count} images", { count: images }));
   if (sounds) parts.push(sounds === 1 ? t("1 sound") : t("{count} sounds", { count: sounds }));
-  return parts.join(", ") || t("{count} steps", { count: workflow.nodes.length });
+  if (parts.length > 0) return parts.join(", ");
+  const steps = workflow.nodes.length;
+  return steps === 0
+    ? t("No steps yet")
+    : steps === 1
+      ? t("1 step")
+      : t("{count} steps", { count: steps });
 }
 
 /** The prompt for a card picture: what the workflow is about, in its own
@@ -84,7 +90,10 @@ export function coverOffer(catalog: MediaCatalog): CoverOffer | undefined {
 
 /** Make a picture for a workflow's card: a paid image, kept hidden in the
  * gallery so it does not crowd it, and set as the cover. */
-export async function makeWorkflowCover(workflow: Workflow, offer: CoverOffer): Promise<string> {
+export async function makeWorkflowCover(
+  workflow: Workflow,
+  offer: CoverOffer,
+): Promise<StudioArtifact> {
   const prompt = coverPrompt(workflow);
   const [image] = await generateImages(offer.model.id, {
     model: offer.model.id,
@@ -103,5 +112,28 @@ export async function makeWorkflowCover(workflow: Workflow, offer: CoverOffer): 
   });
   await markArtifacts([artifact], { hidden: true }).catch(() => undefined);
   await setWorkflowCover(workflow.id, artifact.id);
-  return artifact.id;
+  return artifact;
+}
+
+/** Key-order-independent JSON, to tell an edit from a redraw. */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** Whether two copies of a workflow hold the same graph and name: opening a
+ * workflow redraws its canvas, which is not an edit. */
+export function sameWorkflow(a: Workflow, b: Workflow): boolean {
+  return (
+    a.name === b.name &&
+    stableJson({ nodes: a.nodes, edges: a.edges }) ===
+      stableJson({ nodes: b.nodes, edges: b.edges })
+  );
 }

@@ -96,6 +96,40 @@ describe("the library's store", () => {
     expect(imported).toMatchObject({ origin: "import", coverArtifactId: "cover.png" });
   });
 
+  it("keeps local storage when a workflow could not be written", async () => {
+    window.localStorage.setItem("os-june:studio-workflows", JSON.stringify([workflow("a")]));
+    tauri.invoke.mockImplementation(async (command: string) => {
+      if (command === "studio_workflow_list") return [];
+      if (command === "studio_workflow_save") throw new Error("database is locked");
+      return undefined;
+    });
+    resetWorkflowLibraryForTests();
+    await loadWorkflowLibrary();
+    expect(listWorkflows().map((entry) => entry.id)).toEqual(["a"]);
+    expect(window.localStorage.getItem("os-june:studio-workflows")).not.toBeNull();
+  });
+
+  it("keeps a workflow's picture when the editor saves its graph", async () => {
+    table = [
+      {
+        id: "c",
+        name: "C",
+        definition: JSON.stringify({ nodes: [], edges: [] }),
+        formatVersion: 1,
+        origin: "import",
+        coverArtifactId: "cover.png",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    resetWorkflowLibraryForTests();
+    await loadWorkflowLibrary();
+    // The editor's copy was hydrated before the cover existed.
+    const saved = saveWorkflow({ ...workflow("c"), name: "C, edited" });
+    expect(saved).toMatchObject({ coverArtifactId: "cover.png", origin: "import" });
+    expect(saved.updatedAt).toBeGreaterThan(1);
+  });
+
   it("writes through to the table", async () => {
     resetWorkflowLibraryForTests();
     await loadWorkflowLibrary();

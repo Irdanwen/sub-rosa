@@ -10,10 +10,12 @@
 //
 // Nothing is dropped in silence: every node lands in the report as
 // translated, adjusted or left out, with the reason, before anything is saved.
-// The importer is pure: it reads the file and the live catalog, and returns a
-// workflow and its report.
+// A node that is not clearly a hosted call stays out: guessing wrong would
+// turn a free local step into a paid render. The importer is pure: it reads
+// the file and the live catalog, and returns a workflow and its report.
 
 import {
+  defaultImageModel,
   imageEditModels,
   imageGenerationModels,
   videoDirection,
@@ -21,10 +23,12 @@ import {
 } from "../../catalog";
 import { t } from "../../../i18n";
 import type { MediaCatalog, MediaModel } from "../../types";
+import { nodeTypeLabel } from "../labels";
 import { modelParamPatch, modelsForParam } from "../models";
 import {
   defaultParams,
   NODE_SCHEMAS,
+  openInputPorts,
   type Workflow,
   type WorkflowEdge,
   type WorkflowNode,
@@ -52,16 +56,28 @@ export interface ComfyImport {
   usable: boolean;
 }
 
+interface ComfyLink {
+  from: string;
+  /** What the link carries, as ComfyUI types it ("IMAGE", "STRING"...), or
+   * "" when the file does not say (the API format). */
+  type: string;
+}
+
 /** One Comfy node, reduced to what both file formats share. */
 interface ComfyNode {
   id: string;
   type: string;
   title?: string;
   position: { x: number; y: number };
+  /** 0 runs, 2 is muted, 4 is bypassed (its inputs pass straight through). */
+  mode: number;
   /** Widget values by input name, without the "model." prefix. */
   values: Record<string, unknown>;
-  /** Linked inputs: input name -> [source node id, source slot]. */
-  links: Map<string, [string, number]>;
+  /** Every widget value in file order, for files whose names cannot be
+   * matched to positions. */
+  widgets: unknown[];
+  /** Linked inputs by input name. */
+  links: Map<string, ComfyLink>;
 }
 
 export function detectWorkflowFile(json: unknown): WorkflowFileFormat {
@@ -93,43 +109,56 @@ function shortName(name: string): string {
 
 function readUiFormat(json: Record<string, unknown>): ComfyNode[] {
   const rawNodes = (json.nodes as Array<Record<string, unknown>>) ?? [];
-  const rawLinks = (json.links as unknown[][]) ?? [];
-  const linkById = new Map<number, [string, number]>();
+  const rawLinks = (json.links as unknown[]) ?? [];
+  const linkById = new Map<number, ComfyLink>();
   for (const link of rawLinks) {
-    if (!Array.isArray(link) || link.length < 5) continue;
-    linkById.set(Number(link[0]), [String(link[1]), Number(link[2])]);
+    if (Array.isArray(link) && link.length >= 5) {
+      linkById.set(Number(link[0]), { from: String(link[1]), type: String(link[5] ?? "") });
+    } else if (link && typeof link === "object") {
+      // Newer files write links as objects.
+      const entry = link as { id?: unknown; origin_id?: unknown; type?: unknown };
+      if (entry.id !== undefined && entry.origin_id !== undefined)
+        linkById.set(Number(entry.id), {
+          from: String(entry.origin_id),
+          type: String(entry.type ?? ""),
+        });
+    }
   }
   return rawNodes.map((raw) => {
     const inputs = Array.isArray(raw.inputs) ? (raw.inputs as Array<Record<string, unknown>>) : [];
     const values: Record<string, unknown> = {};
-    const widgetValues = raw.widgets_values;
-    if (Array.isArray(widgetValues)) {
-      // Widget inputs are listed in the order their values are stored; a
-      // seed is followed by its "control after generate" value.
-      let cursor = 0;
-      const widgets = inputs.filter((input) => input.widget);
-      if (widgets.length > 0) {
-        for (const input of widgets) {
-          const name = shortName(String(input.name));
-          values[name] = widgetValues[cursor];
+    const raw_widgets = raw.widgets_values;
+    const widgets = Array.isArray(raw_widgets) ? raw_widgets : [];
+    if (Array.isArray(raw_widgets)) {
+      // Newer files list every widget among the inputs, in the order their
+      // values are stored, a seed followed by its "control after generate".
+      // Older ones list only the widgets converted to inputs, so positions
+      // mean nothing there: name values only when the counts agree.
+      const named = inputs.filter((input) => input.widget);
+      const controls = raw_widgets.filter(
+        (value) => typeof value === "string" && SEED_CONTROLS.has(value),
+      ).length;
+      if (named.length > 0 && named.length === raw_widgets.length - controls) {
+        let cursor = 0;
+        for (const input of named) {
+          values[shortName(String(input.name))] = raw_widgets[cursor];
           cursor += 1;
-          if (
-            typeof widgetValues[cursor] === "string" &&
-            SEED_CONTROLS.has(widgetValues[cursor] as string)
-          )
-            cursor += 1;
+          const next = raw_widgets[cursor];
+          if (typeof next === "string" && SEED_CONTROLS.has(next)) cursor += 1;
         }
-      } else {
-        values._widgets = widgetValues;
       }
-    } else if (widgetValues && typeof widgetValues === "object") {
-      for (const [name, value] of Object.entries(widgetValues)) values[shortName(name)] = value;
+    } else if (raw_widgets && typeof raw_widgets === "object") {
+      for (const [name, value] of Object.entries(raw_widgets)) values[shortName(name)] = value;
     }
-    const links = new Map<string, [string, number]>();
+    const links = new Map<string, ComfyLink>();
     for (const input of inputs) {
       if (input.link === null || input.link === undefined) continue;
       const source = linkById.get(Number(input.link));
-      if (source) links.set(shortName(String(input.name)), source);
+      if (source)
+        links.set(shortName(String(input.name)), {
+          from: source.from,
+          type: source.type || String(input.type ?? ""),
+        });
     }
     const pos = Array.isArray(raw.pos) ? (raw.pos as number[]) : [0, 0];
     return {
@@ -137,7 +166,9 @@ function readUiFormat(json: Record<string, unknown>): ComfyNode[] {
       type: String(raw.type),
       title: typeof raw.title === "string" ? raw.title : undefined,
       position: { x: Number(pos[0]) || 0, y: Number(pos[1]) || 0 },
+      mode: Number(raw.mode) || 0,
       values,
+      widgets,
       links,
     };
   });
@@ -151,10 +182,10 @@ function readApiFormat(json: Record<string, unknown>): ComfyNode[] {
       _meta?: { title?: string };
     };
     const values: Record<string, unknown> = {};
-    const links = new Map<string, [string, number]>();
+    const links = new Map<string, ComfyLink>();
     for (const [name, value] of Object.entries(node.inputs ?? {})) {
       if (Array.isArray(value) && value.length === 2 && typeof value[1] === "number")
-        links.set(shortName(name), [String(value[0]), value[1]]);
+        links.set(shortName(name), { from: String(value[0]), type: "" });
       else values[shortName(name)] = value;
     }
     return {
@@ -163,7 +194,9 @@ function readApiFormat(json: Record<string, unknown>): ComfyNode[] {
       title: node._meta?.title,
       // The API format carries no layout: lay the nodes out in a row.
       position: { x: index * 320, y: 0 },
+      mode: 0,
       values,
+      widgets: [],
       links,
     };
   });
@@ -204,6 +237,9 @@ const TEXTS = new Set([
 
 const NOTES = new Set(["MarkdownNote", "Note"]);
 
+/** Plumbing a graph routes through, traversed and not reported. */
+const PASS_THROUGH = new Set(["Reroute", "PrimitiveNode"]);
+
 /** The local diffusion chain: samplers and what only they consume. */
 const SAMPLERS = new Set([
   "KSampler",
@@ -212,10 +248,13 @@ const SAMPLERS = new Set([
   "SamplerCustomAdvanced",
 ]);
 const LOCAL_ONLY =
-  /^(Checkpoint|UNET|Unet|VAE|CLIP(?!TextEncode)|Lora|ControlNet|EmptyLatent|EmptySD3Latent|Latent|ModelSampling|Upscale.*Model|IPAdapter|InstantID|Conditioning|BasicScheduler|BasicGuider|RandomNoise|KSamplerSelect|CFGGuider|DualCLIP|Flux(Guidance)|DiffusersLoader)/;
+  /(Checkpoint|UNET|Unet|VAE|CLIP|Lora|LoRA|ControlNet|Latent|ModelSampling|Upscale.*Model|IPAdapter|InstantID|Conditioning|Scheduler|Guider|Guidance|RandomNoise|KSampler|Sampler|Loader|Encode|Decode|Scale|Mask)/;
 
+/** Providers of ComfyUI's partner nodes, which call a hosted model and are
+ * named after it ("KlingImage2VideoNode", "IdeogramV3", "WanTextToVideoApi"). */
 const PROVIDERS = [
   "gemini",
+  "google",
   "veo",
   "kling",
   "minimax",
@@ -223,33 +262,38 @@ const PROVIDERS = [
   "pixverse",
   "runway",
   "luma",
-  "seedance",
   "bytedance",
+  "seedance",
+  "seedream",
   "wan",
   "vidu",
   "moonvalley",
-  "sora",
   "openai",
   "ideogram",
   "flux",
   "recraft",
   "stability",
-  "gpt",
   "imagen",
-  "qwen",
-  "seedream",
+  "sora",
 ];
 
+/** A hosted partner node: named for its provider, ending the way ComfyUI
+ * names them, and nothing that runs a local model. "WanImageToVideo" (local)
+ * and "FluxGuidance" (local) stay out; "WanImageToVideoApi" and
+ * "FluxProUltraImageNode" are in. */
+function partnerProvider(type: string): string | undefined {
+  if (LOCAL_ONLY.test(type)) return undefined;
+  if (!/(Node|Api|API|V\d+|\d)$/.test(type)) return undefined;
+  const lower = type.toLowerCase();
+  return PROVIDERS.find((provider) => lower.startsWith(provider));
+}
+
 function isVideoPartner(type: string): boolean {
-  return /video/i.test(type) && PROVIDERS.some((provider) => type.toLowerCase().includes(provider));
+  return Boolean(partnerProvider(type)) && /video|veo|sora/i.test(type);
 }
 
 function isImagePartner(type: string): boolean {
-  return (
-    !/video/i.test(type) &&
-    /(image|ideogram|flux|recraft|stability|imagen|seedream)/i.test(type) &&
-    PROVIDERS.some((provider) => type.toLowerCase().includes(provider))
-  );
+  return Boolean(partnerProvider(type)) && !isVideoPartner(type);
 }
 
 /** The words a model id is likely to share with a Comfy node and its model
@@ -263,7 +307,10 @@ export function modelHints(...sources: unknown[]): string[] {
       .replace(/(\d)\.(\d)/g, "$1-$2")
       .toLowerCase();
     for (const word of spaced.split(/[^a-z0-9-]+/)) {
-      if (word.length < 2 || /^(node|api|v\d|video|image|to|the|model|generation|text)$/.test(word))
+      if (
+        word.length < 2 ||
+        /^(node|api|v\d|video|image|images|to|the|model|generation|text|pro)$/.test(word)
+      )
         continue;
       words.add(word);
     }
@@ -271,22 +318,22 @@ export function modelHints(...sources: unknown[]): string[] {
   return [...words];
 }
 
-/** The catalog model that shares the most words with the hints, preferring
- * one that runs in the wanted direction. */
+/** The catalog model sharing the most words with the hints, preferring one
+ * that runs in the wanted direction. A model that shares no word is never
+ * chosen: picking another provider's model would be a silent swap. */
 export function pickModel(
   models: MediaModel[],
   hints: string[],
   direction?: VideoDirection,
 ): MediaModel | undefined {
-  const live = models.filter((model) => !model.offline);
   let best: { model: MediaModel; score: number } | undefined;
-  for (const model of live) {
+  for (const model of models.filter((entry) => !entry.offline)) {
     const id = model.id.toLowerCase();
     const name = model.name.toLowerCase();
     let score = 0;
     for (const hint of hints) if (id.includes(hint) || name.includes(hint)) score += hint.length;
-    if (direction && isVideo(model) && videoDirection(model) === direction) score += 1;
     if (score === 0) continue;
+    if (direction && isVideo(model) && videoDirection(model) === direction) score += 1;
     if (
       !best ||
       score > best.score ||
@@ -305,29 +352,38 @@ function isVideo(model: MediaModel): boolean {
   );
 }
 
-function text(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function firstString(values: Record<string, unknown>, names: string[]): string {
+/** A named widget's string value, else the best guess from the raw widget
+ * list: the longest string for a prompt. */
+function promptOf(node: ComfyNode, names: string[]): string {
   for (const name of names) {
-    const value = values[name];
+    const value = node.values[name];
     if (typeof value === "string" && value.trim()) return value;
   }
-  const widgets = values._widgets;
-  if (Array.isArray(widgets)) {
-    const found = widgets.find((value) => typeof value === "string" && value.trim().length > 0);
-    if (typeof found === "string") return found;
-  }
-  return "";
+  const strings = node.widgets.filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
+  return strings.sort((a, b) => b.length - a.length)[0] ?? "";
 }
+
+/** A named widget's value, else the first raw widget that looks like one. */
+function settingOf(node: ComfyNode, name: string, shape: RegExp): string {
+  const value = node.values[name];
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number") return String(value);
+  const found = node.widgets.find((entry) => typeof entry === "string" && shape.test(entry));
+  return typeof found === "string" ? found : "";
+}
+
+const RATIO = /^\d+(\.\d+)?:\d+(\.\d+)?$/;
+const RESOLUTION = /^\d+(p|K|k)$/;
 
 // --- The translation ------------------------------------------------------
 
 interface Built {
   node: WorkflowNode;
-  /** Which native port a Comfy input name lands on. */
-  portFor: (input: string, sourceKind: string) => string | undefined;
+  /** Which native port a Comfy input lands on, given what its link carries;
+   * undefined leaves the link out. */
+  portFor: (input: string, linkType: string) => string | undefined;
 }
 
 export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImport {
@@ -342,8 +398,7 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
   const notes: string[] = [];
   const built = new Map<string, Built>();
   const byId = new Map(comfy.map((node) => [node.id, node]));
-  /** Text nodes a sampler took as its negative prompt: folded into the
-   * image node, not kept as a second prompt. */
+  /** Text encoders a sampler took as its prompts: folded into its node. */
   const absorbed = new Set<string>();
 
   const make = (
@@ -360,7 +415,7 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       params: { ...defaultParams(type), ...params },
     };
     built.set(source.id, { node, portFor });
-    report.translated.push({ comfyType: source.type, as: NODE_SCHEMAS[type].label });
+    report.translated.push({ comfyType: source.type, as: nodeTypeLabel(type) });
     return node;
   };
 
@@ -375,15 +430,34 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
     return { ...params, ...modelParamPatch(schema, params, modelParam, model) };
   };
 
+  const drop = (source: ComfyNode, reason: string) =>
+    report.dropped.push({ comfyType: source.title || source.type, reason });
+
   for (const source of comfy) {
+    if (source.mode === 2) {
+      drop(source, t("is muted in the file"));
+      continue;
+    }
+    if (source.mode === 4) {
+      // Bypassed: its inputs reach its outputs, which the edge pass follows.
+      drop(source, t("is bypassed in the file"));
+      continue;
+    }
+    if (source.type === "PrimitiveNode" && typeof source.widgets[0] === "string") {
+      // An older file's shared prompt: a primitive holding text feeds the
+      // nodes whose prompt was converted to an input.
+      make(source, "textInput", { text: source.widgets[0] });
+      continue;
+    }
+    if (PASS_THROUGH.has(source.type)) continue;
     if (NOTES.has(source.type)) {
-      const body = firstString(source.values, ["text", "value"]);
+      const body = promptOf(source, ["text", "value"]);
       if (body.trim()) notes.push(body.trim());
       continue;
     }
     const loaded = LOADERS[source.type];
     if (loaded) {
-      const fileName = firstString(source.values, ["image", "video", "audio", "file"]);
+      const fileName = settingOf(source, loaded, /\.\w{2,5}$/) || promptOf(source, ["file"]);
       if (fileName) report.missing.push(fileName);
       const node = make(source, "asset", { assetKind: loaded, artifactId: "" });
       if (fileName && !node.label) node.label = fileName;
@@ -394,19 +468,25 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       continue;
     }
     if (TEXTS.has(source.type)) {
-      make(source, "textInput", { text: firstString(source.values, ["value", "text", "string"]) });
+      make(source, "textInput", { text: promptOf(source, ["value", "text", "string"]) });
       continue;
     }
     if (isVideoPartner(source.type)) {
-      const values = source.values;
-      const linkedImage = [...source.links.keys()].some((name) => /image|frame/i.test(name));
-      const task = text(values.task_type).toLowerCase();
+      const linkedImage = [...source.links.entries()].some(
+        ([name, link]) => link.type === "IMAGE" || /image|frame/i.test(name),
+      );
+      const task = settingOf(source, "task_type", /_to_/).toLowerCase();
       const direction: VideoDirection = task.includes("reference")
         ? "reference"
         : task.includes("image") || linkedImage
           ? "image"
           : "text";
-      const hints = modelHints(source.type, values.model, values.model_name);
+      const hints = modelHints(
+        source.type,
+        source.values.model,
+        source.values.model_name,
+        partnerProvider(source.type),
+      );
       const candidates = modelsForParam(catalog, {
         name: "model",
         type: "model",
@@ -425,10 +505,12 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
           }),
         );
       const wanted: Record<string, unknown> = {
-        prompt: firstString(values, ["prompt", "text"]),
-        aspectRatio: text(values.aspect_ratio),
-        resolution: text(values.resolution),
-        duration: String(values.duration ?? values.duration_seconds ?? values.length ?? ""),
+        prompt: promptOf(source, ["prompt", "text"]),
+        aspectRatio: settingOf(source, "aspect_ratio", RATIO),
+        resolution: settingOf(source, "resolution", RESOLUTION),
+        duration: String(
+          source.values.duration ?? source.values.duration_seconds ?? source.values.length ?? "",
+        ),
       };
       const params = withModel("video", wanted, model);
       for (const key of ["aspectRatio", "resolution"] as const) {
@@ -441,25 +523,53 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
             }),
           );
       }
-      if (values.seed !== undefined)
+      if (source.values.seed !== undefined)
         report.adjusted.push(t("The seed is not kept: hosted video models choose their own."));
-      make(source, "video", params, (input, kind) => {
-        if (kind === "VIDEO" || /video/i.test(input)) return "referenceClips";
-        if (kind === "AUDIO" || /audio/i.test(input)) return "referenceAudio";
-        if (/end|last/i.test(input)) return "endFrame";
-        if (kind === "IMAGE" || /image|frame/i.test(input))
-          return (model ? videoDirection(model) : direction) === "reference"
-            ? "references"
-            : "openingFrame";
-        return "prompt";
+      const node = make(source, "video", params);
+      const open = new Set(openInputPorts(NODE_SCHEMAS.video, node.params).map((port) => port.id));
+      built.set(source.id, {
+        node,
+        portFor: (input, linkType) => {
+          if (/negative/i.test(input)) return undefined;
+          const kind = linkType || (/image|frame/i.test(input) ? "IMAGE" : "");
+          const port =
+            kind === "VIDEO"
+              ? "referenceClips"
+              : kind === "AUDIO"
+                ? "referenceAudio"
+                : kind === "IMAGE"
+                  ? /end|last/i.test(input)
+                    ? "endFrame"
+                    : open.has("openingFrame")
+                      ? "openingFrame"
+                      : "references"
+                  : kind === "STRING" || /prompt|text/i.test(input)
+                    ? "prompt"
+                    : undefined;
+          if (port && !open.has(port)) {
+            report.adjusted.push(
+              t("{model} takes no {input}: that link is left out.", {
+                model: model?.name ?? t("this model"),
+                input,
+              }),
+            );
+            return undefined;
+          }
+          return port;
+        },
       });
       continue;
     }
     if (isImagePartner(source.type)) {
-      const linkedImage = [...source.links.keys()].some((name) => /image/i.test(name));
+      const linkedImage = [...source.links.entries()].some(
+        ([name, link]) => link.type === "IMAGE" || /image/i.test(name),
+      );
       const type: WorkflowNodeType = linkedImage ? "imageEdit" : "image";
       const models = linkedImage ? imageEditModels(catalog) : imageGenerationModels(catalog);
-      const model = pickModel(models, modelHints(source.type, source.values.model));
+      const model = pickModel(
+        models,
+        modelHints(source.type, source.values.model, partnerProvider(source.type)),
+      );
       if (!model)
         report.adjusted.push(
           t("No hosted model matches {node}: pick one on the image node.", { node: source.type }),
@@ -467,78 +577,77 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       const params = withModel(
         type,
         {
-          prompt: firstString(source.values, ["prompt", "text"]),
-          aspectRatio: text(source.values.aspect_ratio),
-          ...(type === "image" ? { negativePrompt: text(source.values.negative_prompt) } : {}),
+          prompt: promptOf(source, ["prompt", "text"]),
+          aspectRatio: settingOf(source, "aspect_ratio", RATIO),
+          ...(type === "image"
+            ? {
+                negativePrompt:
+                  typeof source.values.negative_prompt === "string"
+                    ? source.values.negative_prompt
+                    : "",
+              }
+            : {}),
         },
         model,
       );
-      make(source, type, params, (input, kind) =>
-        kind === "IMAGE" || /image/i.test(input)
-          ? type === "imageEdit"
-            ? "images"
-            : undefined
-          : "prompt",
-      );
+      make(source, type, params, (input, linkType) => {
+        if (/negative/i.test(input) || /mask/i.test(input)) return undefined;
+        const kind = linkType || (/image/i.test(input) ? "IMAGE" : "");
+        if (kind === "IMAGE") return type === "imageEdit" ? "images" : undefined;
+        if (kind === "STRING" || /prompt|text/i.test(input)) return "prompt";
+        return undefined;
+      });
       continue;
     }
     if (SAMPLERS.has(source.type)) {
       // A local diffusion run, rebuilt as one hosted image render.
-      const promptOf = (input: string) => {
+      const encoderText = (input: string) => {
         const link = source.links.get(input);
-        const upstream = link ? byId.get(link[0]) : undefined;
-        if (!upstream) return { text: "", id: undefined };
-        return { text: firstString(upstream.values, ["text"]), id: upstream.id };
+        const upstream = link ? byId.get(link.from) : undefined;
+        if (!upstream) return "";
+        absorbed.add(upstream.id);
+        return promptOf(upstream, ["text"]);
       };
-      const positive = promptOf("positive");
-      const negative = promptOf("negative");
-      if (negative.id) absorbed.add(negative.id);
-      const model =
-        pickModel(imageGenerationModels(catalog), []) ?? imageGenerationModels(catalog)[0];
-      const params = withModel(
-        "image",
-        { prompt: positive.text, negativePrompt: negative.text },
-        model,
-      );
+      const positive = encoderText("positive");
+      const negative = encoderText("negative");
+      const model = defaultImageModel(catalog);
+      const params = withModel("image", { prompt: positive, negativePrompt: negative }, model);
       report.adjusted.push(
         t(
           "{node} ran a model on a local graphics card: rebuilt as one image from {model} with the same prompts.",
-          {
-            node: source.type,
-            model: model?.name ?? t("a hosted model"),
-          },
+          { node: source.type, model: model?.name ?? t("a hosted model") },
         ),
       );
-      make(source, "image", params, () => "prompt");
+      make(source, "image", params);
       continue;
     }
     if (source.type === "CLIPTextEncode") continue; // decided once the samplers are known
-    report.dropped.push({
-      comfyType: source.type,
-      reason: LOCAL_ONLY.test(source.type)
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(source.type)) {
+      drop(source, t("is a group of nodes, which Sub Rosa does not open"));
+      continue;
+    }
+    drop(
+      source,
+      LOCAL_ONLY.test(source.type)
         ? t("runs a model on a local graphics card, which Sub Rosa does not do")
-        : t("has no counterpart in Sub Rosa"),
-    });
+        : partnerProvider(source.type) ||
+            PROVIDERS.some((p) => source.type.toLowerCase().startsWith(p))
+          ? t("calls a hosted model Sub Rosa does not know yet")
+          : t("has no counterpart in Sub Rosa"),
+    );
   }
 
-  // A prompt encoder feeding a sampler's positive input is that image node's
-  // prompt already; one feeding nothing else is left out, said once.
+  // A prompt encoder feeding a sampler is that image node's prompt already;
+  // one feeding nothing translated is left out, said once.
   for (const source of comfy) {
-    if (source.type !== "CLIPTextEncode") continue;
-    const feedsSampler = comfy.some(
-      (other) =>
-        SAMPLERS.has(other.type) && [...other.links.values()].some(([from]) => from === source.id),
-    );
-    if (feedsSampler || absorbed.has(source.id)) continue;
-    report.dropped.push({
-      comfyType: source.type,
-      reason: t("encodes a prompt for a local model"),
-    });
+    if (source.type !== "CLIPTextEncode" || absorbed.has(source.id) || source.mode !== 0) continue;
+    drop(source, t("encodes a prompt for a local model"));
   }
 
   // Edges: a link between two translated nodes lands on the target's port. A
   // link from a node that did not translate is followed upstream until it
-  // reaches one that did (a VAE decode between a sampler and a save).
+  // reaches one that did (a VAE decode between a sampler and a save, a
+  // bypassed node, a reroute).
   const edges: WorkflowEdge[] = [];
   const seen = new Set<string>();
   const upstreamBuilt = (id: string, guard = new Set<string>()): Built | undefined => {
@@ -547,23 +656,20 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
     const direct = built.get(id);
     if (direct) return direct;
     const node = byId.get(id);
-    if (!node) return undefined;
-    for (const [from] of node.links.values()) {
-      const found = upstreamBuilt(from, guard);
+    if (!node || (node.mode === 2 && !PASS_THROUGH.has(node.type))) return undefined;
+    for (const link of node.links.values()) {
+      const found = upstreamBuilt(link.from, guard);
       if (found) return found;
     }
     return undefined;
   };
   for (const target of comfy) {
     const to = built.get(target.id);
-    if (!to) continue;
-    for (const [input, [fromId]] of target.links) {
-      if (SAMPLERS.has(target.type)) continue; // its prompts are folded in
-      const from = upstreamBuilt(fromId);
+    if (!to || SAMPLERS.has(target.type)) continue; // a sampler's prompts are folded in
+    for (const [input, link] of target.links) {
+      const from = upstreamBuilt(link.from);
       if (!from || from === to) continue;
-      const fromNode = byId.get(fromId);
-      const kind = kindOfComfyOutput(fromNode, from.node.type);
-      const port = to.portFor(input, kind);
+      const port = to.portFor(input, link.type || kindOf(from.node.type, byId.get(link.from)));
       if (!port) continue;
       const key = `${from.node.id}>${to.node.id}:${port}`;
       if (seen.has(key)) continue;
@@ -586,8 +692,9 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
   };
 }
 
-/** What a Comfy link carries, for picking the port it lands on. */
-function kindOfComfyOutput(source: ComfyNode | undefined, nativeType: WorkflowNodeType): string {
+/** What a link carries when the file does not say (the API format), from the
+ * native node it comes from. */
+function kindOf(nativeType: WorkflowNodeType, source: ComfyNode | undefined): string {
   if (nativeType === "video") return "VIDEO";
   if (nativeType === "image" || nativeType === "imageEdit") return "IMAGE";
   if (nativeType === "textInput") return "STRING";
@@ -595,5 +702,5 @@ function kindOfComfyOutput(source: ComfyNode | undefined, nativeType: WorkflowNo
     const kind = LOADERS[source.type];
     return kind === "video" ? "VIDEO" : kind === "audio" ? "AUDIO" : "IMAGE";
   }
-  return "STRING";
+  return "";
 }
