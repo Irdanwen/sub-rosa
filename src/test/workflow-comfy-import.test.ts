@@ -320,4 +320,32 @@ describe("what the review found", () => {
     ]);
     expect(read.workflow.edges).toEqual([]);
   });
+
+  it("never turns a chat node into a paid image, and fills a one-image port once", () => {
+    const chat = api({ "1": { class_type: "OpenAIChatNode", inputs: { prompt: "hi" } } });
+    expect(chat.workflow.nodes).toEqual([]);
+    const ui = {
+      nodes: [
+        { id: 1, type: "LoadImage", mode: 0, inputs: [], widgets_values: ["a.png", "image"] },
+        { id: 2, type: "LoadImage", mode: 0, inputs: [], widgets_values: ["b.png", "image"] },
+        {
+          id: 3,
+          type: "GeminiVideoOmniV2",
+          mode: 0,
+          inputs: [
+            { name: "image", link: 1, type: "IMAGE" },
+            { name: "first_frame", link: 2, type: "IMAGE" },
+          ],
+          widgets_values: [],
+        },
+      ],
+      links: [
+        [1, 1, 0, 3, 0, "IMAGE"],
+        [2, 2, 0, 3, 1, "IMAGE"],
+      ],
+    };
+    const { workflow, report } = translateComfy(ui, catalog);
+    expect(workflow.edges.filter((edge) => edge.targetPort === "openingFrame")).toHaveLength(1);
+    expect(report.adjusted.join("\n")).toMatch(/takes one first_frame/);
+  });
 });

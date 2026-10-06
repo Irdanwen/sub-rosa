@@ -43,6 +43,15 @@ function readLegacy(): Workflow[] {
   }
 }
 
+function writeLegacy(workflows: Workflow[]): void {
+  try {
+    if (workflows.length === 0) window.localStorage.removeItem(LEGACY_KEY);
+    else window.localStorage.setItem(LEGACY_KEY, JSON.stringify(workflows));
+  } catch {
+    // Local storage is only the old home; the table is the record.
+  }
+}
+
 function fromStored(row: StoredWorkflow): Workflow | undefined {
   try {
     const graph = JSON.parse(row.definition) as Pick<Workflow, "nodes" | "edges">;
@@ -115,16 +124,10 @@ export function loadWorkflowLibrary(): Promise<Workflow[]> {
     const pending = cache.filter((workflow) => !known.has(workflow.id));
     const written = await Promise.all(pending.map(persist));
     cache = sorted([...stored, ...pending]);
-    // Local storage goes only once everything in it reached the table: a
-    // failed write leaves it for the next launch to move again (ids are
-    // kept, so moving twice is harmless).
-    if (written.every(Boolean)) {
-      try {
-        window.localStorage.removeItem(LEGACY_KEY);
-      } catch {
-        // Left behind, it is moved again harmlessly.
-      }
-    }
+    // Local storage keeps only what did not reach the table, for the next
+    // launch to move again. Keeping all of it would bring back, at every
+    // launch, whatever was deleted meanwhile.
+    writeLegacy(pending.filter((_, index) => !written[index]));
     loaded = true;
     return cache;
   })().catch(() => {
@@ -153,8 +156,9 @@ export function saveWorkflow(workflow: Workflow): Workflow {
   const previous = cache.find((existing) => existing.id === workflow.id);
   const updated: Workflow = {
     ...workflow,
-    coverArtifactId: workflow.coverArtifactId ?? previous?.coverArtifactId,
-    origin: workflow.origin ?? previous?.origin,
+    // The library owns these; an editor's copy may carry an older value.
+    coverArtifactId: previous ? previous.coverArtifactId : workflow.coverArtifactId,
+    origin: previous?.origin ?? workflow.origin,
     // Strictly newer than what the table holds: two saves in the same
     // millisecond must not tie, or the older could win.
     updatedAt: Math.max(Date.now(), (previous?.updatedAt ?? 0) + 1),
@@ -166,6 +170,11 @@ export function saveWorkflow(workflow: Workflow): Workflow {
 
 export function deleteWorkflow(id: string): void {
   cache = cache.filter((workflow) => workflow.id !== id);
+  unsaved.delete(id);
+  // Not moved yet? Then it must not be moved later.
+  const legacy = readLegacy();
+  if (legacy.some((workflow) => workflow.id === id))
+    writeLegacy(legacy.filter((workflow) => workflow.id !== id));
   void invoke("studio_workflow_delete", { id }).catch(() => {
     // Gone from this session; a failed delete shows again next launch.
   });

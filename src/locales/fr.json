@@ -141,6 +141,7 @@
   "{name}, cut from the character sheet": "{name}, découpé dans la planche personnage",
   "{name}: {role}": "{name} : {role}",
   "{node} ran a model on a local graphics card: rebuilt as one image from {model} with the same prompts.": "{node} faisait tourner un modèle sur une carte graphique locale : reconstruit en une image de {model} avec les mêmes prompts.",
+  "{node} takes one {input}: the extra link is left out.": "{node} ne prend qu'une entrée {input} : le lien en trop est laissé de côté.",
   "{number}. {title}": "{number}. {title}",
   "{origin} · paused": "{origin} · désactivé",
   "{pendingActionCount} actions need you": "{pendingActionCount} actions attendent votre réponse",

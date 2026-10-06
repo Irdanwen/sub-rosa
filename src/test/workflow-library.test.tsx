@@ -12,6 +12,7 @@ import type { NodeRunResult } from "../lib/studio/workflow/engine";
 import { coverArtifactOf, coverPrompt, workflowMakes } from "../lib/studio/workflow/library";
 import type { Workflow } from "../lib/studio/workflow/schema";
 import {
+  deleteWorkflow,
   listWorkflows,
   loadWorkflowLibrary,
   resetWorkflowLibraryForTests,
@@ -107,6 +108,9 @@ describe("the library's store", () => {
     await loadWorkflowLibrary();
     expect(listWorkflows().map((entry) => entry.id)).toEqual(["a"]);
     expect(window.localStorage.getItem("os-june:studio-workflows")).not.toBeNull();
+    // Deleted before it could move: it must not come back next launch.
+    deleteWorkflow("a");
+    expect(window.localStorage.getItem("os-june:studio-workflows")).toBeNull();
   });
 
   it("keeps a workflow's picture when the editor saves its graph", async () => {
@@ -124,8 +128,8 @@ describe("the library's store", () => {
     ];
     resetWorkflowLibraryForTests();
     await loadWorkflowLibrary();
-    // The editor's copy was hydrated before the cover existed.
-    const saved = saveWorkflow({ ...workflow("c"), name: "C, edited" });
+    // The editor's copy was hydrated before the cover changed.
+    const saved = saveWorkflow({ ...workflow("c"), name: "C, edited", coverArtifactId: "old.png" });
     expect(saved).toMatchObject({ coverArtifactId: "cover.png", origin: "import" });
     expect(saved.updatedAt).toBeGreaterThan(1);
   });

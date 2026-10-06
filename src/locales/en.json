@@ -141,6 +141,7 @@
   "{name}, cut from the character sheet": "{name}, cut from the character sheet",
   "{name}: {role}": "{name}: {role}",
   "{node} ran a model on a local graphics card: rebuilt as one image from {model} with the same prompts.": "{node} ran a model on a local graphics card: rebuilt as one image from {model} with the same prompts.",
+  "{node} takes one {input}: the extra link is left out.": "{node} takes one {input}: the extra link is left out.",
   "{number}. {title}": "{number}. {title}",
   "{origin} · paused": "{origin} · paused",
   "{pendingActionCount} actions need you": "{pendingActionCount} actions need you",

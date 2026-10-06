@@ -292,8 +292,14 @@ function isVideoPartner(type: string): boolean {
   return Boolean(partnerProvider(type)) && /video|veo|sora/i.test(type);
 }
 
+/** An image partner names what it makes: a chat node ("OpenAIChatNode",
+ * "GeminiNode") answers in text and must never become a paid image. */
 function isImagePartner(type: string): boolean {
-  return Boolean(partnerProvider(type)) && !isVideoPartner(type);
+  return (
+    Boolean(partnerProvider(type)) &&
+    !isVideoPartner(type) &&
+    /image|ideogram|recraft|imagen|seedream|dall|kontext|flux|stable/i.test(type)
+  );
 }
 
 /** The words a model id is likely to share with a Comfy node and its model
@@ -663,6 +669,8 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
     }
     return undefined;
   };
+  /** Ports that take one link and already have it. */
+  const filled = new Set<string>();
   for (const target of comfy) {
     const to = built.get(target.id);
     if (!to || SAMPLERS.has(target.type)) continue; // a sampler's prompts are folded in
@@ -674,6 +682,19 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       const key = `${from.node.id}>${to.node.id}:${port}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      const single = NODE_SCHEMAS[to.node.type].inputs.find((entry) => entry.id === port);
+      if (single && !single.multi) {
+        if (filled.has(`${to.node.id}:${port}`)) {
+          report.adjusted.push(
+            t("{node} takes one {input}: the extra link is left out.", {
+              node: nodeTypeLabel(to.node.type),
+              input,
+            }),
+          );
+          continue;
+        }
+        filled.add(`${to.node.id}:${port}`);
+      }
       edges.push({
         id: crypto.randomUUID(),
         source: from.node.id,
