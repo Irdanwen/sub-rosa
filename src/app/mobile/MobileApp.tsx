@@ -28,7 +28,9 @@ import type { IntentRequest } from "../../lib/intents";
 import { importSharedItem } from "../../lib/share-inbox";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { observeStandaloneImageJobs } from "../../lib/studio/image-job-recovery";
+import { OPEN_COMPOSE_EVENT } from "../../lib/studio/compose/jobs";
 import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
+import { ComposeScreen } from "../../components/mobile/screens/studio/ComposeScreen";
 import { RetouchScreen } from "../../components/mobile/screens/studio/RetouchScreen";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
@@ -164,6 +166,17 @@ export function MobileApp() {
     };
     window.addEventListener(OPEN_RETOUCH_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_RETOUCH_EVENT, onOpen);
+  }, [navTab, switchTab, push]);
+  // And one opened for a composition lands on the composer.
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const artifactId = (event as CustomEvent<string>).detail;
+      if (typeof artifactId !== "string" || !artifactId) return;
+      if (navTab !== "studio") switchTab("studio");
+      push({ view: "studio-compose", artifactId });
+    };
+    window.addEventListener(OPEN_COMPOSE_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_COMPOSE_EVENT, onOpen);
   }, [navTab, switchTab, push]);
   useAccountLibrarySync(dispatch, nav.top?.view === "note" ? nav.top.noteId : undefined);
   // The Chat tab roots on a conversation, not the history list. The active
@@ -1051,6 +1064,8 @@ export function MobileApp() {
     );
   } else if (top?.view === "studio-retouch") {
     screen = <RetouchScreen artifactId={top.artifactId} rootId={top.rootId} onBack={nav.pop} />;
+  } else if (top?.view === "studio-compose") {
+    screen = <ComposeScreen artifactId={top.artifactId} onBack={nav.pop} />;
   } else if (top?.view === "dictation") {
     screen = <DictationScreen onBack={nav.pop} autoStart={top.autoStart} />;
   } else if (top?.view === "settings-section") {

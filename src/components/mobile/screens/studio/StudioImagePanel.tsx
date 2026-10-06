@@ -45,7 +45,7 @@ import { ReferencePicker } from "./StudioLightbox";
 import { type StageResult, StudioStage } from "./StudioStage";
 
 /** Which of the four image sub-modes the form is in. */
-export type ImageMode = "generate" | "edit" | "upscale" | "cutout";
+export type ImageMode = "generate" | "edit" | "compose" | "upscale" | "cutout";
 
 /**
  * Making a picture: generate, retouch, upscale, cut out.
@@ -362,8 +362,8 @@ export function ImagePanel({
   }, [upscaleRefs, busy, onGenerated, beginWait, landResult]);
 
   const modes: ImageMode[] = cutoutAvailable
-    ? ["generate", "edit", "upscale", "cutout"]
-    : ["generate", "edit", "upscale"];
+    ? ["generate", "edit", "compose", "upscale", "cutout"]
+    : ["generate", "edit", "compose", "upscale"];
 
   /** On the scene: the last render, or - while upscaling or cutting out - the
    * picked source, which the result then wipes over. Nothing made in this
@@ -404,7 +404,7 @@ export function ImagePanel({
 
   return (
     <div className="mobile-studio-form">
-      {mode === "edit" ? null : (
+      {mode === "edit" || mode === "compose" ? null : (
         <StudioStage
           aspect={mode === "generate" ? effectiveAspect || "1:1" : "1:1"}
           result={sceneResult}
@@ -430,9 +430,11 @@ export function ImagePanel({
               ? t("Generate")
               : entry === "edit"
                 ? t("Touch up")
-                : entry === "upscale"
-                  ? t("Upscale")
-                  : t("Cutout")}
+                : entry === "compose"
+                  ? t("Compose")
+                  : entry === "upscale"
+                    ? t("Upscale")
+                    : t("Cutout")}
           </button>
         ))}
       </div>
@@ -494,6 +496,8 @@ export function ImagePanel({
         </>
       ) : mode === "edit" ? (
         <RetouchLauncher galleryImages={galleryImages} />
+      ) : mode === "compose" ? (
+        <RetouchLauncher galleryImages={galleryImages} purpose="compose" />
       ) : (
         <>
           {mode === "generate" ? (

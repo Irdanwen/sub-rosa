@@ -44,7 +44,16 @@ export function imageFilesOf(list: FileList | null | undefined): File[] {
   return [...(list ?? [])].filter((file) => file.type.startsWith("image/"));
 }
 
-export function RetouchPicker({ onOpen }: { onOpen: (artifact: StudioArtifact) => void }) {
+export function RetouchPicker({
+  onOpen,
+  purpose = "retouch",
+}: {
+  onOpen: (artifact: StudioArtifact) => void;
+  /** What the picked image is for. The composer has no sessions to pick up
+   * and its own words. */
+  purpose?: "retouch" | "compose";
+}) {
+  const showSessions = purpose === "retouch";
   const [images, setImages] = useState<StudioArtifact[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [importing, setImporting] = useState(false);
@@ -104,12 +113,25 @@ export function RetouchPicker({ onOpen }: { onOpen: (artifact: StudioArtifact) =
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
       >
-        <h2>{t("Retouch an image")}</h2>
-        <p>
-          {t(
-            "Pick an image, then say what should change. Each retouch becomes a version you can go back to.",
-          )}
-        </p>
+        {purpose === "compose" ? (
+          <>
+            <h2>{t("Compose from an image")}</h2>
+            <p>
+              {t(
+                "Pick an image, then a pack: new angles, scenes or formats of the same subject, filed together in the gallery.",
+              )}
+            </p>
+          </>
+        ) : (
+          <>
+            <h2>{t("Retouch an image")}</h2>
+            <p>
+              {t(
+                "Pick an image, then say what should change. Each retouch becomes a version you can go back to.",
+              )}
+            </p>
+          </>
+        )}
         <div className="retouch-drop-actions">
           <button
             type="button"
@@ -143,7 +165,7 @@ export function RetouchPicker({ onOpen }: { onOpen: (artifact: StudioArtifact) =
           </p>
         ) : null}
       </section>
-      {sessions.length > 0 ? (
+      {showSessions && sessions.length > 0 ? (
         <section className="retouch-picker-section">
           <h3>{t("Pick up where you left off")}</h3>
           <div className="retouch-picker-grid">

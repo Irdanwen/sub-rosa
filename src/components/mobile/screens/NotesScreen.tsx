@@ -29,7 +29,9 @@ type NotesScreenProps = {
   notes: NoteListItemDto[];
   folders: FolderDto[];
   activeRecordingNoteId?: string;
-  /** Notes assigned to this folder are hidden from the main list. */
+  /** Notes assigned to this folder are hidden from the main list, and from
+   * its search. A note in any other folder leaves the list too, but a search
+   * still finds it. */
   archiveFolderId?: string;
   onSelectNote: (noteId: string) => void;
   onRecord: () => void;
@@ -95,12 +97,21 @@ export function NotesScreen({
   const [rowMenu, setRowMenu] = useState<NoteListItemDto | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const sortedNotes = useMemo(
+  const searchableNotes = useMemo(
     () =>
       [...notes]
         .filter((note) => !archiveFolderId || !note.folderIds.includes(archiveFolderId))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [notes, archiveFolderId],
+  );
+  // A filed note lives in its folder: the list shows the ones in none.
+  const unfiledNotes = useMemo(
+    () => searchableNotes.filter((note) => note.folderIds.length === 0),
+    [searchableNotes],
+  );
+  const folderNames = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder.name])),
+    [folders],
   );
   // Ids of the notes whose body or transcript contains the query, from the
   // full-text index (migration 020). The title-and-preview filter below is
@@ -136,21 +147,21 @@ export function NotesScreen({
 
   const visibleNotes = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return sortedNotes;
-    const shallow = sortedNotes.filter(
+    if (!needle) return unfiledNotes;
+    const shallow = searchableNotes.filter(
       (note) =>
         note.title.toLowerCase().includes(needle) ||
         (note.preview ?? "").toLowerCase().includes(needle),
     );
     if (deepHitIds.length === 0) return shallow;
     const shown = new Set(shallow.map((note) => note.id));
-    const byId = new Map(sortedNotes.map((note) => [note.id, note]));
+    const byId = new Map(searchableNotes.map((note) => [note.id, note]));
     const deep = deepHitIds
       .filter((id) => !shown.has(id))
       .map((id) => byId.get(id))
       .filter((note): note is NoteListItemDto => Boolean(note));
     return [...shallow, ...deep];
-  }, [sortedNotes, query, deepHitIds]);
+  }, [searchableNotes, unfiledNotes, query, deepHitIds]);
 
   // The Archive is a state, not a place to file a note: it is not offered as
   // a destination, and its chip comes last.
@@ -306,11 +317,19 @@ export function NotesScreen({
         {visibleNotes.length === 0 ? (
           <EmptyState
             icon={query ? <IconMagnifyingGlass size={28} /> : <IconMicrophone size={28} />}
-            title={query ? t("No matches") : t("No notes yet")}
+            title={
+              query
+                ? t("No matches")
+                : searchableNotes.length > 0
+                  ? t("Every note is in a folder")
+                  : t("No notes yet")
+            }
             description={
               query
                 ? t("Try a different search.")
-                : t("Tap the record button to capture your first meeting.")
+                : searchableNotes.length > 0
+                  ? t("Open a folder above, or search to find any note.")
+                  : t("Tap the record button to capture your first meeting.")
             }
           />
         ) : (
@@ -342,6 +361,7 @@ export function NotesScreen({
                   >
                     <NoteRow
                       note={note}
+                      folderName={folderNames.get(note.folderIds[0] ?? "")}
                       recording={note.id === activeRecordingNoteId}
                       onSelect={() => onSelectNote(note.id)}
                       onLongPress={() => setRowMenu(note)}

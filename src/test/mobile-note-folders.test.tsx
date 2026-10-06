@@ -68,8 +68,19 @@ function renderNotes(overrides: Partial<Parameters<typeof NotesScreen>[0]> = {})
 }
 
 describe("filing notes on the phone", () => {
+  it("leaves a filed note out of the list, and a search still finds it", async () => {
+    renderNotes();
+    expect(screen.queryByRole("button", { name: /Books/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Project idea/ })).toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText("Search notes"), "Books");
+    const hit = screen.getByRole("button", { name: /Books/ });
+    expect(hit).toHaveTextContent("Film ·");
+  });
+
   it("moves several selected notes into one folder", async () => {
     const props = renderNotes();
+    // A filed note is reached by search: "o" finds one filed, one not.
+    await userEvent.type(screen.getByPlaceholderText("Search notes"), "o");
     await userEvent.click(screen.getByRole("button", { name: "Select notes" }));
     await userEvent.click(screen.getByRole("button", { name: /Books/ }));
     await userEvent.click(screen.getByRole("button", { name: /Project idea/ }));
@@ -87,6 +98,7 @@ describe("filing notes on the phone", () => {
 
   it("ticks the folder a single note is already in", async () => {
     renderNotes();
+    await userEvent.type(screen.getByPlaceholderText("Search notes"), "Books");
     await userEvent.click(screen.getByRole("button", { name: "Select notes" }));
     await userEvent.click(screen.getByRole("button", { name: /Books/ }));
     await userEvent.click(screen.getByRole("button", { name: "Move" }));

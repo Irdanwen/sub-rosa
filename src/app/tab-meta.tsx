@@ -76,8 +76,9 @@ export function tabMeta(
         icon: <IconBubble3 size={TAB_ICON_SIZE} />,
       };
     case "all-notes":
+      // The list shows the notes in no project; "All notes" would promise more.
       return {
-        title: t("All notes"),
+        title: t("Meeting notes"),
         icon: <IconNoteText size={TAB_ICON_SIZE} />,
       };
     case "routines":

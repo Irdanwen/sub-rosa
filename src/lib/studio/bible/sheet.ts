@@ -133,10 +133,20 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 export async function cutSheet(
   dataUri: string,
 ): Promise<Array<{ role: BibleRole; base64: string }>> {
+  const cells = await cutSheetCells(
+    dataUri,
+    SHEET_CUTS.map(({ cell }) => cell),
+  );
+  return SHEET_CUTS.map(({ role }, index) => ({ role, base64: cells[index] ?? "" }));
+}
+
+/** Any cells of a 3 by 3 sheet, in the order asked, as base64 PNG. The
+ * Studio's composer cuts all nine; the bible keeps three. */
+export async function cutSheetCells(dataUri: string, cells: readonly number[]): Promise<string[]> {
   const image = await loadImage(dataUri);
   const bounds = measureGrid(image);
-  const cuts: Array<{ role: BibleRole; base64: string }> = [];
-  for (const { cell, role } of SHEET_CUTS) {
+  const cuts: string[] = [];
+  for (const cell of cells) {
     const rect = sheetCell(bounds, cell);
     const canvas = document.createElement("canvas");
     canvas.width = rect.width;
@@ -154,7 +164,7 @@ export async function cutSheet(
       rect.width,
       rect.height,
     );
-    cuts.push({ role, base64: canvas.toDataURL("image/png").split(",")[1] ?? "" });
+    cuts.push(canvas.toDataURL("image/png").split(",")[1] ?? "");
   }
   return cuts;
 }

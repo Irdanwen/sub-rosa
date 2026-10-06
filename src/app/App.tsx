@@ -1945,15 +1945,19 @@ export function App() {
 
   /** Files dropped on the notes list. Handed over one at a time so at most one
    * slice is ever in memory, and the note opened is the last one imported. */
+  // `folderId: null` files the import nowhere: the notes list shows what is in
+  // no project, so an import started there must land there, whatever project
+  // was open before.
   const handleImportFiles = useCallback(
-    async (files: File[]) => {
+    async (files: File[], folderId?: string | null) => {
       if (!files.length) return;
       let opened: NoteDto | null = null;
       try {
         for (const file of files) {
           setImporting({ fileName: file.name, fraction: 0 });
           opened = await importMediaFile(file, {
-            folderId: state.selectedFolderId ?? undefined,
+            folderId:
+              folderId === null ? undefined : (folderId ?? state.selectedFolderId ?? undefined),
             onProgress: ({ transferred, total }) =>
               setImporting({
                 fileName: file.name,
@@ -1973,26 +1977,30 @@ export function App() {
 
   /** The picker route: Rust opens the file by path, so nothing crosses the
    * webview and there is no size ceiling to speak of. */
-  const handlePickImportFile = useCallback(async () => {
-    try {
-      const selected = await openFileDialog({
-        multiple: false,
-        title: t("Import audio or video"),
-        filters: [{ name: "Audio and video", extensions: [...IMPORTABLE_MEDIA_EXTENSIONS] }],
-      });
-      const path = Array.isArray(selected) ? selected[0] : selected;
-      if (!path) return;
-      setImporting({ fileName: path.split(/[\\/]/).pop() ?? path, fraction: 1 });
-      const note = await importMediaPath(path, {
-        folderId: state.selectedFolderId ?? undefined,
-      });
-      openImportedNote(note);
-    } catch (err) {
-      setError(messageFromError(err));
-    } finally {
-      setImporting(null);
-    }
-  }, [openImportedNote, state.selectedFolderId]);
+  const handlePickImportFile = useCallback(
+    async (folderId?: string | null) => {
+      try {
+        const selected = await openFileDialog({
+          multiple: false,
+          title: t("Import audio or video"),
+          filters: [{ name: "Audio and video", extensions: [...IMPORTABLE_MEDIA_EXTENSIONS] }],
+        });
+        const path = Array.isArray(selected) ? selected[0] : selected;
+        if (!path) return;
+        setImporting({ fileName: path.split(/[\\/]/).pop() ?? path, fraction: 1 });
+        const note = await importMediaPath(path, {
+          folderId:
+            folderId === null ? undefined : (folderId ?? state.selectedFolderId ?? undefined),
+        });
+        openImportedNote(note);
+      } catch (err) {
+        setError(messageFromError(err));
+      } finally {
+        setImporting(null);
+      }
+    },
+    [openImportedNote, state.selectedFolderId],
+  );
 
   // Mirrors the sidebar's "New session" button so the agent sessions list
   // can start a fresh chat with the same pending-session handshake. Memoized
@@ -2668,7 +2676,8 @@ export function App() {
     if (firstNoteIntent === "record") {
       void handleStartMeetingDetectedRecording();
     } else {
-      void handlePickImportFile();
+      // A first note belongs to no project.
+      void handlePickImportFile(null);
     }
   }, [firstNoteIntent, appBlocked, handleStartMeetingDetectedRecording, handlePickImportFile]);
 
@@ -2883,7 +2892,13 @@ export function App() {
           setActiveAgentSession(undefined);
           setActiveView("agent");
         }}
-        onImportMedia={() => void handlePickImportFile()}
+        onImportMedia={() =>
+          // From the notes list the import lands in that list (no project);
+          // from a project it lands in that project.
+          void handlePickImportFile(
+            activeView === "notes" || activeView === "all-notes" ? null : undefined,
+          )
+        }
         onSelectAgentSession={(session) => {
           if (takeNewTabIntent()) {
             openTab({ view: "agent", agentSessionId: session.id });
@@ -3134,6 +3149,7 @@ export function App() {
                 <NotesList
                   ref={notesListRef}
                   notes={state.notes}
+                  folders={state.folders}
                   activeRecordingNoteId={recordingNoteId}
                   onSelectNote={(noteId) => {
                     if (takeNewTabIntent()) {
@@ -3151,10 +3167,10 @@ export function App() {
                   onOpenMoveNotes={(noteIds) => setMoveDialogNoteIds(noteIds)}
                   onDeleteNote={(noteId) => void handleDeleteNote(noteId)}
                   onDeleteNotes={(noteIds) => void handleDeleteNotes(noteIds)}
-                  onImportFiles={(files) => void handleImportFiles(files)}
-                  onPickImportFile={() => void handlePickImportFile()}
+                  onImportFiles={(files) => void handleImportFiles(files, null)}
+                  onPickImportFile={() => void handlePickImportFile(null)}
                   importing={importing}
-                  headerAccessory={<ImportLinkBar folderId={state.selectedFolderId ?? undefined} />}
+                  headerAccessory={<ImportLinkBar />}
                 />
               ) : activeView === "folders" ? (
                 <FoldersWorkspace

@@ -1084,6 +1084,15 @@ describe("App shortcuts", () => {
 
     // The app launches on the agent view; the notes list is one hop away.
     await user.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    // The note is in a project, so the list reaches it through its search.
+    await user.type(
+      await waitFor(() => {
+        const field = document.querySelector<HTMLInputElement>(".folders-search input");
+        if (!field) throw new Error("no notes search");
+        return field;
+      }),
+      "First",
+    );
     await user.click(await screen.findByRole("button", { name: /^First note/ }));
     await screen.findByDisplayValue("First note");
     fireEvent.click(screen.getByRole("button", { name: "Open Testing folder" }));

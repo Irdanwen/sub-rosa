@@ -12,6 +12,7 @@ import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconCrossMedium } from "central-icons/IconCrossMedium";
 import { IconHeart } from "central-icons/IconHeart";
+import { IconImagesSparkle } from "central-icons/IconImagesSparkle";
 import { IconRetouch } from "central-icons/IconRetouch";
 import { IconShareOs } from "central-icons/IconShareOs";
 import { IconSquareArrowDown } from "central-icons/IconSquareArrowDown";
@@ -52,6 +53,7 @@ import {
   type StudioLibrary,
   withMarks,
 } from "../../../../lib/studio/library";
+import { requestCompose } from "../../../../lib/studio/compose/jobs";
 import { requestRetouch, shareVersionFile } from "../../../../lib/studio/retouch/jobs";
 import type { ArtifactKind, StudioArtifact } from "../../../../lib/studio/types";
 import { saveToPhotos } from "../../../../lib/tauri";
@@ -355,6 +357,16 @@ export function StudioViewer({
             onAction={() => {
               onClose();
               requestRetouch(artifact.id);
+            }}
+          />
+        ) : null}
+        {artifact.kind === "image" ? (
+          <ViewerAction
+            label={t("Compose")}
+            icon={<IconImagesSparkle size={22} />}
+            onAction={() => {
+              onClose();
+              requestCompose(artifact.id);
             }}
           />
         ) : null}
