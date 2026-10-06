@@ -20,16 +20,21 @@ import {
   useState,
 } from "react";
 import { importableFilesFrom } from "../../lib/import-media";
-import type { NoteListItemDto } from "../../lib/tauri";
+import type { FolderDto, NoteListItemDto } from "../../lib/tauri";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { primaryShiftShortcutLabel } from "../../lib/platform";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { EmptyState } from "../ui/EmptyState";
 
 const NO_NOTES: NoteListItemDto[] = [];
+const NO_FOLDERS: FolderDto[] = [];
 
 type NotesListProps = {
+  /** Every note. The list shows only the ones in no project; a search
+   * covers them all, so a filed note is never out of reach. */
   notes: NoteListItemDto[];
+  /** Names the project of a filed note that a search turns up. */
+  folders?: FolderDto[];
   activeRecordingNoteId?: string;
   onSelectNote: (noteId: string) => void;
   onCreateNote: () => void;
@@ -71,6 +76,7 @@ const VIEWPORT_MARGIN = 8;
 export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function NotesList(
   {
     notes: allNotes,
+    folders = NO_FOLDERS,
     activeRecordingNoteId,
     onSelectNote,
     onCreateNote,
@@ -111,13 +117,21 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
     () => [...notes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [notes],
   );
+  const unfiledNotes = useMemo(
+    () => sortedNotes.filter((note) => note.folderIds.length === 0),
+    [sortedNotes],
+  );
   const filteredNotes = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return sortedNotes;
+    if (!normalized) return unfiledNotes;
     return sortedNotes.filter((note) => {
       return `${note.title} ${note.preview}`.toLowerCase().includes(normalized);
     });
-  }, [sortedNotes, query]);
+  }, [sortedNotes, unfiledNotes, query]);
+  const folderNames = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder.name])),
+    [folders],
+  );
 
   const selectedNoteIds = useMemo(
     () => sortedNotes.filter((note) => selectedIds.has(note.id)).map((note) => note.id),
@@ -261,9 +275,13 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
         <div className="folders-heading">
           <h1>
             {t("Meeting notes")}
-            {notes.length > 0 ? <span className="folders-count">{notes.length}</span> : null}
+            {unfiledNotes.length > 0 ? (
+              <span className="folders-count">{unfiledNotes.length}</span>
+            ) : null}
           </h1>
-          <p className="folders-subtitle">{t("Everything across your workspace.")}</p>
+          <p className="folders-subtitle">
+            {t("Notes not in a project. A search covers them all.")}
+          </p>
         </div>
         <div className="folders-header-actions">
           {onPickImportFile ? (
@@ -332,6 +350,10 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
             </div>
           }
         />
+      ) : filteredNotes.length === 0 && !query.trim() ? (
+        <div className="folders-empty">
+          <p>{t("Every note is in a project. Open one from Projects, or search here.")}</p>
+        </div>
       ) : filteredNotes.length === 0 ? (
         <div className="folders-empty">
           <p>{t("No notes match “{query}”.", { query: query.trim() })}</p>
@@ -342,6 +364,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
             <AllNoteRow
               key={note.id}
               note={note}
+              projectName={folderNames.get(note.folderIds[0] ?? "")}
               activeRecordingNoteId={activeRecordingNoteId}
               menu={
                 openMenu?.noteId === note.id ? { right: openMenu.right, top: openMenu.top } : null
@@ -438,6 +461,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
 
 function AllNoteRow({
   note,
+  projectName,
   activeRecordingNoteId,
   menu,
   onSelect,
@@ -449,6 +473,8 @@ function AllNoteRow({
   onDelete,
 }: {
   note: NoteListItemDto;
+  /** Set when a search shows a note that lives in a project. */
+  projectName?: string;
   activeRecordingNoteId?: string;
   menu: MenuPosition | null;
   onSelect: () => void;
@@ -511,7 +537,10 @@ function AllNoteRow({
             showingStatus={!note.preview.trim()}
           />
         </button>
-        <span className="folder-note-time">{formatNoteTime(note.updatedAt)}</span>
+        <span className="folder-note-time">
+          {projectName ? `${projectName} · ` : null}
+          {formatNoteTime(note.updatedAt)}
+        </span>
         <span className="folder-note-actions">
           <button
             type="button"

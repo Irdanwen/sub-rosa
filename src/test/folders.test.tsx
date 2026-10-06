@@ -47,6 +47,10 @@ const notes: NoteListItemDto[] = [
   },
 ];
 
+// The notes list shows only what is in no project; these cases are about the
+// list itself, so their notes are all unfiled.
+const unfiled = notes.map((note) => ({ ...note, folderIds: [] }));
+
 describe("folders UI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -500,7 +504,7 @@ describe("folders UI", () => {
     const onSelectNote = vi.fn();
     const { container } = render(
       <NotesList
-        notes={notes}
+        notes={unfiled}
         onSelectNote={onSelectNote}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -523,14 +527,14 @@ describe("folders UI", () => {
       <NotesList
         notes={[
           {
-            ...notes[0],
+            ...unfiled[0],
             id: "stale-note",
             title: "Stale take",
             preview: "",
             processingStatus: "recording",
           },
           {
-            ...notes[1],
+            ...unfiled[1],
             id: "active-note",
             title: "Active take",
             preview: "",
@@ -556,7 +560,7 @@ describe("folders UI", () => {
     const user = userEvent.setup();
     render(
       <NotesList
-        notes={notes}
+        notes={unfiled}
         onSelectNote={vi.fn()}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -602,7 +606,7 @@ describe("folders UI", () => {
       });
       render(
         <NotesList
-          notes={notes}
+          notes={unfiled}
           onSelectNote={vi.fn()}
           onCreateNote={vi.fn()}
           onOpenMoveDialog={vi.fn()}
@@ -651,7 +655,7 @@ describe("folders UI", () => {
       <NotesList
         notes={[
           {
-            ...notes[0],
+            ...unfiled[0],
             id: "future-note",
             updatedAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           },
@@ -690,7 +694,7 @@ describe("folders UI", () => {
     const onDeleteNotes = vi.fn();
     render(
       <NotesList
-        notes={notes}
+        notes={unfiled}
         onSelectNote={vi.fn()}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -724,7 +728,7 @@ describe("folders UI", () => {
     const onOpenMoveNotes = vi.fn();
     render(
       <NotesList
-        notes={notes}
+        notes={unfiled}
         onSelectNote={vi.fn()}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -747,7 +751,7 @@ describe("folders UI", () => {
     render(
       <NotesList
         ref={notesListRef}
-        notes={notes}
+        notes={unfiled}
         onSelectNote={vi.fn()}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -777,7 +781,7 @@ describe("folders UI", () => {
     const onDeleteNotes = vi.fn();
     render(
       <NotesList
-        notes={notes}
+        notes={unfiled}
         onSelectNote={vi.fn()}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -799,7 +803,7 @@ describe("folders UI", () => {
     const user = userEvent.setup();
     render(
       <NotesList
-        notes={notes}
+        notes={unfiled}
         onSelectNote={vi.fn()}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -832,7 +836,7 @@ describe("folders UI", () => {
     const user = userEvent.setup();
     render(
       <NotesList
-        notes={notes}
+        notes={unfiled}
         onSelectNote={vi.fn()}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -859,7 +863,7 @@ describe("folders UI", () => {
     const user = userEvent.setup();
     render(
       <NotesList
-        notes={notes}
+        notes={unfiled}
         onSelectNote={vi.fn()}
         onCreateNote={vi.fn()}
         onOpenMoveDialog={vi.fn()}
@@ -942,5 +946,56 @@ describe("MoveNoteToFolderDialog", () => {
     expect(screen.getByRole("heading", { name: "Move meeting note" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Alpha/ })).toBeNull();
     expect(screen.getByRole("option", { name: /Beta/ })).toBeInTheDocument();
+  });
+});
+
+describe("the notes list and projects", () => {
+  const folders: FolderDto[] = [
+    {
+      id: "folder-1",
+      name: "Launch",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+
+  function renderList(list: NoteListItemDto[]) {
+    return render(
+      <NotesList
+        notes={list}
+        folders={folders}
+        onSelectNote={vi.fn()}
+        onCreateNote={vi.fn()}
+        onOpenMoveDialog={vi.fn()}
+        onOpenMoveNotes={vi.fn()}
+        onDeleteNote={vi.fn()}
+        onDeleteNotes={vi.fn()}
+      />,
+    );
+  }
+
+  it("leaves a note in a project out of the list and its count", () => {
+    const { container } = renderList(notes);
+    const list = within(container.querySelector(".all-notes-list") as HTMLElement);
+    expect(list.queryByRole("button", { name: /^Second/ })).toBeNull();
+    expect(list.getAllByRole("listitem")).toHaveLength(1);
+    expect(container.querySelector(".folders-count")?.textContent).toBe("1");
+  });
+
+  it("still finds a filed note by search, and names its project", async () => {
+    const user = userEvent.setup();
+    const { container } = renderList(notes);
+    await user.type(screen.getByPlaceholderText("Search"), "Second");
+    const list = within(container.querySelector(".all-notes-list") as HTMLElement);
+    expect(list.getByRole("button", { name: /^Second/ })).toBeInTheDocument();
+    expect(list.getByText(/Launch ·/)).toBeInTheDocument();
+  });
+
+  it("says where the notes went when every one is filed", () => {
+    renderList([notes[0]]);
+    expect(
+      screen.getByText("Every note is in a project. Open one from Projects, or search here."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Capture your first meeting")).toBeNull();
   });
 });

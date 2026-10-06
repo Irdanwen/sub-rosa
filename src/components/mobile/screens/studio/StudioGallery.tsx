@@ -56,6 +56,12 @@ import {
   type StudioLibrary,
   withMarks,
 } from "../../../../lib/studio/library";
+import {
+  AUDIO_KINDS,
+  filedOutOfView,
+  type GalleryView,
+  visibleArtifacts,
+} from "../../../../lib/studio/gallery-view";
 import { requestRetouch, shareVersionFile } from "../../../../lib/studio/retouch/jobs";
 import type { ArtifactKind, StudioArtifact } from "../../../../lib/studio/types";
 import { saveToPhotos } from "../../../../lib/tauri";
@@ -68,9 +74,8 @@ import { sheetHost } from "../../sheet-host";
 import { formatNoteTime } from "../NoteRow";
 import { dayLabel, formatClipLength } from "./StudioLibrary";
 
-type View = "all" | "image" | "video" | "audio" | "favorites" | "collections" | "hidden";
+type View = GalleryView;
 
-const AUDIO_KINDS: ArtifactKind[] = ["music", "speech", "sfx"];
 const COLUMNS_KEY = "subrosa:studio:gallery-columns";
 const MIN_COLUMNS = 1;
 const MAX_COLUMNS = 4;
@@ -185,28 +190,10 @@ export function StudioGallery({
     [items, library],
   );
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return items.filter((item) => {
-      const mark = markOf(library, item);
-      if (view === "hidden") {
-        if (!mark?.hidden) return false;
-      } else if (mark?.hidden) {
-        return false;
-      }
-      if (view === "image" && item.kind !== "image") return false;
-      if (view === "video" && item.kind !== "video") return false;
-      if (view === "audio" && !AUDIO_KINDS.includes(item.kind)) return false;
-      if (view === "favorites" && !mark?.favorite) return false;
-      if (view === "collections" && (!collectionId || mark?.collectionId !== collectionId)) {
-        return false;
-      }
-      if (!needle) return true;
-      return [item.prompt, item.model, item.title].some((field) =>
-        (field ?? "").toLowerCase().includes(needle),
-      );
-    });
-  }, [items, library, view, collectionId, query]);
+  const visible = useMemo(
+    () => visibleArtifacts(items, library, { view, collectionId, query }),
+    [items, library, view, collectionId, query],
+  );
 
   const groups = useMemo(() => {
     const buckets = new Map<string, StudioArtifact[]>();
@@ -540,7 +527,9 @@ export function StudioGallery({
                   ? t("Press and hold an item to add it to your favorites.")
                   : openCollection
                     ? t("This folder is empty. Press and hold an item to add it here.")
-                    : t("Nothing here yet.")}
+                    : filedOutOfView(items, library, view)
+                      ? t("Everything here is in a folder. Open Folders, or search.")
+                      : t("Nothing here yet.")}
             </p>
           ) : (
             groups.map(([label, group]) => (
