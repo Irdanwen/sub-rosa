@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { messageFromError } from "../lib/errors";
+import { messageFromError, taskErrorMessage } from "../lib/errors";
+import { applyLocale } from "../lib/i18n";
 
 /**
  * The `[object Object]` guard.
@@ -52,5 +53,32 @@ describe("errors reaching the user", () => {
     );
     // And still does the obvious thing for a real Error.
     expect(messageFromError(new Error("boom"))).toBe("boom");
+  });
+});
+
+describe("a failed turn's stored error", () => {
+  it("is shown in the app's language", () => {
+    applyLocale("fr");
+    try {
+      expect(
+        taskErrorMessage(
+          "The assistant used too many search rounds without answering. Try rephrasing.",
+        ),
+      ).toBe(
+        "L'assistant a utilisé trop de tours de recherche sans répondre. Essayez de reformuler.",
+      );
+      expect(taskErrorMessage(null)).toBeNull();
+    } finally {
+      applyLocale("en");
+    }
+  });
+
+  it("never reaches an error banner untranslated", () => {
+    // `lastError` is the backend's English sentence, stored on the task row.
+    const offenders = Object.entries(SOURCES)
+      .filter(([path]) => !path.startsWith("../test/"))
+      .filter(([, source]) => /\.lastError \?\? null/.test(source))
+      .map(([path]) => path.replace("../", "src/"));
+    expect(offenders, "pass lastError through taskErrorMessage").toEqual([]);
   });
 });

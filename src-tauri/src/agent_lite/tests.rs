@@ -608,3 +608,106 @@ fn a_replay_takes_back_exactly_what_the_failed_attempt_showed() {
         serde_json::json!({ "taskId": "t1", "text": "", "retract": 7 })
     );
 }
+
+#[test]
+fn a_spent_research_budget_asks_for_an_answer_before_giving_up() {
+    let mut budget = ToolBudget::default();
+    for _ in 0..MAX_TOOL_ROUNDS {
+        assert_eq!(budget.next_completion(), Completion::Research);
+        budget.ran_tools();
+    }
+    assert_eq!(
+        budget.next_completion(),
+        Completion::Answer {
+            nudge: true,
+            withhold_tools: false
+        }
+    );
+    assert_eq!(
+        budget.next_completion(),
+        Completion::Answer {
+            nudge: false,
+            withhold_tools: true
+        }
+    );
+    assert_eq!(budget.next_completion(), Completion::GiveUp);
+}
+
+#[test]
+fn a_replayed_completion_does_not_spend_a_research_round() {
+    // A stream replay or a vision fallback asks for another completion
+    // without running a tool, so the budget only moves when tools ran.
+    let mut budget = ToolBudget::default();
+    for _ in 0..MAX_TOOL_ROUNDS * 3 {
+        assert_eq!(budget.next_completion(), Completion::Research);
+    }
+}
+
+#[test]
+fn the_three_newest_pages_stay_whole_and_older_ones_shrink() {
+    let page = "word ".repeat(2_400); // 12 000 characters, a full page
+    let mut messages: Vec<serde_json::Value> = (0..4)
+        .map(|_| serde_json::json!({"role": "tool", "content": page.clone()}))
+        .collect();
+    // Three pages: nothing is touched before the answer.
+    let three = [(0, 1), (1, 2), (2, 3)];
+    shorten_read_pages(&mut messages, &three, 3);
+    assert!(messages[..3]
+        .iter()
+        .all(|m| m["content"].as_str().unwrap() == page));
+    // A fourth: the oldest shrinks, the three newest stay whole.
+    let four = [(0, 1), (1, 2), (2, 3), (3, 4)];
+    shorten_read_pages(&mut messages, &four, 4);
+    let first = messages[0]["content"].as_str().unwrap();
+    assert!(first.ends_with("[truncated]"));
+    assert!(first.chars().count() <= READ_PAGE_CHARS + 20);
+    assert!(messages[1..]
+        .iter()
+        .all(|m| m["content"].as_str().unwrap() == page));
+    // Shortening again changes nothing.
+    let once = messages.clone();
+    shorten_read_pages(&mut messages, &four, 5);
+    assert_eq!(messages, once);
+}
+
+#[test]
+fn a_replayed_stream_repeats_the_answer_try_instead_of_spending_the_next() {
+    let mut budget = ToolBudget::default();
+    for _ in 0..MAX_TOOL_ROUNDS {
+        budget.next_completion();
+        budget.ran_tools();
+    }
+    let first = budget.next_completion();
+    assert_eq!(
+        first,
+        Completion::Answer {
+            nudge: true,
+            withhold_tools: false
+        }
+    );
+    budget.replay();
+    // Same try again, without a second nudge.
+    assert_eq!(
+        budget.next_completion(),
+        Completion::Answer {
+            nudge: false,
+            withhold_tools: false
+        }
+    );
+    assert_eq!(
+        budget.next_completion(),
+        Completion::Answer {
+            nudge: false,
+            withhold_tools: true
+        }
+    );
+    budget.replay();
+    assert_eq!(
+        budget.next_completion(),
+        Completion::Answer {
+            nudge: false,
+            withhold_tools: true
+        }
+    );
+    assert_eq!(budget.next_completion(), Completion::GiveUp);
+}

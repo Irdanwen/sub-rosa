@@ -25,7 +25,7 @@ import {
   sendAssistantChat,
   startAssistantChat,
 } from "../../../../lib/assistants";
-import { messageFromError } from "../../../../lib/errors";
+import { messageFromError, taskErrorMessage } from "../../../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../../../lib/haptics";
 import { t } from "../../../../lib/i18n";
 import { useModalFocus } from "../../../../lib/modal-focus";
@@ -139,7 +139,7 @@ export function AssistantChatScreen({
       loaded.status === "failed"
         ? lost
           ? interruptedAttachmentMessage()
-          : (loaded.lastError ?? null)
+          : taskErrorMessage(loaded.lastError)
         : null,
     );
   }, []);
