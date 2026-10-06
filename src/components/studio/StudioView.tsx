@@ -189,7 +189,11 @@ export function StudioView() {
           </button>
         </div>
       ) : null}
-      {loading ? (
+      {tab === "gallery" ? (
+        // The gallery reads files on this device and needs no model catalog:
+        // it stays open offline and when the catalog fails.
+        <StudioGalleryDesktop />
+      ) : loading ? (
         <div className="studio-loading">
           <Spinner aria-label={t("Loading models")} />
         </div>
@@ -203,8 +207,6 @@ export function StudioView() {
             </button>
           }
         />
-      ) : tab === "gallery" ? (
-        <StudioGalleryDesktop />
       ) : tab === "projects" ? (
         <ProjectStudio catalog={catalog} />
       ) : tab === "start" ? (

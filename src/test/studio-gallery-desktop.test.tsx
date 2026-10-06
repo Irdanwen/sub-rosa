@@ -125,4 +125,16 @@ describe("the desktop gallery", () => {
     await userEvent.click(within(confirm).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(files.remove).toHaveBeenCalledWith(ITEMS[2]));
   });
+
+  it("closes the viewer before a dialog it opens, and keeps a hidden file in view", async () => {
+    render(<StudioGalleryDesktop />);
+    await userEvent.click(await screen.findByRole("button", { name: "Open A lighthouse" }));
+    const viewer = await screen.findByRole("dialog", { name: /A lighthouse/ });
+    await userEvent.click(within(viewer).getByRole("button", { name: "Hide" }));
+    // Hidden, it leaves the grid but not the viewer that opened it.
+    expect(screen.getByRole("dialog", { name: /A lighthouse/ })).toBeInTheDocument();
+    await userEvent.click(within(viewer).getByRole("button", { name: "Add to a folder" }));
+    expect(screen.queryByRole("dialog", { name: /A lighthouse/ })).toBeNull();
+    expect(await screen.findByRole("dialog", { name: "Add to a folder" })).toBeInTheDocument();
+  });
 });

@@ -15,7 +15,7 @@ import { IconHeart } from "central-icons/IconHeart";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconTrashCanSimple } from "central-icons/IconTrashCanSimple";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useArtifactThumbnail } from "../../lib/artifact-media";
 import { messageFromError } from "../../lib/errors";
 import { t } from "../../lib/i18n";
@@ -61,6 +61,10 @@ export function StudioGalleryDesktop() {
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [opened, setOpened] = useState<string>();
+  /** The files the viewer steps through, fixed when it opens: hiding or
+   * unfavouriting one from inside must not pull it out from under the
+   * viewer. */
+  const [viewerIds, setViewerIds] = useState<string[]>([]);
   const [filing, setFiling] = useState<StudioArtifact>();
   const [removing, setRemoving] = useState<StudioArtifact>();
   const [naming, setNaming] = useState<{ collection?: StudioCollection } | null>(null);
@@ -131,7 +135,14 @@ export function StudioGalleryDesktop() {
           </button>
         ) : null}
         {markable ? (
-          <button type="button" onClick={() => setFiling(artifact)}>
+          <button
+            type="button"
+            onClick={() => {
+              // The viewer sits above every dialog; close it first.
+              setOpened(undefined);
+              setFiling(artifact);
+            }}
+          >
             {t("Add to a folder")}
           </button>
         ) : null}
@@ -143,7 +154,13 @@ export function StudioGalleryDesktop() {
         <button type="button" onClick={() => void exportArtifact(artifact)}>
           {t("Save a copy")}
         </button>
-        <button type="button" onClick={() => setRemoving(artifact)}>
+        <button
+          type="button"
+          onClick={() => {
+            setOpened(undefined);
+            setRemoving(artifact);
+          }}
+        >
           {t("Delete")}
         </button>
       </>
@@ -261,7 +278,10 @@ export function StudioGalleryDesktop() {
                       artifact={artifact}
                       favorite={Boolean(markOf(library, artifact)?.favorite)}
                       markable={canMark(artifact)}
-                      onOpen={() => setOpened(artifact.id)}
+                      onOpen={() => {
+                        setViewerIds(visible.map((item) => item.id));
+                        setOpened(artifact.id);
+                      }}
                       onFavorite={() =>
                         mark([artifact], { favorite: !markOf(library, artifact)?.favorite })
                       }
@@ -277,15 +297,12 @@ export function StudioGalleryDesktop() {
         </>
       )}
 
-      {opened && visible.some((artifact) => artifact.id === opened) ? (
-        <MediaViewer
-          items={visible.map((artifact) => ({
-            artifact,
-            title: artifact.title || artifact.prompt?.trim() || undefined,
-          }))}
-          index={visible.findIndex((artifact) => artifact.id === opened)}
-          onIndex={(index) => setOpened(visible[index]?.id)}
-          onClose={() => setOpened(undefined)}
+      {opened ? (
+        <GalleryViewer
+          ids={viewerIds}
+          items={items}
+          opened={opened}
+          onOpen={setOpened}
           actions={actionsFor}
         />
       ) : null}
@@ -333,7 +350,7 @@ export function StudioGalleryDesktop() {
         open={Boolean(removing)}
         onClose={() => setRemoving(undefined)}
         title={t("Delete this item?")}
-        description={t("They are deleted from this device and from your other synced devices.")}
+        description={t("It is deleted from this device and from your other synced devices.")}
         confirmLabel={t("Delete")}
         destructive
         onConfirm={async () => {
@@ -350,7 +367,7 @@ export function StudioGalleryDesktop() {
         open={Boolean(deletingFolder)}
         onClose={() => setDeletingFolder(undefined)}
         title={t("Delete the folder")}
-        description={t("Folder deleted. Its items are still in the gallery.")}
+        description={t("Its items stay in the gallery.")}
         confirmLabel={t("Delete")}
         destructive
         onConfirm={async () => {
@@ -366,6 +383,38 @@ export function StudioGalleryDesktop() {
         }}
       />
     </div>
+  );
+}
+
+function GalleryViewer({
+  ids,
+  items,
+  opened,
+  onOpen,
+  actions,
+}: {
+  ids: string[];
+  items: StudioArtifact[];
+  opened: string;
+  onOpen: (id: string | undefined) => void;
+  actions: (artifact: StudioArtifact) => ReactNode;
+}) {
+  // Deleted files leave; everything else the viewer opened with stays.
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const list = ids.flatMap((id) => byId.get(id) ?? []);
+  const index = list.findIndex((artifact) => artifact.id === opened);
+  if (index < 0) return null;
+  return (
+    <MediaViewer
+      items={list.map((artifact) => ({
+        artifact,
+        title: artifact.title || artifact.prompt?.trim() || undefined,
+      }))}
+      index={index}
+      onIndex={(next) => onOpen(list[next]?.id)}
+      onClose={() => onOpen(undefined)}
+      actions={actions}
+    />
   );
 }
 
