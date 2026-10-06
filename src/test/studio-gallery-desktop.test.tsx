@@ -49,9 +49,7 @@ let library: { collections: unknown[]; marks: unknown[] };
 beforeEach(() => {
   library = {
     collections: [{ id: "board", name: "Storyboard", createdAt: "", updatedAt: "" }],
-    marks: [
-      { id: "m2", fileId: uuid(2), collectionId: "board", favorite: false, hidden: false },
-    ],
+    marks: [{ id: "m2", fileId: uuid(2), collectionId: "board", favorite: false, hidden: false }],
   };
   files.list.mockReset().mockResolvedValue(ITEMS);
   files.remove.mockReset().mockResolvedValue(undefined);
