@@ -13,6 +13,7 @@ import { useModalFocus } from "../../lib/modal-focus";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import type { StudioArtifact } from "../../lib/studio/types";
 import "./media-viewer.css";
+import { requestCompose } from "../../lib/studio/compose/jobs";
 import { requestRetouch } from "../../lib/studio/retouch/jobs";
 
 export interface MediaViewerItem {
@@ -197,6 +198,17 @@ export function MediaViewer({
                 }}
               >
                 {t("Retouch this image")}
+              </button>
+            ) : null}
+            {artifact.kind === "image" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  requestCompose(artifact.id);
+                }}
+              >
+                {t("Compose from this image")}
               </button>
             ) : null}
             {actions?.(artifact)}

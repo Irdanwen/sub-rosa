@@ -56,6 +56,7 @@ import {
   type StudioLibrary,
   withMarks,
 } from "../../../../lib/studio/library";
+import { requestCompose } from "../../../../lib/studio/compose/jobs";
 import {
   AUDIO_KINDS,
   filedOutOfView,
@@ -352,6 +353,7 @@ export function StudioGallery({
     }
     if (artifact.kind === "image") {
       actions.push({ label: t("Touch up"), onAction: () => requestRetouch(artifact.id) });
+      actions.push({ label: t("Compose"), onAction: () => requestCompose(artifact.id) });
     }
     if (markable) {
       actions.push({

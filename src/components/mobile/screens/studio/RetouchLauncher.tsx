@@ -9,6 +9,7 @@ import { useMemo, useRef, useState } from "react";
 import { friendlyErrorMessage } from "../../../../lib/errors";
 import { hapticImpact } from "../../../../lib/haptics";
 import { t } from "../../../../lib/i18n";
+import { requestCompose } from "../../../../lib/studio/compose/jobs";
 import { requestRetouch } from "../../../../lib/studio/retouch/jobs";
 import { sessionsIn } from "../../../../lib/studio/retouch/lineage";
 import type { StudioArtifact } from "../../../../lib/studio/types";
@@ -18,7 +19,15 @@ import { GalleryCell } from "./StudioLibrary";
 
 const RECENT = 6;
 
-export function RetouchLauncher({ galleryImages }: { galleryImages: StudioArtifact[] }) {
+export function RetouchLauncher({
+  galleryImages,
+  purpose = "retouch",
+}: {
+  galleryImages: StudioArtifact[];
+  /** Where a picked photo goes: a retouch session, or the composer. */
+  purpose?: "retouch" | "compose";
+}) {
+  const start = purpose === "compose" ? requestCompose : requestRetouch;
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
@@ -35,7 +44,7 @@ export function RetouchLauncher({ galleryImages }: { galleryImages: StudioArtifa
     try {
       const artifact = await importImageFile(file);
       hapticImpact("light");
-      requestRetouch(artifact.id);
+      start(artifact.id);
     } catch (cause) {
       setError(friendlyErrorMessage(cause, t("The image could not be imported.")));
     } finally {
@@ -48,8 +57,21 @@ export function RetouchLauncher({ galleryImages }: { galleryImages: StudioArtifa
       <div className="mobile-retouch-hero">
         <IconSparkle size={22} aria-hidden />
         <div>
-          <h3>{t("Retouch a photo")}</h3>
-          <p>{t("Pick a photo, then say what should change. Each retouch becomes a version.")}</p>
+          {purpose === "compose" ? (
+            <>
+              <h3>{t("Compose from a photo")}</h3>
+              <p>
+                {t("Pick a photo, then a pack: new angles, scenes or formats of the same subject.")}
+              </p>
+            </>
+          ) : (
+            <>
+              <h3>{t("Retouch a photo")}</h3>
+              <p>
+                {t("Pick a photo, then say what should change. Each retouch becomes a version.")}
+              </p>
+            </>
+          )}
         </div>
       </div>
       <div className="mobile-retouch-sources">
@@ -117,16 +139,12 @@ export function RetouchLauncher({ galleryImages }: { galleryImages: StudioArtifa
           <h3 className="mobile-library-day-title">{t("From Studio")}</h3>
           <div className="mobile-studio-grid mobile-library-grid">
             {originals.slice(0, 24).map((image) => (
-              <GalleryCell
-                key={image.id}
-                artifact={image}
-                onOpen={() => requestRetouch(image.id)}
-              />
+              <GalleryCell key={image.id} artifact={image} onOpen={() => start(image.id)} />
             ))}
           </div>
         </section>
       ) : null}
-      {sessions.length > 0 ? (
+      {purpose === "retouch" && sessions.length > 0 ? (
         <section className="mobile-library-day">
           <h3 className="mobile-library-day-title">{t("Pick up a retouch")}</h3>
           <div className="mobile-studio-grid mobile-library-grid">

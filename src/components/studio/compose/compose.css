@@ -1,0 +1,202 @@
+/* The composer: the source on one side, the pack and its results on the
+ * other; one column on a phone. */
+.compose {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  grid-template-areas:
+    "source form"
+    "source results";
+  align-items: start;
+  gap: var(--sp-8);
+}
+.compose[data-layout="phone"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "source" "form" "results";
+  gap: var(--sp-6);
+}
+.compose h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+.compose-source {
+  grid-area: source;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+.compose-source-image {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--muted);
+}
+.compose[data-layout="phone"] .compose-source-image {
+  aspect-ratio: 4 / 3;
+}
+.compose-source-image > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.compose-form,
+.compose-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+.compose-form {
+  grid-area: form;
+}
+.compose-results {
+  grid-area: results;
+}
+.compose-packs {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--sp-3);
+}
+.compose-pack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+.compose-pack[aria-pressed="true"] {
+  border-color: var(--foreground);
+}
+.compose-pack:active {
+  transform: scale(0.98);
+}
+.compose-pack-name {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+.compose-pack-description,
+.compose-pack-count,
+.compose-note,
+.compose-cost {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+.compose-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.compose-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+.compose-settings > .compose-field {
+  flex: 1 1 200px;
+}
+.compose-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.compose-modes legend {
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.compose-modes label {
+  display: flex;
+  flex: 1 1 220px;
+  gap: var(--sp-3);
+  align-items: flex-start;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+}
+.compose-modes label span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+.compose-modes strong {
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+.compose-launch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.compose-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--sp-4);
+}
+.compose-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+}
+.compose-tile figcaption {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compose-tile-open,
+.compose-tile-pending {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--muted);
+  cursor: pointer;
+}
+.compose-tile-open:disabled {
+  cursor: default;
+}
+.compose-tile-open > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* A field under 16px makes the phone zoom the page when it takes focus. */
+.compose[data-layout="phone"] .studio-input {
+  font-size: 16px;
+}
+.compose[data-layout="phone"] .compose-packs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}

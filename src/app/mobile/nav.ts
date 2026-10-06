@@ -34,6 +34,7 @@ export type MobileRoute =
   | { view: "settings-section"; section: SettingsSection }
   /** A retouch session, opened on the image that was picked. */
   | { view: "studio-retouch"; artifactId: string; rootId?: string }
+  | { view: "studio-compose"; artifactId: string }
   /** A conversation with an assistant: a new one with `assistantId`, or the
    * one `taskId` names (kept current as the screen moves between them). */
   | { view: "assistant-chat"; assistantId?: string; taskId?: string }
