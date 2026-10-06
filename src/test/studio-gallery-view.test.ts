@@ -73,4 +73,9 @@ describe("the gallery views", () => {
     expect(visibleArtifacts(ITEMS, hidden, { view: "all", query: "lighthouse" })).toEqual([]);
     expect(visibleArtifacts(ITEMS, hidden, { view: "hidden" })).toEqual([lighthouse]);
   });
+
+  it("show a file whose folder was deleted elsewhere in the kind views", () => {
+    const orphan = library([{ fileId: uuid(2), collectionId: "gone" }]);
+    expect(visibleArtifacts(ITEMS, orphan, { view: "all" })).toEqual(ITEMS);
+  });
 });

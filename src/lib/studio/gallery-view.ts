@@ -44,11 +44,17 @@ export function visibleArtifacts(
     if (view === "collections" && (!collectionId || mark?.collectionId !== collectionId)) {
       return false;
     }
-    if (!needle) return !(isKindView(view) && mark?.collectionId);
+    if (!needle) return !(isKindView(view) && isFiled(library, mark?.collectionId));
     return [item.prompt, item.model, item.title].some((field) =>
       (field ?? "").toLowerCase().includes(needle),
     );
   });
+}
+
+/** Filed in a folder that still exists. A folder deleted on another device
+ * while this one filed into it must not leave a file nowhere to be seen. */
+function isFiled(library: StudioLibrary, collectionId: string | null | undefined): boolean {
+  return Boolean(collectionId && library.collections.some((folder) => folder.id === collectionId));
 }
 
 function isKindView(view: GalleryView) {

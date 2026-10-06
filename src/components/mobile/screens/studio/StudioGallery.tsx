@@ -526,7 +526,9 @@ export function StudioGallery({
                   ? t("Press and hold an item to add it to your favorites.")
                   : openCollection
                     ? t("This folder is empty. Press and hold an item to add it here.")
-                    : t("Nothing here yet.")}
+                    : items.length > 0 && view !== "hidden" && view !== "collections"
+                      ? t("Everything here is in a folder. Open Folders, or search.")
+                      : t("Nothing here yet.")}
             </p>
           ) : (
             groups.map(([label, group]) => (

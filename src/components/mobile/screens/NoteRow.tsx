@@ -79,7 +79,7 @@ export function NoteRow({
         </span>
       </span>
       <span className="mobile-note-row-time">
-        {folderName ? `${folderName} · ` : null}
+        {folderName ? <span className="mobile-note-row-folder">{folderName} · </span> : null}
         {formatNoteTime(note.updatedAt)}
       </span>
     </button>
