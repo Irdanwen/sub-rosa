@@ -61,9 +61,10 @@ const MAX_TOOL_ROUNDS: usize = 12;
 const MAX_COMPLETIONS: usize = MAX_TOOL_ROUNDS * 2 + 4;
 // The answer pass needs two completions past the last research round.
 const _: () = assert!(MAX_COMPLETIONS > MAX_TOOL_ROUNDS + 2);
-/// What a page the model has already read shrinks to once a newer round has
-/// gone by, so a long search does not resend every page in full each time.
+/// What a page older than the newest `READ_PAGES_KEPT` shrinks to.
 const READ_PAGE_CHARS: usize = 2_000;
+/// Pages resent whole in every completion: three at `WEB_PAGE_CHARS` each.
+const READ_PAGES_KEPT: usize = 3;
 /// Sent once the research budget is spent, in place of more tools. Whatever
 /// the searches found is still worth an answer; an error would throw it away.
 const FINAL_ANSWER_NUDGE: &str = "The research budget for this turn is spent, so no more tools can run. Answer the user's question now from what the tool results above already show. Say plainly what you could not confirm, and cite the pages you used.";
@@ -651,6 +652,7 @@ async fn run_turn(
                     error.message
                 );
                 stream_replayed = true;
+                budget.replay();
                 if let Some(event) = retraction(task_id, &reply.content) {
                     let _ = app.emit(AGENT_LITE_DELTA_EVENT, event);
                 }
@@ -662,6 +664,7 @@ async fn run_turn(
                 // iteration buffered before giving up on the turn.
                 tracing::warn!("streamed completion was empty, retrying buffered");
                 stream_withheld = true;
+                budget.replay();
                 continue;
             }
             reply.into_message()
@@ -1011,12 +1014,22 @@ enum Completion {
 struct ToolBudget {
     rounds: usize,
     answer_tries: usize,
+    /// The transport is replaying the last completion (a broken or empty
+    /// stream): the same step again, not the next answer try.
+    replaying: bool,
 }
 
 impl ToolBudget {
     fn next_completion(&mut self) -> Completion {
+        let replaying = std::mem::take(&mut self.replaying);
         if self.rounds < MAX_TOOL_ROUNDS {
             return Completion::Research;
+        }
+        if replaying && self.answer_tries > 0 {
+            return Completion::Answer {
+                nudge: false,
+                withhold_tools: self.answer_tries >= 2,
+            };
         }
         self.answer_tries += 1;
         match self.answer_tries {
@@ -1032,6 +1045,12 @@ impl ToolBudget {
         }
     }
 
+    /// The next completion repeats this one: a transport retry, which must
+    /// not spend an answer try.
+    fn replay(&mut self) {
+        self.replaying = true;
+    }
+
     /// Count a round whose tools ran; returns the round's number.
     fn ran_tools(&mut self) -> usize {
         self.rounds += 1;
@@ -1039,15 +1058,17 @@ impl ToolBudget {
     }
 }
 
-/// Shorten every page read before `current_round`: the model has answered
-/// after reading it at least once, and resending it whole each round is what
-/// makes a long search slow and expensive. The newest round stays intact.
+/// Keep the newest `READ_PAGES_KEPT` pages whole and shorten the older ones.
+/// The answer is written from these pages and the assistant kept nothing of a
+/// page but its call, so a few whole pages are worth resending; a long search
+/// past that resends the old ones as their opening only.
 fn shorten_read_pages(
     messages: &mut [serde_json::Value],
     page_reads: &[(usize, usize)],
     current_round: usize,
 ) {
-    for &(index, round) in page_reads {
+    let older = page_reads.len().saturating_sub(READ_PAGES_KEPT);
+    for &(index, round) in &page_reads[..older] {
         if round >= current_round {
             continue;
         }
