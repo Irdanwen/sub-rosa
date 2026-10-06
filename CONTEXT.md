@@ -823,6 +823,20 @@ result, so the darkroom's rule against previews holds.
 
 ### Studio workflows (fork)
 
+**Workflow library**:
+Every workflow the person drew or imported, shown as cards with a picture
+(the workflow's last real result, or a picture made for it on request), with
+the built-in templates below. Stored in SQLite, not in the webview. See
+[ADR-0075](docs/adr/0075-a-comfyui-workflow-is-translated-never-executed.md).
+_Avoid_: gallery (that is the Studio's files), presets.
+
+**Comfy import**:
+Reading a ComfyUI workflow file and translating it into a native workflow:
+what a hosted model can do becomes nodes, a local diffusion chain becomes one
+hosted image, and the rest is listed in the **import report** before anything
+is saved. Never running the ComfyUI graph itself.
+_Avoid_: Comfy support, running Comfy, compatibility.
+
 **Port (workflow input)**:
 A named, typed input on a workflow node — a video node's prompt, opening
 frame, end frame, and references are four ports, not one merged stream. Media

@@ -185,7 +185,12 @@ describe("the film tab", () => {
     expect(workflow.nodes.some((node) => node.type === "assemble")).toBe(true);
     // Saved before it runs: a production started here is visible, resumable
     // and editable on the canvas like any other.
-    expect(window.localStorage.getItem("os-june:studio-workflows")).toContain(workflow.id);
+    const saved = hoisted.invoke.mock.calls.find(
+      ([command, args]) =>
+        command === "studio_workflow_save" &&
+        (args as { request: { id: string } }).request.id === workflow.id,
+    );
+    expect(saved).toBeDefined();
   });
 
   it("does not claim a film exists when the run came back without one", async () => {

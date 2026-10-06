@@ -57,11 +57,23 @@ export interface WorkflowEdge {
 export interface Workflow {
   id: string;
   name: string;
+  /** What the workflow is for, in the author's words (an imported file's
+   * notes land here). */
+  description?: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   createdAt: number;
   updatedAt: number;
+  /** Where it came from: drawn here, or imported from a file. */
+  origin?: "mine" | "import";
+  /** The gallery file shown on its library card: its last real result, or a
+   * picture made for it on request. */
+  coverArtifactId?: string;
 }
+
+/** The version of the exported workflow file. Raise it with a reader for the
+ * old one when the shape changes. */
+export const WORKFLOW_FILE_VERSION = 1;
 
 export type IOKind = "text" | "image" | "audio" | "video" | "none";
 
