@@ -3134,6 +3134,7 @@ export function App() {
                 <NotesList
                   ref={notesListRef}
                   notes={state.notes}
+                  folders={state.folders}
                   activeRecordingNoteId={recordingNoteId}
                   onSelectNote={(noteId) => {
                     if (takeNewTabIntent()) {

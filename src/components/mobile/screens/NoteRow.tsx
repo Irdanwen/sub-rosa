@@ -8,6 +8,8 @@ import type { NoteListItemDto } from "../../../lib/tauri";
 
 type NoteRowProps = {
   note: NoteListItemDto;
+  /** Shown when a search turns up a note that lives in a folder. */
+  folderName?: string;
   recording?: boolean;
   onSelect: () => void;
   /** Opens the row's actions. Absent where the row is not actionable. */
@@ -19,6 +21,7 @@ type NoteRowProps = {
 
 export function NoteRow({
   note,
+  folderName,
   recording,
   onSelect,
   onLongPress,
@@ -75,7 +78,10 @@ export function NoteRow({
           <span data-shimmer={processing ? "true" : undefined}>{preview}</span>
         </span>
       </span>
-      <span className="mobile-note-row-time">{formatNoteTime(note.updatedAt)}</span>
+      <span className="mobile-note-row-time">
+        {folderName ? `${folderName} · ` : null}
+        {formatNoteTime(note.updatedAt)}
+      </span>
     </button>
   );
 }

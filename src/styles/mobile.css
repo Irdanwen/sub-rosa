@@ -483,6 +483,11 @@
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
   flex-shrink: 0;
+  /* A search hit names its folder here; a long name must not crowd the title. */
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Duration reads as a fact about the recording, so it sits ahead of the
