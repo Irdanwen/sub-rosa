@@ -22,6 +22,7 @@
 import { t } from "../../lib/i18n";
 import { IconClapboard } from "central-icons/IconClapboard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { speechArtifactModels } from "../../lib/studio/artifacts";
 import {
   type BibleEntry,
   type BibleKind,
@@ -38,7 +39,7 @@ import {
   type Shot,
   videoFamilies,
 } from "../../lib/studio/workflow/compile";
-import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
+import { estimateCostCredits, modelsOfType, speechModels } from "../../lib/studio/catalog";
 import {
   estimateWorkflowCost,
   fetchVideoQuotes,
@@ -167,6 +168,19 @@ export function FilmStudio({
   const [showOptions, setShowOptions] = useState(false);
   const [videoModelId, setVideoModelId] = useState("");
   const [ttsModelId, setTtsModelId] = useState("");
+  // The engine each kept voice was cast on, so a line speaks where its voice
+  // was chosen (ADR-0076). Read once; a gallery that cannot be read leaves the
+  // project's engine to speak every line.
+  const [castEngines, setCastEngines] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(() => {
+    let live = true;
+    void speechArtifactModels().then((found) => {
+      if (live) setCastEngines(found);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
   const [musicModelId, setMusicModelId] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [envelope, setEnvelope] = useState(FALLBACK_ENVELOPE_CREDITS);
@@ -274,7 +288,7 @@ export function FilmStudio({
   const shots = reading.shots;
   const referenceCost = useMemo(() => portraitCostCredits(catalog), [catalog]);
   const families = useMemo(() => videoFamilies(catalog), [catalog]);
-  const voiceModels = useMemo(() => modelsOfType(catalog, "tts"), [catalog]);
+  const voiceModels = useMemo(() => speechModels(catalog), [catalog]);
   const musicModels = useMemo(() => modelsOfType(catalog, "music"), [catalog]);
   /** What is actually going to be used, chosen or defaulted, for the summary line. */
   const chosen = useMemo(
@@ -323,9 +337,11 @@ export function FilmStudio({
       videoModelId: videoModelId || undefined,
       ttsModelId: ttsModelId || undefined,
       musicModelId: musicModelId || undefined,
+      voiceModels: castEngines,
       withScore,
     });
   }, [
+    castEngines,
     shots,
     note,
     bible,

@@ -16,7 +16,8 @@ import { DIALOGUE_GAP_SECONDS } from "../mix";
 import { MediaError } from "../client";
 import { judge, type JudgeVerdict, verdictLine } from "../judge";
 import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
-import { fetchMediaCatalog, musicCapabilities } from "../catalog";
+import { fetchMediaCatalog, musicCapabilities, musicQueueBody, speechRail } from "../catalog";
+import { queuedSpeechJob, speechCapabilities } from "../speech";
 import { mediaBinary, mediaJson } from "../client";
 import { composeImages } from "../edit-image";
 import { generateImages } from "../generate-image";
@@ -176,7 +177,7 @@ export interface WorkflowStorage {
 /** What a durable render needs queued: everything Rust's job runner asks for,
  * minus the queue id it will get back. */
 export interface DurableRenderRequest {
-  kind: "video" | "music" | "image";
+  kind: "video" | "music" | "image" | "speech";
   model: string;
   prompt: string;
   extension: string;
@@ -710,6 +711,49 @@ async function executeNode(
       const input = textInputOf(ports, "text").trim() || (stringParam(params, "text") ?? "").trim();
       if (!input || input.length > 50_000)
         throw new Error(t("Speech requires between 1 and 50,000 characters."));
+      // The rail is the model's (ADR-0076): a speaking model of the music
+      // queue is a durable render, never an `/audio/speech` call it would 404.
+      const catalog = await fetchMediaCatalog();
+      const entry = catalog.models.find((candidate) => candidate.id === model);
+      if (entry && speechRail(entry) === "queue") {
+        const caps = speechCapabilities(entry);
+        if (input.length > caps.inputLimit)
+          throw new Error(
+            t("{model} reads at most {count} characters at a time.", {
+              model: entry.name,
+              count: caps.inputLimit,
+            }),
+          );
+        const spec = queuedSpeechJob(catalog, caps, {
+          model: entry,
+          text: input,
+          voice: stringParam(params, "voice"),
+          speed: numberParam(params, "speed"),
+        });
+        const request: DurableRenderRequest = {
+          kind: "speech",
+          model,
+          prompt: input,
+          extension: spec.extension,
+          queuePath: spec.queuePath,
+          queueBody: spec.queueBody,
+          retrievePath: musicPaths(catalog.backend).retrieve,
+          urlFields: spec.urlFields,
+          costCredits: context.costCredits,
+        };
+        if (!context.durableMedia) {
+          throw new Error(t("This runner cannot wait for a queued voice-over."));
+        }
+        const saved = await context.durableMedia(node.id, request, signal);
+        return {
+          kind: "audio",
+          mimeType: saved.mimeType ?? "audio/mpeg",
+          source: "speech",
+          artifactId: saved.artifactId,
+          src: saved.src,
+          atSeconds: secondsParam(params, "startAt"),
+        };
+      }
       const format = stringParam(params, "responseFormat") ?? "mp3";
       const body: Record<string, unknown> = {
         model,
@@ -747,25 +791,22 @@ async function executeNode(
       const prompt =
         textInputOf(ports, "prompt").trim() || (stringParam(params, "prompt") ?? "").trim();
       if (!prompt) throw new Error(t("Add a music prompt before generating the score."));
-      const body: Record<string, unknown> = {
+      // Read the catalog first: the model's published limits decide which keys
+      // go out (ADR-0076), and the backend decides the paths below.
+      const catalog = await fetchMediaCatalog();
+      const caps = musicCapabilities(catalog.models.find((entry) => entry.id === model) ?? model);
+      const body = musicQueueBody(caps, {
         model,
         prompt,
-      };
-      // The measured rules (model-input-rules.json), as the music studio
-      // applies them: a model that takes no lyrics is sent none and is never
-      // told to be instrumental, which some of them refuse as an unknown field.
-      const caps = musicCapabilities(model);
-      const instrumental = booleanParam(params, "instrumental") === true;
-      const lyrics = stringParam(params, "lyrics");
-      if (lyrics && caps.lyrics !== "none" && !instrumental) body.lyrics_prompt = lyrics;
-      const durationSeconds = numberParam(params, "durationSeconds");
-      if (durationSeconds !== undefined) body.duration_seconds = durationSeconds;
-      if (instrumental && caps.instrumental && caps.lyrics !== "none")
-        body.force_instrumental = true;
+        lyrics: stringParam(params, "lyrics"),
+        instrumental: booleanParam(params, "instrumental") === true,
+        writeLyrics: booleanParam(params, "writeLyrics") === true,
+        durationSeconds: numberParam(params, "durationSeconds"),
+        loop: booleanParam(params, "loop") === true,
+      });
       // Music lives under /audio/music/* on Carpe Diem but /audio/* on
       // Venice; the (cached) catalog knows which backend the key targets.
-      const { backend } = await fetchMediaCatalog();
-      const paths = musicPaths(backend);
+      const paths = musicPaths(catalog.backend);
       if (context.durableMedia) {
         const saved = await context.durableMedia(
           node.id,

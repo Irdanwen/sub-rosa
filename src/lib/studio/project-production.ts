@@ -42,6 +42,7 @@ export function compileProjectWithNotes(
   document: ProjectDocument,
   catalog: MediaCatalog,
   onlyShotId?: string,
+  voiceModels?: ReadonlyMap<string, string>,
 ): { workflow: Workflow; notes: string[] } {
   if (document.bible.some((entry) => !entry.name.trim()))
     throw new Error(t("Give this one a name."));
@@ -72,6 +73,7 @@ export function compileProjectWithNotes(
     catalog,
     ...document.settings,
     filmDirection: projectDirection(document),
+    voiceModels,
     withScore: onlyShotId ? false : document.settings.withScore,
     score: onlyShotId ? undefined : scoreCues(document, catalog),
   });
@@ -195,7 +197,7 @@ export function compileCue(
   if (!prompt) throw new Error(t("Describe this cue before composing it."));
   const { model, seconds } = cueLength(document, catalog, cue);
   if (!model) throw new Error(t("No music model on this account, so the film has no score."));
-  const caps = musicCapabilities(model.id);
+  const caps = musicCapabilities(model);
   const lyrics = caps.lyrics !== "none" ? cue.lyrics?.trim() : undefined;
   if (caps.lyrics === "required" && !lyrics)
     throw new Error(
@@ -220,7 +222,8 @@ export function compileCue(
           prompt,
           ...(seconds !== undefined ? { durationSeconds: seconds } : {}),
           ...(lyrics ? { lyrics } : {}),
-          instrumental: !lyrics && caps.instrumental && caps.lyrics !== "none",
+          // A score without words is asked for none, where the model can be told.
+          instrumental: !lyrics && caps.instrumental,
         },
       },
     ],

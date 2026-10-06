@@ -81,7 +81,31 @@ PREFERRED_DEFAULT_MODELS = {
 # The constraint keys worth relaying to the agent (aspect ratios and durations
 # drive valid generate_* arguments); the rest of the Venice constraint blob is
 # noise at tool-choice time.
-RELAYED_CONSTRAINT_KEYS = ("aspectRatios", "durations", "resolutions", "promptCharacterLimit")
+RELAYED_CONSTRAINT_KEYS = (
+    "aspectRatios",
+    "durations",
+    "resolutions",
+    "promptCharacterLimit",
+    # Music queue limits (ADR-0076): which of generate_music's arguments a
+    # model accepts. Venice refuses a key the model does not take, even when
+    # its value is a no-op, so the agent needs these before it calls.
+    "supports_lyrics",
+    "lyrics_required",
+    "supports_force_instrumental",
+    "supports_lyrics_optimizer",
+    "supports_loop",
+    "duration_options",
+    "min_duration",
+    "max_duration",
+    "default_duration",
+    "prompt_character_limit",
+    "lyrics_character_limit",
+    "voices",
+    "default_voice",
+    "supports_speed",
+    "min_speed",
+    "max_speed",
+)
 
 # The loopback proxy caps request bodies at 3 MiB; leave headroom for the
 # JSON envelope around a base64 reference image.
@@ -226,11 +250,47 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "duration_seconds": {
                     "type": "integer",
-                    "description": "Track duration in seconds (model dependent).",
+                    "description": (
+                        "Track duration in seconds. Only for a model whose "
+                        "constraints publish duration_options or "
+                        "min_duration/max_duration; omit it otherwise."
+                    ),
                 },
                 "instrumental": {
                     "type": "boolean",
-                    "description": "Force an instrumental track (no vocals).",
+                    "description": (
+                        "Force an instrumental track (no vocals). Only where "
+                        "supports_force_instrumental is true."
+                    ),
+                },
+                "write_lyrics": {
+                    "type": "boolean",
+                    "description": (
+                        "Let the model write the lyrics from the prompt. Only "
+                        "where supports_lyrics_optimizer is true; send no lyrics."
+                    ),
+                },
+                "loop": {
+                    "type": "boolean",
+                    "description": (
+                        "Render a clip whose end splices back into its start "
+                        "(ambience beds). Only where supports_loop is true."
+                    ),
+                },
+                "voice": {
+                    "type": "string",
+                    "description": (
+                        "Some models on this queue speak instead of play: they "
+                        "list voices in their constraints and read the prompt "
+                        "aloud. Pick one of those voices for them."
+                    ),
+                },
+                "speed": {
+                    "type": "number",
+                    "description": (
+                        "Speaking speed, where supports_speed is true, between "
+                        "min_speed and max_speed."
+                    ),
                 },
             },
             "required": ["prompt"],
@@ -567,9 +627,21 @@ def generate_music(base_url: str, token: str, arguments: dict[str, Any]) -> dict
     duration = arguments.get("duration_seconds")
     if isinstance(duration, int) and duration > 0:
         body["duration_seconds"] = duration
-    instrumental = arguments.get("instrumental")
-    if isinstance(instrumental, bool):
-        body["force_instrumental"] = instrumental
+    # Only a true flag goes out: Venice refuses `force_instrumental: false`
+    # on the models that have no such key, so "false" is said by omission.
+    if arguments.get("instrumental") is True:
+        body["force_instrumental"] = True
+    if arguments.get("write_lyrics") is True:
+        body["lyrics_optimizer"] = True
+        body.pop("lyrics_prompt", None)
+    if arguments.get("loop") is True:
+        body["loop"] = True
+    voice = arguments.get("voice")
+    if isinstance(voice, str) and voice.strip():
+        body["voice"] = voice.strip()
+    speed = arguments.get("speed")
+    if isinstance(speed, (int, float)) and not isinstance(speed, bool) and speed > 0:
+        body["speed"] = speed
 
     dto = proxy_request(base_url, token, "POST", music_paths(base_url, token)["queue"], body)
     if not dto.get("ok"):

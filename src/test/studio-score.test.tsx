@@ -36,7 +36,10 @@ const catalog: MediaCatalog = {
   backend: "carpe-diem",
   models: [
     model("kling-v3-text-to-video", "video"),
-    model("stable-audio-2-5", "music", { constraints: undefined }),
+    // Published limits, as the operator gathers them for a music model.
+    model("stable-audio-2-5", "music", {
+      constraints: { supports_lyrics: false, min_duration: 20, max_duration: 190 },
+    }),
     model("elevenlabs-sound-effects", "music", { constraints: undefined }),
   ],
 };
@@ -68,8 +71,14 @@ describe("a cue's shots and length", () => {
 
   it("asks a model with a duration range for the cue's length, snapped up to its step", () => {
     const stable = catalog.models[1];
-    expect(musicLength(stable, 12)).toEqual({ seconds: 15, longer: true, shorter: false });
-    expect(musicLength(stable, 400)).toMatchObject({ seconds: 180, shorter: true });
+    expect(musicLength(stable, 12)).toEqual({ seconds: 20, longer: true, shorter: false });
+    expect(musicLength(stable, 37)).toEqual({ seconds: 37, longer: false, shorter: false });
+    expect(musicLength(stable, 400)).toMatchObject({ seconds: 190, shorter: true });
+    // An exact list snaps up to its next entry.
+    const ace = model("ace-step-15", "music", {
+      constraints: { supports_lyrics: true, duration_options: [60, 90, 120] },
+    });
+    expect(musicLength(ace, 70)).toEqual({ seconds: 90, longer: true, shorter: false });
     expect(musicLength(model("lyria-2", "music"), 12)).toEqual({ longer: false, shorter: false });
   });
 });
@@ -139,7 +148,7 @@ describe("compiling the score", () => {
     expect(music[0].params).toMatchObject({
       model: "stable-audio-2-5",
       prompt: "Solo cello. Low drone.",
-      durationSeconds: 15,
+      durationSeconds: 20,
       instrumental: false,
     });
   });
@@ -155,7 +164,7 @@ describe("compiling the score", () => {
     expect(workflow.nodes).toHaveLength(1);
     expect(workflow.nodes[0]).toMatchObject({
       id: "score-beat",
-      params: { prompt: "tense", durationSeconds: 10 },
+      params: { prompt: "tense", durationSeconds: 20 },
     });
     expect(() => compileCue("Museum", document, catalog, "gone")).toThrow();
   });

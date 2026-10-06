@@ -110,7 +110,7 @@ export function musicLength(
   model: MediaModel | undefined,
   wanted: number,
 ): { seconds?: number; longer: boolean; shorter: boolean } {
-  const range = model ? musicCapabilities(model.id).durationSeconds : undefined;
+  const range = model ? musicCapabilities(model).durationSeconds : undefined;
   if (!range || !(wanted > 0)) return { longer: false, shorter: false };
   const steps = Math.ceil((wanted - range.min) / range.step);
   const seconds = Math.min(range.max, Math.max(range.min, range.min + steps * range.step));

@@ -165,6 +165,11 @@ export interface ParamSchema {
    * text-to-video, image-to-video, or reference-to-video). Overrides
    * `mediaType` when present. */
   mediaTypes?: string[];
+  /** For audio "model" params: which roles the node accepts (ADR-0076). The
+   * catalog type says which endpoint serves a model, not what it does, so the
+   * music queue's speaking models belong to the speech node. Overrides
+   * `mediaType` and `mediaTypes` when present. */
+  audioRoles?: Array<"speech" | "music" | "effects">;
   /**
    * For params whose choices belong to the node's chosen model rather than to
    * the schema: which of that model's constraints to offer. Resolved by
@@ -410,6 +415,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         required: true,
         default: "tts-kokoro",
         mediaType: "tts",
+        audioRoles: ["speech"],
       },
       { name: "voice", type: "string", label: "Voice", default: "" },
       { name: "speed", type: "number", label: "Speed", default: 1, min: 0.25, max: 4, step: 0.25 },
@@ -437,10 +443,19 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     inputs: [PROMPT_PORT],
     output: "audio",
     params: [
-      { name: "model", type: "model", label: "Model", required: true, mediaType: "music" },
+      {
+        name: "model",
+        type: "model",
+        label: "Model",
+        required: true,
+        mediaType: "music",
+        audioRoles: ["music", "effects"],
+      },
       { name: "lyrics", type: "text", label: "Lyrics", default: "" },
       { name: "durationSeconds", type: "number", label: "Duration (seconds)", min: 1 },
       { name: "instrumental", type: "boolean", label: "Instrumental", default: false },
+      { name: "writeLyrics", type: "boolean", label: "Write the lyrics for me", default: false },
+      { name: "loop", type: "boolean", label: "Seamless loop", default: false },
     ],
   },
   video: {

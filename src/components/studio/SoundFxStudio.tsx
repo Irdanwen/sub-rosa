@@ -8,8 +8,10 @@ import { useCallback, useMemo, useState } from "react";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
 import { useMediaJob } from "../../lib/studio/async-job";
 import {
+  acceptedDuration,
   estimateCostCredits,
   musicCapabilities,
+  musicQueueBody,
   soundEffectsModels,
 } from "../../lib/studio/catalog";
 import { musicPaths, retrieveBody } from "../../lib/studio/paths";
@@ -34,13 +36,14 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
   const paths = musicPaths(catalog.backend);
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
   const model = models.find((entry) => entry.id === modelId) ?? models[0];
-  const caps = musicCapabilities(model?.id ?? "");
+  const caps = musicCapabilities(model);
 
   const [prompt, setPrompt] = useState("");
   // Auto duration lets the model size the effect to the description; the
   // slider only appears (and is only sent) when the user takes over.
   const [autoDuration, setAutoDuration] = useState(true);
   const [durationSeconds, setDurationSeconds] = useState(5);
+  const [loop, setLoop] = useState(false);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
 
   // The file is already in the gallery directory (Rust downloaded it, possibly
@@ -54,9 +57,8 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
     setGalleryEpoch((epoch) => epoch + 1);
   });
 
-  const duration = caps.durationSeconds
-    ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
-    : durationSeconds;
+  const duration = acceptedDuration(caps, durationSeconds) ?? durationSeconds;
+  const loopOn = caps.loop === true && loop;
   const costCredits = model
     ? estimateCostCredits(model, {
         durationSeconds: autoDuration ? undefined : duration,
@@ -81,11 +83,13 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
 
   const start = useCallback(() => {
     if (!model || !prompt.trim()) return;
-    const body: Record<string, unknown> = {
+    const body = musicQueueBody(caps, {
       model: model.id,
       prompt: prompt.trim().slice(0, SFX_PROMPT_LIMIT),
-    };
-    if (!autoDuration) body.duration_seconds = duration;
+      durationSeconds: duration,
+      autoDuration,
+      loop: loopOn,
+    });
     void job.start({
       kind: "sfx",
       model: model.id,
@@ -99,7 +103,7 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
       }),
       urlFields: AUDIO_URL_FIELDS,
     });
-  }, [model, prompt, autoDuration, duration, job, paths]);
+  }, [model, caps, prompt, autoDuration, duration, loopOn, job, paths]);
 
   const controls = (
     <>
@@ -124,6 +128,11 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
           onChange={(event) => setPrompt(event.target.value)}
         />
       </StudioField>
+      {caps.loop ? (
+        <StudioField label={t("Seamless loop")} hint={t("The end flows back into the start")}>
+          <Switch checked={loop} onCheckedChange={setLoop} aria-label={t("Seamless loop")} />
+        </StudioField>
+      ) : null}
       <StudioField label={t("Auto duration")} hint={t("Let the model pick")}>
         <Switch
           checked={autoDuration}

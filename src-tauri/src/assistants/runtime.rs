@@ -271,8 +271,14 @@ pub async fn media_catalog(snapshot: &AssistantSnapshot) -> Result<serde_json::V
             let capability = match model.media_type.as_str() {
                 "image" | "imageEdit" | "upscale" => "image",
                 "video" => "video",
-                "audio" | "music" => "music",
-                "tts" | "speech" => "speech",
+                // By role (ADR-0076): the music queue also carries voices.
+                "music" | "tts" => match super::media_settings::audio_role(model) {
+                    Some("speech") => "speech",
+                    Some(_) => "music",
+                    None => "",
+                },
+                "audio" => "music",
+                "speech" => "speech",
                 _ => "",
             };
             let video_input_required =
@@ -288,6 +294,7 @@ pub async fn media_catalog(snapshot: &AssistantSnapshot) -> Result<serde_json::V
         .map(|model| {
             let kind = match model.media_type.as_str() {
                 "video" => Some("video"),
+                "music" if super::media_settings::speaks_on_queue(&model) => None,
                 "audio" | "music" => Some("music"),
                 _ => None,
             };

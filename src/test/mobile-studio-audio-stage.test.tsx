@@ -18,7 +18,10 @@ const studio = vi.hoisted(() => ({
   save: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: tauri.invoke,
+  convertFileSrc: (path: string) => `asset://localhost/${path}`,
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: tauri.listen }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn() }));
 vi.mock("../lib/studio/catalog", async (importOriginal) => ({
@@ -122,7 +125,9 @@ describe("the audio panels on the stage", () => {
     await waitFor(() => expect(scene.querySelector(".stage-veil")).toBeNull());
     const track = scene.querySelector("audio") as HTMLAudioElement;
     expect(track).toBeTruthy();
-    expect(track.src).toContain("data:audio/mpeg;base64,");
+    // Played from the saved file: WKWebView leaves a data: audio element silent.
+    expect(track.src).not.toContain("data:");
+    expect(track.src).toContain("a1.mp3");
     expect(scene.querySelector(".mobile-studio-scene-wave")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });

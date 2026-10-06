@@ -7,7 +7,7 @@ import { intlLocale, t } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { probedConstraints } from "./model-constraints";
 import inputRules from "./model-input-rules.json";
-import type { MediaCatalog, MediaModel, MediaType } from "./types";
+import type { AudioConstraints, MediaCatalog, MediaModel, MediaType } from "./types";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000;
 
@@ -648,52 +648,278 @@ export function supportsBackgroundRemoval(catalog: MediaCatalog): boolean {
   return catalog.backend === "venice";
 }
 
-/** Sound-effect generators ride the music queue (same `music` catalog type,
- * same endpoints) but are a different tool: short foley or ambience from a
- * one-line description, not a track. The catalogs don't flag them, so they
- * are told apart by id. */
-export function isSoundEffectsModel(modelId: string): boolean {
-  const id = modelId.toLowerCase();
+/** Which surface an audio model belongs to (ADR-0076). The catalog type says
+ * which endpoint serves a model, not what it does: the music queue also
+ * carries sound effects and speech. The role is read from what the model
+ * publishes, and only falls back to its id where nothing is published. */
+export type AudioRole = "speech" | "music" | "effects";
+
+/** How a speaking model is reached: `/audio/speech` answers in one call, the
+ * music queue answers later and is a durable job (ADR-0018). */
+export type SpeechRail = "speech" | "queue";
+
+function audioConstraints(model: MediaModel | undefined): AudioConstraints | undefined {
+  return model?.constraints as AudioConstraints | undefined;
+}
+
+/** Voices a model speaks in: top-level for `/audio/speech` models, inside the
+ * constraints for the speaking models of the music queue. */
+export function modelVoices(model: MediaModel | undefined): string[] {
+  if (!model) return [];
+  if (model.voices && model.voices.length > 0) return model.voices;
+  const voices = audioConstraints(model)?.voices;
+  return Array.isArray(voices) ? voices.filter((voice) => typeof voice === "string") : [];
+}
+
+/** The voice a model uses when none is sent, when it says so. */
+export function defaultVoice(model: MediaModel | undefined): string | undefined {
+  const named = audioConstraints(model)?.default_voice;
+  const voices = modelVoices(model);
+  return typeof named === "string" && voices.includes(named) ? named : voices[0];
+}
+
+/** Sound-effect generators are told apart by what they offer (a seamless
+ * loop) or, failing that, by id: no catalog flags them. */
+export function isSoundEffectsModel(model: MediaModel | string): boolean {
+  const id = (typeof model === "string" ? model : model.id).toLowerCase();
+  if (typeof model !== "string" && audioConstraints(model)?.supports_loop === true) return true;
   return id.includes("sound-effect") || id.includes("mmaudio");
 }
 
-/** Music models for the music surface: the `music` catalog type minus the
- * sound-effect generators, which get their own surface. */
+/** A queue model that reads its prompt aloud: it publishes voices, and takes
+ * neither lyrics nor a length (ElevenLabs TTS v3/v4, Seed Audio). */
+function speaksOnQueue(model: MediaModel): boolean {
+  if (model.mediaType !== "music" || modelVoices(model).length === 0) return false;
+  const c = audioConstraints(model);
+  const takesLength =
+    (c?.duration_options?.length ?? 0) > 0 ||
+    c?.min_duration !== undefined ||
+    c?.max_duration !== undefined;
+  return !takesLength && c?.supports_lyrics !== true;
+}
+
+export function audioRole(model: MediaModel): AudioRole | undefined {
+  if (model.mediaType === "tts") return "speech";
+  if (model.mediaType !== "music") return undefined;
+  if (speaksOnQueue(model)) return "speech";
+  return isSoundEffectsModel(model) ? "effects" : "music";
+}
+
+export function speechRail(model: MediaModel): SpeechRail {
+  return model.mediaType === "music" ? "queue" : "speech";
+}
+
+function modelsWithRole(catalog: MediaCatalog, role: AudioRole): MediaModel[] {
+  return catalog.models
+    .filter((model) => !model.offline && audioRole(model) === role)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Every model that speaks a text, on either rail. */
+export function speechModels(catalog: MediaCatalog): MediaModel[] {
+  return modelsWithRole(catalog, "speech");
+}
+
+/** Music models for the music surface. */
 export function musicModels(catalog: MediaCatalog): MediaModel[] {
-  return modelsOfType(catalog, "music").filter((model) => !isSoundEffectsModel(model.id));
+  return modelsWithRole(catalog, "music");
 }
 
 export function soundEffectsModels(catalog: MediaCatalog): MediaModel[] {
-  return modelsOfType(catalog, "music").filter((model) => isSoundEffectsModel(model.id));
+  return modelsWithRole(catalog, "effects");
 }
 
-/** Per-model music input rules, shared by Studio and native assistant proposals.
- * Catalogs do not publish these. IDs match by substring, most specific first.
- * The measured table includes elevenlabs-music rejecting dedicated lyrics,
- * unlike its documentation. Unknown models retain the permissive default. */
+/** What a queue model accepts, shared by Studio, workflow, film and native
+ * assistant proposals. Read from the published constraints first (ADR-0076);
+ * the measured table in `model-input-rules.json` only answers for a model
+ * that publishes nothing, matched by id substring, most specific first. */
 export interface MusicCapabilities {
   /** Whether the model accepts a dedicated lyrics prompt. */
   lyrics: "required" | "optional" | "none";
+  /** Whether `force_instrumental` may be sent at all. */
   instrumental: boolean;
-  durationSeconds?: { min: number; max: number; step: number };
+  /** `options` is the exact list when the model publishes one. */
+  durationSeconds?: {
+    min: number;
+    max: number;
+    step: number;
+    default?: number;
+    options?: number[];
+  };
+  /** The model can write the lyrics itself from the prompt. */
+  lyricsOptimizer?: boolean;
+  /** The clip can be rendered to splice back into its own start. */
+  loop?: boolean;
+  promptLimit?: number;
+  lyricsLimit?: number;
+  /** False when these come from the fallback table, not the model. */
+  published: boolean;
 }
 
-const MUSIC_CAPABILITIES = inputRules.music as Array<{ match: string; caps: MusicCapabilities }>;
+const MUSIC_CAPABILITIES = inputRules.music as Array<{
+  match: string;
+  caps: Omit<MusicCapabilities, "published">;
+}>;
 
-export function musicCapabilities(modelId: string): MusicCapabilities {
-  const id = modelId.toLowerCase();
-  for (const entry of MUSIC_CAPABILITIES) {
-    if (id.includes(entry.match)) return entry.caps;
+/** Keys whose presence proves the catalog described this model's parameters.
+ * Only then is a missing duration a statement ("takes none"), as the operator
+ * reads it too. */
+const DESCRIBED_BY: Array<keyof AudioConstraints> = [
+  "supports_lyrics",
+  "lyrics_required",
+  "supports_force_instrumental",
+  "supports_speed",
+  "supported_formats",
+  "prompt_character_limit",
+  "min_prompt_length",
+];
+
+function finite(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function publishedDuration(c: AudioConstraints): MusicCapabilities["durationSeconds"] {
+  const options = (c.duration_options ?? [])
+    .filter((value) => finite(value) !== undefined && value > 0)
+    .sort((a, b) => a - b);
+  const fallbackDefault = finite(c.default_duration);
+  if (options.length > 0) {
+    const gaps = options.slice(1).map((value, index) => value - options[index]);
+    const even = gaps.length > 0 && gaps.every((gap) => gap === gaps[0]);
+    return {
+      min: options[0],
+      max: options[options.length - 1],
+      step: even ? gaps[0] : 1,
+      default:
+        fallbackDefault !== undefined && options.includes(fallbackDefault)
+          ? fallbackDefault
+          : options[0],
+      options,
+    };
   }
-  return { lyrics: "optional", instrumental: true };
+  const min = finite(c.min_duration);
+  const max = finite(c.max_duration);
+  if (min === undefined && max === undefined) {
+    // A bare default still means the model takes a length; it is the only
+    // one that can be named.
+    return fallbackDefault !== undefined
+      ? { min: fallbackDefault, max: fallbackDefault, step: 1, default: fallbackDefault }
+      : undefined;
+  }
+  const low = min ?? 1;
+  const high = Math.max(low, max ?? fallbackDefault ?? low);
+  const dflt = fallbackDefault !== undefined ? Math.min(Math.max(fallbackDefault, low), high) : low;
+  return { min: low, max: high, step: 1, default: dflt };
+}
+
+function publishedMusicCapabilities(
+  c: AudioConstraints | undefined,
+): MusicCapabilities | undefined {
+  if (!c || !DESCRIBED_BY.some((key) => c[key] !== undefined)) return undefined;
+  return {
+    lyrics:
+      c.supports_lyrics === false ? "none" : c.lyrics_required === true ? "required" : "optional",
+    instrumental: c.supports_force_instrumental === true,
+    durationSeconds: publishedDuration(c),
+    lyricsOptimizer: c.supports_lyrics_optimizer === true,
+    loop: c.supports_loop === true,
+    promptLimit: finite(c.prompt_character_limit),
+    lyricsLimit: finite(c.lyrics_character_limit),
+    published: true,
+  };
+}
+
+/** Pass the model when you have it; an id is resolved against the cached
+ * catalog so a caller holding only an id still reads what was published. */
+export function musicCapabilities(model: MediaModel | string | undefined): MusicCapabilities {
+  const entry =
+    typeof model === "string"
+      ? cached?.catalog.models.find((candidate) => candidate.id === model)
+      : model;
+  const published = publishedMusicCapabilities(audioConstraints(entry));
+  if (published) return published;
+  const id = (typeof model === "string" ? model : (model?.id ?? "")).toLowerCase();
+  for (const row of MUSIC_CAPABILITIES) {
+    if (id.includes(row.match)) return { ...row.caps, published: false };
+  }
+  return { lyrics: "optional", instrumental: false, published: false };
+}
+
+/** A length the model will take: snapped to its published list or step and
+ * clamped to its range. Undefined when the model takes no length at all. */
+export function acceptedDuration(
+  caps: MusicCapabilities,
+  seconds: number | undefined,
+): number | undefined {
+  const range = caps.durationSeconds;
+  if (!range) return undefined;
+  const wanted = seconds ?? range.default ?? range.min;
+  if (range.options && range.options.length > 0) {
+    return range.options.reduce((best, option) =>
+      Math.abs(option - wanted) < Math.abs(best - wanted) ? option : best,
+    );
+  }
+  const clamped = Math.min(Math.max(wanted, range.min), range.max);
+  const steps = Math.round((clamped - range.min) / range.step);
+  return Math.min(range.max, range.min + steps * range.step);
+}
+
+export interface MusicRequest {
+  model: string;
+  prompt: string;
+  lyrics?: string;
+  instrumental?: boolean;
+  /** Let the model write the lyrics (only where it can). */
+  writeLyrics?: boolean;
+  durationSeconds?: number;
+  /** Leave the length to the model (sound effects): no length is sent. */
+  autoDuration?: boolean;
+  loop?: boolean;
+}
+
+/** The queue body, built in one place for every caller. A key goes out only
+ * when the model accepts it: Venice refuses an unknown key even when its
+ * value is a no-op (`force_instrumental: false` was a 400). */
+export function musicQueueBody(
+  caps: MusicCapabilities,
+  request: MusicRequest,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { model: request.model, prompt: request.prompt.trim() };
+  const instrumental = caps.instrumental && request.instrumental === true;
+  const writeLyrics =
+    caps.lyricsOptimizer === true && request.writeLyrics === true && !instrumental;
+  const lyrics = request.lyrics?.trim();
+  if (caps.lyrics !== "none" && !instrumental && !writeLyrics && lyrics)
+    body.lyrics_prompt = lyrics;
+  if (instrumental) body.force_instrumental = true;
+  if (writeLyrics) body.lyrics_optimizer = true;
+  const duration = request.autoDuration
+    ? undefined
+    : acceptedDuration(caps, request.durationSeconds);
+  if (duration !== undefined) body.duration_seconds = duration;
+  if (caps.loop === true && request.loop === true) body.loop = true;
+  return body;
+}
+
+/** Why a music request cannot go out yet, or undefined when it can. */
+export function musicRequestMissing(
+  caps: MusicCapabilities,
+  request: Pick<MusicRequest, "lyrics" | "instrumental" | "writeLyrics">,
+): "lyrics" | undefined {
+  const instrumental = caps.instrumental && request.instrumental === true;
+  const writeLyrics = caps.lyricsOptimizer === true && request.writeLyrics === true;
+  return caps.lyrics === "required" && !instrumental && !writeLyrics && !request.lyrics?.trim()
+    ? "lyrics"
+    : undefined;
 }
 
 /** Estimated cost of a generation, in credits, when the catalog knows it.
  * Music models price by duration brackets; flat-priced media use costCredits. */
 export function estimateCostCredits(
   model: MediaModel,
-  options: { durationSeconds?: number; multiplier?: number } = {},
+  options: { durationSeconds?: number; characters?: number; multiplier?: number } = {},
 ): number | undefined {
+  const multiplier = options.multiplier ?? 1;
   const brackets = durationBrackets(model);
   if (brackets && options.durationSeconds !== undefined) {
     const bracket = brackets.find(
@@ -702,13 +928,31 @@ export function estimateCostCredits(
         options.durationSeconds >= entry.minSeconds &&
         options.durationSeconds <= entry.maxSeconds,
     );
-    if (bracket) {
-      const multiplier = options.multiplier ?? 1;
-      return round2(bracket.usd * 100 * multiplier);
-    }
+    if (bracket) return round2(bracket.usd * 100 * multiplier);
+  }
+  // Speech and some effects are billed by what they read or how long they
+  // play, not per generation: price the request in hand.
+  const perThousand = pricedUsd(model.pricing?.per_thousand_characters);
+  if (perThousand !== undefined && options.characters !== undefined) {
+    return round2(((perThousand * options.characters) / 1000) * 100 * multiplier);
+  }
+  const perSecond = pricedUsd(model.pricing?.per_second);
+  if (perSecond !== undefined && options.durationSeconds !== undefined) {
+    return round2(perSecond * options.durationSeconds * 100 * multiplier);
+  }
+  // `/audio/speech` models publish an `input` rate per million characters.
+  const perMillion = model.mediaType === "tts" ? pricedUsd(model.pricing?.input) : undefined;
+  if (perMillion !== undefined && options.characters !== undefined) {
+    return round2(((perMillion * options.characters) / 1_000_000) * 100 * multiplier);
   }
   if (model.costCredits !== undefined) return round2(model.costCredits);
   return undefined;
+}
+
+function pricedUsd(block: unknown): number | undefined {
+  if (!block || typeof block !== "object") return undefined;
+  const usd = (block as Record<string, unknown>).usd;
+  return typeof usd === "number" && Number.isFinite(usd) && usd >= 0 ? usd : undefined;
 }
 
 interface DurationBracket {

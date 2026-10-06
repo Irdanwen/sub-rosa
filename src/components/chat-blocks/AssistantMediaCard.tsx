@@ -52,6 +52,8 @@ function settingLabel(key: string) {
     reference_id: t("Image reference"),
     lyrics_prompt: t("Lyrics"),
     force_instrumental: t("Instrumental"),
+    lyrics_optimizer: t("Write the lyrics for me"),
+    loop: t("Seamless loop"),
   };
   return labels[key] ?? key;
 }

@@ -85,7 +85,7 @@ export function ProjectMusic({
   };
   const models = musicModels(catalog);
   const length = cue ? cueLength(document, catalog, cue) : undefined;
-  const caps = length?.model ? musicCapabilities(length.model.id) : undefined;
+  const caps = length?.model ? musicCapabilities(length.model) : undefined;
   const wait = live.find((item) => item.target.kind === "cue" && item.target.cueId === cue?.id);
   const number = (value: number) =>
     value.toLocaleString(intlLocale(), { maximumFractionDigits: 0 });

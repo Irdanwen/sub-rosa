@@ -37,6 +37,7 @@ vi.mock("../lib/studio/projects", async (original) => ({
 vi.mock("../lib/studio/artifacts", () => ({
   listArtifacts: vi.fn(async () => []),
   artifactSrc: vi.fn(),
+  speechArtifactModels: vi.fn(async () => new Map()),
 }));
 vi.mock("../lib/studio/reference-media", () => ({ mediaSeconds: mocks.mediaSeconds }));
 vi.mock("../lib/studio/project-production", async (original) => ({

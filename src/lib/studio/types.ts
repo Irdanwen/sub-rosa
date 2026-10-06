@@ -51,6 +51,33 @@ export interface VideoConstraints {
   video_input?: boolean;
 }
 
+/** What an audio model on the queue accepts, as the catalogs publish it
+ * (snake_case, verbatim). Venice states these as flat `model_spec` fields;
+ * the operator and the Rust merge gather them into `constraints`. */
+export interface AudioConstraints {
+  supports_lyrics?: boolean;
+  lyrics_required?: boolean;
+  supports_force_instrumental?: boolean;
+  supports_lyrics_optimizer?: boolean;
+  supports_loop?: boolean;
+  duration_options?: number[];
+  min_duration?: number;
+  max_duration?: number;
+  default_duration?: number;
+  prompt_character_limit?: number;
+  lyrics_character_limit?: number;
+  min_prompt_length?: number;
+  supported_formats?: string[];
+  default_format?: string;
+  voices?: string[];
+  default_voice?: string;
+  supports_custom_voice_id?: boolean;
+  supports_speed?: boolean;
+  min_speed?: number;
+  max_speed?: number;
+  default_speed?: number;
+}
+
 export interface MediaModel {
   id: string;
   mediaType: MediaType;
@@ -59,7 +86,7 @@ export interface MediaModel {
   privacy?: string;
   offline: boolean;
   voices?: string[];
-  constraints?: ImageConstraints & VideoConstraints;
+  constraints?: ImageConstraints & VideoConstraints & AudioConstraints;
   modelSets?: string[];
   traits?: string[];
   /** Whether the model declares image (vision) input support. */

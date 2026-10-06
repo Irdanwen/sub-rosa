@@ -96,6 +96,8 @@ export async function noteSpeechUrl(
   if (cached) return cached;
 
   const catalog = await fetchMediaCatalog();
+  // A recap read aloud now, so the one-call rail only: a queued voice-over
+  // takes minutes, and this plays while the note is open (ADR-0076).
   const model = modelsOfType(catalog, "tts")[0];
   if (!model) return null;
 

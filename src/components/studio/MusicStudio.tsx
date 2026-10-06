@@ -6,7 +6,14 @@ import { IconAudio } from "central-icons/IconAudio";
 import { useCallback, useMemo, useState } from "react";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
 import { useMediaJob } from "../../lib/studio/async-job";
-import { estimateCostCredits, musicCapabilities, musicModels } from "../../lib/studio/catalog";
+import {
+  acceptedDuration,
+  estimateCostCredits,
+  musicCapabilities,
+  musicModels,
+  musicQueueBody,
+  musicRequestMissing,
+} from "../../lib/studio/catalog";
 import { musicPaths, retrieveBody } from "../../lib/studio/paths";
 import { estimateRenderMs, renderEtaKey } from "../../lib/studio/render-eta";
 import type { MediaCatalog } from "../../lib/studio/types";
@@ -27,12 +34,13 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   const paths = musicPaths(catalog.backend);
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
   const model = models.find((entry) => entry.id === modelId);
-  const caps = musicCapabilities(modelId);
+  const caps = musicCapabilities(model ?? modelId);
 
   const [prompt, setPrompt] = useState("");
   const [lyrics, setLyrics] = useState("");
   const [instrumental, setInstrumental] = useState(false);
-  const [durationSeconds, setDurationSeconds] = useState(60);
+  const [writeLyrics, setWriteLyrics] = useState(false);
+  const [durationSeconds, setDurationSeconds] = useState<number | undefined>(undefined);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
 
   // Rust already wrote the file into the gallery directory (it may have landed
@@ -46,9 +54,11 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
     setGalleryEpoch((epoch) => epoch + 1);
   });
 
-  const duration = caps.durationSeconds
-    ? Math.min(Math.max(durationSeconds, caps.durationSeconds.min), caps.durationSeconds.max)
-    : undefined;
+  // Derived, never stored: a length picked on one model is snapped to what the
+  // next one accepts, and an untouched slider opens on the model's default.
+  const duration = acceptedDuration(caps, durationSeconds);
+  const instrumentalOn = caps.instrumental && instrumental;
+  const writeLyricsOn = caps.lyricsOptimizer === true && writeLyrics && !instrumentalOn;
   const costCredits = model
     ? estimateCostCredits(model, {
         durationSeconds: duration,
@@ -56,7 +66,12 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
       })
     : undefined;
 
-  const lyricsMissing = caps.lyrics === "required" && !instrumental && !lyrics.trim();
+  const lyricsMissing =
+    musicRequestMissing(caps, {
+      lyrics,
+      instrumental: instrumentalOn,
+      writeLyrics: writeLyricsOn,
+    }) === "lyrics";
   const busy =
     job.state.phase === "queueing" ||
     job.state.phase === "queued" ||
@@ -74,14 +89,14 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
 
   const start = useCallback(() => {
     if (!model || !prompt.trim()) return;
-    const body: Record<string, unknown> = { model: model.id, prompt: prompt.trim() };
-    if (caps.lyrics !== "none" && !instrumental && lyrics.trim()) {
-      body.lyrics_prompt = lyrics.trim();
-    }
-    if (caps.instrumental && caps.lyrics !== "none" && instrumental) {
-      body.force_instrumental = true;
-    }
-    if (duration !== undefined) body.duration_seconds = duration;
+    const body = musicQueueBody(caps, {
+      model: model.id,
+      prompt,
+      lyrics,
+      instrumental: instrumentalOn,
+      writeLyrics: writeLyricsOn,
+      durationSeconds: duration,
+    });
     void job.start({
       kind: "music",
       model: model.id,
@@ -95,7 +110,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
       }),
       urlFields: AUDIO_URL_FIELDS,
     });
-  }, [model, prompt, caps, instrumental, lyrics, duration, job, paths]);
+  }, [model, prompt, caps, instrumentalOn, writeLyricsOn, lyrics, duration, job, paths]);
 
   const controls = (
     <>
@@ -112,36 +127,43 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
           className="studio-textarea"
           rows={4}
           value={prompt}
+          maxLength={caps.promptLimit}
           placeholder={t("Genre, mood, tempo, instruments")}
           onChange={(event) => setPrompt(event.target.value)}
         />
       </StudioField>
-      {caps.lyrics !== "none" ? (
-        <>
-          {caps.instrumental ? (
-            <StudioField label={t("Instrumental")} hint={t("No vocals")}>
-              <Switch
-                checked={instrumental}
-                onCheckedChange={setInstrumental}
-                aria-label={t("Instrumental only")}
-              />
-            </StudioField>
-          ) : null}
-          {!instrumental ? (
-            <StudioField
-              label={t("Lyrics")}
-              hint={caps.lyrics === "required" ? t("Required for this model") : t("Optional")}
-            >
-              <textarea
-                className="studio-textarea"
-                rows={5}
-                value={lyrics}
-                placeholder={t("Verse 1: …\nChorus: …")}
-                onChange={(event) => setLyrics(event.target.value)}
-              />
-            </StudioField>
-          ) : null}
-        </>
+      {caps.instrumental ? (
+        <StudioField label={t("Instrumental")} hint={t("No vocals")}>
+          <Switch
+            checked={instrumental}
+            onCheckedChange={setInstrumental}
+            aria-label={t("Instrumental only")}
+          />
+        </StudioField>
+      ) : null}
+      {caps.lyricsOptimizer && !instrumentalOn ? (
+        <StudioField label={t("Write the lyrics for me")} hint={t("From your prompt")}>
+          <Switch
+            checked={writeLyrics}
+            onCheckedChange={setWriteLyrics}
+            aria-label={t("Write the lyrics for me")}
+          />
+        </StudioField>
+      ) : null}
+      {caps.lyrics !== "none" && !instrumentalOn && !writeLyricsOn ? (
+        <StudioField
+          label={t("Lyrics")}
+          hint={caps.lyrics === "required" ? t("Required for this model") : t("Optional")}
+        >
+          <textarea
+            className="studio-textarea"
+            rows={5}
+            value={lyrics}
+            maxLength={caps.lyricsLimit}
+            placeholder={t("Verse 1: …\nChorus: …")}
+            onChange={(event) => setLyrics(event.target.value)}
+          />
+        </StudioField>
       ) : null}
       {caps.durationSeconds && duration !== undefined ? (
         <SliderField

@@ -31,6 +31,7 @@ vi.mock("../lib/studio/assemble", async (importOriginal) => ({
 }));
 
 import { assembleClips } from "../lib/studio/assemble";
+import { fetchMediaCatalog } from "../lib/studio/catalog";
 import { mediaBinary, mediaJson, mediaRaw } from "../lib/studio/client";
 import {
   awaitingGateIds,
@@ -1103,6 +1104,43 @@ describe("compiled audio compatibility", () => {
       expect.objectContaining({ input: "Edited dialogue" }),
       undefined,
     );
+  });
+
+  it("queues a speaking model of the music queue as a durable render, never /audio/speech", async () => {
+    const { audioCatalog } = await import("./fixtures/audio-catalog");
+    vi.mocked(fetchMediaCatalog).mockResolvedValueOnce(audioCatalog);
+    const durableMedia = vi.fn(async () => ({ artifactId: "line", src: "line.mp3" }));
+    const results = await runWorkflow(
+      workflow(
+        [
+          node("speech", "tts", {
+            model: "elevenlabs-tts-multilingual-v2",
+            text: "Bonjour.",
+            voice: "Roger",
+            speed: 1.1,
+          }),
+        ],
+        [],
+      ),
+      { durableMedia },
+    );
+    expect(mediaBinaryMock).not.toHaveBeenCalled();
+    const [, request] = vi.mocked(durableMedia).mock.calls[0] as unknown as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(request).toMatchObject({
+      kind: "speech",
+      queuePath: "/audio/music/queue",
+      retrievePath: "/audio/music/retrieve",
+      queueBody: {
+        model: "elevenlabs-tts-multilingual-v2",
+        prompt: "Bonjour.",
+        voice: "Roger",
+        speed: 1.1,
+      },
+    });
+    expect(results.get("speech")?.output).toMatchObject({ kind: "audio", source: "speech" });
   });
 
   it("rejects empty speech before any paid request", async () => {

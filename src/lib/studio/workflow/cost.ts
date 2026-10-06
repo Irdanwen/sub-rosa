@@ -9,6 +9,7 @@
 // run; the confirmation handshake in the UI is what stands between the figure
 // and the spend.
 
+import { estimatedSpeechSeconds } from "../speech";
 import { estimateCostCredits } from "../catalog";
 import { mediaJson } from "../client";
 import { supportsVideoQuote, VIDEO_QUOTE_PATH } from "../paths";
@@ -87,8 +88,24 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
 
     case "image":
     case "imageEdit":
-    case "tts":
       return flat(base, modelOf(catalog, node.params)?.costCredits);
+
+    // Speech is billed by what it reads (per character, or per second of
+    // what it says): priced when the node holds its own text, metered when
+    // the text arrives from upstream at run time.
+    case "tts": {
+      const model = modelOf(catalog, node.params);
+      const text = typeof node.params.text === "string" ? node.params.text.trim() : "";
+      if (!model || !text) return { ...base, kind: "metered" };
+      return flat(
+        base,
+        estimateCostCredits(model, {
+          characters: text.length,
+          durationSeconds: estimatedSpeechSeconds(text.length),
+          multiplier: catalog.priceMultiplier,
+        }),
+      );
+    }
 
     case "music": {
       const model = modelOf(catalog, node.params);

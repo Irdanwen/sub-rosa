@@ -4,7 +4,7 @@
 // two never drift apart again (the mobile editor once listed only
 // text-to-video models for the video step).
 
-import { imageEditModels, modelsOfType, videoDirection } from "../catalog";
+import { audioRole, imageEditModels, modelsOfType, videoDirection } from "../catalog";
 import { effectiveVideoConstraints, videoFieldApplies } from "../model-constraints";
 import type { MediaCatalog, MediaModel, MediaType } from "../types";
 import type { NodeSchema, ParamSchema } from "./schema";
@@ -18,6 +18,15 @@ const VIDEO_TYPES: MediaType[] = ["video", "imageToVideo", "referenceToVideo"];
  * adds the known-good Carpe Diem passthroughs the catalog does not list. */
 export function modelsForParam(catalog: MediaCatalog, param: ParamSchema): MediaModel[] {
   if (param.mediaType === "imageEdit" && !param.mediaTypes) return imageEditModels(catalog);
+  if (param.audioRoles) {
+    const roles = param.audioRoles;
+    return catalog.models
+      .filter((model) => {
+        const role = audioRole(model);
+        return !model.offline && role !== undefined && roles.includes(role);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
   const types = (param.mediaTypes ?? [param.mediaType ?? "text"]) as MediaType[];
   const seen = new Set<string>();
   const merged: MediaModel[] = [];

@@ -15,7 +15,7 @@ import {
   type ShotListDto,
   type VeniceModelDto,
 } from "../../lib/tauri";
-import { listArtifacts } from "../../lib/studio/artifacts";
+import { listArtifacts, speechArtifactModels } from "../../lib/studio/artifacts";
 import { BIBLE_ROLE_LABELS, type BibleRole } from "../../lib/studio/bible";
 import { foldLiveRender, nodeTarget, type LiveRender } from "../../lib/studio/project-activity";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
@@ -721,7 +721,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
               ),
               notes: [],
             }
-          : compileProjectWithNotes(snapshot.name, snapshot.document, catalog, shotId);
+          : compileProjectWithNotes(
+              snapshot.name,
+              snapshot.document,
+              catalog,
+              shotId,
+              await speechArtifactModels(),
+            );
       const { workflow, notes } = compiled;
       const estimate = await quoteProject(workflow, catalog);
       if (current.current?.id !== snapshot.id || epoch.current !== version)
@@ -876,7 +882,7 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
           dialogue: Boolean(shot.dialogue.trim()),
         })),
         single: (projectScore(document) ?? emptyScore()).mode === "single",
-        lyrics: music ? musicCapabilities(music.id).lyrics === "required" : false,
+        lyrics: music ? musicCapabilities(music).lyrics === "required" : false,
         modelId,
       });
       if (current.current?.id !== origin.id) return;

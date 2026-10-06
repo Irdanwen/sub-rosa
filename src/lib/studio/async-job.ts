@@ -175,7 +175,7 @@ export function fileResultFrom(
 
 // --- durable jobs -------------------------------------------------------------
 
-export type MediaJobKind = "video" | "music" | "image" | "sfx";
+export type MediaJobKind = "video" | "music" | "image" | "sfx" | "speech";
 
 /** A generation Rust is tracking. Mirrors `MediaJobDto`. */
 export interface MediaJob {

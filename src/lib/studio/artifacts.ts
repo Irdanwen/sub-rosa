@@ -357,6 +357,19 @@ function kindFromFileName(fileName: string): ArtifactKind {
 }
 
 /** Reads a gallery file back as base64 (to feed edit/upscale/i2v inputs). */
+/** The engine each narration was made on, keyed by artifact id: what a kept
+ * voice (a bible `voice` reference) needs to speak again on the engine it was
+ * auditioned on (ADR-0076). Empty, never failing, when the gallery cannot be
+ * read: a line then takes the project's engine. */
+export async function speechArtifactModels(): Promise<Map<string, string>> {
+  try {
+    const speech = await listArtifacts("speech");
+    return new Map(speech.filter((artifact) => artifact.model).map((a) => [a.id, a.model]));
+  } catch {
+    return new Map();
+  }
+}
+
 export async function readArtifactBase64(artifact: Pick<StudioArtifact, "path">): Promise<string> {
   return invoke<string>("carpe_diem_media_read_artifact", {
     request: { path: artifact.path },

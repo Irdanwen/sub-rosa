@@ -661,6 +661,18 @@ that the recording then plays. Deterministic, measurable, and the only way to
 duck music under dialogue properly. Distinct from the **lanes** it is made of:
 `clips`, `dialogue`, `sfx`, `music`.
 
+**Audio role**:
+what an audio model does - **speech**, **music** or **effects** - read from
+what it publishes ([ADR-0076](docs/adr/0076-an-audio-model-is-filed-by-what-it-does-not-by-its-endpoint.md)).
+Distinct from its catalog type, which names the endpoint that serves it: the
+music queue carries all three.
+_Avoid_: calling a speaking model on the queue a "music model".
+
+**Rail** (speech):
+how a speaking model is reached - **speech** (`/audio/speech`, one call) or
+**queue** (the music queue, a durable job). A property of the model, not of
+its role.
+
 **Ducking**:
 writing the music down under the dialogue, as gain automation computed from the
 dialogue windows. Not a compressor: the windows are known before anything
