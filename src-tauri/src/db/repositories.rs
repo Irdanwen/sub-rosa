@@ -821,7 +821,7 @@ impl Repositories {
                       snippet(agent_messages_fts, 2, char(1), char(2), '…', 18) AS excerpt,
                       bm25(agent_messages_fts) AS rank
                FROM agent_messages_fts f
-               JOIN agent_tasks t ON t.id = f.task_id
+               JOIN agent_tasks t ON t.id = f.task_id AND t.ephemeral = 0
                WHERE agent_messages_fts MATCH ?1
                ORDER BY rank
                LIMIT ?2
@@ -1262,7 +1262,7 @@ impl Repositories {
         let rows = query(
             "SELECT id, title, prompt, status, safety_profile, progress_summary, last_error,
                     hermes_session_id, model, created_at, updated_at, completed_at
-             FROM agent_tasks
+             FROM agent_tasks WHERE ephemeral = 0
              ORDER BY updated_at DESC, rowid DESC
              LIMIT 200",
         )

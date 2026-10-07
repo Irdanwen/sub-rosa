@@ -82,8 +82,8 @@ impl Repositories {
         // A branch that asks a new question is the one exception: it is work.
         query(
             "INSERT INTO agent_tasks
-             (id, title, prompt, status, safety_profile, progress_summary, model, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (id, title, prompt, status, safety_profile, progress_summary, model, created_at, updated_at, ephemeral)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT ephemeral FROM agent_tasks WHERE id = ?))",
         )
         .bind(&new_task_id)
         .bind(&source.title)
@@ -94,6 +94,8 @@ impl Repositories {
         .bind(&model)
         .bind(&now)
         .bind(&now)
+        // A branch of a temporary chat is temporary too (ADR-0083).
+        .bind(source_task_id)
         .execute(&mut *tx)
         .await?;
         // Preserve order by carrying each message's original created_at (agent

@@ -23,7 +23,7 @@ export function Markdown({ text }: { text: string }) {
  * navigated away by accident. Anything else stays literal text: a reader who
  * sees the raw target can judge it, where a link dressed up as safe cannot be
  * judged at all. */
-function webLink(raw: string): string | null {
+export function webLink(raw: string): string | null {
   if (raw.length > 2048) return null;
   try {
     const url = new URL(raw);

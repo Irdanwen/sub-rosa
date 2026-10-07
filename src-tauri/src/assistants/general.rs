@@ -83,8 +83,8 @@ pub(crate) fn preview_of(content: &str) -> Option<String> {
     Some(line.chars().take(PREVIEW_CHARS).collect())
 }
 
-async fn visible_tasks(repos: &Repositories) -> Result<GeneralTaskList, AppError> {
-    let rows=query("SELECT id,title,prompt,status,safety_profile,progress_summary,last_error,hermes_session_id,model,created_at,updated_at,completed_at,(SELECT content FROM agent_messages m WHERE m.task_id=agent_tasks.id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1) AS last_message,(SELECT role FROM agent_messages m WHERE m.task_id=agent_tasks.id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1) AS last_role FROM agent_tasks WHERE safety_profile NOT IN ('custom_assistant','customAssistant') AND NOT EXISTS(SELECT 1 FROM assistant_conversations WHERE task_id=agent_tasks.id) ORDER BY updated_at DESC,rowid DESC LIMIT 200").fetch_all(&repos.pool).await?;
+pub(crate) async fn visible_tasks(repos: &Repositories) -> Result<GeneralTaskList, AppError> {
+    let rows=query("SELECT id,title,prompt,status,safety_profile,progress_summary,last_error,hermes_session_id,model,created_at,updated_at,completed_at,(SELECT content FROM agent_messages m WHERE m.task_id=agent_tasks.id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1) AS last_message,(SELECT role FROM agent_messages m WHERE m.task_id=agent_tasks.id ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1) AS last_role FROM agent_tasks WHERE ephemeral=0 AND safety_profile NOT IN ('custom_assistant','customAssistant') AND NOT EXISTS(SELECT 1 FROM assistant_conversations WHERE task_id=agent_tasks.id) ORDER BY updated_at DESC,rowid DESC LIMIT 200").fetch_all(&repos.pool).await?;
     Ok(GeneralTaskList {
         items: rows
             .into_iter()

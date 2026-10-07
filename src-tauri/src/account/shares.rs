@@ -41,7 +41,9 @@ pub struct ShareSummary {
 }
 
 /// The sealed head of a share. Position 0 of every share is one of these, and
-/// for a note it is the whole share.
+/// for a note or a conversation it is the whole share. A note carries its
+/// body; a conversation carries its turns and an empty body, so a note's
+/// document is byte for byte what it always was.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SharedDocument {
@@ -50,6 +52,37 @@ struct SharedDocument {
     title: String,
     body: String,
     shared_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    messages: Option<Vec<SharedMessage>>,
+}
+
+/// One visible turn of a shared conversation: who said it, and the text the
+/// person saw. Chat blocks stay in it as their fenced JSON, which the reader
+/// renders as plain lists.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SharedMessage {
+    pub role: String,
+    pub content: String,
+}
+
+/// What the reader of a shared conversation may be handed, at most. Well
+/// under the reader's piece ceiling, so the link that is made always opens.
+const MAX_CONVERSATION_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareConversationRequest {
+    /// A chat stored here (the phone, or a conversation from another device).
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// A desktop Hermes session.
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// The title the desktop shows for its session.
+    #[serde(default)]
+    pub title: Option<String>,
+    pub window_hours: i64,
 }
 
 fn share_aad(id: &str, position: usize) -> String {
@@ -122,20 +155,34 @@ pub async fn create_note_share(
         .ok_or_else(share_error)?;
     let title: String = row.get("title");
     let body: String = row.get("body");
-    let id = uuid::Uuid::new_v4().to_string();
-    let key = crypto::random_key();
-    let document = serde_json::to_vec(&SharedDocument {
+    let document = SharedDocument {
         v: 1,
         kind: "note".into(),
-        title: title.clone(),
+        title,
         body,
         shared_at: chrono::Utc::now().to_rfc3339(),
-    })
-    .map_err(|_| share_error())?;
-    let head = put_piece(&s, crypto::seal(&key, &share_aad(&id, 0), &document)?).await?;
+        messages: None,
+    };
+    publish(&pool, &s, document, Some(note_id), window_hours).await
+}
+
+/// Seals a document under a fresh key, uploads it, opens the share on the
+/// service and names it locally.
+async fn publish(
+    pool: &SqlitePool,
+    s: &Session,
+    document: SharedDocument,
+    note_id: Option<&str>,
+    window_hours: i64,
+) -> Result<ShareLink, AppError> {
+    let title = document.title.clone();
+    let document = serde_json::to_vec(&document).map_err(|_| share_error())?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let key = crypto::random_key();
+    let head = put_piece(s, crypto::seal(&key, &share_aad(&id, 0), &document)?).await?;
     let expires_at = (chrono::Utc::now() + chrono::Duration::hours(window_hours)).to_rfc3339();
     call(
-        &s,
+        s,
         reqwest::Method::POST,
         "/api/v1/shares",
         Some(json!({"id": id, "expires_at": expires_at, "blob_ids": [head]})),
@@ -147,13 +194,130 @@ pub async fn create_note_share(
         .bind(&title)
         .bind(chrono::Utc::now().to_rfc3339())
         .bind(&expires_at)
-        .execute(&pool)
+        .execute(pool)
         .await?;
     Ok(ShareLink {
         url: format!("{}/s/{id}#k={}", s.base, crypto::encode(key.as_slice())),
         id,
         expires_at,
     })
+}
+
+/// Publishes one conversation: its visible turns and nothing else. A
+/// temporary chat is refused before anything is read (ADR-0083).
+pub async fn create_conversation_share(
+    app: &AppHandle,
+    request: ShareConversationRequest,
+) -> Result<ShareLink, AppError> {
+    if !WINDOW_HOURS.contains(&request.window_hours) {
+        return Err(error("share_window_invalid"));
+    }
+    let pool = pool(app).await?;
+    let (title, turns) = match (request.task_id.as_deref(), request.session_id.as_deref()) {
+        (Some(task_id), _) => stored_turns(&pool, task_id).await?,
+        (None, Some(session_id)) => {
+            if crate::temporary_chat::is_temporary_session(&pool, session_id).await? {
+                return Err(error("share_temporary"));
+            }
+            let turns = super::conversations::hermes_turns(app, session_id).await?;
+            (request.title.unwrap_or_default(), turns)
+        }
+        (None, None) => return Err(share_error()),
+    };
+    let messages = visible_turns(turns);
+    if messages.is_empty() {
+        return Err(error("share_empty"));
+    }
+    if messages.iter().map(|m| m.content.len()).sum::<usize>() > MAX_CONVERSATION_BYTES {
+        return Err(error("share_too_large"));
+    }
+    let s = session(&pool).await?;
+    let document = SharedDocument {
+        v: 1,
+        kind: "conversation".into(),
+        title: title.trim().chars().take(200).collect(),
+        body: String::new(),
+        shared_at: chrono::Utc::now().to_rfc3339(),
+        messages: Some(messages),
+    };
+    publish(&pool, &s, document, None, request.window_hours).await
+}
+
+/// A stored chat's title and its user and assistant messages, oldest first.
+async fn stored_turns(
+    pool: &SqlitePool,
+    task_id: &str,
+) -> Result<(String, Vec<(String, String)>), AppError> {
+    let task = query("SELECT title, ephemeral FROM agent_tasks WHERE id = ?")
+        .bind(task_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(share_error)?;
+    if task.get::<i64, _>("ephemeral") != 0 {
+        return Err(error("share_temporary"));
+    }
+    let rows = query("SELECT role, content FROM agent_messages WHERE task_id = ? AND role IN ('user','assistant') ORDER BY created_at, rowid")
+        .bind(task_id)
+        .fetch_all(pool)
+        .await?;
+    Ok((
+        task.get("title"),
+        rows.into_iter()
+            .map(|row| (row.get("role"), row.get("content")))
+            .collect(),
+    ))
+}
+
+/// Only what the person saw in the conversation: user and assistant text,
+/// without the context the app attached to a question, without any inline
+/// attachment bytes, and without a turn that is left empty by that.
+pub(crate) fn visible_turns(turns: Vec<(String, String)>) -> Vec<SharedMessage> {
+    turns
+        .into_iter()
+        .filter(|(role, _)| matches!(role.as_str(), "user" | "assistant"))
+        .filter_map(|(role, content)| {
+            let content = without_inline_data(&without_attached_context(&content));
+            let content = content.trim();
+            (!content.is_empty()).then(|| SharedMessage {
+                role,
+                content: content.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// The desktop appends notes and files to a question under these markers;
+/// the conversation shows the question alone.
+fn without_attached_context(content: &str) -> String {
+    let mut end = content.len();
+    for marker in ["--- Context Warnings ---", "--- Attached Context ---"] {
+        if let Some(at) = content.find(marker) {
+            end = end.min(at);
+        }
+    }
+    content[..end].to_string()
+}
+
+/// Replaces every `data:` URI (an image pasted inline, say) with a marker.
+fn without_inline_data(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    let mut rest = content;
+    while let Some(at) = rest.find("data:") {
+        let candidate = &rest[at..];
+        let end = candidate
+            .find(|c: char| c.is_whitespace() || matches!(c, ')' | '"' | '\'' | '>' | ']'))
+            .unwrap_or(candidate.len());
+        let token = &candidate[..end];
+        out.push_str(&rest[..at]);
+        if token.contains(";base64,") {
+            out.push_str("[attachment]");
+        } else {
+            out.push_str(token);
+        }
+        rest = &candidate[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The service is the authority on what is still answering. The local rows only
@@ -260,6 +424,85 @@ mod tests {
                 .as_slice(),
             b"head"
         );
+    }
+
+    /// A shared conversation carries the turns the person saw and nothing
+    /// else: no system or tool message, no attached context, no inline bytes,
+    /// and chat blocks kept as the fenced JSON the reader renders.
+    #[test]
+    fn a_shared_conversation_carries_only_visible_text() {
+        let block = "Here are two places.\n```subrosa:places\n{\"v\":1,\"places\":[]}\n```";
+        let turns = vec![
+            (
+                "system".to_string(),
+                "You are Sub Rosa. Secret rules.".to_string(),
+            ),
+            (
+                "user".to_string(),
+                "Find me a café\n\n--- Attached Context ---\nnote: private".to_string(),
+            ),
+            ("tool".to_string(), "{\"results\":[1,2,3]}".to_string()),
+            ("assistant".to_string(), block.to_string()),
+            (
+                "user".to_string(),
+                "Look: ![x](data:image/png;base64,AAAA) thanks".to_string(),
+            ),
+            ("assistant".to_string(), "   ".to_string()),
+        ];
+        let shared = visible_turns(turns);
+        assert_eq!(
+            shared,
+            vec![
+                SharedMessage {
+                    role: "user".into(),
+                    content: "Find me a café".into()
+                },
+                SharedMessage {
+                    role: "assistant".into(),
+                    content: block.into()
+                },
+                SharedMessage {
+                    role: "user".into(),
+                    content: "Look: ![x]([attachment]) thanks".into()
+                },
+            ]
+        );
+        let text = serde_json::to_string(&shared).unwrap();
+        assert!(!text.contains("Secret rules"));
+        assert!(!text.contains("private"));
+        assert!(!text.contains("base64"));
+        assert!(!text.contains("results"));
+    }
+
+    /// A note's sealed document is unchanged by the conversation kind: no
+    /// `messages` key appears, so every reader already deployed still opens it.
+    #[test]
+    fn a_note_document_keeps_its_shape() {
+        let note = serde_json::to_value(SharedDocument {
+            v: 1,
+            kind: "note".into(),
+            title: "T".into(),
+            body: "B".into(),
+            shared_at: "now".into(),
+            messages: None,
+        })
+        .unwrap();
+        assert!(note.get("messages").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_temporary_chat_is_never_read_for_a_share() {
+        let pool = sqlx_sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        crate::db::migrations::run_migrations(&pool).await.unwrap();
+        let task = crate::temporary_chat::create(&pool, "hello", None)
+            .await
+            .unwrap();
+        let refused = stored_turns(&pool, &task).await.err().unwrap();
+        assert_eq!(refused.code, "share_temporary");
     }
 
     /// A window is one of three, so a link cannot be made to outlive the

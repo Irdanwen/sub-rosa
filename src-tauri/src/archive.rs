@@ -97,9 +97,12 @@ pub async fn dump_table(
     table: &str,
 ) -> Result<Vec<ArchiveRow>, sqlx::error::Error> {
     let names = columns(pool, table).await?;
-    let rows = query(&format!("SELECT * FROM {table}"))
-        .fetch_all(pool)
-        .await?;
+    let rows = query(&format!(
+        "SELECT * FROM {table}{}",
+        crate::temporary_chat::archive_filter(table)
+    ))
+    .fetch_all(pool)
+    .await?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         let mut map = ArchiveRow::new();

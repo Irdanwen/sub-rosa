@@ -348,6 +348,21 @@ fn snapshot_body(t: &Table, prefix: &str) -> String {
         )
     }
 }
+/// A temporary chat (ADR-0083) never leaves the device: its task and its
+/// messages queue nothing, not even the tombstone of their deletion. The
+/// messages of a temporary chat are deleted before the chat itself, so the
+/// parent row is still there to be asked.
+fn stays_local(t: &Table, prefix: &str) -> String {
+    match t.name {
+        "agent_tasks" => format!(" AND {prefix}ephemeral=0"),
+        "agent_messages" => outside_temporary_chat(prefix),
+        _ => String::new(),
+    }
+}
+/// For a row that belongs to a chat through its `task_id`.
+fn outside_temporary_chat(prefix: &str) -> String {
+    format!(" AND NOT EXISTS(SELECT 1 FROM agent_tasks WHERE agent_tasks.id={prefix}task_id AND agent_tasks.ephemeral=1)")
+}
 /// Only a change to a column that travels is a change worth sending. Without
 /// this, a local-only write (a memory's embedding) or a write that changes
 /// nothing re-sent the whole row, and every device that did the same thing
@@ -456,7 +471,7 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
                 changed_columns(t)
             } else {
                 String::new()
-            };
+            } + &stays_local(t, prefix);
             let name = format!("account_sync_{}_{}", t.name, action.to_lowercase());
             let sql=format!("CREATE TRIGGER {name} AFTER {action} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN {} END",t.name,enqueue(&format!("{prefix}id"),t.kind,&snapshot_body(t,prefix),deleted,""));
             managed.push((name, sql));
@@ -468,7 +483,7 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
         .ok_or_else(|| sqlx::error::Error::Protocol("task schema missing".into()))?;
     for action in ["INSERT", "UPDATE"] {
         let name = format!("account_assistant_snapshot_{}", action.to_lowercase());
-        let sql = format!("CREATE TRIGGER {name} AFTER {action} ON assistant_conversations WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN {} END",enqueue("NEW.task_id","conversation",&snapshot_body(tasks,"agent_tasks."),0," FROM agent_tasks WHERE agent_tasks.id=NEW.task_id"));
+        let sql = format!("CREATE TRIGGER {name} AFTER {action} ON assistant_conversations WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){} BEGIN {} END",outside_temporary_chat("NEW."),enqueue("NEW.task_id","conversation",&snapshot_body(tasks,"agent_tasks."),0," FROM agent_tasks WHERE agent_tasks.id=NEW.task_id"));
         managed.push((name, sql));
     }
     let notes = TABLES
@@ -503,7 +518,7 @@ pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppErro
         // The first inventory is captured in the same write transaction as enable.
         if count == 0 {
             for t in TABLES {
-                let sql=format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM {} WHERE id NOT IN (SELECT object_id FROM account_sync_outbox)",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name);
+                let sql=format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM {} WHERE id NOT IN (SELECT object_id FROM account_sync_outbox){}",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name,stays_local(t,&format!("{}.",t.name)));
                 query(&sql).execute(&mut *tx).await?;
             }
         }

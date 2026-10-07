@@ -92,3 +92,24 @@ ids, and can open none of it.**
 - **A server-side index so the web reader can search everything.** It would be
   an index the service can read, which is the thing it is built not to have.
   Search runs over what the tab pulled and decrypted.
+
+## Addendum 2026-10-07: a conversation is shared the same way
+
+A conversation is now shareable by link, with the same envelope, the same
+three windows and the same revocation. Nothing changed on the service: it
+stores one opaque blob per share whatever it holds.
+
+- The sealed head carries `kind: "conversation"`, an empty `body` and a
+  `messages` array of `{role, content}`. A note's document is byte for byte
+  what it was (`messages` is omitted when absent), so every reader already
+  deployed still opens a note.
+- Only what was said goes in (`account/shares.rs`, `visible_turns`): user
+  and assistant text, never a system or tool message, never the context the
+  app attached under `--- Attached Context ---`, and every inline `data:` URI
+  replaced by a marker. Chat blocks stay as their fenced JSON
+  (ADR-0024), and the website renders each one as a plain list: no map, no
+  photo, nothing fetched, every value written as text. A desktop session is
+  read from Hermes without being mirrored, and a continued conversation shows
+  its question rather than the quoted history.
+- A temporary chat (ADR-0083) is refused before anything is read.
+- "Share link" sits in the desktop chat menu and in the phone's chat list.

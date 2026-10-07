@@ -93,10 +93,12 @@ pub async fn account_conversations_list(
 ) -> Result<Vec<ConversationSummary>, AppError> {
     list_conversations(&pool(&app).await?).await
 }
-async fn list_conversations(pool: &SqlitePool) -> Result<Vec<ConversationSummary>, AppError> {
+pub(crate) async fn list_conversations(
+    pool: &SqlitePool,
+) -> Result<Vec<ConversationSummary>, AppError> {
     // A mobile reply can arrive for a task whose original desktop runtime is
     // still mapped here. Its unbound visible messages must remain discoverable.
-    let rows=query("SELECT t.id,t.title,t.updated_at,count(m.id) AS message_count FROM agent_tasks t JOIN agent_messages m ON m.task_id=t.id WHERE (t.hermes_session_id IS NULL OR EXISTS(SELECT 1 FROM agent_messages remote WHERE remote.task_id=t.id AND remote.role IN ('user','assistant') AND remote.external_id IS NULL)) AND m.role IN ('user','assistant') GROUP BY t.id ORDER BY t.updated_at DESC LIMIT 200").fetch_all(pool).await?;
+    let rows=query("SELECT t.id,t.title,t.updated_at,count(m.id) AS message_count FROM agent_tasks t JOIN agent_messages m ON m.task_id=t.id WHERE t.ephemeral=0 AND (t.hermes_session_id IS NULL OR EXISTS(SELECT 1 FROM agent_messages remote WHERE remote.task_id=t.id AND remote.role IN ('user','assistant') AND remote.external_id IS NULL)) AND m.role IN ('user','assistant') GROUP BY t.id ORDER BY t.updated_at DESC LIMIT 200").fetch_all(pool).await?;
     Ok(rows
         .into_iter()
         .map(|r| ConversationSummary {
@@ -213,12 +215,16 @@ pub async fn mirror_hermes(
     mirror_history(&pool, &account_id, session_id, response).await
 }
 
-async fn mirror_history(
+pub(crate) async fn mirror_history(
     pool: &SqlitePool,
     account_id: &str,
     session_id: &str,
     response: &mut Value,
 ) -> Result<(), AppError> {
+    // A temporary chat is never copied into the portable history (ADR-0083).
+    if crate::temporary_chat::is_temporary_session(pool, session_id).await? {
+        return Ok(());
+    }
     let raw = response
         .as_array()
         .or_else(|| response.get("messages").and_then(Value::as_array))
@@ -450,9 +456,94 @@ pub async fn read_hermes(
     Ok(response)
 }
 
+/// The user and assistant turns of a Hermes session's transcript, as the
+/// person saw them: text blocks only, and a continued conversation's first
+/// question without the history quoted ahead of it. The phone has no Hermes.
+#[cfg_attr(mobile, allow(dead_code))]
+pub(crate) fn hermes_visible_turns(response: &Value) -> Vec<(String, String)> {
+    let raw = response
+        .as_array()
+        .or_else(|| response.get("messages").and_then(Value::as_array))
+        .or_else(|| response.get("items").and_then(Value::as_array))
+        .cloned()
+        .unwrap_or_default();
+    raw.iter()
+        .filter_map(|item| {
+            let role = item["role"]
+                .as_str()
+                .filter(|role| matches!(*role, "user" | "assistant"))?;
+            let content = visible_text(&item["content"]).or_else(|| visible_text(&item["text"]))?;
+            let content = match content.strip_prefix(CONTEXT_PREFIX) {
+                Some(quoted) => serde_json::from_str::<Value>(quoted)
+                    .ok()
+                    .and_then(|value| value["current_user_message"].as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+                None => content,
+            };
+            Some((role.to_owned(), content))
+        })
+        .collect()
+}
+
+/// A desktop session's transcript for a share, read without being mirrored.
+#[cfg(desktop)]
+pub(crate) async fn hermes_turns(
+    app: &AppHandle,
+    session_id: &str,
+) -> Result<Vec<(String, String)>, AppError> {
+    use tauri::Manager as _;
+    let bridge = app
+        .try_state::<crate::hermes_bridge::HermesBridge>()
+        .ok_or_else(|| error("share_failed"))?;
+    let response = crate::hermes_bridge::hermes_api_json(
+        &bridge,
+        reqwest::Method::GET,
+        &format!("/api/sessions/{}/messages", urlencoding::encode(session_id)),
+        None,
+    )
+    .await?;
+    Ok(hermes_visible_turns(&response))
+}
+
+#[cfg(mobile)]
+pub(crate) async fn hermes_turns(
+    _app: &AppHandle,
+    _session_id: &str,
+) -> Result<Vec<(String, String)>, AppError> {
+    Err(error("share_failed"))
+}
+
 #[cfg(test)]
 mod persistence_tests {
     use super::*;
+    /// A shared desktop conversation reads only the visible turns of the
+    /// session, and a continued one shows its question, not the quoted history.
+    #[test]
+    fn a_hermes_transcript_shares_its_visible_turns_only() {
+        let continued = history_prompt(
+            &[ConversationMessage {
+                id: "m".into(),
+                role: "user".into(),
+                content: "old question".into(),
+                created_at: "t".into(),
+            }],
+            "new question",
+        )
+        .unwrap();
+        let response = json!({"messages": [
+            {"role": "system", "content": "rules"},
+            {"role": "user", "content": continued},
+            {"role": "assistant", "content": [{"type": "text", "text": "an answer"}, {"type": "image_url", "image_url": "data:image/png;base64,AAAA"}]},
+            {"role": "tool", "content": "{\"secret\":1}"}
+        ]});
+        assert_eq!(
+            hermes_visible_turns(&response),
+            vec![
+                ("user".to_string(), "new question".to_string()),
+                ("assistant".to_string(), "an answer".to_string()),
+            ]
+        );
+    }
     async fn database() -> SqlitePool {
         let pool = sqlx_sqlite::SqlitePoolOptions::new()
             .max_connections(1)

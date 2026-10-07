@@ -473,6 +473,8 @@ async fn run_turn(
                 .as_deref(),
         ),
     };
+    // After the choice, so a custom assistant carries it too (ADR-0084).
+    let system_prompt = crate::protected_mode::guard_system_prompt(system_prompt);
     let mut offered_tools = tool_definitions(crate::memory::settings().enabled);
     if let Some(tools) = offered_tools.as_array_mut() {
         tools.retain(|tool| {

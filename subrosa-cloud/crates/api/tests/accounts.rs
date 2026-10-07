@@ -2060,6 +2060,31 @@ async fn passkey_challenges_are_recent_account_bound_and_pkce_bound() -> Result<
     ).await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(admitted["data"]["account"]["id"], owner.to_string());
+    let (_, listed) = f.json("GET", "/api/v1/passkeys", &alice, json!({})).await?;
+    let stored = listed["data"]["credentials"][0]["id"]
+        .as_str()
+        .context("credential id")?;
+    assert_eq!(
+        f.json(
+            "DELETE",
+            &format!("/api/v1/passkeys/{stored}"),
+            &alice,
+            json!({})
+        )
+        .await?
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        history(&f, owner).await?,
+        vec![
+            ("signed_in".into(), None),
+            ("passkey_added".into(), None),
+            ("signed_in_passkey".into(), None),
+            ("device_added".into(), Some("Phone".into())),
+            ("passkey_removed".into(), None),
+        ]
+    );
     Ok(())
 }
 
@@ -2210,6 +2235,14 @@ async fn a_recent_app_session_gets_an_assertion_bound_to_its_own_key() -> Result
         120
     );
     assert!(body["data"]["expires_at"].is_string());
+    let owner = Uuid::parse_str(token["account"]["id"].as_str().context("account")?)?;
+    assert_eq!(
+        history(&f, owner).await?.last(),
+        Some(&(
+            "carpe_diem_key_requested".into(),
+            Some("Alice laptop".into())
+        ))
+    );
     Ok(())
 }
 
@@ -2421,6 +2454,19 @@ async fn revoking_a_device_revokes_its_carpe_diem_key_until_carpe_diem_answers()
             false
         )
     );
+    // The history says the key died only once Carpe Diem said so, and once.
+    let revoked: Vec<_> = history(&f, subject)
+        .await?
+        .into_iter()
+        .filter(|(kind, _)| kind == "carpe_diem_key_revoked")
+        .collect();
+    assert_eq!(
+        revoked,
+        vec![(
+            "carpe_diem_key_revoked".to_string(),
+            Some("Frank laptop".to_string())
+        )]
+    );
     Ok(())
 }
 
@@ -2536,6 +2582,13 @@ async fn restoring_a_database_revokes_the_key_of_every_device_it_revokes() -> Re
     for device in [&laptop, &phone] {
         assert!(restored.contains(&(id(device)?, "device_revoked")));
     }
+    for token in [&laptop, &tablet] {
+        let owner = Uuid::parse_str(token["account"]["id"].as_str().context("account")?)?;
+        assert_eq!(
+            history(&f, owner).await?.last(),
+            Some(&("sessions_reset".into(), None))
+        );
+    }
 
     // Revoking a device the restore already marked revoked still asks Carpe
     // Diem, so an explicit revocation is never silently a no-op.
@@ -2584,5 +2637,268 @@ async fn an_assertion_never_names_a_device_in_more_than_sixty_four_code_points()
     let sent = claims["device_name"].as_str().context("name")?;
     assert_eq!(sent.chars().count(), 64);
     assert!(name.starts_with(sent));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Security history (`security_events`): what happened to an account's access,
+// as its owner reads it back on the account page.
+// ---------------------------------------------------------------------------
+
+/// The owner's history as stored, oldest first.
+async fn history(f: &Fixture, owner: Uuid) -> Result<Vec<(String, Option<String>)>> {
+    Ok(sqlx::query_as(
+        "SELECT kind,device_name FROM security_events WHERE account_id=$1 ORDER BY occurred_at,id",
+    )
+    .bind(owner)
+    .fetch_all(&f.pool)
+    .await?)
+}
+async fn account_id(f: &Fixture, browser: &Browser) -> Result<Uuid> {
+    let (_, me) = f.json("GET", "/api/v1/me", browser, json!({})).await?;
+    Ok(Uuid::parse_str(
+        me["data"]["id"].as_str().context("account id")?,
+    )?)
+}
+
+#[tokio::test]
+async fn the_security_history_records_access_changes_for_its_owner_only() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    let owner = account_id(&f, &alice).await?;
+
+    // An app is admitted, renamed, then shows a replayed refresh token.
+    let phone = native_bundle(&f, &alice).await?;
+    let phone_id = phone["device_id"].as_str().context("device")?.to_owned();
+    assert_eq!(
+        f.json(
+            "POST",
+            &format!("/api/v1/devices/{phone_id}/name"),
+            &alice,
+            json!({"name":"Alice phone"})
+        )
+        .await?
+        .0,
+        StatusCode::OK
+    );
+    let (status, _) = f
+        .json(
+            "POST",
+            "/api/v1/session/refresh",
+            &alice,
+            json!({"refresh_token":phone["refresh_token"]}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        f.json(
+            "POST",
+            "/api/v1/session/refresh",
+            &alice,
+            json!({"refresh_token":phone["refresh_token"]})
+        )
+        .await?
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // The vault envelope is created, then replaced as a new recovery key would.
+    for expected in [0, 1] {
+        assert_eq!(
+            f.json(
+                "PUT",
+                "/api/v1/vault",
+                &alice,
+                json!({"expected_version":expected,"envelope":format!("sealed-{expected}")})
+            )
+            .await?
+            .0,
+            StatusCode::OK
+        );
+    }
+
+    // A second browser hands the vault key over through the relay.
+    let target = f.login("alice").await?;
+    let request = Uuid::new_v4();
+    assert_eq!(
+        f.json(
+            "POST",
+            "/api/v1/pairing",
+            &target,
+            json!({"request_id":request})
+        )
+        .await?
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        f.json(
+            "POST",
+            &format!("/api/v1/pairing/{request}/approve"),
+            &alice,
+            json!({"envelope":"opaque"})
+        )
+        .await?
+        .0,
+        StatusCode::OK
+    );
+
+    // The renamed phone is revoked from the browser.
+    assert_eq!(
+        f.json(
+            "DELETE",
+            &format!("/api/v1/devices/{phone_id}"),
+            &alice,
+            json!({})
+        )
+        .await?
+        .0,
+        StatusCode::OK
+    );
+
+    let stored = history(&f, owner).await?;
+    let named = |kind: &str, name: Option<&str>| (kind.to_string(), name.map(str::to_string));
+    assert_eq!(
+        stored,
+        vec![
+            named("signed_in", None),
+            named("device_added", Some("Refresh test phone")),
+            named("device_renamed", Some("Alice phone")),
+            named("refresh_reuse_blocked", Some("Alice phone")),
+            named("vault_created", None),
+            named("vault_updated", None),
+            named("signed_in", None),
+            named("pairing_approved", None),
+            named("device_revoked", Some("Alice phone")),
+        ]
+    );
+
+    // The page reads it newest first, with nothing but these four fields.
+    let (status, body) = f
+        .json("GET", "/api/v1/security-events", &alice, json!({}))
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    let events = body["data"].as_array().context("events")?;
+    let kinds: Vec<&str> = events
+        .iter()
+        .filter_map(|event| event["kind"].as_str())
+        .collect();
+    let mut newest_first: Vec<&str> = stored.iter().map(|(kind, _)| kind.as_str()).collect();
+    newest_first.reverse();
+    assert_eq!(kinds, newest_first);
+    let mut fields: Vec<&str> = events[0]
+        .as_object()
+        .context("event")?
+        .keys()
+        .map(String::as_str)
+        .collect();
+    fields.sort_unstable();
+    assert_eq!(fields, ["device_name", "id", "kind", "occurred_at"]);
+    assert_eq!(events[0]["device_name"], "Alice phone");
+    assert!(events[0]["occurred_at"].is_string());
+
+    // Another account sees only its own sign-in.
+    let bob = f.login("bob").await?;
+    let bob_id = account_id(&f, &bob).await?;
+    let (_, theirs) = f
+        .json("GET", "/api/v1/security-events", &bob, json!({}))
+        .await?;
+    assert_eq!(theirs["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(theirs["data"][0]["kind"], "signed_in");
+
+    // A tab that asserts another account is refused before anything is read,
+    // and nobody reads a history without a session.
+    let mismatch = f
+        .call(
+            Request::builder()
+                .uri("/api/v1/security-events")
+                .header(header::COOKIE, &alice.cookie)
+                .header("x-subrosa-account-id", bob_id.to_string())
+                .body(Body::empty())?,
+        )
+        .await?;
+    let (status, body) = decode_response(mismatch).await?;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"]["code"], "account_mismatch");
+    let anonymous = f
+        .call(
+            Request::builder()
+                .uri("/api/v1/security-events")
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+
+    // Signing out is the last line, written before the session row goes.
+    assert_eq!(
+        f.json("POST", "/auth/logout", &alice, json!({})).await?.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        history(&f, owner).await?.last(),
+        Some(&named("signed_out", None))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_security_history_keeps_ninety_days_and_returns_at_most_a_page() -> Result<()> {
+    let f = Fixture::new().await?;
+    let carol = f.login("carol").await?;
+    let owner = account_id(&f, &carol).await?;
+    for days in [89, 91] {
+        sqlx::query("INSERT INTO security_events(id,account_id,kind,occurred_at) VALUES($1,$2,'passkey_added',now()-make_interval(days => $3))")
+            .bind(Uuid::now_v7())
+            .bind(owner)
+            .bind(days)
+            .execute(&f.pool)
+            .await?;
+    }
+    let (_, body) = f
+        .json("GET", "/api/v1/security-events", &carol, json!({}))
+        .await?;
+    let kinds: Vec<&str> = body["data"]
+        .as_array()
+        .context("events")?
+        .iter()
+        .filter_map(|event| event["kind"].as_str())
+        .collect();
+    assert_eq!(
+        kinds,
+        ["signed_in", "passkey_added"],
+        "an expired line is never shown"
+    );
+    f.service.maintenance().await?;
+    let left: Vec<i32> = sqlx::query_scalar(
+        "SELECT extract(day FROM now()-occurred_at)::int FROM security_events WHERE account_id=$1 ORDER BY occurred_at",
+    )
+    .bind(owner)
+    .fetch_all(&f.pool)
+    .await?;
+    assert_eq!(left, [89, 0], "maintenance deletes past ninety days only");
+
+    sqlx::query("INSERT INTO security_events(id,account_id,kind,occurred_at) SELECT gen_random_uuid(),$1,'device_renamed',now()-make_interval(mins => n) FROM generate_series(1,250) n")
+        .bind(owner)
+        .execute(&f.pool)
+        .await?;
+    let (_, body) = f
+        .json("GET", "/api/v1/security-events", &carol, json!({}))
+        .await?;
+    assert_eq!(
+        body["data"].as_array().map(Vec::len),
+        Some(usize::try_from(subrosa_persistence::SECURITY_EVENTS_PAGE)?)
+    );
+    assert_eq!(body["data"][0]["kind"], "signed_in");
+
+    // The table refuses a kind nobody named, which is how an address or a
+    // user agent would have to arrive.
+    assert!(
+        sqlx::query("INSERT INTO security_events(id,account_id,kind) VALUES($1,$2,'address_seen')")
+            .bind(Uuid::now_v7())
+            .bind(owner)
+            .execute(&f.pool)
+            .await
+            .is_err()
+    );
     Ok(())
 }

@@ -7,6 +7,12 @@ import {
 } from "./tauri";
 import { stripReasoningEffortAlias } from "./desktop-reasoning-effort";
 import { parseHermesProcessNotice } from "./hermes-process-notice";
+import {
+  loadTemporarySessions,
+  sweepTemporarySessions,
+  withoutLeftTemporaryChats,
+  withoutTemporaryChats,
+} from "./temporary-chat";
 
 export type HermesSessionListOptions = {
   limit?: number;
@@ -17,7 +23,12 @@ export type HermesSessionListOptions = {
   query?: string;
 };
 
+let temporarySessionsLoaded: Promise<void> | undefined;
+let temporarySessionsSwept = false;
+
 export async function listHermesSessions(options: HermesSessionListOptions = {}) {
+  temporarySessionsLoaded ??= loadTemporarySessions();
+  await temporarySessionsLoaded;
   const response = await hermesBridgeSessions({
     limit: 100,
     offset: 0,
@@ -33,7 +44,15 @@ export async function listHermesSessions(options: HermesSessionListOptions = {})
     order: "recent",
     ...options,
   });
-  return normalizeHermesSessionsResponse(response);
+  // The runtime answered, so it can delete what an earlier launch left.
+  if (!temporarySessionsSwept) {
+    temporarySessionsSwept = true;
+    sweepTemporarySessions();
+  }
+  const sessions = normalizeHermesSessionsResponse(response);
+  // A temporary chat is never a search result (ADR-0083). The one open right
+  // now stays in the plain list, which the workspace keeps its selection by.
+  return options.query ? withoutTemporaryChats(sessions) : withoutLeftTemporaryChats(sessions);
 }
 
 export async function listHermesSessionMessages(sessionId: string) {

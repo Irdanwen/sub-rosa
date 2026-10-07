@@ -1574,6 +1574,35 @@ th {
   border-color: var(--brand);
 }
 
+/* Security history on the account page: one line per event, newest first. */
+.security-history {
+  scroll-margin-top: 24px;
+}
+.account-quick-grid + .security-history {
+  margin-top: 24px;
+}
+.security-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.security-history-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+  flex-wrap: wrap;
+  padding-block: 12px;
+  border-top: 1px solid var(--border);
+}
+.security-history-list li:first-child {
+  border-top: 0;
+}
+.security-history-list time {
+  color: var(--muted);
+  font-size: 14px;
+}
+
 /* Public documentation */
 .docs-hero {
   border-bottom: 1px solid var(--border);
@@ -5376,4 +5405,63 @@ button.chart-hit {
 }
 .compare-cols-3 {
   --compare-columns: 3;
+}
+
+/* A shared conversation (ADR-0053, addendum): questions to one side, replies
+   to the other, chat blocks as plain lists inside the reply. */
+.share-conversation {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.share-turn {
+  max-width: min(100%, 720px);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  background: var(--surface);
+}
+.share-turn[data-role="user"] {
+  justify-self: end;
+  background: var(--accent-faint);
+  border-color: var(--accent-line);
+}
+.share-turn[data-role="assistant"] {
+  justify-self: start;
+}
+.share-turn-author {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.share-turn-body {
+  overflow-wrap: anywhere;
+}
+.share-turn-body > * + * {
+  margin-top: 12px;
+}
+.chat-block {
+  border-left: 2px solid var(--accent-line);
+  padding-left: 12px;
+}
+.chat-block h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+.chat-block ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.chat-block li + li {
+  margin-top: 6px;
+}
+.chat-block p {
+  margin: 2px 0 0;
+}
+.chat-block-meta,
+.chat-block-missing {
+  color: var(--muted);
 }

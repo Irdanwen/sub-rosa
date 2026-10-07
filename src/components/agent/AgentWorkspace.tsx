@@ -245,6 +245,9 @@ import {
 } from "../../lib/hermes-artifact-store";
 import { SessionUsagePanel } from "./SessionUsagePanel";
 import { MemoryInChatIndicator } from "./MemoryInChatIndicator";
+import { TemporaryChatBanner, TemporaryChatToggle } from "./TemporaryChat";
+import { ConversationShareHost, ShareConversationMenuItem } from "./ConversationShare";
+import * as temporaryChat from "../../lib/temporary-chat";
 import { AgentActivityDrawer, AgentArtifactsSection } from "./AgentActivityDrawer";
 import { hermesTraceBuffer } from "../../lib/hermes-trace-buffer";
 import { UnsupportedEventNotice } from "./UnsupportedEventNotice";
@@ -2002,6 +2005,7 @@ export function AgentWorkspace({
     onSessionSelected?.(selectedHermesSession);
   }, [onSessionSelected, selectedHermesSession, selectedHermesSessionId]);
   const selectedHermesSessionIsProvisional = isProvisionalHermesSessionId(selectedHermesSessionId);
+  temporaryChat.useTemporaryChatHold(selectedHermesSessionId, "session");
   const activeGenerationModelId =
     selectedHermesSessionId && !newSessionMode
       ? selectedHermesSession?.model?.trim() || defaultGenerationModelId
@@ -4871,12 +4875,13 @@ export function AgentWorkspace({
     // Issue reports skip title suggestion: the content is the wrapped
     // investigation prompt, which would title the session after the wrapper.
     const titlePromise =
-      targetSessionId || options?.issueReport
+      targetSessionId || options?.issueReport || temporaryChat.temporaryDraft()
         ? undefined
         : agentSessionTitleForPrompt(titleContent);
     const fallbackSessionTitle = options?.issueReport
       ? "Issue report"
-      : explicitSession?.title?.trim() ||
+      : temporaryChat.temporaryChatTitle(targetSessionId) ||
+        explicitSession?.title?.trim() ||
         explicitSession?.preview?.trim() ||
         titleFromPrompt(titleContent);
     const optimisticSession =
@@ -4955,6 +4960,9 @@ export function AgentWorkspace({
       };
     })().catch(rollbackOptimisticBeforePrompt);
     storedSessionIdForRollback = storedSessionId;
+    await temporaryChat
+      .registerIfTemporary(targetSessionId, storedSessionId)
+      .catch(rollbackOptimisticBeforePrompt);
     const queuedIssueReport = options?.issueReport;
     if (queuedIssueReport && targetSessionId) {
       queuedIssueReport.diagnosisStartedAt = new Date().toISOString();
@@ -7904,6 +7912,7 @@ export function AgentWorkspace({
     />
   ) : !newSessionMode && selectedHermesSessionId ? (
     <div ref={listRef} className="agent-timeline">
+      <TemporaryChatBanner chatId={selectedHermesSessionId} />
       <MemoryInChatIndicator session={selectedHermesSession} />
       <UnsupportedEventNotice
         notice={unsupportedNotice}
@@ -8154,6 +8163,7 @@ export function AgentWorkspace({
       />
       {!heroMode && !(!newSessionMode && !selectedHermesSessionId && selectedTask) ? (
         <AgentSessionBar
+          shareSessionId={newSessionMode ? undefined : selectedHermesSessionId}
           origin={origin}
           artifactCount={!newSessionMode ? surfacedArtifacts.length : 0}
           artifactsOpen={artifactPanel !== null}
@@ -8258,6 +8268,7 @@ export function AgentWorkspace({
           ) : null}
           <div className="agent-hero-heading">
             <h2 className="agent-hero-title">{heroGreeting}</h2>
+            <TemporaryChatToggle disabled={submitting} />
           </div>
           {composer}
           {activePanel === "chat" ? (
@@ -9046,7 +9057,9 @@ function AgentSessionBar({
   onShowUsage,
   onCompactContext,
   onOpenTuiDebug,
+  shareSessionId,
 }: {
+  shareSessionId?: string;
   origin?: AgentWorkspaceOrigin;
   privacyBadge?: ModelPrivacyBadge;
   fullMode?: boolean;
@@ -9101,6 +9114,7 @@ function AgentSessionBar({
 
   return (
     <div className="detail-bar agent-session-bar" data-tauri-drag-region>
+      <ConversationShareHost />
       {origin ? <BackButton label={origin.backLabel} onClick={origin.onBack} /> : null}
       <nav className="detail-breadcrumb" aria-label={t("Breadcrumb")}>
         <ol>
@@ -9243,6 +9257,7 @@ function AgentSessionBar({
                     {t("Rename")}
                   </button>
                 ) : null}
+                <ShareConversationMenuItem id={shareSessionId} title={title} onDone={setMenuOpen} />
                 {onDelete ? (
                   <button
                     type="button"

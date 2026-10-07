@@ -8,7 +8,8 @@ use subrosa_config::Config;
 use subrosa_domain::{
     BlobStore, CarpeDiemPartner, DeviceLogin, DeviceRequest, Error, IdentityProvider,
     IssuanceAssertion, IssuanceClaims, KINDS, Landing, LoginAttempt, NativeLogin, Operation,
-    OperationResult, Result, Secret, Session, Share, StartedDevice, TokenResponse,
+    OperationResult, Result, Secret, SecurityEventKind, Session, Share, StartedDevice,
+    TokenResponse,
 };
 use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
@@ -137,6 +138,16 @@ impl Service {
         let name = self
             .repository
             .live_device_name(session.account.id, device_id)
+            .await?;
+        // Written before signing, and fatal when it fails: a key minted for
+        // the account without a line in its history is the one thing this
+        // history exists to show.
+        self.repository
+            .record_security_event(
+                session.account.id,
+                SecurityEventKind::CarpeDiemKeyRequested,
+                Some(device_id),
+            )
             .await?;
         partner.issuance_assertion(&IssuanceClaims {
             subject: session.account.id,

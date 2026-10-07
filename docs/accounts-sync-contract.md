@@ -16,8 +16,31 @@ JSON field names are snake_case. Successful JSON responses are `{ "data": T }`; 
 | `GET /api/v1/devices` | Array of `{ id, name, created_at, last_seen_at, revoked_at }`. This list contains native device authorizations. |
 | `POST /api/v1/devices/{id}/name` | Renames a device you own. A browser session and CSRF, but no step-up: a label change alters nothing the device may do, and a name you cannot correct is how the list became unreadable. `{ name }`, at most 80 characters, no control characters. |
 | `DELETE /api/v1/devices/{id}` | Requires authentication within five minutes. Revokes the device's sessions/refresh families and pairing requests, and queues the revocation of any Carpe Diem device key it obtained (ADR-0069). Returns `{ revoked: true }`. Past downloaded data and a provider key the person pasted cannot be remotely erased. |
+| `GET /api/v1/security-events` | Browser or native session, read-only, honours `x-subrosa-account-id` like every account route. The account's security history, newest first: at most 200 events from the last 90 days, as an array of `{ id, kind, occurred_at, device_name }`. `device_name` is the device label at the time of the event, or `null` when no device was involved. See below. |
 
 The server uses confidential-client OIDC, exact registered callback, `client_secret_basic`, `openid email`, PKCE S256 and `max_age=0`. ID tokens must use RS256 or ES256 with a matching trusted discovery JWKS key. The OIDC client secret exists only at the service. Existing identity-provider passkeys remain valid for its OIDC sign-in; new Sub Rosa passkeys belong to the account origin and must be enrolled separately. Neither decrypts the vault.
+
+### Security history
+
+`security_events` is append-only. Each row is written in the transaction of the action it describes, so the action and its line commit together, and maintenance deletes rows older than 90 days. An account deletion removes its history with it. Rows hold a kind, a time and, when a device was involved, a copy of that device's label. They never hold a network address, a user agent or a location. The kinds, and where each is written:
+
+| Kind | Written by |
+| --- | --- |
+| `signed_in` | A browser session through OIDC (`/auth/callback`). |
+| `signed_in_passkey` | A browser session through a first-party passkey. |
+| `signed_out` | `POST /auth/logout`, with the device label for a native session. |
+| `device_added`, `device_signed_in` | A device exchange that creates a device row, or reuses one proven by its secret. |
+| `device_renamed`, `device_revoked` | `POST /api/v1/devices/{id}/name`, `DELETE /api/v1/devices/{id}`. |
+| `device_signed_out` | `POST /api/v1/session/renounce`. |
+| `refresh_reuse_blocked` | A consumed refresh token presented again, which revokes its family. |
+| `pairing_approved` | `POST /api/v1/pairing/{id}/approve`, with the approving device's label (none for a browser). |
+| `passkey_added`, `passkey_removed` | Passkey registration and removal. |
+| `vault_created`, `vault_updated` | `PUT /api/v1/vault` at version 0, then at any later version (a new recovery key). |
+| `carpe_diem_key_requested` | `POST /api/v1/carpe-diem/assertion`, written before the assertion is signed; a failed write refuses the assertion. |
+| `carpe_diem_key_revoked` | The first time Carpe Diem acknowledges a device key revocation, for an account that still exists. |
+| `sessions_reset` | `restore-sanitize`, once per account. |
+
+Refreshes, renewals and journal writes are deliberately not recorded. Refreshes and journal writes happen every few minutes and would bury the lines a person needs to see, and a renewal war from a cloned device secret is already visible through `renewed_at` and `renew_count` in the device list.
 
 ## First-party passkeys
 

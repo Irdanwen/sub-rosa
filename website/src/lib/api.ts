@@ -23,6 +23,14 @@ export interface Device {
   last_seen_at: string | null;
   revoked_at: string | null;
 }
+/** One line of the account's security history. The service records no
+ * address, user agent or place, so there is nothing more to show. */
+export interface SecurityEvent {
+  id: string;
+  kind: string;
+  occurred_at: string;
+  device_name: string | null;
+}
 export interface Change {
   sequence: number;
   operation_id: string;

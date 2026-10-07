@@ -117,6 +117,8 @@ fn error(code: &str) -> AppError {
             "share_window_invalid" => "Choose how long the link should work.",
             "share_too_large" => "This is too large to share as a link.",
             "share_failed" => "The link could not be created.",
+            "share_temporary" => "A temporary chat cannot be shared.",
+            "share_empty" => "This conversation has nothing to share yet.",
             _ => "The account operation could not be completed.",
         },
     )
@@ -1147,6 +1149,15 @@ pub async fn account_share_note(
     window_hours: i64,
 ) -> Result<shares::ShareLink, AppError> {
     shares::create_note_share(&app, &note_id, window_hours).await
+}
+/// A conversation as a link (ADR-0053, addendum). The phone names it by its
+/// task, the desktop by its Hermes session and the title it shows.
+#[tauri::command]
+pub async fn account_share_conversation(
+    app: AppHandle,
+    request: shares::ShareConversationRequest,
+) -> Result<shares::ShareLink, AppError> {
+    shares::create_conversation_share(&app, request).await
 }
 #[tauri::command]
 pub async fn account_shares(app: AppHandle) -> Result<Vec<shares::ShareSummary>, AppError> {

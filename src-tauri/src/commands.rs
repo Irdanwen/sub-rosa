@@ -2390,6 +2390,7 @@ pub(crate) async fn repositories(app: &AppHandle) -> Result<Repositories, AppErr
             run_migrations(&pool)
                 .await
                 .map_err(|error| AppError::new("migration_failed", error.to_string()))?;
+            crate::temporary_chat::sweep_on_open(&pool).await;
             Ok(Repositories::new(pool))
         })
         .await
