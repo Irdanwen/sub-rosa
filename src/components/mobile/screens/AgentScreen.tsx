@@ -522,6 +522,8 @@ export function AgentSessionScreen({
   // turn's attachment payloads (cleared from the composer) for the re-run.
   const [canRetry, setCanRetry] = useState(false);
   const retryAttachmentsRef = useRef<AgentLiteAttachment[]>([]);
+  // A new chat started in a project whose filing failed (ADR-0085).
+  const unfiledProjectRef = useRef(false);
   const [model, setModel] = useState(storedChatModel);
   const [models, setModels] = useState<MediaModel[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -842,7 +844,19 @@ export function AgentSessionScreen({
         taskIdRef.current = current.id;
         setTask(current);
         onSessionCreated?.(current.id);
-        if (projectFolderId) await assignSessionToFolder(current.id, projectFolderId);
+        // The question is stored from here: a failure below is retried, not
+        // put back in the composer (sending it again would ask it twice).
+        persistedTaskId = current.id;
+        if (projectFolderId) {
+          try {
+            await assignSessionToFolder(current.id, projectFolderId);
+          } catch (err) {
+            // Not run outside the project it was started in: "Try again"
+            // files it first.
+            unfiledProjectRef.current = true;
+            throw err;
+          }
+        }
         // The title is named by the model after the first reply, in Rust
         // (crate::chat_titles), and arrives on CHAT_TITLE_EVENT.
       } else {
@@ -966,6 +980,7 @@ export function AgentSessionScreen({
   const retryTurn = useCallback(async () => {
     const taskId = taskIdRef.current;
     if (!taskId) return;
+    const fileFirst = unfiledProjectRef.current ? projectFolderId : undefined;
     const turnAttachments = retryAttachmentsRef.current;
     const turnModel = resolveTurnModel({
       selectedModelId: model,
@@ -974,16 +989,21 @@ export function AgentSessionScreen({
     });
     await runOwnTurn(
       taskId,
-      () =>
-        agentLiteRun(
+      async () => {
+        if (fileFirst) {
+          await assignSessionToFolder(taskId, fileFirst);
+          unfiledProjectRef.current = false;
+        }
+        return agentLiteRun(
           taskId,
           turnModel || undefined,
           turnAttachments.length ? turnAttachments : undefined,
           effortFor(turnModel),
-        ),
+        );
+      },
       turnAttachments,
     );
-  }, [model, models, effortFor, runOwnTurn]);
+  }, [model, models, effortFor, runOwnTurn, projectFolderId]);
 
   // Stop the reply being written. The turn keeps what it had shown as the
   // answer and the pending run resolves with the stopped chat.

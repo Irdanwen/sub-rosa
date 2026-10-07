@@ -285,12 +285,43 @@ pub async fn memory_sources_for_task(
         .collect())
 }
 
+/// A desktop chat in a "Project only" project is never given the SOUL's
+/// memory: the provider proxy swaps in its project's top memories on every
+/// request (ADR-0085 addendum), so those are what it was given. `None` for
+/// any other chat.
+async fn project_session_memories(
+    repos: &crate::db::repositories::Repositories,
+    session_id: &str,
+) -> Result<Option<Vec<MemoryDto>>, AppError> {
+    let Some(scope) = crate::projects::context::for_session(&repos.pool, session_id)
+        .await
+        .and_then(|project| project.memory_scope())
+    else {
+        return Ok(None);
+    };
+    if !super::settings().enabled {
+        return Ok(Some(Vec::new()));
+    }
+    Ok(Some(
+        repos
+            .with_memory_scope(Some(scope))
+            .top_memories(super::INJECTED_MEMORY_LIMIT)
+            .await?,
+    ))
+}
+
 #[tauri::command]
 pub async fn memory_sources_for_session(
     app: AppHandle,
     request: SessionSourcesRequest,
 ) -> Result<SessionMemorySources, AppError> {
     let repos = crate::commands::repositories(&app).await?;
+    if let Some(memories) = project_session_memories(&repos, &request.session_id).await? {
+        return Ok(SessionMemorySources {
+            recorded: true,
+            memories,
+        });
+    }
     let injection = soul_injection().clone();
     let ids = session_memory_ids(
         &repos.pool,
@@ -449,6 +480,65 @@ mod tests {
                 .unwrap(),
             Some(Vec::new())
         );
+    }
+
+    #[tokio::test]
+    async fn a_project_only_session_was_given_its_projects_memory() {
+        let repos = crate::db::repositories::Repositories::new(pool().await);
+        for (id, mode) in [("p-only", "project"), ("p-default", "default")] {
+            query("INSERT INTO folders (id, name, created_at, updated_at) VALUES (?, 'P', 'now', 'now')")
+                .bind(id)
+                .execute(&repos.pool)
+                .await
+                .unwrap();
+            crate::projects::save_settings(&repos.pool, id, "", mode)
+                .await
+                .unwrap();
+        }
+        for (session, folder) in [("in-project", "p-only"), ("in-default", "p-default")] {
+            query("INSERT INTO session_folders (session_id, folder_id, assigned_at) VALUES (?, ?, 'now')")
+                .bind(session)
+                .bind(folder)
+                .execute(&repos.pool)
+                .await
+                .unwrap();
+        }
+        repos
+            .insert_memory(
+                "Lives in Lausanne",
+                crate::domain::types::MemorySource::Manual,
+                2,
+            )
+            .await
+            .unwrap();
+        repos
+            .with_memory_scope(Some("p-only".into()))
+            .insert_memory(
+                "Launch in March",
+                crate::domain::types::MemorySource::Manual,
+                2,
+            )
+            .await
+            .unwrap();
+
+        assert!(project_session_memories(&repos, "in-default")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(project_session_memories(&repos, "elsewhere")
+            .await
+            .unwrap()
+            .is_none());
+        let given = project_session_memories(&repos, "in-project")
+            .await
+            .unwrap()
+            .unwrap();
+        if super::super::settings().enabled {
+            let texts: Vec<_> = given.iter().map(|memory| memory.text.as_str()).collect();
+            assert_eq!(texts, ["Launch in March"]);
+        } else {
+            assert!(given.is_empty());
+        }
     }
 
     #[test]

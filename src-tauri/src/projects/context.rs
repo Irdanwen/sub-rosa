@@ -15,9 +15,6 @@ use sha2::{Digest, Sha256};
 use sqlx::{query::query, row::Row};
 use sqlx_sqlite::SqlitePool;
 
-/// How many project memories ride with a desktop chat's project context.
-const DESKTOP_PROJECT_MEMORIES: i64 = 20;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectContext {
     pub folder_id: String,
@@ -160,7 +157,10 @@ pub struct DesktopProjectContext {
 }
 
 /// The desktop's context for a send: the project of the chat (or of the chat
-/// about to be created), with its project memories when it keeps them apart.
+/// about to be created). A "Project only" project's memories are not in it:
+/// the provider proxy puts them in place of the person's own on every request
+/// of the chat ([`project_memory_block`]), so they are current on every turn
+/// and the block does not change each time the project learns something.
 pub async fn desktop_context(
     repos: &Repositories,
     request: &ProjectContextRequest,
@@ -174,20 +174,7 @@ pub async fn desktop_context(
     let Some(project) = project else {
         return Ok(None);
     };
-    let memories = match project.memory_scope() {
-        Some(scope) if crate::memory::settings().enabled => {
-            let scoped = repos.with_memory_scope(Some(scope));
-            scoped
-                .top_memories(DESKTOP_PROJECT_MEMORIES)
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .map(|memory| memory.text)
-                .collect()
-        }
-        _ => Vec::new(),
-    };
-    let block = desktop_block(&project, &memories);
+    let block = desktop_block(&project);
     Ok(Some(DesktopProjectContext {
         folder_id: project.folder_id.clone(),
         name: project.name.clone(),
@@ -196,11 +183,78 @@ pub async fn desktop_context(
     }))
 }
 
+/// The first line of every desktop project context: what the provider proxy
+/// reads to know which project a request's chat is in. Written by the app
+/// only; anything a person wrote into the block has its `<!--` broken.
+pub fn project_marker(folder_id: &str) -> String {
+    format!("{PROJECT_MARKER_OPEN}{folder_id}{PROJECT_MARKER_CLOSE}")
+}
+
+const PROJECT_MARKER_OPEN: &str = "<!-- sub-rosa:project-context ";
+const PROJECT_MARKER_CLOSE: &str = " -->";
+/// Hermes' own marker before context attached to a message, which the
+/// transcript and memory extraction strip (`src/lib/projects.ts`).
+pub const ATTACHED_CONTEXT_MARKER: &str = "--- Attached Context ---";
+
+/// The project a message's attached project context names: the marker must
+/// open a context section, as `withProjectContext` writes it, so a marker a
+/// person typed into their own words is not read as one.
+pub fn project_in_message(text: &str) -> Option<String> {
+    text.match_indices(ATTACHED_CONTEXT_MARKER)
+        .find_map(|(at, marker)| {
+            let rest = text[at + marker.len()..].trim_start();
+            let id = rest.strip_prefix(PROJECT_MARKER_OPEN)?;
+            let id = &id[..id.find(PROJECT_MARKER_CLOSE)?];
+            let valid = !id.is_empty()
+                && id.len() <= 64
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+            valid.then(|| id.to_string())
+        })
+}
+
+/// What a "Project only" chat is told it remembers, in place of the person's
+/// own memory: the project's facts, or `None` when memory is switched off.
+pub async fn project_memory_block(repos: &Repositories, scope: &str) -> Option<String> {
+    if !crate::memory::settings().enabled {
+        return None;
+    }
+    let memories = repos
+        .with_memory_scope(Some(scope.to_string()))
+        .top_memories(crate::memory::INJECTED_MEMORY_LIMIT)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|memory| memory.text)
+        .collect::<Vec<_>>();
+    Some(format_project_memory_block(&memories))
+}
+
+pub fn format_project_memory_block(memories: &[String]) -> String {
+    let mut block = String::from(
+        "Project memory: this conversation is in a project that keeps its own memory. These \
+         are the facts remembered from conversations in this project, and the only ones you \
+         have here; the user's general memory is not available in this conversation. What \
+         the user says now always overrides a remembered fact.\n",
+    );
+    if memories.is_empty() {
+        block.push_str("- Nothing remembered in this project yet.\n");
+    }
+    for memory in memories {
+        block.push_str("- ");
+        block.push_str(memory.trim());
+        block.push('\n');
+    }
+    block
+}
+
 /// The project as the desktop agent reads it. The SOUL every desktop chat
 /// shares cannot carry one chat's project, so this rides with the chat's
 /// first message, after the `--- Attached Context ---` marker the transcript
-/// and memory extraction already strip.
-pub fn desktop_block(project: &ProjectContext, project_memories: &[String]) -> String {
+/// and memory extraction already strip. Its first line is the marker the
+/// provider proxy reads ([`project_in_message`]).
+pub fn desktop_block(project: &ProjectContext) -> String {
     let id = &project.folder_id;
     let mut block = format!(
         "Project context: this conversation is part of the user's project \"{}\" (project id {id}).",
@@ -220,26 +274,19 @@ pub fn desktop_block(project: &ProjectContext, project_memories: &[String]) -> S
     }
     if project.memory_mode == MEMORY_PROJECT {
         block.push_str(&format!(
-            "\nThis project keeps its own memory. In this conversation, do not rely on the general user memory in your instructions: use only the project memory below, and call search_user_memories with project_id \"{id}\" to look further."
+            "\nThis project keeps its own memory: the project memory in your instructions is all you remember here. Call search_user_memories and search_past_chats with project_id \"{id}\" to look further."
         ));
-        if project_memories.is_empty() {
-            block.push_str("\nProject memory: nothing yet.");
-        } else {
-            block.push_str("\nProject memory:");
-            for memory in project_memories {
-                block.push_str("\n- ");
-                block.push_str(memory.trim());
-            }
-        }
     }
-    neutralize_references(&block)
+    format!("{}\n{}", project_marker(id), neutralize_references(&block))
 }
 
 /// Hermes expands `@file:…`, `@url:…`, `@diff` and friends anywhere in a
 /// message. Instructions a person wrote are text, not a request to read their
-/// disk, so an `@` is kept from starting one.
+/// disk, so an `@` is kept from starting one. A `<!--` is broken too, so the
+/// only project marker in a block is the one the app wrote.
 fn neutralize_references(text: &str) -> String {
     text.replace('@', "@\u{200B}")
+        .replace("<!--", "<!\u{200B}--")
 }
 
 pub fn fingerprint(block: &str) -> String {

@@ -178,6 +178,178 @@ describe("project settings", () => {
   });
 });
 
+describe("project settings states", () => {
+  const project = {
+    settings: { folderId: "f1", instructions: "Be brief.", memoryMode: "default" },
+    files: [] as unknown[],
+  };
+  const FILE = {
+    id: "file-1",
+    folderId: "f1",
+    name: "brief.docx",
+    format: "docx",
+    status: "ready",
+    chars: 1200,
+    createdAt: "now",
+    updatedAt: "now",
+  };
+
+  function pending<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it("says the desktop dialog is loading, and holds Save and the fields until it has", async () => {
+    const load = pending<unknown>();
+    commands({ project_get: () => load.promise });
+    render(<ProjectSettingsDialog open onClose={vi.fn()} folder={FOLDER} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading the project…");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add files" })).toBeDisabled();
+    expect(screen.getByLabelText(/Project only/)).toBeDisabled();
+    // No empty-project hint before the files are known.
+    expect(screen.queryByText(/Chats in this project can search them/)).toBeNull();
+
+    load.resolve(project);
+    await screen.findByDisplayValue("Be brief.");
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    // Loaded with no files: the empty state says what files are for.
+    expect(screen.getByText(/Chats in this project can search them/)).toBeInTheDocument();
+  });
+
+  it("offers to load the desktop dialog again after a failure", async () => {
+    let calls = 0;
+    commands({
+      project_get: () => {
+        calls += 1;
+        if (calls === 1) throw { code: "db", message: "The project could not be read." };
+        return project;
+      },
+    });
+    const user = userEvent.setup();
+    render(<ProjectSettingsDialog open onClose={vi.fn()} folder={FOLDER} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The project could not be read.");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByDisplayValue("Be brief.");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("never shows another project's settings while the next one loads", async () => {
+    const second = pending<unknown>();
+    commands({
+      project_get: (args) => (args.folderId === "f1" ? project : second.promise),
+    });
+    const { rerender } = render(<ProjectSettingsDialog open onClose={vi.fn()} folder={FOLDER} />);
+    await screen.findByDisplayValue("Be brief.");
+    rerender(<ProjectSettingsDialog open={false} onClose={vi.fn()} folder={FOLDER} />);
+    rerender(
+      <ProjectSettingsDialog
+        open
+        onClose={vi.fn()}
+        folder={{ ...FOLDER, id: "f2", name: "Hiring" }}
+      />,
+    );
+    expect(screen.queryByDisplayValue("Be brief.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("names the file that could not be added, and removes a file once", async () => {
+    const removal = pending<void>();
+    const remove = vi.fn(() => removal.promise);
+    commands({
+      project_get: () => ({ ...project, files: [FILE] }),
+      project_file_add: () => {
+        throw { code: "project_file_too_large", message: "This file is too large." };
+      },
+      project_file_delete: remove,
+    });
+    const user = userEvent.setup();
+    render(<ProjectSettingsDialog open onClose={vi.fn()} folder={FOLDER} />);
+    await screen.findByText("brief.docx");
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, new File(["x"], "huge.pdf"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "huge.pdf was not added. This file is too large.",
+    );
+    expect(screen.getByRole("button", { name: "Add files" })).toBeEnabled();
+
+    const button = screen.getByRole("button", { name: "Remove brief.docx" });
+    await user.click(button);
+    expect(button).toBeDisabled();
+    expect(screen.getByText("Removing…")).toBeInTheDocument();
+    await user.click(button);
+    expect(remove).toHaveBeenCalledTimes(1);
+    removal.resolve();
+    await waitFor(() => expect(screen.queryByText("brief.docx")).toBeNull());
+  });
+
+  it("says the phone screen is loading, then shows an empty file list", async () => {
+    const load = pending<unknown>();
+    commands({ project_get: () => load.promise });
+    render(<ProjectSettingsScreen folder={FOLDER} onBack={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading the project…");
+    expect(screen.getByLabelText("Instructions")).toBeDisabled();
+    expect(screen.queryByText("No files yet")).toBeNull();
+    load.resolve(project);
+    await screen.findByDisplayValue("Be brief.");
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByText("No files yet")).toBeInTheDocument();
+  });
+
+  it("offers to load the phone screen again after a failure", async () => {
+    let calls = 0;
+    commands({
+      project_get: () => {
+        calls += 1;
+        if (calls === 1) throw { code: "db", message: "The project could not be read." };
+        return project;
+      },
+    });
+    const user = userEvent.setup();
+    render(<ProjectSettingsScreen folder={FOLDER} onBack={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The project could not be read.");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByDisplayValue("Be brief.");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says when the phone's project is gone", () => {
+    render(<ProjectSettingsScreen folder={undefined} onBack={vi.fn()} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("This project no longer exists.");
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("keeps unsaved instructions when the phone's memory mode is switched", async () => {
+    const saved = vi.fn((args: Record<string, unknown>) => ({
+      ...(args.request as object),
+      updatedAt: "now",
+    }));
+    commands({ project_get: () => project, project_save: saved });
+    const user = userEvent.setup();
+    render(<ProjectSettingsScreen folder={FOLDER} onBack={vi.fn()} />);
+    const field = await screen.findByDisplayValue("Be brief.");
+    await user.type(field, " Cite sources.");
+    await user.click(screen.getByLabelText(/Project only/));
+    await waitFor(() =>
+      expect(saved).toHaveBeenCalledWith({
+        request: { folderId: "f1", instructions: "Be brief.", memoryMode: "project" },
+      }),
+    );
+    // The draft is still there, and still unsaved.
+    expect(screen.getByLabelText("Instructions")).toHaveValue("Be brief. Cite sources.");
+    expect(screen.getByRole("button", { name: "Save instructions" })).toBeEnabled();
+  });
+});
+
 describe("phone chat attachments", () => {
   function renderComposer(
     onAttachmentsChange: (

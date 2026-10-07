@@ -170,11 +170,17 @@ pub async fn default_chat_context(
 
 const SOUL_START: &str = "<!-- sub-rosa:personal-context -->";
 const SOUL_END: &str = "<!-- /sub-rosa:personal-context -->";
+/// Around the person's own memory inside the personal section. The SOUL is
+/// shared by every chat of the runtime, so the provider proxy cuts this part
+/// out of a "Project only" project's requests (ADR-0085 addendum).
+pub const MEMORY_START: &str = "<!-- sub-rosa:user-memory -->";
+pub const MEMORY_END: &str = "<!-- /sub-rosa:user-memory -->";
 
 /// The personal section of the desktop SOUL: personalization, the memory
 /// block, and the line about past chats, between two markers so a settings
 /// change can rewrite it in place. Always present, even empty, so there is
-/// always a place to write into.
+/// always a place to write into. The memory block has markers of its own,
+/// also always present, so a project's memory can take its place.
 pub async fn soul_section_for_app(app: &AppHandle) -> Option<String> {
     let memory = crate::memory::prompt_block_for_app(app).await;
     // Protected mode's block leads the section, so a preference written
@@ -194,10 +200,23 @@ fn soul_section(
     memory: Option<String>,
     past_chats: Option<String>,
 ) -> String {
-    match join_blocks([personalization, memory, past_chats]) {
-        Some(body) => format!("{SOUL_START}\n{body}\n{SOUL_END}\n"),
-        None => format!("{SOUL_START}\n{SOUL_END}\n"),
-    }
+    let memory = memory
+        .map(|block| format!("{}\n", defuse_markers(block.trim_end())))
+        .unwrap_or_default();
+    let body = join_blocks([
+        personalization.map(|block| defuse_markers(&block)),
+        Some(format!("{MEMORY_START}\n{memory}{MEMORY_END}")),
+        past_chats.map(|block| defuse_markers(&block)),
+    ])
+    .unwrap_or_default();
+    format!("{SOUL_START}\n{body}\n{SOUL_END}\n")
+}
+
+/// A remembered fact or a preference is the person's text (or the model's
+/// reading of it): an HTML comment in it must not open or close a section,
+/// or the cut the proxy makes would leave part of the memory behind.
+fn defuse_markers(text: &str) -> String {
+    text.replace("<!--", "<!\u{200B}--")
 }
 
 /// `soul` with its personal section replaced by `section`, or `None` when
@@ -452,7 +471,10 @@ mod tests {
     #[test]
     fn the_soul_section_is_marked_even_when_empty_and_splices_in_place() {
         let empty = soul_section(None, None, None);
-        assert_eq!(empty, format!("{SOUL_START}\n{SOUL_END}\n"));
+        assert_eq!(
+            empty,
+            format!("{SOUL_START}\n{MEMORY_START}\n{MEMORY_END}\n{SOUL_END}\n")
+        );
         let soul = format!("You are Sub Rosa.\n\n{empty}## Context\nTools.\n");
         let full = soul_section(
             render_block(&filled()),
@@ -463,13 +485,27 @@ mod tests {
         assert!(next.starts_with("You are Sub Rosa.\n\n<!-- sub-rosa:personal-context -->\n"));
         assert!(next.contains("Personalization:"));
         assert!(next.contains("Personality: Be brief."));
-        assert!(next.contains("\n\nUser memory: facts\n- likes tea\n<!-- /sub-rosa:personal-context -->\n## Context\nTools.\n"));
+        assert!(next.contains("\n\n<!-- sub-rosa:user-memory -->\nUser memory: facts\n- likes tea\n<!-- /sub-rosa:user-memory -->\n<!-- /sub-rosa:personal-context -->\n## Context\nTools.\n"));
         // Splicing the same section again changes nothing, and back to empty
         // restores the original byte for byte.
         assert_eq!(splice_soul_section(&next, &full).unwrap(), next);
         assert_eq!(splice_soul_section(&next, &empty).unwrap(), soul);
         // A soul from an older build has no markers to write into.
         assert_eq!(splice_soul_section("You are Sub Rosa.\n", &full), None);
+    }
+
+    #[test]
+    fn a_comment_in_a_fact_cannot_close_the_memory_section_early() {
+        let section = soul_section(
+            None,
+            Some("User memory:\n- wrote <!-- /sub-rosa:user-memory --> once\n- likes tea\n".into()),
+            Some("Earlier conversations: search them.\n".into()),
+        );
+        let start = section.find(MEMORY_START).unwrap();
+        let end = section.find(MEMORY_END).unwrap();
+        assert_eq!(section.matches(MEMORY_END).count(), 1);
+        assert!(section[start..end].contains("likes tea"));
+        assert!(section[end..].contains("Earlier conversations"));
     }
 
     #[test]

@@ -8007,6 +8007,7 @@ async fn handle_june_provider_connection(
             let mut body = serde_json::from_slice::<serde_json::Value>(&request.body)
                 .unwrap_or_else(|_| serde_json::json!({}));
             provider_proxy::apply_reasoning_effort_alias(&mut body);
+            project_memory::apply(&app, &mut body).await;
             match crate::june_api::proxy_agent_chat_completions(body).await {
                 Ok(response) if response.status >= 400 => {
                     // Error bodies are small enough to buffer whole, and
@@ -8742,6 +8743,7 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
 }
 
 mod local_reads;
+mod project_memory;
 mod provider_proxy;
 use provider_proxy::provider_models_body;
 

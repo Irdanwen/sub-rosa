@@ -38,9 +38,12 @@ export function ProjectSettingsScreen({
   const [saved, setSaved] = useState<ProjectSettings | null>(null);
   const [instructions, setInstructions] = useState("");
   const [files, setFiles] = useState<ProjectFile[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ProjectFile | null>(null);
+  const [removingIds, setRemovingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const fieldId = useId();
@@ -50,6 +53,10 @@ export function ProjectSettingsScreen({
   useEffect(() => {
     if (!folderId) return;
     let cancelled = false;
+    // `attempt` changes only to load again after a failure (Try again).
+    void attempt;
+    setLoadFailed(false);
+    setError(null);
     projectGet(folderId)
       .then((project) => {
         if (cancelled) return;
@@ -58,20 +65,24 @@ export function ProjectSettingsScreen({
         setFiles(project.files);
       })
       .catch((caught) => {
-        if (!cancelled) setError(messageFromError(caught));
+        if (cancelled) return;
+        setLoadFailed(true);
+        setError(messageFromError(caught));
       });
     return () => {
       cancelled = true;
     };
-  }, [folderId]);
+  }, [folderId, attempt]);
 
+  /** Stores the settings. Switching the memory mode saves the instructions
+   * as stored, and leaves what is being typed in the field alone. */
   async function save(next: { instructions: string; memoryMode: ProjectMemoryMode }) {
     if (!folderId) return;
     setSaving(true);
     try {
       const stored = await projectSave({ folderId, ...next });
       setSaved(stored);
-      setInstructions(stored.instructions);
+      setInstructions((typed) => (typed === next.instructions ? stored.instructions : typed));
       setError(null);
       hapticNotify("success");
     } catch (caught) {
@@ -85,37 +96,73 @@ export function ProjectSettingsScreen({
     if (!folderId) return;
     setAdding(true);
     setError(null);
+    const failed: string[] = [];
     for (const file of picked) {
       try {
         const added = await projectFileAdd(folderId, file);
         setFiles((current) => [...current, added]);
       } catch (caught) {
-        setError(messageFromError(caught));
+        failed.push(
+          t("{name} was not added. {reason}", {
+            name: file.name,
+            reason: messageFromError(caught),
+          }),
+        );
       }
     }
+    if (failed.length > 0) setError(failed.join(" "));
     setAdding(false);
   }
 
   async function removeFile(file: ProjectFile) {
+    if (removingIds.has(file.id)) return;
+    setError(null);
+    setRemovingIds((current) => new Set(current).add(file.id));
     try {
       await projectFileDelete(file.id);
       setFiles((current) => current.filter((item) => item.id !== file.id));
     } catch (caught) {
       setError(messageFromError(caught));
+    } finally {
+      setRemovingIds((current) => {
+        const next = new Set(current);
+        next.delete(file.id);
+        return next;
+      });
     }
   }
 
   const over = instructions.length > PROJECT_INSTRUCTIONS_MAX_CHARS;
   const dirty = saved !== null && instructions !== saved.instructions;
+  const loading = folderId !== undefined && saved === null && !loadFailed;
+
+  if (!folder) {
+    return (
+      <div className="mobile-screen-root">
+        <StackHeader title={t("Project settings")} onBack={onBack} backLabel={t("Folder")} />
+        <div className="mobile-settings-scroll">
+          <p className="mobile-memory-error" role="alert">
+            {t("This project no longer exists.")}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mobile-screen-root">
-      <StackHeader
-        title={t("Project settings")}
-        onBack={onBack}
-        backLabel={folder?.name ?? t("Folder")}
-      />
-      <div className="mobile-settings-scroll">
+      <StackHeader title={t("Project settings")} onBack={onBack} backLabel={folder.name} />
+      <div className="mobile-settings-scroll" aria-busy={loading || undefined}>
+        {loading ? (
+          <p className="project-mobile-status" role="status">
+            {t("Loading the project…")}
+          </p>
+        ) : null}
+        {loadFailed ? (
+          <SettingsGroup>
+            <SettingsActionRow label={t("Try again")} onClick={() => setAttempt((n) => n + 1)} />
+          </SettingsGroup>
+        ) : null}
         <SettingsGroup
           title={t("Instructions")}
           footer={t("Chats in this project follow these from their next message.")}
@@ -148,7 +195,7 @@ export function ProjectSettingsScreen({
               disabled={!dirty || saving || over}
               onClick={() => saved && void save({ instructions, memoryMode: saved.memoryMode })}
             >
-              {t("Save instructions")}
+              {saving && dirty ? t("Saving…") : t("Save instructions")}
             </button>
           </SettingsRow>
         </SettingsGroup>
@@ -195,12 +242,13 @@ export function ProjectSettingsScreen({
                 label={file.name}
                 detail={
                   <span className="project-mobile-file-status" data-status={file.status}>
-                    {projectFileStatus(file)}
+                    {removingIds.has(file.id) ? t("Removing…") : projectFileStatus(file)}
                   </span>
                 }
               />
             </SwipeableRow>
           ))}
+          {saved !== null && files.length === 0 ? <SettingsRow label={t("No files yet")} /> : null}
           <SettingsActionRow
             label={adding ? t("Adding…") : t("Add files")}
             disabled={adding || saved === null}

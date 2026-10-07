@@ -196,6 +196,31 @@ describe("mobile chat model persistence", () => {
     expect(tauriMocks.sendAgentMessage).not.toHaveBeenCalled();
   });
 
+  it("files a new project chat before its first turn, and again before a retry if that failed", async () => {
+    tauriMocks.assignSessionToFolder.mockRejectedValueOnce(new Error("The folder is busy."));
+    tauriMocks.assignSessionToFolder.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    render(<AgentSessionScreen projectFolderId="f1" />);
+
+    const composer = screen.getByPlaceholderText("Ask anything, privately…");
+    await user.type(composer, "Plan the launch");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    // The question is stored, so it is not put back to be asked twice, and the
+    // turn does not run outside the project it was started in.
+    const retry = await screen.findByRole("button", { name: "Try again" });
+    expect(screen.getByRole("alert")).toHaveTextContent("The folder is busy.");
+    expect(composer).toHaveValue("");
+    expect(tauriMocks.agentLiteRun).not.toHaveBeenCalled();
+
+    await user.click(retry);
+    await waitFor(() => expect(tauriMocks.agentLiteRun).toHaveBeenCalledTimes(1));
+    expect(tauriMocks.assignSessionToFolder).toHaveBeenCalledTimes(2);
+    expect(tauriMocks.assignSessionToFolder).toHaveBeenLastCalledWith("task-1", "f1");
+    expect(tauriMocks.createAgentTask).toHaveBeenCalledTimes(1);
+  });
+
   it("restores the composer when creating the chat itself fails", async () => {
     tauriMocks.createAgentTask.mockRejectedValueOnce(new Error("network down"));
     const user = userEvent.setup();

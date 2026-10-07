@@ -183,7 +183,7 @@ pub async fn resume_unfinished(app: &AppHandle) {
     }
 }
 
-pub(crate) async fn resume_batch(pool: &SqlitePool, root: &Path) -> Result<usize, AppError> {
+pub async fn resume_batch(pool: &SqlitePool, root: &Path) -> Result<usize, AppError> {
     let _claim = EXTRACTION.lock().await;
     // Oldest change first, so a file that keeps missing cannot sit ahead of
     // one that arrived: the scan covers every queued row a project plausibly
