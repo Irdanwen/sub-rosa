@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 180
+Gaps: 170
 
 ## Matrix
 
@@ -28,17 +28,17 @@ Gaps: 180
 |---|---|---|---|---|---|---|
 | Unlimited chat with history | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` | P9 |
 | Model picker | yes | yes | yes | no | `src/components/settings/ModelPickerDialog.tsx` `src/components/mobile/ModelSheet.tsx` | P9 |
-| Reasoning effort control | yes | yes | yes | no | `src/lib/reasoning-effort.ts` `src/lib/desktop-reasoning-effort.ts` `src-tauri/src/hermes_bridge/provider_proxy.rs` | P9 |
-| Context window shown | no | yes | yes | no | `src/components/chat/ContextGauge.tsx` `src/lib/context-gauge.ts` | P1 |
+| Reasoning effort control | yes | yes | yes | no | `src/lib/reasoning-effort.ts` `src-tauri/src/hermes_bridge/provider_proxy.rs` | P9 |
+| Context window shown | yes | yes | yes | no | `src/components/chat/ContextGauge.tsx` `src/lib/context-gauge.ts` | P9 |
 | Streaming replies | yes | yes | yes | no | `src-tauri/src/agent_lite/mod.rs` | P9 |
 | Stop a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src-tauri/src/agent_lite/cancel.rs` | P9 |
 | Edit a sent message | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/agent/ChatTurnControls.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
 | Regenerate a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/agent/ChatTurnControls.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
 | Branch a conversation | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
 | Copy a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` | P9 |
-| Read a reply aloud | no | no | no | no | | P1 |
-| Rate a reply | no | no | no | no | | P1 |
-| Export a conversation | no | no | no | no | | P1 |
+| Read a reply aloud | yes | yes | yes | no | `src/components/chat/ReadAloudButton.tsx` `src/lib/speakable-text.ts` | P9 |
+| Rate a reply | yes | yes | yes | no | `src/components/chat/RateReply.tsx` `src-tauri/src/reply_ratings.rs` | P9 |
+| Export a conversation | yes | yes | yes | no | `src-tauri/src/conversation_export/mod.rs` `src/lib/conversation-export.ts` | P9 |
 | Search across conversations | yes | yes | yes | no | `src-tauri/src/db/repositories.rs` `src/components/agent/AgentSessionsList.tsx` | P9 |
 | Archive a conversation | yes | yes | yes | no | `src-tauri/src/account/session_folders.rs` `src/components/agent/AgentSessionsList.tsx` | P9 |
 | Temporary chat | no | no | no | no | | P2 |
