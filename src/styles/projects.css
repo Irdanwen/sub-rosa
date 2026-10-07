@@ -1,0 +1,146 @@
+/* Projects (ADR-0085): the desktop settings dialog and the phone screen. */
+
+.project-counter {
+  justify-self: end;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.project-counter[data-over] {
+  color: var(--destructive);
+}
+
+.project-memory-modes {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.project-memory-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  cursor: pointer;
+}
+
+.project-memory-mode[data-active] {
+  border-color: var(--ring);
+  background: var(--accent);
+}
+
+.project-memory-mode input {
+  margin-top: var(--sp-px);
+}
+
+.project-memory-mode-text {
+  display: grid;
+  gap: var(--sp-px);
+}
+
+.project-memory-mode-label {
+  font-weight: var(--fw-medium);
+}
+
+.project-memory-mode-detail {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.project-files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.project-files {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--control-lg);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--muted);
+}
+
+.project-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-file-status {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-file[data-status="failed"] .project-file-status {
+  color: var(--destructive);
+  white-space: normal;
+}
+
+/* Phone. */
+.project-mobile-field {
+  display: grid;
+  gap: var(--sp-2);
+  width: 100%;
+}
+
+.project-mobile-field textarea {
+  width: 100%;
+  min-height: 132px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  /* The shell's floor: a smaller field zooms the page on focus. */
+  font-size: max(16px, var(--fs-md));
+  line-height: 1.45;
+  resize: none;
+}
+
+.project-mobile-save {
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.project-mobile-save:disabled {
+  opacity: 0.35;
+}
+
+.project-mobile-file-status {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.project-mobile-file-status[data-status="failed"] {
+  color: var(--destructive);
+}

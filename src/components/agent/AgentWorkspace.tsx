@@ -45,6 +45,7 @@ import { IconTrashCan } from "central-icons/IconTrashCan";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { PRODUCT_NAME } from "../../lib/branding";
 import { noteAssistantTurnCompleted } from "../../lib/memory";
+import * as projects from "../../lib/projects";
 import { isMacDesktopPlatform } from "../../lib/platform";
 import { AnimatePresence, motion } from "framer-motion";
 import { EASE_OUT } from "../../lib/motion";
@@ -792,6 +793,8 @@ type HermesRuntimeSessionResponse = {
 /** Where the session was opened from — rendered as the leading crumbs in the
  * sticky session bar ("Projects / June" or "Agents") with a back arrow. */
 export type AgentWorkspaceOrigin = {
+  /** The project a new chat started here belongs to (ADR-0085). */
+  projectFolderId?: string;
   backLabel: string;
   onBack: () => void;
   crumbs: { label: string; onClick: () => void }[];
@@ -4873,7 +4876,14 @@ export function AgentWorkspace({
             runtimeContent: content,
           })
         : undefined;
-    const promptSubmitContent = imageInputFallbackContent ?? content;
+    // A chat in a project carries the project's context with its first message (ADR-0085).
+    const projectContext = options?.issueReport
+      ? null
+      : await projects.projectContextForSend(targetSessionId, origin?.projectFolderId);
+    const promptSubmitContent = projects.withProjectContext(
+      imageInputFallbackContent ?? content,
+      projectContext,
+    );
     // Issue reports skip title suggestion: the content is the wrapped
     // investigation prompt, which would title the session after the wrapper.
     const titlePromise =
@@ -5211,6 +5221,7 @@ export function AgentWorkspace({
         }
         await runTurnOn(turnGateway, runtimeSessionId);
       }
+      projects.projectContextSent(storedSessionId, projectContext, !targetSessionId);
       await loadHermesSessions({
         suppressStartupRequestError: !hermesSessionsHydratedRef.current,
       });
@@ -13086,7 +13097,7 @@ function promptWithAttachments(message: string, attachments: AgentAttachment[]):
     `Attached files copied into the ${PRODUCT_NAME} workspace:`,
     ...attachments.map(
       (attachment) =>
-        `- ${attachment.name} (${attachment.rootLabel}): ${attachmentPromptPath(attachment.path)}`,
+        `- ${attachment.name} (${attachment.rootLabel}): ${attachmentPromptPath(attachment.path)}${projects.attachmentTextNote(attachment)}`,
     ),
     "",
     "Use these file paths when inspecting or operating on the files.",

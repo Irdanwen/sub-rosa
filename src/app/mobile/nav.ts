@@ -28,7 +28,9 @@ export type SettingsSection =
 export type MobileRoute =
   | { view: "note"; noteId: string }
   | { view: "folder"; folderId: string }
-  | { view: "agent-session"; sessionId?: string }
+  /** `projectFolderId` files a new chat in that project (ADR-0085). */
+  | { view: "agent-session"; sessionId?: string; projectFolderId?: string }
+  | { view: "project-settings"; folderId: string }
   | { view: "agent-history" }
   /** `autoStart` listens on arrival (a Shortcuts action, never a notification). */
   | { view: "dictation"; autoStart?: boolean }

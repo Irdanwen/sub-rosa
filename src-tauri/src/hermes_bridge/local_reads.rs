@@ -78,6 +78,17 @@ struct SearchBody {
     limit: Option<usize>,
 }
 
+/// The `projectId` a memory search names, when it comes from a project chat.
+fn project_of(request_body: &[u8]) -> Option<String> {
+    serde_json::from_slice::<serde_json::Value>(request_body)
+        .ok()?
+        .get("projectId")?
+        .as_str()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+}
+
 fn search_body(request_body: &[u8]) -> (String, usize) {
     let body = serde_json::from_slice::<SearchBody>(request_body).unwrap_or_default();
     (
@@ -138,9 +149,18 @@ pub(super) async fn forward_memories_search(
     request_body: &[u8],
 ) -> io::Result<()> {
     let (query, limit) = search_body(request_body);
+    let project = project_of(request_body);
     let found = async {
         let repos = crate::commands::repositories(app).await?;
-        crate::memory::recall::recall(&repos, &query, limit).await
+        // A project that keeps its memory to itself is searched alone; any
+        // other search reads the person's own memory (ADR-0085).
+        let scope = match project {
+            Some(folder) => {
+                crate::projects::context::memory_scope_for_folder(&repos.pool, &folder).await
+            }
+            None => None,
+        };
+        crate::memory::recall::recall(&repos.with_memory_scope(scope), &query, limit).await
     }
     .await;
     let body = match found {
@@ -179,5 +199,15 @@ mod tests {
         assert_eq!(search_body(br#"{"query": "x", "limit": 99}"#).1, 20);
         assert_eq!(search_body(br#"{"query": "x", "limit": 0}"#).1, 1);
         assert_eq!(search_body(b"not json"), (String::new(), 8));
+    }
+
+    #[test]
+    fn a_memory_search_names_its_project_or_none() {
+        assert_eq!(
+            super::project_of(br#"{"query":"x","projectId":" f-1 "}"#),
+            Some("f-1".into())
+        );
+        assert_eq!(super::project_of(br#"{"query":"x","projectId":""}"#), None);
+        assert_eq!(super::project_of(br#"{"query":"x"}"#), None);
     }
 }

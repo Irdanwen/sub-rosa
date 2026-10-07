@@ -132,7 +132,15 @@ pub async fn undo(pool: &SqlitePool, change_id: &str) -> Result<AutonomousChange
                 .await?
                 .is_some();
             if !exists {
+                // The duplicate was judged against a fact of one scope (a
+                // project's, ADR-0085): it is stored back into that scope.
+                let scope: Option<String> = query("SELECT scope FROM memories WHERE id = ?")
+                    .bind(&change.subject_id)
+                    .fetch_optional(pool)
+                    .await?
+                    .and_then(|row| row.get("scope"));
                 crate::db::repositories::Repositories::new(pool.clone())
+                    .with_memory_scope(scope)
                     .insert_memory(
                         &change.before.text,
                         crate::domain::types::MemorySource::Auto,

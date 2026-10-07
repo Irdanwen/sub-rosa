@@ -8,6 +8,7 @@ import { IconFolderAddRight } from "central-icons/IconFolderAddRight";
 import { IconFolderDelete } from "central-icons/IconFolderDelete";
 import { IconFolderOpen } from "central-icons/IconFolderOpen";
 import { IconPencil } from "central-icons/IconPencil";
+import { IconSettingsGear1 } from "central-icons/IconSettingsGear1";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconMoveFolder } from "central-icons/IconMoveFolder";
 import { IconNoteText } from "central-icons/IconNoteText";
@@ -35,6 +36,7 @@ import { AddNotesToFolderDialog } from "./AddNotesToFolderDialog";
 import { AddSessionsToProjectDialog } from "./AddSessionsToProjectDialog";
 import { CreateFolderDialog } from "./CreateFolderDialog";
 import { EditFolderDialog } from "./EditFolderDialog";
+import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 const NO_FOLDERS: FolderDto[] = [];
 
@@ -596,6 +598,7 @@ function FolderDetail({
   const [addOpen, setAddOpen] = useState(false);
   const [addSessionsOpen, setAddSessionsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const titleRef = useRef<HTMLInputElement | null>(null);
 
@@ -846,6 +849,17 @@ function FolderDetail({
           <button
             type="button"
             role="menuitem"
+            onClick={() => {
+              setMenu(null);
+              setSettingsOpen(true);
+            }}
+          >
+            <IconSettingsGear1 size={14} />
+            {t("Project settings")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             className="destructive"
             onClick={() => {
               setMenu(null);
@@ -891,6 +905,11 @@ function FolderDetail({
         onClose={() => setEditOpen(false)}
         folder={folder}
         onSave={(name, description) => onRenameFolder(folder.id, name, description)}
+      />
+      <ProjectSettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        folder={folder}
       />
     </section>
   );

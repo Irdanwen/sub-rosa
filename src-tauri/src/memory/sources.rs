@@ -462,6 +462,7 @@ mod tests {
             has_embedding: false,
             created_at: String::new(),
             updated_at: String::new(),
+            scope: None,
         };
         let all = vec![memory("a"), memory("b")];
         let resolved = resolve(&ids(&["b", "gone", "a"]), &all);

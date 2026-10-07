@@ -458,6 +458,9 @@ function chatTitle(task: Pick<AgentTaskDto, "title" | "prompt">): string {
 
 type AgentSessionScreenProps = {
   sessionId?: string;
+  /** A new chat started in this project is filed there before its first
+   * turn runs, so that turn already reads the project (ADR-0085). */
+  projectFolderId?: string;
   /** Absent when the conversation is the Chat tab's root screen. */
   onBack?: () => void;
   /** Reports the lazily created task id so the shell can restore it later. */
@@ -482,6 +485,7 @@ type AgentSessionScreenProps = {
 /** One chat thread: history + composer + live status while agent-lite runs. */
 export function AgentSessionScreen({
   sessionId,
+  projectFolderId,
   onBack,
   onSessionCreated,
   onOpenSession,
@@ -838,6 +842,7 @@ export function AgentSessionScreen({
         taskIdRef.current = current.id;
         setTask(current);
         onSessionCreated?.(current.id);
+        if (projectFolderId) await assignSessionToFolder(current.id, projectFolderId);
         // The title is named by the model after the first reply, in Rust
         // (crate::chat_titles), and arrives on CHAT_TITLE_EVENT.
       } else {
@@ -900,6 +905,7 @@ export function AgentSessionScreen({
     models,
     effortFor,
     onSessionCreated,
+    projectFolderId,
     refreshAfterFailure,
   ]);
 

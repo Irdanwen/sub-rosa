@@ -35,6 +35,7 @@ import { RetouchScreen } from "../../components/mobile/screens/studio/RetouchScr
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
 import { FolderScreen } from "../../components/mobile/screens/FoldersScreen";
+import { ProjectSettingsScreen } from "../../components/mobile/screens/ProjectSettingsScreen";
 import { NoteDetailScreen } from "../../components/mobile/screens/NoteDetailScreen";
 import { NotesScreen } from "../../components/mobile/screens/NotesScreen";
 import { ConnectionScreen } from "../../components/mobile/screens/ConnectionScreen";
@@ -981,6 +982,7 @@ export function MobileApp() {
     screen = (
       <AgentSessionScreen
         sessionId={top.sessionId}
+        projectFolderId={top.projectFolderId}
         onBack={nav.pop}
         onOpenSession={(sessionId) => {
           // Forking swaps the tab's root conversation onto the fork and pops
@@ -1116,6 +1118,16 @@ export function MobileApp() {
           nav.pop();
           void handleDeleteFolder(top.folderId, deleteNotes);
         }}
+        onNewChat={() => nav.push({ view: "agent-session", projectFolderId: top.folderId })}
+        onOpenSettings={() => nav.push({ view: "project-settings", folderId: top.folderId })}
+        onOpenChat={(sessionId) => nav.push({ view: "agent-session", sessionId })}
+      />
+    );
+  } else if (top?.view === "project-settings") {
+    screen = (
+      <ProjectSettingsScreen
+        folder={state.folders.find((item) => item.id === top.folderId)}
+        onBack={nav.pop}
       />
     );
   } else {

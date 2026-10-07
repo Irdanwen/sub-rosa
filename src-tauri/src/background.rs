@@ -35,6 +35,8 @@ pub async fn sweep(app: &AppHandle) {
     // and file them in the gallery.
     crate::carpe_diem::jobs::resume_all(app).await;
     crate::assistants::resume_unfinished(app).await;
+    // A project's files, read once like assistant references (ADR-0085).
+    crate::projects::files::resume_unfinished(app).await;
     crate::assistants::media::resume(app).await;
     // A dictation whose transcription never came back.
     #[cfg(mobile)]

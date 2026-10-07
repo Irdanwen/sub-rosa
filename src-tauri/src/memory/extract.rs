@@ -73,8 +73,10 @@ pub struct ExtractMemoriesRequest {
     /// can ask after every turn; absent, the pass runs unconditionally.
     #[serde(default, alias = "turns")]
     pub assistant_turns: Option<usize>,
-    /// The desktop session the window comes from. A temporary chat's window
-    /// is refused here as well as in the frontend (ADR-0083).
+    /// The desktop chat the window comes from. A temporary chat's window is
+    /// refused here as well as in the frontend (ADR-0083), and a chat in a
+    /// project that keeps its memory to itself stores what it learns there
+    /// (ADR-0085).
     #[serde(default)]
     pub session_id: Option<String>,
 }
@@ -111,7 +113,7 @@ pub async fn memory_extract(
     app: AppHandle,
     request: ExtractMemoriesRequest,
 ) -> Result<ExtractMemoriesResult, AppError> {
-    let repos = crate::commands::repositories(&app).await?;
+    let mut repos = crate::commands::repositories(&app).await?;
     if let Some(session_id) = request.session_id.as_deref() {
         if crate::temporary_chat::is_temporary_session(&repos.pool, session_id).await? {
             return Ok(ExtractMemoriesResult { added: 0 });
@@ -121,6 +123,9 @@ pub async fn memory_extract(
         if !extraction_due(&request.messages, turns).await {
             return Ok(ExtractMemoriesResult { added: 0 });
         }
+    }
+    if let Some(session_id) = request.session_id.as_deref() {
+        repos = crate::projects::context::memory_repos_for_session(&repos, session_id).await;
     }
     let added = extract_and_store(&repos, &request.messages).await?;
     if added > 0 {
@@ -154,7 +159,8 @@ pub fn maybe_extract_after_agent_lite_turn(app: &AppHandle, task_id: String) {
 }
 
 /// One agent-lite chat's extraction pass, when that chat may feed memory: a
-/// temporary chat never does (ADR-0083), nor an assistant that says no.
+/// temporary chat never does (ADR-0083), nor an assistant that says no, and
+/// a chat in a project-only project feeds that project (ADR-0085).
 pub(crate) async fn extract_after_turn(
     repos: &crate::db::repositories::Repositories,
     task_id: &str,
@@ -162,12 +168,22 @@ pub(crate) async fn extract_after_turn(
     if crate::temporary_chat::is_temporary(&repos.pool, task_id).await? {
         return Ok(0);
     }
-    if crate::assistants::runtime::snapshot_for_task(&repos.pool, task_id)
-        .await?
+    let snapshot = crate::assistants::runtime::snapshot_for_task(&repos.pool, task_id).await?;
+    if snapshot
+        .as_ref()
         .is_some_and(|snapshot| !snapshot.definition.allow_memory)
     {
         return Ok(0);
     }
+    // A general chat in a project that keeps its memory to itself stores what
+    // it learns there; an assistant's never is (ADR-0085).
+    let scoped;
+    let repos = if snapshot.is_none() {
+        scoped = crate::projects::context::memory_repos_for_session(repos, task_id).await;
+        &scoped
+    } else {
+        repos
+    };
     let task = repos.get_agent_task(task_id).await?;
     let messages: Vec<ConversationMessage> = task
         .messages

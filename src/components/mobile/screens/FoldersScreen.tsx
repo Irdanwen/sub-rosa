@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { ActionSheet } from "../ActionSheet";
 import { NameSheet } from "../NameSheet";
 import { NotePickerSheet } from "../NotePickerSheet";
+import { ProjectChats } from "../ProjectChats";
 import { EmptyState } from "../../ui/EmptyState";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
@@ -31,6 +32,11 @@ type FolderScreenProps = {
   onRename: (name: string) => void;
   /** Deletes the folder; its notes go with it only when asked. */
   onDeleteFolder: (deleteNotes: boolean) => void;
+  /** A folder is a project (ADR-0085): a chat started in it, its settings,
+   * and the chats filed in it. */
+  onNewChat?: () => void;
+  onOpenSettings?: () => void;
+  onOpenChat?: (taskId: string) => void;
 };
 
 /** Notes filtered to one folder, pushed from the folder strip. */
@@ -48,6 +54,9 @@ export function FolderScreen({
   onAddNotes,
   onRename,
   onDeleteFolder,
+  onNewChat,
+  onOpenSettings,
+  onOpenChat,
 }: FolderScreenProps) {
   const [confirmDelete, setConfirmDelete] = useState<NoteListItemDto | null>(null);
   // A folder could be filled from new notes only, and never renamed or
@@ -89,6 +98,9 @@ export function FolderScreen({
         }
       />
       <div className="mobile-list-scroll">
+        {folder && !isArchiveFolder && onOpenChat ? (
+          <ProjectChats folderId={folder.id} onOpenChat={onOpenChat} />
+        ) : null}
         {notes.length === 0 ? (
           <EmptyState
             icon={isArchiveFolder ? <IconArrowInbox size={28} /> : <IconFolder2 size={28} />}
@@ -136,6 +148,22 @@ export function FolderScreen({
           actions={[
             // Each follow-up opens once this sheet has closed and handed focus
             // back, or the hand-back would pull focus out of the new sheet.
+            ...(onNewChat
+              ? [
+                  {
+                    label: t("New chat in this project"),
+                    onAction: () => window.setTimeout(onNewChat, 0),
+                  },
+                ]
+              : []),
+            ...(onOpenSettings
+              ? [
+                  {
+                    label: t("Project settings"),
+                    onAction: () => window.setTimeout(onOpenSettings, 0),
+                  },
+                ]
+              : []),
             { label: t("Rename"), onAction: () => window.setTimeout(() => setRenaming(true), 0) },
             { label: t("Add notes"), onAction: () => window.setTimeout(() => setAdding(true), 0) },
             {

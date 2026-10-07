@@ -52,11 +52,16 @@ pub struct PastChatSnippet {
 
 /// Messages of other general chats matching an FTS5 expression, best bm25
 /// first, one excerpt per message. `exclude_task` is the chat asking.
+///
+/// `scope` is the memory scope of that chat (ADR-0085): a project that keeps
+/// its memory to itself reads only its own chats, and every other chat reads
+/// everything except such a project's chats.
 pub async fn search(
     pool: &SqlitePool,
     fts: &str,
     exclude_task: Option<&str>,
     limit: i64,
+    scope: Option<&str>,
 ) -> Result<Vec<PastChatSnippet>, sqlx::error::Error> {
     let rows = query(
         "SELECT f.task_id AS task_id, t.title AS title, m.role AS role, m.created_at AS created_at,
@@ -70,12 +75,23 @@ pub async fn search(
            AND t.ephemeral = 0
            AND t.safety_profile NOT IN ('custom_assistant', 'customAssistant')
            AND NOT EXISTS (SELECT 1 FROM assistant_conversations a WHERE a.task_id = t.id)
+           AND CASE WHEN ?4 IS NULL THEN NOT EXISTS (
+                 SELECT 1 FROM session_folders sf
+                 JOIN project_settings p ON p.id = sf.folder_id
+                 WHERE p.memory_mode = 'project'
+                   AND (sf.session_id = t.id OR sf.session_id = t.hermes_session_id))
+               ELSE EXISTS (
+                 SELECT 1 FROM session_folders sf
+                 WHERE sf.folder_id = ?4
+                   AND (sf.session_id = t.id OR sf.session_id = t.hermes_session_id))
+               END
          ORDER BY bm25(agent_messages_fts)
          LIMIT ?3",
     )
     .bind(fts)
     .bind(exclude_task.unwrap_or_default())
     .bind(limit.clamp(1, 50))
+    .bind(scope)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -117,7 +133,15 @@ async fn relevant(
     task_id: &str,
     message: &str,
 ) -> Vec<PastChatSnippet> {
-    let candidates = match search(&repos.pool, fts, Some(task_id), TURN_CANDIDATES).await {
+    let candidates = match search(
+        &repos.pool,
+        fts,
+        Some(task_id),
+        TURN_CANDIDATES,
+        repos.memory_scope(),
+    )
+    .await
+    {
         Ok(candidates) => candidates,
         Err(error) => {
             tracing::warn!("Past chat search failed: {error}");
@@ -232,7 +256,15 @@ pub async fn run_tool(repos: &Repositories, task_id: &str, query_text: &str) -> 
     let Some(fts) = match_for(query_text) else {
         return "search_past_chats needs a few keywords.".to_string();
     };
-    match search(&repos.pool, &fts, Some(task_id), TOOL_RESULTS).await {
+    match search(
+        &repos.pool,
+        &fts,
+        Some(task_id),
+        TOOL_RESULTS,
+        repos.memory_scope(),
+    )
+    .await
+    {
         Ok(snippets) if snippets.is_empty() => {
             "Nothing in the user's other conversations matches that.".to_string()
         }
@@ -342,12 +374,14 @@ mod tests {
         )
         .await;
         let fts = match_for("Which tent for Lyon?").unwrap();
-        let hits = search(&pool, &fts, Some("current"), 10).await.unwrap();
+        let hits = search(&pool, &fts, Some("current"), 10, None)
+            .await
+            .unwrap();
         assert!(!hits.is_empty());
         assert!(hits.iter().all(|hit| hit.task_id == "older"));
         assert_eq!(hits[0].title, "Camping gear");
         // Without an exclusion the asking chat matches too.
-        let all = search(&pool, &fts, None, 10).await.unwrap();
+        let all = search(&pool, &fts, None, 10, None).await.unwrap();
         assert!(all.iter().any(|hit| hit.task_id == "current"));
         assert!(!all.iter().any(|hit| hit.task_id == "assistant"));
     }
@@ -368,7 +402,10 @@ mod tests {
             .await
             .unwrap();
         let fts = match_for("garden budget").unwrap();
-        assert!(search(&pool, &fts, None, 10).await.unwrap().is_empty());
+        assert!(search(&pool, &fts, None, 10, None)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     fn snippet(title: &str, role: &str, excerpt: &str) -> PastChatSnippet {

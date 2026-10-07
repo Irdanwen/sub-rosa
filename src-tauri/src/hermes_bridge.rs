@@ -855,6 +855,9 @@ pub struct ImportedHermesFile {
     pub root_label: String,
     pub size: u64,
     pub preview_data_url: Option<String>,
+    /// A document's text, written beside it so the agent reads words (ADR-0085).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3110,6 +3113,7 @@ pub async fn import_hermes_bridge_file(
         root_label: "Workspace".to_string(),
         size,
         preview_data_url: image_preview_data_url(&destination)?,
+        text_path: crate::documents::extract_beside(&destination),
     })
 }
 
@@ -3161,6 +3165,7 @@ pub fn import_hermes_bridge_file_bytes(
         root_label: "Workspace".to_string(),
         size: bytes.len() as u64,
         preview_data_url: image_preview_data_url(&destination)?,
+        text_path: crate::documents::extract_beside(&destination),
     })
 }
 

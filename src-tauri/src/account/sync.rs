@@ -179,6 +179,35 @@ const TABLES: &[Table] = &[
             "deleted_at",
         ],
     },
+    // A project's settings and files (ADR-0085). The settings object's id is
+    // its folder's, so two devices editing one project edit one object.
+    Table {
+        name: "project_settings",
+        kind: "folder",
+        columns: &[
+            "id",
+            "folder_id",
+            "instructions",
+            "memory_mode",
+            "updated_at",
+        ],
+    },
+    Table {
+        name: "project_files",
+        kind: "artifact",
+        columns: &[
+            "id",
+            "folder_id",
+            "name",
+            "format",
+            "text",
+            "status",
+            "error",
+            "file_name",
+            "created_at",
+            "updated_at",
+        ],
+    },
     Table {
         name: "notes",
         kind: "note",
@@ -256,6 +285,7 @@ const TABLES: &[Table] = &[
             "disabled",
             "created_at",
             "updated_at",
+            "scope",
         ],
     },
     Table {
@@ -322,14 +352,25 @@ fn table(name: &str) -> Result<&'static Table, AppError> {
         .ok_or_else(|| error("sync_format_invalid"))
 }
 fn row_json(t: &Table, prefix: &str) -> String {
-    format!(
+    let object = format!(
         "json_object({})",
         t.columns
             .iter()
+            .filter(|c| !(t.name == "memories" && **c == "scope"))
             .map(|c| format!("'{c}',{prefix}{c}"))
             .collect::<Vec<_>>()
             .join(",")
-    )
+    );
+    // A memory carries its scope only when it has one (ADR-0085). The
+    // person's own memories keep the shape every device already reads; a
+    // project's is refused by a device too old to know scopes, which is the
+    // safe outcome: applied without its scope, it would join the person's
+    // own memory there.
+    if t.name == "memories" {
+        format!("json_patch({object},CASE WHEN {prefix}scope IS NULL THEN '{{}}' ELSE json_object('scope',{prefix}scope) END)")
+    } else {
+        object
+    }
 }
 fn snapshot_body(t: &Table, prefix: &str) -> String {
     if t.name == "agent_tasks" {
@@ -1112,7 +1153,7 @@ pub(super) async fn delete_locally(
                 .execute(&mut *conn)
                 .await?;
         }
-        "account_studio_files" | "assistant_references" => {
+        "account_studio_files" | "assistant_references" | "project_files" => {
             let lane = if table == "account_studio_files" {
                 "studio"
             } else {
@@ -1328,6 +1369,10 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
     if t.name == "ingests" {
         row.insert("status".into(), json!("done"));
     }
+    // A memory without a scope is the person's own (see `row_json`).
+    if t.name == "memories" && !row.contains_key("scope") {
+        row.insert("scope".into(), Value::Null);
+    }
     // `account_errands` is deliberately absent from these coercions, and it is
     // the only table that is. Every other incoming row describes work another
     // device already did, so arriving in a running state would make this
@@ -1372,7 +1417,7 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
                 .await?
                 .is_some();
             if !found && field == "artifact_id" && artifact_table == "assistant_references" {
-                found=query("SELECT 1 FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j WHERE json_extract(j.value,'$.id')=? LIMIT 1").bind(id).fetch_optional(&mut *conn).await?.is_some();
+                found=query("SELECT 1 FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j WHERE json_extract(j.value,'$.id')=? UNION SELECT 1 FROM project_files WHERE id=? LIMIT 1").bind(id).bind(id).fetch_optional(&mut *conn).await?.is_some();
             }
             if !found {
                 return Ok(false);

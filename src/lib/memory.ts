@@ -54,6 +54,8 @@ async function extractIfDue(sessionId: string): Promise<void> {
   if (extractedAtTurn.get(sessionId) === assistantTurns) return;
   extractedAtTurn.set(sessionId, assistantTurns);
 
+  // The session id lets a chat in a project that keeps its memory to itself
+  // store what it learns there (ADR-0085).
   await invoke<MemoryExtractResult>("memory_extract", {
     request: { messages: windowedConversation(conversation), turns: assistantTurns, sessionId },
   });

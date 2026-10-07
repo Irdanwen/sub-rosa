@@ -502,6 +502,7 @@ export type ImportedHermesFile = {
   rootLabel: string;
   size: number;
   previewDataUrl?: string | null;
+  textPath?: string | null;
 };
 
 export type HermesSkillInfo = {
