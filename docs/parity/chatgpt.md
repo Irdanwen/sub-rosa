@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 158
+Gaps: 152
 
 ## Matrix
 
@@ -96,9 +96,9 @@ Gaps: 158
 | Group chats | no | no | no | no | | P9 |
 | Health | n/a | no | no | n/a | | P9 |
 | Finances | no | no | no | no | | P9 |
-| Parental controls | partial | partial | partial | no | `src-tauri/src/protected_mode/mod.rs` `src/components/settings/ProtectedModeSection.tsx` | P2 |
+| Parental controls | equiv | equiv | equiv | no | `src-tauri/src/protected_mode/mod.rs` `src/components/settings/ProtectedModeSection.tsx` `src-tauri/src/protected_mode/restrictions.rs` | P9 |
 | Privacy: no training, data controls | yes | yes | yes | yes | `src-tauri/src/egress.rs` | |
-| Account security history | partial | partial | partial | yes | `subrosa-cloud/migrations/0010_security_events.sql` `website/src/pages/security-history.tsx` | P2 |
+| Account security history | yes | yes | yes | yes | `subrosa-cloud/migrations/0010_security_events.sql` `website/src/pages/security-history.tsx` `src-tauri/src/account/security_events.rs` `src/components/settings/AccountSecurityHistory.tsx` |  |
 
 ## Assumed equivalences
 
@@ -107,6 +107,13 @@ Gaps: 158
   ADR-0009), so the desktop lists the memories a chat was given in the chat
   header rather than under each reply. The phones, which rebuild the prompt on
   every turn, show them per reply (ADR-0081).
+- **Parental controls** (desktop, iOS, Android): the vendor links a parent's
+  account to a teen's and enforces the limits on its servers. Sub Rosa's
+  account server is a blind courier (ADR-0049) and holds no settings it could
+  enforce, so the same limits (adult models and Studio safe mode, quiet hours,
+  memory, image and video generation, voice, past chats) are a protected mode
+  on the device, behind a PIN, enforced in Rust where requests leave
+  (ADR-0084). There is no parent account and no notification to a parent.
 
 ## Out of this matrix
 
