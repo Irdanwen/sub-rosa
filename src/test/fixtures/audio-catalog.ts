@@ -6,7 +6,8 @@
  * `tts` and 14 `music` rows) and Venice's `GET /models?type=music` for
  * the four `elevenlabs-tts-*` models the operator lists again from
  * Lumen-labs-ch/Carpe-diem-#450, reduced the way the operator reduces a music
- * `model_spec` (everything but the fields that describe the model).
+ * `model_spec` (everything but the fields that describe the model). Names and
+ * `pricing` come from Venice's `model_spec`, as the Rust merge adds them.
  *
  * Why captured rather than written: the music queue carries speech and sound
  * effects as well as music, and every wrong rule this surface had (MiniMax 2.5
@@ -24,7 +25,8 @@ const captured = {
     {
       id: "tts-chatterbox-hd",
       mediaType: "tts",
-      name: "tts-chatterbox-hd",
+      name: "Chatterbox HD (Resemble AI)",
+      pricing: { input: { usd: 50, diem: 50 } },
       offline: false,
       voices: [
         "Aurora",
@@ -41,7 +43,8 @@ const captured = {
     {
       id: "tts-elevenlabs-turbo-v2-5",
       mediaType: "tts",
-      name: "tts-elevenlabs-turbo-v2-5",
+      name: "ElevenLabs Turbo v2.5",
+      pricing: { input: { usd: 62.5, diem: 62.5 } },
       offline: false,
       voices: [
         "Alice",
@@ -70,7 +73,8 @@ const captured = {
     {
       id: "tts-gemini-3-1-flash",
       mediaType: "tts",
-      name: "tts-gemini-3-1-flash",
+      name: "Gemini 3.1 Flash TTS",
+      pricing: { input: { usd: 187.5, diem: 187.5 } },
       offline: false,
       voices: [
         "Achernar",
@@ -108,7 +112,8 @@ const captured = {
     {
       id: "tts-gradium-v1",
       mediaType: "tts",
-      name: "tts-gradium-v1",
+      name: "Gradium TTS",
+      pricing: { input: { usd: 47.5, diem: 47.5 } },
       offline: false,
       voices: [
         "Alice",
@@ -128,7 +133,8 @@ const captured = {
     {
       id: "tts-inworld-1-5-max",
       mediaType: "tts",
-      name: "tts-inworld-1-5-max",
+      name: "Inworld TTS-1.5 Max",
+      pricing: { input: { usd: 12.5, diem: 12.5 } },
       offline: false,
       voices: [
         "Alex",
@@ -150,7 +156,8 @@ const captured = {
     {
       id: "tts-kokoro",
       mediaType: "tts",
-      name: "tts-kokoro",
+      name: "Kokoro Text to Speech",
+      pricing: { input: { usd: 3.5, diem: 3.5 } },
       offline: false,
       voices: [
         "af_alloy",
@@ -212,7 +219,8 @@ const captured = {
     {
       id: "tts-minimax-speech-02-hd",
       mediaType: "tts",
-      name: "tts-minimax-speech-02-hd",
+      name: "MiniMax Speech-02 HD",
+      pricing: { input: { usd: 125, diem: 125 } },
       offline: false,
       voices: [
         "CalmWoman",
@@ -235,14 +243,16 @@ const captured = {
     {
       id: "tts-orpheus",
       mediaType: "tts",
-      name: "tts-orpheus",
+      name: "Orpheus TTS",
+      pricing: { input: { usd: 62.5, diem: 62.5 } },
       offline: false,
       voices: ["dan", "jess", "leah", "leo", "mia", "tara", "zac", "zoe"],
     },
     {
       id: "tts-qwen3-0-6b",
       mediaType: "tts",
-      name: "tts-qwen3-0-6b",
+      name: "Qwen 3 TTS 0.6B",
+      pricing: { input: { usd: 87.5, diem: 87.5 } },
       offline: false,
       voices: [
         "Aiden",
@@ -259,7 +269,8 @@ const captured = {
     {
       id: "tts-qwen3-1-7b",
       mediaType: "tts",
-      name: "tts-qwen3-1-7b",
+      name: "Qwen 3 TTS 1.7B",
+      pricing: { input: { usd: 112.5, diem: 112.5 } },
       offline: false,
       voices: [
         "Aiden",
@@ -276,7 +287,8 @@ const captured = {
     {
       id: "tts-xai-v1",
       mediaType: "tts",
-      name: "tts-xai-v1",
+      name: "xAI TTS v1",
+      pricing: { input: { usd: 18.75, diem: 18.75 } },
       offline: false,
       voices: [
         "altair",
@@ -311,6 +323,20 @@ const captured = {
       id: "elevenlabs-music",
       mediaType: "music",
       name: "ElevenLabs Music",
+      pricing: {
+        durations: {
+          "60": { usd: 0.69, diem: 0.69, min_seconds: 3, max_seconds: 60 },
+          "120": { usd: 1.38, diem: 1.38, min_seconds: 61, max_seconds: 120 },
+          "180": { usd: 2.08, diem: 2.08, min_seconds: 121, max_seconds: 180 },
+          "240": { usd: 2.76, diem: 2.76, min_seconds: 181, max_seconds: 240 },
+          "300": { usd: 3.45, diem: 3.45, min_seconds: 241, max_seconds: 300 },
+          "360": { usd: 4.15, diem: 4.15, min_seconds: 301, max_seconds: 360 },
+          "420": { usd: 4.84, diem: 4.84, min_seconds: 361, max_seconds: 420 },
+          "480": { usd: 5.52, diem: 5.52, min_seconds: 421, max_seconds: 480 },
+          "540": { usd: 6.22, diem: 6.22, min_seconds: 481, max_seconds: 540 },
+          "600": { usd: 6.9, diem: 6.9, min_seconds: 541, max_seconds: 600 },
+        },
+      },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -334,6 +360,20 @@ const captured = {
       id: "elevenlabs-music-v2",
       mediaType: "music",
       name: "ElevenLabs Music v2",
+      pricing: {
+        durations: {
+          "60": { usd: 0.69, diem: 0.69, min_seconds: 3, max_seconds: 60 },
+          "120": { usd: 1.38, diem: 1.38, min_seconds: 61, max_seconds: 120 },
+          "180": { usd: 2.08, diem: 2.08, min_seconds: 121, max_seconds: 180 },
+          "240": { usd: 2.76, diem: 2.76, min_seconds: 181, max_seconds: 240 },
+          "300": { usd: 3.45, diem: 3.45, min_seconds: 241, max_seconds: 300 },
+          "360": { usd: 4.15, diem: 4.15, min_seconds: 301, max_seconds: 360 },
+          "420": { usd: 4.84, diem: 4.84, min_seconds: 361, max_seconds: 420 },
+          "480": { usd: 5.52, diem: 5.52, min_seconds: 421, max_seconds: 480 },
+          "540": { usd: 6.22, diem: 6.22, min_seconds: 481, max_seconds: 540 },
+          "600": { usd: 6.9, diem: 6.9, min_seconds: 541, max_seconds: 600 },
+        },
+      },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -357,6 +397,20 @@ const captured = {
       id: "elevenlabs-music-v2-5",
       mediaType: "music",
       name: "ElevenLabs Music v2.5",
+      pricing: {
+        durations: {
+          "60": { usd: 0.69, diem: 0.69, min_seconds: 3, max_seconds: 60 },
+          "120": { usd: 1.38, diem: 1.38, min_seconds: 61, max_seconds: 120 },
+          "180": { usd: 2.08, diem: 2.08, min_seconds: 121, max_seconds: 180 },
+          "240": { usd: 2.76, diem: 2.76, min_seconds: 181, max_seconds: 240 },
+          "300": { usd: 3.45, diem: 3.45, min_seconds: 241, max_seconds: 300 },
+          "360": { usd: 4.15, diem: 4.15, min_seconds: 301, max_seconds: 360 },
+          "420": { usd: 4.84, diem: 4.84, min_seconds: 361, max_seconds: 420 },
+          "480": { usd: 5.52, diem: 5.52, min_seconds: 421, max_seconds: 480 },
+          "540": { usd: 6.22, diem: 6.22, min_seconds: 481, max_seconds: 540 },
+          "600": { usd: 6.9, diem: 6.9, min_seconds: 541, max_seconds: 600 },
+        },
+      },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -380,6 +434,16 @@ const captured = {
       id: "ace-step-15",
       mediaType: "music",
       name: "ACE-Step 1.5",
+      pricing: {
+        durations: {
+          "60": { usd: 0.03, diem: 0.03, min_seconds: 60, max_seconds: 60 },
+          "90": { usd: 0.04, diem: 0.04, min_seconds: 61, max_seconds: 90 },
+          "120": { usd: 0.05, diem: 0.05, min_seconds: 91, max_seconds: 120 },
+          "150": { usd: 0.06, diem: 0.06, min_seconds: 121, max_seconds: 150 },
+          "180": { usd: 0.07, diem: 0.07, min_seconds: 151, max_seconds: 180 },
+          "210": { usd: 0.08, diem: 0.08, min_seconds: 181, max_seconds: 210 },
+        },
+      },
       offline: false,
       constraints: {
         supports_lyrics: true,
@@ -405,6 +469,7 @@ const captured = {
       id: "elevenlabs-sound-effects-v2",
       mediaType: "music",
       name: "ElevenLabs Sound Effects",
+      pricing: { per_second: { usd: 0.0023000000000000004, diem: 0.0023000000000000004 } },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -428,6 +493,7 @@ const captured = {
       id: "lyria-3-pro",
       mediaType: "music",
       name: "Lyria 3 Pro",
+      pricing: { generation: { usd: 0.1, diem: 0.1 } },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -448,6 +514,7 @@ const captured = {
       id: "minimax-music-v2",
       mediaType: "music",
       name: "MiniMax Music 2.0",
+      pricing: { generation: { usd: 0.04, diem: 0.04 } },
       offline: false,
       constraints: {
         supports_lyrics: true,
@@ -469,6 +536,7 @@ const captured = {
       id: "minimax-music-v25",
       mediaType: "music",
       name: "MiniMax Music 2.5",
+      pricing: { generation: { usd: 0.18, diem: 0.18 } },
       offline: false,
       constraints: {
         supports_lyrics: true,
@@ -490,6 +558,7 @@ const captured = {
       id: "minimax-music-v26",
       mediaType: "music",
       name: "MiniMax Music 2.6",
+      pricing: { generation: { usd: 0.18, diem: 0.18 } },
       offline: false,
       constraints: {
         supports_lyrics: true,
@@ -511,6 +580,7 @@ const captured = {
       id: "mmaudio-v2-text-to-audio",
       mediaType: "music",
       name: "MMAudio V2",
+      pricing: { per_second: { usd: 0.0009200000000000001, diem: 0.0009200000000000001 } },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -534,6 +604,7 @@ const captured = {
       id: "seed-audio-1-0",
       mediaType: "music",
       name: "Seed Audio 1.0",
+      pricing: { per_second: { usd: 0.0028750000000000004, diem: 0.0028750000000000004 } },
       offline: false,
       voices: [
         "Describe in prompt",
@@ -612,6 +683,7 @@ const captured = {
       id: "sonilo-v1-1-music",
       mediaType: "music",
       name: "Sonilo V1.1 Music",
+      pricing: { per_second: { usd: 0.0028750000000000004, diem: 0.0028750000000000004 } },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -635,6 +707,7 @@ const captured = {
       id: "sonilo-v1-1-sound-effects",
       mediaType: "music",
       name: "Sonilo V1.1 Sound Effects",
+      pricing: { per_second: { usd: 0.0020700000000000002, diem: 0.0020700000000000002 } },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -658,6 +731,7 @@ const captured = {
       id: "stable-audio-25",
       mediaType: "music",
       name: "Stable Audio 2.5",
+      pricing: { generation: { usd: 0.19, diem: 0.19 } },
       offline: false,
       constraints: {
         supports_lyrics: false,
@@ -681,6 +755,7 @@ const captured = {
       id: "elevenlabs-tts-v4",
       mediaType: "music",
       name: "ElevenLabs TTS v4",
+      pricing: { per_thousand_characters: { usd: 0.09200000000000001, diem: 0.09200000000000001 } },
       offline: false,
       voices: [
         "Aria",
@@ -746,6 +821,9 @@ const captured = {
       id: "elevenlabs-tts-v4-turbo",
       mediaType: "music",
       name: "ElevenLabs TTS v4 Turbo",
+      pricing: {
+        per_thousand_characters: { usd: 0.046000000000000006, diem: 0.046000000000000006 },
+      },
       offline: false,
       voices: [
         "Aria",
@@ -811,6 +889,7 @@ const captured = {
       id: "elevenlabs-tts-v3",
       mediaType: "music",
       name: "ElevenLabs TTS v3",
+      pricing: { per_thousand_characters: { usd: 0.11500000000000002, diem: 0.11500000000000002 } },
       offline: false,
       voices: [
         "Aria",
@@ -876,6 +955,7 @@ const captured = {
       id: "elevenlabs-tts-multilingual-v2",
       mediaType: "music",
       name: "ElevenLabs Multilingual v2",
+      pricing: { per_thousand_characters: { usd: 0.11500000000000002, diem: 0.11500000000000002 } },
       offline: false,
       voices: [
         "Aria",

@@ -107,6 +107,22 @@ export function speechCapabilities(model: MediaModel | undefined): SpeechCapabil
   };
 }
 
+/** The engine a speech surface opens on: a one-call model (seconds, not a
+ * queued render of minutes), the cheapest the catalog prices. Never the first
+ * name in the alphabet - that put a queued, premium engine in front of every
+ * first narration, the default nobody chose (Carpe Diem #312 made the same
+ * mistake). */
+export function defaultSpeechModel(models: readonly MediaModel[]): MediaModel | undefined {
+  const price = (model: MediaModel) => {
+    const usd = (model.pricing?.input as { usd?: unknown } | undefined)?.usd;
+    return typeof usd === "number" && Number.isFinite(usd) ? usd : Number.POSITIVE_INFINITY;
+  };
+  const oneCall = models.filter((model) => speechRail(model) === "speech");
+  return (
+    [...oneCall].sort((a, b) => price(a) - price(b) || a.name.localeCompare(b.name))[0] ?? models[0]
+  );
+}
+
 /** A voice the model will take: one of its own, a provider Voice ID where it
  * accepts one, else its default. Never a name carried over from another
  * model, which the queue refuses. */

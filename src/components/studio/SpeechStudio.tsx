@@ -14,6 +14,7 @@ import {
   AUDIO_TAGS,
   acceptedSpeed,
   acceptedVoice,
+  defaultSpeechModel,
   estimatedSpeechSeconds,
   generateSpeech,
   insertTag,
@@ -42,8 +43,8 @@ import {
 
 export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
   const models = useMemo(() => speechModels(catalog), [catalog]);
-  const [modelId, setModelId] = useState(models[0]?.id ?? "");
-  const model = models.find((entry) => entry.id === modelId) ?? models[0];
+  const [modelId, setModelId] = useState("");
+  const model = models.find((entry) => entry.id === modelId) ?? defaultSpeechModel(models);
   const caps = useMemo(() => speechCapabilities(model), [model]);
 
   const [voice, setVoice] = useState("");
@@ -87,13 +88,15 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
   const estimate = useMemo(() => estimateRenderMs(renderEtaKey("speech", model?.id)), [model?.id]);
 
   const input = text.trim().slice(0, caps.inputLimit);
-  const costCredits = model
-    ? estimateCostCredits(model, {
-        characters: input.length,
-        durationSeconds: estimatedSpeechSeconds(input.length),
-        multiplier: catalog.priceMultiplier,
-      })
-    : undefined;
+  // No price before there is a text: "~0 credits" read as free.
+  const costCredits =
+    model && input
+      ? estimateCostCredits(model, {
+          characters: input.length,
+          durationSeconds: estimatedSpeechSeconds(input.length),
+          multiplier: catalog.priceMultiplier,
+        })
+      : undefined;
   const canSubmit = Boolean(model && input) && !working;
 
   const generate = useCallback(async () => {
@@ -176,10 +179,7 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
         </StudioField>
       ) : null}
       {caps.customVoiceId ? (
-        <StudioField
-          label={t("Your ElevenLabs voice")}
-          hint={t("Paste a Voice ID from your ElevenLabs library")}
-        >
+        <StudioField label={t("Your ElevenLabs voice")} hint={t("From your ElevenLabs library")}>
           <input
             className="studio-input"
             value={voiceId}
@@ -300,9 +300,13 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
             <EmptyState
               icon={<IconVoice2 size={22} />}
               title={t("No narrations yet")}
-              description={t(
-                "Type some text, pick a voice, and generate. Short texts render in seconds.",
-              )}
+              description={
+                caps.rail === "queue"
+                  ? t(
+                      "Type some text, pick a voice, and generate. This engine takes a minute or two, and keeps going if you leave.",
+                    )
+                  : t("Type some text, pick a voice, and generate. Short texts render in seconds.")
+              }
             />
           ) : null
         }

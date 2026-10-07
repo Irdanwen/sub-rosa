@@ -42,15 +42,15 @@ import {
   ROLES_BY_KIND,
   saveBibleEntry,
 } from "../../lib/studio/bible";
-import {
-  estimateCostCredits,
-  modelsOfType,
-  speechModels,
-  speechRail,
-} from "../../lib/studio/catalog";
+import { estimateCostCredits, modelsOfType, speechModels } from "../../lib/studio/catalog";
 import { canGenerate, generateReference, pickPortraitModel } from "../../lib/studio/bible/portrait";
 import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
-import { generateSpeech, queuedSpeechJob, speechCapabilities } from "../../lib/studio/speech";
+import {
+  defaultSpeechModel,
+  generateSpeech,
+  queuedSpeechJob,
+  speechCapabilities,
+} from "../../lib/studio/speech";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
 import { Select } from "../ui/Select";
@@ -137,9 +137,7 @@ export function BibleStudio({
   const [voiceModelId, setVoiceModelId] = useState("");
   const voiceEngines = useMemo(() => speechModels(catalog), [catalog]);
   const ttsModel =
-    voiceEngines.find((model) => model.id === voiceModelId) ??
-    voiceEngines.find((model) => speechRail(model) === "speech") ??
-    voiceEngines[0];
+    voiceEngines.find((model) => model.id === voiceModelId) ?? defaultSpeechModel(voiceEngines);
   const engineName = useCallback(
     (modelId: string | undefined) =>
       voiceEngines.find((model) => model.id === modelId)?.name ?? modelId ?? "",

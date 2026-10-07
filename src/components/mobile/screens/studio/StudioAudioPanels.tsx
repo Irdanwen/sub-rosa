@@ -22,6 +22,7 @@ import {
   AUDIO_TAGS,
   acceptedSpeed,
   acceptedVoice,
+  defaultSpeechModel,
   estimatedSpeechSeconds,
   generateSpeech,
   insertTag,
@@ -40,6 +41,7 @@ import { JobFailureNotice } from "../../../studio/JobFailureNotice";
 import type { StageWait } from "../../../studio/stage/Veil";
 import { ModelSheet } from "../../ModelSheet";
 import {
+  DockSelectChip,
   ModelPickerButton,
   modelSubtitle,
   pickEffective,
@@ -175,8 +177,8 @@ export function SpeechPanel({
   onWorking?: (working: boolean) => void;
 }) {
   const models = useMemo(() => speechModels(catalog), [catalog]);
-  const [modelId, setModelId] = useState(models[0]?.id ?? "");
-  const model = models.find((entry) => entry.id === modelId) ?? models[0];
+  const [modelId, setModelId] = useState("");
+  const model = models.find((entry) => entry.id === modelId) ?? defaultSpeechModel(models);
   const caps = useMemo(() => speechCapabilities(model), [model]);
   const [voice, setVoice] = useState("");
   const listedVoice = pickEffective(caps.voices, voice) || caps.defaultVoice || "";
@@ -238,13 +240,14 @@ export function SpeechPanel({
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const input = text.trim().slice(0, caps.inputLimit);
-  const cost = model
-    ? estimateCostCredits(model, {
-        characters: input.length,
-        durationSeconds: estimatedSpeechSeconds(input.length),
-        multiplier: catalog.priceMultiplier,
-      })
-    : undefined;
+  const cost =
+    model && input
+      ? estimateCostCredits(model, {
+          characters: input.length,
+          durationSeconds: estimatedSpeechSeconds(input.length),
+          multiplier: catalog.priceMultiplier,
+        })
+      : undefined;
 
   const generate = useCallback(async () => {
     if (!model || !input || working) return;
@@ -422,20 +425,19 @@ export function SpeechPanel({
                 {t("Cancel")}
               </button>
             ) : caps.audioTags && !working ? (
-              AUDIO_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  className="mobile-chip-button"
-                  onClick={() =>
-                    setText((current) =>
-                      insertTag(current, tag, current.length).text.slice(0, caps.inputLimit),
-                    )
-                  }
-                >
-                  {tag}
-                </button>
-              ))
+              // One chip, so the send button and the price keep their place:
+              // six tags in the row pushed both off the screen.
+              <DockSelectChip
+                label={t("Expression")}
+                value=""
+                options={[...AUDIO_TAGS]}
+                format={(option) => option || t("Expression")}
+                onChange={(tag) =>
+                  setText((current) =>
+                    insertTag(current, tag, current.length).text.slice(0, caps.inputLimit),
+                  )
+                }
+              />
             ) : undefined
           }
           blocker={

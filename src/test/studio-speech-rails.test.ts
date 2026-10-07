@@ -3,10 +3,11 @@
 // Models come from the captured catalog (fixtures/audio-catalog.ts).
 
 import { describe, expect, it } from "vitest";
-import { estimateCostCredits } from "../lib/studio/catalog";
+import { estimateCostCredits, speechModels } from "../lib/studio/catalog";
 import {
   acceptedSpeed,
   acceptedVoice,
+  defaultSpeechModel,
   insertTag,
   isProviderVoiceId,
   queuedSpeechJob,
@@ -122,5 +123,20 @@ describe("the price of a narration", () => {
     expect(
       estimateCostCredits(priced({ input: { usd: 3.5 } }, "tts"), { characters: 100_000 }),
     ).toBe(35);
+  });
+});
+
+describe("the engine a speech surface opens on", () => {
+  it("is the cheapest one-call engine, never the first name in the alphabet", () => {
+    // Alphabetically the panel would open on Chatterbox HD (or, with ids for
+    // names, on a queued ElevenLabs engine): nobody's choice either way.
+    const models = speechModels(audioCatalog);
+    expect(models[0].id).not.toBe("tts-kokoro");
+    expect(defaultSpeechModel(models)?.id).toBe("tts-kokoro");
+  });
+
+  it("falls back to a queued engine when the account has no other", () => {
+    const queued = speechModels(audioCatalog).filter((model) => model.mediaType === "music");
+    expect(defaultSpeechModel(queued)?.id).toBe(queued[0].id);
   });
 });

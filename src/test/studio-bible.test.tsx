@@ -16,6 +16,8 @@ const hoisted = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: hoisted.invoke }));
+// The bible watches its queued auditions (durable speech jobs).
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => undefined) }));
 vi.mock("../lib/studio/generate-image", () => ({ generateImages: hoisted.generateImages }));
 vi.mock("../lib/artifact-media", () => ({ artifactDataUrl: hoisted.artifactDataUrl }));
 vi.mock("../lib/studio/artifacts", async (importOriginal) => ({
