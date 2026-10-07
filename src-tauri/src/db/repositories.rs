@@ -13,7 +13,7 @@ use sqlx::query::query;
 use sqlx::row::Row;
 use sqlx_sqlite::SqlitePool;
 use uuid::Uuid;
-mod conversations;
+pub mod conversations;
 mod memories;
 pub mod passages;
 const DICTATION_HISTORY_RETENTION_DAYS: i64 = 7;

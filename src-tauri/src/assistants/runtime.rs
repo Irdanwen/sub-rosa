@@ -394,6 +394,7 @@ fn schedule(
                 task_id,
                 model: None,
                 attachments,
+                reasoning_effort: None,
             },
             claim,
         )
@@ -666,6 +667,8 @@ mod tests {
             model_sets: vec![],
             traits: vec![],
             supports_vision: vision,
+            supports_reasoning_effort: false,
+            context_tokens: None,
             pricing: None,
             cost_credits: None,
         }

@@ -1538,6 +1538,67 @@
   transform: scale(0.96);
 }
 
+/* Under a reply (copy, regenerate, branch) or a question (edit). */
+.mobile-chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.mobile-chat-actions .mobile-chat-copy {
+  margin-top: 0;
+}
+
+.mobile-chat-actions[data-role="user"] {
+  justify-content: flex-end;
+}
+
+/* What the composer is doing instead of a new message: editing one. */
+.mobile-chat-editing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-1) var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-chat-editing-cancel {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+}
+
+/* The reasoning effort row in the chat's model sheet. */
+.mobile-effort {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--sp-1);
+  margin: 0 0 var(--sp-2);
+}
+
+.mobile-effort-label {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-effort-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
 .mobile-chat-composer {
   display: flex;
   align-items: flex-end;

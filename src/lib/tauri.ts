@@ -1203,7 +1203,12 @@ export async function retryAgentTask(taskId: string) {
 /** Duplicate a mobile (agent-lite) chat onto another model: a new task with the
  * same transcript, bound to the chosen model, so the conversation can branch
  * onto a different model while the original stays untouched. */
-export async function forkAgentTask(input: { sourceTaskId: string; model?: string }) {
+export async function forkAgentTask(input: {
+  sourceTaskId: string;
+  model?: string;
+  /** Branch at this message, keeping it and everything before it. */
+  upToMessageId?: string;
+}) {
   return invoke<AgentTaskDto>("fork_agent_task", { request: input });
 }
 
@@ -2367,13 +2372,7 @@ export type AgentLiteAttachment = {
   data: string;
 };
 
-export async function agentLiteRun(
-  taskId: string,
-  model?: string,
-  attachments?: AgentLiteAttachment[],
-) {
-  return invoke<AgentTaskDto>("agent_lite_run", { request: { taskId, model, attachments } });
-}
+export { agentLiteRun } from "./agent-lite-controls";
 
 /** Mobile only: save a Studio artifact to the system photo library. */
 export async function saveToPhotos(path: string, kind: "image" | "video") {

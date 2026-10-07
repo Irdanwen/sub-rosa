@@ -5,7 +5,7 @@ import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconStar } from "central-icons/IconStar";
 import { IconStar as IconStarFilled } from "central-icons-filled/IconStar";
-import { useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { hapticSelection } from "../../lib/haptics";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
@@ -79,6 +79,9 @@ type ModelSheetProps = {
   /** The entry this surface recommends: listed first, above favorites, while
    * nothing is searched. Its row should say why (a "Recommended" tag). */
   pinnedId?: string;
+  /** A setting of the selected model, shown above the list (the chat's
+   * reasoning effort). */
+  extra?: ReactNode;
 };
 
 /**
@@ -99,6 +102,7 @@ export function ModelSheet({
   initialFilter,
   filtersLabel,
   pinnedId,
+  extra,
 }: ModelSheetProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState(() =>
@@ -288,6 +292,7 @@ export function ModelSheet({
             ))}
           </fieldset>
         ) : null}
+        {extra}
         <ul className="mobile-sheet-list">
           {error ? <li className="mobile-sheet-error">{error}</li> : null}
           {defaultOption && !query ? (

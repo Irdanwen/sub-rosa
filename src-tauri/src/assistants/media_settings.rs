@@ -332,6 +332,8 @@ mod tests {
             model_sets: Vec::new(),
             traits: Vec::new(),
             supports_vision: false,
+            supports_reasoning_effort: false,
+            context_tokens: None,
             pricing: None,
             cost_credits: None,
         }

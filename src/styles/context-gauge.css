@@ -1,0 +1,101 @@
+/* The context gauge (src/components/chat/ContextGauge.tsx). Shell-neutral:
+ * it sits in the phone composer and can sit in the desktop one. */
+
+.context-gauge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.context-gauge-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.context-gauge-ring svg {
+  /* The fill starts at twelve o'clock, as a clock hand does. */
+  transform: rotate(-90deg);
+}
+
+.context-gauge-track,
+.context-gauge-fill {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.context-gauge-track {
+  stroke: var(--border);
+}
+
+.context-gauge-fill {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--t-med) var(--ease-out);
+}
+
+.context-gauge[data-tone="warning"] .context-gauge-ring {
+  color: var(--warning);
+}
+
+.context-gauge-detail {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  /* Anchored to the ring's start: the gauge sits toward the start of a
+   * composer row, where a centred bubble would leave the screen. */
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: max-content;
+  max-width: min(260px, 70vw);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-md);
+  color: var(--popover-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+}
+
+/* Bridges the gap down to the ring, so a pointer moving up into the bubble
+ * does not leave the gauge on the way and close it. */
+.context-gauge-detail::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: var(--sp-2);
+}
+
+.context-gauge-warning {
+  color: var(--warning);
+}
+
+.context-gauge-action {
+  align-self: flex-start;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-gauge-fill {
+    transition: none;
+  }
+}

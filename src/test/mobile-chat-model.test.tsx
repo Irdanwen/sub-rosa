@@ -231,7 +231,12 @@ describe("mobile chat model persistence", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
     await waitFor(() =>
-      expect(tauriMocks.agentLiteRun).toHaveBeenLastCalledWith("task-1", "qwen3-4b", undefined),
+      expect(tauriMocks.agentLiteRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "qwen3-4b",
+        undefined,
+        undefined,
+      ),
     );
   });
 
@@ -357,7 +362,10 @@ describe("mobile chat model persistence", () => {
     render(<AgentSessionScreen sessionId="task-1" />);
     await screen.findByText("Thinking");
     await user.type(screen.getByPlaceholderText("Ask anything, privately…"), "Next question");
-    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    // The round button is the stop square while the reply is written, so
+    // nothing can be sent over the running turn.
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Stop reply" })).toBeEnabled();
     expect(tauriMocks.agentLiteRun).not.toHaveBeenCalled();
   });
 
