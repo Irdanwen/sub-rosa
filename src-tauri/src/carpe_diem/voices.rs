@@ -156,6 +156,10 @@ async fn upload(
         .map_err(|error| AppError::new("cloned_voice_upload", error.to_string()))?;
     let form = reqwest::multipart::Form::new()
         .text("model", model.to_string())
+        // The person confirmed the sample is their voice, or one they may use,
+        // when the voice was made (`consented_at`); every upload of it says so.
+        // The operator requires it once VOICE_CLONING_CONSENT_REQUIRED is on.
+        .text("consent", "true")
         .part("file", part);
     let url = format!(
         "{}/audio/voices",
@@ -200,10 +204,7 @@ async fn upload(
             "cloned voice upload refused ({status}): {}",
             body["error"].as_str().unwrap_or("")
         );
-        return Err(AppError::new(
-            "cloned_voice_upload",
-            "The voice service refused this sample. Try a clear recording of one speaker, without music.",
-        ));
+        return Err(upload_refusal(status.as_u16()));
     }
     let handle = body["id"]
         .as_str()
@@ -216,6 +217,31 @@ async fn upload(
         .map(|at| at.with_timezone(&chrono::Utc))
         .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::days(retention_days));
     Ok((handle, expires_at.to_rfc3339()))
+}
+
+/// The sentence a refused upload reads as. The operator's reasons that a
+/// person can act on get their own (Carpe-diem-#451 follow-up: a wallet holds
+/// at most 20 active voices, uploads are rate limited, and need a balance);
+/// anything else is about the sample.
+fn upload_refusal(status: u16) -> AppError {
+    match status {
+        409 => AppError::new(
+            "cloned_voice_upload",
+            "You have reached the limit of voices. Delete one to make another.",
+        ),
+        429 => AppError::new(
+            "cloned_voice_upload",
+            "Too many samples sent for now. Try again later.",
+        ),
+        402 => AppError::new(
+            "cloned_voice_upload",
+            "Add credits to make a voice. Making one costs nothing.",
+        ),
+        _ => AppError::new(
+            "cloned_voice_upload",
+            "The voice service refused this sample. Try a clear recording of one speaker, without music.",
+        ),
+    }
 }
 
 /// Keep the sample under the samples directory: as it came when the provider
@@ -450,6 +476,14 @@ pub async fn cloned_voice_delete(app: AppHandle, id: String) -> Result<(), AppEr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refused_upload_says_what_the_person_can_do() {
+        assert!(upload_refusal(409).message.contains("Delete one"));
+        assert!(upload_refusal(429).message.contains("Try again later"));
+        assert!(upload_refusal(402).message.contains("Add credits"));
+        assert!(upload_refusal(400).message.contains("refused this sample"));
+    }
 
     #[test]
     fn a_handle_is_reused_only_while_it_has_a_day_left() {
