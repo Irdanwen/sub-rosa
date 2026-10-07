@@ -25,6 +25,8 @@ import {
   saveArtifactFromBase64,
 } from "../../lib/studio/artifacts";
 import { useMediaJobQueue } from "../../lib/studio/async-job";
+import { clonedVoiceId } from "../../lib/studio/cloned-voices";
+import { useClonedVoices } from "../../lib/studio/use-cloned-voices";
 import {
   addBibleRef,
   BIBLE_KIND_LABELS,
@@ -138,6 +140,16 @@ export function BibleStudio({
   const voiceEngines = useMemo(() => speechModels(catalog), [catalog]);
   const ttsModel =
     voiceEngines.find((model) => model.id === voiceModelId) ?? defaultSpeechModel(voiceEngines);
+  // The voices the person made, on an engine that clones (ADR-0077): they
+  // audition first, and a kept one is shown by the name it was given.
+  const cloned = useClonedVoices(ttsModel?.id, speechCapabilities(ttsModel).cloning !== undefined);
+  const voiceName = useCallback(
+    (voice: string) => {
+      const id = clonedVoiceId(voice);
+      return id ? (cloned.voices.find((entry) => entry.id === id)?.name ?? t("Your voice")) : voice;
+    },
+    [cloned.voices],
+  );
   const engineName = useCallback(
     (modelId: string | undefined) =>
       voiceEngines.find((model) => model.id === modelId)?.name ?? modelId ?? "",
@@ -269,7 +281,10 @@ export function BibleStudio({
   const audition = useCallback(
     async (entry: BibleEntry) => {
       const caps = speechCapabilities(ttsModel);
-      const voices = caps.voices.filter((voice) => voice !== "Describe in prompt");
+      const voices = [
+        ...cloned.options.map((option) => option.value),
+        ...caps.voices.filter((voice) => voice !== "Describe in prompt"),
+      ];
       if (!ttsModel || voices.length === 0) {
         setError(t("No voices are available on this account."));
         return;
@@ -281,7 +296,7 @@ export function BibleStudio({
         setAuditions([]);
         setError(undefined);
         for (const voice of voices.slice(0, AUDITION_COUNT)) {
-          const prompt = `${entry.name} audition, ${voice}`;
+          const prompt = `${entry.name} audition, ${voiceName(voice)}`;
           queuedAuditions.current.set(prompt, { entryId: entry.id, voice });
           const job = queuedSpeechJob(catalog, caps, {
             model: ttsModel,
@@ -311,7 +326,7 @@ export function BibleStudio({
           const artifact = await saveArtifactFromBase64(base64, caps.defaultFormat, {
             kind: "speech",
             model: ttsModel.id,
-            prompt: `${entry.name} audition, ${voice}`,
+            prompt: `${entry.name} audition, ${voiceName(voice)}`,
           });
           results.push({ voice, artifact });
           setAuditions([...results]);
@@ -327,17 +342,17 @@ export function BibleStudio({
         setAuditioning(undefined);
       }
     },
-    [ttsModel, reload, catalog, auditionQueue],
+    [ttsModel, reload, catalog, auditionQueue, cloned.options, voiceName],
   );
 
   const keepVoice = useCallback(
     async (entryId: string, artifact: StudioArtifact, voice: string) => {
       await addBibleRef({ entryId, artifactId: artifact.id, role: "voice", label: voice });
       setAuditions([]);
-      setNotice(t("Kept {voice}.", { voice }));
+      setNotice(t("Kept {voice}.", { voice: voiceName(voice) }));
       await reload();
     },
-    [reload],
+    [reload, voiceName],
   );
 
   const controls = (
@@ -518,7 +533,7 @@ export function BibleStudio({
                         <div key={take.artifact.id} className="bible-audition">
                           <span>
                             {t("{voice} on {engine}", {
-                              voice: take.voice,
+                              voice: voiceName(take.voice),
                               engine: engineName(take.artifact.model),
                             })}
                           </span>
@@ -552,7 +567,7 @@ export function BibleStudio({
                             {reference.role === "voice" && artifact
                               ? t("{role}: {voice} on {engine}", {
                                   role: BIBLE_ROLE_LABELS[reference.role],
-                                  voice: reference.label,
+                                  voice: voiceName(reference.label),
                                   engine: engineName(artifact.model),
                                 })
                               : BIBLE_ROLE_LABELS[reference.role]}

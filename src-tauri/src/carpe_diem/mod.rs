@@ -8,7 +8,8 @@
 //! proxy ([`media`]) behind the Studio views, the durable runner
 //! ([`jobs`]) that carries asynchronous generations through a suspension, and
 //! the tracker a user's report reaches ([`issue_reports`]), and the native
-//! merge of a zone retouch back into its source ([`zone`]).
+//! merge of a zone retouch back into its source ([`zone`]), and the voices a
+//! person clones from a sample of their own ([`voices`], ADR-0077).
 
 mod artifact_format;
 pub mod billing;
@@ -23,5 +24,6 @@ pub mod media_protocol;
 pub mod settings;
 pub mod sidecar;
 pub mod stream_usage;
+pub mod voices;
 pub mod workflow_runs;
 pub mod zone;

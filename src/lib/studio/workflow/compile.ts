@@ -54,6 +54,7 @@ import {
   videoDirection,
 } from "../catalog";
 import { maxVideoReferences, takesReferenceAudio } from "../seedance";
+import { clonedVoiceId } from "../cloned-voices";
 import { isProviderVoiceId, speechCapabilities } from "../speech";
 import { effectiveVideoConstraints } from "../model-constraints";
 import type { MediaCatalog, MediaModel } from "../types";
@@ -731,7 +732,10 @@ export function castVoice(
   const model = engine ?? fallback;
   const caps = speechCapabilities(model);
   const fits =
-    caps.voices.includes(donor.label) || (caps.customVoiceId && isProviderVoiceId(donor.label));
+    caps.voices.includes(donor.label) ||
+    (caps.customVoiceId && isProviderVoiceId(donor.label)) ||
+    // A cloned voice, cast on the engine that clones (ADR-0077).
+    (caps.cloning !== undefined && clonedVoiceId(donor.label) !== undefined);
   return {
     model,
     voice: fits ? donor.label : undefined,

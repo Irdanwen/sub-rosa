@@ -1248,7 +1248,7 @@ fn host_of(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
-fn media_http_client() -> &'static reqwest::Client {
+pub(super) fn media_http_client() -> &'static reqwest::Client {
     MEDIA_HTTP_CLIENT.get_or_init(|| {
         crate::http_client::build(
             crate::http_client::credentialed(MEDIA_HTTP_TIMEOUT).user_agent("sub-rosa-studio/0.1"),

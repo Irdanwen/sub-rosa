@@ -17,8 +17,14 @@ import { MediaError } from "../client";
 import { judge, type JudgeVerdict, verdictLine } from "../judge";
 import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
 import { fetchMediaCatalog, musicCapabilities, musicQueueBody, speechRail } from "../catalog";
-import { acceptedFormat, queuedSpeechJob, speechCapabilities } from "../speech";
-import { mediaBinary, mediaJson } from "../client";
+import {
+  acceptedFormat,
+  generateSpeech,
+  queuedSpeechJob,
+  type SpeechFormat,
+  speechCapabilities,
+} from "../speech";
+import { mediaJson } from "../client";
 import { composeImages } from "../edit-image";
 import { generateImages } from "../generate-image";
 import { extractFrameAt, extractHandoffFrame, loadVideoElement } from "../frames";
@@ -758,15 +764,16 @@ async function executeNode(
       const format = entry
         ? acceptedFormat(speechCapabilities(entry), stringParam(params, "responseFormat") as never)
         : (stringParam(params, "responseFormat") ?? "mp3");
-      const body: Record<string, unknown> = {
+      // Through the one speech client, so a cloned voice (`cloned:<id>`,
+      // ADR-0077) is resolved to its handle at the moment of speaking.
+      const { base64, contentType } = await generateSpeech({
         model,
         input,
+        voice: stringParam(params, "voice") || undefined,
         speed: numberParam(params, "speed") ?? 1,
-        response_format: format,
-      };
-      const voice = stringParam(params, "voice");
-      if (voice) body.voice = voice;
-      const { base64, contentType } = await mediaBinary("/audio/speech", body, signal);
+        format: format as SpeechFormat,
+        signal,
+      });
       const mimeType = contentType ?? TTS_MIME[format] ?? "audio/mpeg";
       const saved = storage
         ? await storage.save({ base64 }, audioExtension(mimeType), {
