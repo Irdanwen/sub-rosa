@@ -2684,3 +2684,47 @@
   max-height: 230px;
   object-fit: contain;
 }
+
+/* --- cloned voices (ADR-0077) --------------------------------------------- */
+
+.cloned-voice-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.cloned-voice-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cloned-voice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+}
+
+.cloned-voice-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.cloned-voice-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+}

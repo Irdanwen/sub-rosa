@@ -482,16 +482,16 @@ fn merge_carpe_diem_catalog(
                     .map_or_else(
                         || {
                             (media_type == "tts")
-                                .then(|| spec.and_then(music_spec_constraints))
+                                .then(|| spec.and_then(operator_tts_fallback))
                                 .flatten()
                         },
                         |published| {
-                            // A tts row's formats and cloning live flat in the
-                            // Venice spec; what the operator publishes wins.
+                            // A tts row's formats live flat in the Venice spec;
+                            // what the operator publishes wins.
                             if media_type == "tts" {
                                 Some(merge_missing(
                                     published,
-                                    spec.and_then(music_spec_constraints),
+                                    spec.and_then(operator_tts_fallback),
                                 ))
                             } else {
                                 Some(published)
@@ -580,6 +580,22 @@ const MUSIC_SPEC_METADATA: [&str; 14] = [
     "constraints",
     "model_sets",
 ];
+
+/// What a Carpe Diem tts row borrows from the Venice spec: its formats and
+/// the like, never `voice_cloning`. Cloning needs the operator's own route
+/// (`/v1/audio/voices`), so on this backend only the operator can say a model
+/// clones; borrowing Venice's word would offer a voice that cannot be made
+/// on an operator that predates the route (ADR-0077).
+fn operator_tts_fallback(spec: &serde_json::Value) -> Option<serde_json::Value> {
+    let mut limits = music_spec_constraints(spec)?;
+    if let Some(fields) = limits.as_object_mut() {
+        fields.remove("voice_cloning");
+        if fields.is_empty() {
+            return None;
+        }
+    }
+    Some(limits)
+}
 
 /// `published` with every key of `fallback` it does not already state.
 fn merge_missing(
@@ -1248,7 +1264,7 @@ fn host_of(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
-fn media_http_client() -> &'static reqwest::Client {
+pub(super) fn media_http_client() -> &'static reqwest::Client {
     MEDIA_HTTP_CLIENT.get_or_init(|| {
         crate::http_client::build(
             crate::http_client::credentialed(MEDIA_HTTP_TIMEOUT).user_agent("sub-rosa-studio/0.1"),
@@ -1362,6 +1378,16 @@ mod tests {
         assert_eq!(chatterbox["voice_cloning"]["min_sample_seconds"], json!(5));
         assert_eq!(by_id("tts-kokoro")["default_format"], json!("mp3"));
         assert!(by_id("tts-kokoro").get("pricing").is_none());
+
+        // An operator that does not publish cloning (one that predates its
+        // /v1/audio/voices route) never borrows Venice's word for it.
+        let older = json!({"data": [
+            {"id": "tts-chatterbox-hd", "carpe_diem_type": "tts", "voices": ["Aurora"], "constraints": null}
+        ]});
+        let models = merge_carpe_diem_catalog(&older, Some(&venice), None);
+        let chatterbox = models[0].constraints.clone().unwrap();
+        assert_eq!(chatterbox["supported_formats"], json!(["wav"]));
+        assert!(chatterbox.get("voice_cloning").is_none());
     }
 
     #[test]

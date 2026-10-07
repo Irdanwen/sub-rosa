@@ -6,7 +6,8 @@
 
 import type { StartJobOptions } from "./async-job";
 import { defaultVoice, modelVoices, speechRail, type SpeechRail } from "./catalog";
-import { mediaBinary } from "./client";
+import { MediaError, mediaBinary } from "./client";
+import { clonedVoiceHandle, clonedVoiceId } from "./cloned-voices";
 import { musicPaths, retrieveBody } from "./paths";
 import type { AudioConstraints, MediaCatalog, MediaModel } from "./types";
 
@@ -39,6 +40,20 @@ export async function generateSpeech(
     speed: request.speed ?? SPEECH_SPEED.default,
     response_format: request.format ?? "mp3",
   };
+  // A cloned voice (ADR-0077) is resolved to its handle now, and reminted
+  // once if the backend says the handle is gone (operator restart, retired
+  // provider key): the sample is still on the device.
+  const cloned = clonedVoiceId(request.voice);
+  if (cloned) {
+    body.voice = await clonedVoiceHandle(cloned);
+    try {
+      return await mediaBinary("/audio/speech", body, request.signal);
+    } catch (error) {
+      if (!(error instanceof MediaError) || error.status !== 404) throw error;
+      body.voice = await clonedVoiceHandle(cloned, true);
+      return mediaBinary("/audio/speech", body, request.signal);
+    }
+  }
   if (request.voice) body.voice = request.voice;
   return mediaBinary("/audio/speech", body, request.signal);
 }
@@ -168,6 +183,8 @@ export function acceptedVoice(
   const wanted = voice?.trim();
   if (wanted && caps.voices.includes(wanted)) return wanted;
   if (wanted && caps.customVoiceId && isProviderVoiceId(wanted)) return wanted;
+  // A cloned voice (`cloned:<id>`) on the engine that clones (ADR-0077).
+  if (wanted && caps.cloning && clonedVoiceId(wanted)) return wanted;
   return caps.defaultVoice;
 }
 

@@ -8,7 +8,8 @@
  * Lumen-labs-ch/Carpe-diem-#450, reduced the way the operator reduces a music
  * `model_spec` (everything but the fields that describe the model). Names and
  * `pricing` come from Venice's `model_spec`, as the Rust merge adds them; so do
- * the tts rows' formats and `voice_cloning` (flat in the Venice spec).
+ * the tts rows' formats (flat in the Venice spec); `voice_cloning` is as the
+ * operator publishes it from Carpe-diem-#451.
  *
  * Why captured rather than written: the music queue carries speech and sound
  * effects as well as music, and every wrong rule this surface had (MiniMax 2.5

@@ -85,6 +85,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0074](adr/0074-project-prompts-are-blocks-rendered-per-family.md) — a film project's prompts follow the prompt bible's blocks, from one shared vocabulary and per-family profiles (labels, budget, timing, sound, languages); a line is spoken by the model only in a language its family speaks, otherwise dubbed and silenced; one project shot is one continuous take
 - [adr/0075](adr/0075-a-comfyui-workflow-is-translated-never-executed.md) — a ComfyUI file is translated into a native workflow (hosted models only) with a report of what changed, never executed; the workflow library lives in SQLite and a card shows the workflow's last real result
 - [adr/0076](adr/0076-an-audio-model-is-filed-by-what-it-does-not-by-its-endpoint.md) — an audio model is filed as speech, music or effects from what it publishes, not from its catalog type (which names the endpoint); a speaking model on the music queue sits with the voices, and a queue request carries only the keys the model publishes
+- [adr/0077](adr/0077-a-cloned-voice-keeps-its-sample-and-remints-its-handle.md) — a cloned voice is the sample kept on the device (never synced) with a consent; the provider handle, which lives seven days at most, is a cache reminted from the sample before it expires or when the backend says it is gone
 
 ## Enforceable rules (spec/)
 

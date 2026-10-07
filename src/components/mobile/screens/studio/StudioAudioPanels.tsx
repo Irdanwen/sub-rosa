@@ -41,6 +41,9 @@ import { hapticNotify } from "../../../../lib/haptics";
 import { JobFailureNotice } from "../../../studio/JobFailureNotice";
 import type { StageWait } from "../../../studio/stage/Veil";
 import { ModelSheet } from "../../ModelSheet";
+import { ClonedVoiceDialog } from "../../../studio/ClonedVoiceDialog";
+import { clonedVoiceRef } from "../../../../lib/studio/cloned-voices";
+import { useClonedVoices } from "../../../../lib/studio/use-cloned-voices";
 import {
   DockSelectChip,
   ModelPickerButton,
@@ -182,7 +185,26 @@ export function SpeechPanel({
   const model = models.find((entry) => entry.id === modelId) ?? defaultSpeechModel(models);
   const caps = useMemo(() => speechCapabilities(model), [model]);
   const [voice, setVoice] = useState("");
-  const listedVoice = pickEffective(caps.voices, voice) || caps.defaultVoice || "";
+  // Voices the person made from a sample, on the engine that clones (ADR-0077).
+  const cloned = useClonedVoices(model?.id, caps.cloning !== undefined);
+  const [voicesOpen, setVoicesOpen] = useState(false);
+  const voiceEntries = [
+    ...cloned.options.map((option) => ({
+      id: option.value,
+      name: option.label,
+      subtitle: t("Your voice"),
+    })),
+    ...caps.voices.map((entry) => ({ id: entry, name: entry, subtitle: "" })),
+  ];
+  const listedVoice =
+    pickEffective(
+      voiceEntries.map((entry) => entry.id),
+      voice,
+    ) ||
+    caps.defaultVoice ||
+    "";
+  const listedVoiceName =
+    voiceEntries.find((entry) => entry.id === listedVoice)?.name ?? listedVoice;
   const [voiceId, setVoiceId] = useState("");
   const effectiveVoice = acceptedVoice(
     caps,
@@ -342,12 +364,35 @@ export function SpeechPanel({
         value={model?.name ?? ""}
         onOpen={() => setPickerOpen(true)}
       />
-      {caps.voices.length > 0 ? (
+      {voiceEntries.length > 0 ? (
         <ModelPickerButton
           label={t("Voice")}
-          value={listedVoice}
+          value={listedVoiceName}
           onOpen={() => setVoicePickerOpen(true)}
         />
+      ) : null}
+      {caps.cloning && model ? (
+        <>
+          <ModelPickerButton
+            label={t("Your voices")}
+            value={cloned.voices.length > 0 ? t("Manage your voices") : t("Make your voice")}
+            onOpen={() => setVoicesOpen(true)}
+          />
+          <ClonedVoiceDialog
+            open={voicesOpen}
+            onClose={() => setVoicesOpen(false)}
+            model={model}
+            cloning={caps.cloning}
+            voices={cloned.voices}
+            onChanged={(created) => {
+              void cloned.reload();
+              if (created) {
+                setVoice(clonedVoiceRef(created.id));
+                setVoicesOpen(false);
+              }
+            }}
+          />
+        </>
       ) : null}
       {caps.customVoiceId ? (
         <div className="mobile-studio-field">
@@ -474,7 +519,7 @@ export function SpeechPanel({
       {voicePickerOpen ? (
         <ModelSheet
           title={t("Voice")}
-          entries={caps.voices.map((entry) => ({ id: entry, name: entry, subtitle: "" }))}
+          entries={voiceEntries}
           selectedId={listedVoice}
           onSelect={(id) => {
             if (id) setVoice(id);

@@ -9,6 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { registerDownloadedArtifact, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
 import { useMediaJob } from "../../lib/studio/async-job";
 import { estimateCostCredits, speechModels } from "../../lib/studio/catalog";
+import { clonedVoiceRef } from "../../lib/studio/cloned-voices";
+import { useClonedVoices } from "../../lib/studio/use-cloned-voices";
 import { estimateRenderMs, renderEtaKey } from "../../lib/studio/render-eta";
 import {
   AUDIO_TAGS,
@@ -29,6 +31,7 @@ import type { MediaCatalog } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
+import { ClonedVoiceDialog } from "./ClonedVoiceDialog";
 import { Darkroom } from "./Darkroom";
 import { GalleryStrip } from "./GalleryStrip";
 import { JobFailureNotice } from "./JobFailureNotice";
@@ -50,7 +53,20 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
 
   const [voice, setVoice] = useState("");
   const [voiceId, setVoiceId] = useState("");
-  const listedVoice = effectiveOption(caps.voices, voice) || caps.defaultVoice || "";
+  // Voices the person made from a sample, on the engine that clones (ADR-0077).
+  const cloned = useClonedVoices(model?.id, caps.cloning !== undefined);
+  const [voicesOpen, setVoicesOpen] = useState(false);
+  const voiceOptions = [
+    ...cloned.options,
+    ...caps.voices.map((entry) => ({ value: entry, label: entry })),
+  ];
+  const listedVoice =
+    effectiveOption(
+      voiceOptions.map((option) => option.value),
+      voice,
+    ) ||
+    caps.defaultVoice ||
+    "";
   // A provider Voice ID, where the model takes one, wins over the list.
   const effectiveVoice = acceptedVoice(
     caps,
@@ -171,14 +187,35 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
           ariaLabel={t("Speech model")}
         />
       </StudioField>
-      {caps.voices.length > 0 ? (
+      {voiceOptions.length > 0 ? (
         <StudioField label={t("Voice")}>
           <Select
             value={listedVoice || null}
             placeholder={t("Choose a voice")}
             ariaLabel={t("Voice")}
             onChange={setVoice}
-            options={caps.voices.map((entry) => ({ value: entry, label: entry }))}
+            options={voiceOptions}
+          />
+        </StudioField>
+      ) : null}
+      {caps.cloning && model ? (
+        <StudioField label={t("Your voices")} hint={t("Made from a sample of your own voice")}>
+          <button type="button" className="btn btn-secondary" onClick={() => setVoicesOpen(true)}>
+            {cloned.voices.length > 0 ? t("Manage your voices") : t("Make your voice")}
+          </button>
+          <ClonedVoiceDialog
+            open={voicesOpen}
+            onClose={() => setVoicesOpen(false)}
+            model={model}
+            cloning={caps.cloning}
+            voices={cloned.voices}
+            onChanged={(created) => {
+              void cloned.reload();
+              if (created) {
+                setVoice(clonedVoiceRef(created.id));
+                setVoicesOpen(false);
+              }
+            }}
           />
         </StudioField>
       ) : null}

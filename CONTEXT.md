@@ -673,6 +673,14 @@ how a speaking model is reached - **speech** (`/audio/speech`, one call) or
 **queue** (the music queue, a durable job). A property of the model, not of
 its role.
 
+**Cloned voice**:
+a voice a person makes from a short sample of their own voice, on the engine
+that clones ([ADR-0077](docs/adr/0077-a-cloned-voice-keeps-its-sample-and-remints-its-handle.md)).
+It is the sample kept on the device and a consent; the provider's handle is
+only a cache of an upload of it. Referred to as `cloned:<id>` wherever a voice
+is stored.
+_Avoid_: calling the handle "the voice"; it expires, the voice does not.
+
 **Ducking**:
 writing the music down under the dialogue, as gain automation computed from the
 dialogue windows. Not a compressor: the windows are known before anything
