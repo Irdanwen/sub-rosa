@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { messageFromError } from "../../../lib/errors";
 import {
   type MemoryDto,
-  type MemorySettings,
   memoryAdd,
   memoryClear,
   memoryDelete,
@@ -11,6 +10,7 @@ import {
   memorySetSettings,
   memoryUpdate,
 } from "../../../lib/tauri";
+import type { MemorySettingsWithHistory } from "../../../lib/personalization";
 import { SettingsActionRow, SettingsGroup, SettingsRow, SettingsToggleRow } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
@@ -26,7 +26,7 @@ import { ReflexJournalGroup } from "../../settings/ReflexJournal";
  */
 export function MemoryScreen({ onBack }: { onBack: () => void }) {
   const [items, setItems] = useState<MemoryDto[]>([]);
-  const [settings, setSettings] = useState<MemorySettings | null>(null);
+  const [settings, setSettings] = useState<MemorySettingsWithHistory | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -46,7 +46,7 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
-  async function updateSettings(next: MemorySettings) {
+  async function updateSettings(next: MemorySettingsWithHistory) {
     try {
       setSettings(await memorySetSettings(next));
       setError(null);
@@ -129,6 +129,20 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
             disabled={settings === null || !enabled}
             onChange={(next) =>
               void updateSettings({ enabled: settings?.enabled ?? true, autoExtract: next })
+            }
+          />
+          <SettingsToggleRow
+            label={t("Reference past chats")}
+            detail={t("Look through your other chats when they help")}
+            checked={enabled && settings?.referenceChatHistory !== false}
+            disabled={settings === null || !enabled}
+            onChange={(next) =>
+              void updateSettings({
+                enabled: settings?.enabled ?? true,
+                autoExtract: settings?.autoExtract ?? true,
+                extractionModel: settings?.extractionModel,
+                referenceChatHistory: next,
+              })
             }
           />
         </SettingsGroup>

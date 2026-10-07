@@ -403,6 +403,24 @@ content.
 _Avoid_: history, context (unqualified), Hermes memory (that is the runtime's
 folder, not this store).
 
+**Personalization**:
+What the user tells Sub Rosa about themselves, how it should respond, and a
+**personality** preset, rendered as one block into the default chat on both
+shells and never into a custom assistant (ADR-0081). Kept on the device.
+_Avoid_: custom instructions (the vendor's name), system prompt (that is the
+whole prompt, of which this is one block), profile.
+
+**Past chats (reference chat history)**:
+What was said in the user's other general chats, read from
+`agent_messages_fts` when a turn needs it, as excerpts or through
+`search_past_chats` (ADR-0081). Not memory: nothing is extracted or stored.
+_Avoid_: chat memory, history (unqualified).
+
+**Memory sources**:
+The memories a reply was given, recorded per phone turn (by the user message
+that opened it) and per desktop session (ADR-0081).
+_Avoid_: citations (those point at notes and pages).
+
 ### The council (fork)
 
 **Council**:

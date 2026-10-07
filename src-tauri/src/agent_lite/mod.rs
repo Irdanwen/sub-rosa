@@ -11,6 +11,7 @@
 //! - `read_note`         — one note in full, note body plus transcript;
 //! - `list_recent_notes` — the newest notes, for questions about a period;
 //! - `search_memories`   — hybrid recall over remembered facts (memory on only);
+//! - `search_past_chats` — the user's other chats, by word (past chats on only);
 //! - `web_search`        — the June API `/v1/web/search` passthrough;
 //! - `summarize_note`    — starts a long-form reading of a recording (ADR-0027);
 //! - `import_link`       — starts fetching a link into a note (ADR-0028);
@@ -399,8 +400,7 @@ async fn run_turn(
         .as_ref()
         .map_or(true, |snapshot| snapshot.definition.allow_memory);
     let memory_block = if memory_allowed {
-        let latest = task.messages.last().map_or("", |m| m.content.as_str());
-        crate::memory::prompt_block_for_turn(repos, latest).await
+        crate::memory::sources::block_for_turn(repos, &task).await
     } else {
         None
     };
@@ -432,7 +432,12 @@ async fn run_turn(
         Some(snapshot) => {
             crate::assistants::runtime::system_prompt(snapshot, memory_block.as_deref())
         }
-        None => build_system_prompt(memory_block.as_deref()),
+        // Personalization and past chats reach the default chat only (ADR-0081).
+        None => build_system_prompt(
+            crate::personalization::default_chat_context(repos, &task, memory_block.as_deref())
+                .await
+                .as_deref(),
+        ),
     };
     let mut offered_tools = tool_definitions(crate::memory::settings().enabled);
     if let Some(tools) = offered_tools.as_array_mut() {
@@ -1226,6 +1231,10 @@ async fn execute_tool(
                 Err(error) => format!("Memory search failed: {}", error.message),
             }
         }
+        "search_past_chats" => {
+            emit_status(app, task_id, "searching-memory", Some(query.clone()));
+            crate::memory::past_chats::run_tool(repos, task_id, &query).await
+        }
         "web_search" => {
             emit_status(app, task_id, "searching-web", Some(query.clone()));
             // The June API web handler requires a non-empty `requestId` (it
@@ -1786,6 +1795,7 @@ fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
                 }
             }
         }));
+        tools.extend(crate::memory::past_chats::tool_definition());
     }
     serde_json::Value::Array(tools)
 }

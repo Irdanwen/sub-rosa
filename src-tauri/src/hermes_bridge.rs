@@ -1167,7 +1167,7 @@ async fn start_hermes_bridge_inner(
     } else {
         sandboxed
     };
-    let user_memory = crate::memory::prompt_block_for_app(app).await;
+    let user_memory = crate::personalization::soul_section_for_app(app).await;
     sync_june_soul(
         &hermes_home,
         sandbox_available,
@@ -7610,11 +7610,7 @@ fn render_mcp_servers_config(
 }
 
 fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
-    let memory_arg = if config.memory_enabled {
-        String::new()
-    } else {
-        "      - \"--memory=off\"\n".to_string()
-    };
+    let memory_arg = crate::memory::past_chats::context_mcp_args(config.memory_enabled);
     format!(
         r#"  {server_name}:
     enabled: true
@@ -7765,8 +7761,8 @@ fn merge_external_skill_dirs(user_dirs: Vec<PathBuf>, bundled: Option<PathBuf>) 
 /// missing or the escape-hatch env var disabled it, so the agent never
 /// claims a protection that isn't enforced).
 ///
-/// `user_memory` is the cross-conversation facts block from
-/// `memory::prompt_block_for_app` (None when memory is disabled or empty).
+/// `user_memory` is the personal section (personalization, memory facts,
+/// past chats) from `personalization::soul_section_for_app` (ADR-0081).
 /// SOUL.md is written at spawn time, so facts extracted mid-session appear
 /// at the next runtime start; on-demand recall covers the gap through the
 /// `june_context` MCP.

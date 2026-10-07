@@ -87,6 +87,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0076](adr/0076-an-audio-model-is-filed-by-what-it-does-not-by-its-endpoint.md) — an audio model is filed as speech, music or effects from what it publishes, not from its catalog type (which names the endpoint); a speaking model on the music queue sits with the voices, and a queue request carries only the keys the model publishes
 - [adr/0077](adr/0077-a-cloned-voice-keeps-its-sample-and-remints-its-handle.md) — a cloned voice is the sample kept on the device (never synced) with a consent; the provider handle, which lives seven days at most, is a cache reminted from the sample before it expires or when the backend says it is gone
 - [adr/0078](adr/0078-parity-is-measured-against-the-vendor-grid-not-the-model-name.md) — "no feature behind ChatGPT" is the vendor's personal-plan grid copied into `docs/parity/chatgpt.md`, one status per platform backed by files, checked by `parity-matrix.test.mjs`; capabilities not model names, boundaries closed by explained equivalents, business administration outside
+- [adr/0081](adr/0081-personalization-and-past-chats-ride-the-memory-seams.md) — custom instructions and a personality render one block at the two memory seams (desktop SOUL section spliced in place on save, phone per-turn prompt), never for custom assistants, kept on the device; past chats are read from `agent_messages_fts` when needed (excerpts on the phone, `search_past_chats` on both); a reply records the memories it carried (migration 044)
 
 ## Enforceable rules (spec/)
 

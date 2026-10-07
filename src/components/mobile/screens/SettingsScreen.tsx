@@ -353,6 +353,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         ) : null}
 
         <SettingsGroup>
+          <SettingsLinkRow label={t("Personalization")} onClick={() => onOpen("personalization")} />
           <SettingsLinkRow
             label={t("Memory")}
             value={memorySummary ?? undefined}

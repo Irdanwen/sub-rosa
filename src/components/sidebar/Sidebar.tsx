@@ -8,6 +8,7 @@ import { IconChevronLeftSmall } from "central-icons/IconChevronLeftSmall";
 import { IconAudio } from "central-icons/IconAudio";
 import { IconBox2 } from "central-icons/IconBox2";
 import { IconBookmark } from "central-icons/IconBookmark";
+import { IconPeopleSparkles } from "central-icons/IconPeopleSparkles";
 import { IconCirclesThree } from "central-icons/IconCirclesThree";
 import { IconBrain2 } from "central-icons/IconBrain2";
 import { IconBug } from "central-icons/IconBug";
@@ -240,6 +241,11 @@ export const SETTINGS_SIDEBAR_GROUPS: {
     items: [
       { id: "models", label: t("Models"), icon: <IconBrain2 size={16} /> },
       { id: "agent", label: t("Agent"), icon: <IconRobot2 size={16} /> },
+      {
+        id: "personalization",
+        label: t("Personalization"),
+        icon: <IconPeopleSparkles size={16} />,
+      },
       { id: "memory", label: t("Memory"), icon: <IconBookmark size={16} /> },
       { id: "council", label: t("Council"), icon: <IconCirclesThree size={16} /> },
       {
@@ -307,7 +313,8 @@ const SETTINGS_SEARCH_ALIASES: Partial<Record<SettingsTab, string>> = {
   audio: "microphone input device system sound recording",
   models: "model picker chat image video default",
   agent: "hermes tools autonomy sandbox permissions",
-  memory: "remember facts recall forget",
+  personalization: "custom instructions personality tone about me style",
+  memory: "remember facts recall forget past chats history",
   privacy: "data network what leaves security offline local sends",
   council: "sitting judge review verdict",
   skills: "plugins capabilities installed",

@@ -55,6 +55,7 @@ import { readableModelName } from "../../../lib/model-names";
 import { BrandMark } from "../../brand/Marks";
 import { ChatAmbient } from "../ChatAmbient";
 import { ChatComposer } from "../ChatComposer";
+import { MemorySourcesChip } from "../MemorySourcesChip";
 import {
   ChatSteps,
   CopyReplyButton,
@@ -980,6 +981,7 @@ export function AgentSessionScreen({
                 <>
                   <SimpleMarkdown text={message.content} />
                   <CopyReplyButton text={message.content} />
+                  <MemorySourcesChip task={task} messageId={message.id} />
                 </>
               )
             ) : (
