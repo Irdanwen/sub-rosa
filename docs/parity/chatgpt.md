@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 207
+Gaps: 180
 
 ## Matrix
 
@@ -28,25 +28,25 @@ Gaps: 207
 |---|---|---|---|---|---|---|
 | Unlimited chat with history | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` | P9 |
 | Model picker | yes | yes | yes | no | `src/components/settings/ModelPickerDialog.tsx` `src/components/mobile/ModelSheet.tsx` | P9 |
-| Reasoning effort control | no | no | no | no | | P1 |
-| Context window shown | no | no | no | no | | P1 |
+| Reasoning effort control | yes | yes | yes | no | `src/lib/reasoning-effort.ts` `src/lib/desktop-reasoning-effort.ts` `src-tauri/src/hermes_bridge/provider_proxy.rs` | P9 |
+| Context window shown | no | yes | yes | no | `src/components/chat/ContextGauge.tsx` `src/lib/context-gauge.ts` | P1 |
 | Streaming replies | yes | yes | yes | no | `src-tauri/src/agent_lite/mod.rs` | P9 |
-| Stop a reply | yes | no | no | no | `src/components/agent/AgentWorkspace.tsx` | P1 |
-| Edit a sent message | partial | no | no | no | `src/components/agent/AgentWorkspace.tsx` | P1 |
-| Regenerate a reply | partial | partial | partial | no | `src/components/agent/AgentWorkspace.tsx` | P1 |
-| Branch a conversation | yes | no | no | no | `src/components/agent/AgentWorkspace.tsx` | P1 |
+| Stop a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src-tauri/src/agent_lite/cancel.rs` | P9 |
+| Edit a sent message | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/agent/ChatTurnControls.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
+| Regenerate a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/agent/ChatTurnControls.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
+| Branch a conversation | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
 | Copy a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` | P9 |
 | Read a reply aloud | no | no | no | no | | P1 |
 | Rate a reply | no | no | no | no | | P1 |
 | Export a conversation | no | no | no | no | | P1 |
 | Search across conversations | yes | yes | yes | no | `src-tauri/src/db/repositories.rs` `src/components/agent/AgentSessionsList.tsx` | P9 |
-| Archive a conversation | no | no | no | no | | P1 |
+| Archive a conversation | yes | yes | yes | no | `src-tauri/src/account/session_folders.rs` `src/components/agent/AgentSessionsList.tsx` | P9 |
 | Temporary chat | no | no | no | no | | P2 |
 | Share a conversation by link | no | no | no | no | | P2 |
-| Custom instructions and personality | partial | partial | partial | no | `src/components/assistants/AssistantsDialog.tsx` | P1 |
+| Custom instructions and personality | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/personalization/mod.rs` `src/components/settings/PersonalizationSettingsSection.tsx` `src/components/mobile/screens/PersonalizationScreen.tsx` | P9 |
 | Memory | yes | yes | yes | no | `src/components/settings/MemorySettingsSection.tsx` `src/components/mobile/screens/MemoryScreen.tsx` | P9 |
-| Memory of past chats | partial | partial | partial | no | `src-tauri/src/db/repositories.rs` | P1 |
-| Memory sources shown on a reply | no | no | no | no | | P1 |
+| Memory of past chats | yes | yes | yes | no | `src-tauri/src/db/repositories.rs` `src-tauri/src/memory/past_chats.rs` | P9 |
+| Memory sources shown on a reply | equiv | yes | yes | no | `src-tauri/src/memory/sources.rs` `src/components/mobile/MemorySourcesChip.tsx` `src/components/agent/MemoryInChatIndicator.tsx` | P9 |
 | Projects with instructions, files and memory | partial | partial | partial | no | `src/components/folders` | P3 |
 | Shared projects | no | no | no | no | | P9 |
 | File uploads (PDF, Word, Excel) | partial | partial | partial | no | `src-tauri/src/assistants/references.rs` | P3 |
@@ -102,7 +102,11 @@ Gaps: 207
 
 ## Assumed equivalences
 
-None yet.
+- **Memory sources shown on a reply** (desktop): the desktop runtime receives
+  memories once, when the session starts (the `sync_june_soul` seam of
+  ADR-0009), so the desktop lists the memories a chat was given in the chat
+  header rather than under each reply. The phones, which rebuild the prompt on
+  every turn, show them per reply (ADR-0081).
 
 ## Out of this matrix
 
