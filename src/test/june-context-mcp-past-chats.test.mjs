@@ -20,13 +20,15 @@ import june_context_mcp as m
 db = Path(sys.argv[2])
 c = sqlite3.connect(db)
 c.executescript('''
-CREATE TABLE agent_tasks(id TEXT PRIMARY KEY, title TEXT, safety_profile TEXT);
+CREATE TABLE agent_tasks(id TEXT PRIMARY KEY, title TEXT, safety_profile TEXT, hermes_session_id TEXT);
+CREATE TABLE session_folders(session_id TEXT, folder_id TEXT);
+CREATE TABLE project_settings(id TEXT PRIMARY KEY, folder_id TEXT, memory_mode TEXT);
 CREATE TABLE agent_messages(id TEXT PRIMARY KEY, task_id TEXT, role TEXT, content TEXT, created_at TEXT);
 CREATE TABLE assistant_conversations(task_id TEXT PRIMARY KEY);
 CREATE VIRTUAL TABLE agent_messages_fts USING fts5(message_id UNINDEXED, task_id UNINDEXED, content, tokenize='unicode61 remove_diacritics 2');
-INSERT INTO agent_tasks VALUES('c1','Camping gear','general');
-INSERT INTO agent_tasks VALUES('c2','A story','custom_assistant');
-INSERT INTO agent_tasks VALUES('c3','Owned','general');
+INSERT INTO agent_tasks VALUES('c1','Camping gear','general',NULL);
+INSERT INTO agent_tasks VALUES('c2','A story','custom_assistant',NULL);
+INSERT INTO agent_tasks VALUES('c3','Owned','general',NULL);
 INSERT INTO assistant_conversations VALUES('c3');
 INSERT INTO agent_messages VALUES('m1','c1','user','Which tent for the Lyon trip?','2026-09-01T10:00:00Z');
 INSERT INTO agent_messages VALUES('m2','c1','assistant','A light two person tent fits the Lyon trip.','2026-09-01T10:01:00Z');

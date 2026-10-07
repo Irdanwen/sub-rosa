@@ -74,8 +74,8 @@ pub mod personalization;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
 pub mod places;
-pub mod protected_mode;
 pub mod projects;
+pub mod protected_mode;
 pub mod providers;
 pub mod redacted;
 pub mod reflex;

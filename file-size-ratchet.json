@@ -1,7 +1,7 @@
 {
   "ceiling": 2000,
   "exceptions": {
-    "src/components/agent/AgentWorkspace.tsx": 13716,
+    "src/components/agent/AgentWorkspace.tsx": 13631,
     "src-tauri/src/hermes_bridge.rs": 11723,
     "src-tauri/src/dictation.rs": 5775,
     "src-tauri/src/db/repositories.rs": 5592,

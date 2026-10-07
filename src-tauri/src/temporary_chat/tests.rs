@@ -120,7 +120,7 @@ async fn past_chat_recall_never_quotes_a_temporary_chat() {
         .execute(&pool)
         .await
         .unwrap();
-    let snippets = crate::memory::past_chats::search(&pool, "harbour", None, 10)
+    let snippets = crate::memory::past_chats::search(&pool, "harbour", None, 10, None)
         .await
         .unwrap();
     assert!(snippets.is_empty(), "{snippets:?}");
