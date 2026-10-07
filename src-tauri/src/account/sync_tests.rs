@@ -1598,6 +1598,8 @@ async fn a_reply_regenerated_elsewhere_disappears_here() {
         .await,
         0
     );
+}
+
 /// A chat's archive travels (ADR-0080): the desktop files a Hermes session,
 /// the membership leaves under the conversation's task id every device knows,
 /// and one arriving from the phone lands under that id, is found by the
