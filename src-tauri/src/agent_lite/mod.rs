@@ -43,6 +43,8 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
 mod budget;
+pub mod cancel;
+pub mod controls;
 use budget::{shorten_read_pages, Completion, ToolBudget, MAX_COMPLETIONS};
 #[cfg(test)]
 use budget::{MAX_TOOL_ROUNDS, READ_PAGE_CHARS};
@@ -95,6 +97,11 @@ pub struct AgentLiteRunRequest {
     /// Attachments for the current turn only. Persisted messages keep a text
     /// marker; re-sending images on every later turn would multiply cost.
     pub attachments: Option<Vec<AgentLiteAttachment>>,
+    /// `low` | `medium` | `high`, sent as `reasoning_effort` when the turn runs
+    /// on the model it was chosen for. The screen offers it only for models
+    /// whose catalog entry says they honour it.
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,6 +168,7 @@ pub(crate) async fn run_claimed(
     let task_id = request.task_id;
     let model = request.model.filter(|value| !value.trim().is_empty());
     let attachments = request.attachments.unwrap_or_default();
+    let effort = controls::accepted_effort(request.reasoning_effort);
     // Locking the screen mid-turn suspends the process and used to kill the
     // reply; hold a background task for the whole turn (every tool-loop
     // request included) so it survives the lock. If the lock outlasts the
@@ -187,7 +195,14 @@ pub(crate) async fn run_claimed(
         .await
         .map(|snapshot| snapshot.map_or(true, |snapshot| snapshot.definition.allow_memory))
         .unwrap_or(false);
-    let result = run_turn(&app, &repos, &task_id, model.as_deref(), &attachments).await;
+    let result = run_turn(
+        &app,
+        &repos,
+        &task_id,
+        (model.as_deref(), effort.as_deref()),
+        &attachments,
+    )
+    .await;
     match result {
         Ok(answer) => {
             persist_answer(&repos, &task_id, &answer).await?;
@@ -201,6 +216,9 @@ pub(crate) async fn run_claimed(
                 crate::memory::extract::maybe_extract_after_agent_lite_turn(&app, task_id.clone());
             }
             Ok(task)
+        }
+        Err(error) if error.code == cancel::STOPPED => {
+            cancel::finish_stopped(&app, &repos, &task_id).await
         }
         Err(error) => {
             repos
@@ -250,16 +268,22 @@ pub(crate) struct TurnClaim(String);
 impl TurnClaim {
     pub(crate) fn try_hold(task_id: &str) -> Option<Self> {
         // Inserting and checking must be one atomic operation. A second guard
-        // used to succeed and later remove the first runner's ownership.
-        claims()
-            .insert(task_id.to_string())
-            .then(|| Self(task_id.to_string()))
+        // used to succeed and later remove the first runner's ownership. The
+        // stop signal is registered under the same lock, so a held claim
+        // always has one (cancel::agent_lite_cancel relies on it).
+        let mut held = claims();
+        held.insert(task_id.to_string()).then(|| {
+            cancel::register(task_id);
+            Self(task_id.to_string())
+        })
     }
 }
 
 impl Drop for TurnClaim {
     fn drop(&mut self) {
-        claims().remove(&self.0);
+        let mut held = claims();
+        held.remove(&self.0);
+        cancel::release(&self.0);
     }
 }
 
@@ -328,7 +352,7 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
             .unwrap_or(false);
         // Attachment payloads are not persisted. run_turn rejects their
         // surviving markers before inference, asking the user to attach again.
-        match run_turn(app, &repos, &task_id, model.as_deref(), &[]).await {
+        match run_turn(app, &repos, &task_id, (model.as_deref(), None), &[]).await {
             Ok(answer) => {
                 if let Err(error) = persist_answer(&repos, &task_id, &answer).await {
                     tracing::warn!("Could not persist resumed reply: {}", error.code);
@@ -351,6 +375,9 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
                     .body(answer.chars().take(120).collect::<String>())
                     .extra(crate::destinations::EXTRA_KEY, destination)
                     .show();
+            }
+            Err(error) if error.code == cancel::STOPPED => {
+                let _ = cancel::finish_stopped(app, &repos, &task_id).await;
             }
             // Still failing: leave the task running so a later sweep retries
             // rather than showing the user an error they cannot act on.
@@ -380,9 +407,12 @@ async fn run_turn(
     app: &AppHandle,
     repos: &crate::db::repositories::Repositories,
     task_id: &str,
-    model: Option<&str>,
+    (model, effort): (Option<&str>, Option<&str>),
     attachments: &[AgentLiteAttachment],
 ) -> Result<String, AppError> {
+    // What the reply has shown so far, kept if the user stops it.
+    let stop = cancel::signal(task_id);
+    let mut shown = String::new();
     let task = repos.get_agent_task(task_id).await?;
     validate_turn_attachments(
         task.messages
@@ -427,7 +457,11 @@ async fn run_turn(
         } else {
             None
         };
+    let requested = model;
     let model = Some(vision_route.as_deref().unwrap_or(resolved));
+    // An effort chosen for one model means nothing to the one an assistant or
+    // a photo routed the turn to, and may be refused by it.
+    let effort = effort.filter(|_| model == requested);
     let system_prompt = match &snapshot {
         Some(snapshot) => {
             crate::assistants::runtime::system_prompt(snapshot, memory_block.as_deref())
@@ -525,6 +559,9 @@ async fn run_turn(
             }
             Completion::GiveUp => break,
         };
+        if stop.is_stopped() {
+            return Err(stop.halt(&shown));
+        }
         emit_status(app, task_id, "thinking", None);
         let tool_choice = if final_pass { "none" } else { "auto" };
         let mut body = if tools_withheld {
@@ -545,12 +582,17 @@ async fn run_turn(
         if let (Some(model), Some(object)) = (model, body.as_object_mut()) {
             object.insert("model".to_string(), serde_json::json!(model));
         }
+        if let (Some(effort), Some(object)) = (effort, body.as_object_mut()) {
+            object.insert("reasoning_effort".to_string(), serde_json::json!(effort));
+        }
         if !stream_withheld {
             if let Some(object) = body.as_object_mut() {
                 object.insert("stream".to_string(), serde_json::json!(true));
             }
         }
-        let response = june_api::proxy_agent_chat_completions(body).await?;
+        let response = cancel::unless_stopped(&stop, june_api::proxy_agent_chat_completions(body))
+            .await
+            .ok_or_else(|| stop.halt(&shown))??;
         if !(200..300).contains(&response.status) {
             let status = response.status;
             let body = response.collect_body().await.unwrap_or_default();
@@ -628,10 +670,17 @@ async fn run_turn(
         let message = if streamed {
             let mut response = response;
             let mut reply = StreamedReply::default();
-            let read = collect_stream(&mut response, &mut reply, |text| {
-                emit_delta(app, task_id, text);
-            })
+            let read = cancel::unless_stopped(
+                &stop,
+                collect_stream(&mut response, &mut reply, |text| {
+                    shown.push_str(text);
+                    emit_delta(app, task_id, text);
+                }),
+            )
             .await;
+            let Some(read) = read else {
+                return Err(stop.halt(&shown));
+            };
             if let Err(error) = read {
                 if stream_replayed || !replays_after(&error) {
                     return Err(error);
@@ -642,6 +691,7 @@ async fn run_turn(
                 );
                 stream_replayed = true;
                 budget.replay();
+                shown.truncate(shown.len().saturating_sub(reply.content.len()));
                 if let Some(event) = retraction(task_id, &reply.content) {
                     let _ = app.emit(AGENT_LITE_DELTA_EVENT, event);
                 }
@@ -658,7 +708,9 @@ async fn run_turn(
             }
             reply.into_message()
         } else {
-            let body = response.collect_body().await?;
+            let body = cancel::unless_stopped(&stop, response.collect_body())
+                .await
+                .ok_or_else(|| stop.halt(&shown))??;
             let value: serde_json::Value = serde_json::from_slice(&body)
                 .map_err(|error| AppError::new("agent_lite_invalid", error.to_string()))?;
             let mut message = value
@@ -715,6 +767,9 @@ async fn run_turn(
         let tool_rounds = budget.ran_tools();
         let mut reference_images = Vec::new();
         for tool_call in &tool_calls {
+            if stop.is_stopped() {
+                return Err(stop.halt(&shown));
+            }
             let id = tool_call
                 .get("id")
                 .and_then(serde_json::Value::as_str)

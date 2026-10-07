@@ -1,11 +1,13 @@
 // The phone's one way to write to a model: the field, its attachments, and a
 // single round button that is the microphone until there is something to
-// send, then the arrow. The Chat tab and an assistant's conversation share it,
+// send, then the arrow, and the stop square while a reply is being written.
+// The Chat tab and an assistant's conversation share it,
 // so the two never drift into two ways of typing a message.
 
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
+import { IconStop } from "central-icons/IconStop";
 import {
   type Dispatch,
   type ReactNode,
@@ -38,6 +40,8 @@ export function ChatComposer({
   chip,
   above,
   inputRef,
+  running = false,
+  onStop,
 }: {
   draft: string;
   onDraftChange: Dispatch<SetStateAction<string>>;
@@ -53,6 +57,9 @@ export function ChatComposer({
   /** What sits above the card: openers on an empty conversation. */
   above?: ReactNode;
   inputRef?: RefObject<HTMLTextAreaElement>;
+  /** A reply is being written. With `onStop`, the round button stops it. */
+  running?: boolean;
+  onStop?: () => void;
 }) {
   const ownInput = useRef<HTMLTextAreaElement>(null);
   const field = inputRef ?? ownInput;
@@ -201,8 +208,21 @@ export function ChatComposer({
           {chip}
           <span className="mobile-composer-spacer" />
           {/* One round button that changes with the field: the microphone
-              while there is nothing to send, the arrow once there is. */}
-          {hasDraft && !dictating ? (
+              while there is nothing to send, the arrow once there is, and
+              the stop square for as long as a reply is being written. */}
+          {running && onStop ? (
+            <button
+              type="button"
+              className="mobile-chat-send"
+              aria-label={t("Stop reply")}
+              onClick={() => {
+                hapticImpact("medium");
+                onStop();
+              }}
+            >
+              <IconStop size={18} />
+            </button>
+          ) : hasDraft && !dictating ? (
             <button
               type="button"
               className="mobile-chat-send"

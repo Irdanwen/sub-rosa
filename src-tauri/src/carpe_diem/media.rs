@@ -247,6 +247,14 @@ pub struct MediaModelDto {
     pub traits: Vec<String>,
     /// Whether the model declares image (vision) input support.
     pub supports_vision: bool,
+    /// Whether the model honours `reasoning_effort` (its catalog capability
+    /// `supportsReasoningEffort`). The chat offers an effort only then.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub supports_reasoning_effort: bool,
+    /// How many tokens of conversation the model reads: the operator's
+    /// `context_length`, else Venice's `availableContextTokens`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u64>,
     /// Venice `model_spec.pricing`, verbatim (per-generation USD, per-duration
     /// brackets for music...).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -501,6 +509,12 @@ fn merge_carpe_diem_catalog(
                 model_sets: string_list(spec.and_then(|spec| spec.get("model_sets"))),
                 traits: string_list(spec.and_then(|spec| spec.get("traits"))),
                 supports_vision: supports_vision(entry) || spec.is_some_and(supports_vision),
+                supports_reasoning_effort: supports_reasoning_effort(entry)
+                    || spec.is_some_and(supports_reasoning_effort),
+                context_tokens: entry
+                    .get("context_length")
+                    .and_then(serde_json::Value::as_u64)
+                    .or_else(|| spec.and_then(context_tokens)),
                 pricing: spec
                     .and_then(|spec| spec.get("pricing"))
                     .filter(|value| !value.is_null())
@@ -553,6 +567,8 @@ fn venice_catalog_models(catalog: &serde_json::Value) -> Vec<MediaModelDto> {
                 model_sets: string_list(spec.and_then(|spec| spec.get("model_sets"))),
                 traits: string_list(spec.and_then(|spec| spec.get("traits"))),
                 supports_vision: spec.is_some_and(supports_vision),
+                supports_reasoning_effort: spec.is_some_and(supports_reasoning_effort),
+                context_tokens: spec.and_then(context_tokens),
                 cost_credits: pricing.and_then(flat_generation_usd).map(|usd| usd * 100.0),
                 constraints,
                 pricing: pricing.cloned(),
@@ -1308,6 +1324,18 @@ fn supports_vision(value: &serde_json::Value) -> bool {
         })
 }
 
+fn supports_reasoning_effort(value: &serde_json::Value) -> bool {
+    value
+        .pointer("/capabilities/supportsReasoningEffort")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn context_tokens(spec: &serde_json::Value) -> Option<u64> {
+    spec.get("availableContextTokens")
+        .and_then(serde_json::Value::as_u64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1626,6 +1654,34 @@ mod tests {
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].media_type, "image");
         assert!(models[0].constraints.is_none());
+    }
+
+    /// The chat's effort choice and its context gauge read these two. The
+    /// operator's own row wins; the Venice spec fills in what it leaves out.
+    #[test]
+    fn a_text_model_carries_its_reasoning_effort_and_context_length() {
+        let primary = json!({ "data": [
+            { "id": "thinker", "carpe_diem_type": "text", "context_length": 200_000,
+              "capabilities": { "supportsReasoningEffort": true } },
+            { "id": "spec-thinker", "carpe_diem_type": "text" },
+            { "id": "plain", "carpe_diem_type": "text" }
+        ]});
+        let venice = json!({ "data": [
+            { "id": "spec-thinker", "model_spec": { "availableContextTokens": 128_000,
+              "capabilities": { "supportsReasoningEffort": true } } },
+            { "id": "plain", "model_spec": { "capabilities": { "supportsReasoning": true } } }
+        ]});
+        let models = merge_carpe_diem_catalog(&primary, Some(&venice), None);
+        let find = |id: &str| models.iter().find(|model| model.id == id).expect("listed");
+        assert!(find("thinker").supports_reasoning_effort);
+        assert_eq!(find("thinker").context_tokens, Some(200_000));
+        assert!(find("spec-thinker").supports_reasoning_effort);
+        assert_eq!(find("spec-thinker").context_tokens, Some(128_000));
+        // Reasoning is not the same as honouring an effort.
+        assert!(!find("plain").supports_reasoning_effort);
+        assert_eq!(find("plain").context_tokens, None);
+        let wire = serde_json::to_value(find("plain")).expect("serializes");
+        assert!(wire.get("supportsReasoningEffort").is_none());
     }
 
     #[test]

@@ -98,6 +98,10 @@ export interface MediaModel {
   traits?: string[];
   /** Whether the model declares image (vision) input support. */
   supportsVision?: boolean;
+  /** Whether the model honours `reasoning_effort` (text models). */
+  supportsReasoningEffort?: boolean;
+  /** How many tokens of conversation the model reads (text models). */
+  contextTokens?: number;
   /** Venice `model_spec.pricing`, verbatim (music duration brackets, etc). */
   pricing?: Record<string, unknown>;
   /** Flat per-generation price in credits, when the backend publishes one. */

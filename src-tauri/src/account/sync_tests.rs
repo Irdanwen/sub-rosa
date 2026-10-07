@@ -1476,3 +1476,126 @@ async fn deleting_a_gallery_file_tombstones_its_record_and_manifest_and_cancels_
         .iter()
         .any(|row| row.get::<i64, _>("deleted") == 1));
 }
+
+// --- Rewritten conversation tails (ADR-0079) --------------------------------
+
+/// Regenerating a reply deletes its row and editing a question updates one.
+/// Both leave this device the way any other write does: the deletion as a
+/// tombstone, the edit as a new snapshot, so the other devices converge on
+/// the rewritten thread instead of keeping the reply that was replaced.
+#[tokio::test]
+async fn a_rewritten_conversation_tail_leaves_as_a_tombstone_and_an_edit() {
+    use crate::domain::types::AgentMessageRole;
+    let pool = database().await;
+    let repos = crate::db::repositories::Repositories::new(pool.clone());
+    let task = repos
+        .create_agent_task("Question", None, Default::default(), None)
+        .await
+        .unwrap();
+    let question = task.messages[0].id.clone();
+    tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+    let reply = repos
+        .add_agent_message(&task.id, AgentMessageRole::Assistant, "First answer")
+        .await
+        .unwrap();
+    query("DELETE FROM account_sync_outbox")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    repos.rewind_to_last_user_message(&task.id).await.unwrap();
+    assert_eq!(count(&pool, "SELECT count(*) AS n FROM account_sync_outbox WHERE object_id=? AND kind='conversation' AND deleted=1", &reply.id).await, 1);
+
+    assert!(repos
+        .rewrite_last_user_message(&task.id, &question, "Question, edited")
+        .await
+        .unwrap());
+    let body: String =
+        query("SELECT body FROM account_sync_outbox WHERE object_id=? AND deleted=0")
+            .bind(&question)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .get("body");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["row"]["content"],
+        "Question, edited"
+    );
+}
+
+/// The other end: a device that receives the tombstone of a regenerated
+/// reply removes that message, and nothing else, without asking anyone.
+#[tokio::test]
+async fn a_reply_regenerated_elsewhere_disappears_here() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let task = uuid::Uuid::new_v4().to_string();
+    let question = uuid::Uuid::new_v4().to_string();
+    let reply = uuid::Uuid::new_v4().to_string();
+    query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at) VALUES(?,'Chat','Question','completed','autonomous_private','now','now')")
+        .bind(&task).execute(&pool).await.unwrap();
+    for (id, role, content) in [
+        (&question, "user", "Question"),
+        (&reply, "assistant", "Old answer"),
+    ] {
+        query(
+            "INSERT INTO agent_messages(id,task_id,role,content,created_at) VALUES(?,?,?,?,'now')",
+        )
+        .bind(id)
+        .bind(&task)
+        .bind(role)
+        .bind(content)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    query("DELETE FROM account_sync_outbox")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let head = uuid::Uuid::now_v7().to_string();
+    set_head(&pool, &reply, &head, "conversation").await;
+    let c = tombstone(
+        &s,
+        &key,
+        "agent_messages",
+        "conversation",
+        &reply,
+        Some(head),
+        json!({"id":reply,"task_id":task}),
+    );
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, &c, &verify(&s, &key, &c).unwrap())
+        .await
+        .unwrap());
+    head_and_applied(&mut tx, &c).await.unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM agent_messages WHERE task_id=?",
+            &task
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM agent_messages WHERE id=?",
+            &question
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) AS n FROM account_sync_conflicts WHERE object_id=?",
+            &reply
+        )
+        .await,
+        0
+    );
+}

@@ -1,5 +1,11 @@
 import "../../../styles/chat-reading.css";
 import { useAccountSyncUpdated } from "../../../lib/account-sync-events";
+import {
+  agentLiteCancel,
+  agentLiteEditBranch,
+  agentLiteEditLast,
+  agentLiteRegenerate,
+} from "../../../lib/agent-lite-controls";
 import { type AgentLiteDeltaDto, applyAgentLiteDelta } from "../../../lib/agent-lite-delta";
 import {
   type ChatSessionItem,
@@ -26,11 +32,20 @@ import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
+import { readContextGauge } from "../../../lib/context-gauge";
 import { friendlyErrorMessage, messageFromError, taskErrorMessage } from "../../../lib/errors";
 import { hapticImpact, hapticNotify, hapticSelection } from "../../../lib/haptics";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
 import { fetchMediaCatalog, formatCredits, modelsOfType } from "../../../lib/studio/catalog";
 import { ensureNotificationPermission } from "../../../lib/notifications";
+import {
+  effortForModel,
+  type ReasoningEffort,
+  storedReasoningEffort,
+  storeReasoningEffort,
+  supportsReasoningEffort,
+} from "../../../lib/reasoning-effort";
+import { SUGGESTED_MODELS } from "../../../lib/suggested-models";
 import { resolveTurnModel } from "../../../lib/vision-routing";
 import type { MediaModel } from "../../../lib/studio/types";
 import {
@@ -39,6 +54,7 @@ import {
   AGENT_LITE_STATUS_EVENT,
   type AgentLiteAttachment,
   type AgentLiteStatusDto,
+  type AgentMessageDto,
   type AgentTaskDto,
   agentLiteRun,
   assignSessionToFolder,
@@ -53,13 +69,15 @@ import {
 } from "../../../lib/tauri";
 import { readableModelName } from "../../../lib/model-names";
 import { BrandMark } from "../../brand/Marks";
+import { ContextGauge } from "../../chat/ContextGauge";
 import { ChatAmbient } from "../ChatAmbient";
 import { ChatComposer } from "../ChatComposer";
 import {
   ChatSteps,
-  CopyReplyButton,
   hasAttachmentMarkers,
   interruptedAttachmentMessage,
+  QuestionActions,
+  ReplyActions,
   stageText,
   TypewriterMarkdown,
   withAttachmentMarkers,
@@ -68,6 +86,7 @@ import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { ModelSheet } from "../ModelSheet";
+import { ReasoningEffortRow } from "../ReasoningEffortRow";
 import { NameSheet } from "../NameSheet";
 import { formatNoteTime } from "./NoteRow";
 import { PullToRefresh } from "../PullToRefresh";
@@ -75,6 +94,10 @@ import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
 
 const CHAT_MODEL_STORAGE_KEY = "subrosa:mobile:chat-model";
+const CHAT_EFFORT_STORAGE_KEY = "subrosa:mobile:chat-reasoning-effort";
+/** The model "Default" stands for, as far as the screen can tell: the app's
+ * default generation model (DEFAULT_GENERATION_MODEL in Rust). */
+const DEFAULT_CHAT_MODEL_ID = SUGGESTED_MODELS.generation[0]?.id ?? "";
 
 export function storedChatModel(): string {
   try {
@@ -470,6 +493,13 @@ export function AgentSessionScreen({
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [attachments, setAttachments] = useState<AgentLiteAttachment[]>([]);
+  const [effort, setEffort] = useState<ReasoningEffort | undefined>(() =>
+    storedReasoningEffort(CHAT_EFFORT_STORAGE_KEY),
+  );
+  // A question being edited in the composer. The last one is rewritten in
+  // place; an earlier one is asked again in a new chat, so nothing already
+  // read disappears (ADR-0079).
+  const [editing, setEditing] = useState<{ messageId: string; last: boolean } | null>(null);
   const [animatingId, setAnimatingId] = useState<string | null>(null);
   const knownIdsRef = useRef<Set<string> | null>(null);
   const taskIdRef = useRef<string | undefined>(sessionId);
@@ -702,6 +732,22 @@ export function AgentSessionScreen({
     }
   }, []);
 
+  // The effort a turn on `turnModel` asks for. Only a model whose catalog
+  // entry honours one gets it; the choice is kept for the next one that does.
+  const effortFor = useCallback(
+    (turnModel: string) =>
+      effortForModel(
+        models.find((entry) => entry.id === turnModel),
+        effort,
+      ),
+    [models, effort],
+  );
+
+  const selectEffort = useCallback((next: ReasoningEffort | undefined) => {
+    setEffort(next);
+    storeReasoningEffort(CHAT_EFFORT_STORAGE_KEY, next);
+  }, []);
+
   // Fork this chat onto another model: a copy carrying the same transcript,
   // bound to the chosen model, opened in its own thread so the original stays
   // untouched (comparing two models, or reasking a busy turn on a fresh one).
@@ -784,6 +830,7 @@ export function AgentSessionScreen({
         current.id,
         turnModel || undefined,
         turnAttachments.length ? turnAttachments : undefined,
+        effortFor(turnModel),
       );
       setTask(finished);
     } catch (err) {
@@ -816,6 +863,7 @@ export function AgentSessionScreen({
     task,
     model,
     models,
+    effortFor,
     onSessionCreated,
     refreshAfterFailure,
   ]);
@@ -831,48 +879,172 @@ export function AgentSessionScreen({
     if (autoSend) void send();
   }, [initialDraft, autoSend, loadingTask, taskLoadFailed, onInitialDraftUsed, send]);
 
+  // One turn the screen runs on an existing chat (retry, regenerate, an edit
+  // of the last question): the same running state and failure handling as a
+  // send. A failure keeps the persisted question re-runnable, with `retry`
+  // attachments for the "Try again" that follows.
+  const runOwnTurn = useCallback(
+    async (
+      taskId: string,
+      start: () => Promise<AgentTaskDto>,
+      retry: AgentLiteAttachment[] = [],
+    ) => {
+      if (runningRef.current) return;
+      runningRef.current = true;
+      taskRevisionRef.current += 1;
+      setError(null);
+      setCanRetry(false);
+      setStreamed("");
+      setRunning(true);
+      setSteps([]);
+      lastStepKeyRef.current = null;
+      hapticImpact("light");
+      retryAttachmentsRef.current = retry;
+      try {
+        setTask(await start());
+        retryAttachmentsRef.current = [];
+      } catch (err) {
+        hapticNotify("error");
+        setError(messageFromError(err));
+        setCanRetry(true);
+        refreshAfterFailure(taskId);
+      } finally {
+        runningRef.current = false;
+        setRunning(false);
+        setStage(null);
+        setSteps([]);
+        setStreamed("");
+      }
+    },
+    [refreshAfterFailure],
+  );
+
   // Re-run the last (failed) turn without retyping. The message is already
   // persisted, so this only re-issues the run — and it uses the CURRENT model,
   // so switching the picker then retrying continues the chat on another model.
   const retryTurn = useCallback(async () => {
     const taskId = taskIdRef.current;
-    if (!taskId || runningRef.current) return;
-    runningRef.current = true;
-    taskRevisionRef.current += 1;
-    setError(null);
-    setCanRetry(false);
-    setStreamed("");
-    setRunning(true);
-    setSteps([]);
-    lastStepKeyRef.current = null;
-    hapticImpact("light");
+    if (!taskId) return;
     const turnAttachments = retryAttachmentsRef.current;
-    try {
-      const turnModel = resolveTurnModel({
-        selectedModelId: model,
-        models,
-        hasImages: turnAttachments.some((entry) => entry.kind === "image"),
-      });
-      const finished = await agentLiteRun(
-        taskId,
-        turnModel || undefined,
-        turnAttachments.length ? turnAttachments : undefined,
-      );
-      setTask(finished);
-      retryAttachmentsRef.current = [];
-    } catch (err) {
-      hapticNotify("error");
-      setError(messageFromError(err));
-      setCanRetry(true);
-      refreshAfterFailure(taskId);
-    } finally {
-      runningRef.current = false;
-      setRunning(false);
-      setStage(null);
-      setSteps([]);
-      setStreamed("");
+    const turnModel = resolveTurnModel({
+      selectedModelId: model,
+      models,
+      hasImages: turnAttachments.some((entry) => entry.kind === "image"),
+    });
+    await runOwnTurn(
+      taskId,
+      () =>
+        agentLiteRun(
+          taskId,
+          turnModel || undefined,
+          turnAttachments.length ? turnAttachments : undefined,
+          effortFor(turnModel),
+        ),
+      turnAttachments,
+    );
+  }, [model, models, effortFor, runOwnTurn]);
+
+  // Stop the reply being written. The turn keeps what it had shown as the
+  // answer and the pending run resolves with the stopped chat.
+  const stopReply = useCallback(() => {
+    const taskId = taskIdRef.current;
+    if (!taskId) return;
+    void agentLiteCancel(taskId).catch((err: unknown) => setError(messageFromError(err)));
+  }, []);
+
+  // Ask the last question again, on the model (and effort) selected now: the
+  // way to compare an answer with another model's is to switch, then this.
+  const regenerate = useCallback(() => {
+    const taskId = taskIdRef.current;
+    if (!taskId || runningRef.current) return;
+    const turnModel = resolveTurnModel({ selectedModelId: model, models, hasImages: false });
+    // The old answer leaves at once; the new one streams in where it was.
+    setTask((current) =>
+      current ? { ...current, messages: throughLastQuestion(current.messages) } : current,
+    );
+    void runOwnTurn(taskId, () =>
+      agentLiteRegenerate(taskId, {
+        model: turnModel || undefined,
+        reasoningEffort: effortFor(turnModel),
+      }),
+    );
+  }, [model, models, effortFor, runOwnTurn]);
+
+  // "Branch from here": a new chat holding the thread up to this reply.
+  const branchFrom = useCallback(
+    (messageId: string) => {
+      const sourceTaskId = taskIdRef.current;
+      if (!sourceTaskId) return;
+      void forkAgentTask({ sourceTaskId, upToMessageId: messageId })
+        .then((forked) => {
+          hapticNotify("success");
+          onOpenSession?.(forked.id);
+        })
+        .catch((err: unknown) => setError(messageFromError(err)));
+    },
+    [onOpenSession],
+  );
+
+  const startEdit = useCallback((message: AgentMessageDto, last: boolean) => {
+    setEditing({ messageId: message.id, last });
+    setDraft(message.content);
+    chatInputRef.current?.focus();
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditing(null);
+    setDraft("");
+  }, []);
+
+  // Send the edited question. The last one is rewritten here and answered
+  // again; an earlier one opens as a new chat that is answered there.
+  const submitEdit = useCallback(async () => {
+    const edit = editing;
+    const taskId = taskIdRef.current;
+    const content = draft.trim();
+    if (!edit || !taskId || (!content && attachments.length === 0) || runningRef.current) return;
+    const stored = withAttachmentMarkers(content, attachments);
+    const turnAttachments = attachments;
+    const turnModel = resolveTurnModel({
+      selectedModelId: model,
+      models,
+      hasImages: turnAttachments.some((entry) => entry.kind === "image"),
+    });
+    const request = {
+      taskId,
+      messageId: edit.messageId,
+      content: stored,
+      model: turnModel || undefined,
+      attachments: turnAttachments.length ? turnAttachments : undefined,
+      reasoningEffort: effortFor(turnModel),
+    };
+    setEditing(null);
+    setDraft("");
+    setAttachments([]);
+    if (!edit.last) {
+      setError(null);
+      hapticImpact("light");
+      try {
+        const branch = await agentLiteEditBranch(request);
+        hapticNotify("success");
+        onOpenSession?.(branch.id);
+      } catch (err) {
+        hapticNotify("error");
+        setError(messageFromError(err));
+        // Nothing was written: give the edit back to the person.
+        setEditing(edit);
+        setDraft(content);
+        setAttachments(turnAttachments);
+      }
+      return;
     }
-  }, [model, models, refreshAfterFailure]);
+    setTask((current) =>
+      current
+        ? { ...current, messages: rewrittenQuestion(current.messages, edit.messageId, stored) }
+        : current,
+    );
+    await runOwnTurn(taskId, () => agentLiteEditLast(request), turnAttachments);
+  }, [editing, draft, attachments, model, models, effortFor, onOpenSession, runOwnTurn]);
 
   // An empty chat, with nothing loading and nothing failed. Both the greeting
   // and the ambient ground key off this, so it is named rather than repeated.
@@ -888,6 +1060,16 @@ export function AgentSessionScreen({
     ? readableModelName(model, models.find((entry) => entry.id === model)?.name)
     : t("Default model");
   const hasDraft = Boolean(draft.trim()) || attachments.length > 0;
+  const selectedModel = models.find((entry) => entry.id === model);
+  const messages = task?.messages ?? [];
+  const lastQuestion = lastQuestionIndex(messages);
+  // "Default" has no catalog row of its own; read the default model's window.
+  const gauge = readContextGauge({
+    messages,
+    draft,
+    contextTokens: (selectedModel ?? models.find((entry) => entry.id === DEFAULT_CHAT_MODEL_ID))
+      ?.contextTokens,
+  });
   const openers = suggestions(Boolean(onGenerateImage)).filter(
     (suggestion) => !hasDraft || suggestion.id === "image",
   );
@@ -967,7 +1149,7 @@ export function AgentSessionScreen({
             <h2 className="mobile-chat-hero-greeting">{t("Ask a question")}</h2>
           </div>
         ) : null}
-        {task?.messages.map((message) => (
+        {messages.map((message, index) => (
           <div key={message.id} className="mobile-chat-bubble" data-role={message.role}>
             {message.role === "assistant" ? (
               message.id === animatingId ? (
@@ -979,11 +1161,24 @@ export function AgentSessionScreen({
               ) : (
                 <>
                   <SimpleMarkdown text={message.content} />
-                  <CopyReplyButton text={message.content} />
+                  <ReplyActions
+                    text={message.content}
+                    onRegenerate={
+                      !running && index === messages.length - 1 && lastQuestion >= 0
+                        ? regenerate
+                        : undefined
+                    }
+                    onBranch={!running && onOpenSession ? () => branchFrom(message.id) : undefined}
+                  />
                 </>
               )
             ) : (
-              message.content
+              <>
+                {message.content}
+                {message.role === "user" && !running && !editing ? (
+                  <QuestionActions onEdit={() => startEdit(message, index === lastQuestion)} />
+                ) : null}
+              </>
             )}
           </div>
         ))}
@@ -1025,11 +1220,24 @@ export function AgentSessionScreen({
         onAttachmentsChange={setAttachments}
         placeholder={t("Ask anything, privately…")}
         canSend={!running && !loadingTask && !taskLoadFailed}
-        onSend={() => void send()}
+        onSend={() => void (editing ? submitEdit() : send())}
+        running={running}
+        onStop={stopReply}
         onError={setError}
         inputRef={chatInputRef}
         above={
-          showHero && openers.length > 0 ? (
+          editing ? (
+            <div className="mobile-chat-editing">
+              <span>
+                {editing.last
+                  ? t("Editing your message")
+                  : t("Editing an earlier message opens a new chat")}
+              </span>
+              <button type="button" className="mobile-chat-editing-cancel" onClick={cancelEdit}>
+                {t("Cancel")}
+              </button>
+            </div>
+          ) : showHero && openers.length > 0 ? (
             // An empty chat with only a placeholder makes the user invent the
             // capability. These name what it can actually do: read a note in
             // full, look back over a week, make a picture, remember. Once
@@ -1059,16 +1267,19 @@ export function AgentSessionScreen({
           ) : null
         }
         chip={
-          <button
-            type="button"
-            className="mobile-composer-model"
-            onClick={() => setPickerOpen(true)}
-            aria-label={t("Choose model, {model}", { model: activeModelLabel })}
-          >
-            <IconSparklesSoft size={15} aria-hidden />
-            <span className="mobile-composer-model-name">{activeModelLabel}</span>
-            <IconChevronDownSmall size={14} aria-hidden />
-          </button>
+          <>
+            <button
+              type="button"
+              className="mobile-composer-model"
+              onClick={() => setPickerOpen(true)}
+              aria-label={t("Choose model, {model}", { model: activeModelLabel })}
+            >
+              <IconSparklesSoft size={15} aria-hidden />
+              <span className="mobile-composer-model-name">{activeModelLabel}</span>
+              <IconChevronDownSmall size={14} aria-hidden />
+            </button>
+            {messages.length > 0 ? <ContextGauge reading={gauge} onNewChat={onNewChat} /> : null}
+          </>
         }
       />
       {pickerOpen ? (
@@ -1088,6 +1299,11 @@ export function AgentSessionScreen({
           error={modelsError}
           onSelect={selectModel}
           onFork={task ? forkChat : undefined}
+          extra={
+            supportsReasoningEffort(selectedModel) ? (
+              <ReasoningEffortRow value={effort} onChange={selectEffort} />
+            ) : null
+          }
           onClose={() => setPickerOpen(false)}
         />
       ) : null}
@@ -1134,4 +1350,29 @@ function suggestions(canMakeImages: boolean): {
       icon: <IconBrain size={16} aria-hidden />,
     },
   ];
+}
+
+/** The thread up to and including its last question: what is left once the
+ * replies to it are dropped to be asked for again. */
+function throughLastQuestion(messages: AgentMessageDto[]): AgentMessageDto[] {
+  const last = lastQuestionIndex(messages);
+  return last < 0 ? messages : messages.slice(0, last + 1);
+}
+
+function lastQuestionIndex(messages: readonly AgentMessageDto[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") return index;
+  }
+  return -1;
+}
+
+/** The thread with `messageId` rewritten to `content` and nothing after it. */
+function rewrittenQuestion(
+  messages: AgentMessageDto[],
+  messageId: string,
+  content: string,
+): AgentMessageDto[] {
+  const index = messages.findIndex((message) => message.id === messageId);
+  if (index < 0) return messages;
+  return [...messages.slice(0, index), { ...messages[index], content }];
 }

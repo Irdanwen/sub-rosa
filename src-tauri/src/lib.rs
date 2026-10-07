@@ -324,6 +324,10 @@ pub fn run() {
             commands::cancel_agent_task,
             commands::retry_agent_task,
             commands::fork_agent_task,
+            agent_lite::cancel::agent_lite_cancel,
+            agent_lite::controls::agent_lite_regenerate,
+            agent_lite::controls::agent_lite_edit_last,
+            agent_lite::controls::agent_lite_edit_branch,
             commands::list_agent_tool_events,
             commands::delete_agent_task,
             hermes_bridge::hermes_bridge_status,
@@ -791,6 +795,10 @@ pub fn run() {
         dictation_mobile::mobile_list_dictation_history,
         dictation_mobile::mobile_delete_dictation_history_item,
         agent_lite::agent_lite_run,
+        agent_lite::cancel::agent_lite_cancel,
+        agent_lite::controls::agent_lite_regenerate,
+        agent_lite::controls::agent_lite_edit_last,
+        agent_lite::controls::agent_lite_edit_branch,
         #[cfg(target_os = "ios")]
         photos_ios::save_to_photos,
         #[cfg(target_os = "ios")]

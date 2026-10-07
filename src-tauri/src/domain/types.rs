@@ -816,6 +816,10 @@ pub struct ForkAgentTaskRequest {
     /// source chat's own model.
     #[serde(default)]
     pub model: Option<String>,
+    /// Branch at this message, keeping it and everything before it. Absent
+    /// copies the whole conversation.
+    #[serde(default)]
+    pub up_to_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
