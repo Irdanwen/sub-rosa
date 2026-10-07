@@ -97,3 +97,39 @@ Three constraints shaped the answer:
 - **A separate memory table per project.** Recall, embeddings, consolidation,
   the journal and sync would all need a second path; one column and one store
   rule keep them one.
+
+## Addendum (2026-10-07): "Project only" is enforced on the desktop too
+
+The first consequence above left the desktop's direction prompt-level: the
+shared SOUL carried the person's own memory into a "Project only" chat and the
+project context only asked the agent not to rely on it. That is closed where
+every Hermes request passes, the provider proxy
+(`hermes_bridge/project_memory.rs`):
+
+- The SOUL's memory block sits between its own markers
+  (`<!-- sub-rosa:user-memory -->`, always written, even empty) inside the
+  personal section. An HTML comment in a fact or a preference is broken, so a
+  remembered sentence cannot close the section early.
+- The project context opens with a marker of its own
+  (`<!-- sub-rosa:project-context <id> -->`), read only right after Hermes'
+  `--- Attached Context ---` marker in a user message. The latest one names
+  the chat's project. The mode is read from the store, never from the text: a
+  Default project, a deleted one, or no context leaves the request untouched.
+- For a "Project only" project, every request leaves with the person's memory
+  section replaced by the project's memories (read fresh each time, so they
+  no longer ride in the project context or change its fingerprint), with
+  `project_id` pinned to the project on `search_user_memories` and
+  `search_past_chats`, and with the result of any memory search that ran
+  without that id replaced by a notice to search again inside the project.
+  Hermes' transcript keeps what it had; the cut is made on every request.
+- If the store cannot be read, the person's memory is cut and nothing is put
+  back: an unreadable mode fails closed.
+
+What stays outside: personalization (settings, not memory) still applies in a
+project, as on the phone; a SOUL written before this build has no memory
+markers and is cut only from the next runtime start; and a first message lost
+to Hermes' context compression takes its marker with it.
+
+The archive (ADR-0042) now carries `project_settings`, `project_files` (with
+their extracted text) and the files' stored bytes, which the reference
+ownership query now counts as owned.

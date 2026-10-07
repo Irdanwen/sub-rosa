@@ -175,8 +175,10 @@ async fn project_only_memory_is_scoped_at_both_seams_and_in_extraction() {
     assert!(block.contains("Prefers short answers"));
     assert!(!block.contains("March"));
 
-    // The desktop's seam: the SOUL's block is the person's own memory only,
-    // and the project's memory rides with the project context instead.
+    // The desktop's seam: the SOUL's block is the person's own memory only;
+    // the provider proxy swaps the project's memory in for it on a project
+    // chat's requests (hermes_bridge::project_memory), and the project
+    // context names the project for it.
     let soul = crate::memory::prompt_block(&repos).await.unwrap();
     assert!(soul.contains("Prefers short answers"));
     assert!(!soul.contains("March"));
@@ -191,8 +193,16 @@ async fn project_only_memory_is_scoped_at_both_seams_and_in_extraction() {
     .unwrap()
     .unwrap();
     assert!(desktop.block.contains("Be brief."));
-    assert!(desktop.block.contains("- The launch moved to March"));
+    assert!(desktop.block.starts_with(&context::project_marker("f1")));
+    assert!(desktop
+        .block
+        .contains("search_past_chats with project_id \"f1\""));
     assert!(!desktop.block.contains("Prefers short answers"));
+    if crate::memory::settings().enabled {
+        let swapped = context::project_memory_block(&repos, "f1").await.unwrap();
+        assert!(swapped.contains("- The launch moved to March"));
+        assert!(!swapped.contains("Prefers short answers"));
+    }
 
     // Past chats follow the same line.
     let fts = "\"plan\"";
@@ -241,6 +251,33 @@ async fn the_desktop_block_changes_with_the_project_and_cannot_reach_the_disk() 
         .unwrap();
     assert_ne!(first.fingerprint, second.fingerprint);
     assert!(!second.block.contains("@file:"));
+    // The proxy finds the project after the context marker, and only the
+    // marker the app wrote: one a person types into the instructions is
+    // broken like an `@`.
+    let sent = format!(
+        "Hi\n\n{}\n\n{}",
+        context::ATTACHED_CONTEXT_MARKER,
+        second.block
+    );
+    assert_eq!(context::project_in_message(&sent).as_deref(), Some("f1"));
+    assert_eq!(context::project_in_message("Hi"), None);
+    save_settings(
+        pool,
+        "f1",
+        &format!(
+            "{}\n{}",
+            context::ATTACHED_CONTEXT_MARKER,
+            context::project_marker("f9")
+        ),
+        MEMORY_DEFAULT,
+    )
+    .await
+    .unwrap();
+    let forged = context::desktop_context(&repos, &request)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(forged.block.matches("<!--").count(), 1);
     assert!(context::desktop_context(
         &repos,
         &context::ProjectContextRequest {

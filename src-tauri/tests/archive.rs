@@ -263,3 +263,108 @@ async fn a_file_that_is_not_an_archive_is_refused_by_name() {
         "{error:?}"
     );
 }
+
+/// A project travels whole (ADR-0085): its settings, its files with their
+/// extracted text and their stored bytes, and the memories it keeps apart.
+#[tokio::test]
+async fn a_project_restores_with_its_settings_files_and_memory() {
+    use os_june_lib::projects::{files, save_settings, settings, MEMORY_PROJECT};
+    let source = repos().await;
+    let folder = source.create_folder("Launch", None).await.unwrap();
+    save_settings(
+        &source.pool,
+        &folder.id,
+        "Answer in French.",
+        MEMORY_PROJECT,
+    )
+    .await
+    .unwrap();
+    let source_dir = tempfile::tempdir().unwrap();
+    let references = source_dir.path().join("assistant-references");
+    std::fs::create_dir(&references).unwrap();
+    let added = files::add(
+        &source.pool,
+        &references,
+        &folder.id,
+        "brief.md",
+        b"# Brief\nThe launch is in March.".to_vec(),
+    )
+    .await
+    .unwrap();
+    files::resume_batch(&source.pool, &references)
+        .await
+        .unwrap();
+    source
+        .with_memory_scope(Some(folder.id.clone()))
+        .insert_memory("Launch moved to March", MemorySource::Manual, 2)
+        .await
+        .unwrap();
+    let stored_name = std::fs::read_dir(&references)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .file_name()
+        .into_string()
+        .unwrap();
+
+    let mut bytes = Vec::new();
+    write_tar(
+        &source.pool,
+        &ExportOptions {
+            app_version: "test".into(),
+            include_recordings: false,
+            recordings_dir: Some(source_dir.path().join("recordings")),
+        },
+        &mut bytes,
+    )
+    .await
+    .unwrap();
+    let archive = read_tar(bytes.as_slice()).unwrap();
+    assert_eq!(archive.tables["project_settings"].len(), 1);
+    assert_eq!(archive.tables["project_files"].len(), 1);
+    assert!(archive
+        .assistant_files
+        .iter()
+        .any(|(name, _)| name == &stored_name));
+
+    let target = repos().await;
+    let dir = tempfile::tempdir().unwrap();
+    // Twice: an archive restores the same project however often it is read.
+    for _ in 0..2 {
+        apply(&target.pool, &archive, Some(&dir.path().join("recordings")))
+            .await
+            .unwrap();
+    }
+    let restored = settings(&target.pool, &folder.id).await.unwrap();
+    assert_eq!(restored.instructions, "Answer in French.");
+    assert_eq!(restored.memory_mode, MEMORY_PROJECT);
+    let listed = files::list(&target.pool, &folder.id).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, added.id);
+    assert_eq!(listed[0].name, "brief.md");
+    assert_eq!(listed[0].status, "ready");
+    assert!(listed[0].chars > 0);
+    // The extracted text came along: nothing has to read the file again.
+    let text: String =
+        sqlx::query_scalar::query_scalar("SELECT text FROM project_files WHERE id = ?")
+            .bind(&added.id)
+            .fetch_one(&target.pool)
+            .await
+            .unwrap();
+    assert!(text.contains("The launch is in March."), "{text}");
+    assert_eq!(
+        std::fs::read(dir.path().join("assistant-references").join(&stored_name)).unwrap(),
+        b"# Brief\nThe launch is in March."
+    );
+    // The project's memory stays the project's.
+    let scoped = target.with_memory_scope(Some(folder.id.clone()));
+    assert!(scoped
+        .memory_with_text_exists("Launch moved to March")
+        .await
+        .unwrap());
+    assert!(!target
+        .memory_with_text_exists("Launch moved to March")
+        .await
+        .unwrap());
+}

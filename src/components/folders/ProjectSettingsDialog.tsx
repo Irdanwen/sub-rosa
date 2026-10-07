@@ -38,16 +38,29 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
   const [instructions, setInstructions] = useState("");
   const [memoryMode, setMemoryMode] = useState<ProjectMemoryMode>("default");
   const [files, setFiles] = useState<ProjectFile[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const counterId = useId();
 
+  // Every opening starts from the stored project: nothing of another folder,
+  // or of an edit abandoned with Cancel, shows while it loads.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setSaved(null);
+    setInstructions("");
+    setMemoryMode("default");
+    setFiles([]);
+    setRemoving(new Set());
+    setLoadFailed(false);
     setError(null);
+    // `attempt` changes only to load again after a failure (Try again).
+    void attempt;
     projectGet(folder.id)
       .then((project) => {
         if (cancelled) return;
@@ -57,41 +70,59 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
         setFiles(project.files);
       })
       .catch((caught) => {
-        if (!cancelled) setError(messageFromError(caught));
+        if (cancelled) return;
+        setLoadFailed(true);
+        setError(messageFromError(caught));
       });
     return () => {
       cancelled = true;
     };
-  }, [open, folder.id]);
+  }, [open, folder.id, attempt]);
 
   async function addFiles(picked: File[]) {
     setAdding(true);
     setError(null);
+    const failed: string[] = [];
     for (const file of picked) {
       try {
         const added = await projectFileAdd(folder.id, file);
         setFiles((current) => [...current, added]);
       } catch (caught) {
-        setError(messageFromError(caught));
+        failed.push(
+          t("{name} was not added. {reason}", {
+            name: file.name,
+            reason: messageFromError(caught),
+          }),
+        );
       }
     }
+    if (failed.length > 0) setError(failed.join(" "));
     setAdding(false);
   }
 
   async function removeFile(id: string) {
+    if (removing.has(id)) return;
     setError(null);
+    setRemoving((current) => new Set(current).add(id));
     try {
       await projectFileDelete(id);
       setFiles((current) => current.filter((file) => file.id !== id));
     } catch (caught) {
       setError(messageFromError(caught));
+    } finally {
+      setRemoving((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || saved === null) return;
     setBusy(true);
+    setError(null);
     try {
       await projectSave({ folderId: folder.id, instructions, memoryMode });
       onClose();
@@ -102,6 +133,8 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
     }
   }
 
+  const loading = saved === null && !loadFailed;
+  const editable = saved !== null && !busy;
   const over = instructions.length > PROJECT_INSTRUCTIONS_MAX_CHARS;
 
   return (
@@ -131,12 +164,24 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
         </>
       }
     >
-      <form id="project-settings-form" className="dialog-body" onSubmit={handleSubmit}>
+      <form
+        id="project-settings-form"
+        className="dialog-body"
+        aria-busy={loading || undefined}
+        onSubmit={handleSubmit}
+      >
+        {loading ? (
+          <p className="dialog-field-hint" role="status">
+            {t("Loading the project…")}
+          </p>
+        ) : null}
         <DialogField
           label={t("Instructions")}
           htmlFor="project-instructions"
           hint={t("Chats in this project follow these, on top of your personalization.")}
         >
+          {/* Read-only rather than disabled while it loads, so the dialog's
+              first focus still lands here. */}
           <textarea
             id="project-instructions"
             name="project-instructions"
@@ -147,6 +192,7 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
             )}
             value={instructions}
             onChange={(event) => setInstructions(event.currentTarget.value)}
+            readOnly={!editable}
             rows={5}
           />
           <span id={counterId} className="project-counter" data-over={over || undefined}>
@@ -170,6 +216,7 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
                 name="project-memory-mode"
                 value={mode.id}
                 checked={memoryMode === mode.id}
+                disabled={!editable}
                 onChange={() => setMemoryMode(mode.id)}
               />
               <span className="project-memory-mode-text">
@@ -186,7 +233,7 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
             <button
               type="button"
               className="primary-action"
-              disabled={adding}
+              disabled={adding || saved === null}
               onClick={() => fileInput.current?.click()}
             >
               <IconPaperclip1 size={14} aria-hidden />
@@ -205,7 +252,7 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
               if (picked.length > 0) void addFiles(picked);
             }}
           />
-          {files.length === 0 ? (
+          {saved === null ? null : files.length === 0 ? (
             <p className="dialog-field-hint">
               {t(
                 "Add PDFs, Office documents, text or images. Chats in this project can search them.",
@@ -217,11 +264,14 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
                 <li key={file.id} className="project-file" data-status={file.status}>
                   <IconFileText size={14} aria-hidden />
                   <span className="project-file-name">{file.name}</span>
-                  <span className="project-file-status">{projectFileStatus(file)}</span>
+                  <span className="project-file-status">
+                    {removing.has(file.id) ? t("Removing…") : projectFileStatus(file)}
+                  </span>
                   <button
                     type="button"
                     className="ghost-icon-button"
                     aria-label={t("Remove {name}", { name: file.name })}
+                    disabled={removing.has(file.id)}
                     onClick={() => void removeFile(file.id)}
                   >
                     <IconTrashCan size={14} />
@@ -235,6 +285,15 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
           <p className="dialog-share-error" role="alert">
             {error}
           </p>
+        ) : null}
+        {loadFailed ? (
+          <button
+            type="button"
+            className="primary-action"
+            onClick={() => setAttempt((count) => count + 1)}
+          >
+            {t("Try again")}
+          </button>
         ) : null}
       </form>
     </Dialog>

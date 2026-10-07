@@ -144,3 +144,10 @@
 .project-mobile-file-status[data-status="failed"] {
   color: var(--destructive);
 }
+
+/* While the project loads: a quiet line above the groups, not a spinner. */
+.project-mobile-status {
+  margin: 0 var(--sp-4);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
