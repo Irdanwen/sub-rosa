@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { date, t } from "./../lib/i18n";
 import { Markdown } from "./../lib/markdown";
-import { readShare, readShareLink, type SharedDocument, type SharePreview } from "./../lib/share";
+import { MessageBody } from "./../lib/chat-blocks";
+import {
+  readShare,
+  readShareLink,
+  type SharedDocument,
+  type SharedMessage,
+  type SharePreview,
+} from "./../lib/share";
 
 /**
  * The page a link opens. It holds a key, so it is deliberately the plainest
@@ -63,15 +70,25 @@ export function SharePage({ path }: { path: string }) {
         <p role="status">{t("Opening…", "Ouverture…")}</p>
       </section>
     );
+  const conversation = state.document.kind === "conversation";
   return (
     <section className="page wrap">
       <div className="prose">
         <p className="eyebrow">{t("Shared with you", "Partagé avec vous")}</p>
-        <h1>{state.document.title || t("Untitled note", "Note sans titre")}</h1>
+        <h1>
+          {state.document.title ||
+            (conversation
+              ? t("Untitled conversation", "Conversation sans titre")
+              : t("Untitled note", "Note sans titre"))}
+        </h1>
       </div>
-      <article className="card">
-        <Markdown text={state.document.body} />
-      </article>
+      {conversation ? (
+        <ConversationReader messages={state.document.messages ?? []} />
+      ) : (
+        <article className="card">
+          <Markdown text={state.document.body} />
+        </article>
+      )}
       <p className="quiet">
         {t("Shared on", "Partagé le")} {date(state.document.shared_at)}
         {state.preview ? (
@@ -87,5 +104,30 @@ export function SharePage({ path }: { path: string }) {
         )}
       </p>
     </section>
+  );
+}
+
+/** A shared conversation as it read in the app: the questions on one side,
+ * the replies on the other, each in its own bubble. */
+export function ConversationReader({ messages }: { messages: SharedMessage[] }) {
+  return (
+    <ol className="share-conversation">
+      {messages.map((message, index) => (
+        <li
+          // The order is the conversation; nothing reorders or removes a turn.
+          // biome-ignore lint/suspicious/noArrayIndexKey: turns have no other identity
+          key={index}
+          className="share-turn"
+          data-role={message.role}
+        >
+          <p className="share-turn-author">
+            {message.role === "user" ? t("Question", "Question") : "Sub Rosa"}
+          </p>
+          <div className="share-turn-body">
+            <MessageBody content={message.content} />
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }

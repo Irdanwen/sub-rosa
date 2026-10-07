@@ -877,6 +877,15 @@ export function AccountSettingsSection({
               >
                 {t("Refresh status")}
               </button>
+              {status.server_url ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void openExternalUrl(securityHistoryUrl(status.server_url ?? ""))}
+                >
+                  {t("Security history")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -1278,6 +1287,12 @@ function formatAccountDate(value: string) {
 }
 
 /** Never render provider response text, URLs containing tokens, or credentials. */
+/** The account site's list of recent sign-ins, devices, passkeys and
+ * revocations: read there, where the service that recorded them answers. */
+export function securityHistoryUrl(serverUrl: string): string {
+  return new URL("/account#security-history", serverUrl).toString();
+}
+
 export function accountError(cause: unknown): string {
   switch (errorCode(cause)) {
     case "recent_auth_required":
@@ -1328,7 +1343,11 @@ export function accountError(cause: unknown): string {
     case "share_window_invalid":
       return t("Choose how long the link should work.");
     case "share_too_large":
-      return t("This note is too large to share as a link.");
+      return t("This is too large to share as a link.");
+    case "share_temporary":
+      return t("A temporary chat cannot be shared.");
+    case "share_empty":
+      return t("This conversation has nothing to share yet.");
     case "share_failed":
       return t("The link could not be created. Try again.");
     default:

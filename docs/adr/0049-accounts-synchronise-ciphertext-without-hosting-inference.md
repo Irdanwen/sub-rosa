@@ -67,3 +67,25 @@ authenticated device of a verified account may obtain its own key, and it asks
 Carpe Diem to revoke that key with the device. It still never sees a key, a
 balance or a prompt, and still runs nothing. Its PostgreSQL data still contains
 no Carpe Diem key: only an outbox of revocations to deliver.
+
+## Addendum 2026-10-07: the account keeps a security history
+
+The service now records an append-only `security_events` table (migration
+0010 of `subrosa-cloud`): sign-ins, sign-outs, devices added, renamed,
+revoked or signed in again, a refresh token replayed, pairings approved,
+passkeys added and removed, vault created or updated, Carpe Diem keys
+requested and revoked, and sessions reset. Each row is written in the
+transaction of the action it records, so the two commit together.
+
+- It is a history, not a reconstruction: sessions and devices are deleted or
+  overwritten, so they cannot be read back as one.
+- It holds no new personal data: a kind from a list the database enforces, a
+  time, and the device label copied at the moment of the event. No IP
+  address, user agent or location is stored, and deleting the account deletes
+  its history.
+- `GET /api/v1/security-events` answers the signed-in account only (with the
+  same account assertion as every account route), newest first, 90 days, at
+  most 200 rows; maintenance deletes rows older than 90 days. The account
+  site shows it under "Security history", and the app links there.
+- Token refreshes and synchronisation writes are not recorded: too frequent
+  to read, and a copied device secret already shows through its renewal count.

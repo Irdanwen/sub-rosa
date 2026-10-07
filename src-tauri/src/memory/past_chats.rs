@@ -67,6 +67,7 @@ pub async fn search(
          WHERE agent_messages_fts MATCH ?1
            AND f.task_id <> ?2
            AND m.role IN ('user', 'assistant')
+           AND t.ephemeral = 0
            AND t.safety_profile NOT IN ('custom_assistant', 'customAssistant')
            AND NOT EXISTS (SELECT 1 FROM assistant_conversations a WHERE a.task_id = t.id)
          ORDER BY bm25(agent_messages_fts)

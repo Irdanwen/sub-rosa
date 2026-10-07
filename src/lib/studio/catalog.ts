@@ -3,6 +3,7 @@
 // video family twice (a text-to-video id and an image-to-video id); the studio
 // presents one family with a Text/Image toggle, like a single "model".
 
+import { withoutAdultModels } from "../adult-models";
 import { intlLocale, t } from "../i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { probedConstraints } from "./model-constraints";
@@ -45,7 +46,9 @@ export function resetMediaCatalogCache() {
 }
 
 export function modelsOfType(catalog: MediaCatalog, type: MediaType): MediaModel[] {
-  return catalog.models
+  // Rust already left adult families out under protected mode (ADR-0084);
+  // filtering again covers a catalog cached from before the switch.
+  return withoutAdultModels(catalog.models, catalog.protectedMode === true)
     .filter((model) => model.mediaType === type && !model.offline)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -129,7 +132,12 @@ export function imageEditModels(catalog: MediaCatalog): MediaModel[] {
   // An explicit offline entry is authoritative too: do not resurrect it as
   // an unlisted passthrough after modelsOfType has filtered it out.
   const seen = new Set(catalog.models.map((model) => model.id));
-  const extras = CARPE_DIEM_EXTRA_EDIT_MODELS.filter((model) => !seen.has(model.id));
+  // The passthroughs are added here, past Rust's filter: protected mode
+  // applies to them too.
+  const extras = withoutAdultModels(
+    CARPE_DIEM_EXTRA_EDIT_MODELS,
+    catalog.protectedMode === true,
+  ).filter((model) => !seen.has(model.id));
   return [...live, ...extras].sort((a, b) => a.name.localeCompare(b.name));
 }
 

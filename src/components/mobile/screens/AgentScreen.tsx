@@ -68,6 +68,17 @@ import {
   setAgentTaskModel,
 } from "../../../lib/tauri";
 import { readableModelName } from "../../../lib/model-names";
+import {
+  createTemporaryChat,
+  isTemporaryChat,
+  markTemporaryChat,
+  useIsTemporaryChat,
+  useTemporaryChatHold,
+  useTemporaryDraft,
+} from "../../../lib/temporary-chat";
+import { TemporaryChatBanner, TemporaryChatToggle } from "../../agent/TemporaryChat";
+import { ShareConversationDialog } from "../../share/ShareNoteDialog";
+import { useCanShare } from "../../share/useCanShare";
 import { BrandMark } from "../../brand/Marks";
 import { ContextGauge } from "../../chat/ContextGauge";
 import { ChatAmbient } from "../ChatAmbient";
@@ -130,6 +141,8 @@ export function AgentScreen({
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<ChatSessionItem | null>(null);
   const [renaming, setRenaming] = useState<ChatSessionItem | null>(null);
+  const [sharing, setSharing] = useState<ChatSessionItem | null>(null);
+  const canShare = useCanShare();
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -259,6 +272,9 @@ export function AgentScreen({
             isArchived
               ? { label: t("Restore"), tone: "neutral", onAction: () => void restore(task.id) }
               : { label: t("Archive"), tone: "neutral", onAction: () => void archive(task.id) },
+            ...(canShare
+              ? [{ label: t("Share"), tone: "neutral" as const, onAction: () => setSharing(task) }]
+              : []),
             { label: t("Delete"), tone: "destructive", onAction: () => setConfirmDelete(task) },
           ]}
         >
@@ -405,6 +421,13 @@ export function AgentScreen({
           onClose={() => setRenaming(null)}
         />
       ) : null}
+      {sharing ? (
+        <ShareConversationDialog
+          target={{ taskId: sharing.id }}
+          open={true}
+          onClose={() => setSharing(null)}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirmDelete !== null}
         title={t("Delete this chat?")}
@@ -470,6 +493,11 @@ export function AgentSessionScreen({
   onInitialDraftUsed,
 }: AgentSessionScreenProps) {
   const [task, setTask] = useState<AgentTaskDto | null>(null);
+  // A temporary chat (ADR-0083) is chosen before its first message, and is
+  // deleted as soon as this screen leaves it.
+  const temporaryDraftOn = useTemporaryDraft();
+  const temporary = useIsTemporaryChat(task?.id) || (!task && !sessionId && temporaryDraftOn);
+  useTemporaryChatHold(task?.id, "task");
   const [draft, setDraft] = useState(initialDraft ?? "");
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
@@ -761,6 +789,8 @@ export function AgentSessionScreen({
       void forkAgentTask({ sourceTaskId, model: modelId })
         .then((forked) => {
           hapticNotify("success");
+          // A branch of a temporary chat is temporary too (Rust copies the flag).
+          if (isTemporaryChat(sourceTaskId)) markTemporaryChat(forked.id);
           onOpenSession?.(forked.id);
         })
         .catch((err: unknown) => setError(messageFromError(err)));
@@ -798,11 +828,13 @@ export function AgentSessionScreen({
     try {
       let current = task;
       if (!current) {
-        current = await createAgentTask({
-          prompt: stored,
-          runPlaceholder: false,
-          model: model || undefined,
-        });
+        current = temporary
+          ? await createTemporaryChat({ prompt: stored, model: model || undefined })
+          : await createAgentTask({
+              prompt: stored,
+              runPlaceholder: false,
+              model: model || undefined,
+            });
         taskIdRef.current = current.id;
         setTask(current);
         onSessionCreated?.(current.id);
@@ -863,6 +895,7 @@ export function AgentSessionScreen({
     loadingTask,
     taskLoadFailed,
     task,
+    temporary,
     model,
     models,
     effortFor,
@@ -980,6 +1013,8 @@ export function AgentSessionScreen({
       void forkAgentTask({ sourceTaskId, upToMessageId: messageId })
         .then((forked) => {
           hapticNotify("success");
+          // A branch of a temporary chat is temporary too (Rust copies the flag).
+          if (isTemporaryChat(sourceTaskId)) markTemporaryChat(forked.id);
           onOpenSession?.(forked.id);
         })
         .catch((err: unknown) => setError(messageFromError(err)));
@@ -1028,6 +1063,7 @@ export function AgentSessionScreen({
       hapticImpact("light");
       try {
         const branch = await agentLiteEditBranch(request);
+        if (isTemporaryChat(request.taskId)) markTemporaryChat(branch.id);
         hapticNotify("success");
         onOpenSession?.(branch.id);
       } catch (err) {
@@ -1092,7 +1128,13 @@ export function AgentSessionScreen({
       <ChatAmbient active={showHero} onPresenceChange={setAmbientPresent} />
       <StackHeader
         // A new chat's opening has no title: the page is the question it asks.
-        title={!task && showHero ? "" : task?.title.trim() || t("New chat")}
+        title={
+          !task && showHero
+            ? ""
+            : temporary
+              ? t("Temporary chat")
+              : task?.title.trim() || t("New chat")
+        }
         onBack={onBack}
         backLabel={t("Chats")}
         leading={
@@ -1144,12 +1186,14 @@ export function AgentSessionScreen({
       <div className="assistants-entry"></div>
       <div className="mobile-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {loadingTask ? <Spinner aria-label={t("Loading")} /> : null}
+        {!showHero ? <TemporaryChatBanner chatId={task?.id} /> : null}
         {showHero ? (
           <div className="mobile-chat-hero">
             <span className="mobile-chat-hero-mark" aria-hidden>
               <BrandMark />
             </span>
             <h2 className="mobile-chat-hero-greeting">{t("Ask a question")}</h2>
+            <TemporaryChatToggle disabled={running} />
           </div>
         ) : null}
         {messages.map((message, index) => (

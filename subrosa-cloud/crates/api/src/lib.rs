@@ -75,6 +75,7 @@ pub fn router(service: Service) -> Router {
         .route("/api/v1/session/renew", post(renew_session))
         .route("/api/v1/session/renounce", post(renounce_device))
         .route("/api/v1/devices", get(devices))
+        .route("/api/v1/security-events", get(security_events))
         .route("/api/v1/devices/{id}", axum::routing::delete(revoke_device))
         .route(
             "/api/v1/devices/{id}/name",
@@ -432,6 +433,13 @@ async fn revoke_device(
         .revoke_device(a.account.id, id, RevocationReason::DeviceRevoked)
         .await?;
     Ok(ok(json!({"revoked":true})).into_response())
+}
+/// The account's security history, newest first. Read-only, and scoped like
+/// every other account route: the session names the account, and a tab that
+/// asserts another account is refused before anything is read.
+async fn security_events(State(s): State<Arc<Service>>, h: HeaderMap) -> Result<Response> {
+    let a = session(&s, &h, false).await?;
+    Ok(ok(s.repository.security_events(a.account.id).await?).into_response())
 }
 #[derive(Deserialize)]
 struct DeviceName {

@@ -5,6 +5,7 @@ import { IconLock } from "central-icons/IconLock";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { useEffect, useState } from "react";
 import { EgressLedgerCard } from "./EgressLedgerCard";
+import { ProtectedModeSection } from "./ProtectedModeSection";
 import { ReflexCard } from "./ReflexCard";
 import { SemanticAskCard } from "./SemanticAskCard";
 import {
@@ -72,6 +73,8 @@ export function PrivacySettingsSection() {
           <p className="settings-row-description">{error}</p>
         </div>
       ) : null}
+
+      <ProtectedModeSection />
 
       <EgressLedgerCard />
 

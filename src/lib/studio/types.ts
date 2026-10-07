@@ -111,6 +111,8 @@ export interface MediaModel {
 export interface MediaCatalog {
   backend: "carpe-diem" | "venice";
   priceMultiplier?: number;
+  /** Protected mode left adult families out (ADR-0084). */
+  protectedMode?: boolean;
   models: MediaModel[];
 }
 

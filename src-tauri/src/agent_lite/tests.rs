@@ -155,6 +155,18 @@ fn system_prompt_appends_memory_block_when_present() {
     assert!(with_memory.ends_with(block));
 }
 
+#[test]
+fn protected_mode_closes_the_phone_prompt_whatever_built_it() {
+    use crate::protected_mode::guards::guard_system_prompt;
+    let block = "User memory: facts.\n- likes tea\n";
+    let base = build_system_prompt(Some(block));
+    assert_eq!(guard_system_prompt(base.clone(), false), base);
+    let guarded = guard_system_prompt(base, true);
+    assert!(guarded.starts_with(SYSTEM_PROMPT));
+    assert!(guarded.contains("- likes tea\n\nProtected mode:"));
+    assert!(guarded.contains("general audience"));
+}
+
 fn tool_names(tools: &serde_json::Value) -> Vec<String> {
     tools
         .as_array()

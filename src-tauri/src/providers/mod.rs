@@ -202,8 +202,27 @@ pub fn transcription_model() -> String {
     current_settings().transcription_model
 }
 
+/// The chat default. While protected mode is on an adult model stored before
+/// it was switched on reads as the built-in default (ADR-0084).
 pub fn generation_model() -> String {
-    current_settings().generation_model
+    let model = current_settings().generation_model;
+    if crate::protected_mode::check_model(Some(&model)).is_err() {
+        return DEFAULT_GENERATION_MODEL.to_string();
+    }
+    model
+}
+
+/// Puts the chat default back to the built-in one when it is an adult model,
+/// so the pickers do not show a choice protected mode has hidden (ADR-0084).
+pub fn drop_adult_generation_model(state: &ProviderSettingsState) -> Result<(), AppError> {
+    let stored = selected_model_for_mode(state, ModelMode::Generation)?;
+    if !crate::protected_mode::is_adult_model_id(&stored) {
+        return Ok(());
+    }
+    update_settings(state, |settings| {
+        settings.generation_model = DEFAULT_GENERATION_MODEL.to_string();
+    })
+    .map(|_| ())
 }
 
 pub fn image_model() -> String {
@@ -349,6 +368,7 @@ pub fn set_venice_model(
     if model_id.is_empty() {
         return Err(AppError::new("provider_model_required", "Select a model."));
     }
+    crate::protected_mode::check_model(Some(model_id))?;
     update_settings(&state, |settings| match request.mode {
         ModelMode::Transcription => {
             settings.transcription_provider =
@@ -437,6 +457,7 @@ pub async fn list_venice_models(
         .into_iter()
         .map(VeniceModelDto::from)
         .collect::<Vec<_>>();
+    crate::protected_mode::filter_chat_models(&mut models);
     models.sort_by(|left, right| {
         left.name
             .to_ascii_lowercase()

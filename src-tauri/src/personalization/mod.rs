@@ -177,8 +177,13 @@ const SOUL_END: &str = "<!-- /sub-rosa:personal-context -->";
 /// always a place to write into.
 pub async fn soul_section_for_app(app: &AppHandle) -> Option<String> {
     let memory = crate::memory::prompt_block_for_app(app).await;
+    // Protected mode's block leads the section, so a preference written
+    // below it reads as subordinate (ADR-0084).
     Some(soul_section(
-        render_block(&settings()),
+        join_blocks([
+            crate::protected_mode::prompt_block(),
+            render_block(&settings()),
+        ]),
         memory,
         crate::memory::past_chats::soul_note().map(str::to_string),
     ))

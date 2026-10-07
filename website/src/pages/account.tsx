@@ -16,6 +16,7 @@ import { registerPasskey, signInWithPasskey } from "../lib/passkeys";
 import { decryptObject, prepareObject, prepareVault, sendObject, unlockVault } from "../lib/vault";
 import { Library } from "./library";
 import { PairApproval, PairReceiver } from "./pairing";
+import { SecurityHistory } from "./security-history";
 
 type Key = Uint8Array<ArrayBuffer>;
 type PasskeySummary = { id: string; created_at: string; last_used_at: string | null };
@@ -379,6 +380,7 @@ export function AccountPage({ path }: { path: string }) {
                       </a>
                     </article>
                   </div>
+                  <SecurityHistory />
                   <p className="quiet">
                     <a
                       className="text-link"
@@ -1469,6 +1471,7 @@ function Security({
           {t("Add a passkey", "Ajouter une passkey")}
         </button>
       </article>
+      <SecurityHistory />
       <article className="card">
         <h2>{t("Your recovery kit", "Votre kit de récupération")}</h2>
         <p>

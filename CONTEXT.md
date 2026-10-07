@@ -416,6 +416,13 @@ What was said in the user's other general chats, read from
 `search_past_chats` (ADR-0081). Not memory: nothing is extracted or stored.
 _Avoid_: chat memory, history (unqualified).
 
+**Temporary chat**:
+A chat that is not saved and not remembered: kept out of every list, index,
+memory pass, title, synchronisation, archive and share, and deleted when the
+person leaves it or at the next launch (ADR-0083). In code, `ephemeral`.
+_Avoid_: incognito, private chat (every chat here is private), ephemeral chat
+in copy.
+
 **Memory sources**:
 The memories a reply was given, recorded per phone turn (by the user message
 that opened it) and per desktop session (ADR-0081).

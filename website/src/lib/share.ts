@@ -18,12 +18,19 @@ export interface SharePreview {
   bytes: number;
   expires_at: string;
 }
+/** One visible turn of a shared conversation. Chat blocks ride in `content`
+ * as fenced JSON (```subrosa:<kind>), exactly as the app stored them. */
+export interface SharedMessage {
+  role: "user" | "assistant";
+  content: string;
+}
 export interface SharedDocument {
   v: number;
-  kind: string;
+  kind: "note" | "conversation";
   title: string;
   body: string;
   shared_at: string;
+  messages?: SharedMessage[];
 }
 
 const MAX_PIECE_BYTES = 8 * 1024 * 1024;
@@ -102,12 +109,26 @@ export async function readShare(
 ): Promise<{ preview: SharePreview; document: SharedDocument }> {
   const preview = await sharePreview(id, signal);
   const document = (await sharePiece(id, 0, key, signal)) as SharedDocument;
-  if (
-    document?.v !== 1 ||
-    typeof document.title !== "string" ||
-    typeof document.body !== "string" ||
-    document.kind !== "note"
-  )
+  if (!isSharedDocument(document))
     throw new ApiError("invalid_response", "This link could not be read.", 502);
   return { preview, document };
+}
+
+/** A note, or a conversation whose every turn is a user or assistant text.
+ * Anything else is refused whole rather than shown in part. */
+export function isSharedDocument(value: unknown): value is SharedDocument {
+  const document = value as SharedDocument | null;
+  if (document?.v !== 1 || typeof document.title !== "string" || typeof document.body !== "string")
+    return false;
+  if (document.kind === "note") return true;
+  return (
+    document.kind === "conversation" &&
+    Array.isArray(document.messages) &&
+    document.messages.length > 0 &&
+    document.messages.every(
+      (message) =>
+        (message?.role === "user" || message?.role === "assistant") &&
+        typeof message.content === "string",
+    )
+  );
 }

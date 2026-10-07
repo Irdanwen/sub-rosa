@@ -1216,6 +1216,137 @@
         }
       }
     },
+    "/api/v1/security-events": {
+      "get": {
+        "summary": "List the account's security history, newest first: at most 200 events from the last 90 days",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SecurityEvent"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Authorization pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Retry after delay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "nativeSession": []
+          },
+          {
+            "browserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ExpectedAccount"
+          }
+        ]
+      }
+    },
     "/api/v1/me": {
       "get": {
         "summary": "Read current account",
@@ -5019,6 +5150,59 @@
           "created_at",
           "last_seen_at",
           "revoked_at"
+        ]
+      },
+      "SecurityEvent": {
+        "type": "object",
+        "description": "One line of the account's security history. No network address, user agent or location is recorded.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "signed_in",
+              "signed_in_passkey",
+              "signed_out",
+              "device_added",
+              "device_signed_in",
+              "device_renamed",
+              "device_revoked",
+              "device_signed_out",
+              "refresh_reuse_blocked",
+              "pairing_approved",
+              "passkey_added",
+              "passkey_removed",
+              "vault_created",
+              "vault_updated",
+              "carpe_diem_key_requested",
+              "carpe_diem_key_revoked",
+              "sessions_reset"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The device label at the time of the event, when a device was involved."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "occurred_at",
+          "device_name"
         ]
       },
       "Operation": {

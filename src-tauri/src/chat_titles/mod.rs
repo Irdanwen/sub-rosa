@@ -62,6 +62,7 @@ pub(crate) async fn mark_first_reply(
         "INSERT OR IGNORE INTO agent_task_titles(task_id,state,expected_title,attempts,created_at,updated_at) \
          SELECT t.id,'pending',t.title,0,?,? FROM agent_tasks t \
          WHERE t.id=? \
+         AND t.ephemeral=0 \
          AND t.safety_profile NOT IN ('custom_assistant','customAssistant') \
          AND t.hermes_session_id IS NULL \
          AND NOT EXISTS (SELECT 1 FROM assistant_conversations c WHERE c.task_id=t.id) \

@@ -73,6 +73,10 @@ pub struct ExtractMemoriesRequest {
     /// can ask after every turn; absent, the pass runs unconditionally.
     #[serde(default, alias = "turns")]
     pub assistant_turns: Option<usize>,
+    /// The desktop session the window comes from. A temporary chat's window
+    /// is refused here as well as in the frontend (ADR-0083).
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,12 +111,17 @@ pub async fn memory_extract(
     app: AppHandle,
     request: ExtractMemoriesRequest,
 ) -> Result<ExtractMemoriesResult, AppError> {
+    let repos = crate::commands::repositories(&app).await?;
+    if let Some(session_id) = request.session_id.as_deref() {
+        if crate::temporary_chat::is_temporary_session(&repos.pool, session_id).await? {
+            return Ok(ExtractMemoriesResult { added: 0 });
+        }
+    }
     if let Some(turns) = request.assistant_turns {
         if !extraction_due(&request.messages, turns).await {
             return Ok(ExtractMemoriesResult { added: 0 });
         }
     }
-    let repos = crate::commands::repositories(&app).await?;
     let added = extract_and_store(&repos, &request.messages).await?;
     if added > 0 {
         super::recall::spawn_backfill(&app);
@@ -131,39 +140,51 @@ pub fn maybe_extract_after_agent_lite_turn(app: &AppHandle, task_id: String) {
     tauri::async_runtime::spawn(async move {
         let result = async {
             let repos = crate::commands::repositories(&app).await?;
-            if crate::assistants::runtime::snapshot_for_task(&repos.pool, &task_id)
-                .await?
-                .is_some_and(|snapshot| !snapshot.definition.allow_memory)
-            {
-                return Ok::<usize, AppError>(0);
-            }
-            let task = repos.get_agent_task(&task_id).await?;
-            let messages: Vec<ConversationMessage> = task
-                .messages
-                .iter()
-                .map(|message| ConversationMessage {
-                    role: message.role.as_db().to_string(),
-                    content: message.content.clone(),
-                })
-                .collect();
-            let assistant_turns = messages
-                .iter()
-                .filter(|message| message.role == "assistant")
-                .count();
-            if !extraction_due(&messages, assistant_turns).await {
-                return Ok::<usize, AppError>(0);
-            }
-            let added = extract_and_store(&repos, &messages).await?;
+            let added = extract_after_turn(&repos, &task_id).await?;
             if added > 0 {
                 let _ = super::recall::backfill_embeddings(&repos).await;
             }
-            Ok(added)
+            Ok::<usize, AppError>(added)
         }
         .await;
         if let Err(error) = result {
             eprintln!("memory extraction after agent-lite turn failed: {error:?}");
         }
     });
+}
+
+/// One agent-lite chat's extraction pass, when that chat may feed memory: a
+/// temporary chat never does (ADR-0083), nor an assistant that says no.
+pub(crate) async fn extract_after_turn(
+    repos: &crate::db::repositories::Repositories,
+    task_id: &str,
+) -> Result<usize, AppError> {
+    if crate::temporary_chat::is_temporary(&repos.pool, task_id).await? {
+        return Ok(0);
+    }
+    if crate::assistants::runtime::snapshot_for_task(&repos.pool, task_id)
+        .await?
+        .is_some_and(|snapshot| !snapshot.definition.allow_memory)
+    {
+        return Ok(0);
+    }
+    let task = repos.get_agent_task(task_id).await?;
+    let messages: Vec<ConversationMessage> = task
+        .messages
+        .iter()
+        .map(|message| ConversationMessage {
+            role: message.role.as_db().to_string(),
+            content: message.content.clone(),
+        })
+        .collect();
+    let assistant_turns = messages
+        .iter()
+        .filter(|message| message.role == "assistant")
+        .count();
+    if !extraction_due(&messages, assistant_turns).await {
+        return Ok(0);
+    }
+    extract_and_store(repos, &messages).await
 }
 
 /// Whether a conversation that now counts `assistant_turns` assistant replies

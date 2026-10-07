@@ -112,6 +112,10 @@ pub(super) async fn send(
             format!("Path {path} is not allowed on the media proxy."),
         ));
     }
+    // Protected mode is enforced here, where every Studio and assistant
+    // request leaves, not in the webview (ADR-0084).
+    let guarded = crate::protected_mode::guard_media_request(path, body)?;
+    let body = guarded.as_ref().or(body);
     let Some((credential_base, key)) = settings::credentials() else {
         return Err(AppError::new(
             "media_no_api_key",
@@ -273,6 +277,9 @@ pub struct MediaCatalogDto {
     /// 1.0 on the Venice-direct path.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price_multiplier: Option<f64>,
+    /// Protected mode left adult families out of `models` (ADR-0084).
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub protected_mode: bool,
     pub models: Vec<MediaModelDto>,
 }
 
@@ -355,16 +362,24 @@ pub async fn recent_media_catalog(max_age: Duration) -> Result<MediaCatalogDto, 
     let mut slot = RECENT_CATALOG.lock().await;
     if let Some((fetched_at, catalog)) = slot.as_ref() {
         if fetched_at.elapsed() <= max_age {
-            return Ok(catalog.clone());
+            return Ok(crate::protected_mode::filter_media_catalog(catalog.clone()));
         }
     }
-    let catalog = carpe_diem_media_catalog().await?;
+    let catalog = fetch_media_catalog().await?;
     *slot = Some((std::time::Instant::now(), catalog.clone()));
-    Ok(catalog)
+    Ok(crate::protected_mode::filter_media_catalog(catalog))
 }
 
+/// The catalog every picker reads, without adult families while protected
+/// mode is on (ADR-0084).
 #[tauri::command]
 pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
+    fetch_media_catalog()
+        .await
+        .map(crate::protected_mode::filter_media_catalog)
+}
+
+async fn fetch_media_catalog() -> Result<MediaCatalogDto, AppError> {
     let Some((credential_base, key)) = settings::credentials() else {
         return Err(AppError::new(
             "media_no_api_key",
@@ -394,6 +409,7 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
         Ok(MediaCatalogDto {
             backend: "carpe-diem".to_string(),
             price_multiplier: pricing.as_ref().and_then(pricing_multiplier),
+            protected_mode: false,
             models: merge_carpe_diem_catalog(&primary, venice.as_ref(), pricing.as_ref()),
         })
     } else {
@@ -408,6 +424,7 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
         Ok(MediaCatalogDto {
             backend: "venice".to_string(),
             price_multiplier: Some(1.0),
+            protected_mode: false,
             models: venice_catalog_models(&catalog),
         })
     }

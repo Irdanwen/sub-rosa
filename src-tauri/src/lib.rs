@@ -73,6 +73,7 @@ pub mod personalization;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
 pub mod places;
+pub mod protected_mode;
 pub mod providers;
 pub mod redacted;
 pub mod reflex;
@@ -86,6 +87,7 @@ pub mod sse_lines;
 pub mod storefront;
 #[cfg(desktop)]
 pub mod stream_relay;
+pub mod temporary_chat;
 #[cfg(desktop)]
 pub mod theme_icon;
 #[cfg(desktop)]
@@ -556,6 +558,16 @@ pub fn run() {
             reply_ratings::reply_rating_set,
             reply_ratings::reply_ratings_list,
             conversation_export::export_conversation,
+            temporary_chat::temporary_chat_create,
+            temporary_chat::temporary_chat_register,
+            temporary_chat::temporary_chat_discard,
+            temporary_chat::temporary_chat_sweep,
+            temporary_chat::temporary_chat_sessions,
+            account::account_share_conversation,
+            protected_mode::protected_mode_status,
+            protected_mode::protected_mode_enable,
+            protected_mode::protected_mode_disable,
+            protected_mode::protected_mode_verify,
             account::account_status,
             account::conversations::account_conversations_list,
             account::conversations::account_conversation_get,
@@ -862,6 +874,16 @@ pub fn run() {
         reply_ratings::reply_rating_set,
         reply_ratings::reply_ratings_list,
         conversation_export::export_conversation,
+        temporary_chat::temporary_chat_create,
+        temporary_chat::temporary_chat_register,
+        temporary_chat::temporary_chat_discard,
+        temporary_chat::temporary_chat_sweep,
+        temporary_chat::temporary_chat_sessions,
+        account::account_share_conversation,
+        protected_mode::protected_mode_status,
+        protected_mode::protected_mode_enable,
+        protected_mode::protected_mode_disable,
+        protected_mode::protected_mode_verify,
         account::account_status,
         account::conversations::account_conversations_list,
         account::conversations::account_conversation_get,
@@ -1000,6 +1022,7 @@ pub fn run() {
             diagnostics::mark("sidecar setup");
             memory::setup(app);
             personalization::setup(app);
+            protected_mode::setup(app);
             ask::semantic::setup(app);
             reflex::setup(app);
             egress_ledger::spawn_flusher(app.handle());
