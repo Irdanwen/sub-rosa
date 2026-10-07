@@ -15,7 +15,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { stripReasoningEffortAlias } from "./desktop-reasoning-effort";
+import { stripReasoningEffortAlias } from "./reasoning-effort";
 
 export interface TextPrice {
   model: string;

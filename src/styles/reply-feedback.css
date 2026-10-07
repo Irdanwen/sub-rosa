@@ -1,0 +1,104 @@
+/* Rating a reply and reading it aloud (src/components/chat/RateReply.tsx,
+ * ReadAloudButton.tsx). Shell-neutral: the buttons take each shell's action
+ * class, only the reason panel and the pressed state are drawn here. */
+
+.agent-turn-action[data-rated],
+.mobile-chat-copy[data-rated] {
+  color: var(--foreground);
+}
+
+.reply-feedback-panel {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  max-width: 420px;
+  margin: var(--sp-1) 0 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-md);
+  color: var(--popover-foreground);
+  font-size: var(--fs-sm);
+}
+
+.reply-feedback-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.reply-feedback-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+.reply-feedback-reason,
+.reply-feedback-button {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--foreground);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.reply-feedback-reason[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.reply-feedback-note {
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
+
+.reply-feedback-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.reply-feedback-privacy {
+  flex: 1;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.reply-feedback-button[data-primary="true"] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* The desktop row only shows on hover. While the reasons are asked or a reply
+ * is being read, it stays: Stop has to be there to press. */
+.agent-turn-actions:has(.reply-feedback-panel),
+.agent-turn-actions:has([data-state="playing"]),
+.agent-turn-actions:has([data-state="loading"]) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.agent-turn-actions-inner:has(.reply-feedback-panel) {
+  flex-wrap: wrap;
+}
+
+/* On a phone the reasons are tapped: room for a thumb, and no zoom on focus. */
+.mobile-chat-actions .reply-feedback-reason,
+.mobile-chat-actions .reply-feedback-button {
+  min-height: 32px;
+}
+
+.mobile-chat-actions .reply-feedback-note {
+  font-size: max(16px, var(--fs-md));
+}

@@ -436,6 +436,27 @@ the runtime's `/undo` before a new turn. Editing an earlier message happens in
 a **branch**, so the original conversation stays as it was (ADR-0080).
 _Avoid_: retry (that re-asks after a failure), rewrite (a note rewrite).
 
+**Read aloud (a reply)**:
+A finished reply spoken through the one-call speech rail, the engine and voice
+the spoken recap of a note uses, cut into chunks so the first sentence plays in
+seconds. A chat card or a code block is named ("There are links here"), never
+read. One reply speaks at a time.
+_Avoid_: TTS (the rail, not the action), voice mode (a spoken conversation,
+which this is not).
+
+**Reply rating**:
+A thumbs up or down a person gives a reply, with an optional reason on a
+thumbs down. For themselves only: kept on the device, never synchronised,
+never sent, carried only by an **archive** they write (ADR-0082).
+_Avoid_: feedback (implies someone receives it), vote, review.
+
+**Conversation export**:
+One chat written as a Markdown or PDF file: title, date, model, each turn
+under its speaker, cards as lists. The desktop saves it where the person
+points; the phone hands it to the share sheet (ADR-0082).
+_Avoid_: share (a share link is another thing), archive (that is the whole
+corpus).
+
 **Archived chat**:
 A chat filed in the shared folder named "Archive". The membership is
 synchronised, so archiving on one device archives on every device; restoring

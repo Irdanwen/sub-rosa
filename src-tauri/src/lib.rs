@@ -25,6 +25,7 @@ pub mod carpe_diem;
 pub mod chat_titles;
 pub mod child_env;
 pub mod commands;
+pub mod conversation_export;
 #[cfg(desktop)]
 pub mod council;
 pub mod db;
@@ -75,6 +76,7 @@ pub mod places;
 pub mod providers;
 pub mod redacted;
 pub mod reflex;
+pub mod reply_ratings;
 pub mod rewrite_stream;
 pub mod share_inbox;
 #[cfg(target_os = "ios")]
@@ -551,6 +553,9 @@ pub fn run() {
             memory::sources::memory_sources_for_session,
             personalization::personalization_get_settings,
             personalization::personalization_set_settings,
+            reply_ratings::reply_rating_set,
+            reply_ratings::reply_ratings_list,
+            conversation_export::export_conversation,
             account::account_status,
             account::conversations::account_conversations_list,
             account::conversations::account_conversation_get,
@@ -854,6 +859,9 @@ pub fn run() {
         memory::sources::memory_sources_for_session,
         personalization::personalization_get_settings,
         personalization::personalization_set_settings,
+        reply_ratings::reply_rating_set,
+        reply_ratings::reply_ratings_list,
+        conversation_export::export_conversation,
         account::account_status,
         account::conversations::account_conversations_list,
         account::conversations::account_conversation_get,

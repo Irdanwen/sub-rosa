@@ -365,9 +365,11 @@ import { createFrameBatcher, requestFrame } from "../../lib/frame-batch";
 import { createPostTurnRefresher } from "../../lib/post-turn-refresh";
 import { useEventCallback } from "../../lib/use-event-callback";
 import { clipboardImageFiles } from "../../lib/clipboard-images";
-import { desktopRuntimeModel } from "../../lib/desktop-reasoning-effort";
-import { regenerableTurnId } from "../../lib/hermes-turn-rewrite";
+import { exportHermesChat } from "../../lib/conversation-export";
+import { desktopRuntimeModel } from "../../lib/reasoning-effort";
+import { type RewriteTargets, rewriteTargetsFor } from "../../lib/hermes-turn-rewrite";
 import * as turnRewrites from "../../lib/hermes-turn-rewrite-actions";
+import { DesktopContextGauge, ExportChatItems, ReplyExtras } from "./ChatReplyExtras";
 import { ReasoningEffortControl, RegenerateAction, UserTurnEditor } from "./ChatTurnControls";
 import {
   assignArtifactsToTurns,
@@ -6025,6 +6027,8 @@ export function AgentWorkspace({
     runtimeModel: (modelId) => desktopRuntimeModel(modelId, generationModelsRef.current),
     knownSessionIds: () => new Set(hermesSessionItemsRef.current.map((session) => session.id)),
     listSessions: () => listHermesSessions(),
+    restoreDraft: (_id, text) => editUserPrompt(text),
+    notice: (sessionId, message) => setModelSwitchNotice({ message, sessionId }),
     openBranch: async ({ storedSessionId, runtimeSessionId, sourceSessionId }) => {
       rememberSessionMode(storedSessionId, sessionUnrestricted(sourceSessionId));
       rememberSessionWorkingDir(storedSessionId, sessionWorkingDir(sourceSessionId) ?? null);
@@ -6798,11 +6802,8 @@ export function AgentWorkspace({
     ],
   );
   const rewriteTargets = useMemo(
-    () => ({
-      regenerable: regenerableTurnId(hermesTurns),
-      lastUser: [...hermesTurns].reverse().find((turn) => turn.role === "user")?.id,
-    }),
-    [hermesTurns],
+    () => rewriteTargetsFor(hermesTurns, selectedHermesSessionId),
+    [hermesTurns, selectedHermesSessionId],
   );
   const selectedTaskLiveEvents = selectedTask ? liveEvents[selectedTask.id] : undefined;
   const taskTurns = useMemo(
@@ -7591,6 +7592,11 @@ export function AgentWorkspace({
                 }}
               />
               <ReasoningEffortControl model={generationModel} onChange={applyReasoningEffort} />
+              <DesktopContextGauge
+                model={generationModel}
+                messages={selectedHermesMessages}
+                onNewChat={() => void startNewTask()}
+              />
               <button
                 type="button"
                 className="agent-composer-mic"
@@ -8206,6 +8212,11 @@ export function AgentWorkspace({
           onCompactContext={
             !newSessionMode && selectedHermesSessionId && !selectedHermesSessionIsProvisional
               ? () => setCompactSessionId(selectedHermesSessionId)
+              : undefined
+          }
+          onExport={
+            !newSessionMode && selectedHermesSession
+              ? (format) => exportHermesChat(format, selectedHermesSession, hermesTurns, setError)
               : undefined
           }
           // Dev builds only: open the raw Hermes TUI on this exact session,
@@ -9045,6 +9056,7 @@ function AgentSessionBar({
   onDelete,
   onShowUsage,
   onCompactContext,
+  onExport,
   onOpenTuiDebug,
 }: {
   origin?: AgentWorkspaceOrigin;
@@ -9062,6 +9074,7 @@ function AgentSessionBar({
   onDelete?: () => void;
   onShowUsage?: () => void;
   onCompactContext?: () => void;
+  onExport?: (format: "markdown" | "pdf") => void;
   /** Developer-only: open this session in Hermes' raw TUI. Undefined (and the
    * menu item absent) in production builds. */
   onOpenTuiDebug?: () => void;
@@ -9096,7 +9109,7 @@ function AgentSessionBar({
   }
 
   const hasMenu = Boolean(
-    onRename || onDelete || onShowUsage || onCompactContext || onOpenTuiDebug,
+    onRename || onDelete || onShowUsage || onCompactContext || onExport || onOpenTuiDebug,
   );
 
   return (
@@ -9229,6 +9242,7 @@ function AgentSessionBar({
                     {t("Compact context")}
                   </button>
                 ) : null}
+                <ExportChatItems onExport={onExport} close={() => setMenuOpen(false)} />
                 {onRename ? (
                   <button
                     type="button"
@@ -10217,7 +10231,7 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
    * last reply (ADR-0080). `rewriteTargets` names the turns that offer them. */
   onEditMessage?: (messageId: string, text: string, original: string) => void;
   onRegenerate?: () => void;
-  rewriteTargets?: { regenerable?: string; lastUser?: string };
+  rewriteTargets?: RewriteTargets;
   /** Fork the conversation from this turn into a new session (feature 07).
    * Optional: only Hermes-session rows pass it — task rows and the dev gallery
    * omit it, so the action is absent there. */
@@ -10365,13 +10379,14 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
     ) : null;
   const regenerateAction =
     onRegenerate && rewriteTargets?.regenerable === turn.id ? (
-      <RegenerateAction onRegenerate={onRegenerate} />
+      <RegenerateAction onRegenerate={onRegenerate} blocked={rewriteTargets.regenerateBlocked} />
     ) : null;
   const turnActions =
     copyAction || editAction || branchAction ? (
       <div className="agent-turn-actions">
         <div className="agent-turn-actions-inner">
           {copyAction}
+          <ReplyExtras turn={turn} sessionId={rewriteTargets?.sessionId} />
           {editAction}
           {regenerateAction}
           {branchAction}

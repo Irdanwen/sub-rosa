@@ -23,6 +23,10 @@ describe("reasoning effort", () => {
     expect(supportsReasoningEffort({ capabilities: ["supportsReasoning"] })).toBe(false);
     expect(supportsReasoningEffort({})).toBe(false);
     expect(supportsReasoningEffort(undefined)).toBe(false);
+    // The provider list sometimes prefixes the capability name.
+    expect(
+      supportsReasoningEffort({ capabilities: ["capabilities.supportsReasoningEffort"] }),
+    ).toBe(true);
   });
 
   it("sends an effort only to a model that honours one", () => {
@@ -50,8 +54,9 @@ describe("reasoning effort", () => {
   });
 
   it("names every choice in full, in both languages", () => {
+    // One set of names for both shells.
     expect([undefined, ...REASONING_EFFORTS].map(reasoningEffortLabel)).toEqual([
-      "Default",
+      "Default effort",
       "Low effort",
       "Medium effort",
       "High effort",

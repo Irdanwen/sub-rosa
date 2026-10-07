@@ -1,4 +1,4 @@
-import { stripReasoningEffortAlias } from "./desktop-reasoning-effort";
+import { stripReasoningEffortAlias } from "./reasoning-effort";
 import { IMAGE_MODELS } from "./image-models";
 import { humanizeModelId } from "./studio/catalog";
 import type { MediaCatalog } from "./studio/types";

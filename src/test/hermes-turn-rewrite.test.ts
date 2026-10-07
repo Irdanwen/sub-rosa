@@ -5,7 +5,9 @@ import {
   findBranchStoredId,
   messagesAfterUndo,
   planUserTurnEdit,
+  questionCarriesImages,
   regenerableTurnId,
+  rewriteTargetsFor,
   undoPrefillText,
   undoTurnsFor,
 } from "../lib/hermes-turn-rewrite";
@@ -155,6 +157,8 @@ function fakeDeps(overrides: Partial<TurnRewriteDeps> = {}) {
       { id: "fork", parent_session_id: "source", started_at: "2026-10-07T10:00:00Z" },
     ],
     openBranch: vi.fn(async () => undefined),
+    restoreDraft: vi.fn(),
+    notice: vi.fn(),
     ...overrides,
   };
   return { deps, request, stored };
@@ -260,5 +264,97 @@ describe("rewriting through the gateway", () => {
       "Hermes did not return a branched session.",
     );
     expect(deps.openBranch).not.toHaveBeenCalled();
+  });
+
+  it("puts the question back in the composer when the send after a rewind fails", async () => {
+    const { deps } = fakeDeps({
+      send: vi.fn(async () => {
+        throw new Error("The provider is busy.");
+      }),
+    });
+
+    await expect(regenerateLastReply(deps, "source")).rejects.toThrow(
+      "Your message is back in the composer. The provider is busy.",
+    );
+    expect(deps.restoreDraft).toHaveBeenCalledWith("source", "Third question");
+
+    const earlier = fakeDeps({ send: deps.send });
+    await expect(
+      editSentMessage(earlier.deps, "source", "4", "Second, sharper", "Second question"),
+    ).rejects.toThrow("Your message is back in the composer.");
+    // The edit went to the fork, so that is where its text comes back.
+    expect(earlier.deps.restoreDraft).toHaveBeenCalledWith("fork", "Second, sharper");
+  });
+
+  it("will not ask a question with pictures again, and leaves the transcript alone", async () => {
+    const withImage: HermesSessionMessage[] = [
+      ...messages.slice(0, 7),
+      {
+        id: "8",
+        role: "user",
+        content:
+          "What is this?\n\nAttached files copied into the Sub Rosa workspace:\n- photo.jpg (Workspace): uploads/photo.jpg\n\nUse these file paths when inspecting or operating on the files.",
+      },
+      { id: "9", role: "assistant", content: "A cat." },
+    ];
+    const { deps, request } = fakeDeps({ storedMessages: () => withImage });
+
+    await expect(regenerateLastReply(deps, "source")).rejects.toThrow(
+      "A question with images cannot be asked again.",
+    );
+    expect(request).not.toHaveBeenCalled();
+    expect(deps.send).not.toHaveBeenCalled();
+  });
+
+  it("says so when a branch cannot be put back on its source's model", async () => {
+    const { deps, request } = fakeDeps();
+    request.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === "session.branch") return { session_id: "fork-runtime", parent: "source" };
+      if (method === "config.set") throw new Error("model not found");
+      if (method === "command.dispatch" && params?.name === "undo") return {};
+      return {};
+    });
+
+    await branchFromMessage(deps, "source", "2");
+
+    expect(deps.openBranch).toHaveBeenCalled();
+    expect(deps.notice).toHaveBeenCalledWith(
+      "fork",
+      expect.stringContaining("answers on your default model"),
+    );
+  });
+});
+
+describe("what Regenerate can resend", () => {
+  it("recognises a question that carried pictures", () => {
+    const block = (line: string) =>
+      `Look\n\nAttached files copied into the Sub Rosa workspace:\n${line}\n\nUse these file paths when inspecting or operating on the files.`;
+    expect(questionCarriesImages(block("- shot.PNG (Workspace): a/shot.PNG"))).toBe(true);
+    expect(questionCarriesImages(block("- notes.pdf (Workspace): a/notes.pdf"))).toBe(false);
+    expect(
+      questionCarriesImages('Fix it\n\n- Image "chart": attached to this message, look at it.'),
+    ).toBe(true);
+    expect(questionCarriesImages("[The user attached an image but analysis failed] Hi")).toBe(true);
+    expect(questionCarriesImages("Rename image.png to cover.png")).toBe(false);
+  });
+
+  it("blocks Regenerate only for such a question, and names the open chat", () => {
+    const question = turn("1", "user", {
+      parts: [
+        {
+          type: "text",
+          text: '- Image "chart": attached to this message, look at it directly.',
+          status: "complete",
+        },
+      ] as AgentChatTurn["parts"],
+    });
+    const reply = turn("2", "assistant");
+    expect(rewriteTargetsFor([question, reply], "s1")).toEqual({
+      regenerable: "2",
+      lastUser: "1",
+      regenerateBlocked: true,
+      sessionId: "s1",
+    });
+    expect(rewriteTargetsFor([turn("1", "user"), reply]).regenerateBlocked).toBe(false);
   });
 });

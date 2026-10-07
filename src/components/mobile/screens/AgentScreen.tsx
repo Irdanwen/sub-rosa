@@ -72,6 +72,7 @@ import { BrandMark } from "../../brand/Marks";
 import { ContextGauge } from "../../chat/ContextGauge";
 import { ChatAmbient } from "../ChatAmbient";
 import { ChatComposer } from "../ChatComposer";
+import { ChatExportButton } from "../ChatExportButton";
 import { MemorySourcesChip } from "../MemorySourcesChip";
 import {
   ChatSteps,
@@ -1115,6 +1116,7 @@ export function AgentSessionScreen({
                 {formatCredits(credits.availableCredits)}
               </span>
             ) : null}
+            <ChatExportButton task={task} disabled={running} onError={setError} />
             {onOpenHistory && onBack ? (
               <button
                 type="button"
@@ -1164,6 +1166,8 @@ export function AgentSessionScreen({
                   <SimpleMarkdown text={message.content} />
                   <ReplyActions
                     text={message.content}
+                    conversationId={task?.id}
+                    messageId={message.id}
                     onRegenerate={
                       !running && index === messages.length - 1 && lastQuestion >= 0
                         ? regenerate

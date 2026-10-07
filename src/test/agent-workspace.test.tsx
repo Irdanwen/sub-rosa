@@ -3310,6 +3310,51 @@ describe("AgentWorkspace", () => {
     });
   });
 
+  it("offers read aloud and thumbs on a stored reply, and export in the chat menu", async () => {
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      { id: "u1", role: "user", content: "Name a colour", timestamp: "2026-06-12T10:00:00Z" },
+      { id: "a1", role: "assistant", content: "Blue.", timestamp: "2026-06-12T10:00:05Z" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+
+    const reply = (await screen.findByText("Blue.")).closest("article") as HTMLElement;
+    for (const name of ["Read aloud", "Good reply", "Bad reply"]) {
+      expect(within(reply).getByRole("button", { name })).toBeInTheDocument();
+    }
+    const question = screen.getByText("Name a colour").closest("article") as HTMLElement;
+    expect(within(question).queryByRole("button", { name: "Read aloud" })).toBeNull();
+    expect(within(question).queryByRole("button", { name: "Good reply" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Session actions" }));
+    expect(screen.getByRole("menuitem", { name: "Export as Markdown" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Export as PDF" })).toBeInTheDocument();
+  });
+
+  it("does not offer to regenerate a question that carried a picture", async () => {
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      {
+        id: "u1",
+        role: "user",
+        content:
+          "What is this?\n\nAttached files copied into the Sub Rosa workspace:\n- cat.png (Workspace): uploads/cat.png\n\nUse these file paths when inspecting or operating on the files.",
+        timestamp: "2026-06-12T10:00:00Z",
+      },
+      { id: "a1", role: "assistant", content: "A cat.", timestamp: "2026-06-12T10:00:05Z" },
+    ]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+
+    const reply = (await screen.findByText("A cat.")).closest("article") as HTMLElement;
+    const regenerate = within(reply).getByRole("button", { name: "Regenerate reply" });
+    expect(regenerate).toBeDisabled();
+    expect(regenerate).toHaveAttribute(
+      "title",
+      "A question with images cannot be asked again. Send it anew.",
+    );
+  });
+
   it("repairs gateway-glued contractions in assistant prose but not code or user text", async () => {
     mocks.listHermesSessionMessages.mockResolvedValue([
       {

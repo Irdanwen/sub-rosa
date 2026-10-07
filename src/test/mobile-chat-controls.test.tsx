@@ -286,6 +286,19 @@ describe("mobile chat controls", () => {
     );
   });
 
+  it("offers read aloud and thumbs on each reply, and export in the header", async () => {
+    render(<AgentSessionScreen sessionId="task-1" />);
+    const reply = (await screen.findByText("First answer")).closest(".mobile-chat-bubble");
+    for (const name of ["Read aloud", "Good reply", "Bad reply"]) {
+      expect(within(reply as HTMLElement).getByRole("button", { name })).toBeInTheDocument();
+    }
+    const question = screen.getByText("First question").closest(".mobile-chat-bubble");
+    expect(
+      within(question as HTMLElement).queryByRole("button", { name: "Read aloud" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Export chat" })).toBeInTheDocument();
+  });
+
   it("shows how full the conversation is against the model's window", async () => {
     tauriMocks.getAgentTask.mockResolvedValue(makeTask({ model: "thinker" }));
     render(<AgentSessionScreen sessionId="task-1" />);

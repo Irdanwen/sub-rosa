@@ -5,7 +5,7 @@ import {
   type HermesSessionInfo,
   type HermesSessionMessage,
 } from "./tauri";
-import { stripReasoningEffortAlias } from "./desktop-reasoning-effort";
+import { stripReasoningEffortAlias } from "./reasoning-effort";
 import { parseHermesProcessNotice } from "./hermes-process-notice";
 
 export type HermesSessionListOptions = {

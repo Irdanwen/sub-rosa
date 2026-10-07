@@ -52,7 +52,12 @@ pub async fn share_file(app: AppHandle, request: ShareFileRequest) -> Result<(),
         "share_file_missing",
         "The file could not be found.",
     )?;
-    let path = path.to_string_lossy().into_owned();
+    present_file(&app, path.to_string_lossy().into_owned())
+}
+
+/// Shares a file the app wrote itself (a conversation export, a Studio
+/// picture) through the share sheet. The caller has already confined it.
+pub(crate) fn present_file(app: &AppHandle, path: String) -> Result<(), AppError> {
     app.run_on_main_thread(move || unsafe {
         let Some(url_class) = AnyClass::get(c"NSURL") else {
             return;

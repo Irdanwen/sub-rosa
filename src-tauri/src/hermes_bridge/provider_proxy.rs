@@ -3,7 +3,7 @@
 //! encodes into a model name (ADR-0080).
 
 /// The marker the desktop appends to a model id to carry a reasoning effort
-/// (`src/lib/desktop-reasoning-effort.ts`). Venice and Carpe Diem ids never
+/// (`src/lib/reasoning-effort.ts`). Venice and Carpe Diem ids never
 /// contain `@`, so a real id cannot be mistaken for an alias.
 const REASONING_EFFORT_ALIAS_MARKER: &str = "@reasoning-effort=";
 

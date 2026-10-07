@@ -66,6 +66,7 @@ pub const ARCHIVED_TABLES: &[&str] = &[
     "bible_entries",
     "bible_refs",
     "shot_lists",
+    "reply_ratings",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -12,6 +12,7 @@
  * same note must not pay twice.
  */
 
+import { speakableMarkdown } from "./speakable-text";
 import { fetchMediaCatalog, modelsOfType } from "./studio/catalog";
 import {
   SPEECH_INPUT_LIMIT,
@@ -27,51 +28,14 @@ const MAX_SPOKEN_CHARS = Math.min(SPEECH_INPUT_LIMIT, 4_000);
 /**
  * Turns a generated note into something worth hearing: headings become
  * sentences, list markers and emphasis disappear, code blocks and tables are
- * dropped outright (reading a pipe table aloud is noise).
+ * dropped outright (reading a pipe table aloud is noise). The stripping is
+ * shared with "Read aloud" on a chat reply (speakable-text.ts).
  */
 export function speakableText(markdown: string): string {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const out: string[] = [];
-  let inFence = false;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line.startsWith("```")) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    if (!line || /^([-*_])\1{2,}$/.test(line)) continue;
-    // Tables read as gibberish out loud.
-    if (line.startsWith("|")) continue;
-    const heading = /^#{1,6}\s+(.*)$/.exec(line);
-    if (heading) {
-      // A heading is a sentence when spoken, so it gets a full stop and the
-      // pause that comes with it.
-      const text = inline(heading[1]);
-      if (text) out.push(text.endsWith(".") ? text : `${text}.`);
-      continue;
-    }
-    const bullet = /^([-*+]|\d+[.)])\s+(.*)$/.exec(line);
-    const text = inline(bullet ? bullet[2] : line);
-    if (text) out.push(text);
-  }
-  const spoken = out.join("\n").trim();
+  const spoken = speakableMarkdown(markdown);
   return spoken.length > MAX_SPOKEN_CHARS
     ? `${spoken.slice(0, MAX_SPOKEN_CHARS).trimEnd()}…`
     : spoken;
-}
-
-/** Strips the inline markup a voice cannot pronounce. */
-function inline(text: string): string {
-  return text
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/(\*\*|__)(.*?)\1/g, "$2")
-    .replace(/(\*|_)(.*?)\1/g, "$2")
-    .replace(/~~(.*?)~~/g, "$2")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /** Audio already paid for, this session. Keyed by note id + text, so an edit

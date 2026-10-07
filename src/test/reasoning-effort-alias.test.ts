@@ -3,13 +3,13 @@ import { priceFor } from "../lib/carpe-diem-text-pricing";
 import {
   desktopReasoningEffortFor,
   desktopRuntimeModel,
-  modelSupportsReasoningEffort,
+  supportsReasoningEffort,
   parseReasoningEffortAlias,
   REASONING_EFFORT_ALIAS_MARKER,
   setDesktopReasoningEffort,
   stripReasoningEffortAlias,
   withReasoningEffortAlias,
-} from "../lib/desktop-reasoning-effort";
+} from "../lib/reasoning-effort";
 import { normalizeHermesSessionsResponse } from "../lib/hermes-adapter";
 import { parseSessionUsage } from "../lib/hermes-session-usage";
 import { readableModelName } from "../lib/model-names";
@@ -66,11 +66,11 @@ describe("the reasoning-effort alias", () => {
   });
 
   it("is offered only where the catalog says the effort is supported", () => {
-    expect(modelSupportsReasoningEffort(capable)).toBe(true);
-    expect(modelSupportsReasoningEffort(thinksOnly)).toBe(false);
-    expect(modelSupportsReasoningEffort(undefined)).toBe(false);
+    expect(supportsReasoningEffort(capable)).toBe(true);
+    expect(supportsReasoningEffort(thinksOnly)).toBe(false);
+    expect(supportsReasoningEffort(undefined)).toBe(false);
     expect(
-      modelSupportsReasoningEffort({ capabilities: ["capabilities.supportsReasoningEffort"] }),
+      supportsReasoningEffort({ capabilities: ["capabilities.supportsReasoningEffort"] }),
     ).toBe(true);
   });
 

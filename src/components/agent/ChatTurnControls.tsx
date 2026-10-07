@@ -4,23 +4,16 @@ import { IconBrain } from "central-icons/IconBrain";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
 import { useEffect, useRef, useState } from "react";
-import {
-  DESKTOP_REASONING_EFFORTS,
-  type DesktopReasoningEffort,
-  desktopReasoningEffortFor,
-  modelSupportsReasoningEffort,
-  setDesktopReasoningEffort,
-} from "../../lib/desktop-reasoning-effort";
 import { t } from "../../lib/i18n";
+import {
+  desktopReasoningEffortFor,
+  REASONING_EFFORTS,
+  type ReasoningEffort,
+  reasoningEffortLabel as effortLabel,
+  setDesktopReasoningEffort,
+  supportsReasoningEffort,
+} from "../../lib/reasoning-effort";
 import type { VeniceModelDto } from "../../lib/tauri";
-
-function effortLabel(effort: DesktopReasoningEffort | undefined) {
-  // Whole phrases, not bare adjectives: "Medium" already names a shot size.
-  if (effort === "low") return t("Low effort");
-  if (effort === "medium") return t("Medium effort");
-  if (effort === "high") return t("High effort");
-  return t("Default effort");
-}
 
 /**
  * The reasoning effort beside the desktop model picker (ADR-0080). Shown only
@@ -64,10 +57,10 @@ export function ReasoningEffortControl({
     };
   }, [open]);
 
-  if (!model || !modelSupportsReasoningEffort(model)) return null;
+  if (!model || !supportsReasoningEffort(model)) return null;
   const current = model;
 
-  function choose(next: DesktopReasoningEffort | undefined) {
+  function choose(next: ReasoningEffort | undefined) {
     setOpen(false);
     if (next === effort) return;
     setDesktopReasoningEffort(current.id, next);
@@ -75,7 +68,7 @@ export function ReasoningEffortControl({
     onChange(current.id);
   }
 
-  const options: (DesktopReasoningEffort | undefined)[] = [undefined, ...DESKTOP_REASONING_EFFORTS];
+  const options: (ReasoningEffort | undefined)[] = [undefined, ...REASONING_EFFORTS];
   return (
     <div
       ref={rootRef}
@@ -116,14 +109,26 @@ export function ReasoningEffortControl({
   );
 }
 
-/** "Regenerate" on the last reply: asks the same question again. */
-export function RegenerateAction({ onRegenerate }: { onRegenerate: () => void }) {
+/** "Regenerate" on the last reply: asks the same question again. Disabled,
+ * with the reason in its tooltip, when the question carried pictures, which a
+ * rewind cannot send again. */
+export function RegenerateAction({
+  onRegenerate,
+  blocked,
+}: {
+  onRegenerate: () => void;
+  blocked?: boolean;
+}) {
+  const title = blocked
+    ? t("A question with images cannot be asked again. Send it anew.")
+    : t("Regenerate reply");
   return (
     <button
       type="button"
       className="agent-turn-action"
       aria-label={t("Regenerate reply")}
-      title={t("Regenerate reply")}
+      title={title}
+      disabled={blocked}
       onClick={onRegenerate}
     >
       <IconArrowRotateClockwise size={13} aria-hidden />
