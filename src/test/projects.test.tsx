@@ -11,9 +11,11 @@ import { ChatComposer } from "../components/mobile/ChatComposer";
 import { ProjectSettingsScreen } from "../components/mobile/screens/ProjectSettingsScreen";
 import {
   attachmentTextNote,
+  fileChatInProject,
   isExtractableDocument,
   projectContextForSend,
   projectContextSent,
+  retryPendingProjectFilings,
   withProjectContext,
 } from "../lib/projects";
 import type { AgentLiteAttachment, FolderDto } from "../lib/tauri";
@@ -413,5 +415,34 @@ describe("phone chat attachments", () => {
     await user.upload(input, new File(["%PDF"], "scan.pdf", { type: "application/pdf" }));
     await waitFor(() => expect(onError).toHaveBeenCalled());
     expect(onError.mock.calls[0][0]).toContain("probably a scan");
+  });
+});
+
+describe("filing a new desktop chat in its project", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mocks.assignSessionToFolder.mockReset();
+  });
+
+  it("retries a failed filing before giving up", async () => {
+    mocks.assignSessionToFolder
+      .mockRejectedValueOnce(new Error("busy"))
+      .mockResolvedValueOnce(undefined);
+    await expect(fileChatInProject("s1", "f1", [0, 0])).resolves.toBe(true);
+    expect(mocks.assignSessionToFolder).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem("subrosa:pending-project-filings") ?? "{}").toBe("{}");
+  });
+
+  it("keeps a filing it could not make and makes it at the next launch", async () => {
+    mocks.assignSessionToFolder.mockRejectedValue(new Error("offline"));
+    await expect(fileChatInProject("s2", "f2", [0, 0])).resolves.toBe(false);
+    expect(JSON.parse(localStorage.getItem("subrosa:pending-project-filings") ?? "{}")).toEqual({
+      s2: "f2",
+    });
+
+    mocks.assignSessionToFolder.mockReset().mockResolvedValue(undefined);
+    await retryPendingProjectFilings();
+    expect(mocks.assignSessionToFolder).toHaveBeenCalledWith("s2", "f2");
+    expect(JSON.parse(localStorage.getItem("subrosa:pending-project-filings") ?? "{}")).toEqual({});
   });
 });

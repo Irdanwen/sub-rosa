@@ -1,5 +1,6 @@
 import { AssistantLauncher, openAssistants } from "../components/assistants/AssistantLauncher";
 import { useAccountLibrarySync } from "./useAccountLibrarySync";
+import { fileChatInProject, retryPendingProjectFilings } from "../lib/projects";
 import { useDesktopChatArchive } from "./useDesktopChatArchive";
 import { sessionFolderMap } from "../lib/chat-archive";
 import { t } from "../lib/i18n";
@@ -303,6 +304,9 @@ export function App() {
     folderId: string;
     knownSessionIds: Set<string>;
   } | null>(null);
+  useEffect(() => {
+    void retryPendingProjectFilings();
+  }, []);
   const agentMenuBarSessionsRef = useRef<HermesSessionInfo[]>([]);
   const agentMenuBarWorkingSessionIdsRef = useRef<Set<string>>(new Set());
   const agentMenuBarWaitingSessionIdsRef = useRef<Set<string>>(new Set());
@@ -1250,14 +1254,10 @@ export function App() {
         pendingSessionProjectRef.current = null;
         const sessionId = detail.selectedSessionId;
         if (!pendingProject.knownSessionIds.has(sessionId)) {
-          void assignSessionToFolder(sessionId, pendingProject.folderId)
-            .then(() =>
-              setSessionFolders((prev) => ({
-                ...prev,
-                [sessionId]: [pendingProject.folderId],
-              })),
-            )
-            .catch(() => {});
+          void fileChatInProject(sessionId, pendingProject.folderId).then((filed) => {
+            if (!filed) return;
+            setSessionFolders((prev) => ({ ...prev, [sessionId]: [pendingProject.folderId] }));
+          });
         } else {
           // User switched to an existing session — abandon the pending
           // project intent so the workspace doesn't show misleading crumbs.

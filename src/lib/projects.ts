@@ -208,5 +208,58 @@ export function projectContextSent(
   } catch {
     // A lost record only means the context is sent once more.
   }
-  if (created) void assignSessionToFolder(sessionId, context.folderId).catch(() => undefined);
+  if (created) void fileChatInProject(sessionId, context.folderId);
+}
+
+const PENDING_FILINGS_KEY = "subrosa:pending-project-filings";
+
+function pendingFilings(): Record<string, string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PENDING_FILINGS_KEY) ?? "{}");
+    return raw && typeof raw === "object" ? (raw as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePendingFilings(filings: Record<string, string>) {
+  try {
+    localStorage.setItem(PENDING_FILINGS_KEY, JSON.stringify(filings));
+  } catch {
+    // Without storage the filing is only retried within this run.
+  }
+}
+
+/** Files a new desktop chat in the project it was started from. A failure is
+ * retried twice, then remembered and retried at the next launch, so a chat
+ * started in a project never silently ends up outside it. Resolves whether
+ * the chat is filed now. */
+export async function fileChatInProject(
+  sessionId: string,
+  folderId: string,
+  delaysMs: number[] = [0, 500, 2000],
+): Promise<boolean> {
+  for (const delay of delaysMs) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      await assignSessionToFolder(sessionId, folderId);
+      const pending = pendingFilings();
+      if (sessionId in pending) {
+        delete pending[sessionId];
+        writePendingFilings(pending);
+      }
+      return true;
+    } catch {
+      // Tried again below, then kept for the next launch.
+    }
+  }
+  writePendingFilings({ ...pendingFilings(), [sessionId]: folderId });
+  return false;
+}
+
+/** Retries the filings a previous run could not complete. */
+export async function retryPendingProjectFilings(): Promise<void> {
+  for (const [sessionId, folderId] of Object.entries(pendingFilings())) {
+    await fileChatInProject(sessionId, folderId, [0]);
+  }
 }
