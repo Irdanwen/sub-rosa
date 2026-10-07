@@ -1144,6 +1144,7 @@ async fn start_hermes_bridge_inner(
         &june_studio_mcp,
     )
     .await?;
+    guard::install(app, &hermes_home).await?;
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
     // its tool calls, and any subprocess it forks all inherit the profile, so
@@ -7505,7 +7506,8 @@ async fn sync_hermes_config(
         Some(june_media_mcp),
         Some(june_studio_mcp),
     );
-    std::fs::write(hermes_home.join("config.yaml"), config)
+    let guard = guard::config_block(crate::protected_mode::restrictions().memory_off);
+    std::fs::write(hermes_home.join("config.yaml"), config + &guard)
         .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))
 }
 
@@ -8029,9 +8031,11 @@ async fn handle_june_provider_connection(
                     write_streaming_response(&mut stream, response).await?;
                 }
                 Err(error) => {
+                    // A protected-mode refusal is final: a 5xx would be retried.
+                    let refused = error.code.starts_with("protected_mode");
                     write_json_response(
                         &mut stream,
-                        502,
+                        if refused { 403 } else { 502 },
                         serde_json::json!({
                             "error": {
                                 "message": format!("Sub Rosa agent provider failed: {}", error.message),
@@ -8742,6 +8746,7 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
     ))
 }
 
+pub mod guard;
 mod local_reads;
 mod project_memory;
 mod provider_proxy;

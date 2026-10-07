@@ -89,3 +89,17 @@ transaction of the action it records, so the two commit together.
   site shows it under "Security history", and the app links there.
 - Token refreshes and synchronisation writes are not recorded: too frequent
   to read, and a copied device secret already shows through its renewal count.
+
+## Addendum 2026-10-08: the app reads the security history itself
+
+The app no longer only links to the account site. `account_security_events`
+(`src-tauri/src/account/security_events.rs`) reads
+`GET /api/v1/security-events` with the device's own bearer session, as every
+other account call does, and Settings › Account on both shells lists it
+(`AccountSecurityHistory.tsx`) in the website's words, newest first. The
+client trusts the response no more than the website does: anything that is
+not a list is refused, a line without an id, a kind or a readable instant is
+left out, at most 200 lines are kept, and a kind the app does not know yet
+reads "Account activity". The website stays one tap away as "Open on the web".
+Reading it needs a live session, like the device list beside it; nothing is
+cached on the device.

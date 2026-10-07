@@ -1,5 +1,6 @@
 import { AccountConflictList } from "./AccountConflictList";
 import { AccountPairingSection } from "./AccountPairingSection";
+import { AccountSecurityHistory } from "./AccountSecurityHistory";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { accountNextStep } from "../../lib/account-next-step";
@@ -877,15 +878,6 @@ export function AccountSettingsSection({
               >
                 {t("Refresh status")}
               </button>
-              {status.server_url ? (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => void openExternalUrl(securityHistoryUrl(status.server_url ?? ""))}
-                >
-                  {t("Security history")}
-                </button>
-              ) : null}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -1179,6 +1171,7 @@ export function AccountSettingsSection({
               {t("Refresh devices")}
             </button>
           </AccountCard>
+          <AccountSecurityHistory serverUrl={status.server_url} />
           <AccountCard title={t("Delete your account")}>
             <p className="settings-row-description">
               {t(
@@ -1286,12 +1279,9 @@ function formatAccountDate(value: string) {
       );
 }
 
+export { securityHistoryUrl } from "./AccountSecurityHistory";
+
 /** Never render provider response text, URLs containing tokens, or credentials. */
-/** The account site's list of recent sign-ins, devices, passkeys and
- * revocations: read there, where the service that recorded them answers. */
-export function securityHistoryUrl(serverUrl: string): string {
-  return new URL("/account#security-history", serverUrl).toString();
-}
 
 export function accountError(cause: unknown): string {
   switch (errorCode(cause)) {

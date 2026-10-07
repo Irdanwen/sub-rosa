@@ -10,6 +10,9 @@
 //! - both chat shells carry a protective instruction, at the memory seams of
 //!   ADR-0081 (the desktop SOUL's personal section, the phone's per-turn
 //!   system prompt);
+//! - the parental-control switches ([`restrictions`]: quiet hours, memory,
+//!   image and video generation, voice, past chats) take effect, and changing
+//!   them takes the PIN too;
 //! - turning it off takes the PIN.
 //!
 //! Stored in `protected-mode.json` next to the other settings files, on this
@@ -18,6 +21,7 @@
 
 pub mod guards;
 pub mod pin;
+pub mod restrictions;
 
 use crate::domain::types::AppError;
 use serde::{Deserialize, Serialize};
@@ -30,6 +34,7 @@ use std::{
 use tauri::{AppHandle, Manager, State};
 
 pub use guards::{is_adult_model, is_adult_model_id};
+pub use restrictions::Restrictions;
 
 const SETTINGS_FILE: &str = "protected-mode.json";
 
@@ -42,19 +47,32 @@ pub struct ProtectedModeSettings {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pin: Option<pin::PinHash>,
+    /// Kept while protected mode is off, so turning it back on restores
+    /// them, but in force only while it is on.
+    pub restrictions: Restrictions,
 }
 
-/// What the webview may know: whether it is on. Never the hash.
+/// What the webview may know: whether it is on, its switches, and whether
+/// quiet hours are on right now. Never the hash.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtectedModeStatus {
     pub enabled: bool,
+    pub restrictions: Restrictions,
+    pub quiet_now: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtectedModePinRequest {
     pub pin: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtectedModeRestrictionsRequest {
+    pub pin: String,
+    pub restrictions: Restrictions,
 }
 
 /// Whether protected mode is on right now. Read on every guarded request.
@@ -67,11 +85,39 @@ pub fn check_model(model: Option<&str>) -> Result<(), AppError> {
     guards::check_model(model, is_on())
 }
 
-/// The media proxy's body as it may leave (see [`guards::guard_media_body`]).
+/// The switches in force: the stored ones while protected mode is on, none
+/// while it is off.
+pub fn restrictions() -> Restrictions {
+    restrictions_of(&current())
+}
+
+fn restrictions_of(settings: &ProtectedModeSettings) -> Restrictions {
+    if settings.enabled {
+        settings.restrictions
+    } else {
+        Restrictions::default()
+    }
+}
+
+/// What the chat proxy asks of every request: no adult model, and not
+/// during quiet hours.
+pub fn check_chat(model: Option<&str>) -> Result<(), AppError> {
+    check_model(model)?;
+    restrictions::check_chat(&restrictions(), restrictions::local_minute())
+}
+
+/// The media proxy's body as it may leave (see [`guards::guard_media_body`]),
+/// after the quiet hours and the image and video switch.
 pub fn guard_media_request(
     path: &str,
     body: Option<&serde_json::Value>,
 ) -> Result<Option<serde_json::Value>, AppError> {
+    restrictions::check_media(
+        path,
+        body.is_some(),
+        &restrictions(),
+        restrictions::local_minute(),
+    )?;
     guards::guard_media_body(path, body, is_on())
 }
 
@@ -168,11 +214,39 @@ pub async fn protected_mode_disable(
         return Ok(status_of(&current()));
     }
     verify_pin(request.pin).await?;
-    let next = turned_off();
+    let next = turned_off(&current());
     persist(&state.config_path, &next)?;
     replace_mirror(next.clone());
     after_change(&app).await;
     Ok(status_of(&next))
+}
+
+/// Changes the switches. Takes the PIN while protected mode is on; while it
+/// is off there is no PIN, and the switches wait for the next "turn on".
+#[tauri::command]
+pub async fn protected_mode_set_restrictions(
+    app: AppHandle,
+    state: State<'_, ProtectedModeState>,
+    request: ProtectedModeRestrictionsRequest,
+) -> Result<ProtectedModeStatus, AppError> {
+    restrictions::validate(&request.restrictions)?;
+    verify_pin(request.pin).await?;
+    let next = ProtectedModeSettings {
+        restrictions: request.restrictions,
+        ..current()
+    };
+    persist(&state.config_path, &next)?;
+    replace_mirror(next.clone());
+    after_change(&app).await;
+    Ok(status_of(&next))
+}
+
+/// The model switch of an open desktop chat goes from the webview to the
+/// runtime directly, so it asks here first (the chat proxy still refuses an
+/// adult model on every request that follows).
+#[tauri::command]
+pub fn protected_mode_check_model(model: String) -> Result<(), AppError> {
+    check_model(Some(&model))
 }
 
 /// Checks the PIN without changing anything, for a screen that asks for it
@@ -211,12 +285,17 @@ fn turned_on(
     Ok(ProtectedModeSettings {
         enabled: true,
         pin: Some(pin::hash(candidate)?),
+        restrictions: current.restrictions,
     })
 }
 
-/// Off forgets the PIN: the next "turn on" sets a new one.
-fn turned_off() -> ProtectedModeSettings {
-    ProtectedModeSettings::default()
+/// Off forgets the PIN: the next "turn on" sets a new one. The switches stay,
+/// out of force, for that next time.
+fn turned_off(current: &ProtectedModeSettings) -> ProtectedModeSettings {
+    ProtectedModeSettings {
+        restrictions: current.restrictions,
+        ..ProtectedModeSettings::default()
+    }
 }
 
 /// Ok when `settings` is off, or when `candidate` is its PIN. A wrong PIN
@@ -248,19 +327,29 @@ fn wrong_pin() -> AppError {
     AppError::new("protected_mode_wrong_pin", "That PIN is not right.")
 }
 
-/// The desktop SOUL's personal section carries the protective block, so it
-/// is rewritten in place like a personalization change (ADR-0081). The
-/// phone rebuilds its prompt every turn and needs nothing.
+/// The desktop SOUL's personal section carries the protective block and the
+/// memory it injects, so it is rewritten in place like a personalization
+/// change (ADR-0081), and the runtime's guard ledger learns the memory and
+/// past-chat switches at once. The phone rebuilds its prompt every turn and
+/// needs nothing.
 async fn after_change(app: &AppHandle) {
     #[cfg(desktop)]
-    crate::personalization::refresh_soul(app).await;
+    {
+        crate::personalization::refresh_soul(app).await;
+        if let Err(error) = crate::hermes_bridge::guard::publish(app).await {
+            tracing::warn!(code = %error.code, "the runtime guard did not learn the protected switches");
+        }
+    }
     #[cfg(not(desktop))]
     let _ = app;
 }
 
 fn status_of(settings: &ProtectedModeSettings) -> ProtectedModeStatus {
+    let restrictions = restrictions_of(settings);
     ProtectedModeStatus {
         enabled: settings.enabled,
+        restrictions: settings.restrictions,
+        quiet_now: restrictions.quiet_at(restrictions::local_minute()),
     }
 }
 
@@ -372,6 +461,10 @@ mod tests {
         let settings = ProtectedModeSettings {
             enabled: true,
             pin: Some(pin::hash_with("8642", 4, 1, 1).unwrap()),
+            restrictions: Restrictions {
+                memory_off: true,
+                ..Restrictions::default()
+            },
         };
         persist(&path, &settings).unwrap();
         let raw = fs::read_to_string(&path).unwrap();
@@ -415,7 +508,29 @@ mod tests {
             turned_on(&on, "1111").unwrap_err().code,
             "protected_mode_already_on"
         );
-        assert_eq!(turned_off(), ProtectedModeSettings::default());
+        assert_eq!(turned_off(&on), ProtectedModeSettings::default());
+    }
+
+    #[test]
+    fn the_switches_outlive_off_but_are_in_force_only_while_on() {
+        let switches = Restrictions {
+            media_off: true,
+            past_chats_off: true,
+            ..Restrictions::default()
+        };
+        let on = ProtectedModeSettings {
+            enabled: true,
+            pin: Some(pin::hash_with("2580", 4, 1, 1).unwrap()),
+            restrictions: switches,
+        };
+        assert_eq!(restrictions_of(&on), switches);
+        let off = turned_off(&on);
+        assert!(!off.enabled && off.pin.is_none());
+        assert_eq!(off.restrictions, switches);
+        assert_eq!(restrictions_of(&off), Restrictions::default());
+        // Turning it on again brings them back.
+        let again = turned_on(&off, "1357").unwrap();
+        assert_eq!(restrictions_of(&again), switches);
     }
 
     #[test]
@@ -425,6 +540,7 @@ mod tests {
         let on = ProtectedModeSettings {
             enabled: true,
             pin: Some(pin::hash_with("2580", 4, 1, 1).unwrap()),
+            restrictions: Restrictions::default(),
         };
         assert_eq!(
             check_pin(&on, "0000", &throttle, now).unwrap_err().code,
@@ -437,6 +553,7 @@ mod tests {
         let no_pin = ProtectedModeSettings {
             enabled: true,
             pin: None,
+            restrictions: Restrictions::default(),
         };
         assert!(check_pin(&no_pin, "2580", &throttle, now).is_err());
     }
@@ -448,6 +565,7 @@ mod tests {
         let on = ProtectedModeSettings {
             enabled: true,
             pin: Some(pin::hash_with("2580", 4, 1, 1).unwrap()),
+            restrictions: Restrictions::default(),
         };
         for _ in 0..5 {
             let _ = check_pin(&on, "9999", &throttle, now);
@@ -465,8 +583,13 @@ mod tests {
         let settings = ProtectedModeSettings {
             enabled: true,
             pin: Some(pin::hash_with("1234", 4, 1, 1).unwrap()),
+            restrictions: Restrictions::default(),
         };
         let json = serde_json::to_value(status_of(&settings)).unwrap();
-        assert_eq!(json, serde_json::json!({"enabled": true}));
+        assert!(json.get("pin").is_none());
+        assert!(!json.to_string().contains("salt"));
+        assert_eq!(json["enabled"], serde_json::json!(true));
+        assert_eq!(json["quietNow"], serde_json::json!(false));
+        assert_eq!(json["restrictions"]["memoryOff"], serde_json::json!(false));
     }
 }

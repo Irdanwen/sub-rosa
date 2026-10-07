@@ -355,3 +355,33 @@ async fn leaving_or_relaunching_deletes_a_temporary_chat() {
     discard_task(&pool, &kept.id).await.unwrap();
     assert!(repos.get_agent_task(&kept.id).await.is_ok());
 }
+
+/// What the desktop runtime's guard is told (ADR-0083 addendum): a session
+/// is in its ledger from registration, before any message, until it is gone.
+#[cfg(desktop)]
+#[tokio::test]
+async fn the_runtime_guard_lists_a_temporary_session_from_registration_until_it_is_gone() {
+    let pool = database().await;
+    let restrictions = crate::protected_mode::Restrictions::default();
+    let ledger = |sessions: Vec<String>| -> serde_json::Value {
+        serde_json::from_str(&crate::hermes_bridge::guard::render_ledger(
+            &sessions,
+            &restrictions,
+        ))
+        .unwrap()
+    };
+    assert_eq!(
+        ledger(session_ids(&pool).await.unwrap())["temporarySessions"],
+        serde_json::json!([])
+    );
+    register_session(&pool, "hermes-temporary").await.unwrap();
+    assert_eq!(
+        ledger(session_ids(&pool).await.unwrap())["temporarySessions"],
+        serde_json::json!(["hermes-temporary"])
+    );
+    forget_session(&pool, "hermes-temporary").await.unwrap();
+    assert_eq!(
+        ledger(session_ids(&pool).await.unwrap())["temporarySessions"],
+        serde_json::json!([])
+    );
+}

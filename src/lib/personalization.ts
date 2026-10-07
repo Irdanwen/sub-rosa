@@ -50,8 +50,14 @@ export function personalizationSetSettings(request: PersonalizationSettings) {
 }
 
 /** Memory settings with the past-chats switch. Absent from a save, the stored
- * value is kept, so screens that do not show the switch leave it alone. */
-export type MemorySettingsWithHistory = MemorySettings & { referenceChatHistory?: boolean };
+ * value is kept, so screens that do not show the switch leave it alone.
+ * `heldByProtectedMode` says protected mode holds memory or past chats off
+ * (ADR-0084 addendum): the values read are the ones in force, so a screen
+ * must not save them back as the person's own choice. */
+export type MemorySettingsWithHistory = MemorySettings & {
+  referenceChatHistory?: boolean;
+  heldByProtectedMode?: boolean;
+};
 
 /** The memories one phone reply was given, keyed by the user message that
  * opened its turn. */

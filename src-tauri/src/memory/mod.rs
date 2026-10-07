@@ -15,6 +15,10 @@
 //! - `reference_chat_history` — excerpts of the user's other chats ride along
 //!   with a turn, and a `search_past_chats` tool reaches further back
 //!   ([`past_chats`], ADR-0081). Only meaningful while `enabled` is on.
+//!
+//! Protected mode can hold memory or past chats off (ADR-0084 addendum):
+//! [`settings`], which every seam reads, answers with them off while it does,
+//! whatever the file says, and the file keeps the person's own choice.
 
 use crate::domain::types::{AppError, MemoryDto, MemorySource};
 use serde::{Deserialize, Serialize};
@@ -56,6 +60,14 @@ pub struct MemorySettings {
     /// Whether the user's other chats are consulted ("reference chat
     /// history"). On by default with memory itself (ADR-0081).
     pub reference_chat_history: bool,
+    /// Protected mode holds memory or past chats off right now. Reported to
+    /// the settings screens, never read from or written to the file.
+    #[serde(skip_deserializing, skip_serializing_if = "is_false")]
+    pub held_by_protected_mode: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl Default for MemorySettings {
@@ -65,6 +77,7 @@ impl Default for MemorySettings {
             auto_extract: true,
             extraction_model: None,
             reference_chat_history: true,
+            held_by_protected_mode: false,
         }
     }
 }
@@ -86,12 +99,33 @@ pub fn setup(app: &mut tauri::App) {
 }
 
 /// Current settings snapshot, readable from any thread (the injection and
-/// extraction paths call this outside command context).
+/// extraction paths call this outside command context). These are the
+/// settings in force: protected mode's switches applied over the file's.
 pub fn settings() -> MemorySettings {
+    in_force(stored(), crate::protected_mode::restrictions())
+}
+
+/// What the file says, before protected mode.
+fn stored() -> MemorySettings {
     mirror()
         .lock()
         .unwrap_or_else(|poison| poison.into_inner())
         .clone()
+}
+
+fn in_force(
+    mut settings: MemorySettings,
+    restrictions: crate::protected_mode::Restrictions,
+) -> MemorySettings {
+    if restrictions.memory_off && settings.enabled {
+        settings.enabled = false;
+        settings.held_by_protected_mode = true;
+    }
+    if restrictions.past_chats_off && settings.reference_chat_history {
+        settings.reference_chat_history = false;
+        settings.held_by_protected_mode = true;
+    }
+    settings
 }
 
 // --- Prompt injection --------------------------------------------------------
@@ -263,11 +297,12 @@ pub fn memory_set_settings(
             .filter(|model| !model.is_empty()),
         reference_chat_history: request
             .reference_chat_history
-            .unwrap_or_else(|| settings().reference_chat_history),
+            .unwrap_or_else(|| stored().reference_chat_history),
+        held_by_protected_mode: false,
     };
     persist(&state.config_path, &next)?;
     replace_mirror(next.clone());
-    Ok(next)
+    Ok(in_force(next, crate::protected_mode::restrictions()))
 }
 
 #[tauri::command]
@@ -414,6 +449,55 @@ mod tests {
         persist(&path, &off).expect("persist");
         assert_eq!(load_from_disk(Some(&path)), off);
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn protected_mode_holds_memory_and_past_chats_off_without_touching_the_file() {
+        use crate::protected_mode::Restrictions;
+        let mine = MemorySettings::default();
+        assert_eq!(in_force(mine.clone(), Restrictions::default()), mine);
+        let held = in_force(
+            mine.clone(),
+            Restrictions {
+                memory_off: true,
+                ..Restrictions::default()
+            },
+        );
+        assert!(!held.enabled);
+        assert!(held.held_by_protected_mode);
+        let past = in_force(
+            mine.clone(),
+            Restrictions {
+                past_chats_off: true,
+                ..Restrictions::default()
+            },
+        );
+        assert!(past.enabled);
+        assert!(!past.reference_chat_history);
+        assert!(past.held_by_protected_mode);
+        // What is already off is the person's own choice, not a hold.
+        let own = MemorySettings {
+            enabled: false,
+            ..MemorySettings::default()
+        };
+        let own = in_force(
+            own,
+            Restrictions {
+                memory_off: true,
+                ..Restrictions::default()
+            },
+        );
+        assert!(!own.held_by_protected_mode);
+        // The hold is reported, never stored, and never read back.
+        let json = serde_json::to_value(&held).unwrap();
+        assert_eq!(json["heldByProtectedMode"], serde_json::json!(true));
+        let read: MemorySettings =
+            serde_json::from_str(r#"{"enabled":true,"heldByProtectedMode":true}"#).unwrap();
+        assert!(!read.held_by_protected_mode);
+        assert!(serde_json::to_value(&mine)
+            .unwrap()
+            .get("heldByProtectedMode")
+            .is_none());
     }
 
     #[test]

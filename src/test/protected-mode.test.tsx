@@ -7,10 +7,22 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let enabled = false;
+let restrictions: Record<string, unknown> = {
+  memoryOff: false,
+  mediaOff: false,
+  voiceOff: false,
+  pastChatsOff: false,
+};
 const PIN = "2580";
 const invokeMock = vi.fn(async (command: string, args?: unknown) => {
   const pin = (args as { request?: { pin?: string } } | undefined)?.request?.pin;
-  if (command === "protected_mode_status") return { enabled };
+  if (command === "protected_mode_status") return { enabled, restrictions, quietNow: false };
+  if (command === "protected_mode_set_restrictions") {
+    if (pin !== PIN) throw { code: "protected_mode_wrong_pin", message: "That PIN is not right." };
+    restrictions = (args as { request: { restrictions: Record<string, unknown> } }).request
+      .restrictions;
+    return { enabled, restrictions, quietNow: false };
+  }
   if (command === "protected_mode_enable") {
     enabled = true;
     return { enabled };
@@ -55,6 +67,7 @@ function catalog(protectedMode: boolean): MediaCatalog {
 
 beforeEach(() => {
   enabled = false;
+  restrictions = { memoryOff: false, mediaOff: false, voiceOff: false, pastChatsOff: false };
   invokeMock.mockClear();
 });
 
@@ -163,5 +176,61 @@ describe("Settings › Privacy › Protected mode", () => {
     await screen.findByRole("dialog");
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});
+
+describe("protected mode limits", () => {
+  it("are shown while on and change only with the PIN", async () => {
+    enabled = true;
+    const user = userEvent.setup();
+    render(<ProtectedModeSection />);
+    await user.click(await screen.findByRole("button", { name: "Change limits" }));
+    await user.click(screen.getByRole("switch", { name: "Image and video generation" }));
+    await user.click(screen.getByRole("switch", { name: "Quiet hours" }));
+    const from = screen.getByLabelText("From") as HTMLInputElement;
+    const until = screen.getByLabelText("Until") as HTMLInputElement;
+    expect(from.value).toBe("21:00");
+    expect(until.value).toBe("07:00");
+    await user.type(screen.getByLabelText("PIN"), "1111");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("That PIN is not right.");
+    expect(restrictions.mediaOff).toBe(false);
+    await user.type(screen.getByLabelText("PIN"), PIN);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(restrictions).toEqual({
+      memoryOff: false,
+      mediaOff: true,
+      voiceOff: false,
+      pastChatsOff: false,
+      quietHours: { startMinute: 21 * 60, endMinute: 7 * 60 },
+    });
+    expect(screen.getByText("21:00 to 07:00")).toBeTruthy();
+  });
+
+  it("refuses quiet hours that start and end at the same time", async () => {
+    enabled = true;
+    const user = userEvent.setup();
+    render(<ProtectedModeSection />);
+    await user.click(await screen.findByRole("button", { name: "Change limits" }));
+    await user.click(screen.getByRole("switch", { name: "Quiet hours" }));
+    const until = screen.getByLabelText("Until");
+    await user.clear(until);
+    await user.type(until, "21:00");
+    await user.type(screen.getByLabelText("PIN"), PIN);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "start and end at different times",
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "protected_mode_set_restrictions",
+      expect.anything(),
+    );
+  });
+
+  it("are hidden while protected mode is off", async () => {
+    render(<ProtectedModeSection />);
+    expect(await screen.findByRole("button", { name: "Turn on" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Change limits" })).toBeNull();
   });
 });

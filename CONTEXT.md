@@ -423,6 +423,12 @@ person leaves it or at the next launch (ADR-0083). In code, `ephemeral`.
 _Avoid_: incognito, private chat (every chat here is private), ephemeral chat
 in copy.
 
+**Quiet hours**:
+A daily window, set behind the protected mode PIN, when chat and Studio
+refuse new work (ADR-0084 addendum). One of the protected mode **limits**,
+with memory, image and video generation, voice and past chats.
+_Avoid_: downtime, bedtime, do not disturb (the system's own feature).
+
 **Memory sources**:
 The memories a reply was given, recorded per phone turn (by the user message
 that opened it) and per desktop session (ADR-0081).

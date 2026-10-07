@@ -1,3 +1,4 @@
+import { guardSessionModel } from "../protected-model-guard";
 import type { HermesMode } from "./events";
 
 /**
@@ -168,10 +169,12 @@ export function createHermesMethods(client: HermesRequestLike): HermesMethods {
         arg: turns && turns > 1 ? String(Math.floor(turns)) : "",
       });
     },
-    switchActiveSessionModel({ sessionId, model }) {
+    async switchActiveSessionModel({ sessionId, model }) {
       // The model is selected against the gateway that already owns this
       // session, so `mode` only steers gateway routing at the call site and is
-      // not part of the wire payload.
+      // not part of the wire payload. Protected mode is asked first: the
+      // switch never leaves for an adult model while it is on.
+      await guardSessionModel(model);
       return request("config.set", {
         session_id: sessionId,
         key: "model",

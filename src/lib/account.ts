@@ -107,6 +107,15 @@ export const accountLoginExchange = (requestId: string) =>
   statusCommand("account_login_exchange", { requestId });
 export const accountLogout = () => statusCommand("account_logout");
 export const accountDevices = () => invoke<AccountDevice[]>("account_devices");
+/** One line of the account's security history, newest first (ADR-0049
+ * addendum). `kind` is the service's own name; an unknown one still renders. */
+export type SecurityEvent = {
+  id: string;
+  kind: string;
+  occurredAt: string;
+  deviceName?: string;
+};
+export const accountSecurityEvents = () => invoke<SecurityEvent[]>("account_security_events");
 export const accountRevokeDevice = (deviceId: string) =>
   invoke<void>("account_revoke_device", { deviceId });
 export const accountDelete = () => invoke<void>("account_delete");

@@ -169,6 +169,8 @@ export function MemorySettingsSection() {
       ? "Nothing remembered yet. Facts are extracted automatically from your chats, or add one yourself."
       : `No memories match "${query.trim()}".`;
 
+  const held = settings?.heldByProtectedMode === true;
+
   return (
     <section className="settings-group" aria-labelledby="memory-heading">
       <h2 id="memory-heading" className="settings-group-heading">
@@ -179,6 +181,11 @@ export function MemorySettingsSection() {
           "Sub Rosa remembers durable facts from your conversations, stored only on this device, and uses them so you never have to repeat yourself.",
         )}
       </p>
+      {held ? (
+        <p className="settings-row-description" role="status">
+          {t("Protected mode keeps memory or past chats off on this device.")}
+        </p>
+      ) : null}
       <div className="settings-card">
         <div className="settings-rows">
           <div className="settings-row">
@@ -193,7 +200,7 @@ export function MemorySettingsSection() {
             <div className="settings-row-control">
               <Switch
                 checked={settings?.enabled === true}
-                disabled={settings === null || savingSettings}
+                disabled={settings === null || held || savingSettings}
                 onCheckedChange={(enabled) =>
                   void updateSettings({
                     enabled,
@@ -217,7 +224,7 @@ export function MemorySettingsSection() {
             <div className="settings-row-control">
               <Switch
                 checked={settings?.autoExtract === true}
-                disabled={settings === null || savingSettings || settings?.enabled !== true}
+                disabled={settings === null || held || savingSettings || settings?.enabled !== true}
                 onCheckedChange={(autoExtract) =>
                   void updateSettings({
                     enabled: settings?.enabled ?? true,
@@ -241,7 +248,7 @@ export function MemorySettingsSection() {
             <div className="settings-row-control">
               <Switch
                 checked={settings?.enabled === true && settings?.referenceChatHistory !== false}
-                disabled={settings === null || savingSettings || settings?.enabled !== true}
+                disabled={settings === null || held || savingSettings || settings?.enabled !== true}
                 onCheckedChange={(referenceChatHistory) =>
                   void updateSettings({
                     enabled: settings?.enabled ?? true,
@@ -270,7 +277,7 @@ export function MemorySettingsSection() {
                 id={extractionModelId}
                 className="mcp-tools-select"
                 value={settings?.extractionModel ?? ""}
-                disabled={settings === null || savingSettings || settings?.enabled !== true}
+                disabled={settings === null || held || savingSettings || settings?.enabled !== true}
                 onChange={(event) =>
                   void updateSettings({
                     enabled: settings?.enabled ?? true,

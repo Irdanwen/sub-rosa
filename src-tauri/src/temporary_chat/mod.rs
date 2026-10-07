@@ -267,6 +267,27 @@ async fn delete_hermes_session(_app: &AppHandle, _session_id: &str) -> Result<bo
     Ok(true)
 }
 
+/// Tells the desktop runtime's guard which sessions are temporary right now
+/// (ADR-0083 addendum): its own memory tool and skill writer are refused
+/// there. The phone has no runtime of its own.
+#[cfg(desktop)]
+async fn publish_guard(app: &AppHandle) -> Result<(), AppError> {
+    crate::hermes_bridge::guard::publish(app).await
+}
+
+#[cfg(mobile)]
+async fn publish_guard(_app: &AppHandle) -> Result<(), AppError> {
+    Ok(())
+}
+
+/// After a temporary chat is gone: a stale ledger entry only refuses memory
+/// to a session that no longer exists, so a failure here is logged.
+async fn republish_guard(app: &AppHandle) {
+    if let Err(error) = publish_guard(app).await {
+        tracing::warn!(code = %error.code, "the runtime guard was not updated");
+    }
+}
+
 async fn pool(app: &AppHandle) -> Result<SqlitePool, AppError> {
     Ok(crate::commands::repositories(app).await?.pool.clone())
 }
@@ -307,6 +328,10 @@ pub async fn temporary_chat_create(
 }
 
 /// The desktop's new session, marked temporary as soon as Hermes names it.
+/// The runtime's guard learns it before this returns, and the webview sends
+/// the first message only after, so not even the first turn can write to the
+/// runtime's memory. A guard that cannot be told fails the registration, and
+/// with it the send.
 #[tauri::command]
 pub async fn temporary_chat_register(app: AppHandle, session_id: String) -> Result<(), AppError> {
     let session_id = session_id.trim();
@@ -316,7 +341,8 @@ pub async fn temporary_chat_register(app: AppHandle, session_id: String) -> Resu
             "This temporary chat could not be found.",
         ));
     }
-    Ok(register_session(&pool(&app).await?, session_id).await?)
+    register_session(&pool(&app).await?, session_id).await?;
+    publish_guard(&app).await
 }
 
 /// Leaving a temporary chat. Best effort by design: what fails here is
@@ -337,6 +363,7 @@ pub async fn temporary_chat_discard(
         live().remove(session_id);
         if delete_hermes_session(&app, session_id).await? {
             forget_session(&pool, session_id).await?;
+            republish_guard(&app).await;
         }
     }
     Ok(())
@@ -356,6 +383,7 @@ pub async fn temporary_chat_sweep(app: AppHandle) -> Result<(), AppError> {
             }
         }
     }
+    republish_guard(&app).await;
     Ok(())
 }
 

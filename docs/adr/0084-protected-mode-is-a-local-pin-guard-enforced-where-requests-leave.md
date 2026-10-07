@@ -100,3 +100,49 @@ about the reader's age.
 - **A server-side policy through the account service.** Accounts store
   identity and ciphertext (ADR-0049); a policy service would be the first
   server that decides what a device may do.
+
+## Addendum 2026-10-08: the parental-control switches, and the model switch
+
+**Switches.** Behind the same PIN, protected mode now carries five switches
+(`protected_mode/restrictions.rs`), kept in `protected-mode.json`, in force
+only while it is on and kept, out of force, when it is turned off:
+
+- **Quiet hours**: a daily window in local time (it may run over midnight).
+  Inside it the chat proxy (`june_api::proxy_agent_chat_completions`, every
+  phone turn, every side call and every desktop runtime request) and the
+  media proxy (`carpe_diem::media::send`, every Studio, workflow and
+  assistant request) refuse with "Quiet hours are on. Chat and Studio are
+  paused until they end." Reading back a render queued before the window
+  (`/retrieve`, `/complete`, `/quote`) and the catalogs still pass, so paid
+  work is not lost. The desktop provider proxy answers a protected-mode
+  refusal with 403, not 502, so the runtime does not retry it.
+- **Memory off**: `memory::settings()`, which every memory seam reads
+  (injection on both shells, extraction, recall, the agent-lite tools, the
+  `june_context` MCP arguments), answers with memory off while the file keeps
+  the person's own choice; the settings screens show the hold and lock their
+  controls so they cannot save it back as a choice. On the desktop the
+  runtime's own memory is switched off in the `config.yaml` written at its
+  next start, and from the moment the switch changes the `subrosa_guard`
+  plugin (ADR-0083 addendum) refuses its memory tool and the memory recall
+  tool in every session.
+- **Image and video generation off**: the media proxy refuses `/image/*`
+  and `/video/*` requests that start work.
+- **Past chats off**: the same hold on `reference_chat_history`, and the
+  plugin refuses the runtime's `session_search` and the `search_past_chats`
+  MCP tool.
+- **Voice off**: stored and shown now, for the voice mode to come; nothing
+  enforces it yet.
+
+Changing a switch takes the PIN (`protected_mode_set_restrictions`).
+
+**The model switch of an open desktop chat.** The Consequences above left it
+to the filtered picker. It now asks Rust first: `switchActiveSessionModel`
+(the one seam that sends `config.set … --session`, used by the composer and
+by Edit's fork) calls `protected_mode_check_model` and never sends the switch
+when it is refused. The chat proxy already refused an adult model on every
+request that follows, so that remains the hard stop; the new check is the
+clear, immediate refusal at the switch.
+
+**Still not covered**: quiet hours and the media switch rely on the clock and
+files of the device, like the rest of protected mode. Someone who changes the
+device time or edits the file removes them.
