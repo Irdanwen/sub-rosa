@@ -68,3 +68,53 @@ extraction (ADR-0009), the chat title the model writes, the account outbox
   rule inside a write instead of stating it in the trigger.
 - **Relying on the FTS gate alone for search and past chats.** A row that
   reached the index another way would leak; the joins ask the flag too.
+
+## Addendum 2026-10-08: the runtime's own memory is closed too
+
+The consequence above ("the agent could still write a fact to Hermes' own
+memory directory") was a leak, and it is closed.
+
+**What the pinned runtime offers, checked in its source** (v2026.7.20,
+`tui_gateway/server.py`, `agent/tool_executor.py`, `hermes_cli/plugins.py`):
+`config.set` has no memory or toolset key; `tools.configure` rewrites the
+shared `config.yaml`, so it would switch memory off for every chat at once;
+`skip_memory` is read from the process environment (`HERMES_IGNORE_RULES`),
+so it is per process, not per session. There is no per-session switch. There
+is a `pre_tool_call` plugin hook, asked on the sequential and the concurrent
+dispatch path before any tool runs, with the id of the session the call
+belongs to; a `block` answer becomes the tool's result and the tool never
+runs. The background memory and skill review runs under its parent's session
+id, so it is asked too.
+
+**Decision.** The app installs a Hermes user plugin, `subrosa_guard`
+(`src-tauri/src/hermes/subrosa_guard.py`, written to
+`$HERMES_HOME/plugins/` and enabled in the `config.yaml` the app writes at
+every runtime start), and keeps a ledger beside it, `subrosa-guard.json`,
+listing the stored session ids of the temporary chats
+(`hermes_bridge/guard.rs`). The plugin refuses `memory` and `skill_manage`
+in those sessions and in any session descended from one (a branch, or a
+continuation the runtime forks when it compacts), walking `state.db`'s
+parent links. `temporary_chat_register` writes the ledger before it returns,
+and the webview sends the first message only after, so not even the first
+turn can write; a ledger that cannot be written fails the registration and
+the send. Leaving or sweeping a chat rewrites it. A ledger that exists but
+cannot be read refuses the guarded tools; a call with no session id while a
+temporary chat is open is refused rather than guessed at.
+
+**What a temporary chat still has**: every other tool, including reading
+memory and searching past sessions (recall works, as decided above).
+
+**Rejected.** Routing desktop temporary chats through agent-lite (ADR-0058)
+closes the leak by having no runtime memory at all, but costs the chat every
+runtime tool (files, terminal, browser, skills, MCP servers, sub-agents,
+routines), which would make "temporary" a different product. Stripping the
+memory tool from requests in the provider proxy (it can tell a temporary
+session by a model alias, as ADR-0080 does for effort) does not close it:
+the runtime dispatches by its own tool registry, so a model that calls
+`memory` without being offered it would still be obeyed.
+
+**Verified** against the pinned runtime's own plugin manager (the plugin
+loads from a `config.yaml` like the app's, and `resolve_pre_tool_block`
+returns the refusal for a temporary session and nothing for another), and in
+`hermes_bridge::guard::tests`, which run the installed plugin in Python
+against a ledger and a `state.db`.

@@ -10,6 +10,7 @@ import {
   protectedModeStatus,
 } from "../../lib/protected-mode";
 import { Dialog, DialogField } from "../ui/Dialog";
+import { ProtectedModeLimits } from "./ProtectedModeLimits";
 
 type Step = "enable" | "disable" | null;
 
@@ -48,7 +49,7 @@ export function ProtectedModeSection() {
       </div>
       <p className="settings-row-description">
         {t(
-          "For a child or a shared device. While it is on, adult and uncensored models are hidden from every picker, Studio images are made with safe mode on, and chats follow stricter rules. Turning it off takes the PIN.",
+          "For a child or a shared device. While it is on, adult and uncensored models are hidden from every picker, Studio images are made with safe mode on, chats follow stricter rules, and the limits below apply. Turning it off or changing a limit takes the PIN.",
         )}
       </p>
       <div className="settings-rows">
@@ -74,6 +75,7 @@ export function ProtectedModeSection() {
             </button>
           </div>
         </div>
+        {enabled && status ? <ProtectedModeLimits status={status} onChanged={setStatus} /> : null}
       </div>
       {step ? (
         <PinDialog
