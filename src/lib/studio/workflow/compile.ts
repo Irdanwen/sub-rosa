@@ -48,11 +48,13 @@ import {
   modelsOfType,
   musicCapabilities,
   musicModels,
+  speechModels,
   acceptsOpeningFrameWithReferences,
   requiresOpeningFrame,
   videoDirection,
 } from "../catalog";
 import { maxVideoReferences, takesReferenceAudio } from "../seedance";
+import { isProviderVoiceId, speechCapabilities } from "../speech";
 import { effectiveVideoConstraints } from "../model-constraints";
 import type { MediaCatalog, MediaModel } from "../types";
 import { defaultParams, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
@@ -137,6 +139,13 @@ export interface CompileInput {
   videoModelId?: string;
   /** Which voice engine speaks the dialogue. Absent picks the default below. */
   ttsModelId?: string;
+  /**
+   * The engine each kept voice was auditioned on, keyed by the audition's
+   * gallery artifact id. A voice is a pair - an engine and one of its voices -
+   * so a character speaks on the engine their voice was cast on, whatever the
+   * project's default engine is. Absent, every line uses the default engine.
+   */
+  voiceModels?: ReadonlyMap<string, string>;
   /** Which engine writes the score. */
   musicModelId?: string;
   /** Hard ceiling in credits. Over it, nothing is built. */
@@ -693,12 +702,43 @@ function withLinesLanguage(
  * offering more voices is more likely to have one that fits a character.
  */
 export function pickTtsModel(catalog: MediaCatalog, preferredId?: string): MediaModel | undefined {
-  const models = modelsOfType(catalog, "tts");
+  // Both rails: the dialogue renders through the tts node, which queues a
+  // speaking model of the music queue as a durable job (ADR-0076).
+  const models = speechModels(catalog);
   const chosen = preferredId ? models.find((model) => model.id === preferredId) : undefined;
   if (chosen) return chosen;
   return [...models].sort(
     (left, right) => (right.voices?.length ?? 0) - (left.voices?.length ?? 0),
   )[0];
+}
+
+/**
+ * The engine and voice a character speaks with. A kept voice names the engine
+ * it was auditioned on (ADR-0076): a voice name means nothing on another
+ * engine, and the queue's models would refuse it after charging. Without a
+ * cast voice, or when its engine is gone, the line takes the project's engine
+ * and that engine's own default voice.
+ */
+export function castVoice(
+  catalog: MediaCatalog,
+  fallback: MediaModel,
+  donor: { artifactId: string; label: string } | undefined,
+  voiceModels: ReadonlyMap<string, string> | undefined,
+): { model: MediaModel; voice?: string; lost: boolean } {
+  if (!donor) return { model: fallback, lost: false };
+  const castOn = voiceModels?.get(donor.artifactId);
+  const engine = castOn ? speechModels(catalog).find((model) => model.id === castOn) : undefined;
+  const model = engine ?? fallback;
+  const caps = speechCapabilities(model);
+  const fits =
+    caps.voices.includes(donor.label) || (caps.customVoiceId && isProviderVoiceId(donor.label));
+  return {
+    model,
+    voice: fits ? donor.label : undefined,
+    // Cast on an engine this account no longer lists: say so rather than
+    // speak in a voice nobody chose without a word.
+    lost: castOn !== undefined && !engine,
+  };
 }
 
 /**
@@ -721,13 +761,11 @@ export function pickMusicModel(
   return [...models].sort((left, right) => longestDuration(right) - longestDuration(left))[0];
 }
 
-/** The longest score a model says it can write, in seconds. */
+/** The longest score a model says it can write, in seconds. Read from the
+ * music limits: the video `durations` field this once read is never published
+ * for music, so every model scored 0 and the pick was the first by name. */
 function longestDuration(model: MediaModel): number {
-  const published = effectiveVideoConstraints(model).durations ?? [];
-  return published.reduce((longest, option) => {
-    const value = Number.parseFloat(option);
-    return Number.isFinite(value) && value > longest ? value : longest;
-  }, 0);
+  return musicCapabilities(model).durationSeconds?.max ?? 0;
 }
 
 /** An exact match if the list has one, otherwise its first entry. */
@@ -830,6 +868,7 @@ export function compileShotList(input: CompileInput): CompileResult {
   const videoIds: string[] = [];
   const ttsIds: string[] = [];
   const tts = pickTtsModel(input.catalog, input.ttsModelId);
+  const lostVoices = new Set<string>();
 
   planned.forEach((entry, index) => {
     const level = 1 + index * 2;
@@ -907,6 +946,16 @@ export function compileShotList(input: CompileInput): CompileResult {
         (candidate) => candidate.name.toLowerCase() === entry.shot.speaker.trim().toLowerCase(),
       );
       const donor = voiceReference(speaker);
+      const cast = castVoice(input.catalog, tts, donor, input.voiceModels);
+      if (cast.lost && speaker && !lostVoices.has(speaker.name)) {
+        lostVoices.add(speaker.name);
+        notes.push(
+          t(
+            "{name}'s voice was cast on an engine this account no longer offers, so {name} speaks in {engine}'s default voice.",
+            { name: speaker.name, engine: cast.model.name },
+          ),
+        );
+      }
       const ttsId = `line-${stableId}`;
       const textId = `dialogue-${stableId}`;
       nodes.push(
@@ -925,9 +974,9 @@ export function compileShotList(input: CompileInput): CompileResult {
           level,
           index + 0.5,
           {
-            model: tts.id,
+            model: cast.model.id,
             text: entry.shot.dialogue.trim(),
-            voice: donor?.label ?? "",
+            voice: cast.voice ?? "",
             // Just inside the shot rather than exactly on the cut: a line that
             // starts on the frame the shot does reads as a mistake.
             startAt: (shotStartSeconds + DIALOGUE_LEAD_IN_SECONDS).toFixed(2),
@@ -966,7 +1015,7 @@ export function compileShotList(input: CompileInput): CompileResult {
 
   if (input.withScore && input.score) {
     const music = pickMusicModel(input.catalog, input.musicModelId);
-    const caps = music ? musicCapabilities(music.id) : undefined;
+    const caps = music ? musicCapabilities(music) : undefined;
     if (!music || !caps) {
       notes.push(t("No music model on this account, so the film has no score."));
     } else if (caps.lyrics === "required" && input.score.some((cue) => !cue.lyrics?.trim())) {
@@ -996,8 +1045,8 @@ export function compileShotList(input: CompileInput): CompileResult {
                 ? { durationSeconds: cue.durationSeconds }
                 : {}),
               ...(lyrics ? { lyrics } : {}),
-              // Only a model that could sing is told not to.
-              instrumental: !lyrics && caps.instrumental && caps.lyrics !== "none",
+              // A score without words is asked for none, where the model can be told.
+              instrumental: !lyrics && caps.instrumental,
             },
           ),
         );

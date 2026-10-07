@@ -18,7 +18,13 @@
 import { t } from "../../lib/i18n";
 import { IconCirclePerson } from "central-icons/IconCirclePerson";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { artifactSrc, listArtifacts, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
+import {
+  artifactSrc,
+  listArtifacts,
+  registerDownloadedArtifact,
+  saveArtifactFromBase64,
+} from "../../lib/studio/artifacts";
+import { useMediaJobQueue } from "../../lib/studio/async-job";
 import {
   addBibleRef,
   BIBLE_KIND_LABELS,
@@ -36,10 +42,15 @@ import {
   ROLES_BY_KIND,
   saveBibleEntry,
 } from "../../lib/studio/bible";
-import { estimateCostCredits, modelsOfType } from "../../lib/studio/catalog";
+import { estimateCostCredits, modelsOfType, speechModels } from "../../lib/studio/catalog";
 import { canGenerate, generateReference, pickPortraitModel } from "../../lib/studio/bible/portrait";
 import { STUDIO_IMAGE_RECOVERED_EVENT } from "../../lib/studio/image-job-recovery";
-import { generateSpeech } from "../../lib/studio/speech";
+import {
+  defaultSpeechModel,
+  generateSpeech,
+  queuedSpeechJob,
+  speechCapabilities,
+} from "../../lib/studio/speech";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { EmptyState } from "../ui/EmptyState";
 import { Select } from "../ui/Select";
@@ -120,7 +131,45 @@ export function BibleStudio({
   }, [reload]);
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const ttsModel = useMemo(() => modelsOfType(catalog, "tts")[0], [catalog]);
+  // Which engine auditions. A voice is a pair - an engine and one of its
+  // voices - and a kept one speaks on the engine it was heard on (ADR-0076).
+  // Opens on a one-call engine, so an audition plays in seconds.
+  const [voiceModelId, setVoiceModelId] = useState("");
+  const voiceEngines = useMemo(() => speechModels(catalog), [catalog]);
+  const ttsModel =
+    voiceEngines.find((model) => model.id === voiceModelId) ?? defaultSpeechModel(voiceEngines);
+  const engineName = useCallback(
+    (modelId: string | undefined) =>
+      voiceEngines.find((model) => model.id === modelId)?.name ?? modelId ?? "",
+    [voiceEngines],
+  );
+  /** Queued auditions in flight, by the prompt their job carries, so a take
+   * that lands is filed under its character and voice. Not persisted: after a
+   * restart a take still lands in the gallery, where it can be attached. */
+  const queuedAuditions = useRef(new Map<string, { entryId: string; voice: string }>());
+  const auditionQueue = useMediaJobQueue("speech", (file, finished) => {
+    const artifact = registerDownloadedArtifact(file, {
+      kind: "speech",
+      model: finished.model,
+      prompt: finished.prompt,
+    });
+    const take = queuedAuditions.current.get(finished.prompt);
+    if (!take) return;
+    queuedAuditions.current.delete(finished.prompt);
+    setAuditions((current) => [...current, { voice: take.voice, artifact }]);
+    void reload();
+  });
+  const [queuedFor, setQueuedFor] = useState<string | undefined>(undefined);
+  // Only this surface's auditions count: the queue also carries narrations
+  // started from the speech tab.
+  const ourTakes = auditionQueue.jobs.filter((entry) =>
+    queuedAuditions.current.has(entry.job.prompt),
+  );
+  const queueBusy = ourTakes.some(
+    (entry) => entry.phase === "queued" || entry.phase === "processing",
+  );
+  const queueFailure = ourTakes.find((entry) => entry.phase === "failed");
+  const auditioningNow = auditioning ?? (queueBusy ? queuedFor : undefined);
   // Said on the button rather than after the fact: drawing spends.
   const referenceModel =
     modelsOfType(catalog, "image").find((model) => model.id === referenceModelId) ??
@@ -219,9 +268,28 @@ export function BibleStudio({
    */
   const audition = useCallback(
     async (entry: BibleEntry) => {
-      const voices = ttsModel?.voices ?? [];
+      const caps = speechCapabilities(ttsModel);
+      const voices = caps.voices.filter((voice) => voice !== "Describe in prompt");
       if (!ttsModel || voices.length === 0) {
         setError(t("No voices are available on this account."));
+        return;
+      }
+      if (caps.rail === "queue") {
+        // Durable renders: each voice is its own job, and the takes arrive as
+        // they finish, even if the window closes in between.
+        setQueuedFor(entry.id);
+        setAuditions([]);
+        setError(undefined);
+        for (const voice of voices.slice(0, AUDITION_COUNT)) {
+          const prompt = `${entry.name} audition, ${voice}`;
+          queuedAuditions.current.set(prompt, { entryId: entry.id, voice });
+          const job = queuedSpeechJob(catalog, caps, {
+            model: ttsModel,
+            text: AUDITION_LINE,
+            voice,
+          });
+          await auditionQueue.start({ ...job, prompt });
+        }
         return;
       }
       const controller = new AbortController();
@@ -237,9 +305,10 @@ export function BibleStudio({
             model: ttsModel.id,
             input: AUDITION_LINE,
             voice,
+            format: caps.defaultFormat,
             signal: controller.signal,
           });
-          const artifact = await saveArtifactFromBase64(base64, "mp3", {
+          const artifact = await saveArtifactFromBase64(base64, caps.defaultFormat, {
             kind: "speech",
             model: ttsModel.id,
             prompt: `${entry.name} audition, ${voice}`,
@@ -250,13 +319,15 @@ export function BibleStudio({
         await reload();
       } catch (auditionError) {
         if (!(auditionError instanceof DOMException && auditionError.name === "AbortError")) {
-          setError(auditionError instanceof Error ? auditionError.message : "The audition failed.");
+          setError(
+            auditionError instanceof Error ? auditionError.message : t("The audition failed."),
+          );
         }
       } finally {
         setAuditioning(undefined);
       }
     },
-    [ttsModel, reload],
+    [ttsModel, reload, catalog, auditionQueue],
   );
 
   const keepVoice = useCallback(
@@ -277,6 +348,14 @@ export function BibleStudio({
           options={modelsOfType(catalog, "image").map(mediaModelOption)}
           onChange={setReferenceModelId}
           ariaLabel={t("Reference image model")}
+        />
+      </StudioField>
+      <StudioField label={t("Voice engine")} hint={t("Where characters' voices are auditioned")}>
+        <MediaModelPicker
+          value={ttsModel?.id ?? ""}
+          options={voiceEngines.map(mediaModelOption)}
+          onChange={setVoiceModelId}
+          ariaLabel={t("Voice engine")}
         />
       </StudioField>
       <StudioField label={t("Kind")}>
@@ -405,10 +484,10 @@ export function BibleStudio({
                         <button
                           type="button"
                           className="btn btn-secondary"
-                          disabled={auditioning !== undefined}
+                          disabled={auditioningNow !== undefined}
                           onClick={() => void audition(entry)}
                         >
-                          {auditioning === entry.id ? t("Auditioning...") : t("Audition voices")}
+                          {auditioningNow === entry.id ? t("Auditioning...") : t("Audition voices")}
                         </button>
                       ) : null}
                       <button
@@ -424,12 +503,25 @@ export function BibleStudio({
                     </div>
                   </div>
 
-                  {auditioning === entry.id || (auditions.length > 0 && draft.id !== entry.id) ? (
+                  {auditioningNow === entry.id ||
+                  (auditions.length > 0 && draft.id !== entry.id) ? (
                     <div className="bible-auditions">
-                      {auditioning === entry.id ? <Spinner aria-label={t("Auditioning")} /> : null}
+                      {auditioningNow === entry.id ? (
+                        <Spinner aria-label={t("Auditioning")} />
+                      ) : null}
+                      {queueFailure && queuedFor === entry.id ? (
+                        <p className="studio-error">
+                          {queueFailure.message ?? t("The audition failed.")}
+                        </p>
+                      ) : null}
                       {auditions.map((take) => (
                         <div key={take.artifact.id} className="bible-audition">
-                          <span>{take.voice}</span>
+                          <span>
+                            {t("{voice} on {engine}", {
+                              voice: take.voice,
+                              engine: engineName(take.artifact.model),
+                            })}
+                          </span>
                           {/* biome-ignore lint/a11y/useMediaCaption: a voice take has no track */}
                           <audio controls src={artifactSrc(take.artifact)} />
                           <button
@@ -457,7 +549,13 @@ export function BibleStudio({
                             </span>
                           )}
                           <span className="bible-ref-role">
-                            {BIBLE_ROLE_LABELS[reference.role]}
+                            {reference.role === "voice" && artifact
+                              ? t("{role}: {voice} on {engine}", {
+                                  role: BIBLE_ROLE_LABELS[reference.role],
+                                  voice: reference.label,
+                                  engine: engineName(artifact.model),
+                                })
+                              : BIBLE_ROLE_LABELS[reference.role]}
                           </span>
                           <span className="studio-card-actions">
                             <button

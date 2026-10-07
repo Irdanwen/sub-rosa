@@ -453,7 +453,17 @@ fn merge_carpe_diem_catalog(
                 tier: string_field(entry, "tier"),
                 privacy: string_field(entry, "privacy"),
                 offline: false,
-                voices: string_list(entry.get("voices")),
+                // A `tts` row carries its voices at the top; a speaking model on
+                // the music queue (`elevenlabs-tts-*`, `seed-audio-1-0`) carries
+                // them inside `constraints`, with every other music field.
+                voices: {
+                    let top = string_list(entry.get("voices"));
+                    if top.is_empty() {
+                        string_list(entry.get("constraints").and_then(|c| c.get("voices")))
+                    } else {
+                        top
+                    }
+                },
                 // The operator publishes its own constraints since 2026-08-03,
                 // measured against the provider's validator, and they cover
                 // families Venice's public catalogue does not list at all.
@@ -463,7 +473,31 @@ fn merge_carpe_diem_catalog(
                     .get("constraints")
                     .or_else(|| spec.and_then(|spec| spec.get("constraints")))
                     .filter(|value| !value.is_null())
-                    .cloned(),
+                    .cloned()
+                    .or_else(|| {
+                        (media_type == "music")
+                            .then(|| spec.and_then(music_spec_constraints))
+                            .flatten()
+                    })
+                    .map_or_else(
+                        || {
+                            (media_type == "tts")
+                                .then(|| spec.and_then(music_spec_constraints))
+                                .flatten()
+                        },
+                        |published| {
+                            // A tts row's formats and cloning live flat in the
+                            // Venice spec; what the operator publishes wins.
+                            if media_type == "tts" {
+                                Some(merge_missing(
+                                    published,
+                                    spec.and_then(music_spec_constraints),
+                                ))
+                            } else {
+                                Some(published)
+                            }
+                        },
+                    ),
                 model_sets: string_list(spec.and_then(|spec| spec.get("model_sets"))),
                 traits: string_list(spec.and_then(|spec| spec.get("traits"))),
                 supports_vision: supports_vision(entry) || spec.is_some_and(supports_vision),
@@ -493,8 +527,14 @@ fn venice_catalog_models(catalog: &serde_json::Value) -> Vec<MediaModelDto> {
             let pricing = spec
                 .and_then(|spec| spec.get("pricing"))
                 .filter(|value| !value.is_null());
+            let media_type = venice_media_type(entry, constraints);
+            let constraints = if media_type == "music" || media_type == "tts" {
+                spec.and_then(music_spec_constraints)
+            } else {
+                constraints.cloned()
+            };
             Some(MediaModelDto {
-                media_type: venice_media_type(entry, constraints),
+                media_type,
                 name: spec
                     .and_then(|spec| spec.get("name"))
                     .and_then(serde_json::Value::as_str)
@@ -514,12 +554,62 @@ fn venice_catalog_models(catalog: &serde_json::Value) -> Vec<MediaModelDto> {
                 traits: string_list(spec.and_then(|spec| spec.get("traits"))),
                 supports_vision: spec.is_some_and(supports_vision),
                 cost_credits: pricing.and_then(flat_generation_usd).map(|usd| usd * 100.0),
-                constraints: constraints.cloned(),
+                constraints,
                 pricing: pricing.cloned(),
                 id,
             })
         })
         .collect()
+}
+
+/// `model_spec` keys that describe a music model rather than state what it
+/// accepts. Everything else is a limit (the operator's denylist, mirrored).
+const MUSIC_SPEC_METADATA: [&str; 14] = [
+    "pricing",
+    "name",
+    "description",
+    "modelSource",
+    "offline",
+    "privacy",
+    "traits",
+    "betaModel",
+    "capabilities",
+    "availableContextTokens",
+    "maxCompletionTokens",
+    "uncensored",
+    "constraints",
+    "model_sets",
+];
+
+/// `published` with every key of `fallback` it does not already state.
+fn merge_missing(
+    mut published: serde_json::Value,
+    fallback: Option<serde_json::Value>,
+) -> serde_json::Value {
+    if let (Some(target), Some(serde_json::Value::Object(extra))) =
+        (published.as_object_mut(), fallback)
+    {
+        for (key, value) in extra {
+            target.entry(key).or_insert(value);
+        }
+    }
+    published
+}
+
+/// A music or tts model's limits (for tts: `supported_formats`,
+/// `default_format`, `voice_cloning`). Venice publishes them as top-level `model_spec`
+/// fields (`supports_lyrics`, `min_duration`, `voices`, `supports_speed`...)
+/// rather than under `constraints`, which is null for the whole music type.
+/// The operator assembles the same block since 2026-08-24; this gives the
+/// Venice-direct path (and an operator row with none) the same reading.
+fn music_spec_constraints(spec: &serde_json::Value) -> Option<serde_json::Value> {
+    let fields = spec.as_object()?;
+    let limits: serde_json::Map<String, serde_json::Value> = fields
+        .iter()
+        .filter(|(key, value)| !MUSIC_SPEC_METADATA.contains(&key.as_str()) && !value.is_null())
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    (!limits.is_empty()).then_some(serde_json::Value::Object(limits))
 }
 
 /// Venice `type` → Carpe Diem type vocabulary. Video models split into
@@ -1206,6 +1296,89 @@ fn supports_vision(value: &serde_json::Value) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_speaking_queue_model_carries_its_voices_and_limits() {
+        // Operator rows, verbatim shape (2026-10-06): a `tts` row has its
+        // voices at the top, a speaking model on the music queue has them
+        // inside `constraints`.
+        let primary = json!({"data": [
+            {"id": "tts-kokoro", "carpe_diem_type": "tts", "voices": ["af_sky"], "constraints": null},
+            {"id": "elevenlabs-tts-v4", "carpe_diem_type": "music", "voices": null,
+             "constraints": {"supports_lyrics": false, "voices": ["Aria", "Roger"],
+                             "default_voice": "Aria", "supports_custom_voice_id": true}},
+            {"id": "lyria-3-pro", "carpe_diem_type": "music", "voices": null, "constraints": null}
+        ]});
+        // Venice publishes music limits flat in `model_spec`, never nested.
+        let venice = json!({"data": [
+            {"id": "lyria-3-pro", "type": "music", "model_spec": {
+                "name": "Lyria 3 Pro", "pricing": {"generation": {"usd": 0.1}},
+                "supports_lyrics": false, "prompt_character_limit": 5000, "constraints": null}}
+        ]});
+        let models = merge_carpe_diem_catalog(&primary, Some(&venice), None);
+        let by_id = |id: &str| models.iter().find(|m| m.id == id).unwrap();
+        assert_eq!(by_id("tts-kokoro").voices, vec!["af_sky"]);
+        assert_eq!(by_id("elevenlabs-tts-v4").voices, vec!["Aria", "Roger"]);
+        // No operator block: the Venice spec's flat fields stand in, without
+        // the fields that describe the model rather than limit it.
+        let lyria = by_id("lyria-3-pro").constraints.clone().unwrap();
+        assert_eq!(lyria["supports_lyrics"], json!(false));
+        assert_eq!(lyria["prompt_character_limit"], json!(5000));
+        assert!(lyria.get("pricing").is_none() && lyria.get("name").is_none());
+    }
+
+    #[test]
+    fn a_tts_row_carries_its_formats_and_cloning_from_the_venice_spec() {
+        // Measured 2026-10-07: tts-chatterbox-hd refuses mp3 with a 400. The
+        // formats it takes are only in Venice's flat spec, never in the
+        // operator row, which states voices and (since CD #451) voice_cloning.
+        let primary = json!({"data": [
+            {"id": "tts-chatterbox-hd", "carpe_diem_type": "tts", "voices": ["Aurora"],
+             "constraints": {"voice_cloning": {"min_sample_seconds": 5, "retention_days": 7}}},
+            {"id": "tts-kokoro", "carpe_diem_type": "tts", "voices": ["af_sky"], "constraints": null}
+        ]});
+        let venice = json!({"data": [
+            {"id": "tts-chatterbox-hd", "type": "tts", "model_spec": {
+                "name": "Chatterbox HD", "pricing": {"input": {"usd": 50}},
+                "supported_formats": ["wav"], "default_format": "wav",
+                "voice_cloning": {"min_sample_seconds": 3, "retention_days": 7}}},
+            {"id": "tts-kokoro", "type": "tts", "model_spec": {
+                "name": "Kokoro", "supported_formats": ["mp3", "wav"], "default_format": "mp3"}}
+        ]});
+        let models = merge_carpe_diem_catalog(&primary, Some(&venice), None);
+        let by_id = |id: &str| {
+            models
+                .iter()
+                .find(|m| m.id == id)
+                .unwrap()
+                .constraints
+                .clone()
+                .unwrap()
+        };
+        let chatterbox = by_id("tts-chatterbox-hd");
+        assert_eq!(chatterbox["supported_formats"], json!(["wav"]));
+        assert_eq!(chatterbox["default_format"], json!("wav"));
+        // The operator's own statement wins over the spec's.
+        assert_eq!(chatterbox["voice_cloning"]["min_sample_seconds"], json!(5));
+        assert_eq!(by_id("tts-kokoro")["default_format"], json!("mp3"));
+        assert!(by_id("tts-kokoro").get("pricing").is_none());
+    }
+
+    #[test]
+    fn a_venice_key_reads_music_limits_from_the_flat_spec() {
+        let catalog = json!({"data": [
+            {"id": "seed-audio-1-0", "type": "music", "model_spec": {
+                "name": "Seed Audio 1.0", "pricing": {"per_second": {"usd": 0.003}},
+                "voices": ["Tim", "Vivi"], "supports_speed": true, "min_speed": 0.5,
+                "max_speed": 2, "constraints": null, "traits": []}}
+        ]});
+        let models = venice_catalog_models(&catalog);
+        assert_eq!(models[0].media_type, "music");
+        assert_eq!(models[0].voices, vec!["Tim", "Vivi"]);
+        let limits = models[0].constraints.clone().unwrap();
+        assert_eq!(limits["max_speed"], json!(2));
+        assert!(limits.get("traits").is_none());
+    }
 
     #[test]
     fn allowlist_admits_media_paths_only() {

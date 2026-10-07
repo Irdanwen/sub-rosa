@@ -91,7 +91,8 @@ pub fn has_active() -> bool {
 pub struct StartMediaJobRequest {
     /// The backend's queue id, from the queue call the frontend just made.
     pub queue_id: String,
-    /// "video" | "music" | "image" | "sfx".
+    /// "video" | "music" | "image" | "sfx" | "speech" (a narration read by a
+    /// speaking model of the music queue, ADR-0076).
     pub kind: String,
     pub model: String,
     pub prompt: String,
@@ -843,6 +844,7 @@ fn notification_text(job: &MediaJobDto, success: bool) -> (&'static str, String)
             "video" => "Your video is ready",
             "music" => "Your track is ready",
             "sfx" => "Your sound effect is ready",
+            "speech" => "Your voice-over is ready",
             _ => "Your image is ready",
         }
     } else {

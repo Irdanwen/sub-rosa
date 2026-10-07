@@ -11,6 +11,7 @@ import {
   modelsOfType,
   musicModels,
   soundEffectsModels,
+  speechModels,
   videoFamilies,
 } from "../../lib/studio/catalog";
 import type { MediaCatalog } from "../../lib/studio/types";
@@ -33,7 +34,7 @@ export function StudioStart({
   const images = modelsOfType(catalog, "image").length;
   const videos = videoFamilies(catalog).length;
   const music = musicModels(catalog).length;
-  const voices = modelsOfType(catalog, "tts").length;
+  const voices = speechModels(catalog).length;
   const effects = soundEffectsModels(catalog).length;
   const canPlanFilm = modelsOfType(catalog, "text").length > 0 && videos > 0;
   const choices: {

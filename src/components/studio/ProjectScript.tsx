@@ -1,6 +1,6 @@
 import { type ReactNode, useId } from "react";
 import { t } from "../../lib/i18n";
-import { musicModels, modelsOfType } from "../../lib/studio/catalog";
+import { musicModels, speechModels } from "../../lib/studio/catalog";
 import type { ProjectDocument, StudioProject } from "../../lib/studio/projects";
 import type { MediaCatalog } from "../../lib/studio/types";
 import type { VeniceModelDto } from "../../lib/tauri";
@@ -232,7 +232,7 @@ export function ProjectScript({
           >
             <MediaModelPicker
               value={settings.ttsModelId}
-              options={modelsOfType(catalog, "tts").map(mediaModelOption)}
+              options={speechModels(catalog).map(mediaModelOption)}
               ariaLabel={t("Dialogue model")}
               placeholder={t("Automatic")}
               onChange={(ttsModelId) => setSettings({ ttsModelId })}

@@ -475,13 +475,18 @@ describe("choosing the engines", () => {
 
   it("scores with the model that can write the longest piece", () => {
     // A film wants one piece over the whole cut. A model capped at thirty
-    // seconds forces a loop, and a viewer hears a loop.
+    // seconds forces a loop, and a viewer hears a loop. The length is read
+    // from the music limits the catalog publishes, not the video `durations`.
     const scores: MediaCatalog = {
       backend: "carpe-diem",
       models: [
         model("kling-v3-standard-text-to-video", "video"),
-        model("aaa-music", "music", { constraints: { durations: ["30s"] } }),
-        model("zzz-music", "music", { constraints: { durations: ["30s", "180s"] } }),
+        model("aaa-music", "music", {
+          constraints: { supports_lyrics: false, min_duration: 5, max_duration: 30 },
+        }),
+        model("zzz-music", "music", {
+          constraints: { supports_lyrics: false, min_duration: 5, max_duration: 180 },
+        }),
       ],
     };
     expect(pickMusicModel(scores)?.id).toBe("zzz-music");
@@ -502,6 +507,50 @@ describe("choosing the engines", () => {
     });
     const spoken = result.workflow?.nodes.find((node) => node.type === "tts");
     expect(spoken?.params?.model).toBe("other-tts");
+  });
+
+  it("speaks a character on the engine their voice was cast on (ADR-0076)", () => {
+    // A voice is a pair: Roger means nothing to another engine, and the queue
+    // engines would refuse it after charging.
+    const cast: BibleEntry = {
+      ...nera,
+      refs: [{ ...nera.refs[1], artifactId: "nera-roger.mp3", label: "Roger" }],
+    };
+    const voices: MediaCatalog = {
+      backend: "carpe-diem",
+      models: [
+        ...catalog.models,
+        model("other-tts", "tts", { constraints: undefined, voices: ["ash"] }),
+        model("elevenlabs-tts-v4", "music", {
+          voices: ["Aria", "Roger"],
+          constraints: { supports_lyrics: false, voices: ["Aria", "Roger"], default_voice: "Aria" },
+        }),
+      ],
+    };
+    const line = (voiceModels?: ReadonlyMap<string, string>) =>
+      compileShotList({
+        shots: [shot({ dialogue: "It is time.", speaker: "Nera", dialogueMode: "dubbed" })],
+        bible: [cast],
+        catalog: voices,
+        name: "Voice",
+        ttsModelId: "other-tts",
+        voiceModels,
+      });
+
+    const spoken = line(new Map([["nera-roger.mp3", "elevenlabs-tts-v4"]]));
+    expect(spoken.workflow?.nodes.find((node) => node.type === "tts")?.params).toMatchObject({
+      model: "elevenlabs-tts-v4",
+      voice: "Roger",
+    });
+
+    // Cast on an engine the account lost: the project's engine, its own
+    // default voice, and a note saying so.
+    const lost = line(new Map([["nera-roger.mp3", "retired-engine"]]));
+    expect(lost.workflow?.nodes.find((node) => node.type === "tts")?.params).toMatchObject({
+      model: "other-tts",
+      voice: "",
+    });
+    expect(lost.notes.some((note) => note.includes("Nera"))).toBe(true);
   });
 });
 

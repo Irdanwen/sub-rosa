@@ -81,10 +81,12 @@ fn parameters(kind: &str, input: &Value) -> Result<Value, AppError> {
                         && v.len() <= 20
                         && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '.')
                 }),
+                // The widest range any model publishes (ElevenLabs Music, 600 s);
+                // each model's own range is checked by `media_settings::prepare`.
                 ("music", "duration_seconds") => {
-                    value.as_f64().is_some_and(|v| (1.0..=300.0).contains(&v))
+                    value.as_f64().is_some_and(|v| (1.0..=600.0).contains(&v))
                 }
-                ("music", "force_instrumental") => value.is_boolean(),
+                ("music", "force_instrumental" | "lyrics_optimizer" | "loop") => value.is_boolean(),
                 ("music", "lyrics_prompt") => value.as_str().is_some_and(|v| v.len() <= 5000),
                 ("speech", "voice") => value
                     .as_str()
@@ -114,9 +116,16 @@ fn select_model<'a>(
     requested: &str,
 ) -> Result<&'a media::MediaModelDto, AppError> {
     let family = family(kind).ok_or_else(invalid)?;
+    // Audio is chosen by role, not catalog type (ADR-0076): a speaking model
+    // of the music queue is a voice, and sound effects stay with music.
+    let role = super::media_settings::audio_role;
     let candidates = models.iter().filter(|m| {
         !m.offline
-            && m.media_type == family
+            && match kind {
+                "speech" => role(m) == Some("speech"),
+                "music" => matches!(role(m), Some("music" | "effects")),
+                _ => m.media_type == family,
+            }
             && (kind != "video" || super::media_settings::prompt_video(&m.id))
     });
     if requested.is_empty() {
@@ -157,8 +166,13 @@ pub async fn propose(app: &AppHandle, task_id: &str, args: &Value) -> Result<Val
     let model = select_model(&catalog.models, kind, args["model"].as_str().unwrap_or(""))?;
     super::media_settings::prepare(kind, &model.id, model.constraints.as_ref(), &mut params)?;
     if kind == "speech" {
+        // A model that takes a provider Voice ID accepts one outside its list.
+        let custom = model
+            .constraints
+            .as_ref()
+            .is_some_and(|c| c["supports_custom_voice_id"] == true);
         if let Some(voice) = params["voice"].as_str() {
-            if !model.voices.is_empty() && !model.voices.iter().any(|v| v == voice) {
+            if !custom && !model.voices.is_empty() && !model.voices.iter().any(|v| v == voice) {
                 return Err(invalid());
             }
         } else if let Some(voice) = model.voices.first() {
@@ -313,8 +327,14 @@ async fn request(path: &str, body: Value) -> Result<media::MediaResponseDto, App
     .await
 }
 
-fn route(p: &MediaProposal) -> (&'static str, &'static str, &'static str) {
+/// `queued_speech`: a speaking model of the music queue (ADR-0076), read
+/// aloud from its prompt and retrieved like music.
+fn route(p: &MediaProposal, queued_speech: bool) -> (&'static str, &'static str, &'static str) {
     match p.kind.as_str() {
+        "speech" if queued_speech && p.backend == "carpe-diem" => {
+            ("/audio/music/queue", "/audio/music/retrieve", "mp3")
+        }
+        "speech" if queued_speech => ("/audio/queue", "/audio/retrieve", "mp3"),
         "image" if p.backend == "venice" => ("/image/generate", "", "png"),
         "edit" if p.backend == "venice" => ("/image/edit", "", "png"),
         "image" => ("/image/generate/queue", "/image/generate/retrieve", "png"),
@@ -332,7 +352,20 @@ fn route(p: &MediaProposal) -> (&'static str, &'static str, &'static str) {
 async fn submit(app: &AppHandle, p: &MediaProposal) -> Result<(), AppError> {
     let mut body = p.parameters.clone();
     body["model"] = json!(p.model);
-    if p.kind == "speech" {
+    // The rail belongs to the model; the catalog says which one, once, for a
+    // voice only. A model gone from the catalog fails before anything is spent.
+    let queued_speech = if p.kind == "speech" {
+        let catalog = media::carpe_diem_media_catalog().await?;
+        let model = catalog
+            .models
+            .iter()
+            .find(|m| m.id == p.model)
+            .ok_or_else(invalid)?;
+        super::media_settings::speaks_on_queue(model)
+    } else {
+        false
+    };
+    if p.kind == "speech" && !queued_speech {
         body["input"] = json!(p.prompt);
         body["response_format"] = json!("mp3");
     } else if p.kind != "upscale" {
@@ -362,7 +395,7 @@ async fn submit(app: &AppHandle, p: &MediaProposal) -> Result<(), AppError> {
             body["scale"] = json!(2);
         }
     }
-    let (path, _, extension) = route(p);
+    let (path, _, extension) = route(p, queued_speech);
     let response = request(path, body).await?;
     if !response.ok {
         // A transport/server failure cannot prove the provider did not bill.
@@ -471,7 +504,8 @@ async fn handoff(app: &AppHandle, p: &MediaProposal) -> Result<(), AppError> {
     if repos.get_media_job(queue_id).await?.is_some() {
         return Ok(());
     }
-    let (_, retrieve, extension) = route(p);
+    // Only a queued render reaches a handoff, so a voice here is a queued one.
+    let (_, retrieve, extension) = route(p, p.kind == "speech");
     jobs::media_job_start(
         app.clone(),
         jobs::StartMediaJobRequest {
