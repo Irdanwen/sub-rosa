@@ -95,7 +95,7 @@ export function ClonedVoiceDialog({
           </button>
           <button
             type="button"
-            className="btn btn-primary"
+            className="studio-primary-button"
             disabled={!canCreate}
             onClick={() => void create()}
           >
