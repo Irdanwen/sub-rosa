@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 170
+Gaps: 158
 
 ## Matrix
 
@@ -41,15 +41,15 @@ Gaps: 170
 | Export a conversation | yes | yes | yes | no | `src-tauri/src/conversation_export/mod.rs` `src/lib/conversation-export.ts` | P9 |
 | Search across conversations | yes | yes | yes | no | `src-tauri/src/db/repositories.rs` `src/components/agent/AgentSessionsList.tsx` | P9 |
 | Archive a conversation | yes | yes | yes | no | `src-tauri/src/account/session_folders.rs` `src/components/agent/AgentSessionsList.tsx` | P9 |
-| Temporary chat | no | no | no | no | | P2 |
-| Share a conversation by link | no | no | no | no | | P2 |
+| Temporary chat | yes | yes | yes | no | `src-tauri/src/temporary_chat/mod.rs` `src/components/agent/TemporaryChat.tsx` | P9 |
+| Share a conversation by link | yes | yes | yes | no | `src-tauri/src/account/shares.rs` `website/src/pages/share.tsx` | P9 |
 | Custom instructions and personality | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/personalization/mod.rs` `src/components/settings/PersonalizationSettingsSection.tsx` `src/components/mobile/screens/PersonalizationScreen.tsx` | P9 |
 | Memory | yes | yes | yes | no | `src/components/settings/MemorySettingsSection.tsx` `src/components/mobile/screens/MemoryScreen.tsx` | P9 |
 | Memory of past chats | yes | yes | yes | no | `src-tauri/src/db/repositories.rs` `src-tauri/src/memory/past_chats.rs` | P9 |
 | Memory sources shown on a reply | equiv | yes | yes | no | `src-tauri/src/memory/sources.rs` `src/components/mobile/MemorySourcesChip.tsx` `src/components/agent/MemoryInChatIndicator.tsx` | P9 |
-| Projects with instructions, files and memory | partial | partial | partial | no | `src/components/folders` | P3 |
+| Projects with instructions, files and memory | partial | yes | yes | no | `src/components/folders` `src-tauri/src/projects/mod.rs` `src/components/folders/ProjectSettingsDialog.tsx` `src/components/mobile/screens/ProjectSettingsScreen.tsx` | P3 |
 | Shared projects | no | no | no | no | | P9 |
-| File uploads (PDF, Word, Excel) | partial | partial | partial | no | `src-tauri/src/assistants/references.rs` | P3 |
+| File uploads (PDF, Word, Excel) | yes | yes | yes | no | `src-tauri/src/assistants/references.rs` `src-tauri/src/documents.rs` `src/components/mobile/ChatComposer.tsx` | P9 |
 | Vision | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` | P9 |
 | Data analysis | partial | no | no | no | `src/components/settings/ToolsetsSection.tsx` | P4 |
 | Interactive tables and charts | no | no | no | no | | P4 |
@@ -96,9 +96,9 @@ Gaps: 170
 | Group chats | no | no | no | no | | P9 |
 | Health | n/a | no | no | n/a | | P9 |
 | Finances | no | no | no | no | | P9 |
-| Parental controls | no | no | no | no | | P2 |
+| Parental controls | partial | partial | partial | no | `src-tauri/src/protected_mode/mod.rs` `src/components/settings/ProtectedModeSection.tsx` | P2 |
 | Privacy: no training, data controls | yes | yes | yes | yes | `src-tauri/src/egress.rs` | |
-| Account security history | no | no | no | no | | P2 |
+| Account security history | partial | partial | partial | yes | `subrosa-cloud/migrations/0010_security_events.sql` `website/src/pages/security-history.tsx` | P2 |
 
 ## Assumed equivalences
 
