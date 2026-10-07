@@ -1598,4 +1598,96 @@ async fn a_reply_regenerated_elsewhere_disappears_here() {
         .await,
         0
     );
+/// A chat's archive travels (ADR-0080): the desktop files a Hermes session,
+/// the membership leaves under the conversation's task id every device knows,
+/// and one arriving from the phone lands under that id, is found by the
+/// desktop under its session id, and leaves again on a restore.
+#[tokio::test]
+async fn a_chat_archive_travels_under_the_conversation_id_both_ways() {
+    let pool = database().await;
+    query("INSERT INTO folders(id,name,created_at,updated_at) VALUES('archive','Archive','now','now')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let task = uuid::Uuid::new_v4().to_string();
+    query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at,hermes_session_id) VALUES(?,'T','P','completed','autonomous_private','now','now','h1')")
+        .bind(&task)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let repos = crate::db::repositories::Repositories { pool: pool.clone() };
+
+    // Archived on the desktop, under the Hermes session id.
+    repos
+        .assign_session_to_folder("h1", "archive")
+        .await
+        .unwrap();
+    let membership: (String, String) = {
+        let row = query("SELECT id,session_id FROM account_session_folders WHERE deleted=0")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        (row.get("id"), row.get("session_id"))
+    };
+    assert_eq!(membership.1, task, "the wire carries the conversation id");
+    let rows = outbox_rows(&pool, &membership.0).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("kind"), "folder");
+    let body: Value = serde_json::from_str(&rows[0].get::<String, _>("body")).unwrap();
+    assert_eq!(body["table"], "account_session_folders");
+
+    // Restored on the desktop: the same object leaves again, flagged.
+    repos
+        .remove_session_from_folder("h1", "archive")
+        .await
+        .unwrap();
+    let flagged: i64 = query("SELECT deleted FROM account_session_folders WHERE id=?")
+        .bind(&membership.0)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("deleted");
+    assert_eq!(flagged, 1);
+
+    // Archived on the phone and received here.
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let object = uuid::Uuid::new_v4().to_string();
+    let receive = |deleted: i64| {
+        let op = uuid::Uuid::new_v4().to_string();
+        let payload = json!({"v":1,"operation_id":op,"parent_revision":null,"deleted":false,"table":"account_session_folders","row":{"id":object,"session_id":task,"folder_id":"archive","assigned_at":"now","deleted":deleted}});
+        Change {
+            sequence: 1,
+            resolved_revisions: Vec::new(),
+            object_id: object.clone(),
+            revision: uuid::Uuid::new_v4().to_string(),
+            parent_revision: None,
+            kind: "folder".into(),
+            ciphertext: crypto::seal(
+                &key,
+                &aad(&s, "folder", &object),
+                &serde_json::to_vec(&payload).unwrap(),
+            )
+            .unwrap(),
+            deleted: false,
+            operation_id: Some(op),
+        }
+    };
+    let archived = receive(0);
+    let body = verify(&s, &key, &archived).unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, &archived, &body).await.unwrap());
+    tx.commit().await.unwrap();
+    let listed = repos.list_session_folders().await.unwrap();
+    assert!(listed
+        .iter()
+        .any(|row| row.session_id == "h1" && row.folder_id == "archive"));
+    assert!(outbox_rows(&pool, &object).await.is_empty(), "no echo");
+
+    let restored = receive(1);
+    let body = verify(&s, &key, &restored).unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, &restored, &body).await.unwrap());
+    tx.commit().await.unwrap();
+    assert!(repos.list_session_folders().await.unwrap().is_empty());
 }

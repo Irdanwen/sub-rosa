@@ -7999,8 +7999,9 @@ async fn handle_june_provider_connection(
             write_json_response(&mut stream, 200, body).await?;
         }
         ("POST", "/v1/chat/completions") => {
-            let body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let mut body = serde_json::from_slice::<serde_json::Value>(&request.body)
                 .unwrap_or_else(|_| serde_json::json!({}));
+            provider_proxy::apply_reasoning_effort_alias(&mut body);
             match crate::june_api::proxy_agent_chat_completions(body).await {
                 Ok(response) if response.status >= 400 => {
                     // Error bodies are small enough to buffer whole, and
@@ -8250,19 +8251,6 @@ fn translate_context_overflow_error(body: &[u8]) -> Option<serde_json::Value> {
 /// by bouncing off the backend's prompt_too_long rejection. When the window
 /// is unknown the field is omitted and Hermes falls back to its own probing,
 /// exactly the previous behavior.
-fn provider_models_body(model: String, context_tokens: Option<i64>) -> serde_json::Value {
-    let mut entry = serde_json::json!({
-        "id": model,
-        "object": "model",
-        "created": 0,
-        "owned_by": "june"
-    });
-    if let Some(context_tokens) = context_tokens {
-        entry["context_length"] = serde_json::json!(context_tokens);
-    }
-    serde_json::json!({ "object": "list", "data": [entry] })
-}
-
 fn provider_proxy_authorized(request: &HttpRequest, token: &str) -> bool {
     request
         .headers
@@ -8749,6 +8737,8 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
 }
 
 mod local_reads;
+mod provider_proxy;
+use provider_proxy::provider_models_body;
 
 #[cfg(test)]
 mod config_tests;
@@ -9605,29 +9595,6 @@ mod tests {
                 String::from_utf8_lossy(body),
             );
         }
-    }
-
-    #[test]
-    fn models_listing_advertises_the_context_window_when_known() {
-        let body = provider_models_body("zai-org-glm-5".to_string(), Some(202_752));
-
-        let entry = &body["data"][0];
-        assert_eq!(entry["id"], "zai-org-glm-5");
-        // The key hermes-agent's _CONTEXT_LENGTH_KEYS reads; renaming it
-        // silently puts the agent back on reactive overflow recovery.
-        assert_eq!(entry["context_length"], 202_752);
-    }
-
-    #[test]
-    fn models_listing_omits_the_context_window_when_unknown() {
-        // Offline or signed out: the listing must still serve (hermes needs
-        // it to enumerate the model at all) and just skip the window, which
-        // returns hermes to its own probing.
-        let body = provider_models_body("zai-org-glm-5".to_string(), None);
-
-        let entry = &body["data"][0];
-        assert_eq!(entry["id"], "zai-org-glm-5");
-        assert!(entry.get("context_length").is_none());
     }
 
     #[test]

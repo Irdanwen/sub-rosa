@@ -5,6 +5,7 @@ import {
   type HermesSessionInfo,
   type HermesSessionMessage,
 } from "./tauri";
+import { stripReasoningEffortAlias } from "./desktop-reasoning-effort";
 import { parseHermesProcessNotice } from "./hermes-process-notice";
 
 export type HermesSessionListOptions = {
@@ -50,7 +51,15 @@ export function normalizeHermesSessionsResponse(response: unknown) {
     .filter((session) => !isDelegatedSubagentSession(session))
     .map(withScheduledRunDisplay)
     .map(withProcessNoticeDisplay)
+    .map(withCatalogModelId)
     .sort((a, b) => sessionTimestamp(b).localeCompare(sessionTimestamp(a)));
+}
+
+/** Hermes stores the model string it was handed, which carries the reasoning
+ * effort alias on the desktop (ADR-0080). The app reads the catalog id. */
+function withCatalogModelId(session: HermesSessionInfo): HermesSessionInfo {
+  const model = stripReasoningEffortAlias(session.model);
+  return model === session.model ? session : { ...session, model };
 }
 
 function isDelegatedSubagentSession(session: HermesSessionInfo) {

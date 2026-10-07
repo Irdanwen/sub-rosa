@@ -6,6 +6,7 @@ pub mod crypto;
 mod files;
 pub mod login;
 pub mod pairing;
+mod session_folders;
 pub mod shares;
 pub(crate) mod studio;
 mod summaries;

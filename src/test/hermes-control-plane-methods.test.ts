@@ -55,18 +55,19 @@ describe("createHermesMethods — typed command wrappers", () => {
     });
   });
 
-  it("switchActiveSessionModel dispatches /model through command.dispatch", async () => {
+  it("switchActiveSessionModel switches the session through config.set", async () => {
     const { request, methods } = setup();
     await methods.switchActiveSessionModel({
       mode: "sandboxed",
       sessionId: "s1",
       model: "kimi-k2-6",
     });
-    // Built on dispatchCommand: the mode only routes the gateway at the call
-    // site and never reaches the wire.
-    expect(request).toHaveBeenCalledWith("command.dispatch", {
+    // The mode only routes the gateway at the call site and never reaches the
+    // wire.
+    expect(request).toHaveBeenCalledWith("config.set", {
       session_id: "s1",
-      command: "/model kimi-k2-6",
+      key: "model",
+      value: "kimi-k2-6 --session",
     });
   });
 

@@ -5,8 +5,8 @@ use crate::domain::types::{
     CouncilVerdictDto, DictationHistoryItemDto, DictionaryEntryDto, FilmListItemDto, FolderDto,
     IngestDto, ListDictationHistoryResponse, ListNotesResponse, MediaJobDto, MediaJobStatus,
     MemoryDto, MemorySource, NoteDto, NoteListItemDto, NoteSummaryDto, PendingDictationDto,
-    ProcessingStatus, RecordingSourceMode, RecordingState, SessionFolderDto, ShotListDto,
-    TranscriptCoverageDto, TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto, WorkflowRunStatus,
+    ProcessingStatus, RecordingSourceMode, RecordingState, ShotListDto, TranscriptCoverageDto,
+    TranscriptDto, WorkflowRunDto, WorkflowRunNodeDto, WorkflowRunStatus,
 };
 use chrono::{Duration, SecondsFormat, Utc};
 use sqlx::query::query;
@@ -16,6 +16,7 @@ use uuid::Uuid;
 pub mod conversations;
 mod memories;
 pub mod passages;
+mod session_folders;
 const DICTATION_HISTORY_RETENTION_DAYS: i64 = 7;
 
 /// Shared SELECT column list for memory rows (see [`memory_from_row`]).
@@ -504,54 +505,6 @@ impl Repositories {
             .execute(&self.pool)
             .await?;
         self.get_note(note_id).await
-    }
-
-    pub async fn list_session_folders(&self) -> Result<Vec<SessionFolderDto>, sqlx::error::Error> {
-        let rows = query(
-            "SELECT sf.session_id, sf.folder_id
-             FROM session_folders sf
-             INNER JOIN folders f ON f.id = sf.folder_id
-             WHERE f.deleted_at IS NULL
-             ORDER BY sf.assigned_at ASC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| SessionFolderDto {
-                session_id: row.get("session_id"),
-                folder_id: row.get("folder_id"),
-            })
-            .collect())
-    }
-
-    pub async fn assign_session_to_folder(
-        &self,
-        session_id: &str,
-        folder_id: &str,
-    ) -> Result<(), sqlx::error::Error> {
-        query(
-            "INSERT OR IGNORE INTO session_folders (session_id, folder_id, assigned_at) VALUES (?, ?, ?)",
-        )
-        .bind(session_id)
-        .bind(folder_id)
-        .bind(timestamp())
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    pub async fn remove_session_from_folder(
-        &self,
-        session_id: &str,
-        folder_id: &str,
-    ) -> Result<(), sqlx::error::Error> {
-        query("DELETE FROM session_folders WHERE session_id = ? AND folder_id = ?")
-            .bind(session_id)
-            .bind(folder_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
     }
 
     pub async fn list_dictionary_entries(

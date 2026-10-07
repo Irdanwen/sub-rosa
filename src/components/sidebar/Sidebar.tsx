@@ -117,6 +117,9 @@ type SidebarProps = {
    * no picker, in which case the command is simply not offered. */
   onImportMedia?: () => void;
   onSelectAgentSession: (session: HermesSessionInfo) => void;
+  /** Chats filed in the shared Archive folder: left out of the list. */
+  archivedAgentSessionIds?: ReadonlySet<string>;
+  onArchiveAgentSession?: (sessionId: string) => void;
   /** Projects, so the palette can reach one by name. Optional because several
    * tests mount the sidebar without the folders plumbing. */
   folders?: { id: string; name: string }[];
@@ -345,6 +348,8 @@ export function Sidebar({
   onNewAgentSession,
   onImportMedia,
   onSelectAgentSession,
+  archivedAgentSessionIds,
+  onArchiveAgentSession,
   folders,
   onSelectFolder,
   recoverableNoteIds,
@@ -398,7 +403,14 @@ export function Sidebar({
   const [allAgentSessions, setAgentSessions] = useState<HermesSessionInfo[]>([]);
   // __emptyStates() preview (dev console): the agent section renders its
   // "No sessions yet" line as a fresh install would, real data untouched.
-  const agentSessions = useForcedEmptyStates() ? NO_AGENT_SESSIONS : allAgentSessions;
+  const forcedEmpty = useForcedEmptyStates();
+  const agentSessions = useMemo(
+    () =>
+      forcedEmpty
+        ? NO_AGENT_SESSIONS
+        : allAgentSessions.filter((session) => !archivedAgentSessionIds?.has(session.id)),
+    [allAgentSessions, archivedAgentSessionIds, forcedEmpty],
+  );
   const [pinnedAgentSessionIds, setPinnedAgentSessionIds] = useState<Set<string>>(() =>
     readPinnedAgentSessionIds(),
   );
@@ -1292,6 +1304,9 @@ export function Sidebar({
           right={menu.right}
           top={menu.top}
           onTogglePinned={() => togglePinnedAgentSession(menuAgentSession.id)}
+          onArchive={
+            onArchiveAgentSession ? () => onArchiveAgentSession(menuAgentSession.id) : undefined
+          }
           onDelete={() => {
             setAgentSessionDeleteError(null);
             setAgentSessionToDelete(menuAgentSession);

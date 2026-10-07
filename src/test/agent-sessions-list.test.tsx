@@ -209,4 +209,43 @@ describe("MoveSessionToProjectDialog", () => {
     expect(onMoved).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
+  it("archives a chat from its menu and restores it from the archived view", async () => {
+    const user = userEvent.setup();
+    const onArchiveSession = vi.fn();
+    const onRestoreSession = vi.fn();
+    const [idle, running, waiting] = sessions;
+    render(
+      <AgentSessionsList
+        sessions={[idle, running]}
+        archivedSessions={[waiting]}
+        onArchiveSession={onArchiveSession}
+        onRestoreSession={onRestoreSession}
+        folders={[]}
+        sessionFolderIds={{}}
+        onSelectSession={vi.fn()}
+        onNewSession={vi.fn()}
+        onOpenMoveDialog={vi.fn()}
+        onOpenMoveSessions={vi.fn()}
+        onRemoveFromProject={vi.fn()}
+      />,
+    );
+
+    // The list holds the active chats only.
+    expect(screen.queryByText("Waiting session")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Actions for Idle session" }));
+    await user.click(screen.getByRole("menuitem", { name: "Archive" }));
+    expect(onArchiveSession).toHaveBeenCalledWith("idle-session");
+
+    await user.click(screen.getByRole("button", { name: "Archived chats (1)" }));
+    expect(screen.getByRole("heading", { name: /Archived chats/ })).toBeInTheDocument();
+    expect(screen.getByText("Waiting session")).toBeInTheDocument();
+    expect(screen.queryByText("Idle session")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Actions for Waiting session" }));
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).toBeNull();
+    await user.click(screen.getByRole("menuitem", { name: "Restore" }));
+    expect(onRestoreSession).toHaveBeenCalledWith("waiting-session");
+
+    await user.click(screen.getByRole("button", { name: "Back to sessions" }));
+    expect(screen.getByText("Idle session")).toBeInTheDocument();
+  });
 });

@@ -267,6 +267,55 @@ describe("folders UI", () => {
     expect(window.localStorage.getItem("june:pinned-agent-session-ids")).toBe("[]");
   });
 
+  it("leaves archived chats out of the sidebar and archives one from its menu", async () => {
+    const user = userEvent.setup();
+    const onArchiveAgentSession = vi.fn();
+    render(
+      <Sidebar
+        notes={notes}
+        activeView="notes"
+        onChangeView={vi.fn()}
+        onSelectNote={vi.fn()}
+        onDeleteNote={vi.fn()}
+        onOpenMoveDialog={vi.fn()}
+        onRemoveNoteFromFolder={vi.fn()}
+        onNewAgentSession={vi.fn()}
+        onSelectAgentSession={vi.fn()}
+        archivedAgentSessionIds={new Set(["session-2"])}
+        onArchiveAgentSession={onArchiveAgentSession}
+      />,
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(AGENT_SESSIONS_CHANGED_EVENT, {
+          detail: {
+            sessions: [
+              {
+                id: "session-1",
+                title: "Fetch os platform issues",
+                last_active: "2026-06-04T19:00:00Z",
+              },
+              { id: "session-2", title: "Review onboarding", last_active: "2026-06-04T18:00:00Z" },
+            ],
+            selectedSessionId: "session-1",
+            workingSessionIds: [],
+          },
+        }),
+      );
+    });
+
+    const row = (await screen.findByText("Fetch os platform issues")).closest(
+      ".agent-sidebar-row",
+    ) as HTMLElement;
+    expect(screen.queryByText("Review onboarding")).toBeNull();
+    await user.click(
+      within(row).getByRole("button", { name: "Actions for Fetch os platform issues" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Archive" }));
+    expect(onArchiveAgentSession).toHaveBeenCalledWith("session-1");
+  });
+
   it("retries initial agent session hydration when the bridge is still starting", async () => {
     vi.useFakeTimers();
     try {

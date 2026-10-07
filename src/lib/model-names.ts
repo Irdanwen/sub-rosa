@@ -1,3 +1,4 @@
+import { stripReasoningEffortAlias } from "./desktop-reasoning-effort";
 import { IMAGE_MODELS } from "./image-models";
 import { humanizeModelId } from "./studio/catalog";
 import type { MediaCatalog } from "./studio/types";
@@ -12,10 +13,13 @@ import type { MediaCatalog } from "./studio/types";
  * is the id made presentable.
  */
 export function readableModelName(
-  id: string,
+  model: string,
   reported?: string,
   catalog?: MediaCatalog | null,
 ): string {
+  // A desktop chat's model can carry its reasoning effort (ADR-0080); the
+  // name is the model's, never the alias's.
+  const id = stripReasoningEffortAlias(model);
   const given = reported?.trim();
   if (given && given !== id) return given;
   const published = catalog?.models.find((model) => model.id === id)?.name?.trim();

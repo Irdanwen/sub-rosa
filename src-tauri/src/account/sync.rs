@@ -137,6 +137,11 @@ const TABLES: &[Table] = &[
         columns: &["id", "note_id", "folder_id", "assigned_at", "deleted"],
     },
     Table {
+        name: "account_session_folders",
+        kind: "folder",
+        columns: &["id", "session_id", "folder_id", "assigned_at", "deleted"],
+    },
+    Table {
         name: "account_usage",
         kind: "usage",
         columns: &[
@@ -479,6 +484,7 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
         let sql = format!("CREATE TRIGGER {name} AFTER {action} ON note_summaries WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){ready} BEGIN {} END",enqueue(&format!("{prefix}note_id"),"note",&snapshot_body(notes,"notes."),0,&format!(" FROM notes WHERE notes.id={prefix}note_id")));
         managed.push((name, sql));
     }
+    managed.extend(super::session_folders::triggers(UUID_SQL));
     install_managed(pool, &managed).await?;
     query(&format!("CREATE TRIGGER IF NOT EXISTS account_membership_insert AFTER INSERT ON note_folders WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_note_folders(id,note_id,folder_id,assigned_at) SELECT {UUID_SQL},NEW.note_id,NEW.folder_id,NEW.assigned_at WHERE NOT EXISTS(SELECT 1 FROM account_note_folders WHERE note_id=NEW.note_id AND folder_id=NEW.folder_id); UPDATE account_note_folders SET deleted=0,assigned_at=NEW.assigned_at WHERE note_id=NEW.note_id AND folder_id=NEW.folder_id; END")).execute(pool).await?;
     query("CREATE TRIGGER IF NOT EXISTS account_membership_delete AFTER DELETE ON note_folders WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN UPDATE account_note_folders SET deleted=1 WHERE note_id=OLD.note_id AND folder_id=OLD.folder_id; END").execute(pool).await?;
@@ -489,6 +495,7 @@ pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppErro
     let mut tx = pool.begin().await?;
     if enabled {
         query(&format!("INSERT INTO account_note_folders(id,note_id,folder_id,assigned_at) SELECT {UUID_SQL},nf.note_id,nf.folder_id,nf.assigned_at FROM note_folders nf WHERE NOT EXISTS(SELECT 1 FROM account_note_folders s WHERE s.note_id=nf.note_id AND s.folder_id=nf.folder_id)")).execute(&mut *tx).await?;
+        super::session_folders::backfill(&mut tx, UUID_SQL).await?;
         let count: i64 = query("SELECT count(*) AS n FROM account_sync_heads")
             .fetch_one(&mut *tx)
             .await?
@@ -1140,6 +1147,7 @@ pub(super) async fn delete_locally(
                 .execute(&mut *conn)
                 .await?;
         }
+        "account_session_folders" => super::session_folders::delete_locally(conn, id).await?,
         "account_note_folders" => {
             query("DELETE FROM note_folders WHERE (note_id,folder_id) IN (SELECT note_id,folder_id FROM account_note_folders WHERE id=?)")
                 .bind(id)
@@ -1403,6 +1411,9 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
             if let Some(summary) = body.get("summary") {
                 super::summaries::apply(conn, &c.object_id, summary).await?;
             }
+        }
+        if t.name == "account_session_folders" {
+            super::session_folders::apply(conn, &row).await?;
         }
         if t.name == "account_note_folders" {
             if row.get("deleted").and_then(Value::as_i64).unwrap_or(0) != 0 {

@@ -203,6 +203,18 @@ describe("isHermesFeatureSupported — honest support gate", () => {
     expect(isHermesFeatureSupported("command.dispatch")).toBe(true);
   });
 
+  it("reports the desktop reasoning effort and its config.set switch as supported (ADR-0080)", () => {
+    // The effort rides a model alias through session.create and config.set,
+    // and the shell's provider proxy turns it into reasoning_effort.
+    expect(getFeatureStatus("reasoningEffortControls")).toBe("supported");
+    expect(isHermesFeatureSupported("reasoningEffortControls")).toBe(true);
+    expect(getFeatureStatus("config.set")).toBe("supported");
+    expect(hermesCompatibilityMatrix.methods["config.set"]?.rationale).toContain("--session");
+    expect(hermesCompatibilityMatrix.features.reasoningEffortControls?.rationale).toContain(
+      "supportsReasoningEffort",
+    );
+  });
+
   it("reports feature 08's session.compress as supported once shipped", () => {
     // Feature 08 shipped the Compact context menu item + confirmation dialog
     // that calls compressSession, so its owned matrix key is now supported.

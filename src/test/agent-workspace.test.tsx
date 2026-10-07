@@ -3218,7 +3218,7 @@ describe("AgentWorkspace", () => {
     }
   });
 
-  it("prefills a user prompt for editing and resubmits the revision", async () => {
+  it("edits the last sent message in place: rewinds it, then sends the revision", async () => {
     mocks.listHermesSessionMessages.mockResolvedValue([
       {
         id: "u1",
@@ -3245,13 +3245,14 @@ describe("AgentWorkspace", () => {
       }),
     );
 
-    const composer = screen.getByRole("textbox");
-    expect(composer).toHaveTextContent("Draft the launch plan");
-    await user.type(composer, " for sales");
-
-    const send = screen.getByRole("button", { name: "Send message" });
-    await waitFor(() => expect(send).not.toBeDisabled());
-    await user.click(send);
+    // An inline field on the message itself, not the composer.
+    const field = screen.getByRole("textbox", { name: "Edit message" });
+    expect(field).toHaveValue("Draft the launch plan");
+    expect(
+      screen.queryByText("Saving starts a new branch from here. This conversation stays as it is."),
+    ).not.toBeInTheDocument();
+    await user.type(field, " for sales");
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
@@ -3259,6 +3260,54 @@ describe("AgentWorkspace", () => {
         text: "Draft the launch plan for sales",
       }),
     );
+    const calls = mocks.gatewayRequest.mock.calls.map(([method, params]) => [method, params]);
+    const undoIndex = calls.findIndex(
+      ([method, params]) =>
+        method === "command.dispatch" &&
+        (params as { name?: string }).name === "undo" &&
+        (params as { session_id?: string }).session_id === "runtime-session-1",
+    );
+    const submitIndex = calls.findIndex(([method]) => method === "prompt.submit");
+    expect(undoIndex).toBeGreaterThanOrEqual(0);
+    expect(undoIndex).toBeLessThan(submitIndex);
+  });
+
+  it("regenerates the last reply by rewinding it and asking the question again", async () => {
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      { id: "u1", role: "user", content: "Name a colour", timestamp: "2026-06-12T10:00:00Z" },
+      { id: "a1", role: "assistant", content: "Blue.", timestamp: "2026-06-12T10:00:05Z" },
+    ]);
+    mocks.gatewayRequest.mockImplementation((method: string, params?: { name?: string }) => {
+      if (method === "session.resume") return Promise.resolve({ session_id: "runtime-session-1" });
+      if (method === "command.dispatch" && params?.name === "undo") {
+        return Promise.resolve({ type: "prefill", message: "Name a colour" });
+      }
+      return Promise.resolve({});
+    });
+    const user = userEvent.setup();
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+
+    const reply = (await screen.findByText("Blue.")).closest("article");
+    expect(reply).not.toBeNull();
+    // Offered on the last reply only, never on the question.
+    const question = screen.getByText("Name a colour").closest("article") as HTMLElement;
+    expect(within(question).queryByRole("button", { name: "Regenerate reply" })).toBeNull();
+    await user.click(
+      within(reply as HTMLElement).getByRole("button", { name: "Regenerate reply" }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.gatewayRequest).toHaveBeenCalledWith("prompt.submit", {
+        session_id: "runtime-session-1",
+        text: "Name a colour",
+      }),
+    );
+    expect(mocks.gatewayRequest).toHaveBeenCalledWith("command.dispatch", {
+      session_id: "runtime-session-1",
+      name: "undo",
+      arg: "",
+    });
   });
 
   it("repairs gateway-glued contractions in assistant prose but not code or user text", async () => {
@@ -8640,11 +8689,13 @@ describe("AgentWorkspace", () => {
       });
       // The global default is left untouched.
       expect(mocks.setVeniceModel).not.toHaveBeenCalled();
-      // …AND the live session is switched via command.dispatch (/model …).
+      // …AND the live session is switched on its RUNTIME id through
+      // config.set (command.dispatch refuses `/model` on the pinned gateway).
       await waitFor(() =>
-        expect(mocks.gatewayRequest).toHaveBeenCalledWith("command.dispatch", {
-          session_id: "session-1",
-          command: "/model kimi-k2-6",
+        expect(mocks.gatewayRequest).toHaveBeenCalledWith("config.set", {
+          session_id: "runtime-session-1",
+          key: "model",
+          value: "kimi-k2-6 --session",
         }),
       );
       expect(await screen.findByText("Switched this session to Kimi K2.6.")).toBeInTheDocument();
@@ -8668,9 +8719,10 @@ describe("AgentWorkspace", () => {
       await user.click(screen.getByRole("button", { name: "Send message" }));
 
       await waitFor(() =>
-        expect(mocks.gatewayRequest).toHaveBeenCalledWith("command.dispatch", {
-          session_id: "session-1",
-          command: "/model kimi-k2-6",
+        expect(mocks.gatewayRequest).toHaveBeenCalledWith("config.set", {
+          session_id: "runtime-session-1",
+          key: "model",
+          value: "kimi-k2-6 --session",
         }),
       );
       expect(mocks.ensureHermesBridgeSession).not.toHaveBeenCalledWith({
@@ -8717,6 +8769,7 @@ describe("AgentWorkspace", () => {
       ).toBeInTheDocument();
       // No live session, so nothing is dispatched to the gateway.
       expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("command.dispatch", expect.anything());
+      expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("config.set", expect.anything());
     });
 
     it("shows a failure notice and does not claim success when the dispatch is rejected", async () => {
@@ -8728,7 +8781,7 @@ describe("AgentWorkspace", () => {
       });
       mocks.setVeniceModel.mockResolvedValue(undefined);
       mocks.gatewayRequest.mockImplementation((method: string) => {
-        if (method === "command.dispatch") {
+        if (method === "config.set") {
           return Promise.reject(new Error("model switch refused"));
         }
         if (method === "session.resume") {
@@ -8753,6 +8806,58 @@ describe("AgentWorkspace", () => {
       ).toBeInTheDocument();
       // Never the success copy when Hermes rejected the switch.
       expect(screen.queryByText("Switched this session to Kimi K2.6.")).not.toBeInTheDocument();
+    });
+
+    it("offers a reasoning effort only for a capable model and hands the open chat its alias", async () => {
+      window.localStorage.removeItem("os-june:desktop-reasoning-effort");
+      mocks.listVeniceModels.mockResolvedValue({
+        mode: "generation",
+        modelType: "text",
+        selectedModel: "zai-org-glm-5-2",
+        models: [
+          {
+            ...toolCapableCatalog[0],
+            capabilities: ["functionCalling", "supportsReasoningEffort"],
+          },
+          toolCapableCatalog[1],
+        ],
+      });
+      const user = userEvent.setup();
+
+      render(<AgentWorkspace initialSession={existingSession} />);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Reasoning effort: default effort" }),
+      );
+      await user.click(screen.getByRole("menuitemradio", { name: "High effort" }));
+
+      // The chat's runtime gets the alias; the catalog id stays the model.
+      await waitFor(() =>
+        expect(mocks.gatewayRequest).toHaveBeenCalledWith("config.set", {
+          session_id: "runtime-session-1",
+          key: "model",
+          value: "zai-org-glm-5-2@reasoning-effort=high --session",
+        }),
+      );
+      expect(screen.getByRole("button", { name: "Model: GLM 5.2" })).toBeInTheDocument();
+      expect(window.localStorage.getItem("os-june:desktop-reasoning-effort")).toBe(
+        JSON.stringify({ "zai-org-glm-5-2": "high" }),
+      );
+      window.localStorage.removeItem("os-june:desktop-reasoning-effort");
+    });
+
+    it("hides the reasoning effort for a model that does not take one", async () => {
+      mocks.listVeniceModels.mockResolvedValue({
+        mode: "generation",
+        modelType: "text",
+        selectedModel: "zai-org-glm-5-2",
+        models: toolCapableCatalog,
+      });
+
+      render(<AgentWorkspace initialSession={existingSession} />);
+
+      expect(await screen.findByRole("button", { name: "Model: GLM 5.2" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Reasoning effort/ })).toBeNull();
     });
 
     it("keeps tool-incapable models out of the picker for the agent", async () => {

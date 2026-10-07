@@ -528,6 +528,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
     .await?;
     replay(
         _pool,
+        "043_session_folder_sync.sql",
+        include_str!("../../migrations/043_session_folder_sync.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
         "044_memory_sources.sql",
         include_str!("../../migrations/044_memory_sources.sql"),
     )
