@@ -15,6 +15,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { stripReasoningEffortAlias } from "./desktop-reasoning-effort";
 
 export interface TextPrice {
   model: string;
@@ -51,7 +52,8 @@ export function forgetTextPricing(): void {
 
 export function priceFor(model: string | undefined, prices: TextPrice[]): TextPrice | undefined {
   if (!model) return undefined;
-  return prices.find((price) => price.model === model);
+  const id = stripReasoningEffortAlias(model);
+  return prices.find((price) => price.model === id);
 }
 
 /**

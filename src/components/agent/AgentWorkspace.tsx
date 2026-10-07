@@ -227,11 +227,7 @@ import {
   parseCompressSessionResult,
   type CompressSessionResult,
 } from "../../lib/hermes-session-compress";
-import {
-  isBranchableMessageId,
-  parseBranchSessionResult,
-  type BranchSessionResult,
-} from "../../lib/hermes-session-branch";
+import { isBranchableMessageId } from "../../lib/hermes-session-branch";
 import { normalizeSteerText, steeringLiveEvent } from "../../lib/hermes-session-steer";
 import { unsupportedEventStore } from "../../lib/hermes-unsupported-events";
 import { pendingActionStore } from "../../lib/hermes-pending-actions";
@@ -367,6 +363,11 @@ import { attachScrollThumbFade } from "../../lib/scroll-thumb-fade";
 import { createFrameBatcher, requestFrame } from "../../lib/frame-batch";
 import { createPostTurnRefresher } from "../../lib/post-turn-refresh";
 import { useEventCallback } from "../../lib/use-event-callback";
+import { clipboardImageFiles } from "../../lib/clipboard-images";
+import { desktopRuntimeModel } from "../../lib/desktop-reasoning-effort";
+import { regenerableTurnId } from "../../lib/hermes-turn-rewrite";
+import * as turnRewrites from "../../lib/hermes-turn-rewrite-actions";
+import { ReasoningEffortControl, RegenerateAction, UserTurnEditor } from "./ChatTurnControls";
 import {
   assignArtifactsToTurns,
   attachmentPromptPath,
@@ -2725,8 +2726,8 @@ export function AgentWorkspace({
   // Switching the model always writes the global text-model default (Settings'
   // model rows and this pill refresh through the same changed event). When a
   // session is open, it ALSO switches that live session via Hermes
-  // command.dispatch (/model …) — and the UI only claims the running session
-  // moved when Hermes accepts the dispatch (feature 10). The gateway result is
+  // config.set (switchRuntimeModel) — and the UI only claims the running session
+  // moved when Hermes accepts the switch (feature 10). The gateway result is
   // the source of truth: raw model.switch/model.changed frames classify as
   // unsupported, so there is no confirming event to wait on.
   async function handleSelectGenerationModel(modelId: string) {
@@ -2783,12 +2784,7 @@ export function AgentWorkspace({
     );
     let dispatchSucceeded = false;
     try {
-      const gateway = await ensureHermesGateway(sessionUnrestricted(sessionId));
-      await createHermesMethods(gateway).switchActiveSessionModel({
-        mode: hermesModeFor(sessionId),
-        sessionId,
-        model: modelId,
-      });
+      await switchRuntimeModel(sessionId, modelId);
       dispatchSucceeded = true;
     } catch {
       // The per-chat override is saved; the notice explains the running session
@@ -3691,28 +3687,49 @@ export function AgentWorkspace({
     }
   }
 
-  /** Dispatches a `/goal` subcommand to the session's live gateway, resolving
-   * the runtime session id first (resuming the stored session when this is
-   * its first touch since app start). */
-  async function dispatchGoalToSession(storedSessionId: string, arg: string) {
+  /** Runs `call` on the session's live runtime, resolving the runtime session
+   * id first (resuming the stored session when this is its first touch since
+   * app start). */
+  async function withLiveSession<T>(
+    storedSessionId: string,
+    call: (gateway: HermesGatewayClient, runtimeSessionId: string) => Promise<T>,
+  ): Promise<T> {
     const initialGateway = await ensureHermesGateway(sessionUnrestricted(storedSessionId));
-    const dispatchOn = async (target: HermesGatewayClient, runtimeSessionId: string) =>
-      (await createHermesMethods(target).dispatchGoalCommand({
-        sessionId: runtimeSessionId,
-        arg,
-      })) as HermesGoalDispatchResponse;
     const resolved = await resolveRuntimeSession(storedSessionId, initialGateway);
     try {
-      return await dispatchOn(resolved.gateway, resolved.runtimeSessionId);
+      return await call(resolved.gateway, resolved.runtimeSessionId);
     } catch (err) {
-      // Same dead-memo recovery as a send: a goal set against a runtime that
+      // Same dead-memo recovery as a send: a command sent to a runtime that
       // died between turns must not strand the session.
       if (!isSessionGoneError(messageFromError(err))) throw err;
     }
     const retried = await resolveRuntimeSession(storedSessionId, initialGateway, {
       forceRefresh: true,
     });
-    return dispatchOn(retried.gateway, retried.runtimeSessionId);
+    return call(retried.gateway, retried.runtimeSessionId);
+  }
+  const dispatchGoalToSession = (storedSessionId: string, arg: string) =>
+    withLiveSession(storedSessionId, async (target, sessionId) => {
+      const methods = createHermesMethods(target);
+      return (await methods.dispatchGoalCommand({ sessionId, arg })) as HermesGoalDispatchResponse;
+    });
+  // The model string the runtime runs: the catalog id, or its reasoning-effort
+  // alias (ADR-0080). A switch goes to the runtime session through config.set.
+  const switchRuntimeModel = (storedSessionId: string, modelId: string) =>
+    withLiveSession(storedSessionId, (gateway, sessionId) =>
+      createHermesMethods(gateway).switchActiveSessionModel({
+        mode: hermesModeFor(storedSessionId),
+        sessionId,
+        model: desktopRuntimeModel(modelId, generationModelsRef.current),
+      }),
+    );
+  // A new effort reaches the open chat now, and every new chat on that model.
+  function applyReasoningEffort(modelId: string) {
+    const sessionId = newSessionModeRef.current ? undefined : selectedHermesSessionIdRef.current;
+    if (!sessionId || isProvisionalHermesSessionId(sessionId)) return;
+    void switchRuntimeModel(sessionId, modelId).catch((err: unknown) =>
+      setError(messageFromError(err), { sessionId }),
+    );
   }
 
   function clearComposerCommandDraft(commandText: string) {
@@ -4920,7 +4937,9 @@ export function AgentWorkspace({
         : await nextGateway.request<HermesRuntimeSessionResponse>("session.create", {
             title: nextSessionTitle ?? fallbackSessionTitle,
             cols: 96,
-            ...(targetSessionModelId ? { model: targetSessionModelId } : {}),
+            ...(targetSessionModelId
+              ? { model: desktopRuntimeModel(targetSessionModelId, generationModelsRef.current) }
+              : {}),
           });
       const nextStoredSessionId =
         targetSessionId ?? nextCreated?.stored_session_id ?? nextCreated?.session_id;
@@ -5982,66 +6001,68 @@ export function AgentWorkspace({
     }
   }
 
-  // Feature 07: fork the conversation into a NEW session that starts from the
-  // given message, through the typed control-plane method (session.branch).
-  // The source session is never mutated. The returned session id is
-  // AUTHORITATIVE — we open whatever the gateway minted, never a local guess —
-  // and the new session inherits the source's write-access mode so a follow-up
-  // routes to the right runtime. On failure the UI stays in the source session
-  // with an actionable banner.
-  async function branchFromMessage(
-    sessionId: string | undefined,
-    fromMessageId: string,
-    modeSessionId = sessionId,
-  ) {
-    if (branchingMessageId) return;
-    if (!sessionId) {
-      setError(t("Cannot branch from this message because its session is unavailable."), {
-        sessionId: modeSessionId ?? null,
-      });
-      return;
-    }
-    setBranchingMessageId(fromMessageId);
-    const sourceTitle =
-      hermesSessionItems.find((session) => session.id === sessionId || session.id === modeSessionId)
-        ?.title ?? "this session";
-    const unrestricted = sessionUnrestricted(modeSessionId);
-    try {
-      const gateway = await ensureHermesGateway(unrestricted);
-      const raw = await createHermesMethods(gateway).branchSession({
-        sessionId,
-        fromMessageId,
-      });
-      const result: BranchSessionResult | undefined = parseBranchSessionResult(raw, {
-        sourceSessionId: sessionId,
-        sourceMessageId: fromMessageId,
-      });
-      if (!result) {
-        throw new Error(t("Hermes did not return a branched session."));
-      }
-      // Carry the source session's write-access mode onto the fork so its
-      // follow-ups route to the matching runtime (mirrors session.create).
-      // The working folder rides along for the same reason: the forked
-      // transcript's file references only make sense in the same folder.
-      rememberSessionMode(result.sessionId, unrestricted);
-      rememberSessionWorkingDir(result.sessionId, sessionWorkingDir(modeSessionId) ?? null);
-      // Open the fork. Selecting it triggers the message-fetch effect, which
-      // fills the forked transcript. The source session is left untouched.
+  // Regenerate, Edit and Branch from here (feature 07) rewrite a transcript
+  // through the runtime's own /undo and session.branch (ADR-0080). A fork is
+  // never a local guess: its stored id is read back from the session list, it
+  // inherits the source's write-access mode and working folder so follow-ups
+  // route to the right runtime, and the source is never mutated.
+  const turnRewriteDeps: turnRewrites.TurnRewriteDeps = {
+    withLiveSession,
+    isBusy: (id) => workingSessionIdsRef.current.has(id) || waitingSessionIdsRef.current.has(id),
+    storedMessages: (id) => hermesSessionMessagesRef.current[id] ?? [],
+    replaceStoredMessages: (id, kept) =>
+      setHermesSessionMessages((all) => ({ ...all, [id]: kept })),
+    send: (id, text, model) =>
+      submitHermesSession(text, {
+        ...(hermesSessionItemsRef.current.find((session) => session.id === id) ?? { id }),
+        ...(model ? { model } : {}),
+      }),
+    sessionModel: (id) =>
+      hermesSessionItemsRef.current.find((session) => session.id === id)?.model?.trim() ||
+      defaultGenerationModelIdRef.current ||
+      undefined,
+    runtimeModel: (modelId) => desktopRuntimeModel(modelId, generationModelsRef.current),
+    knownSessionIds: () => new Set(hermesSessionItemsRef.current.map((session) => session.id)),
+    listSessions: () => listHermesSessions(),
+    openBranch: async ({ storedSessionId, runtimeSessionId, sourceSessionId }) => {
+      rememberSessionMode(storedSessionId, sessionUnrestricted(sourceSessionId));
+      rememberSessionWorkingDir(storedSessionId, sessionWorkingDir(sourceSessionId) ?? null);
+      rememberRuntimeSessionId(storedSessionId, runtimeSessionId);
+      const source = hermesSessionItemsRef.current.find(
+        (session) => session.id === sourceSessionId,
+      );
       newSessionModeRef.current = false;
       setNewSessionMode(false);
       setSelectedTaskId(undefined);
-      selectedHermesSessionIdRef.current = result.sessionId;
-      setSelectedHermesSessionId(result.sessionId);
+      selectedHermesSessionIdRef.current = storedSessionId;
+      setSelectedHermesSessionId(storedSessionId);
       setActivePanel("chat");
-      setBranchedNotice({ sessionId: result.sessionId, sourceTitle });
+      setBranchedNotice({
+        sessionId: storedSessionId,
+        sourceTitle: source?.title ?? "this session",
+      });
       setError(null);
       await loadHermesSessions();
+    },
+  };
+  async function rewriteTurns(sessionId: string, run: () => Promise<unknown>) {
+    try {
+      await run();
     } catch (err) {
-      // Leave the UI in the source session; surface the failure there.
       setError(messageFromError(err), { sessionId });
-    } finally {
-      setBranchingMessageId(null);
     }
+  }
+  async function branchFromMessage(sessionId: string | undefined, fromMessageId: string) {
+    if (branchingMessageId) return;
+    if (!sessionId) {
+      setError(t("Cannot branch from this message because its session is unavailable."));
+      return;
+    }
+    setBranchingMessageId(fromMessageId);
+    await rewriteTurns(sessionId, () =>
+      turnRewrites.branchFromMessage(turnRewriteDeps, sessionId, fromMessageId),
+    );
+    setBranchingMessageId(null);
   }
 
   // A new prompt (or a steer) opens a new beat of the conversation: drop what a
@@ -6775,6 +6796,13 @@ export function AgentWorkspace({
       selectedTurnInterrupted,
     ],
   );
+  const rewriteTargets = useMemo(
+    () => ({
+      regenerable: regenerableTurnId(hermesTurns),
+      lastUser: [...hermesTurns].reverse().find((turn) => turn.role === "user")?.id,
+    }),
+    [hermesTurns],
+  );
   const selectedTaskLiveEvents = selectedTask ? liveEvents[selectedTask.id] : undefined;
   const taskTurns = useMemo(
     () =>
@@ -6834,9 +6862,18 @@ export function AgentWorkspace({
       );
     }),
     onBranch: useEventCallback((messageId: string, sessionId?: string) => {
-      void branchFromMessage(sessionIdForRow(sessionId), messageId, sessionIdForRow());
+      void branchFromMessage(sessionIdForRow(sessionId), messageId);
     }),
-    onEditUserPrompt: useEventCallback((text: string) => editUserPrompt(text)),
+    onEditMessage: useEventCallback((messageId: string, text: string, original: string) => {
+      const id = sessionIdForRow();
+      void rewriteTurns(id, () =>
+        turnRewrites.editSentMessage(turnRewriteDeps, id, messageId, text, original),
+      );
+    }),
+    onRegenerate: useEventCallback(() => {
+      const id = sessionIdForRow();
+      void rewriteTurns(id, () => turnRewrites.regenerateLastReply(turnRewriteDeps, id));
+    }),
     onRetry: useEventCallback(() => retryLastHermesUserTurn()),
     onDownloadArtifact: useEventCallback(
       (artifact: AgentArtifact) => void downloadArtifact(artifact),
@@ -7552,6 +7589,7 @@ export function AgentWorkspace({
                   openComposerModelPicker();
                 }}
               />
+              <ReasoningEffortControl model={generationModel} onChange={applyReasoningEffort} />
               <button
                 type="button"
                 className="agent-composer-mic"
@@ -7916,6 +7954,7 @@ export function AgentWorkspace({
               thinkingOpen={thinkingOpen}
               onThinkingOpenChange={setThinkingOpen}
               {...hermesRowHandlers}
+              rewriteTargets={rewriteTargets}
               onTopUp={handleTopUp}
               topUpLabel={topUpLabel}
               branchingMessageId={branchingMessageId}
@@ -10138,6 +10177,9 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
   topUpLabel,
   onBranch,
   onEditUserPrompt,
+  onEditMessage,
+  onRegenerate,
+  rewriteTargets,
   onRetry,
   branchingMessageId,
   turn,
@@ -10169,6 +10211,11 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
   onTopUp?: () => void;
   topUpLabel?: string;
   onEditUserPrompt?: (text: string) => void;
+  /** Hermes rows: edit a sent message where it stands, and regenerate the
+   * last reply (ADR-0080). `rewriteTargets` names the turns that offer them. */
+  onEditMessage?: (messageId: string, text: string, original: string) => void;
+  onRegenerate?: () => void;
+  rewriteTargets?: { regenerable?: string; lastUser?: string };
   /** Fork the conversation from this turn into a new session (feature 07).
    * Optional: only Hermes-session rows pass it — task rows and the dev gallery
    * omit it, so the action is absent there. */
@@ -10205,6 +10252,7 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
     thinkingOpen(activeThinkingKey);
   const thinkingIsOpen = thinkingOpen(thinkingKey) || carriedOpen;
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
   const copyResetTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -10298,17 +10346,24 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
     </button>
   ) : null;
   const editAction =
-    turn.role === "user" && !turn.isScheduledRun && userPromptText && onEditUserPrompt ? (
+    turn.role === "user" &&
+    !turn.isScheduledRun &&
+    userPromptText &&
+    (onEditUserPrompt || onEditMessage) ? (
       <button
         type="button"
         className="agent-turn-action"
         aria-label={t("Edit message")}
         title={t("Edit message")}
-        onClick={() => onEditUserPrompt(userPromptText)}
+        onClick={() => (onEditMessage ? setEditing(true) : onEditUserPrompt?.(userPromptText))}
       >
         <IconPencilLine size={13} aria-hidden />
         <span>{t("Edit")}</span>
       </button>
+    ) : null;
+  const regenerateAction =
+    onRegenerate && rewriteTargets?.regenerable === turn.id ? (
+      <RegenerateAction onRegenerate={onRegenerate} />
     ) : null;
   const turnActions =
     copyAction || editAction || branchAction ? (
@@ -10316,6 +10371,7 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
         <div className="agent-turn-actions-inner">
           {copyAction}
           {editAction}
+          {regenerateAction}
           {branchAction}
         </div>
       </div>
@@ -10350,6 +10406,22 @@ export const AgentChatTurnRow = memo(function AgentChatTurnRow({
           />
         ))}
       </>
+    );
+  }
+
+  if (turn.role === "user" && editing && onEditMessage) {
+    return (
+      <article className="agent-user-turn" data-editing="true">
+        <UserTurnEditor
+          text={userPromptText}
+          earlier={rewriteTargets?.lastUser !== turn.id}
+          onCancel={() => setEditing(false)}
+          onSave={(text) => {
+            setEditing(false);
+            onEditMessage(turn.id, text, userPromptText);
+          }}
+        />
+      </article>
     );
   }
 
@@ -13294,91 +13366,6 @@ function formatBytes(value: number | null | undefined) {
 
 function safeText(value: unknown) {
   return typeof value === "string" ? value : "";
-}
-
-function clipboardImageFiles(data: DataTransfer | null): File[] {
-  if (!data) return [];
-  const itemFiles =
-    data.items && data.items.length
-      ? Array.from(data.items)
-          .filter((item) => item.kind === "file" && isClipboardImageType(item.type))
-          .map((item) => item.getAsFile())
-          .filter((file): file is File => Boolean(file))
-      : [];
-  if (itemFiles.length) return normalizeClipboardImageFiles(itemFiles);
-  return normalizeClipboardImageFiles(
-    Array.from(data.files ?? []).filter((file) => isClipboardImageType(file.type)),
-  );
-}
-
-function normalizeClipboardImageFiles(files: File[]): File[] {
-  if (files.length <= 1 || hasDistinctClipboardFileNames(files)) {
-    return files.map(ensureClipboardImageName);
-  }
-  const best = [...files].sort(
-    (left, right) => clipboardImageRank(right) - clipboardImageRank(left),
-  )[0];
-  return best ? [ensureClipboardImageName(best, 0)] : [];
-}
-
-function hasDistinctClipboardFileNames(files: File[]) {
-  const names = files.map((file) => file.name.trim()).filter(Boolean);
-  const stems = names.map(clipboardImageStem);
-  return (
-    names.length === files.length &&
-    new Set(names).size === files.length &&
-    new Set(stems).size === files.length
-  );
-}
-
-function ensureClipboardImageName(file: File, index: number) {
-  if (file.name.trim()) return file;
-  const suffix = index === 0 ? "" : `-${index + 1}`;
-  return new File([file], `pasted-image${suffix}.${clipboardImageExtension(file)}`, {
-    type: file.type,
-    lastModified: file.lastModified,
-  });
-}
-
-function isClipboardImageType(type: string) {
-  const mimeType = normalizedImageMimeType(type);
-  return (
-    mimeType === "image/png" ||
-    mimeType === "image/jpeg" ||
-    mimeType === "image/jpg" ||
-    mimeType === "image/tiff" ||
-    mimeType === "image/tif" ||
-    mimeType === "image/gif" ||
-    mimeType === "image/webp"
-  );
-}
-
-function clipboardImageExtension(file: File) {
-  const mimeType = normalizedImageMimeType(file.type);
-  if (mimeType === "image/jpeg" || mimeType === "image/jpg") return "jpg";
-  if (mimeType === "image/tiff" || mimeType === "image/tif") return "tiff";
-  const subtype = mimeType.startsWith("image/") ? mimeType.slice(6) : "";
-  return subtype.replace(/[^a-z0-9]/g, "") || "png";
-}
-
-function clipboardImageStem(name: string) {
-  const trimmed = name.trim().toLowerCase();
-  const dot = trimmed.lastIndexOf(".");
-  return dot > 0 ? trimmed.slice(0, dot) : trimmed;
-}
-
-function clipboardImageRank(file: File) {
-  const mimeType = normalizedImageMimeType(file.type);
-  if (mimeType === "image/png") return 50;
-  if (mimeType === "image/tiff" || mimeType === "image/tif") return 40;
-  if (mimeType === "image/webp") return 30;
-  if (mimeType === "image/jpeg" || mimeType === "image/jpg") return 20;
-  if (mimeType === "image/gif") return 10;
-  return 1;
-}
-
-function normalizedImageMimeType(type: string) {
-  return type.toLowerCase().split(";")[0];
 }
 
 function toolNames(toolset: HermesToolsetInfo) {

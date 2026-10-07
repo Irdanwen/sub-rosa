@@ -403,6 +403,28 @@ content.
 _Avoid_: history, context (unqualified), Hermes memory (that is the runtime's
 folder, not this store).
 
+**Reasoning effort**:
+How hard a model thinks before it answers (default, low, medium, high),
+offered only for a model whose catalog entry says `supportsReasoningEffort`.
+On the desktop it travels as a **reasoning-effort alias**,
+`<model-id>@reasoning-effort=<level>`, which the provider proxy turns back into
+the model id and the `reasoning_effort` field (ADR-0080). The alias is never a
+model: nothing shows, prices or meters it.
+_Avoid_: thinking mode, model variant.
+
+**Regenerate / Edit (a sent message)**:
+Regenerate asks the last question again in place of its reply; Edit replaces a
+sent message and everything after it. Both rewind the stored transcript with
+the runtime's `/undo` before a new turn. Editing an earlier message happens in
+a **branch**, so the original conversation stays as it was (ADR-0080).
+_Avoid_: retry (that re-asks after a failure), rewrite (a note rewrite).
+
+**Archived chat**:
+A chat filed in the shared folder named "Archive". The membership is
+synchronised, so archiving on one device archives on every device; restoring
+removes it. The archive is a state, never a project.
+_Avoid_: hidden chat, deleted chat.
+
 ### The council (fork)
 
 **Council**:

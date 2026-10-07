@@ -1,5 +1,7 @@
 import { AssistantLauncher, openAssistants } from "../components/assistants/AssistantLauncher";
 import { useAccountLibrarySync } from "./useAccountLibrarySync";
+import { useDesktopChatArchive } from "./useDesktopChatArchive";
+import { sessionFolderMap } from "../lib/chat-archive";
 import { t } from "../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
@@ -1203,13 +1205,7 @@ export function App() {
     let cancelled = false;
     void listSessionFolders()
       .then((assignments) => {
-        if (cancelled) return;
-        const next: Record<string, string[]> = {};
-        for (const assignment of assignments) {
-          next[assignment.sessionId] ??= [];
-          next[assignment.sessionId].push(assignment.folderId);
-        }
-        setSessionFolders(next);
+        if (!cancelled) setSessionFolders(sessionFolderMap(assignments));
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(messageFromError(err));
@@ -1881,6 +1877,14 @@ export function App() {
   /** Reload the notes list. A fetched link creates its note in Rust, on a task
    * that outlives the click, so nothing else would ever tell the list. */
   useAccountLibrarySync(dispatch, state.selectedNoteId);
+  const chatArchive = useDesktopChatArchive({
+    folders: state.folders,
+    sessionFolders,
+    setSessionFolders,
+    createFolder: (name) => handleCreateFolder(name),
+    onError: (err) => setError(messageFromError(err)),
+  });
+  const splitAgentSessions = chatArchive.split(agentSessions);
 
   const refreshNotesList = useCallback(async () => {
     try {
@@ -2137,7 +2141,8 @@ export function App() {
     folderId: string,
     options?: { rethrow?: boolean },
   ) {
-    const current = sessionFolders[sessionId] ?? [];
+    // The archive is a state, not a project: a move keeps it.
+    const current = chatArchive.projectFolders[sessionId] ?? [];
     if (current.length === 1 && current[0] === folderId) return;
     try {
       for (const existing of current) {
@@ -2147,7 +2152,7 @@ export function App() {
       if (!current.includes(folderId)) {
         await assignSessionToFolder(sessionId, folderId);
       }
-      setSessionFolders((prev) => ({ ...prev, [sessionId]: [folderId] }));
+      await chatArchive.refresh();
     } catch (err) {
       setError(messageFromError(err));
       if (options?.rethrow) throw err;
@@ -2836,6 +2841,8 @@ export function App() {
       </button>
       <Sidebar
         notes={state.notes}
+        archivedAgentSessionIds={chatArchive.archivedIds}
+        onArchiveAgentSession={(sessionId) => void chatArchive.archive(sessionId)}
         folders={state.folders}
         onSelectFolder={(folderId) => {
           setActiveView("folders");
@@ -3124,9 +3131,12 @@ export function App() {
               ) : activeView === "agent-sessions" ? (
                 <AgentSessionsList
                   ref={agentSessionsListRef}
-                  sessions={agentSessions}
+                  sessions={splitAgentSessions.active}
+                  archivedSessions={splitAgentSessions.archived}
+                  onArchiveSession={(sessionId) => void chatArchive.archive(sessionId)}
+                  onRestoreSession={(sessionId) => void chatArchive.restore(sessionId)}
                   folders={state.folders}
-                  sessionFolderIds={sessionFolders}
+                  sessionFolderIds={chatArchive.projectFolders}
                   workingSessionIds={agentWorkingSessionIds}
                   waitingSessionIds={agentWaitingSessionIds}
                   onSelectSession={(session) => {
@@ -3502,7 +3512,7 @@ export function App() {
                 .filter((session): session is HermesSessionInfo => session !== undefined)
             : []
         }
-        sessionFolderIds={sessionFolders}
+        sessionFolderIds={chatArchive.projectFolders}
         folders={state.folders}
         onSetFolder={(sessionId, folderId) => handleSetSessionFolder(sessionId, folderId)}
         onMoved={() => agentSessionsListRef.current?.resetSelection()}

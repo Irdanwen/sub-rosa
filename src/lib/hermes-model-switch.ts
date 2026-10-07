@@ -3,10 +3,10 @@
  *
  * Picking a model in June always writes the app-wide default (so the next
  * session uses it). What it does to the session you are looking at depends on
- * whether one is running and whether Hermes accepted the `/model` dispatch:
+ * whether one is running and whether Hermes accepted the switch:
  *
  * - `active-session-switched` — a session is live AND Hermes accepted the
- *   `/model` slash command (the gateway result is the only signal June trusts;
+ *   per-session `config.set` (the gateway result is the only signal June trusts;
  *   raw `model.switch`/`model.changed` events classify as `unsupported`).
  * - `default-changed` — no session is running, so only the default moved; the
  *   copy says it applies to new sessions.

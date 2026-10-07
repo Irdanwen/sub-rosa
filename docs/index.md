@@ -87,6 +87,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0076](adr/0076-an-audio-model-is-filed-by-what-it-does-not-by-its-endpoint.md) — an audio model is filed as speech, music or effects from what it publishes, not from its catalog type (which names the endpoint); a speaking model on the music queue sits with the voices, and a queue request carries only the keys the model publishes
 - [adr/0077](adr/0077-a-cloned-voice-keeps-its-sample-and-remints-its-handle.md) — a cloned voice is the sample kept on the device (never synced) with a consent; the provider handle, which lives seven days at most, is a cache reminted from the sample before it expires or when the backend says it is gone
 - [adr/0078](adr/0078-parity-is-measured-against-the-vendor-grid-not-the-model-name.md) — "no feature behind ChatGPT" is the vendor's personal-plan grid copied into `docs/parity/chatgpt.md`, one status per platform backed by files, checked by `parity-matrix.test.mjs`; capabilities not model names, boundaries closed by explained equivalents, business administration outside
+- [adr/0080](adr/0080-desktop-chat-controls-ride-the-runtimes-own-seams.md) — the desktop chat's reasoning effort is a model alias the provider proxy turns into `reasoning_effort`, the live model switch is `config.set --session`, Regenerate and Edit are `/undo` plus a new turn (an earlier message in a fork), and Archive is a synchronised membership of the shared "Archive" folder answered under both chat ids
 
 ## Enforceable rules (spec/)
 

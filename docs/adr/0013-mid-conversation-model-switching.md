@@ -98,3 +98,12 @@ Concretely, three seams, all built on the reliable primitives:
 - If a future, in-repo Hermes gateway makes `/model` verifiable (a confirming
   event, documented per-session semantics), seam (1) can extend to desktop
   in-place switching without revisiting seams (2) and (3).
+
+## Addendum (2026-10-07)
+
+Verified against a live gateway: the pinned server's `command.dispatch` reads
+only `name`/`arg`, so the `/model` dispatch of seam (1)'s desktop happy path was
+always refused (4018). The live switch now goes through `config.set` with
+`key: "model"` and `--session` on the runtime session id, which the gateway
+applies to that session only. See
+[ADR-0080](0080-desktop-chat-controls-ride-the-runtimes-own-seams.md).

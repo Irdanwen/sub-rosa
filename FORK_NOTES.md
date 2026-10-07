@@ -2064,3 +2064,45 @@ Le plafond B2 est une action de l'opérateur (Caps & Alerts), pas du code.
 |---|---|---|
 | `src/app/mobile/MobileApp.tsx`, `src/app/mobile/nav.ts` | Route `studio-compose`, écoute `OPEN_COMPOSE_EVENT` | Réappliquer |
 
+
+## Le chat desktop : effort de réflexion, Régénérer, Modifier, Archiver (2026-10-07, ADR-0080)
+
+Lot P1-WP2 de la parité (ADR-0078). Tout passe par les primitives réelles du
+runtime Hermes épinglé, vérifiées sur une passerelle vivante :
+
+- **Effort de réflexion = alias de modèle** `<id>@reasoning-effort=<niveau>`,
+  donné à `session.create` et à `config.set`. Le proxy fournisseur
+  (`hermes_bridge/provider_proxy.rs`) retire le suffixe et pose
+  `reasoning_effort` avant le sidecar. Proposé seulement si le catalogue porte
+  `supportsReasoningEffort`, choix gardé par modèle sur l'appareil
+  (`src/lib/desktop-reasoning-effort.ts`).
+- **Changement de modèle en direct = `config.set … --session`** sur l'id
+  runtime (le `command.dispatch` `/model` était refusé en 4018).
+- **Régénérer / Modifier = `/undo` puis un nouveau tour**
+  (`src/lib/hermes-turn-rewrite*.ts`) ; un message plus ancien se modifie dans
+  une branche. « Brancher ici » passe par la même séquence (l'id runtime, puis
+  `/undo` sur la branche).
+- **Archiver = l'appartenance au dossier « Archive »**, désormais synchronisée
+  (`account_session_folders`, migration 043, `account/session_folders.rs`) et
+  lue sous les deux ids d'une discussion (`db/repositories/session_folders.rs`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/components/agent/AgentWorkspace.tsx` | Alias à `session.create`, `withLiveSession`, `switchRuntimeModel`, deps des réécritures, Régénérer et édition en ligne dans `AgentChatTurnRow`, contrôle d'effort ; aides presse-papiers déplacées dans `src/lib/clipboard-images.ts` | Réappliquer |
+| `src/lib/hermes-control-plane/methods.ts` | `switchActiveSessionModel` par `config.set`, `dispatchUndoCommand` | Réappliquer |
+| `src/lib/hermes-control-plane/compatibility/matrix.ts` | `config.set`, `command.dispatch`, `session.branch`, `reasoningEffortControls` | Réappliquer |
+| `src/lib/hermes-adapter.ts`, `hermes-session-usage.ts`, `carpe-diem-text-pricing.ts`, `model-names.ts` | Retirer l'alias de ce qui s'affiche ou se paie | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | Appel de `apply_reasoning_effort_alias`, `provider_models_body` déplacé dans `provider_proxy.rs` | Réappliquer |
+| `src/components/agent/AgentSessionsList.tsx`, `src/components/sidebar/Sidebar.tsx`, `sidebar-context.tsx`, `src/app/App.tsx` | Vue « Discussions archivées », Archiver / Restaurer | Réappliquer |
+| `src-tauri/src/db/repositories.rs` | Requêtes des dossiers de discussion déplacées dans `repositories/session_folders.rs` | Réappliquer |
+
+### Pièges
+
+- Rien ne doit lire un modèle venu de Hermes sans `stripReasoningEffortAlias`.
+- Le suffixe est long exprès : Hermes « corrige » une valeur `/model` à 90 %
+  semblable à un id listé.
+- `session.branch` ignore `from_message_id` et démarre la branche sur le modèle
+  par défaut du profil ; son id stocké se retrouve parmi les enfants de la
+  source.

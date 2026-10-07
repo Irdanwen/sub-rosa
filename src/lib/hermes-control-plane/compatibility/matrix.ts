@@ -119,7 +119,7 @@ const methods: HermesCompatibilitySection = {
   "session.branch": {
     status: "supported",
     rationale:
-      "AgentWorkspace's per-message 'Branch from here' action calls branchSession (session.branch), parses the authoritative new session id via parseBranchSessionResult, opens the fork, and banners 'Branched from <title>'; covered by hermes-session-branch tests.",
+      "AgentWorkspace's per-message 'Branch from here' action and the edit of an earlier message call branchSession (session.branch) with the RUNTIME session id (the pinned server keys live sessions by it and ignores from_message_id), find the fork's stored id among the source's children, rewind it to the chosen message with /undo, open it, and banner 'Branched from <title>'; covered by hermes-session-branch and hermes-turn-rewrite tests.",
     since: PIN,
   },
   "session.compress": {
@@ -143,8 +143,14 @@ const methods: HermesCompatibilitySection = {
   "command.dispatch": {
     status: "supported",
     rationale:
-      "The composer model picker switches a live session by dispatching /model via switchActiveSessionModel (command.dispatch) and only claims success on the gateway ack; covered by hermes-model-switch and agent-workspace tests. The composer's /goal command drives the runtime's goal loop through the same method via dispatchGoalCommand, using the name/arg params pending-input commands require.",
+      "The composer's /goal command drives the runtime's goal loop via dispatchGoalCommand, and Regenerate and the edit of a sent message rewind the transcript via dispatchUndoCommand (/undo), both using the name/arg params the server reads (a `command` string is refused with 4018, so the model switch moved to config.set); covered by hermes-goal-command, hermes-turn-rewrite and agent-workspace tests.",
     since: PIN,
+  },
+  "config.set": {
+    status: "supported",
+    rationale:
+      "The composer model picker and the reasoning effort control switch a live session (by its runtime id) through switchActiveSessionModel, which sends config.set key=model with `--session` and the model or its reasoning-effort alias (ADR-0080), and only claims success on the gateway ack; covered by hermes-model-switch and agent-workspace tests.",
+    since: CURRENT_PIN,
   },
   "subagent.interrupt": {
     status: "supported",
@@ -335,9 +341,9 @@ const features: HermesCompatibilitySection = {
     since: CURRENT_PIN,
   },
   reasoningEffortControls: {
-    status: "planned",
+    status: "supported",
     rationale:
-      "Hermes 0.19 adds max and ultra reasoning effort plus per-model overrides, but June's model picker does not expose those tiers.",
+      "Hermes never sends a reasoning field to the loopback provider, so the desktop carries the effort (Default, Low, Medium, High, offered only for models whose catalog entry has supportsReasoningEffort) as a model alias, `<id>@reasoning-effort=<level>`, through session.create and config.set; the shell's provider proxy strips it into the flat reasoning_effort field before the sidecar, so pricing and metering see the real id (ADR-0080). Hermes' own max and ultra tiers stay unexposed; covered by desktop-reasoning-effort tests and the provider_proxy Rust tests.",
     since: CURRENT_PIN,
   },
 };
