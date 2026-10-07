@@ -92,3 +92,17 @@ opposed to what our typed wrappers assumed:
   no other device knows. Like `studio_marks` (ADR-0073), the new synchronised
   table is unknown to older app versions, which refuse the page that holds it
   until they update.
+
+## Addendum 2026-10-07: Regenerate resends the pictures
+
+The consequence "a question that carried images resends its text only" was
+offered as a disabled button, and it did not have to be. The stored question
+names every picture the send path attached: the attachment block lists each
+upload by its path in the workspace, and an image mention by its absolute
+path, and the files stay where they were copied. Regenerate now reads them
+back from the stored text (`questionImages`), checks each one can still be
+read before it rewinds anything, and sends them through the composer's own
+attach step. The Hermes bridge resolves a relative path against the
+workspace, which is what such a path means. Regenerate stays disabled only
+for a picture the text does not name (the notice Hermes writes when it could
+not see one), and refuses with a reason when a named file was deleted since.

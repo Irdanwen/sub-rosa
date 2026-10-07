@@ -522,6 +522,7 @@ pub fn run() {
             meeting_hud::meeting_hud_latest_status,
             meeting_hud::meeting_hud_reopen,
             providers::provider_model_settings,
+            providers::default_chat_model,
             providers::list_venice_models,
             providers::set_venice_model,
             providers::set_venice_api_key,
@@ -850,6 +851,7 @@ pub fn run() {
         #[cfg(target_os = "ios")]
         audio::ios_session::set_playback_audio_session,
         providers::provider_model_settings,
+        providers::default_chat_model,
         providers::list_venice_models,
         providers::set_venice_model,
         providers::set_venice_api_key,

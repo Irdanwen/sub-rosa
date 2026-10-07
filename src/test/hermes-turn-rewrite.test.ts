@@ -6,6 +6,7 @@ import {
   messagesAfterUndo,
   planUserTurnEdit,
   questionCarriesImages,
+  questionImages,
   regenerableTurnId,
   rewriteTargetsFor,
   undoPrefillText,
@@ -15,6 +16,7 @@ import {
   branchFromMessage,
   editSentMessage,
   regenerateLastReply,
+  sendArgs,
   type TurnRewriteDeps,
 } from "../lib/hermes-turn-rewrite-actions";
 import type { HermesSessionMessage } from "../lib/tauri";
@@ -286,24 +288,74 @@ describe("rewriting through the gateway", () => {
     expect(earlier.deps.restoreDraft).toHaveBeenCalledWith("fork", "Second, sharper");
   });
 
-  it("will not ask a question with pictures again, and leaves the transcript alone", async () => {
-    const withImage: HermesSessionMessage[] = [
+  const pictureQuestion =
+    "What is this?\n\nAttached files copied into the Sub Rosa workspace:\n- photo.jpg (Workspace): uploads/photo.jpg\n- notes.pdf (Workspace): uploads/notes.pdf\n\nUse these file paths when inspecting or operating on the files.";
+  const withImage: HermesSessionMessage[] = [
+    ...messages.slice(0, 7),
+    { id: "8", role: "user", content: pictureQuestion },
+    { id: "9", role: "assistant", content: "A cat." },
+  ];
+
+  it("asks a question with pictures again with its pictures attached", async () => {
+    const imagesReadable = vi.fn(async () => true);
+    const { deps, request } = fakeDeps({ storedMessages: () => withImage, imagesReadable });
+    request.mockImplementation(async (method: string, params?: Record<string, unknown>) =>
+      method === "command.dispatch" && params?.name === "undo"
+        ? { type: "prefill", message: pictureQuestion }
+        : {},
+    );
+
+    await regenerateLastReply(deps, "source");
+
+    const photo = { name: "photo.jpg", path: "uploads/photo.jpg" };
+    expect(imagesReadable).toHaveBeenCalledWith([photo]);
+    expect(deps.send).toHaveBeenCalledWith("source", pictureQuestion, undefined, [photo]);
+  });
+
+  it("will not rewind a question whose pictures are gone, and leaves the transcript alone", async () => {
+    const { deps, request } = fakeDeps({
+      storedMessages: () => withImage,
+      imagesReadable: async () => false,
+    });
+
+    await expect(regenerateLastReply(deps, "source")).rejects.toThrow(
+      "The images of this question are no longer in the workspace.",
+    );
+    expect(request).not.toHaveBeenCalled();
+    expect(deps.send).not.toHaveBeenCalled();
+  });
+
+  it("will not ask again a question whose picture its text does not name", async () => {
+    const noticeOnly: HermesSessionMessage[] = [
       ...messages.slice(0, 7),
-      {
-        id: "8",
-        role: "user",
-        content:
-          "What is this?\n\nAttached files copied into the Sub Rosa workspace:\n- photo.jpg (Workspace): uploads/photo.jpg\n\nUse these file paths when inspecting or operating on the files.",
-      },
-      { id: "9", role: "assistant", content: "A cat." },
+      { id: "8", role: "user", content: "[The user attached an image but analysis failed] Hi" },
+      { id: "9", role: "assistant", content: "Hello." },
     ];
-    const { deps, request } = fakeDeps({ storedMessages: () => withImage });
+    const { deps, request } = fakeDeps({ storedMessages: () => noticeOnly });
 
     await expect(regenerateLastReply(deps, "source")).rejects.toThrow(
       "A question with images cannot be asked again.",
     );
     expect(request).not.toHaveBeenCalled();
-    expect(deps.send).not.toHaveBeenCalled();
+  });
+
+  it("hands the workspace's send the question's pictures as attachments", () => {
+    const [text, session, options] = sendArgs(
+      [{ id: "source", title: "A chat" }],
+      "source",
+      "What is this?",
+      "kimi",
+      [{ name: "chart", path: "/Users/me/Pictures/chart.webp" }],
+    );
+    expect(text).toBe("What is this?");
+    expect(session).toEqual({ id: "source", title: "A chat", model: "kimi" });
+    expect(options.attachments).toHaveLength(1);
+    expect(options.attachments[0]).toMatchObject({
+      name: "chart",
+      path: "/Users/me/Pictures/chart.webp",
+      attach: { kind: "image", status: "imported", workspacePath: "/Users/me/Pictures/chart.webp" },
+    });
+    expect(sendArgs([], "new", "Hi")[2].attachments).toEqual([]);
   });
 
   it("says so when a branch cannot be put back on its source's model", async () => {
@@ -338,6 +390,23 @@ describe("what Regenerate can resend", () => {
     expect(questionCarriesImages("Rename image.png to cover.png")).toBe(false);
   });
 
+  it("finds the pictures again from the question's text", () => {
+    const block = (line: string) =>
+      `Look\n\nAttached files copied into the Sub Rosa workspace:\n${line}\n\nUse these file paths when inspecting or operating on the files.`;
+    expect(questionImages(block("- cat (1).png (Workspace): uploads/cat (1).png"))).toEqual([
+      { name: "cat (1).png", path: "uploads/cat (1).png" },
+    ]);
+    // A HEIC was never attached as pixels: it is resent as it went, as text.
+    expect(questionImages(block("- shot.heic (Workspace): uploads/shot.heic"))).toEqual([]);
+    expect(
+      questionImages(
+        'Fix it\n\n- Image "chart": attached to this message, look at it directly. Saved at `/Users/me/chart.png`.',
+      ),
+    ).toEqual([{ name: "chart", path: "/Users/me/chart.png" }]);
+    expect(questionImages("[The user attached an image but analysis failed] Hi")).toBeUndefined();
+    expect(questionImages("Rename image.png to cover.png")).toEqual([]);
+  });
+
   it("blocks Regenerate only for such a question, and names the open chat", () => {
     const question = turn("1", "user", {
       parts: [
@@ -356,5 +425,27 @@ describe("what Regenerate can resend", () => {
       sessionId: "s1",
     });
     expect(rewriteTargetsFor([turn("1", "user"), reply]).regenerateBlocked).toBe(false);
+  });
+
+  it("judges the question as stored, not as the bubble shows it", () => {
+    const reply = turn("2", "assistant");
+    // The bubble drops the notice Hermes wrote about a picture it could not see.
+    const stored: HermesSessionMessage[] = [
+      { id: "1", role: "user", content: "[The user attached an image but analysis failed] Hi" },
+    ];
+    expect(rewriteTargetsFor([turn("1", "user"), reply], "s1", stored).regenerateBlocked).toBe(
+      true,
+    );
+    const named: HermesSessionMessage[] = [
+      {
+        id: "1",
+        role: "user",
+        content:
+          "Hi\n\nAttached files copied into the Sub Rosa workspace:\n- a.png (Workspace): uploads/a.png\n\nUse these file paths when inspecting or operating on the files.",
+      },
+    ];
+    expect(rewriteTargetsFor([turn("1", "user"), reply], "s1", named).regenerateBlocked).toBe(
+      false,
+    );
   });
 });

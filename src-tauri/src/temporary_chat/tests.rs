@@ -355,3 +355,31 @@ async fn leaving_or_relaunching_deletes_a_temporary_chat() {
     discard_task(&pool, &kept.id).await.unwrap();
     assert!(repos.get_agent_task(&kept.id).await.is_ok());
 }
+
+async fn rate(pool: &SqlitePool, conversation_id: &str) {
+    let request = crate::reply_ratings::SetReplyRatingRequest {
+        conversation_id: conversation_id.into(),
+        message_id: "m1".into(),
+        rating: Some("down".into()),
+        reason: Some("too_long".into()),
+        note: None,
+    };
+    crate::reply_ratings::set_rating(pool, &request)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn leaving_a_temporary_chat_deletes_its_reply_ratings() {
+    let pool = database().await;
+    // On the phone a rating names the task, on the desktop the Hermes session.
+    let phone = create(&pool, "a temporary chat", None).await.unwrap();
+    rate(&pool, &phone).await;
+    register_session(&pool, "hermes-rated").await.unwrap();
+    rate(&pool, "hermes-rated").await;
+
+    discard_task(&pool, &phone).await.unwrap();
+    forget_session(&pool, "hermes-rated").await.unwrap();
+
+    assert_eq!(count(&pool, "SELECT count(*) FROM reply_ratings").await, 0);
+}

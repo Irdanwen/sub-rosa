@@ -2553,16 +2553,19 @@ pub async fn hermes_bridge_session_messages(
 
 #[tauri::command]
 pub async fn delete_hermes_bridge_session(
+    app: AppHandle,
     bridge: State<'_, HermesBridge>,
     request: DeleteHermesSessionRequest,
 ) -> Result<serde_json::Value, AppError> {
-    hermes_api_json(
+    let deleted = hermes_api_json(
         &bridge,
         reqwest::Method::DELETE,
         &format!("/api/sessions/{}", urlencoding::encode(&request.session_id)),
         None,
     )
-    .await
+    .await?;
+    crate::reply_ratings::forget_deleted_session(&app, &request.session_id).await;
+    Ok(deleted)
 }
 
 /// The bridge's cron dashboard API spans Hermes profiles; June only ever
@@ -3203,7 +3206,8 @@ fn validate_hermes_file_path(app: &AppHandle, path: &str) -> Result<PathBuf, App
         .collect();
     let requested = crate::path_confinement::confine_existing(
         &roots,
-        Path::new(path),
+        // A prompt names an upload by its path in the workspace.
+        &crate::path_confinement::resolve_relative_to(&hermes_home.join("workspace"), path),
         "hermes_file_download_denied",
         "Only files in this app's Hermes workspace, memory, or the active working folder can be downloaded.",
     )?;

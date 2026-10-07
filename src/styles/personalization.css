@@ -29,6 +29,18 @@
   gap: var(--sp-3);
 }
 
+/* The read-aloud voice, below the two answers. */
+.voice-settings {
+  margin-top: var(--sp-4);
+}
+
+.voice-settings-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
 /* Phone: the two answers are full-width fields inside a settings group. */
 .personalization-mobile-field {
   display: grid;

@@ -6040,11 +6040,10 @@ export function AgentWorkspace({
     storedMessages: (id) => hermesSessionMessagesRef.current[id] ?? [],
     replaceStoredMessages: (id, kept) =>
       setHermesSessionMessages((all) => ({ ...all, [id]: kept })),
-    send: (id, text, model) =>
-      submitHermesSession(text, {
-        ...(hermesSessionItemsRef.current.find((session) => session.id === id) ?? { id }),
-        ...(model ? { model } : {}),
-      }),
+    send: (id, text, model, images) =>
+      submitHermesSession(
+        ...turnRewrites.sendArgs(hermesSessionItemsRef.current, id, text, model, images),
+      ),
     sessionModel: (id) =>
       hermesSessionItemsRef.current.find((session) => session.id === id)?.model?.trim() ||
       defaultGenerationModelIdRef.current ||
@@ -6827,8 +6826,8 @@ export function AgentWorkspace({
     ],
   );
   const rewriteTargets = useMemo(
-    () => rewriteTargetsFor(hermesTurns, selectedHermesSessionId),
-    [hermesTurns, selectedHermesSessionId],
+    () => rewriteTargetsFor(hermesTurns, selectedHermesSessionId, selectedHermesMessages),
+    [hermesTurns, selectedHermesSessionId, selectedHermesMessages],
   );
   const selectedTaskLiveEvents = selectedTask ? liveEvents[selectedTask.id] : undefined;
   const taskTurns = useMemo(

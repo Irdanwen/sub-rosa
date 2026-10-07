@@ -1,23 +1,22 @@
 // "Read aloud" on a chat reply, on the desktop and the phone.
 //
 // The same machinery as the spoken recap of a note (note-speech.ts): the
-// one-call `/audio/speech` rail through the fork's media proxy, the cheapest
-// one-call engine in its default voice and format, and a real <audio> element
+// one-call `/audio/speech` rail through the fork's media proxy, in the voice
+// the person chose in Settings (voice-preference.ts), and a real <audio> element
 // so the system's own controls (lock screen, headphones, keyboard media keys)
 // drive it. What it adds is for replies: the text is cut into chunks
 // (speakable-text.ts) so the first sentence plays in seconds while the rest
 // renders behind it, and only one reply speaks at a time. Pressing another
 // reply's button stops the first; pressing the playing one stops it.
 //
-// Rendered audio is kept for the session (by reply and chunk), so listening
-// to the same reply twice does not pay twice.
+// Rendered audio is kept for the session (by reply, chunk and voice), so
+// listening to the same reply twice does not pay twice.
 
 import { useCallback, useSyncExternalStore } from "react";
 import { PRODUCT_NAME } from "./branding";
 import { t } from "./i18n";
 import { speakableReply, speechChunks } from "./speakable-text";
-import { fetchMediaCatalog, modelsOfType } from "./studio/catalog";
-import { defaultSpeechModel, generateSpeech, speechCapabilities } from "./studio/speech";
+import { renderPreferredSpeech, voicePreferenceKey } from "./voice-preference";
 
 export type ReplySpeechStatus = "idle" | "loading" | "playing" | "failed";
 
@@ -40,6 +39,9 @@ export type ReplySpeechDeps = {
   /** Renders one chunk and answers a playable URL. */
   render: (text: string, signal: AbortSignal) => Promise<string>;
   createAudio: () => SpeechAudio;
+  /** What the rendered audio sounds like: a chunk rendered in another voice
+   * is not replayed. */
+  voiceKey?: () => string;
 };
 
 /** Rendered chunks kept, oldest dropped first. */
@@ -68,7 +70,7 @@ export function createReplySpeechPlayer(deps: ReplySpeechDeps) {
   }
 
   function render(key: string, index: number, text: string, signal: AbortSignal) {
-    const cacheKey = `${key}:${index}:${text.length}`;
+    const cacheKey = `${key}:${index}:${text.length}:${deps.voiceKey?.() ?? ""}`;
     const cached = cache.get(cacheKey);
     if (cached) return Promise.resolve(cached);
     return deps.render(text, signal).then((url) => {
@@ -173,43 +175,11 @@ function announce(stop: () => void) {
   }
 }
 
-let speechModel: Promise<{
-  id: string;
-  format: ReturnType<typeof speechCapabilities>["defaultFormat"];
-}> | null = null;
-
-/** The engine a reply is read with: the one the spoken recap uses (the
- * cheapest one-call engine, in a format it answers). Looked up once. */
-function replySpeechModel() {
-  speechModel ??= fetchMediaCatalog().then((catalog) => {
-    const model = defaultSpeechModel(modelsOfType(catalog, "tts"));
-    if (!model) throw new Error("no speech model");
-    return { id: model.id, format: speechCapabilities(model).defaultFormat };
-  });
-  speechModel.catch(() => {
-    speechModel = null;
-  });
-  return speechModel;
-}
-
-/** Renders a chunk through the media proxy into a Blob URL. Never a data:
- * URL: WKWebView byte-range-requests media and leaves a data: audio silent. */
-async function renderChunk(text: string, signal: AbortSignal): Promise<string> {
-  const model = await replySpeechModel();
-  const { base64, contentType } = await generateSpeech({
-    model: model.id,
-    input: text,
-    format: model.format,
-    signal,
-  });
-  const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
-  return URL.createObjectURL(new Blob([bytes], { type: contentType || "audio/mpeg" }));
-}
-
 /** The app's one reply reader. */
 export const replySpeech = createReplySpeechPlayer({
-  render: renderChunk,
+  render: (text, signal) => renderPreferredSpeech(text, { signal }),
   createAudio: () => new Audio(),
+  voiceKey: () => voicePreferenceKey(),
 });
 
 /** The reading state of one reply, and the press that starts or stops it. */

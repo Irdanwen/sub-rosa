@@ -1693,3 +1693,34 @@ async fn a_chat_archive_travels_under_the_conversation_id_both_ways() {
     tx.commit().await.unwrap();
     assert!(repos.list_session_folders().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn a_chat_deleted_elsewhere_takes_its_reply_ratings_here() {
+    let pool = database().await;
+    let task = uuid::Uuid::new_v4().to_string();
+    query("INSERT INTO agent_tasks(id,title,prompt,status,safety_profile,created_at,updated_at) VALUES(?,'Chat','Question','completed','autonomous_private','now','now')")
+        .bind(&task).execute(&pool).await.unwrap();
+    crate::reply_ratings::set_rating(
+        &pool,
+        &crate::reply_ratings::SetReplyRatingRequest {
+            conversation_id: task.clone(),
+            message_id: "reply".into(),
+            rating: Some("up".into()),
+            reason: None,
+            note: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut conn = pool.acquire().await.unwrap();
+    delete_locally(&mut conn, "agent_tasks", &task)
+        .await
+        .unwrap();
+    drop(conn);
+
+    assert!(crate::reply_ratings::ratings_for(&pool, &task)
+        .await
+        .unwrap()
+        .is_empty());
+}

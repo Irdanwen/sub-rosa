@@ -114,11 +114,13 @@ describe("the read aloud button", () => {
     const audios: FakeAudio[] = [];
     vi.doMock("../lib/studio/catalog", () => ({
       fetchMediaCatalog: async () => ({}),
-      modelsOfType: () => [{ id: "tts-1", name: "TTS" }],
+      modelsOfType: () => [{ id: "tts-1", name: "TTS", offline: false }],
+      speechRail: () => "speech",
     }));
     vi.doMock("../lib/studio/speech", () => ({
       defaultSpeechModel: (models: { id: string }[]) => models[0],
-      speechCapabilities: () => ({ defaultFormat: "mp3" }),
+      speechCapabilities: () => ({ defaultFormat: "mp3", voices: [] }),
+      acceptedVoice: () => undefined,
       generateSpeech: vi.fn(async () => ({ base64: btoa("mp3"), contentType: "audio/mpeg" })),
     }));
     vi.stubGlobal(

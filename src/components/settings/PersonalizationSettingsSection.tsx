@@ -11,6 +11,7 @@ import {
   personalizationSetSettings,
 } from "../../lib/personalization";
 import { Switch } from "../ui/Switch";
+import { VoiceSettingsCard } from "./VoiceSettingsCard";
 
 /**
  * Settings › Personalization (ADR-0081): what Sub Rosa should know about the
@@ -158,6 +159,7 @@ export function PersonalizationSettingsSection() {
           </button>
         </div>
       </div>
+      <VoiceSettingsCard />
       {error ? <p className="settings-row-error">{error}</p> : null}
     </section>
   );
