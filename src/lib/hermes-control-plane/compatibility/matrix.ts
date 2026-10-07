@@ -343,7 +343,7 @@ const features: HermesCompatibilitySection = {
   reasoningEffortControls: {
     status: "supported",
     rationale:
-      "Hermes never sends a reasoning field to the loopback provider, so the desktop carries the effort (Default, Low, Medium, High, offered only for models whose catalog entry has supportsReasoningEffort) as a model alias, `<id>@reasoning-effort=<level>`, through session.create and config.set; the shell's provider proxy strips it into the flat reasoning_effort field before the sidecar, so pricing and metering see the real id (ADR-0080). Hermes' own max and ultra tiers stay unexposed; covered by desktop-reasoning-effort tests and the provider_proxy Rust tests.",
+      "Hermes never sends a reasoning field to the loopback provider, so the desktop carries the effort (Default, Low, Medium, High, offered only for models whose catalog entry has supportsReasoningEffort) as a model alias, `<id>@reasoning-effort=<level>`, through session.create and config.set; the shell's provider proxy strips it into the flat reasoning_effort field before the sidecar, so pricing and metering see the real id (ADR-0080). Hermes' own max and ultra tiers stay unexposed; covered by reasoning-effort-alias tests and the provider_proxy Rust tests.",
     since: CURRENT_PIN,
   },
 };

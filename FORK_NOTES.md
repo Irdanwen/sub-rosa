@@ -2076,7 +2076,7 @@ runtime Hermes épinglé, vérifiées sur une passerelle vivante :
   (`hermes_bridge/provider_proxy.rs`) retire le suffixe et pose
   `reasoning_effort` avant le sidecar. Proposé seulement si le catalogue porte
   `supportsReasoningEffort`, choix gardé par modèle sur l'appareil
-  (`src/lib/desktop-reasoning-effort.ts`).
+  (`src/lib/reasoning-effort.ts`).
 - **Changement de modèle en direct = `config.set … --session`** sur l'id
   runtime (le `command.dispatch` `/model` était refusé en 4018).
 - **Régénérer / Modifier = `/undo` puis un nouveau tour**
@@ -2107,3 +2107,40 @@ runtime Hermes épinglé, vérifiées sur une passerelle vivante :
 - `session.branch` ignore `from_message_id` et démarre la branche sur le modèle
   par défaut du profil ; son id stocké se retrouve parmi les enfants de la
   source.
+
+## Lire, noter et exporter une réponse ; jauge desktop (2026-10-07, ADR-0082)
+
+Lot P1-WP4 de la parité (ADR-0078), desktop et téléphones :
+
+- **Lire à voix haute** (`src/components/chat/ReadAloudButton.tsx`,
+  `src/lib/reply-speech.ts`) : le rail `/audio/speech` du récap parlé, découpé
+  en morceaux (`src/lib/speakable-text.ts`, partagé avec `note-speech.ts`), une
+  seule réponse à la fois, un `<audio>` réel pour les contrôles système.
+- **Noter une réponse** (`src/components/chat/RateReply.tsx`,
+  `src/lib/reply-ratings.ts`, `src-tauri/src/reply_ratings.rs`, migration 045) :
+  gardée sur l'appareil, aucune synchro, seulement dans l'archive.
+- **Exporter une conversation** (`src/lib/conversation-export.ts`,
+  `src-tauri/src/conversation_export/`) : Markdown écrit par la webview, PDF
+  dessiné en Rust avec les polices de base ; enregistrer (desktop) ou partager
+  (téléphone).
+- **Jauge de contexte desktop** (`ChatReplyExtras.tsx`) et **un seul module
+  d'effort** (`src/lib/reasoning-effort.ts`, l'alias desktop compris).
+- Régénérer/Modifier : un envoi qui échoue après `/undo` remet le texte dans la
+  zone de saisie ; Régénérer est désactivé sur une question avec images ; une
+  branche qui ne change pas de modèle le dit.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/components/agent/AgentWorkspace.tsx` | `ReplyExtras` dans la rangée d'actions, `ExportChatItems` dans le menu de session, `DesktopContextGauge` au composer, `rewriteTargetsFor`, deps `restoreDraft`/`notice` | Réappliquer |
+| `src/components/settings/PrivacySettingsSection.tsx` | Une phrase : les notes de réponse ne quittent pas l'appareil | Réappliquer |
+| `src-tauri/src/note_export.rs`, `src-tauri/src/share_ios.rs` | `safe_file_stem` et `present_file` extraits pour l'export de conversation | Réappliquer |
+| `src-tauri/src/archive.rs` | `reply_ratings` dans `ARCHIVED_TABLES` | Réappliquer |
+
+### Pièges
+
+- Le PDF ne couvre que WinAnsi : les emoji disparaissent, une autre écriture
+  devient `?`. L'export Markdown garde tout.
+- `AndroidExports.shareFile` donnait `image/*` à toute extension inconnue : un
+  `.md` est maintenant `text/markdown`.

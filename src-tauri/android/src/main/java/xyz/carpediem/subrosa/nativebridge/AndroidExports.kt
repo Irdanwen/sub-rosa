@@ -48,8 +48,9 @@ object AndroidExports {
         }
     }
 
-    /** A Studio picture to the share sheet. The file is copied into the cache
-     * the app's FileProvider already serves, so no other path is exposed. */
+    /** A Studio picture or a conversation export to the share sheet. The
+     * file is copied into the cache the app's FileProvider already serves, so
+     * no other path is exposed. */
     fun shareFile(activity: Activity, invoke: Invoke) {
         val args = try {
             invoke.parseArgs(ShareFileArgs::class.java)
@@ -73,8 +74,11 @@ object AndroidExports {
                     "${activity.packageName}.fileprovider",
                     copy,
                 )
-                val mime = MimeTypeMap.getSingleton()
-                    .getMimeTypeFromExtension(copy.extension.lowercase()) ?: "image/*"
+                // A conversation export is Markdown, which older Androids
+                // have no type for; anything else unknown is a picture.
+                val extension = copy.extension.lowercase()
+                val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+                    ?: if (extension == "md") "text/markdown" else "image/*"
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = mime
                     putExtra(Intent.EXTRA_STREAM, uri)

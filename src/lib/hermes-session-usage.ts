@@ -15,7 +15,7 @@
  * as a tab.
  */
 
-import { stripReasoningEffortAlias } from "./desktop-reasoning-effort";
+import { stripReasoningEffortAlias } from "./reasoning-effort";
 import { asRecord, pickNumber, pickString } from "./hermes-control-plane";
 
 /** A single tool or subagent cost line, when the gateway breaks costs down. */

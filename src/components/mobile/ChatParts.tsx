@@ -14,6 +14,8 @@ import { hapticImpact, hapticSelection } from "../../lib/haptics";
 import { t } from "../../lib/i18n";
 import { SimpleMarkdown } from "../../lib/simple-markdown";
 import type { AgentLiteAttachment, AgentLiteStatusDto } from "../../lib/tauri";
+import { RateReply } from "../chat/RateReply";
+import { ReadAloudButton } from "../chat/ReadAloudButton";
 import { Spinner } from "../ui/Spinner";
 
 /** Whether a stored message names attachments. Only the names are kept: the
@@ -124,20 +126,42 @@ export function CopyReplyButton({ text }: { text: string }) {
   );
 }
 
-/** What a finished reply offers: copy it, ask for it again (the last reply
- * only) and branch the chat from it into a new one. */
+/** What a finished reply offers: copy it, read it aloud, rate it (a stored
+ * reply in a saved chat), ask for it again (the last reply only) and branch
+ * the chat from it into a new one. */
 export function ReplyActions({
   text,
+  conversationId,
+  messageId,
   onRegenerate,
   onBranch,
 }: {
   text: string;
+  /** The chat and the reply, for reading aloud and rating. */
+  conversationId?: string;
+  messageId?: string;
   onRegenerate?: () => void;
   onBranch?: () => void;
 }) {
   return (
     <div className="mobile-chat-actions">
       <CopyReplyButton text={text} />
+      {messageId ? (
+        <ReadAloudButton
+          speechKey={`${conversationId ?? "chat"}:${messageId}`}
+          text={text}
+          className="mobile-chat-copy"
+          onPress={hapticSelection}
+        />
+      ) : null}
+      {conversationId && messageId ? (
+        <RateReply
+          conversationId={conversationId}
+          messageId={messageId}
+          className="mobile-chat-copy"
+          onPress={hapticSelection}
+        />
+      ) : null}
       {onRegenerate ? (
         <button
           type="button"

@@ -5,6 +5,7 @@
  * the workspace keeps owning its state.
  */
 
+import { messageFromError } from "./errors";
 import { createHermesMethods } from "./hermes-control-plane";
 import type { HermesGatewayClient } from "./hermes-gateway";
 import { parseBranchSessionResult } from "./hermes-session-branch";
@@ -12,10 +13,12 @@ import {
   findBranchStoredId,
   messagesAfterUndo,
   planUserTurnEdit,
+  questionCarriesImages,
   undoPrefillText,
   undoTurnsFor,
 } from "./hermes-turn-rewrite";
 import { t } from "./i18n";
+import { readableModelName } from "./model-names";
 import type { HermesSessionInfo, HermesSessionMessage } from "./tauri";
 
 export type TurnRewriteDeps = {
@@ -40,6 +43,11 @@ export type TurnRewriteDeps = {
   /** The sessions the list holds now, and a fresh read of them. */
   knownSessionIds: () => ReadonlySet<string>;
   listSessions: () => Promise<HermesSessionInfo[]>;
+  /** Puts a message back in the session's composer: a rewind went through
+   * but the new send did not, and the text must not be lost with it. */
+  restoreDraft: (storedSessionId: string, text: string) => void;
+  /** Tells the person something that worked only in part, on that session. */
+  notice: (storedSessionId: string, message: string) => void;
   /** Records and opens a fork the runtime made. */
   openBranch: (branch: {
     storedSessionId: string;
@@ -53,6 +61,25 @@ export class TurnRewriteError extends Error {}
 function ensureIdle(deps: TurnRewriteDeps, sessionId: string) {
   if (deps.isBusy(sessionId)) {
     throw new TurnRewriteError(t("Wait for the current reply to finish, then try again."));
+  }
+}
+
+/** Sends `text` after a rewind. The rewind already removed the message from
+ * the transcript, so a failed send puts it back in the composer and says why,
+ * instead of letting the question vanish. */
+async function sendAfterRewind(
+  deps: TurnRewriteDeps,
+  sessionId: string,
+  text: string,
+  model?: string,
+) {
+  try {
+    await (model ? deps.send(sessionId, text, model) : deps.send(sessionId, text));
+  } catch (error) {
+    deps.restoreDraft(sessionId, text);
+    throw new TurnRewriteError(
+      t("Your message is back in the composer. {reason}", { reason: messageFromError(error) }),
+    );
   }
 }
 
@@ -74,6 +101,7 @@ async function branchSession(deps: TurnRewriteDeps, sourceSessionId: string, und
   const sourceModel = deps.sessionModel(sourceSessionId);
   // A fork starts on the profile default, not on its source's model.
   const model = sourceModel ? deps.runtimeModel(sourceModel) : undefined;
+  let modelSwitchFailed = false;
   const runtimeSessionId = await deps.withLiveSession(
     sourceSessionId,
     async (gateway, sourceRuntimeId) => {
@@ -87,10 +115,13 @@ async function branchSession(deps: TurnRewriteDeps, sourceSessionId: string, und
         await methods.dispatchUndoCommand({ sessionId: fork.sessionId, turns: undoCount });
       }
       if (model) {
-        // Best effort: on the profile default the fork still answers.
+        // On the profile default the fork still answers, but not on the model
+        // the person chose: said below rather than passed over.
         await methods
           .switchActiveSessionModel({ mode: "sandboxed", sessionId: fork.sessionId, model })
-          .catch(() => undefined);
+          .catch(() => {
+            modelSwitchFailed = true;
+          });
       }
       return fork.sessionId;
     },
@@ -100,6 +131,14 @@ async function branchSession(deps: TurnRewriteDeps, sourceSessionId: string, und
     throw new TurnRewriteError(t("Hermes did not return a branched session."));
   }
   await deps.openBranch({ storedSessionId, runtimeSessionId, sourceSessionId });
+  if (modelSwitchFailed && sourceModel) {
+    deps.notice(
+      storedSessionId,
+      t("This branch could not switch to {model} and answers on your default model.", {
+        model: readableModelName(sourceModel),
+      }),
+    );
+  }
   return storedSessionId;
 }
 
@@ -108,10 +147,16 @@ export async function regenerateLastReply(deps: TurnRewriteDeps, sessionId: stri
   ensureIdle(deps, sessionId);
   const messages = deps.storedMessages(sessionId);
   const lastQuestion = [...messages].reverse().find((message) => message.role === "user");
+  const stored = typeof lastQuestion?.content === "string" ? lastQuestion.content : "";
+  // Checked before the rewind: `/undo` hands back the text alone, so a
+  // question with pictures would be asked again without them.
+  if (questionCarriesImages(stored)) {
+    throw new TurnRewriteError(t("A question with images cannot be asked again. Send it anew."));
+  }
   const text = await undoTurns(deps, sessionId, 1);
-  const question = text ?? (typeof lastQuestion?.content === "string" ? lastQuestion.content : "");
+  const question = text ?? stored;
   if (!question.trim()) throw new TurnRewriteError(t("There is no question to ask again."));
-  await deps.send(sessionId, question);
+  await sendAfterRewind(deps, sessionId, question);
 }
 
 /** Edit a sent message: the last one is replaced in place, an earlier one in a
@@ -129,11 +174,11 @@ export async function editSentMessage(
   ensureIdle(deps, sessionId);
   if (plan.kind === "in-place") {
     await undoTurns(deps, sessionId, 1);
-    await deps.send(sessionId, plan.text);
+    await sendAfterRewind(deps, sessionId, plan.text);
     return sessionId;
   }
   const branchId = await branchSession(deps, sessionId, plan.undoTurns);
-  await deps.send(branchId, plan.text, deps.sessionModel(sessionId));
+  await sendAfterRewind(deps, branchId, plan.text, deps.sessionModel(sessionId));
   return branchId;
 }
 

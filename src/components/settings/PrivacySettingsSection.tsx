@@ -90,6 +90,11 @@ export function PrivacySettingsSection() {
               "Your library is stored on this device. AI requests send the content needed for the task to your configured provider. If you enable account sync, supported data is encrypted before upload. Your Carpe Diem key is kept in the system keychain and shared only when you choose to use your encrypted vault.",
             )}
           </p>
+          <p className="settings-row-description">
+            {t(
+              "Your thumbs up and down on replies never leave this device: they are not synced or sent, and only travel in an archive you export yourself.",
+            )}
+          </p>
         </div>
       </div>
 

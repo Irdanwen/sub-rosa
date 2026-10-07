@@ -119,3 +119,49 @@ export function findBranchStoredId(
     .filter((session) => parentOf(session) === parentId && !knownIds.has(session.id))
     .sort((a, b) => String(started(b)).localeCompare(String(started(a))))[0]?.id;
 }
+
+const ATTACHED_IMAGE_LINE = /^- .+\.(?:png|jpe?g|gif|webp|tiff?|heic|bmp)\b/im;
+
+/** Whether a sent question carried pictures: an attached image in the block
+ * the send path appends, an image mention, or the notice Hermes writes when
+ * it could not look at one. `/undo` hands back the text only, so asking such
+ * a question again would send it without its pictures. */
+export function questionCarriesImages(text: string): boolean {
+  const attached =
+    /Attached files copied into the .+ workspace:\n([\s\S]*?)\n+Use these file paths/i.exec(
+      text,
+    )?.[1];
+  if (attached && ATTACHED_IMAGE_LINE.test(attached)) return true;
+  if (/^- Image ".*": attached to this message/m.test(text)) return true;
+  return /attached an image/i.test(text);
+}
+
+/** The turns that carry Regenerate and Edit, and what the rows need to know
+ * about them. */
+export type RewriteTargets = {
+  regenerable?: string;
+  lastUser?: string;
+  /** The question Regenerate would ask again carried pictures, which a
+   * rewind cannot resend: Regenerate is offered disabled, with the reason. */
+  regenerateBlocked?: boolean;
+  /** The open chat's stored session id, the conversation a rating belongs
+   * to. */
+  sessionId?: string;
+};
+
+export function rewriteTargetsFor(
+  turns: readonly AgentChatTurn[],
+  sessionId?: string,
+): RewriteTargets {
+  const lastUserTurn = [...turns].reverse().find((turn) => turn.role === "user");
+  const regenerable = regenerableTurnId(turns);
+  const question = lastUserTurn?.parts
+    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+    .join("\n");
+  return {
+    regenerable,
+    lastUser: lastUserTurn?.id,
+    regenerateBlocked: Boolean(regenerable && question && questionCarriesImages(question)),
+    sessionId,
+  };
+}
