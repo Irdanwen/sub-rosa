@@ -727,6 +727,10 @@ pub struct MemoryDto {
     pub has_embedding: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// The project (folder id) that keeps this memory to itself, or `None`
+    /// for the user's own memory (ADR-0085).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

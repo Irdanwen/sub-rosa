@@ -109,7 +109,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        Repositories { pool }
+        Repositories::new(pool)
     }
 
     fn pairs(rows: Vec<SessionFolderDto>) -> Vec<(String, String)> {

@@ -15,12 +15,13 @@
  * surfaced into the chat UI.
  */
 
+import { invoke } from "@tauri-apps/api/core";
 import { textFromHermesContent } from "./agent-chat-runtime";
 import {
   type HermesSessionMessage,
   hermesBridgeSessionMessages,
   type MemoryConversationMessage,
-  memoryExtract,
+  type MemoryExtractResult,
   memoryGetSettings,
 } from "./tauri";
 
@@ -50,7 +51,11 @@ async function extractIfDue(sessionId: string): Promise<void> {
   if (extractedAtTurn.get(sessionId) === assistantTurns) return;
   extractedAtTurn.set(sessionId, assistantTurns);
 
-  await memoryExtract(windowedConversation(conversation), assistantTurns);
+  // The session id lets a chat in a project that keeps its memory to itself
+  // store what it learns there (ADR-0085).
+  await invoke<MemoryExtractResult>("memory_extract", {
+    request: { messages: windowedConversation(conversation), turns: assistantTurns, sessionId },
+  });
 }
 
 /** Normalizes Hermes session messages to plain (role, content) pairs; tool

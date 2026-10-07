@@ -5,8 +5,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const MAX_BYTES: u64 = 20 * 1024 * 1024;
-const MAX_TEXT: usize = 240_000;
+pub(crate) const MAX_BYTES: u64 = 20 * 1024 * 1024;
+pub(crate) const MAX_TEXT: usize = 240_000;
 mod lifecycle;
 mod worker;
 pub use lifecycle::retained_reference_files;
@@ -50,8 +50,8 @@ pub fn references_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
 }
 pub fn reference_extension(value: &str) -> Result<&str, AppError> {
     match value {
-        "txt" | "md" | "pdf" | "docx" | "xlsx" | "pptx" | "png" | "jpg" | "jpeg" | "webp"
-        | "gif" => Ok(value),
+        "txt" | "md" | "csv" | "pdf" | "docx" | "xlsx" | "pptx" | "png" | "jpg" | "jpeg"
+        | "webp" | "gif" => Ok(value),
         _ => Err(error("assistant_reference_format")),
     }
 }
@@ -321,7 +321,7 @@ pub async fn assistant_reference_read(app: AppHandle, id: String) -> Result<Stri
     image_data_url(&app, &reference.assistant_id, &id).await
 }
 
-fn extract(path: &Path, format: &str) -> Result<String, AppError> {
+pub(crate) fn extract(path: &Path, format: &str) -> Result<String, AppError> {
     let mut file =
         std::fs::File::open(path).map_err(|_| error("assistant_reference_unavailable"))?;
     let mut bytes = Vec::new();
@@ -332,8 +332,22 @@ fn extract(path: &Path, format: &str) -> Result<String, AppError> {
     if bytes.len() as u64 > MAX_BYTES {
         return Err(error("assistant_reference_too_large"));
     }
+    extract_bytes(bytes, format, MAX_TEXT)
+}
+
+/// The text of a document already in memory, at most `max_text` bytes of it.
+/// Shared with chat attachments and project files (ADR-0085), which read the
+/// same formats through the same extractors.
+pub(crate) fn extract_bytes(
+    bytes: Vec<u8>,
+    format: &str,
+    max_text: usize,
+) -> Result<String, AppError> {
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(error("assistant_reference_too_large"));
+    }
     let text = match format {
-        "txt" | "md" => {
+        "txt" | "md" | "csv" => {
             String::from_utf8(bytes).map_err(|_| error("assistant_reference_encoding"))?
         }
         "png" | "jpg" | "jpeg" | "webp" | "gif" => {
@@ -366,7 +380,7 @@ fn extract(path: &Path, format: &str) -> Result<String, AppError> {
         "docx" | "xlsx" | "pptx" => extract_office(&bytes, format)?,
         _ => return Err(error("assistant_reference_format")),
     };
-    if text.len() > MAX_TEXT {
+    if text.len() > max_text {
         return Err(error("assistant_reference_too_large"));
     }
     Ok(text)
@@ -616,10 +630,18 @@ pub async fn reference_context(
     assistant_id: &str,
     query_text: &str,
 ) -> Result<String, AppError> {
-    let refs = list_references(pool, assistant_id).await?;
-    let candidates = reference_candidates(&refs, query_text);
+    reference_context_over(&list_references(pool, assistant_id).await?, query_text).await
+}
+
+/// [`reference_context`] over any set of extracted documents: a project's
+/// files take the same path to the same passages (ADR-0085).
+pub(crate) async fn reference_context_over(
+    refs: &[AssistantReference],
+    query_text: &str,
+) -> Result<String, AppError> {
+    let candidates = reference_candidates(refs, query_text);
     if candidates.is_empty() || query_text.trim().is_empty() {
-        return Ok(select_reference_context(&refs, query_text));
+        return Ok(select_reference_context(refs, query_text));
     }
     let screened = crate::egress_ledger::scoped(
         "assistant",
@@ -634,7 +656,7 @@ pub async fn reference_context(
     )
     .await;
     Ok(match screened.outcome {
-        crate::reflex::screen::Outcome::Unjudged => select_reference_context(&refs, query_text),
+        crate::reflex::screen::Outcome::Unjudged => select_reference_context(refs, query_text),
         _ => screened.kept.join("\n\n"),
     })
 }

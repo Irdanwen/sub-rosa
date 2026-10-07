@@ -46,6 +46,7 @@ use tauri_plugin_notification::NotificationExt;
 mod budget;
 pub mod cancel;
 pub mod controls;
+mod project;
 use budget::{shorten_read_pages, Completion, ToolBudget, MAX_COMPLETIONS};
 #[cfg(test)]
 use budget::{MAX_TOOL_ROUNDS, READ_PAGE_CHARS};
@@ -426,6 +427,12 @@ async fn run_turn(
     // turn so facts extracted a moment ago apply immediately. System messages
     // are never persisted to agent_messages, so this cannot leak into history.
     let snapshot = crate::assistants::runtime::snapshot_for_task(&repos.pool, task_id).await?;
+    // A general chat filed in a project reads its instructions, files and,
+    // in "Project only", its memory (ADR-0085). Every memory read and write
+    // below goes through the scoped store.
+    let project = project::of_turn(repos, task_id, snapshot.is_some()).await;
+    let scoped = repos.with_memory_scope(project.as_ref().and_then(|p| p.memory_scope()));
+    let repos = &scoped;
     let memory_allowed = snapshot
         .as_ref()
         .map_or(true, |snapshot| snapshot.definition.allow_memory);
@@ -467,10 +474,13 @@ async fn run_turn(
             crate::assistants::runtime::system_prompt(snapshot, memory_block.as_deref())
         }
         // Personalization and past chats reach the default chat only (ADR-0081).
-        None => build_system_prompt(
-            crate::personalization::default_chat_context(repos, &task, memory_block.as_deref())
-                .await
-                .as_deref(),
+        None => project::with_section(
+            build_system_prompt(
+                crate::personalization::default_chat_context(repos, &task, memory_block.as_deref())
+                    .await
+                    .as_deref(),
+            ),
+            project.as_ref(),
         ),
     };
     let mut offered_tools = tool_definitions(crate::memory::settings().enabled);
@@ -484,6 +494,7 @@ async fn run_turn(
                 crate::memory::settings().enabled,
             )
         });
+        project::offer_tool(tools, project.as_ref());
         if snapshot.is_some() {
             tools.push(serde_json::json!({"type":"function","function":{
                 "name":"search_references","description":"Search the reference documents explicitly attached to this assistant. Cite the returned reference name and passage.",
@@ -803,6 +814,9 @@ async fn run_turn(
                 crate::memory::settings().enabled,
             ) {
                 "This tool is not enabled for this assistant.".to_string()
+            } else if let Some(project) = project.as_ref().filter(|_| name == project::TOOL) {
+                emit_status(app, task_id, "searching-references", None);
+                project::run_tool(repos, project, &args).await
             } else if name == "search_references" {
                 emit_status(app, task_id, "searching-references", None);
                 snapshot

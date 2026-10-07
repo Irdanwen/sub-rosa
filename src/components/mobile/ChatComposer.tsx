@@ -22,6 +22,7 @@ import { messageFromError } from "../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../lib/haptics";
 import { t } from "../../lib/i18n";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
+import { documentExtract, isExtractableDocument } from "../../lib/projects";
 import {
   type AgentLiteAttachment,
   mobileDictationStart,
@@ -89,6 +90,19 @@ export function ChatComposer({
             ]),
           )
           .catch(() => onError(t("This image could not be read.")));
+        return;
+      }
+      // PDF and Office documents are read on the device, and their text
+      // rides as a text attachment (ADR-0085). A scan says so.
+      if (isExtractableDocument(file.name)) {
+        void documentExtract(file)
+          .then((document) =>
+            onAttachmentsChange((current) => [
+              ...current,
+              { kind: "text", name: file.name, data: document.text },
+            ]),
+          )
+          .catch((err: unknown) => onError(messageFromError(err)));
         return;
       }
       if (file.size > 512 * 1024) {
@@ -163,7 +177,7 @@ export function ChatComposer({
         <input
           ref={fileInput}
           type="file"
-          accept="image/*,.txt,.md,.csv,.json,text/plain"
+          accept="image/*,.txt,.md,.csv,.json,text/plain,.pdf,.docx,.xlsx,.pptx"
           multiple
           hidden
           onChange={(event) => {

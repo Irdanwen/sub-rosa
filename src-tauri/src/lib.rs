@@ -34,6 +34,7 @@ pub mod diagnostics;
 pub mod dictation;
 #[cfg(mobile)]
 pub mod dictation_mobile;
+pub mod documents;
 pub mod domain;
 pub mod egress;
 pub mod egress_ledger;
@@ -72,6 +73,7 @@ pub mod personalization;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
 pub mod places;
+pub mod projects;
 pub mod providers;
 pub mod redacted;
 pub mod reflex;
@@ -303,6 +305,12 @@ pub fn run() {
             commands::list_session_folders,
             commands::assign_session_to_folder,
             commands::remove_session_from_folder,
+            documents::document_extract,
+            projects::project_get,
+            projects::project_save,
+            projects::project_file_add,
+            projects::project_file_delete,
+            projects::project_context,
             commands::list_dictionary_entries,
             commands::create_dictionary_entry,
             commands::update_dictionary_entry,
@@ -687,6 +695,12 @@ pub fn run() {
         commands::list_session_folders,
         commands::assign_session_to_folder,
         commands::remove_session_from_folder,
+        documents::document_extract,
+        projects::project_get,
+        projects::project_save,
+        projects::project_file_add,
+        projects::project_file_delete,
+        projects::project_context,
         commands::list_dictionary_entries,
         commands::create_dictionary_entry,
         commands::update_dictionary_entry,

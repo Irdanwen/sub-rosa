@@ -445,6 +445,7 @@ mod tests {
             has_embedding: false,
             created_at: "2026-07-10T00:00:00.000Z".to_string(),
             updated_at: "2026-07-10T00:00:00.000Z".to_string(),
+            scope: None,
         };
         let block = format_memory_block(&[memory]).expect("block");
         assert!(block.starts_with("User memory:"));

@@ -3084,6 +3084,7 @@ export function App() {
                   origin={
                     agentOriginFolder
                       ? {
+                          projectFolderId: agentOriginFolder.id,
                           backLabel: `Back to ${agentOriginFolder.name}`,
                           onBack: handleReturnToAgentOriginFolder,
                           crumbs: [

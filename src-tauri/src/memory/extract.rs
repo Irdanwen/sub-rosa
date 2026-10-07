@@ -73,6 +73,10 @@ pub struct ExtractMemoriesRequest {
     /// can ask after every turn; absent, the pass runs unconditionally.
     #[serde(default, alias = "turns")]
     pub assistant_turns: Option<usize>,
+    /// The desktop chat the window comes from. A chat in a project that keeps
+    /// its memory to itself stores what it learns there (ADR-0085).
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -112,7 +116,10 @@ pub async fn memory_extract(
             return Ok(ExtractMemoriesResult { added: 0 });
         }
     }
-    let repos = crate::commands::repositories(&app).await?;
+    let mut repos = crate::commands::repositories(&app).await?;
+    if let Some(session_id) = request.session_id.as_deref() {
+        repos = crate::projects::context::memory_repos_for_session(&repos, session_id).await;
+    }
     let added = extract_and_store(&repos, &request.messages).await?;
     if added > 0 {
         super::recall::spawn_backfill(&app);
@@ -131,12 +138,21 @@ pub fn maybe_extract_after_agent_lite_turn(app: &AppHandle, task_id: String) {
     tauri::async_runtime::spawn(async move {
         let result = async {
             let repos = crate::commands::repositories(&app).await?;
-            if crate::assistants::runtime::snapshot_for_task(&repos.pool, &task_id)
-                .await?
+            let snapshot =
+                crate::assistants::runtime::snapshot_for_task(&repos.pool, &task_id).await?;
+            if snapshot
+                .as_ref()
                 .is_some_and(|snapshot| !snapshot.definition.allow_memory)
             {
                 return Ok::<usize, AppError>(0);
             }
+            // A general chat in a project that keeps its memory to itself
+            // stores what it learns there; an assistant's never is (ADR-0085).
+            let repos = if snapshot.is_none() {
+                crate::projects::context::memory_repos_for_session(&repos, &task_id).await
+            } else {
+                repos
+            };
             let task = repos.get_agent_task(&task_id).await?;
             let messages: Vec<ConversationMessage> = task
                 .messages

@@ -420,6 +420,26 @@ _Avoid_: chat memory, history (unqualified).
 The memories a reply was given, recorded per phone turn (by the user message
 that opened it) and per desktop session (ADR-0081).
 _Avoid_: citations (those point at notes and pages).
+
+**Project (chat project)**:
+A note folder seen from its chats: the folder the UI calls a project, given
+**project instructions**, **project files** and a **memory mode** (ADR-0085).
+A chat belongs to the project whose folder it is filed in last; the shared
+"Archive" folder is never one. Distinct from a **film project**, which is
+Studio's editing document; qualify when both could be meant.
+_Avoid_: workspace (the agent's working directory), space.
+
+**Project files**:
+Documents added to a project, stored and read once like assistant references
+(`project_files`), searched by `search_project_files` on both shells. Evidence,
+never instructions.
+_Avoid_: attachments (those ride with one message), uploads.
+
+**Memory mode (Default, Project only)**:
+Whether a project's chats use the person's own memory (Default) or keep their
+own (Project only): a memory a "Project only" chat learns carries the folder id
+in `memories.scope`, and only such memories reach that project's chats.
+_Avoid_: private memory, project memory (unqualified).
 **Reasoning effort**:
 How hard a model thinks before it answers (default, low, medium, high),
 offered only for a model whose catalog entry says `supportsReasoningEffort`.

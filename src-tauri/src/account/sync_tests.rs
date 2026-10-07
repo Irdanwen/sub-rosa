@@ -1617,7 +1617,7 @@ async fn a_chat_archive_travels_under_the_conversation_id_both_ways() {
         .execute(&pool)
         .await
         .unwrap();
-    let repos = crate::db::repositories::Repositories { pool: pool.clone() };
+    let repos = crate::db::repositories::Repositories::new(pool.clone());
 
     // Archived on the desktop, under the Hermes session id.
     repos
