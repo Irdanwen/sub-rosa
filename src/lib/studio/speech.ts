@@ -52,6 +52,10 @@ export interface SpeechCapabilities {
   speed?: { min: number; max: number; step: number; default: number };
   /** Formats the request may ask for. The queue takes none: the model's own. */
   formats: readonly SpeechFormat[];
+  /** What the model answers when nothing else is asked for. */
+  defaultFormat: SpeechFormat;
+  /** Set when the model makes a voice from a short sample (ADR-0077). */
+  cloning?: { minSampleSeconds: number; acceptedFormats: string[]; retentionDays: number };
   inputLimit: number;
   /** `voice` also accepts the provider's own Voice ID (ElevenLabs). */
   customVoiceId: boolean;
@@ -74,18 +78,27 @@ export const AUDIO_TAGS = [
 export function speechCapabilities(model: MediaModel | undefined): SpeechCapabilities {
   const voices = modelVoices(model);
   const base = { voices, defaultVoice: defaultVoice(model) };
+  const c = (model?.constraints ?? {}) as AudioConstraints;
   if (!model || speechRail(model) === "speech") {
+    // Only the formats the model publishes: Chatterbox HD answers a 400 to
+    // mp3 (measured 2026-10-07), and so would the other wav-only engines.
+    const published = (c.supported_formats ?? []).filter((format): format is SpeechFormat =>
+      (SPEECH_FORMATS as readonly string[]).includes(format),
+    );
+    const formats = published.length > 0 ? published : SPEECH_FORMATS;
+    const defaultFormat = formats.find((format) => format === c.default_format) ?? formats[0];
     return {
       ...base,
       rail: "speech",
       speed: SPEECH_SPEED,
-      formats: SPEECH_FORMATS,
+      formats,
+      defaultFormat,
+      cloning: cloningOf(c),
       inputLimit: SPEECH_INPUT_LIMIT,
       customVoiceId: false,
       audioTags: false,
     };
   }
-  const c = (model.constraints ?? {}) as AudioConstraints;
   const min = c.min_speed ?? SPEECH_SPEED.min;
   const max = c.max_speed ?? SPEECH_SPEED.max;
   return {
@@ -101,6 +114,7 @@ export function speechCapabilities(model: MediaModel | undefined): SpeechCapabil
           }
         : undefined,
     formats: [],
+    defaultFormat: "mp3",
     inputLimit: Math.min(SPEECH_INPUT_LIMIT, c.prompt_character_limit ?? SPEECH_INPUT_LIMIT),
     customVoiceId: c.supports_custom_voice_id === true,
     audioTags: /^elevenlabs-tts-v[34]/.test(model.id),
@@ -121,6 +135,27 @@ export function defaultSpeechModel(models: readonly MediaModel[]): MediaModel | 
   return (
     [...oneCall].sort((a, b) => price(a) - price(b) || a.name.localeCompare(b.name))[0] ?? models[0]
   );
+}
+
+function cloningOf(c: AudioConstraints): SpeechCapabilities["cloning"] {
+  const raw = c.voice_cloning;
+  if (!raw || typeof raw !== "object") return undefined;
+  return {
+    minSampleSeconds: typeof raw.min_sample_seconds === "number" ? raw.min_sample_seconds : 5,
+    acceptedFormats: Array.isArray(raw.accepted_formats)
+      ? raw.accepted_formats.filter((format): format is string => typeof format === "string")
+      : ["mp3", "wav", "flac", "mp4"],
+    retentionDays: typeof raw.retention_days === "number" ? raw.retention_days : 7,
+  };
+}
+
+/** A format the model answers in: the one asked for when it takes it, else
+ * its own default. */
+export function acceptedFormat(
+  caps: SpeechCapabilities,
+  format: SpeechFormat | undefined,
+): SpeechFormat {
+  return format && caps.formats.includes(format) ? format : caps.defaultFormat;
 }
 
 /** A voice the model will take: one of its own, a provider Voice ID where it

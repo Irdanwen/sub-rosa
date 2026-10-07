@@ -20,6 +20,7 @@ import {
 } from "../../../../lib/studio/render-eta";
 import {
   AUDIO_TAGS,
+  acceptedFormat,
   acceptedSpeed,
   acceptedVoice,
   defaultSpeechModel,
@@ -190,7 +191,10 @@ export function SpeechPanel({
   const [text, setText] = useState("");
   const [speed, setSpeed] = useState<number | undefined>(undefined);
   const effectiveSpeed = acceptedSpeed(caps, speed);
-  const [format, setFormat] = useState<SpeechFormat>("mp3");
+  // The format the model answers in: the one chosen when it takes it, else
+  // its own default (Chatterbox HD answers only wav).
+  const [chosenFormat, setFormat] = useState<SpeechFormat | undefined>(undefined);
+  const format = acceptedFormat(caps, chosenFormat);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);

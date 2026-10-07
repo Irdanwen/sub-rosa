@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { estimateCostCredits, speechModels } from "../lib/studio/catalog";
 import {
+  acceptedFormat,
   acceptedSpeed,
   acceptedVoice,
   defaultSpeechModel,
@@ -27,7 +28,8 @@ describe("what a speaking model accepts", () => {
   it("keeps the one-call rail's own controls for a tts model", () => {
     const caps = speechCapabilities(byId("tts-kokoro"));
     expect(caps).toMatchObject({ rail: "speech", customVoiceId: false, audioTags: false });
-    expect(caps.formats).toEqual(["mp3", "wav", "flac"]);
+    // The published formats, in the order the model publishes them.
+    expect(caps.formats).toEqual(["mp3", "flac", "wav"]);
     expect(caps.speed).toMatchObject({ min: 0.25, max: 4 });
   });
 
@@ -138,5 +140,26 @@ describe("the engine a speech surface opens on", () => {
   it("falls back to a queued engine when the account has no other", () => {
     const queued = speechModels(audioCatalog).filter((model) => model.mediaType === "music");
     expect(defaultSpeechModel(queued)?.id).toBe(queued[0].id);
+  });
+});
+
+describe("the format a one-call engine answers in", () => {
+  it("asks each engine only for what it publishes", () => {
+    // Measured 2026-10-07: tts-chatterbox-hd answers mp3 with a 400.
+    const chatterbox = speechCapabilities(byId("tts-chatterbox-hd"));
+    expect(chatterbox.formats).toEqual(["wav"]);
+    expect(acceptedFormat(chatterbox, "mp3")).toBe("wav");
+    const kokoro = speechCapabilities(byId("tts-kokoro"));
+    expect(kokoro.defaultFormat).toBe("mp3");
+    expect(acceptedFormat(kokoro, "flac")).toBe("flac");
+  });
+
+  it("says which engine makes a voice from a sample, and how", () => {
+    expect(speechCapabilities(byId("tts-chatterbox-hd")).cloning).toEqual({
+      minSampleSeconds: 5,
+      acceptedFormats: ["mp3", "wav", "flac", "mp4"],
+      retentionDays: 7,
+    });
+    expect(speechCapabilities(byId("tts-kokoro")).cloning).toBeUndefined();
   });
 });

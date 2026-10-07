@@ -305,9 +305,10 @@ export function BibleStudio({
             model: ttsModel.id,
             input: AUDITION_LINE,
             voice,
+            format: caps.defaultFormat,
             signal: controller.signal,
           });
-          const artifact = await saveArtifactFromBase64(base64, "mp3", {
+          const artifact = await saveArtifactFromBase64(base64, caps.defaultFormat, {
             kind: "speech",
             model: ttsModel.id,
             prompt: `${entry.name} audition, ${voice}`,

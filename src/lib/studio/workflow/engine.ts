@@ -17,7 +17,7 @@ import { MediaError } from "../client";
 import { judge, type JudgeVerdict, verdictLine } from "../judge";
 import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
 import { fetchMediaCatalog, musicCapabilities, musicQueueBody, speechRail } from "../catalog";
-import { queuedSpeechJob, speechCapabilities } from "../speech";
+import { acceptedFormat, queuedSpeechJob, speechCapabilities } from "../speech";
 import { mediaBinary, mediaJson } from "../client";
 import { composeImages } from "../edit-image";
 import { generateImages } from "../generate-image";
@@ -754,7 +754,10 @@ async function executeNode(
           atSeconds: secondsParam(params, "startAt"),
         };
       }
-      const format = stringParam(params, "responseFormat") ?? "mp3";
+      // A format the engine answers in (Chatterbox HD takes only wav).
+      const format = entry
+        ? acceptedFormat(speechCapabilities(entry), stringParam(params, "responseFormat") as never)
+        : (stringParam(params, "responseFormat") ?? "mp3");
       const body: Record<string, unknown> = {
         model,
         input,

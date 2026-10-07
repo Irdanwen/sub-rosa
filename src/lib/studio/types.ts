@@ -76,6 +76,13 @@ export interface AudioConstraints {
   min_speed?: number;
   max_speed?: number;
   default_speed?: number;
+  /** Voice cloning from a short sample (tts-chatterbox-hd). */
+  voice_cloning?: {
+    mode?: string;
+    accepted_formats?: string[];
+    min_sample_seconds?: number;
+    retention_days?: number;
+  };
 }
 
 export interface MediaModel {

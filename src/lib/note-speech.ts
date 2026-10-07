@@ -13,7 +13,12 @@
  */
 
 import { fetchMediaCatalog, modelsOfType } from "./studio/catalog";
-import { SPEECH_INPUT_LIMIT, generateSpeech } from "./studio/speech";
+import {
+  SPEECH_INPUT_LIMIT,
+  defaultSpeechModel,
+  generateSpeech,
+  speechCapabilities,
+} from "./studio/speech";
 
 /** Hard stop on what one press of play can cost. Roughly ten minutes of
  * speech, which is longer than any recap has a right to be. */
@@ -97,13 +102,16 @@ export async function noteSpeechUrl(
 
   const catalog = await fetchMediaCatalog();
   // A recap read aloud now, so the one-call rail only: a queued voice-over
-  // takes minutes, and this plays while the note is open (ADR-0076).
-  const model = modelsOfType(catalog, "tts")[0];
+  // takes minutes, and this plays while the note is open (ADR-0076). The
+  // engine is the cheapest one-call one, in a format it answers: the first
+  // name in the alphabet was Chatterbox HD, which refuses the mp3 asked of it.
+  const model = defaultSpeechModel(modelsOfType(catalog, "tts"));
   if (!model) return null;
 
   const { base64, contentType } = await generateSpeech({
     model: model.id,
     input: text,
+    format: speechCapabilities(model).defaultFormat,
     signal: options.signal,
   });
   const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
