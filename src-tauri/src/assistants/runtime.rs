@@ -764,6 +764,20 @@ mod tests {
         assert!(!allows_tool(Some(&snapshot), "search_calendar", true));
     }
 
+    /// Personalization and past chats belong to the default chat (ADR-0081):
+    /// an assistant with memory still gets neither.
+    #[test]
+    fn an_assistant_gets_neither_personalization_nor_past_chats() {
+        let mut snapshot = private_snapshot();
+        snapshot.definition.allow_memory = true;
+        snapshot.definition.allow_notes = true;
+        assert!(!allows_tool(Some(&snapshot), "search_past_chats", true));
+        let prompt = system_prompt(&snapshot, Some("User memory: likes tea"));
+        assert!(prompt.contains("likes tea"));
+        assert!(!prompt.contains("Personalization:"));
+        assert!(!prompt.contains("Earlier conversations:"));
+    }
+
     #[test]
     fn fiction_never_receives_memory_even_if_passed_accidentally() {
         let snapshot = private_snapshot();

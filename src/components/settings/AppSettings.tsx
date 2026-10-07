@@ -92,6 +92,7 @@ import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { ImportSettingsSection } from "./ImportSettingsSection";
 import { CouncilSettingsSection } from "./CouncilSettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
+import { PersonalizationSettingsSection } from "./PersonalizationSettingsSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ReportsSettingsSection } from "./ReportsSettingsSection";
 import { StorageSettingsSection } from "./StorageSettingsSection";
@@ -170,6 +171,7 @@ export type SettingsTab =
   | "audio"
   | "models"
   | "agent"
+  | "personalization"
   | "memory"
   | "privacy"
   | "council"
@@ -193,6 +195,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "audio", label: t("Audio") },
   { id: "models", label: t("Models") },
   { id: "agent", label: t("Agent") },
+  { id: "personalization", label: t("Personalization") },
   { id: "memory", label: t("Memory") },
   { id: "privacy", label: t("Privacy") },
   { id: "council", label: t("Council") },
@@ -1311,6 +1314,7 @@ export function AppSettings({
 
         {activeTab === "agent" ? <AgentSettingsSection /> : null}
         {activeTab === "privacy" ? <PrivacySettingsSection /> : null}
+        {activeTab === "personalization" ? <PersonalizationSettingsSection /> : null}
         {activeTab === "memory" ? (
           <>
             <MemorySettingsSection />

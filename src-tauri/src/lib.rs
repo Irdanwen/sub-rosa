@@ -68,6 +68,7 @@ pub mod note_processing;
 pub mod open_url;
 pub mod os_accounts;
 pub mod path_confinement;
+pub mod personalization;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
 pub mod places;
@@ -546,6 +547,10 @@ pub fn run() {
             memory::memory_delete,
             memory::memory_clear,
             memory::extract::memory_extract,
+            memory::sources::memory_sources_for_task,
+            memory::sources::memory_sources_for_session,
+            personalization::personalization_get_settings,
+            personalization::personalization_set_settings,
             account::account_status,
             account::conversations::account_conversations_list,
             account::conversations::account_conversation_get,
@@ -845,6 +850,10 @@ pub fn run() {
         memory::memory_delete,
         memory::memory_clear,
         memory::extract::memory_extract,
+        memory::sources::memory_sources_for_task,
+        memory::sources::memory_sources_for_session,
+        personalization::personalization_get_settings,
+        personalization::personalization_set_settings,
         account::account_status,
         account::conversations::account_conversations_list,
         account::conversations::account_conversation_get,
@@ -982,6 +991,7 @@ pub fn run() {
             carpe_diem::sidecar::setup(app);
             diagnostics::mark("sidecar setup");
             memory::setup(app);
+            personalization::setup(app);
             ask::semantic::setup(app);
             reflex::setup(app);
             egress_ledger::spawn_flusher(app.handle());

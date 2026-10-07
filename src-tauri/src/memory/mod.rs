@@ -12,6 +12,9 @@
 //! - `enabled` — master switch: no injection, no extraction, no recall.
 //! - `auto_extract` — automatic extraction after chat turns; manual adds
 //!   still work when this is off.
+//! - `reference_chat_history` — excerpts of the user's other chats ride along
+//!   with a turn, and a `search_past_chats` tool reaches further back
+//!   ([`past_chats`], ADR-0081). Only meaningful while `enabled` is on.
 
 use crate::domain::types::{AppError, MemoryDto, MemorySource};
 use serde::{Deserialize, Serialize};
@@ -24,7 +27,9 @@ use tauri::{AppHandle, Manager, State};
 
 pub mod consolidate;
 pub mod extract;
+pub mod past_chats;
 pub mod recall;
+pub mod sources;
 
 const SETTINGS_FILE: &str = "memory.json";
 const MAX_MEMORY_CHARS: usize = 2_000;
@@ -48,6 +53,9 @@ pub struct MemorySettings {
     /// called this "a later knob").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extraction_model: Option<String>,
+    /// Whether the user's other chats are consulted ("reference chat
+    /// history"). On by default with memory itself (ADR-0081).
+    pub reference_chat_history: bool,
 }
 
 impl Default for MemorySettings {
@@ -56,6 +64,7 @@ impl Default for MemorySettings {
             enabled: true,
             auto_extract: true,
             extraction_model: None,
+            reference_chat_history: true,
         }
     }
 }
@@ -96,11 +105,15 @@ pub const INJECTED_MEMORY_LIMIT: i64 = 20;
 /// and the agent-lite system prompt). `None` when memory is disabled, off, or
 /// empty, so callers add nothing rather than an empty header.
 pub async fn prompt_block(repos: &crate::db::repositories::Repositories) -> Option<String> {
+    format_memory_block(&static_memories(repos).await?)
+}
+
+/// The memories of the static block; `None` when memory is off.
+async fn static_memories(repos: &crate::db::repositories::Repositories) -> Option<Vec<MemoryDto>> {
     if !settings().enabled {
         return None;
     }
-    let memories = repos.top_memories(INJECTED_MEMORY_LIMIT).await.ok()?;
-    format_memory_block(&memories)
+    repos.top_memories(INJECTED_MEMORY_LIMIT).await.ok()
 }
 
 /// The most important memories always ride along in a turn's block.
@@ -111,24 +124,27 @@ const TURN_MEMORIES: usize = 12;
 /// static block: a chat's first word must not wait on recall.
 const TURN_RECALL_BUDGET: std::time::Duration = std::time::Duration::from_millis(2_500);
 
-/// [`prompt_block`], chosen for the turn (ADR-0065).
+/// The memories of [`prompt_block`], chosen for the turn (ADR-0065). The
+/// block itself is [`sources::block_for_turn`], which also records them.
 ///
 /// While everything remembered fits in the static block, that block is the
 /// answer and nothing is fetched. Past that, the static top-N left out
 /// whatever was not "important" in general even when it was exactly what
 /// this message is about. So the block becomes the core (most important) plus
 /// the memories recall finds for the message and the relevance screen keeps.
-/// Recall that is slow or fails falls back to the static block.
-pub async fn prompt_block_for_turn(
+/// Recall that is slow or fails falls back to the static block. `None` when
+/// memory is off.
+pub async fn memories_for_turn(
     repos: &crate::db::repositories::Repositories,
     message: &str,
-) -> Option<String> {
+) -> Option<Vec<MemoryDto>> {
     if !settings().enabled {
         return None;
     }
-    let all = repos.top_memories(INJECTED_MEMORY_LIMIT + 1).await.ok()?;
+    let mut all = repos.top_memories(INJECTED_MEMORY_LIMIT + 1).await.ok()?;
     if all.len() as i64 <= INJECTED_MEMORY_LIMIT || message.trim().is_empty() {
-        return format_memory_block(&all[..all.len().min(INJECTED_MEMORY_LIMIT as usize)]);
+        all.truncate(INJECTED_MEMORY_LIMIT as usize);
+        return Some(all);
     }
     let relevant = tokio::time::timeout(
         TURN_RECALL_BUDGET,
@@ -136,7 +152,7 @@ pub async fn prompt_block_for_turn(
     )
     .await;
     let Ok(Ok(relevant)) = relevant else {
-        return prompt_block(repos).await;
+        return static_memories(repos).await;
     };
     let mut chosen = repos.top_memories(CORE_MEMORIES).await.ok()?;
     for memory in relevant {
@@ -144,20 +160,30 @@ pub async fn prompt_block_for_turn(
             chosen.push(memory);
         }
     }
-    format_memory_block(&chosen)
+    Some(chosen)
+}
+
+/// The block of [`memories_for_turn`], without recording which went out
+/// (agent-lite goes through [`sources::block_for_turn`], which does).
+pub async fn prompt_block_for_turn(
+    repos: &crate::db::repositories::Repositories,
+    message: &str,
+) -> Option<String> {
+    format_memory_block(&memories_for_turn(repos, message).await?)
 }
 
 /// [`prompt_block`] for callers that only hold an [`AppHandle`] (the Hermes
-/// spawn path). Best-effort: any storage error yields `None`.
+/// spawn path). Best-effort: any storage error yields `None`. What it hands
+/// the SOUL is noted as the runtime's injection, so a chat can later say which
+/// memories it was given ([`sources::note_soul_injection`]).
 pub async fn prompt_block_for_app(app: &AppHandle) -> Option<String> {
-    if !settings().enabled {
-        return None;
-    }
     let repos = crate::commands::repositories(app).await.ok()?;
-    prompt_block(&repos).await
+    let memories = static_memories(&repos).await.unwrap_or_default();
+    sources::note_soul_injection(memories.iter().map(|memory| memory.id.clone()).collect());
+    format_memory_block(&memories)
 }
 
-fn format_memory_block(memories: &[MemoryDto]) -> Option<String> {
+pub(crate) fn format_memory_block(memories: &[MemoryDto]) -> Option<String> {
     if memories.is_empty() {
         return None;
     }
@@ -184,6 +210,9 @@ pub struct SetMemorySettingsRequest {
     pub auto_extract: bool,
     #[serde(default)]
     pub extraction_model: Option<String>,
+    /// Absent from callers that predate it, which keeps the stored value.
+    #[serde(default)]
+    pub reference_chat_history: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,6 +261,9 @@ pub fn memory_set_settings(
             .extraction_model
             .map(|model| model.trim().to_string())
             .filter(|model| !model.is_empty()),
+        reference_chat_history: request
+            .reference_chat_history
+            .unwrap_or_else(|| settings().reference_chat_history),
     };
     persist(&state.config_path, &next)?;
     replace_mirror(next.clone());
@@ -368,6 +400,20 @@ mod tests {
         let parsed: MemorySettings = serde_json::from_str(r#"{"enabled":false}"#).expect("parse");
         assert!(!parsed.enabled);
         assert!(parsed.auto_extract);
+        assert!(parsed.reference_chat_history);
+    }
+
+    #[test]
+    fn reference_chat_history_round_trips_through_the_file() {
+        let dir = std::env::temp_dir().join(format!("memory-settings-{}", uuid::Uuid::new_v4()));
+        let path = dir.join(SETTINGS_FILE);
+        let off = MemorySettings {
+            reference_chat_history: false,
+            ..MemorySettings::default()
+        };
+        persist(&path, &off).expect("persist");
+        assert_eq!(load_from_disk(Some(&path)), off);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

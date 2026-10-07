@@ -7,7 +7,6 @@ import type { FormEvent } from "react";
 import { useEffect, useId, useMemo, useState } from "react";
 import {
   type MemoryDto,
-  type MemorySettings,
   memoryAdd,
   memoryClear,
   memoryDelete,
@@ -17,6 +16,7 @@ import {
   listVeniceModels,
   type VeniceModelDto,
 } from "../../lib/tauri";
+import type { MemorySettingsWithHistory } from "../../lib/personalization";
 import { Dialog, DialogField } from "../ui/Dialog";
 import { Switch } from "../ui/Switch";
 import { ReflexJournalCard } from "./ReflexJournal";
@@ -29,7 +29,7 @@ const EMPTY_DRAFT: Draft = { text: "" };
 
 export function MemorySettingsSection() {
   const [items, setItems] = useState<MemoryDto[]>([]);
-  const [settings, setSettings] = useState<MemorySettings | null>(null);
+  const [settings, setSettings] = useState<MemorySettingsWithHistory | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [editingId, setEditingId] = useState<string>();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -78,7 +78,7 @@ export function MemorySettingsSection() {
     }
   }
 
-  async function updateSettings(next: MemorySettings) {
+  async function updateSettings(next: MemorySettingsWithHistory) {
     setSavingSettings(true);
     try {
       setSettings(await memorySetSettings(next));
@@ -226,6 +226,31 @@ export function MemorySettingsSection() {
                   })
                 }
                 aria-label={t("Learn from conversations")}
+              />
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <h3 className="settings-row-title">{t("Reference past chats")}</h3>
+              <p className="settings-row-description">
+                {t(
+                  "Let the assistant look through your other chats on this device when they help with what you ask.",
+                )}
+              </p>
+            </div>
+            <div className="settings-row-control">
+              <Switch
+                checked={settings?.enabled === true && settings?.referenceChatHistory !== false}
+                disabled={settings === null || savingSettings || settings?.enabled !== true}
+                onCheckedChange={(referenceChatHistory) =>
+                  void updateSettings({
+                    enabled: settings?.enabled ?? true,
+                    autoExtract: settings?.autoExtract ?? true,
+                    extractionModel: settings?.extractionModel,
+                    referenceChatHistory,
+                  })
+                }
+                aria-label={t("Reference past chats")}
               />
             </div>
           </div>

@@ -526,6 +526,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/041_cloned_voices.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "044_memory_sources.sql",
+        include_str!("../../migrations/044_memory_sources.sql"),
+    )
+    .await?;
     crate::account::sync::install(_pool).await?;
     crate::diagnostics::mark("migrations");
 

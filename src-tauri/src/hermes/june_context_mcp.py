@@ -55,6 +55,35 @@ MEMORY_TOOL: dict[str, Any] = {
     },
 }
 
+# What was said in the user's other chats (ADR-0081). Withheld with the rest of
+# memory by --memory=off, and alone by --past-chats=off (the user's "reference
+# chat history" switch).
+PAST_CHATS_TOOL: dict[str, Any] = {
+    "name": "search_past_chats",
+    "description": (
+        "Search what was said in the user's other conversations on this "
+        "device. Use it when the user refers to an earlier chat (\"like we "
+        "discussed\", \"what did you suggest last week\"). Returns excerpts "
+        "with the conversation title and date, best match first."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "A few keywords, in the user's language.",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": MAX_LIMIT,
+                "default": DEFAULT_LIMIT,
+            },
+        },
+        "required": ["query"],
+    },
+}
+
 CALENDAR_TOOL: dict[str, Any] = {
     "name": "search_calendar",
     "description": (
@@ -296,11 +325,13 @@ def call_proxy(coords_path: str, path: str, payload: dict[str, Any]) -> dict[str
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit(
-            "Usage: june_context_mcp.py <notes.sqlite3> [--memory=off] [--proxy=<coords.json>]"
+            "Usage: june_context_mcp.py <notes.sqlite3> [--memory=off] [--past-chats=off] "
+            "[--proxy=<coords.json>]"
         )
 
     db_path = Path(sys.argv[1]).expanduser()
     memory_enabled = "--memory=off" not in sys.argv[2:]
+    past_chats_enabled = memory_enabled and "--past-chats=off" not in sys.argv[2:]
     # The calendar is local data like the notes, but it lives in EventKit, not
     # in SQLite — so that one tool round-trips through the app's proxy. Absent
     # coordinates simply mean the tool is not advertised.
@@ -312,7 +343,9 @@ def main() -> None:
         message = read_message()
         if message is None:
             return
-        response = handle_message(db_path, message, memory_enabled, proxy_coords)
+        response = handle_message(
+            db_path, message, memory_enabled, proxy_coords, past_chats_enabled
+        )
         if response is not None:
             write_message(response)
 
@@ -358,6 +391,7 @@ def handle_message(
     message: dict[str, Any],
     memory_enabled: bool = True,
     proxy_coords: str = "",
+    past_chats_enabled: bool = True,
 ) -> dict[str, Any] | None:
     method = message.get("method")
     request_id = message.get("id")
@@ -379,6 +413,8 @@ def handle_message(
         tools = list(TOOLS)
         if memory_enabled:
             tools.append(MEMORY_TOOL)
+            if past_chats_enabled:
+                tools.append(PAST_CHATS_TOOL)
         # Only advertised when the app handed us proxy coordinates: a tool the
         # agent cannot actually reach is worse than one it does not know.
         if proxy_coords:
@@ -387,7 +423,12 @@ def handle_message(
         return response(request_id, {"tools": tools})
     if method == "tools/call":
         return call_tool(
-            db_path, request_id, message.get("params") or {}, memory_enabled, proxy_coords
+            db_path,
+            request_id,
+            message.get("params") or {},
+            memory_enabled,
+            proxy_coords,
+            memory_enabled and past_chats_enabled,
         )
 
     if request_id is None:
@@ -401,6 +442,7 @@ def call_tool(
     params: dict[str, Any],
     memory_enabled: bool = True,
     proxy_coords: str = "",
+    past_chats_enabled: bool = True,
 ) -> dict[str, Any]:
     name = params.get("name")
     arguments = params.get("arguments") or {}
@@ -413,6 +455,8 @@ def call_tool(
             result = search_dictation_history(db_path, arguments)
         elif name == "search_user_memories" and memory_enabled:
             result = search_user_memories(db_path, arguments, proxy_coords)
+        elif name == "search_past_chats" and memory_enabled and past_chats_enabled:
+            result = search_past_chats(db_path, arguments)
         elif name == "search_calendar" and proxy_coords:
             result = search_calendar(proxy_coords, arguments)
         elif name == "create_note" and proxy_coords:
@@ -796,6 +840,51 @@ def search_user_memories(
         for row in rows
     ]
     return {"query": query, "count": len(items), "items": items}
+
+
+def search_past_chats(db_path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Messages of the user's other general chats matching any of the query's
+    content words, best bm25 first. Mirrors `memory::past_chats::search`:
+    a custom assistant's conversation is never quoted into another chat."""
+    query = str(arguments.get("query") or "").strip()
+    limit = bounded_limit(arguments.get("limit"))
+    terms = content_terms(query)
+    if not terms:
+        return {"query": query, "items": [], "message": "Give a few keywords to search for."}
+    if not db_path.exists():
+        return {"query": query, "items": [], "message": "No conversations are stored yet."}
+    match = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
+    sql = """
+        SELECT f.task_id AS task_id, t.title AS title, m.role AS role,
+               m.created_at AS created_at,
+               snippet(agent_messages_fts, 2, '', '', '…', 48) AS excerpt
+        FROM agent_messages_fts f
+        JOIN agent_tasks t ON t.id = f.task_id
+        JOIN agent_messages m ON m.id = f.message_id
+        WHERE agent_messages_fts MATCH ?
+          AND m.role IN ('user', 'assistant')
+          AND t.safety_profile NOT IN ('custom_assistant', 'customAssistant')
+          AND NOT EXISTS (SELECT 1 FROM assistant_conversations a WHERE a.task_id = t.id)
+        ORDER BY bm25(agent_messages_fts)
+        LIMIT ?
+    """
+    try:
+        with connect_readonly(db_path) as conn:
+            rows = conn.execute(sql, [match, limit]).fetchall()
+    except sqlite3.OperationalError:
+        # A database from before the conversation index (migration 020).
+        return {"query": query, "items": [], "message": "No conversations are indexed yet."}
+    items = [
+        {
+            "conversationId": row["task_id"],
+            "conversation": row["title"] or "Untitled conversation",
+            "speaker": row["role"],
+            "date": (row["created_at"] or "")[:10],
+            "excerpt": " ".join((row["excerpt"] or "").split()),
+        }
+        for row in rows
+    ]
+    return {"query": query, "terms": terms, "count": len(items), "items": items}
 
 
 def dictation_history_cutoff_timestamp() -> str:

@@ -248,6 +248,7 @@ import {
   type AgentArtifact as TimelineArtifact,
 } from "../../lib/hermes-artifact-store";
 import { SessionUsagePanel } from "./SessionUsagePanel";
+import { MemoryInChatIndicator } from "./MemoryInChatIndicator";
 import { AgentActivityDrawer, AgentArtifactsSection } from "./AgentActivityDrawer";
 import { hermesTraceBuffer } from "../../lib/hermes-trace-buffer";
 import { UnsupportedEventNotice } from "./UnsupportedEventNotice";
@@ -7865,6 +7866,7 @@ export function AgentWorkspace({
     />
   ) : !newSessionMode && selectedHermesSessionId ? (
     <div ref={listRef} className="agent-timeline">
+      <MemoryInChatIndicator session={selectedHermesSession} />
       <UnsupportedEventNotice
         notice={unsupportedNotice}
         // Dev/debug context gates the raw-trace affordance. Reuse the same DEV

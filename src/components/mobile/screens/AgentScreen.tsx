@@ -72,6 +72,7 @@ import { BrandMark } from "../../brand/Marks";
 import { ContextGauge } from "../../chat/ContextGauge";
 import { ChatAmbient } from "../ChatAmbient";
 import { ChatComposer } from "../ChatComposer";
+import { MemorySourcesChip } from "../MemorySourcesChip";
 import {
   ChatSteps,
   hasAttachmentMarkers,
@@ -1170,6 +1171,7 @@ export function AgentSessionScreen({
                     }
                     onBranch={!running && onOpenSession ? () => branchFrom(message.id) : undefined}
                   />
+                  <MemorySourcesChip task={task} messageId={message.id} />
                 </>
               )
             ) : (
