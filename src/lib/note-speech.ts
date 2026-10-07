@@ -13,13 +13,8 @@
  */
 
 import { speakableMarkdown } from "./speakable-text";
-import { fetchMediaCatalog, modelsOfType } from "./studio/catalog";
-import {
-  SPEECH_INPUT_LIMIT,
-  defaultSpeechModel,
-  generateSpeech,
-  speechCapabilities,
-} from "./studio/speech";
+import { SPEECH_INPUT_LIMIT } from "./studio/speech";
+import { renderPreferredSpeech, voicePreferenceKey } from "./voice-preference";
 
 /** Hard stop on what one press of play can cost. Roughly ten minutes of
  * speech, which is longer than any recap has a right to be. */
@@ -38,13 +33,13 @@ export function speakableText(markdown: string): string {
     : spoken;
 }
 
-/** Audio already paid for, this session. Keyed by note id + text, so an edit
- * re-renders but a second press does not. */
+/** Audio already paid for, this session. Keyed by note id + text + voice, so
+ * an edit or another voice re-renders but a second press does not. */
 const cache = new Map<string, string>();
 
 function cacheKey(noteId: string, text: string): string {
   // Cheap, stable, and enough to notice an edit.
-  return `${noteId}:${text.length}:${text.slice(0, 64)}`;
+  return `${noteId}:${text.length}:${text.slice(0, 64)}:${voicePreferenceKey()}`;
 }
 
 /**
@@ -64,22 +59,16 @@ export async function noteSpeechUrl(
   const cached = cache.get(key);
   if (cached) return cached;
 
-  const catalog = await fetchMediaCatalog();
   // A recap read aloud now, so the one-call rail only: a queued voice-over
   // takes minutes, and this plays while the note is open (ADR-0076). The
-  // engine is the cheapest one-call one, in a format it answers: the first
-  // name in the alphabet was Chatterbox HD, which refuses the mp3 asked of it.
-  const model = defaultSpeechModel(modelsOfType(catalog, "tts"));
-  if (!model) return null;
-
-  const { base64, contentType } = await generateSpeech({
-    model: model.id,
-    input: text,
-    format: speechCapabilities(model).defaultFormat,
-    signal: options.signal,
-  });
-  const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
-  const url = URL.createObjectURL(new Blob([bytes], { type: contentType || "audio/mpeg" }));
+  // voice is the one chosen in Settings, shared with Read aloud on a reply.
+  let url: string;
+  try {
+    url = await renderPreferredSpeech(text, { signal: options.signal });
+  } catch (error) {
+    if (error instanceof Error && error.message === "no speech model") return null;
+    throw error;
+  }
   cache.set(key, url);
   return url;
 }

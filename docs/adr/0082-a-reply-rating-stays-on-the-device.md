@@ -70,3 +70,15 @@ replies are mirrored into `agent_messages`.
 - **Reading the desktop transcript in Rust from Hermes' state database.**
   Rejected: the webview already holds it, rendered as the person reads it, and
   the database layout is the pinned runtime's, not ours.
+
+## Addendum 2026-10-07: a rating goes with its chat
+
+"Deleting a chat leaves its ratings in place" is withdrawn: a rating of a
+reply that no longer exists is a record of nothing. Migration 050 deletes a
+chat's ratings when its task row goes, by trigger, so every path that deletes
+the row (the phone's delete, leaving a temporary chat, the launch sweep, a
+deletion that arrives from another device) takes them, keyed by the task id
+or by the Hermes session id the row stores. A reply removed on its own takes
+its rating too. A desktop chat that lives only in the runtime has no row, so
+`delete_hermes_bridge_session` deletes its ratings after the runtime's own
+delete succeeds. The table still has no sync trigger.

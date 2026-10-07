@@ -14,6 +14,7 @@ import {
 import { OptionSheet } from "../OptionSheet";
 import { SettingsGroup, SettingsLinkRow, SettingsRow, SettingsToggleRow } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
+import { VoiceSettingsGroup } from "../VoiceSettingsGroup";
 
 /**
  * Personalization on the phone (ADR-0081): the same three settings as the
@@ -117,6 +118,8 @@ export function PersonalizationScreen({ onBack }: { onBack: () => void }) {
         </SettingsGroup>
 
         {error ? <p className="mobile-memory-error">{error}</p> : null}
+
+        <VoiceSettingsGroup />
       </div>
       {picking && saved ? (
         <OptionSheet

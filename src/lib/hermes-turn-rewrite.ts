@@ -121,19 +121,59 @@ export function findBranchStoredId(
 }
 
 const ATTACHED_IMAGE_LINE = /^- .+\.(?:png|jpe?g|gif|webp|tiff?|heic|bmp)\b/im;
+/** The images the send path hands the model as pixels (`isImageImport`):
+ * any other picture only ever rode along as a path in the text. */
+const ATTACHABLE_IMAGE_PATH = /\.(?:png|jpe?g|gif|webp|tiff?)$/i;
+
+function attachedBlock(text: string): string | undefined {
+  return /Attached files copied into the .+ workspace:\n([\s\S]*?)\n+Use these file paths/i.exec(
+    text,
+  )?.[1];
+}
 
 /** Whether a sent question carried pictures: an attached image in the block
  * the send path appends, an image mention, or the notice Hermes writes when
- * it could not look at one. `/undo` hands back the text only, so asking such
- * a question again would send it without its pictures. */
+ * it could not look at one. */
 export function questionCarriesImages(text: string): boolean {
-  const attached =
-    /Attached files copied into the .+ workspace:\n([\s\S]*?)\n+Use these file paths/i.exec(
-      text,
-    )?.[1];
+  const attached = attachedBlock(text);
   if (attached && ATTACHED_IMAGE_LINE.test(attached)) return true;
   if (/^- Image ".*": attached to this message/m.test(text)) return true;
   return /attached an image/i.test(text);
+}
+
+/** A picture a question carried, found again from its text. */
+export type QuestionImage = { name: string; path: string };
+
+/**
+ * The pictures to attach again when a question is asked again. `/undo` hands
+ * back the text only, but the text names every picture the send path
+ * attached: the attachment block lists each upload by its path in the
+ * workspace (`- name (root): path`), and an image mention by its absolute
+ * path. The files stay in the workspace, so Regenerate can attach them again.
+ *
+ * `undefined` when the question carried a picture its text does not name
+ * (only the notice Hermes writes when it could not look at one): that one
+ * cannot be sent again.
+ */
+export function questionImages(text: string): QuestionImage[] | undefined {
+  const images: QuestionImage[] = [];
+  for (const line of (attachedBlock(text) ?? "").split("\n")) {
+    const entry = /^- (.+?) \([^()]*\): (.+?)(?: \(its text, extracted: .*\))?$/.exec(line.trim());
+    if (entry && ATTACHABLE_IMAGE_PATH.test(entry[2])) {
+      images.push({ name: entry[1], path: entry[2] });
+    }
+  }
+  for (const match of text.matchAll(
+    /^- Image "(.*)": attached to this message.*? Saved at `([^`]+)`\.?$/gm,
+  )) {
+    images.push({ name: match[1], path: match[2] });
+  }
+  if (images.length) return images;
+  // An image in the block that was never attached (a HEIC rides as a path)
+  // is resent exactly as it went: as text.
+  const attached = attachedBlock(text);
+  if (attached && ATTACHED_IMAGE_LINE.test(attached)) return [];
+  return questionCarriesImages(text) ? undefined : [];
 }
 
 /** The turns that carry Regenerate and Edit, and what the rows need to know
@@ -141,8 +181,9 @@ export function questionCarriesImages(text: string): boolean {
 export type RewriteTargets = {
   regenerable?: string;
   lastUser?: string;
-  /** The question Regenerate would ask again carried pictures, which a
-   * rewind cannot resend: Regenerate is offered disabled, with the reason. */
+  /** The question Regenerate would ask again carried a picture its text does
+   * not name, which a rewind cannot resend: Regenerate is offered disabled,
+   * with the reason. */
   regenerateBlocked?: boolean;
   /** The open chat's stored session id, the conversation a rating belongs
    * to. */
@@ -152,16 +193,23 @@ export type RewriteTargets = {
 export function rewriteTargetsFor(
   turns: readonly AgentChatTurn[],
   sessionId?: string,
+  /** The stored transcript: the question as sent, before the display strips
+   * what Hermes wrote into it (the notice about a picture it could not see). */
+  messages: readonly HermesSessionMessage[] = [],
 ): RewriteTargets {
   const lastUserTurn = [...turns].reverse().find((turn) => turn.role === "user");
   const regenerable = regenerableTurnId(turns);
-  const question = lastUserTurn?.parts
-    .flatMap((part) => (part.type === "text" ? [part.text] : []))
-    .join("\n");
+  const stored = lastUserTurn
+    ? messages.find((message) => String(message.id) === lastUserTurn.id)?.content
+    : undefined;
+  const question =
+    typeof stored === "string"
+      ? stored
+      : lastUserTurn?.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
   return {
     regenerable,
     lastUser: lastUserTurn?.id,
-    regenerateBlocked: Boolean(regenerable && question && questionCarriesImages(question)),
+    regenerateBlocked: Boolean(regenerable && question && questionImages(question) === undefined),
     sessionId,
   };
 }

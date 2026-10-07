@@ -69,6 +69,11 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauri")>()),
   ...tauriMocks,
 }));
+// The model the backend runs a chat on when the chat names none.
+const defaultChatModel = vi.hoisted(() => ({ id: undefined as string | undefined }));
+vi.mock("../lib/default-chat-model", () => ({
+  useDefaultChatModelId: () => defaultChatModel.id,
+}));
 vi.mock("../lib/agent-lite-controls", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/agent-lite-controls")>()),
   ...controlMocks,
@@ -123,6 +128,7 @@ describe("mobile chat controls", () => {
     tauriMocks.setAgentTaskModel.mockResolvedValue(makeTask());
     tauriMocks.sendAgentMessage.mockResolvedValue(makeTask());
     localStorage.clear();
+    defaultChatModel.id = undefined;
     HTMLElement.prototype.scrollTo = vi.fn();
   });
 
@@ -307,5 +313,21 @@ describe("mobile chat controls", () => {
     expect(
       await screen.findByRole("button", { name: /^About 4K of 8K tokens used$/ }),
     ).toBeInTheDocument();
+  });
+
+  it("reads the window of the model the backend uses when the chat is on Default", async () => {
+    // Not the app's built-in default: the person chose another one in Settings.
+    defaultChatModel.id = "thinker";
+    render(<AgentSessionScreen sessionId="task-1" />);
+    await screen.findByText("Second answer");
+    expect(
+      await screen.findByRole("button", { name: /^About 4K of 8K tokens used$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("draws no gauge while the default model is not known", async () => {
+    render(<AgentSessionScreen sessionId="task-1" />);
+    await screen.findByText("Second answer");
+    expect(screen.queryByRole("button", { name: /tokens used$/ })).toBeNull();
   });
 });

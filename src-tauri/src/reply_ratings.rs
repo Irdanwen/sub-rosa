@@ -169,6 +169,35 @@ pub async fn ratings_for(
         .collect())
 }
 
+/// Deletes every rating in one conversation. A chat with a task row loses its
+/// ratings through a trigger when that row goes (migration 050). A desktop
+/// chat kept by the runtime alone has no such row, so its delete calls this.
+pub async fn forget_conversation(
+    pool: &SqlitePool,
+    conversation_id: &str,
+) -> Result<(), sqlx::error::Error> {
+    query("DELETE FROM reply_ratings WHERE conversation_id = ?1")
+        .bind(conversation_id.trim())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// [`forget_conversation`] after a desktop session was deleted. Best effort:
+/// the chat is already gone, and a rating left behind is never shown again.
+pub async fn forget_deleted_session(app: &AppHandle, session_id: &str) {
+    let result = async {
+        let repos = crate::commands::repositories(app).await?;
+        forget_conversation(&repos.pool, session_id)
+            .await
+            .map_err(AppError::from)
+    }
+    .await;
+    if let Err(error) = result {
+        tracing::warn!(code = %error.code, "could not delete the ratings of a deleted chat");
+    }
+}
+
 #[tauri::command]
 pub async fn reply_rating_set(
     app: AppHandle,
@@ -271,6 +300,89 @@ mod tests {
             stored.note.map(|note| note.chars().count()),
             Some(MAX_NOTE_CHARS)
         );
+    }
+
+    async fn rate(pool: &SqlitePool, conversation_id: &str, message_id: &str) {
+        set_rating(
+            pool,
+            &SetReplyRatingRequest {
+                conversation_id: conversation_id.into(),
+                message_id: message_id.into(),
+                rating: Some("up".into()),
+                reason: None,
+                note: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn deleting_a_phone_chat_deletes_its_ratings() {
+        let pool = pool().await;
+        let repos = crate::db::repositories::Repositories::new(pool.clone());
+        let gone = repos
+            .create_agent_task("a chat", None, Default::default(), None)
+            .await
+            .unwrap();
+        let kept = repos
+            .create_agent_task("another chat", None, Default::default(), None)
+            .await
+            .unwrap();
+        rate(&pool, &gone.id, "m1").await;
+        rate(&pool, &kept.id, "m1").await;
+
+        repos.delete_agent_task(&gone.id).await.unwrap();
+
+        assert!(ratings_for(&pool, &gone.id).await.unwrap().is_empty());
+        assert_eq!(ratings_for(&pool, &kept.id).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_reply_removed_on_its_own_takes_its_rating() {
+        let pool = pool().await;
+        let repos = crate::db::repositories::Repositories::new(pool.clone());
+        let task = repos
+            .create_agent_task("a chat", None, Default::default(), None)
+            .await
+            .unwrap();
+        for id in ["old reply", "kept reply"] {
+            query("INSERT INTO agent_messages (id, task_id, role, content, created_at) VALUES (?, ?, 'assistant', 'text', 'now')")
+                .bind(id)
+                .bind(&task.id)
+                .execute(&pool)
+                .await
+                .unwrap();
+            rate(&pool, &task.id, id).await;
+        }
+
+        query("DELETE FROM agent_messages WHERE id = 'old reply'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let left: Vec<_> = ratings_for(&pool, &task.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|rating| rating.message_id)
+            .collect();
+        assert_eq!(left, vec!["kept reply".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_desktop_session_deletes_its_ratings() {
+        let pool = pool().await;
+        rate(&pool, "hermes-session", "41").await;
+        rate(&pool, "other-session", "41").await;
+
+        forget_conversation(&pool, "hermes-session").await.unwrap();
+
+        assert!(ratings_for(&pool, "hermes-session")
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(ratings_for(&pool, "other-session").await.unwrap().len(), 1);
     }
 
     #[tokio::test]

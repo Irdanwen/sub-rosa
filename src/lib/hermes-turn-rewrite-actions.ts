@@ -9,17 +9,24 @@ import { messageFromError } from "./errors";
 import { createHermesMethods } from "./hermes-control-plane";
 import type { HermesGatewayClient } from "./hermes-gateway";
 import { parseBranchSessionResult } from "./hermes-session-branch";
+import { attachmentStateFrom, type HermesAttachmentState } from "./hermes-image-attach";
 import {
   findBranchStoredId,
   messagesAfterUndo,
   planUserTurnEdit,
-  questionCarriesImages,
+  type QuestionImage,
+  questionImages,
   undoPrefillText,
   undoTurnsFor,
 } from "./hermes-turn-rewrite";
 import { t } from "./i18n";
 import { readableModelName } from "./model-names";
-import type { HermesSessionInfo, HermesSessionMessage } from "./tauri";
+import {
+  type HermesSessionInfo,
+  type HermesSessionMessage,
+  hermesBridgeImageForModel,
+  type ImportedHermesFile,
+} from "./tauri";
 
 export type TurnRewriteDeps = {
   /** Runs `call` on the session's live runtime (resuming it if needed). */
@@ -33,8 +40,17 @@ export type TurnRewriteDeps = {
   storedMessages: (storedSessionId: string) => HermesSessionMessage[];
   /** Replaces the workspace's copy of the stored transcript. */
   replaceStoredMessages: (storedSessionId: string, messages: HermesSessionMessage[]) => void;
-  /** Sends `text` as a new user turn of the session, on `model` if given. */
-  send: (storedSessionId: string, text: string, model?: string) => Promise<unknown>;
+  /** Sends `text` as a new user turn of the session, on `model` if given,
+   * attaching `images` the way the composer attaches its own. */
+  send: (
+    storedSessionId: string,
+    text: string,
+    model?: string,
+    images?: QuestionImage[],
+  ) => Promise<unknown>;
+  /** Whether every picture can still be read from the workspace. Defaults
+   * to reading each one the way the attach does. */
+  imagesReadable?: (images: QuestionImage[]) => Promise<boolean>;
   /** The catalog model id the session runs on. */
   sessionModel: (storedSessionId: string) => string | undefined;
   /** The model string the runtime is handed for a catalog id (the
@@ -72,9 +88,14 @@ async function sendAfterRewind(
   sessionId: string,
   text: string,
   model?: string,
+  images?: QuestionImage[],
 ) {
   try {
-    await (model ? deps.send(sessionId, text, model) : deps.send(sessionId, text));
+    await (images?.length
+      ? deps.send(sessionId, text, model, images)
+      : model
+        ? deps.send(sessionId, text, model)
+        : deps.send(sessionId, text));
   } catch (error) {
     deps.restoreDraft(sessionId, text);
     throw new TurnRewriteError(
@@ -142,21 +163,71 @@ async function branchSession(deps: TurnRewriteDeps, sourceSessionId: string, und
   return storedSessionId;
 }
 
-/** Regenerate the last reply: back up the last question and ask it again. */
+/** Each picture can still be read from the workspace, the way the attach
+ * will read it: a file deleted since cannot be attached again. */
+async function imagesStillReadable(images: QuestionImage[]): Promise<boolean> {
+  const read = await Promise.all(
+    images.map((image) => hermesBridgeImageForModel(image.path).catch(() => null)),
+  );
+  return read.every(Boolean);
+}
+
+/** Regenerate the last reply: back up the last question and ask it again,
+ * with the pictures it carried. */
 export async function regenerateLastReply(deps: TurnRewriteDeps, sessionId: string) {
   ensureIdle(deps, sessionId);
   const messages = deps.storedMessages(sessionId);
   const lastQuestion = [...messages].reverse().find((message) => message.role === "user");
   const stored = typeof lastQuestion?.content === "string" ? lastQuestion.content : "";
-  // Checked before the rewind: `/undo` hands back the text alone, so a
-  // question with pictures would be asked again without them.
-  if (questionCarriesImages(stored)) {
+  // Checked before the rewind: `/undo` hands back the text alone, so the
+  // pictures are found again from it, and must still be there to attach.
+  const images = questionImages(stored);
+  if (!images) {
     throw new TurnRewriteError(t("A question with images cannot be asked again. Send it anew."));
+  }
+  if (images.length && !(await (deps.imagesReadable ?? imagesStillReadable)(images))) {
+    throw new TurnRewriteError(
+      t("The images of this question are no longer in the workspace. Send it anew."),
+    );
   }
   const text = await undoTurns(deps, sessionId, 1);
   const question = text ?? stored;
   if (!question.trim()) throw new TurnRewriteError(t("There is no question to ask again."));
-  await sendAfterRewind(deps, sessionId, question);
+  await sendAfterRewind(deps, sessionId, question, undefined, images);
+}
+
+type ResentAttachment = ImportedHermesFile & { id: string; attach: HermesAttachmentState };
+
+/** What the workspace's send is called with for a rewrite: the text, the
+ * session as the list holds it (on `model` if given), and the question's
+ * pictures as composer attachments, which the send path attaches before the
+ * prompt exactly as it attaches the composer's own. */
+export function sendArgs(
+  sessions: readonly HermesSessionInfo[],
+  sessionId: string,
+  text: string,
+  model?: string,
+  images?: QuestionImage[],
+): [string, HermesSessionInfo, { attachments: ResentAttachment[] }] {
+  const session = {
+    ...(sessions.find((entry) => entry.id === sessionId) ?? { id: sessionId }),
+    ...(model ? { model } : {}),
+  };
+  return [text, session, { attachments: resentImageAttachments(images) }];
+}
+
+function resentImageAttachments(images: QuestionImage[] | undefined): ResentAttachment[] {
+  return (images ?? []).map((image, index) => {
+    const file: ImportedHermesFile = {
+      name: image.name,
+      path: image.path,
+      rootLabel: "Workspace",
+      size: 0,
+    };
+    // An image whether or not its name says so: a mention is named by its label.
+    const attach: HermesAttachmentState = { ...attachmentStateFrom(file), kind: "image" };
+    return { ...file, id: `resend:${index}:${image.path}`, attach };
+  });
 }
 
 /** Edit a sent message: the last one is replaced in place, an earlier one in a

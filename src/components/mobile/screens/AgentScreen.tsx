@@ -33,6 +33,7 @@ import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { readContextGauge } from "../../../lib/context-gauge";
+import { useDefaultChatModelId } from "../../../lib/default-chat-model";
 import { friendlyErrorMessage, messageFromError, taskErrorMessage } from "../../../lib/errors";
 import { hapticImpact, hapticNotify, hapticSelection } from "../../../lib/haptics";
 import { SimpleMarkdown } from "../../../lib/simple-markdown";
@@ -45,7 +46,6 @@ import {
   storeReasoningEffort,
   supportsReasoningEffort,
 } from "../../../lib/reasoning-effort";
-import { SUGGESTED_MODELS } from "../../../lib/suggested-models";
 import { resolveTurnModel } from "../../../lib/vision-routing";
 import type { MediaModel } from "../../../lib/studio/types";
 import {
@@ -108,9 +108,6 @@ import { SwipeableRow } from "../SwipeableRow";
 
 const CHAT_MODEL_STORAGE_KEY = "subrosa:mobile:chat-model";
 const CHAT_EFFORT_STORAGE_KEY = "subrosa:mobile:chat-reasoning-effort";
-/** The model "Default" stands for, as far as the screen can tell: the app's
- * default generation model (DEFAULT_GENERATION_MODEL in Rust). */
-const DEFAULT_CHAT_MODEL_ID = SUGGESTED_MODELS.generation[0]?.id ?? "";
 
 export function storedChatModel(): string {
   try {
@@ -526,6 +523,7 @@ export function AgentSessionScreen({
   const unfiledProjectRef = useRef(false);
   const [model, setModel] = useState(storedChatModel);
   const [models, setModels] = useState<MediaModel[]>([]);
+  const defaultModelId = useDefaultChatModelId();
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [attachments, setAttachments] = useState<AgentLiteAttachment[]>([]);
@@ -1127,11 +1125,12 @@ export function AgentSessionScreen({
   const selectedModel = models.find((entry) => entry.id === model);
   const messages = task?.messages ?? [];
   const lastQuestion = lastQuestionIndex(messages);
-  // "Default" has no catalog row of its own; read the default model's window.
+  // "Default" has no catalog row of its own: read the window of the model
+  // the backend will run the chat on.
   const gauge = readContextGauge({
     messages,
     draft,
-    contextTokens: (selectedModel ?? models.find((entry) => entry.id === DEFAULT_CHAT_MODEL_ID))
+    contextTokens: (selectedModel ?? models.find((entry) => entry.id === defaultModelId))
       ?.contextTokens,
   });
   const openers = suggestions(Boolean(onGenerateImage)).filter(

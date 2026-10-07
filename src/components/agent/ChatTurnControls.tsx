@@ -3,7 +3,8 @@ import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise
 import { IconBrain } from "central-icons/IconBrain";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { t } from "../../lib/i18n";
 import {
   desktopReasoningEffortFor,
@@ -33,6 +34,10 @@ export function ReasoningEffortControl({
     model ? desktopReasoningEffortFor(model.id) : undefined,
   );
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  // The composer box clips what overflows it (its rounded surface), so the
+  // menu is drawn on the body, anchored above the trigger.
+  const [anchor, setAnchor] = useState<CSSProperties>();
   const modelId = model?.id;
 
   useEffect(() => {
@@ -42,7 +47,8 @@ export function ReasoningEffortControl({
   useEffect(() => {
     if (!open) return;
     function close(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     }
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
@@ -82,36 +88,47 @@ export function ReasoningEffortControl({
         title={t("How hard the model thinks before it answers")}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          setAnchor({
+            position: "fixed",
+            right: Math.max(0, window.innerWidth - rect.right),
+            bottom: window.innerHeight - rect.top + 4,
+          });
+          setOpen((value) => !value);
+        }}
       >
         <IconBrain size={14} aria-hidden />
         <span>{effortLabel(effort)}</span>
         <IconChevronDownSmall size={12} aria-hidden />
       </button>
-      {open ? (
-        <div className="agent-reasoning-effort-menu" role="menu">
-          <p className="agent-reasoning-effort-title">{t("Reasoning effort")}</p>
-          {options.map((option) => (
-            <button
-              key={option ?? "default"}
-              type="button"
-              role="menuitemradio"
-              aria-checked={option === effort}
-              onClick={() => choose(option)}
-            >
-              <span>{effortLabel(option)}</span>
-              {option === effort ? <IconCheckmark1Small size={14} aria-hidden /> : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {open
+        ? createPortal(
+            <div ref={menuRef} className="agent-reasoning-effort-menu" role="menu" style={anchor}>
+              <p className="agent-reasoning-effort-title">{t("Reasoning effort")}</p>
+              {options.map((option) => (
+                <button
+                  key={option ?? "default"}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={option === effort}
+                  onClick={() => choose(option)}
+                >
+                  <span>{effortLabel(option)}</span>
+                  {option === effort ? <IconCheckmark1Small size={14} aria-hidden /> : null}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
 
-/** "Regenerate" on the last reply: asks the same question again. Disabled,
- * with the reason in its tooltip, when the question carried pictures, which a
- * rewind cannot send again. */
+/** "Regenerate" on the last reply: asks the same question again, with the
+ * pictures its text names. Disabled, with the reason in its tooltip, when it
+ * carried one its text does not name, which a rewind cannot send again. */
 export function RegenerateAction({
   onRegenerate,
   blocked,

@@ -3332,13 +3332,32 @@ describe("AgentWorkspace", () => {
     expect(screen.getByRole("menuitem", { name: "Export as PDF" })).toBeInTheDocument();
   });
 
-  it("does not offer to regenerate a question that carried a picture", async () => {
+  it("offers to regenerate a question whose pictures its text names", async () => {
     mocks.listHermesSessionMessages.mockResolvedValue([
       {
         id: "u1",
         role: "user",
         content:
           "What is this?\n\nAttached files copied into the Sub Rosa workspace:\n- cat.png (Workspace): uploads/cat.png\n\nUse these file paths when inspecting or operating on the files.",
+        timestamp: "2026-06-12T10:00:00Z",
+      },
+      { id: "a1", role: "assistant", content: "A cat.", timestamp: "2026-06-12T10:00:05Z" },
+    ]);
+
+    render(<AgentWorkspace initialSession={existingSession} />);
+
+    const reply = (await screen.findByText("A cat.")).closest("article") as HTMLElement;
+    const regenerate = within(reply).getByRole("button", { name: "Regenerate reply" });
+    expect(regenerate).toBeEnabled();
+    expect(regenerate).toHaveAttribute("title", "Regenerate reply");
+  });
+
+  it("does not offer to regenerate a question whose picture cannot be found again", async () => {
+    mocks.listHermesSessionMessages.mockResolvedValue([
+      {
+        id: "u1",
+        role: "user",
+        content: "[The user attached an image but analysis failed] What is this?",
         timestamp: "2026-06-12T10:00:00Z",
       },
       { id: "a1", role: "assistant", content: "A cat.", timestamp: "2026-06-12T10:00:05Z" },
