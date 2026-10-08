@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 113
+Gaps: 97
 
 ## Matrix
 
@@ -60,18 +60,18 @@ Gaps: 113
 | Virtual try-on | yes | yes | yes | no | `src/components/studio/TryOnPanel.tsx` `src/components/chat-blocks/TryOnCard.tsx` | P9 |
 | Web search with sources | yes | yes | yes | no | `src-tauri/src/hermes/june_web_mcp.py` `src-tauri/src/agent_lite/mod.rs` | P9 |
 | Deep research report | yes | yes | yes | no | `src/lib/agent-composer-slash-commands.ts` `src-tauri/src/research/mod.rs` `src/components/research/ResearchDialog.tsx` `src-tauri/src/docx.rs` | P9 |
-| Apps inside deep research | no | no | no | no | | P6 |
+| Apps inside deep research | yes | yes | yes | no | `src-tauri/src/connectors/research.rs` | P9 |
 | Study mode | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/study/mod.rs` `src/lib/study-blocks.ts` `src/components/study/StudyReview.tsx` | P9 |
 | Work deliverables (documents, sheets, slides) | yes | yes | yes | no | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/deliverables/mod.rs` `src/components/chat-blocks/FileCard.tsx` | P9 |
 | Code surface | yes | n/a | n/a | n/a | `src-tauri/src/hermes_bridge.rs` `src-tauri/src/code_review/mod.rs` `src/components/agent/CodeReviewPanel.tsx` |  |
 | Scheduled tasks | yes | equiv | equiv | no | `src/lib/hermes-routines.ts` `src/components/routines` `src-tauri/src/assignments/mod.rs` | P9 |
 | Always-available agent | equiv | equiv | equiv | no | `src-tauri/src/assignments/mod.rs` | P9 |
 | Daily brief | yes | yes | yes | no | `src-tauri/src/moments.rs` `src-tauri/src/moments/daily.rs` `src/components/assignments/TodaySurface.tsx` `src/components/mobile/screens/TodayScreen.tsx` | P9 |
-| Connectors and plugins | partial | no | no | no | `src/components/settings/McpServersSection.tsx` | P6 |
-| Interactive apps in chat | partial | partial | partial | no | `src/components/chat-blocks` | P6 |
-| Connector event triggers | no | no | no | no | | P6 |
-| Developer mode (custom connectors in chat) | yes | no | no | no | `src/components/settings/McpServersSection.tsx` `src/components/settings/McpSecuritySection.tsx` | P6 |
-| Skills | yes | no | no | no | `src/components/settings/InstalledSkillsSection.tsx` | P6 |
+| Connectors and plugins | yes | yes | yes | no | `src/components/settings/McpServersSection.tsx` `src-tauri/src/connectors/mcp.rs` `src-tauri/src/connectors/catalog.rs` `src/components/settings/ConnectorsSection.tsx` | P9 |
+| Interactive apps in chat | yes | yes | yes | no | `src/components/chat-blocks` `src/components/chat-blocks/ConnectorAppCard.tsx` `src-tauri/src/connectors/apps.rs` | P9 |
+| Connector event triggers | equiv | equiv | equiv | no | `src-tauri/src/connectors/triggers.rs` | P9 |
+| Developer mode (custom connectors in chat) | yes | yes | yes | no | `src/components/settings/McpServersSection.tsx` `src/components/settings/McpSecuritySection.tsx` `src-tauri/src/connectors/mcp.rs` | P9 |
+| Skills | yes | yes | yes | no | `src/components/settings/InstalledSkillsSection.tsx` `src-tauri/src/skill_packs/mod.rs` `src/components/mobile/SkillSlashMenu.tsx` | P9 |
 | Realtime voice conversation | no | no | no | no | | P7 |
 | Voice with camera or screen | no | no | no | no | | P7 |
 | Voice with connected apps | no | no | no | no | | P7 |
@@ -114,7 +114,8 @@ Gaps: 113
   memory, image and video generation, voice, past chats) are a protected mode
   on the device, behind a PIN, enforced in Rust where requests leave
   (ADR-0084). There is no parent account and no notification to a parent.
-- **Always-available agent** and **Scheduled tasks** (phones): the vendor runs
+- **Always-available agent**, **Scheduled tasks** (phones) and
+  **Connector event triggers**: the vendor runs
   its agents and tasks on its own servers, around the clock. Sub Rosa's
   decision of 2026-10-07 is that agents run only while an app is open (the
   desktop app in the menu bar counts), never on the account server
