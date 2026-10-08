@@ -1,0 +1,146 @@
+{
+  "extName": {
+    "message": "Sub Rosa"
+  },
+  "extDescription": {
+    "message": "Chiedi a Sub Rosa della pagina che stai leggendo. Funziona con l'app Sub Rosa sul tuo computer."
+  },
+  "actionTitle": {
+    "message": "Chiedi a Sub Rosa"
+  },
+  "menuAskSelection": {
+    "message": "Chiedi a Sub Rosa"
+  },
+  "pairTitle": {
+    "message": "Collega questo browser"
+  },
+  "pairBody": {
+    "message": "In Sub Rosa su questo computer apri Impostazioni, poi Estensione del browser, e scegli Collega un browser. Inserisci il codice che compare."
+  },
+  "pairCodeLabel": {
+    "message": "Codice"
+  },
+  "pairButton": {
+    "message": "Collega"
+  },
+  "paired": {
+    "message": "Questo browser è collegato a Sub Rosa."
+  },
+  "summarize": {
+    "message": "Riassumi"
+  },
+  "summarizePrompt": {
+    "message": "Riassumi questa pagina."
+  },
+  "addToNote": {
+    "message": "Aggiungi a una nota"
+  },
+  "saveLink": {
+    "message": "Salva il link nella libreria"
+  },
+  "openSidePanel": {
+    "message": "Apri nel pannello laterale"
+  },
+  "askPlaceholder": {
+    "message": "Fai una domanda su questa pagina"
+  },
+  "includePage": {
+    "message": "Includi questa pagina"
+  },
+  "send": {
+    "message": "Invia"
+  },
+  "stop": {
+    "message": "Interrompi"
+  },
+  "newChat": {
+    "message": "Nuova chat"
+  },
+  "forget": {
+    "message": "Scollega questo browser"
+  },
+  "you": {
+    "message": "Tu"
+  },
+  "assistant": {
+    "message": "Sub Rosa"
+  },
+  "selectionLabel": {
+    "message": "Testo selezionato"
+  },
+  "noteSaved": {
+    "message": "Aggiunto a una nuova nota: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "linkSaved": {
+    "message": "Salvato nella tua libreria: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "continuesInApp": {
+    "message": "Questa chat è anche in Sub Rosa, tra le tue chat."
+  },
+  "stageThinking": {
+    "message": "Sto pensando"
+  },
+  "stageSearchingWeb": {
+    "message": "Cerco sul web"
+  },
+  "stageReadingPage": {
+    "message": "Leggo una pagina"
+  },
+  "stageSearchingNotes": {
+    "message": "Cerco nelle tue note"
+  },
+  "stageSearchingMemory": {
+    "message": "Controllo cosa ricorda Sub Rosa"
+  },
+  "errorAppNotRunning": {
+    "message": "Sub Rosa non è aperto su questo computer. Aprilo, poi riprova."
+  },
+  "errorHostNotFound": {
+    "message": "Questo browser non è ancora configurato per Sub Rosa. In Sub Rosa apri Impostazioni, poi Estensione del browser, e scegli Collega un browser."
+  },
+  "errorNotPaired": {
+    "message": "Questo browser non è più collegato a Sub Rosa. Inserisci un nuovo codice per ricollegarlo."
+  },
+  "errorPairingNotStarted": {
+    "message": "Sub Rosa non mostra alcun codice. In Impostazioni, Estensione del browser, scegli prima Collega un browser."
+  },
+  "errorPairingWrong": {
+    "message": "Questo codice non è quello mostrato da Sub Rosa. Controllalo e riprova."
+  },
+  "errorPairingExpired": {
+    "message": "Questo codice è scaduto. Fanne mostrare uno nuovo in Sub Rosa."
+  },
+  "errorPairingExhausted": {
+    "message": "Troppi codici errati. Fanne mostrare uno nuovo in Sub Rosa."
+  },
+  "errorNotAPage": {
+    "message": "Sub Rosa può leggere solo pagine web."
+  },
+  "errorNoAccess": {
+    "message": "Fai clic sul pulsante Sub Rosa nella barra degli strumenti per permettergli di leggere questa pagina."
+  },
+  "errorUpdateApp": {
+    "message": "Aggiorna Sub Rosa per usare questa versione dell'estensione."
+  },
+  "errorBusy": {
+    "message": "Questa chat sta ancora rispondendo. Aspetta, poi chiedi di nuovo."
+  },
+  "errorEmptyQuestion": {
+    "message": "Scrivi prima una domanda."
+  },
+  "errorGeneric": {
+    "message": "Qualcosa è andato storto. Riprova."
+  }
+}

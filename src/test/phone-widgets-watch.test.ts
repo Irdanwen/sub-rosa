@@ -25,6 +25,24 @@ import projectSpec from "../../src-tauri/gen/apple/project.yml?raw";
 import versionScript from "../../scripts/sync-ios-version.mjs?raw";
 import { parseDestination } from "../lib/destinations";
 
+// Every language of the app's catalog, as Apple names its .lproj folders.
+const APP_REGIONS = ["en", "fr", "de", "it", "es", "pt-BR"];
+const APPLE_STRINGS = import.meta.glob(
+  [
+    "../../src-tauri/gen/apple/{Widgets,Watch,WatchWidgets}/*.lproj/Localizable.strings",
+    "../../src-tauri/gen/apple/Sources/os-june/Intents/*.lproj/*.strings",
+  ],
+  { query: "?raw", import: "default", eager: true },
+) as Record<string, string>;
+const ANDROID_STRINGS = import.meta.glob(
+  "../../src-tauri/android/src/main/res/values*/strings.xml",
+  {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  },
+) as Record<string, string>;
+
 const APP_ID = "xyz.carpediem.subrosa";
 const GROUP = "group.xyz.carpediem.subrosa";
 
@@ -147,5 +165,55 @@ describe("the Android widget and share target", () => {
     const names = (xml: string) => [...xml.matchAll(/<string name="([^"]+)"/g)].map((m) => m[1]);
     expect(names(androidStringsFr).sort()).toEqual(names(androidStrings).sort());
     expect(androidStringsFr).not.toMatch(/[\u2013\u2014]/);
+  });
+
+  it("speak every language the app speaks", () => {
+    const names = (xml: string) => [...xml.matchAll(/<string name="([^"]+)"/g)].map((m) => m[1]);
+    const folders = Object.keys(ANDROID_STRINGS).map((path) => path.split("/").at(-2));
+    expect(folders.sort()).toEqual(
+      ["values", "values-de", "values-es", "values-fr", "values-it", "values-pt-rBR"].sort(),
+    );
+    for (const [path, xml] of Object.entries(ANDROID_STRINGS)) {
+      expect(names(xml).sort(), path).toEqual(names(androidStrings).sort());
+      expect(xml, path).not.toMatch(/[\u2013\u2014]/);
+    }
+  });
+});
+
+describe("the native strings in every language", () => {
+  it("have one table per language for each widget, the watch and the actions", () => {
+    const byTable = new Map<string, string[]>();
+    for (const path of Object.keys(APPLE_STRINGS)) {
+      const [, table, region] = path.match(/apple\/(.+)\/([\w-]+)\.lproj\/[^/]+$/) ?? [];
+      const key = `${table}/${path.split("/").at(-1)}`;
+      byTable.set(key, [...(byTable.get(key) ?? []), region]);
+    }
+    expect(byTable.size).toBe(5);
+    for (const [table, regions] of byTable) {
+      expect(regions.sort(), table).toEqual([...APP_REGIONS].sort());
+    }
+  });
+
+  it("translate every key of the English table, keep placeholders and use no dash", () => {
+    for (const [path, table] of Object.entries(APPLE_STRINGS)) {
+      const english = strings(APPLE_STRINGS[path.replace(/[\w-]+\.lproj/, "en.lproj")]);
+      const translated = strings(table);
+      expect([...translated.keys()].sort(), path).toEqual([...english.keys()].sort());
+      for (const [key, value] of translated) {
+        expect(value, path).not.toMatch(/[\u2013\u2014]/);
+        expect(value.trim(), path).not.toBe("");
+        for (const variable of key.match(/\$\{\w+\}/g) ?? [])
+          expect(value, path).toContain(variable);
+      }
+    }
+  });
+
+  it("are declared to the system and the project", () => {
+    const declared = (yml: string) =>
+      [...yml.matchAll(/CFBundleLocalizations: \[([^\]]+)\]/g)].map((m) => m[1].split(/,\s*/));
+    for (const list of declared(projectSpec)) expect(list.sort()).toEqual([...APP_REGIONS].sort());
+    for (const region of APP_REGIONS) {
+      expect(xcodeProject).toMatch(new RegExp(`knownRegions = \\([^)]*\\b"?${region}"?,`));
+    }
   });
 });

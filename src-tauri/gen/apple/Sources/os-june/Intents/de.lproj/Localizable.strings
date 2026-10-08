@@ -1,0 +1,10 @@
+/* SubRosaIntents.swift (de). Keys are the English text. */
+"New audio note" = "Neue Audionotiz";
+"Opens Sub Rosa on a new note and starts recording." = "Öffnet Sub Rosa mit einer neuen Notiz und startet die Aufnahme.";
+"Dictate" = "Diktieren";
+"Opens dictation and starts listening." = "Öffnet das Diktat und hört sofort zu.";
+"Ask Sub Rosa" = "Sub Rosa fragen";
+"Opens a new chat with your question, and sends it." = "Öffnet einen neuen Chat mit deiner Frage und sendet sie.";
+"Question" = "Frage";
+"What do you want to ask?" = "Was möchtest du fragen?";
+"Send now" = "Sofort senden";

@@ -11,8 +11,10 @@ import { crc32, zip } from "../../browser-extension/scripts/zip.mjs";
 
 const root = join(__dirname, "../../browser-extension");
 const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+// Chrome's folder names: an underscore, not the app's "pt-BR".
+const LANGS = ["en", "fr", "de", "it", "es", "pt_BR"];
 const locales = Object.fromEntries(
-  ["en", "fr"].map((lang) => [
+  LANGS.map((lang) => [
     lang,
     JSON.parse(readFileSync(join(root, "_locales", lang, "messages.json"), "utf8")),
   ]),
@@ -66,18 +68,27 @@ describe("the extension's languages", () => {
     readFileSync(join(root, "src", name), "utf8"),
   );
 
-  it("has the same messages and placeholders in English and French", () => {
-    expect(Object.keys(locales.fr).sort()).toEqual(Object.keys(locales.en).sort());
-    for (const [key, entry] of Object.entries(locales.en)) {
-      expect(Object.keys(locales.fr[key].placeholders ?? {}), key).toEqual(
-        Object.keys(entry.placeholders ?? {}),
-      );
-      expect(locales.fr[key].message.trim(), key).not.toBe("");
+  it("has every language the app speaks, and no other", () => {
+    expect(readdirSync(join(root, "_locales")).sort()).toEqual([...LANGS].sort());
+  });
+
+  it("has the same messages and placeholders in every language", () => {
+    for (const lang of LANGS.filter((lang) => lang !== "en")) {
+      expect(Object.keys(locales[lang]).sort(), lang).toEqual(Object.keys(locales.en).sort());
+      for (const [key, entry] of Object.entries(locales.en)) {
+        expect(Object.keys(locales[lang][key].placeholders ?? {}), `${lang} ${key}`).toEqual(
+          Object.keys(entry.placeholders ?? {}),
+        );
+        expect(locales[lang][key].message.trim(), `${lang} ${key}`).not.toBe("");
+        for (const name of entry.message.match(/\$[A-Z_]+\$/g) ?? []) {
+          expect(locales[lang][key].message, `${lang} ${key}`).toContain(name);
+        }
+      }
     }
   });
 
   it("uses no typographic dashes", () => {
-    for (const lang of ["en", "fr"]) {
+    for (const lang of LANGS) {
       for (const entry of Object.values(locales[lang])) {
         expect(entry.message).not.toMatch(/[–—]/);
       }
