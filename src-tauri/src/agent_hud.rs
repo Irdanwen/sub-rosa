@@ -281,6 +281,86 @@ fn make_agent_hud_nonactivating(window: &WebviewWindow) {
     }
 }
 
+/// The same non-activating panel for another surface that needs the
+/// keyboard: the chat bar (ADR-0094). Without the HUD's context-click
+/// interception, so a text field keeps its native menu (paste, spelling).
+#[cfg(target_os = "macos")]
+pub(crate) fn make_key_panel(window: &WebviewWindow) {
+    use objc2::msg_send;
+    use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
+    use objc2::sel;
+
+    extern "C-unwind" fn can_become_key(_this: &AnyObject, _sel: Sel) -> Bool {
+        Bool::YES
+    }
+    extern "C-unwind" fn can_become_main(_this: &AnyObject, _sel: Sel) -> Bool {
+        Bool::NO
+    }
+
+    let Ok(handle) = window.ns_window() else {
+        return;
+    };
+    if handle.is_null() {
+        return;
+    }
+    let class = AnyClass::get(c"SubRosaKeyPanel").or_else(|| {
+        let mut builder = ClassBuilder::new(c"SubRosaKeyPanel", AnyClass::get(c"NSPanel")?)?;
+        unsafe {
+            builder.add_method(
+                sel!(canBecomeKeyWindow),
+                can_become_key as extern "C-unwind" fn(_, _) -> _,
+            );
+            builder.add_method(
+                sel!(canBecomeMainWindow),
+                can_become_main as extern "C-unwind" fn(_, _) -> _,
+            );
+        }
+        Some(builder.register())
+    });
+    let Some(class) = class else {
+        return;
+    };
+    unsafe {
+        let window = handle as *mut AnyObject;
+        objc2::ffi::object_setClass(window, class as *const _ as *const _);
+        const NON_ACTIVATING: usize = 1 << 7;
+        // Shown over a full-screen app too, not only on ordinary spaces.
+        const FULL_SCREEN_AUXILIARY: usize = 1 << 8;
+        let mask: usize = msg_send![window, styleMask];
+        let _: () = msg_send![window, setStyleMask: mask | NON_ACTIVATING];
+        let behavior: usize = msg_send![window, collectionBehavior];
+        let _: () = msg_send![window, setCollectionBehavior: behavior | FULL_SCREEN_AUXILIARY];
+        let _: () = msg_send![window, setHidesOnDeactivate: false];
+    }
+}
+
+/// Shows a key panel and gives it the keyboard without activating the app:
+/// the app the person was in stays the frontmost one.
+#[cfg(target_os = "macos")]
+pub(crate) fn order_front_as_key(window: &WebviewWindow) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+
+    let Ok(handle) = window.ns_window() else {
+        return;
+    };
+    if handle.is_null() {
+        return;
+    }
+    unsafe {
+        let ns_window = handle as *mut AnyObject;
+        let nil: *mut AnyObject = std::ptr::null_mut();
+        let _: () = msg_send![ns_window, makeKeyAndOrderFront: nil];
+    }
+    let _ = window.with_webview(|webview| unsafe {
+        let ns_window = webview.ns_window() as *mut AnyObject;
+        let web_view = webview.inner() as *mut AnyObject;
+        if !ns_window.is_null() && !web_view.is_null() {
+            let _: bool = msg_send![ns_window, makeFirstResponder: web_view];
+        }
+    });
+}
+
 /// NSPanel subclass that can become the key window. A borderless panel
 /// answers NO to `canBecomeKeyWindow` by default, so it never becomes key
 /// and the webview receives no keyboard events — Escape wouldn't dismiss the

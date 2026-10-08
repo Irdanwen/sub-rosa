@@ -8,6 +8,7 @@ import { EgressLedgerCard } from "./EgressLedgerCard";
 import { ProtectedModeSection } from "./ProtectedModeSection";
 import { ReflexCard } from "./ReflexCard";
 import { SemanticAskCard } from "./SemanticAskCard";
+import { ScreenAwarenessCard } from "./ScreenAwarenessCard";
 import {
   type EgressHost,
   carpeDiemGetSettings,
@@ -79,6 +80,8 @@ export function PrivacySettingsSection() {
       <EgressLedgerCard />
 
       <SemanticAskCard />
+
+      <ScreenAwarenessCard />
 
       <ReflexCard />
 

@@ -317,6 +317,8 @@ fn build_dictation_helper() {
                 "Carbon",
                 "CoreMedia",
                 "CoreGraphics",
+                // "What I'm looking at": one window's picture (ADR-0094).
+                "ScreenCaptureKit",
             ],
         );
         if !built {

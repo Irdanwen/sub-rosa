@@ -111,6 +111,14 @@ pub const DECLARED_EGRESS: &[EgressHost] = &[
         Reach::WhenAsked,
         "The community link, opened in your browser when you click it.",
     ),
+    // The agent browser (ADR-0094) has no fixed destination: it goes where
+    // the person's task needs, and the bound is the allow list they keep in
+    // Settings › Agent. Each page it opens is a row in the egress ledger.
+    host(
+        "sites you allow",
+        Reach::WhenAsked,
+        "The agent browser, only on the sites you allow when it asks or in Settings, in a profile of its own in your Chromium browser.",
+    ),
     // Connectors (ADR-0092): contacted only once you add one and sign in.
     // The catalog's servers, each read on its vendor's documentation.
     host(

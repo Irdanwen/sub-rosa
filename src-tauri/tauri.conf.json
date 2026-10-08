@@ -59,6 +59,23 @@
         "visible": false
       },
       {
+        "label": "chat-bar",
+        "url": "/chat-bar.html",
+        "title": "Sub Rosa Chat Bar",
+        "width": 640,
+        "height": 64,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "focusable": true,
+        "skipTaskbar": true,
+        "shadow": true,
+        "visible": false
+      },
+      {
         "label": "meeting-hud",
         "url": "/meeting-hud.html",
         "title": "Sub Rosa Recording",
@@ -89,6 +106,7 @@
         "main",
         "hud",
         "agent-hud",
+        "chat-bar",
         "meeting-hud"
       ]
     }

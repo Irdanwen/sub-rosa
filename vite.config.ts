@@ -39,6 +39,7 @@ export default defineConfig({
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         hud: fileURLToPath(new URL("./hud.html", import.meta.url)),
         "agent-hud": fileURLToPath(new URL("./agent-hud.html", import.meta.url)),
+        "chat-bar": fileURLToPath(new URL("./chat-bar.html", import.meta.url)),
         "meeting-hud": fileURLToPath(new URL("./meeting-hud.html", import.meta.url)),
       },
       output: {
@@ -72,7 +73,14 @@ export default defineConfig({
       reportOnFailure: true,
       reportsDirectory: "coverage/frontend",
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/test/**", "src/**/*.d.ts", "src/main.tsx", "src/hud.ts", "src/agent-hud.ts"],
+      exclude: [
+        "src/test/**",
+        "src/**/*.d.ts",
+        "src/main.tsx",
+        "src/hud.ts",
+        "src/agent-hud.ts",
+        "src/chat-bar.tsx",
+      ],
     },
   },
 });

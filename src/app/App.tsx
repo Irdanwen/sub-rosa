@@ -72,6 +72,7 @@ import { Sidebar, type SidebarView } from "../components/sidebar/Sidebar";
 import { TabBar, type TabItem } from "../components/tabs/TabBar";
 import { defaultNav, makeTabId, navEquals, type Tab, type TabNav } from "./tabs/tabs";
 import { agentSessionTabTitle, tabMeta } from "./tab-meta";
+import { AgentBrowserIndicator } from "../components/agent-browser/AgentBrowserIndicator";
 import { AskNoteOverlay } from "../components/ask/AskNoteOverlay";
 import { ShareNoteDialog } from "../components/share/ShareNoteDialog";
 import { useCanShare } from "../components/share/useCanShare";
@@ -3463,6 +3464,7 @@ export function App() {
           </AnimatePresence>
         </section>
       </div>
+      <AgentBrowserIndicator />
       {shareNoteId ? (
         <ShareNoteDialog noteId={shareNoteId} open={true} onClose={() => setShareNoteId(null)} />
       ) : null}

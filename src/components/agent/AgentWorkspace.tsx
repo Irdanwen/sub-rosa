@@ -251,6 +251,7 @@ import {
   // `AgentArtifact` (the file-viewer card), so alias it.
   type AgentArtifact as TimelineArtifact,
 } from "../../lib/hermes-artifact-store";
+import { LookingAtMenuItem } from "./LookingAtMenuItem";
 import { SessionUsagePanel } from "./SessionUsagePanel";
 import { MemoryInChatIndicator } from "./MemoryInChatIndicator";
 import { TemporaryChatBanner, TemporaryChatToggle } from "./TemporaryChat";
@@ -7697,6 +7698,7 @@ export function AgentWorkspace({
               </span>
               <span className="agent-attach-menu-label">{t("Attach files")}</span>
             </button>
+            <LookingAtMenuItem attach={importDroppedFilePaths} close={setAttachMenuOpen} />
             <div className="agent-attach-menu-divider" role="separator" />
             {REPORT_CATEGORIES.map((reportCategory) => (
               <button

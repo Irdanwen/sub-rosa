@@ -41,6 +41,8 @@ import type {
   VeniceModelDto,
 } from "../../lib/tauri";
 import { KeycapShortcut } from "../shortcuts/KeycapShortcut";
+import { AgentBrowserSettingsSection } from "./AgentBrowserSettingsSection";
+import { ChatBarShortcutCard } from "./ChatBarShortcutCard";
 import {
   MODIFIER_REQUIRED_MESSAGE,
   chordFromKeyEvent,
@@ -1036,6 +1038,7 @@ export function AppSettings({
                 )}
               </div>
             </div>
+            <ChatBarShortcutCard />
           </section>
         ) : null}
 
@@ -1316,6 +1319,7 @@ export function AppSettings({
         ) : null}
 
         {activeTab === "agent" ? <AgentSettingsSection /> : null}
+        {activeTab === "agent" ? <AgentBrowserSettingsSection /> : null}
         {activeTab === "privacy" ? <PrivacySettingsSection /> : null}
         {activeTab === "personalization" ? <PersonalizationSettingsSection /> : null}
         {activeTab === "memory" ? (
