@@ -122,6 +122,105 @@ CALENDAR_TOOL: dict[str, Any] = {
     },
 }
 
+# Health and finances (ADR-0099), read only. The app answers them over its
+# proxy so the computer and the phones share one implementation. A computer
+# has no health store: what it answers is what a phone sent with the
+# person's consent, measure by measure. Advertised only alongside the proxy
+# coordinates, like the calendar.
+PERSONAL_DATA_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "health_summary",
+        "description": (
+            "Read the user's daily health summaries (steps, sleep, heart rate, "
+            "resting heart rate, workouts, weight) that their phone synced with "
+            "their consent: averages, totals, range, the last week against the "
+            "week before, and the latest days. Use it for questions about their "
+            "activity, sleep, heart rate, exercise or weight. Describe what the "
+            "figures say; do not diagnose."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "How many days back from today, 1 to 90. Defaults to 14.",
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "steps",
+                            "sleep",
+                            "heart_rate",
+                            "resting_heart_rate",
+                            "workouts",
+                            "weight",
+                        ],
+                    },
+                    "description": "The measures to read. Defaults to every measure that has data.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "spending_summary",
+        "description": (
+            "Summarise the user's spending and income from the bank statements "
+            "they imported into Sub Rosa: totals, spending by category and by "
+            "month, the merchants the money goes to, and the balance trend. "
+            "Transfers between their own accounts and savings are left out of "
+            "spending."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "from": {"type": "string", "description": "First day, YYYY-MM-DD."},
+                "to": {"type": "string", "description": "Last day, YYYY-MM-DD."},
+                "category": {"type": "string", "description": "Only this category."},
+                "currency": {"type": "string", "description": "A currency code."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "transactions_search",
+        "description": (
+            "Find individual transactions in the bank statements the user "
+            "imported into Sub Rosa, newest first, by words in the description "
+            "or payee, a category, a period, or an amount range. Amounts are "
+            "signed, negative for money out."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Words to look for."},
+                "category": {"type": "string", "description": "A category, or empty for the unfiled."},
+                "from": {"type": "string", "description": "First day, YYYY-MM-DD."},
+                "to": {"type": "string", "description": "Last day, YYYY-MM-DD."},
+                "min_amount": {"type": "number", "description": "Lowest signed amount."},
+                "max_amount": {"type": "number", "description": "Highest signed amount."},
+                "limit": {"type": "integer", "description": "How many, 1 to 30."},
+            },
+            "required": [],
+        },
+    },
+]
+
+PERSONAL_DATA_ROUTES = {
+    "health_summary": "/health/summary",
+    "spending_summary": "/finance/spending",
+    "transactions_search": "/finance/transactions",
+}
+
+
+def personal_data(coords_path: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Health and finances, answered by the app over the local proxy."""
+    payload = {key: value for key, value in arguments.items() if value is not None}
+    return call_proxy(coords_path, PERSONAL_DATA_ROUTES[name], payload)
+
+
 # Writing a note goes through the app, never through this process: the
 # database is opened read-only here on purpose. Advertised only alongside the
 # proxy coordinates, like the calendar.
@@ -469,6 +568,7 @@ def handle_message(
         if proxy_coords:
             tools.append(CALENDAR_TOOL)
             tools.extend(WRITE_TOOLS)
+            tools.extend(PERSONAL_DATA_TOOLS)
         return response(request_id, {"tools": tools})
     if method == "tools/call":
         return call_tool(
@@ -514,6 +614,8 @@ def call_tool(
             result = create_note(proxy_coords, arguments)
         elif name == "append_to_note" and proxy_coords:
             result = append_to_note(proxy_coords, arguments)
+        elif name in PERSONAL_DATA_ROUTES and proxy_coords:
+            result = personal_data(proxy_coords, name, arguments)
         else:
             return error_response(request_id, -32602, f"Unknown tool: {name}")
     except Exception as exc:

@@ -1,0 +1,13 @@
+{
+ "_doc": "Règles de catégorisation : la première qui correspond (regex, insensible à la casse, sur libellé + détail) gagne. 'user' passe avant 'rules'. Types : revenu | depense | epargne | interne | financement.",
+ "user": [
+  {"pattern": "Carte \"Claude\"", "type": "interne", "cat": "Frais pro remboursés", "sub": "Claude (remboursé par l’employeur)"},
+  {"pattern": "Intérets débiteurs", "type": "depense", "cat": "Dépenses annuelles & imprévus", "sub": "Agios (découvert)"}
+ ],
+ "rules": [
+  {"pattern": "Migros|Coop|Denner|Lidl|Aldi", "type": "depense", "cat": "Courses", "sub": "Supermarché"},
+  {"pattern": "SALAIRE|Lohn", "type": "revenu", "cat": "Salaire", "sub": ""},
+  {"pattern": "Virement vers Livret A", "type": "epargne", "cat": "Épargne", "sub": "Livret A"},
+  {"pattern": "", "type": "depense", "cat": "Vide", "sub": ""}
+ ]
+}

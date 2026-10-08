@@ -53,6 +53,8 @@ pub mod domain;
 pub mod egress;
 pub mod egress_ledger;
 mod errands;
+pub mod finance;
+pub mod health;
 #[cfg(desktop)]
 pub mod hermes_bridge;
 pub mod hermes_image_fit;
@@ -85,6 +87,7 @@ pub mod note_processing;
 pub mod open_url;
 pub mod os_accounts;
 pub mod path_confinement;
+pub mod personal_data;
 pub mod personalization;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
@@ -630,6 +633,27 @@ pub fn run() {
             saved_items::saved_items_list,
             saved_items::saved_item_save,
             saved_items::saved_item_remove,
+            health::health_status,
+            health::health_choose,
+            health::health_refresh,
+            health::health_set_sync,
+            health::health_forget,
+            health::health_days,
+            finance::finance_status,
+            finance::finance_set_sync,
+            finance::finance_preview,
+            finance::finance_import,
+            finance::finance_transactions,
+            finance::finance_set_category,
+            finance::finance_overview,
+            finance::finance_rules,
+            finance::finance_rule_add,
+            finance::finance_rule_remove,
+            finance::finance_suggest,
+            finance::finance_resolve_suggestions,
+            finance::finance_forget,
+            finance::finance_export,
+            finance::finance_import_rules,
             research::research_start,
             connectors::connector_catalog,
             connectors::connector_list,
@@ -1043,6 +1067,27 @@ pub fn run() {
         saved_items::saved_items_list,
         saved_items::saved_item_save,
         saved_items::saved_item_remove,
+        health::health_status,
+        health::health_choose,
+        health::health_refresh,
+        health::health_set_sync,
+        health::health_forget,
+        health::health_days,
+        finance::finance_status,
+        finance::finance_set_sync,
+        finance::finance_preview,
+        finance::finance_import,
+        finance::finance_transactions,
+        finance::finance_set_category,
+        finance::finance_overview,
+        finance::finance_rules,
+        finance::finance_rule_add,
+        finance::finance_rule_remove,
+        finance::finance_suggest,
+        finance::finance_resolve_suggestions,
+        finance::finance_forget,
+        finance::finance_export,
+        finance::finance_import_rules,
         research::research_start,
         connectors::connector_catalog,
         connectors::connector_list,

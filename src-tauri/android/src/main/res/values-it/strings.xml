@@ -12,4 +12,6 @@
     <string name="subrosa_widget_ask">Chiedi</string>
     <string name="subrosa_widget_dictate">Detta</string>
     <string name="subrosa_widget_record">Registra</string>
+    <string name="subrosa_health_rationale_title">La tua salute in Sub Rosa</string>
+    <string name="subrosa_health_rationale_body">Sub Rosa legge solo le misure di salute che scegli nell\'app (passi, sonno, frequenza cardiaca, frequenza cardiaca a riposo, allenamenti, peso). Conserva un riepilogo al giorno su questo telefono per mostrarti grafici e rispondere alle tue domande. Non scrive mai in Health Connect. Nulla lascia questo telefono se non attivi la sincronizzazione di una misura in Sub Rosa, e puoi eliminare quello che ha conservato in qualsiasi momento.</string>
 </resources>

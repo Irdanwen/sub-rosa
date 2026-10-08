@@ -189,6 +189,26 @@ jobs:
       # Tauri (unset)" cert with the team unset), so we let it archive and export
       # the resulting xcarchive ourselves below. Tolerate Tauri's export failure
       # as long as it leaves a valid xcarchive.
+      # Health (ADR-0099) needs the HealthKit capability on the App ID and a
+      # profile that carries it. Until the owner has enabled it and refreshed
+      # IOS_PROVISION_PROFILE, ship without it rather than fail the export:
+      # the app then says Health is unavailable instead of reading it.
+      - name: Keep HealthKit only when the profile allows it
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, plistlib
+          profile = plistlib.loads((pathlib.Path(os.environ["RUNNER_TEMP"]) / "app-profile.plist").read_bytes())
+          path = pathlib.Path("src-tauri/gen/apple/os-june_iOS/os-june_iOS.entitlements")
+          entitlements = plistlib.loads(path.read_bytes())
+          if "com.apple.developer.healthkit" in profile.get("Entitlements", {}):
+              print("HealthKit: the profile carries it.")
+          else:
+              for key in ("com.apple.developer.healthkit", "com.apple.developer.healthkit.access"):
+                  entitlements.pop(key, None)
+              path.write_bytes(plistlib.dumps(entitlements))
+              print("::warning::The app profile has no HealthKit capability; this build ships without Health (HANDOFF.md).")
+          PY
+
       - name: Stamp the iOS bundles with the app version
         # The run number is the build counter. Apple refuses a CFBundleVersion it
         # has already seen, so a delivery rejected for any reason could never be

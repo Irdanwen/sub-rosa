@@ -83,6 +83,7 @@ import type { SettingsTab } from "../settings/AppSettings";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DotSpinner } from "../DotSpinner";
 import { combineSourceAudioLevels, Waveform } from "../recorder/Waveform";
+import { PersonalDataNav } from "../personal-data/PersonalDataNav";
 
 const NO_AGENT_SESSIONS: HermesSessionInfo[] = [];
 
@@ -97,6 +98,8 @@ export type SidebarView =
   | "library"
   | "routines"
   | "today"
+  | "health"
+  | "finances"
   | "agent"
   | "agent-sessions";
 
@@ -1206,6 +1209,7 @@ export function Sidebar({
               </span>
               <span className="sidebar-nav-label">{t("Today")}</span>
             </button>
+            <PersonalDataNav activeView={activeView} onChangeView={onChangeView} />
           </nav>
 
           {pinnedAgentSessions.length > 0 ? (

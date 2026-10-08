@@ -7942,12 +7942,9 @@ async fn handle_june_provider_connection(
             write_json_response(&mut stream, status, body).await?;
         }
         _ => {
-            write_json_response(
-                &mut stream,
-                404,
-                serde_json::json!({ "error": { "message": "Not found" } }),
-            )
-            .await?;
+            let (status, body) =
+                crate::personal_data::proxy_route(&app, &request.path, &request.body).await;
+            write_json_response(&mut stream, status, body).await?;
         }
     }
     Ok(())

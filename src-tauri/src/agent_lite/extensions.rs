@@ -1,7 +1,7 @@
 //! What a turn gains beyond its own tools: the person's connectors and skill
-//! packs (ADR-0092). Kept apart from the loop so `mod.rs` only asks two
-//! questions: what to add before the first completion, and whether a tool
-//! call belongs here.
+//! packs (ADR-0092), and their health and finances (ADR-0099). Kept apart
+//! from the loop so `mod.rs` only asks two questions: what to add before the
+//! first completion, and whether a tool call belongs here.
 
 use serde_json::Value;
 use tauri::AppHandle;
@@ -33,6 +33,8 @@ pub(super) async fn prepare(
     }
     let skills = crate::skill_packs::agent::for_turn(&repos.pool, last_message).await;
     skills.apply(tools);
+    // Health and finances, read only, when there is something to read (ADR-0099).
+    crate::personal_data::offer(&repos.pool, tools).await;
     TurnExtensions {
         skills,
         connectors_note,
@@ -60,6 +62,9 @@ pub(super) async fn dispatch(
 ) -> Option<String> {
     if name == crate::skill_packs::agent::TOOL {
         return Some(crate::skill_packs::agent::load(&repos.pool, args).await);
+    }
+    if let Some(answer) = crate::personal_data::dispatch(&repos.pool, name, args).await {
+        return Some(answer);
     }
     crate::connectors::agent::dispatch(app, &repos.pool, task_id, name, args).await
 }

@@ -1,0 +1,2 @@
+/* Health, read only (ADR-0099). Shown by iOS when Sub Rosa asks to read the measures the person picked. */
+"NSHealthShareUsageDescription" = "Sub Rosa liest die Gesundheitswerte, die du auswählst (Schritte, Schlaf, Herzfrequenz, Trainings, Gewicht), um deine Tageszusammenfassungen zu zeigen und deine Fragen dazu zu beantworten. Es schreibt nie in Health, und nichts verlässt dieses iPhone, solange du die Synchronisierung für einen Wert nicht einschaltest.";

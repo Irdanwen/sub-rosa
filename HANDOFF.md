@@ -242,3 +242,28 @@ verrouillé, la complication sur un cadran, la dictée sur la montre, le réveil
 de l'iPhone en arrière-plan par un message WatchConnectivity et la lecture à
 voix haute. Le build simulateur compile les cibles ; seul un iPhone appairé à
 une Apple Watch prouve le trajet complet.
+
+## Santé (ADR-0099) : ce que le titulaire doit activer
+
+1. **iPhone, HealthKit** : dans le portail Apple Developer, cocher la capacité
+   *HealthKit* sur l'App ID `xyz.carpediem.subrosa`, régénérer le profil App
+   Store de l'app et mettre à jour le secret `IOS_PROVISION_PROFILE`. Tant que
+   le profil ne porte pas `com.apple.developer.healthkit`, la lane
+   `ios-release.yml` retire l'entitlement avant l'archive (avertissement dans
+   le journal) et l'app dit que Santé est indisponible. Dans App Store
+   Connect, la fiche de confidentialité doit déclarer les données de santé
+   (lues, non liées à des tiers, non utilisées pour le suivi) ; la revue
+   demande souvent une phrase sur l'usage dans les notes de revue.
+2. **Android, Health Connect** : dans la Play Console, remplir la déclaration
+   *Health Connect* (types lus : pas, sommeil, fréquence cardiaque, fréquence
+   cardiaque au repos, exercice, poids ; lecture seule ; justification par
+   type) et la section *Sécurité des données*. Google peut demander une
+   vidéo du parcours de permission. La politique de confidentialité publique
+   doit mentionner la lecture des données de santé.
+
+**Non vérifié sans matériel** : la feuille d'autorisation HealthKit et la
+lecture réelle (pas, sommeil fusionné montre plus téléphone, entraînements),
+la feuille Health Connect et l'écran de justification, l'historique au-delà
+de trente jours sur Android. Le pont iOS est vérifié à la compilation
+(`cargo check --target aarch64-apple-ios`), le pont Kotlin seulement par la
+CI Android.

@@ -41,6 +41,16 @@ fn main() {
             .flag("-fobjc-arc")
             .flag("-fmodules")
             .compile("subrosa_document_scanner");
+        // crate::health: HealthKit, read only (ADR-0099). Xcode links the
+        // framework into the app too (project.yml).
+        println!("cargo:rustc-link-lib=framework=HealthKit");
+        println!("cargo:rerun-if-changed=native/health-kit/HealthBridge.m");
+        cc::Build::new()
+            .file("native/health-kit/HealthBridge.m")
+            .flag("-fobjc-arc")
+            .flag("-fmodules")
+            .flag("-Wno-unused-parameter")
+            .compile("subrosa_health_kit");
     }
     // crate::calendar reads EventKit on both Apple platforms; the classes only
     // resolve if the framework is linked.

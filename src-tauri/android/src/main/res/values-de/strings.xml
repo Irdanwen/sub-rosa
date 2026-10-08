@@ -12,4 +12,6 @@
     <string name="subrosa_widget_ask">Fragen</string>
     <string name="subrosa_widget_dictate">Diktieren</string>
     <string name="subrosa_widget_record">Aufnehmen</string>
+    <string name="subrosa_health_rationale_title">Deine Gesundheit in Sub Rosa</string>
+    <string name="subrosa_health_rationale_body">Sub Rosa liest nur die Gesundheitswerte, die du in der App auswählst (Schritte, Schlaf, Herzfrequenz, Ruhepuls, Trainings, Gewicht). Es speichert eine Zusammenfassung pro Tag auf diesem Telefon, um dir Diagramme zu zeigen und deine Fragen dazu zu beantworten. Es schreibt nie in Health Connect. Nichts verlässt dieses Telefon, solange du in Sub Rosa die Synchronisierung für einen Wert nicht einschaltest, und du kannst das Gespeicherte jederzeit löschen.</string>
 </resources>

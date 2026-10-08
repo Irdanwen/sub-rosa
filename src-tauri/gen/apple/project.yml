@@ -56,6 +56,9 @@ targets:
         NSMicrophoneUsageDescription:
           Sub Rosa records microphone audio locally so it can transcribe and generate your notes, and hears you during a voice conversation.
         # The system-audio source of a note (microphone plus system audio).
+        # Health, read only (ADR-0099): the measures the person picked.
+        # Translated in os-june_iOS/<language>.lproj/InfoPlist.strings.
+        NSHealthShareUsageDescription: Sub Rosa reads the health measures you choose (steps, sleep, heart rate, workouts, weight) to show your daily summaries and answer your questions about them. It never writes to Health, and nothing leaves this iPhone unless you turn on sync for a measure.
         NSCalendarsUsageDescription: Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.
         NSCalendarsFullAccessUsageDescription: Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.
         NSRemindersUsageDescription: Sub Rosa adds a reminder to your list when you tap to accept one it suggested. It never reads or changes anything else.
@@ -113,6 +116,11 @@ targets:
           - webcredentials:subrosa.furetier.com
         com.apple.security.application-groups:
           - group.xyz.carpediem.subrosa
+        # Health, read only (ADR-0099). The App ID needs the HealthKit
+        # capability and the profile must carry it (HANDOFF.md); the release
+        # lane drops these two keys when the installed profile lacks them.
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
@@ -155,6 +163,8 @@ targets:
       # text recognition, from the Objective-C file in Rust's static library.
       - sdk: Vision.framework
       - sdk: VisionKit.framework
+      # crate::health reads HealthKit (native/health-kit/HealthBridge.m).
+      - sdk: HealthKit.framework
       - sdk: WebKit.framework
       # The Shortcuts actions (iOS 16+). Weak, because the app still runs on
       # iOS 15, where a strong link to a framework that does not exist stops

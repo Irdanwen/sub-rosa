@@ -74,8 +74,36 @@ fn stays_local(t: &Table, prefix: &str) -> String {
         "agent_tasks" => format!(" AND {prefix}ephemeral=0"),
         "agent_messages" => outside_temporary_chat(prefix),
         "saved_items" => super::saved_items::outside_temporary_chat(prefix),
+        // Health and finances leave only by the person's own choice on this
+        // device (ADR-0099). A received row is applied with `applying=1`, so
+        // a device that never opted in still shows what another one sent.
+        "health_days" => {
+            format!(" AND {prefix}metric IN (SELECT metric FROM health_metrics WHERE sync=1)")
+        }
+        "transactions" | "finance_rules" => {
+            " AND (SELECT sync FROM finance_settings WHERE id=1)=1".to_string()
+        }
         _ => String::new(),
     }
+}
+/// Queues the rows of `table_name` matching `filter` that have never left
+/// this device: what a person kept local until they opted in (ADR-0099).
+/// A library with no account queues nothing; its first inventory will.
+pub(crate) async fn enqueue_existing(
+    pool: &SqlitePool,
+    table_name: &str,
+    filter: &str,
+) -> Result<(), AppError> {
+    let t = table(table_name)?;
+    let bound = query("SELECT 1 FROM account_sync_control WHERE id=1 AND account_id IS NOT NULL")
+        .fetch_optional(pool)
+        .await?
+        .is_some();
+    if !bound {
+        return Ok(());
+    }
+    query(&format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM {} WHERE id NOT IN (SELECT object_id FROM account_sync_outbox) AND id NOT IN (SELECT object_id FROM account_sync_heads) AND ({filter}){}",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name,stays_local(t,&format!("{}.",t.name)))).execute(pool).await?;
+    Ok(())
 }
 /// For a row that belongs to a chat through its `task_id`.
 fn outside_temporary_chat(prefix: &str) -> String {

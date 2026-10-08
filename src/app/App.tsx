@@ -31,6 +31,8 @@ import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import { ASK_ABOUT_SELECTION_EVENT } from "../lib/ask-selection";
 import { CanvasHost } from "../components/canvas/CanvasHost";
 import { LibraryView } from "../components/library/LibraryView";
+import { FinancesView } from "../components/personal-data/FinancesView";
+import { HealthView } from "../components/personal-data/HealthView";
 import { FILM_FROM_NOTE_EVENT } from "../lib/film-from-note";
 import { STUDIO_FILM_NOTE_KEY, STUDIO_TAB_STORAGE_KEY } from "../components/studio/studio-keys";
 import { requestRetouch } from "../lib/studio/retouch/jobs";
@@ -3066,6 +3068,10 @@ export function App() {
                 <StudioView />
               ) : activeView === "library" ? (
                 <LibraryView header={<h1 className="library-view-title">{t("Library")}</h1>} />
+              ) : activeView === "health" ? (
+                <HealthView header={<h1 className="personal-view-title">{t("Health")}</h1>} />
+              ) : activeView === "finances" ? (
+                <FinancesView header={<h1 className="personal-view-title">{t("Finances")}</h1>} />
               ) : activeView === "today" ? (
                 <TodayView />
               ) : activeView === "routines" ? (

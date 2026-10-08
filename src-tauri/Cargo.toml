@@ -70,6 +70,10 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"]
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
 quick-xml = "0.41"
+# Bank statements (crate::finance): regular expression rules, as the budget
+# engine writes them, and the encodings older bank exports use.
+regex = "1"
+encoding_rs = "0.8"
 zip = { version = "4.6", default-features = false, features = ["deflate"] }
 pdf-extract = "0.12.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "cookies"] }

@@ -2333,3 +2333,47 @@ et l'entendre répondre, mains libres.
 - macOS limite le chemin d'un socket à 104 octets : le fichier s'appelle
   `bx.sock`, et un chemin trop long désactive l'extension plutôt que de
   tronquer.
+
+## Santé et finances (2026-10-08, ADR-0099)
+
+- `src-tauri/src/health/` : mesures choisies, lecture seule (`native.rs` :
+  HealthKit par `native/health-kit/HealthBridge.m` compilé dans `build.rs`,
+  Health Connect par `HealthConnect.kt`), un résumé par mesure et par jour
+  (`health_days`, migration 068), choix de l'appareil dans `health_metrics`,
+  résumé pur (`summary.rs`) et outil `health_summary` (`tool.rs`).
+- `src-tauri/src/finance/` : relevés CSV (`csv.rs`, préréglages par en-têtes),
+  OFX/QFX (`ofx.rs`), camt.053 (`camt.rs`), table `transactions` et règles
+  (`store.rs`, `rules.rs`, migration 069), suggestions du modèle confirmées
+  (`suggest.rs`), synthèses pures (`summary.rs`), outils `spending_summary` et
+  `transactions_search` (`tool.rs`), pont manuel vers le moteur de budget
+  (`bridge.rs`). Jeux d'essai réalistes dans `finance/fixtures/`.
+- `src-tauri/src/personal_data.rs` : les trois outils pour agent-lite
+  (`agent_lite/extensions.rs`) et la dernière route du proxy local pour le MCP
+  de contexte du desktop (`hermes/june_context_mcp.py`).
+- Synchronisation : `health_days`, `transactions`, `finance_rules` dans
+  `account/sync_tables.rs`, filtrés par `stays_local` ; `enqueue_existing`
+  envoie l'existant quand la personne active la synchronisation.
+- Front : `src/lib/health.ts`, `src/lib/finance.ts`,
+  `src/components/personal-data/` (vues partagées, feuille d'import avec
+  correspondance des colonnes), entrées du menu latéral desktop
+  (`PersonalDataNav.tsx`) et Réglages du téléphone (`PersonalDataScreen.tsx`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/hermes_bridge.rs` | La route `_` du proxy délègue à `personal_data::proxy_route` (qui répond 404 au reste) | Réappliquer |
+| `src-tauri/src/hermes/june_context_mcp.py` | Trois outils santé et finances, annoncés avec les coordonnées du proxy | Réappliquer |
+| `src-tauri/src/lib.rs` | Modules `finance`, `health`, `personal_data` ; 21 commandes dans les deux listes | Réappliquer |
+| `src-tauri/build.rs`, `src-tauri/Cargo.toml` | HealthKit lié et compilé pour iOS ; `regex` et `encoding_rs` (déjà dans le lockfile) | Réappliquer |
+| `src/app/App.tsx`, `src/components/sidebar/Sidebar.tsx`, `src/app/tab-meta.tsx` | Vues Santé et Finances | Réappliquer |
+
+### Pièges
+
+- `Steps` et `Period` existent déjà dans les catalogues au sens « étapes » et
+  « époque » : les libellés de santé disent `Step count`, `{count} steps walked`
+  et `Time range`.
+- L'entitlement HealthKit casse l'export si le profil ne le porte pas : la
+  lane iOS le retire alors (avertissement) au lieu d'échouer.
+- La bibliothèque Health Connect exige minSdk 26 : le module du plugin passe
+  de 24 à 26 (l'app est à 29).
