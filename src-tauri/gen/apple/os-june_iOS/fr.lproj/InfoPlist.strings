@@ -7,3 +7,6 @@
 "NSCalendarsFullAccessUsageDescription" = "Sub Rosa lit votre calendrier sur cet appareil pour qu'un enregistrement sache à quelle réunion il appartient. Rien n'est envoyé nulle part.";
 "NSRemindersUsageDescription" = "Sub Rosa ajoute un rappel à votre liste quand vous touchez pour accepter celui qu'il a suggéré. Il ne lit ni ne modifie rien d'autre.";
 "NSRemindersFullAccessUsageDescription" = "Sub Rosa ajoute un rappel à votre liste quand vous touchez pour accepter celui qu'il a suggéré. Il ne lit ni ne modifie rien d'autre.";
+
+/* Health, read only (ADR-0099). Shown by iOS when Sub Rosa asks to read the measures the person picked. */
+"NSHealthShareUsageDescription" = "Sub Rosa lit les mesures de santé que vous choisissez (pas, sommeil, fréquence cardiaque, entraînements, poids) pour afficher vos résumés quotidiens et répondre à vos questions à leur sujet. Il n'écrit jamais dans Santé, et rien ne quitte cet iPhone sauf si vous activez la synchronisation d'une mesure.";

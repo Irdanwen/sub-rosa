@@ -51,6 +51,12 @@ const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
     key: "NSPhotoLibraryAddUsageDescription",
     reachedBy: "saving a Studio generation to the photo library",
   },
+  // Health, read only (ADR-0099). HealthKit raises the moment the app asks
+  // without it; translated in os-june_iOS/<language>.lproj/InfoPlist.strings.
+  {
+    key: "NSHealthShareUsageDescription",
+    reachedBy: "reading the health measures the person picked (crate::health)",
+  },
   // Two keys, one resource: iOS 17 renamed it, the deployment target is 15,
   // so the app has to satisfy both systems (crate::calendar asks with
   // whichever selector the OS answers to).

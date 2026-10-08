@@ -5,6 +5,8 @@ import { IconNoteText } from "central-icons/IconNoteText";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
+import { IconBank } from "central-icons/IconBank";
+import { IconHeartBeat } from "central-icons/IconHeartBeat";
 import { IconLibrary } from "central-icons/IconLibrary";
 import { IconSunrise } from "central-icons/IconSunrise";
 import { IconZap } from "central-icons/IconZap";
@@ -102,6 +104,16 @@ export function tabMeta(
       return {
         title: t("Library"),
         icon: <IconLibrary size={TAB_ICON_SIZE} />,
+      };
+    case "health":
+      return {
+        title: t("Health"),
+        icon: <IconHeartBeat size={TAB_ICON_SIZE} />,
+      };
+    case "finances":
+      return {
+        title: t("Finances"),
+        icon: <IconBank size={TAB_ICON_SIZE} />,
       };
     case "dictation":
       return {

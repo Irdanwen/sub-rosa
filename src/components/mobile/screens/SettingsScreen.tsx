@@ -366,6 +366,11 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         </SettingsGroup>
 
         <SettingsGroup>
+          <SettingsLinkRow label={t("Health")} onClick={() => onOpen("health")} />
+          <SettingsLinkRow label={t("Finances")} onClick={() => onOpen("finances")} />
+        </SettingsGroup>
+
+        <SettingsGroup>
           <SettingsLinkRow label={t("Privacy")} onClick={() => onOpen("privacy")} />
           <SettingsLinkRow label={t("Models")} onClick={() => onOpen("models")} />
           <SettingsLinkRow label={t("Reports")} onClick={() => onOpen("reports")} />

@@ -9,7 +9,39 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Health (ADR-0099): read only, and only what the person picks in the
+         app. Nothing is ever written to Health Connect. -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
     <application>
+        <!-- Why the app reads health data, shown from Health Connect's
+             permission screen: the rationale action up to Android 13, and the
+             permission usage alias from Android 14. -->
+        <activity
+            android:name="xyz.carpediem.subrosa.nativebridge.HealthRationaleActivity"
+            android:exported="true"
+            android:label="@string/subrosa_health_rationale_title">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <activity-alias
+            android:name="xyz.carpediem.subrosa.nativebridge.ViewPermissionUsageActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity="xyz.carpediem.subrosa.nativebridge.HealthRationaleActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
         <service
             android:name="xyz.carpediem.subrosa.nativebridge.RecordingService"
             android:exported="false"

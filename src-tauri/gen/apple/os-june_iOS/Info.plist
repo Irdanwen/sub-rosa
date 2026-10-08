@@ -69,6 +69,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Sub Rosa reads the health measures you choose (steps, sleep, heart rate, workouts, weight) to show your daily summaries and answer your questions about them. It never writes to Health, and nothing leaves this iPhone unless you turn on sync for a measure.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

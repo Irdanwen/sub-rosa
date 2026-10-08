@@ -40,6 +40,7 @@ import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
 import { ComposeScreen } from "../../components/mobile/screens/studio/ComposeScreen";
 import { RetouchScreen } from "../../components/mobile/screens/studio/RetouchScreen";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
+import { PersonalDataScreen } from "../../components/mobile/screens/PersonalDataScreen";
 import { StackHeader } from "../../components/mobile/StackHeader";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
 import { FolderScreen } from "../../components/mobile/screens/FoldersScreen";
@@ -1185,6 +1186,8 @@ export function MobileApp() {
         <ModelsScreen onBack={nav.pop} />
       ) : top.section === "reports" ? (
         <ReportsScreen onBack={nav.pop} />
+      ) : top.section === "health" || top.section === "finances" ? (
+        <PersonalDataScreen kind={top.section} onBack={nav.pop} />
       ) : top.section === "about" ? (
         <AboutScreen onBack={nav.pop} />
       ) : (

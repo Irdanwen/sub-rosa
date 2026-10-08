@@ -7,3 +7,6 @@
 "NSCalendarsFullAccessUsageDescription" = "Sub Rosa liest deinen Kalender auf diesem Gerät, damit eine Aufnahme weiß, zu welchem Meeting sie gehört. Nichts wird irgendwohin gesendet.";
 "NSRemindersUsageDescription" = "Sub Rosa fügt deiner Liste eine Erinnerung hinzu, wenn du tippst, um einen Vorschlag anzunehmen. Es liest oder ändert nichts anderes.";
 "NSRemindersFullAccessUsageDescription" = "Sub Rosa fügt deiner Liste eine Erinnerung hinzu, wenn du tippst, um einen Vorschlag anzunehmen. Es liest oder ändert nichts anderes.";
+
+/* Health, read only (ADR-0099). Shown by iOS when Sub Rosa asks to read the measures the person picked. */
+"NSHealthShareUsageDescription" = "Sub Rosa liest die Gesundheitswerte, die du auswählst (Schritte, Schlaf, Herzfrequenz, Trainings, Gewicht), um deine Tageszusammenfassungen zu zeigen und deine Fragen dazu zu beantworten. Es schreibt nie in Health, und nichts verlässt dieses iPhone, solange du die Synchronisierung für einen Wert nicht einschaltest.";

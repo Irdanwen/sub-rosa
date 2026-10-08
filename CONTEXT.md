@@ -1570,6 +1570,41 @@ Settings and applied before the first render. Distinct from the
 transcription language (what the model should expect to hear).
 _Avoid:_ "locale" in copy (the person picks a language, not a locale).
 
+### Health and finances (fork)
+
+**Measure** — one kind of health reading the person can pick: steps, sleep,
+heart rate, resting heart rate, workouts, weight (ADR-0099). Picked per
+device; each measure has its own sync switch.
+_Avoid:_ "metric" in copy (it is the code's word), "permission" (the system
+grants it; the person picks a measure).
+
+**Health day** — one measure on one local calendar day, as the app keeps it
+(`health_days`): a step total, minutes asleep counted on the morning the
+night ended, an average heart rate with its range. The app never keeps the
+store's raw samples.
+_Avoid:_ "sample" (HealthKit's and Health Connect's word for one reading).
+
+**Statement** — a file the person exported from their bank (CSV, OFX or QFX,
+camt.053) and read into the app. It is not an **import**: an import is a
+note, and a statement becomes **transactions**, never a note.
+_Avoid:_ "import" for the file (that word names a note), "bank sync" (no bank
+is ever contacted), "aggregator".
+
+**Transaction** — one booking from a statement: a day, a signed amount in
+minor units, a description, its **category**. Read again from an overlapping
+statement it is recognised by its dedup key, never added twice.
+_Avoid:_ "operation", "entry" (the budget engine's words for its own ledger).
+
+**Category / rule / suggestion** — where a transaction's money went. A
+**rule** files every transaction whose description or payee matches; the
+person's own choice always wins over a rule. A **suggestion** is a category
+the model proposed that waits until the person accepts or declines it.
+_Avoid:_ "auto-categorised" (nothing is filed on the model's word alone).
+
+**Budget engine** — the household's separate budget program on the home
+server. The app reaches it only through files the person carries
+(transactions CSV, `rules.json`), never a call.
+
 ## Account and synchronisation vocabulary
 
 These terms describe the optional account implementation, not a production launch.

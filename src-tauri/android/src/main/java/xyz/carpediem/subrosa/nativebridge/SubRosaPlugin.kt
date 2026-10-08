@@ -249,4 +249,21 @@ class SubRosaPlugin(private val activity: Activity) : Plugin(activity) {
     @ActivityCallback
     private fun documentScanned(invoke: Invoke, result: ActivityResult) =
         DocumentScanner.finish(activity, invoke, result)
+
+    @Command
+    fun healthAvailability(invoke: Invoke) = HealthConnect.availability(activity, invoke)
+
+    @Command
+    fun healthRequest(invoke: Invoke) = HealthConnect.request(this, activity, invoke)
+
+    @Command
+    fun healthDaily(invoke: Invoke) = HealthConnect.daily(activity, invoke)
+
+    /** Health Connect's permission sheet; its answer comes back here. */
+    fun startHealthPermissions(invoke: Invoke, intent: Intent) =
+        startActivityForResult(invoke, intent, "healthPermissionsAnswered")
+
+    @ActivityCallback
+    @Suppress("UNUSED_PARAMETER")
+    private fun healthPermissionsAnswered(invoke: Invoke, result: ActivityResult) = HealthConnect.answered(invoke)
 }

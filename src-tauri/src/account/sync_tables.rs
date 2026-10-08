@@ -97,6 +97,58 @@ pub(super) const TABLES: &[Table] = &[
             "created_at",
         ],
     },
+    // Health and finances (ADR-0099), each sent only when the person opted
+    // in on the device that holds them (`stays_local`): a health measure by
+    // measure, finances as a whole. Their ids are derived from what they
+    // describe, so two devices reading one day or one statement make one
+    // object.
+    Table {
+        name: "health_days",
+        kind: "artifact",
+        columns: &[
+            "id",
+            "metric",
+            "day",
+            "value",
+            "low",
+            "high",
+            "samples",
+            "source",
+            "updated_at",
+        ],
+    },
+    Table {
+        name: "transactions",
+        kind: "artifact",
+        columns: &[
+            "id",
+            "dedup_key",
+            "account",
+            "booked_on",
+            "amount_minor",
+            "currency",
+            "description",
+            "counterparty",
+            "reference",
+            "balance_minor",
+            "category",
+            "category_source",
+            "created_at",
+            "updated_at",
+        ],
+    },
+    Table {
+        name: "finance_rules",
+        kind: "settings",
+        columns: &[
+            "id",
+            "pattern",
+            "is_regex",
+            "category",
+            "position",
+            "created_at",
+        ],
+    },
     Table {
         name: "account_studio_files",
         kind: "artifact",

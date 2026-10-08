@@ -40,6 +40,7 @@
 		B399DA8CF54F48D251F1E5DC /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 33B57007691C7F02E91C3F9F /* Localizable.strings */; };
 		BC27FCDD5F6FDC1E85674AE5 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CB6E12545C407CBF2B0C56C5 /* QuartzCore.framework */; };
 		C724068C17FD462BA3D7F5FB /* VisionKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 936A3F3769F676D123F8C1E6 /* VisionKit.framework */; };
+		F55F875D2770548D61A2EDB0 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D6B255FCE87E987AAD5AB49E /* HealthKit.framework */; };
 		CB2360E0B865C9F0D9F0DD29 /* SubRosaShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53F2A47CFBFDDFD23FB8A66 /* SubRosaShortcuts.swift */; };
 		DD08F8E6E6F1B6250C2FCBD9 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C9C15D05B14FDB4C408592A /* AVFoundation.framework */; };
 		E095CC55B7DCAEB610A155EC /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C67642DE590E5DFBF8623CA /* WidgetKit.framework */; };
@@ -332,6 +333,7 @@
 		93062B0242B0AA01AAD696A7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/AppShortcuts.strings; sourceTree = "<group>"; };
 		933396BE30AF393CDBBF3138 /* calendar.rs */ = {isa = PBXFileReference; path = calendar.rs; sourceTree = "<group>"; };
 		936A3F3769F676D123F8C1E6 /* VisionKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VisionKit.framework; path = System/Library/Frameworks/VisionKit.framework; sourceTree = SDKROOT; };
+		D6B255FCE87E987AAD5AB49E /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		9582A057F4711D1666420075 /* egress_ledger.rs */ = {isa = PBXFileReference; path = egress_ledger.rs; sourceTree = "<group>"; };
 		959450BA5613973A882E0958 /* june_web_mcp.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = june_web_mcp.py; sourceTree = "<group>"; };
 		960E44DBEDA3229A391DF40E /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -508,6 +510,7 @@
 				E487255D0DEED8754C37CACF /* UIKit.framework in Frameworks */,
 				FE4B6BD698513EC5144A541D /* Vision.framework in Frameworks */,
 				C724068C17FD462BA3D7F5FB /* VisionKit.framework in Frameworks */,
+				F55F875D2770548D61A2EDB0 /* HealthKit.framework in Frameworks */,
 				A6C5565F0DFC51737FC1BAEE /* WebKit.framework in Frameworks */,
 				477A690D6E47F5FA4F77720D /* AppIntents.framework in Frameworks */,
 				367B4026F6FEDC416D5B0C84 /* WatchConnectivity.framework in Frameworks */,
@@ -1097,6 +1100,7 @@
 				97402B24C9614C6337EC3588 /* UIKit.framework */,
 				7C2CE79A12CFF2493EC280A6 /* Vision.framework */,
 				936A3F3769F676D123F8C1E6 /* VisionKit.framework */,
+				D6B255FCE87E987AAD5AB49E /* HealthKit.framework */,
 				622EB9021DC4457803E8B97F /* WatchConnectivity.framework */,
 				68FCD86C299D838436740FDC /* WebKit.framework */,
 				7C67642DE590E5DFBF8623CA /* WidgetKit.framework */,
