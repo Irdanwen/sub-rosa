@@ -55,6 +55,10 @@ pub struct ToolGroup {
     pub acts: bool,
 }
 
+/// The desktop's health and finance server (ADR-0099), apart from the
+/// notes' `mcp-june_context` so that ticking the notes does not bring them.
+pub const PERSONAL_DATA_TOOLSET: &str = "mcp-june_personal";
+
 pub const TOOL_GROUPS: &[ToolGroup] = &[
     ToolGroup {
         id: "web",
@@ -73,6 +77,18 @@ pub const TOOL_GROUPS: &[ToolGroup] = &[
             "search_past_chats",
             "create_note",
             "append_to_note",
+        ],
+        acts: false,
+    },
+    // Health and finances, read only (ADR-0099). Never part of the notes:
+    // a run reads them only when its definition names them.
+    ToolGroup {
+        id: "personal",
+        hermes: &[PERSONAL_DATA_TOOLSET],
+        lite: &[
+            crate::health::tool::TOOL,
+            crate::finance::tool::SPENDING_TOOL,
+            crate::finance::tool::SEARCH_TOOL,
         ],
         acts: false,
     },
@@ -332,6 +348,25 @@ mod tests {
         assert!(!lite.contains("create_note"), "notes were not ticked");
         // Nothing ticked still gets an explicit, minimal list.
         assert_eq!(hermes_toolsets(&[]), ["todo"]);
+    }
+
+    #[test]
+    fn the_notes_never_bring_the_health_and_the_money_with_them() {
+        let personal = ["health_summary", "spending_summary", "transactions_search"];
+        let notes = effective_groups(&tools(&["notes"]), Autonomy::Ask);
+        let lite = lite_tools(&notes);
+        assert!(personal.iter().all(|tool| !lite.contains(tool)));
+        assert!(!hermes_toolsets(&notes).contains(&PERSONAL_DATA_TOOLSET.to_string()));
+        assert!(hermes_toolsets(&notes).contains(&"mcp-june_context".to_string()));
+
+        // Named, they reach both shells, under either autonomy: reading
+        // them leaves nothing and changes nothing.
+        for autonomy in [Autonomy::Ask, Autonomy::Act] {
+            let groups = effective_groups(&tools(&["notes", "personal"]), autonomy);
+            let lite = lite_tools(&groups);
+            assert!(personal.iter().all(|tool| lite.contains(tool)));
+            assert!(hermes_toolsets(&groups).contains(&PERSONAL_DATA_TOOLSET.to_string()));
+        }
     }
 
     #[test]

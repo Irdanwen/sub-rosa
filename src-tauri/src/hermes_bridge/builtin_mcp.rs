@@ -10,6 +10,32 @@ use super::{
 };
 
 const JUNE_BROWSER_MCP_SERVER_NAME: &str = "june_browser";
+/// Health and finances (ADR-0099): the context script again, scoped to the
+/// three read-only tools, so a run's tools can name it apart from the notes.
+const PERSONAL_DATA_MCP_SERVER_NAME: &str = "june_personal";
+
+/// Every built-in server a routine without its own tools may use: all of
+/// them but the personal data. Naming them turns the cron platform's MCP
+/// servers into an allowlist (Hermes's `_get_platform_tools`); without a
+/// name it would take every enabled server, the personal data included.
+const CRON_MCP_SERVERS: &[&str] = &[
+    JUNE_CONTEXT_MCP_SERVER_NAME,
+    JUNE_WEB_MCP_SERVER_NAME,
+    JUNE_MEDIA_MCP_SERVER_NAME,
+    JUNE_STUDIO_MCP_SERVER_NAME,
+    JUNE_BROWSER_MCP_SERVER_NAME,
+    crate::connectors::hermes::SERVER,
+];
+
+/// `platform_toolsets.cron`: the sandboxed toolsets, then the servers.
+pub(super) fn cron_toolsets(sandboxed: &[&str]) -> String {
+    sandboxed
+        .iter()
+        .chain(CRON_MCP_SERVERS)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 const JUNE_BROWSER_MCP_SCRIPT_NAME: &str = "june_browser_mcp.py";
 pub(super) const JUNE_BROWSER_MCP_SCRIPT: &str = include_str!("../hermes/june_browser_mcp.py");
 
@@ -64,6 +90,7 @@ pub(super) fn render_mcp_servers_config(
     let mut entries = String::new();
     if let Some(config) = context {
         entries.push_str(&render_context_mcp_entry(config));
+        entries.push_str(&render_personal_data_mcp_entry(config));
     }
     if let Some(config) = web {
         entries.push_str(&render_web_mcp_entry(config));
@@ -102,6 +129,34 @@ pub(super) fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String 
     connect_timeout: 10
 "#,
         server_name = JUNE_CONTEXT_MCP_SERVER_NAME,
+        command = yaml_string(&config.command),
+        script_path = yaml_string(&config.script_path.to_string_lossy()),
+        database_path = yaml_string(&config.database_path.to_string_lossy()),
+        proxy_arg = yaml_string(&format!(
+            "--proxy={}",
+            config.coordinates_path.to_string_lossy()
+        )),
+    )
+}
+
+/// The context script, serving only the health and finance tools. It needs
+/// the proxy, which answers them, and nothing of the memory switches.
+fn render_personal_data_mcp_entry(config: &JuneContextMcpConfig) -> String {
+    format!(
+        r#"  {server_name}:
+    enabled: true
+    command: {command}
+    args:
+      - {script_path}
+      - {database_path}
+      - "--scope=personal-data"
+      - {proxy_arg}
+    env:
+      PYTHONUNBUFFERED: "1"
+    timeout: 30
+    connect_timeout: 10
+"#,
+        server_name = PERSONAL_DATA_MCP_SERVER_NAME,
         command = yaml_string(&config.command),
         script_path = yaml_string(&config.script_path.to_string_lossy()),
         database_path = yaml_string(&config.database_path.to_string_lossy()),
@@ -264,6 +319,67 @@ mod tests {
         assert!(block.contains("  june_browser:\n"));
         assert!(block.contains("/data/hermes-mcp/june_browser_mcp.py"));
         assert!(block.contains("/data/hermes-mcp/coords.json"));
+    }
+
+    #[test]
+    fn the_personal_data_is_a_server_of_its_own_that_routines_leave_out() {
+        let context = JuneContextMcpConfig {
+            command: "/venv/bin/python".to_string(),
+            script_path: PathBuf::from("/data/hermes-mcp/june_context_mcp.py"),
+            database_path: PathBuf::from("/data/notes.sqlite3"),
+            memory_enabled: true,
+            coordinates_path: PathBuf::from("/data/hermes-mcp/coords.json"),
+        };
+        let studio = JuneStudioMcpConfig {
+            command: "/venv/bin/python".to_string(),
+            script_path: PathBuf::from("/data/hermes-mcp/june_studio_mcp.py"),
+            coordinates_path: PathBuf::from("/data/hermes-mcp/coords.json"),
+        };
+        let web = JuneWebMcpConfig {
+            command: "/venv/bin/python".to_string(),
+            script_path: PathBuf::from("/data/hermes-mcp/june_web_mcp.py"),
+            coordinates_path: PathBuf::from("/data/hermes-mcp/coords.json"),
+        };
+        let media = JuneMediaMcpConfig {
+            command: "/venv/bin/python".to_string(),
+            script_path: PathBuf::from("/data/hermes-mcp/june_media_mcp.py"),
+            coordinates_path: PathBuf::from("/data/hermes-mcp/coords.json"),
+        };
+        let block =
+            render_mcp_servers_config(Some(&context), Some(&web), Some(&media), Some(&studio));
+        let parsed: serde_json::Value = serde_yaml::from_str(&block).unwrap();
+        let servers = parsed["mcp_servers"].as_object().unwrap();
+        assert_eq!(
+            servers["june_personal"]["args"],
+            serde_json::json!([
+                "/data/hermes-mcp/june_context_mcp.py",
+                "/data/notes.sqlite3",
+                "--scope=personal-data",
+                "--proxy=/data/hermes-mcp/coords.json"
+            ])
+        );
+        // The context server itself is never scoped to the personal data.
+        assert!(!servers["june_context"]["args"]
+            .to_string()
+            .contains("--scope"));
+        // The toolset a run's "personal data" group names.
+        assert_eq!(
+            crate::assignments::prompt::PERSONAL_DATA_TOOLSET,
+            format!("mcp-{PERSONAL_DATA_MCP_SERVER_NAME}")
+        );
+
+        // A routine keeps every built-in server but this one, so a server
+        // added later cannot drop out of routines unnoticed.
+        let cron = cron_toolsets(&["web", "todo"]);
+        assert!(cron.starts_with("web, todo, "));
+        let listed: Vec<&str> = cron.split(", ").collect();
+        for name in servers.keys() {
+            assert_eq!(
+                listed.contains(&name.as_str()),
+                name != PERSONAL_DATA_MCP_SERVER_NAME,
+                "{name} in the routines' servers"
+            );
+        }
     }
 
     #[test]

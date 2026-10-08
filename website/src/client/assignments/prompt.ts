@@ -27,8 +27,9 @@ export function liteTools(groups: ToolGroup[]): Set<string> {
  * Whether a run may be offered a tool, as `assistants::runtime::allows_tool`
  * decides for a phone run: a connector tool (`<connector>__<tool>`) when the
  * connectors group is ticked, a skill when one is asked for, otherwise only
- * the tools of the run's groups. What no group names (a document, Python,
- * finances) is not offered to a run on the phone, nor here.
+ * the tools of the run's groups. What no group names (a document, Python)
+ * is not offered to a run on the phone, nor here, and the finances only when
+ * the run's definition ticks the "personal" group.
  */
 export function allowToolFor(groups: ToolGroup[]): (name: string) => boolean {
   const tools = liteTools(groups);

@@ -117,6 +117,13 @@ export function toolChoices(platform: "desktop" | "phone"): ToolChoice[] {
       acts: false,
     },
     { id: "memory", label: t("Memory"), detail: t("Recall and remember facts."), acts: false },
+    // Never part of "Your notes": a run reads them only when ticked here.
+    {
+      id: "personal",
+      label: t("Health and finances"),
+      detail: t("Read your health summaries and your imported bank statements."),
+      acts: false,
+    },
   ];
   // The phone's runs use its own connectors (ADR-0092); each tool keeps its
   // allow, ask or deny rule inside a run.
@@ -211,9 +218,21 @@ export function runStateLabel(state: RunState): string {
   }
 }
 
-/** Where a run ran, as the reader says it. */
+/** Where a run ran, as the reader says it. A run records the kind of
+ * device it ran on: "phone" or "computer" from the app (`device_kind` in
+ * `assignments/mod.rs`), "browser" from the web client
+ * (`BROWSER_DEVICE_NAME` in `website/src/client/assignments/runner.ts`). */
 export function runPlaceLabel(run: Pick<AssignmentRun, "deviceName">): string {
-  return run.deviceName === "phone" ? t("On your phone") : t("On your computer");
+  switch (run.deviceName) {
+    case "phone":
+      return t("On your phone");
+    case "computer":
+      return t("On your computer");
+    case "browser":
+      return t("In your browser");
+    default:
+      return t("On another device");
+  }
 }
 
 /** The reasons the Rust side writes when a run fails, translated. Anything

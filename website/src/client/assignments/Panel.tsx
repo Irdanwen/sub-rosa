@@ -44,6 +44,7 @@ const GROUP_LABELS: Record<string, () => string> = {
   web: () => t("Search the web", "Chercher sur le web"),
   notes: () => t("Your notes", "Vos notes"),
   memory: () => t("Your memories", "Vos souvenirs"),
+  personal: () => t("Health and finances", "Santé et finances"),
   connectors: () => t("Connected apps", "Apps connectées"),
   files: () => t("Files and code, on a computer", "Fichiers et code, sur un ordinateur"),
   terminal: () => t("The terminal, on a computer", "Le terminal, sur un ordinateur"),

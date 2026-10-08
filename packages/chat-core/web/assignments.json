@@ -105,6 +105,15 @@
     },
     {
       "acts": false,
+      "id": "personal",
+      "lite": [
+        "health_summary",
+        "spending_summary",
+        "transactions_search"
+      ]
+    },
+    {
+      "acts": false,
       "id": "memory",
       "lite": [
         "search_memories",

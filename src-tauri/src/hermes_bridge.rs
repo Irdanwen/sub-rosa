@@ -7467,7 +7467,7 @@ async fn sync_hermes_config(
         &model,
         &base_url,
         provider_proxy_token,
-        &CRON_SANDBOXED_TOOLSETS.join(", "),
+        &builtin_mcp::cron_toolsets(CRON_SANDBOXED_TOOLSETS),
         external_skill_dirs,
         // Catalog-sourced, never assumed: an unreachable catalog writes no key
         // and leaves Hermes on its own detection (see the function's docs).
@@ -10283,7 +10283,8 @@ mod tests {
 
         let config = std::fs::read_to_string(home.path().join("config.yaml")).expect("read config");
         assert!(config.contains("platform_toolsets:"));
-        assert!(config.contains(&format!("cron: [{}]", CRON_SANDBOXED_TOOLSETS.join(", "))));
+        let cron = builtin_mcp::cron_toolsets(CRON_SANDBOXED_TOOLSETS);
+        assert!(config.contains(&format!("cron: [{cron}]")) && !cron.contains("june_personal"));
         for toolset in [
             "terminal",
             "file",

@@ -142,6 +142,15 @@ describe("what a run is told and may use", () => {
     expect(allowToolFor(effectiveGroups(["connectors"], "ask"))("linear__list_issues")).toBe(true);
   });
 
+  it("reads the finances only for a run whose definition names them", () => {
+    const notes = allowToolFor(effectiveGroups(["notes"], "act"));
+    expect(notes("spending_summary")).toBe(false);
+    expect(notes("transactions_search")).toBe(false);
+    const personal = allowToolFor(effectiveGroups(["notes", "personal"], "ask"));
+    expect(personal("spending_summary")).toBe(true);
+    expect(personal("transactions_search")).toBe(true);
+  });
+
   it("narrows the turn's tools to the run's", () => {
     const { sync } = fakeHost();
     const tools = turnTools({
