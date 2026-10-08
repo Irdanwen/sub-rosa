@@ -23,3 +23,5 @@ sha2.workspace = true
 subtle.workspace = true
 uuid.workspace = true
 tracing.workspace = true
+ammonia.workspace = true
+pulldown-cmark.workspace = true

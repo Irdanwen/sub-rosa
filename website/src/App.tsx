@@ -14,6 +14,7 @@ import { guideBySlug, read } from "./pages/docs-content";
 import { modelsPath, useModelCatalog } from "./models/loader";
 
 import { SharePage } from "./pages/share";
+import { AssistantCatalog } from "./pages/assistants";
 
 /** The web client is its own chunk: the marketing pages never load it. */
 const WebAppPage = lazy(() =>
@@ -316,11 +317,13 @@ export function App({ initialPath }: { initialPath?: string }) {
   const appPath = rawPathname === "/app";
   const accountPath = appPath || rawPathname === "/account" || rawPathname.startsWith("/account/");
   const sharePath = rawPathname.startsWith("/s/");
+  // The assistant catalog (ADR-0097) lives with the account service it reads.
+  const catalogPath = rawPathname === "/assistants" || rawPathname.startsWith("/assistants/");
   const returnPath = rawPathname === "/account/devices/return";
   const [locale, setLocale] = useState<SiteLocale>(() =>
     rawPathname === "/fr" || rawPathname.startsWith("/fr/")
       ? "fr"
-      : accountPath || sharePath
+      : accountPath || sharePath || catalogPath
         ? initialWebsiteLocale(
             rawPathname,
             path.split("?")[1] ?? "",
@@ -357,7 +360,12 @@ export function App({ initialPath }: { initialPath?: string }) {
       if (next === "/fr" || next.startsWith("/fr/")) {
         rememberWebsiteLocale("fr");
         setLocale("fr");
-      } else if (!next.startsWith("/account") && !next.startsWith("/s/")) setLocale("en");
+      } else if (
+        !next.startsWith("/account") &&
+        !next.startsWith("/s/") &&
+        !next.startsWith("/assistants")
+      )
+        setLocale("en");
       window.scrollTo(0, 0);
     };
     const click = (event: MouseEvent) => {
@@ -392,18 +400,20 @@ export function App({ initialPath }: { initialPath?: string }) {
       ? `${t("Shared with you", "Partagé avec vous")} · Sub Rosa`
       : appPath
         ? `${t("Chats", "Discussions")} · Sub Rosa`
-        : accountPath
-          ? `${t("Your account", "Votre compte")} · Sub Rosa`
-          : documentationPath(pathname) || pathname === "/help"
-            ? `${pathname.startsWith("/docs/") ? read(guideBySlug(pathname.slice(6))?.title ?? ["Documentation", "Documentation"]) : t("Documentation", "Documentation")} · Sub Rosa`
-            : modelsPath(pathname)
-              ? `${catalog ? catalog.modelCatalogTitle(pathname) : t("Model catalog", "Catalogue des modèles")} · Sub Rosa`
-              : pathname === "/downloads"
-                ? `${t("Download", "Télécharger")} · Sub Rosa`
-                : pathname === "/"
-                  ? "Sub Rosa"
-                  : `${t("Information", "Informations")} · Sub Rosa`;
-  }, [locale, appPath, accountPath, sharePath, pathname, catalog]);
+        : catalogPath
+          ? `${t("Assistant catalog", "Catalogue d’assistants")} · Sub Rosa`
+          : accountPath
+            ? `${t("Your account", "Votre compte")} · Sub Rosa`
+            : documentationPath(pathname) || pathname === "/help"
+              ? `${pathname.startsWith("/docs/") ? read(guideBySlug(pathname.slice(6))?.title ?? ["Documentation", "Documentation"]) : t("Documentation", "Documentation")} · Sub Rosa`
+              : modelsPath(pathname)
+                ? `${catalog ? catalog.modelCatalogTitle(pathname) : t("Model catalog", "Catalogue des modèles")} · Sub Rosa`
+                : pathname === "/downloads"
+                  ? `${t("Download", "Télécharger")} · Sub Rosa`
+                  : pathname === "/"
+                    ? "Sub Rosa"
+                    : `${t("Information", "Informations")} · Sub Rosa`;
+  }, [locale, appPath, accountPath, sharePath, catalogPath, pathname, catalog]);
   const changeLocale = (next: SiteLocale) => {
     rememberWebsiteLocale(next);
     setLocale(next);
@@ -415,7 +425,7 @@ export function App({ initialPath }: { initialPath?: string }) {
       setPath(`${rawPathname}?${query}`);
       return;
     }
-    if (sharePath) return;
+    if (sharePath || catalogPath) return;
     const destination = localizedSiteHref(pathname, next);
     history.pushState(null, "", destination);
     setPath(next === "fr" ? (pathname === "/" ? "/fr/" : `/fr${pathname}`) : pathname);
@@ -460,6 +470,8 @@ export function App({ initialPath }: { initialPath?: string }) {
       <main id="main" tabIndex={-1}>
         {sharePath ? (
           <SharePage path={path} />
+        ) : catalogPath ? (
+          <AssistantCatalog path={rawPathname} />
         ) : returnPath ? (
           <ReturnToApp />
         ) : accountPath && (accountsUnavailable || !sitePaths.hostsAccounts) ? (
@@ -540,6 +552,7 @@ export function App({ initialPath }: { initialPath?: string }) {
           <div className="footer-links">
             <a href={href("/docs")}>{t("Documentation", "Documentation")}</a>
             <a href={href("/models")}>{t("Model catalog", "Catalogue des modèles")}</a>
+            <a href={href("/assistants")}>{t("Assistant catalog", "Catalogue d’assistants")}</a>
             <a href={href("/privacy")}>{t("Privacy", "Confidentialité")}</a>
             <a href={href("/security")}>{t("Security", "Sécurité")}</a>
             <a href="https://github.com/Irdanwen/sub-rosa-releases/releases">

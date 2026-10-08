@@ -47,10 +47,23 @@ impl IntoResponse for ApiError {
             Error::DeviceRequired => (403, "device_required"),
             Error::AdmissionRequired => (403, "admission_required"),
             Error::DeviceProof => (401, "device_proof_invalid"),
+            Error::SlugTaken => (409, "slug_taken"),
+            Error::ContentPolicy(_) => (422, "content_policy"),
+            Error::TakenDown => (403, "taken_down"),
+            Error::PublishingSuspended => (403, "publishing_suspended"),
+        };
+        let rule = match self.0 {
+            Error::ContentPolicy(rule) => Some(rule.as_str()),
+            _ => None,
         };
         let mut response = (
             StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            Json(json!({"error":{"code":code,"message":self.0.to_string()}})),
+            Json(match rule {
+                Some(rule) => {
+                    json!({"error":{"code":code,"rule":rule,"message":self.0.to_string()}})
+                }
+                None => json!({"error":{"code":code,"message":self.0.to_string()}}),
+            }),
         )
             .into_response();
         if status == 429 {
@@ -66,6 +79,13 @@ mod browser_devices;
 mod carpe_diem;
 mod pairing;
 mod passkeys;
+mod public_pages;
+mod publications;
+
+/// The address a request is charged to, as the guard worked it out. Handlers
+/// that keep a per-address count (reports) read it rather than recompute it.
+#[derive(Clone)]
+pub(crate) struct ClientAddress(pub String);
 
 pub fn router(service: Service) -> Router {
     let state = Arc::new(service);
@@ -74,6 +94,7 @@ pub fn router(service: Service) -> Router {
         .merge(passkeys::routes())
         .merge(carpe_diem::routes())
         .merge(browser_devices::routes())
+        .merge(publications::routes())
         .route("/api/v1/me", get(me).delete(delete_me))
         .route("/api/v1/session/refresh", post(refresh_session))
         .route("/api/v1/session/renew", post(renew_session))
@@ -102,6 +123,9 @@ pub fn router(service: Service) -> Router {
         // title, a file name, an account or another share.
         .route("/api/v1/shares/{id}/preview", get(share_preview))
         .route("/api/v1/shares/{id}/blobs/{position}", get(share_blob))
+        // The public origin's pages (ADR 0097). They refuse every other origin
+        // when the two are apart, which is always outside development.
+        .merge(public_pages::routes())
         .route(
             "/api/v1/blobs/{id}",
             get(blob)
@@ -156,13 +180,14 @@ fn client_address(service: &Service, request: &Request) -> String {
     peer.to_string()
 }
 
-async fn guard(State(s): State<Arc<Service>>, request: Request, next: Next) -> Response {
+async fn guard(State(s): State<Arc<Service>>, mut request: Request, next: Next) -> Response {
     let Ok(_slot) = REQUEST_SLOTS.try_acquire() else {
         return ApiError(Error::RateLimited).into_response();
     };
     let path = request.uri().path().to_owned();
     if path != "/livez" && path != "/readyz" {
         let peer = client_address(&s, &request);
+        request.extensions_mut().insert(ClientAddress(peer.clone()));
         let limit = if path.starts_with("/auth/")
             || path == "/api/v1/device-login"
             || path == "/api/v1/passkeys"
@@ -187,11 +212,15 @@ async fn guard(State(s): State<Arc<Service>>, request: Request, next: Next) -> R
         }
     }
     let mut response = next.run(request).await;
+    // A public page answers its reader in HTML, a missing one included.
     if response.status().is_client_error()
         && !response
             .headers()
             .get(header::CONTENT_TYPE)
-            .is_some_and(|v| v.as_bytes().starts_with(b"application/json"))
+            .is_some_and(|v| {
+                v.as_bytes().starts_with(b"application/json")
+                    || v.as_bytes().starts_with(b"text/html")
+            })
     {
         response = ApiError(if response.status() == StatusCode::PAYLOAD_TOO_LARGE {
             Error::Quota

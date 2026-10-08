@@ -1,5 +1,6 @@
 import { AccountConflictList } from "./AccountConflictList";
 import { AccountPairingSection } from "./AccountPairingSection";
+import { PublishingCard } from "../publishing/PublishingCard";
 import { AccountSecurityHistory } from "./AccountSecurityHistory";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -1172,6 +1173,7 @@ export function AccountSettingsSection({
             </button>
           </AccountCard>
           <AccountSecurityHistory serverUrl={status.server_url} />
+          <PublishingCard />
           <AccountCard title={t("Delete your account")}>
             <p className="settings-row-description">
               {t(

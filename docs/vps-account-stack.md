@@ -96,6 +96,19 @@ Rotation : générer une nouvelle clé, transmettre la nouvelle entrée à Carpe
 
 Nouvelle sortie réseau : l’API appelle `{audience}/partner/keys/revoke` depuis sa boucle de maintenance (60 s, reprise progressive de 1 minute à 6 heures, sans abandon). C’est sa première sortie autre que l’OIDC et le stockage objet. Le réseau `outbound` de Compose la permet déjà ; une future liste d’autorisation de sortie devra inclure l’hôte Carpe Diem.
 
+## Pages publiques, profils et catalogue d’assistants (ADR 0097)
+
+Publier rend un texte **public et en clair** : le service rend le markdown en HTML filtré et le sert sans aucun script, depuis une **origine à part** de celle du compte (jamais les cookies du compte ni le coffre du navigateur). Le catalogue d’assistants, lui, est une API JSON publique de l’origine du compte, lue par les pages `/assistants` du site. Tant que `operator.json` ne contient pas d’URL de publication, toutes les routes de publication répondent 404 et l’app dit que le service ne publie pas de pages.
+
+1. Choisir un hôte dédié (par exemple `pages.subrosa.furetier.com`), différent de l’hôte du compte, et créer son enregistrement DNS vers le VPS.
+2. Installer le vhost : `sed 's/pages.example.invalid/<hôte>/g' subrosa-cloud/deploy/nginx-pages.conf.example > /etc/nginx/sites-available/subrosa-pages`, lien dans `sites-enabled`, puis `certbot --nginx -d <hôte>` et `nginx -t && systemctl reload nginx`. Seuls `/p/`, `/u/` et `/_pub/` vont au service ; tout le reste répond 404, et les cookies ne passent pas.
+3. Sur le poste de préparation, renseigner dans `operator.json` : `"publication": {"url": "https://<hôte>", "blocked_terms": []}`, puis `render`. La section `[publication]` est rendue dans `runtime.toml` et `migration.toml` ; `render` refuse une URL qui n’est pas une origine HTTPS ou qui reprend l’hôte du compte.
+4. Construire et publier l’image du service (migration `0012_publications.sql`), copier `private/` vers le VPS, puis `stack.py migrate` et `stack.py start`.
+5. Déployer le site du compte construit depuis cette version (pages `/assistants`) ; l’hôte du compte n’a besoin d’aucun changement de vhost, le repli SPA les sert déjà.
+6. Vérifier : `curl -sI https://<hôte>/p/inexistant` répond 404 en `text/html` avec `Content-Security-Policy: default-src 'none'…` ; `curl -s https://<hôte-compte>/api/v1/catalog/assistants` répond `{"data":[]}` ; `curl -sI https://<hôte-compte>/p/x` ne sert **pas** de page publiée.
+
+Modération : `subrosa-cloud/scripts/takedown.sh --directory <dossier privé> reports` liste les signalements ouverts, `… page <slug> "<motif>"` (ou `site`, `profile`, `assistant`) retire un contenu. Règles et détails : [`public-content-rules.md`](public-content-rules.md). Le texte publié vit en clair dans PostgreSQL et dans ses sauvegardes : une restauration peut faire revenir une page dépubliée depuis la sauvegarde.
+
 ## Stockage et sauvegardes : portes encore fermées
 
 Le fichier [`storage-policies.example.json`](../subrosa-cloud/deploy/vps/storage-policies.example.json) fournit deux politiques de rôle à adapter chez le fournisseur. Ciphertexts : get/put/delete, bucket privé. Registre : list/get/create conditionnel, **aucun delete**, pas de changement de lifecycle/versioning/rétention par le runtime. Les [conditions S3 de création](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes-enforce.html) doivent être testées chez le fournisseur compatible. Ce n’est pas une configuration universelle interchangeable entre prestataires.

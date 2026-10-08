@@ -44,6 +44,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { AssistantChat } from "./AssistantChat";
 import { assistantQuestions, assistantTemplates } from "./templates";
 import "./assistants.css";
+import { PublishAssistantAction } from "../publishing/PublishAssistantDialog";
 
 export function AssistantsDialog({
   open,
@@ -427,6 +428,19 @@ function AssistantsSurface({
                         >
                           {t("Duplicate")}
                         </button>
+                        <PublishAssistantAction
+                          assistant={item}
+                          trigger={(open) => (
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={busy}
+                              onClick={open}
+                            >
+                              {t("Publish to the catalog")}
+                            </button>
+                          )}
+                        />
                         <button
                           type="button"
                           className="btn btn-secondary"

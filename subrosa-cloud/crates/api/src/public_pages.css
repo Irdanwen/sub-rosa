@@ -1,0 +1,191 @@
+/* Published pages (ADR 0097). Self-contained: no font, no image, nothing
+   fetched from elsewhere, so the page policy can stay at 'self'. */
+:root {
+  color-scheme: light dark;
+  --paper: #fbf8f4;
+  --ink: #1f1b18;
+  --muted: #6b625a;
+  --line: #e4ddd4;
+  --accent: #8a2e3b;
+  --code: #f1ece5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #171412;
+    --ink: #ece6df;
+    --muted: #a99f95;
+    --line: #2e2925;
+    --accent: #e08a96;
+    --code: #241f1c;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font:
+    17px/1.65 ui-serif,
+    Georgia,
+    "Times New Roman",
+    serif;
+}
+a {
+  color: var(--accent);
+  text-underline-offset: 0.15em;
+}
+.site {
+  border-bottom: 1px solid var(--line);
+  padding: 1rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+}
+.site,
+.page,
+.foot {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+.site-title {
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+.site ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+.site a[aria-current="page"] {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+.page {
+  padding: 2rem 1rem 3rem;
+}
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+}
+h1 {
+  font-size: 2rem;
+  margin: 0 0 1.25rem;
+}
+pre,
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--code);
+  border-radius: 4px;
+}
+code {
+  padding: 0.1em 0.3em;
+}
+pre {
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+}
+pre code {
+  padding: 0;
+  background: none;
+}
+blockquote {
+  margin: 1rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+th,
+td {
+  border: 1px solid var(--line);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+}
+hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.updated,
+.handle {
+  color: var(--muted);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+}
+.who {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.who h1 {
+  margin: 0;
+}
+.who .handle {
+  margin: 0.25rem 0 0;
+}
+.avatar {
+  border-radius: 50%;
+  object-fit: cover;
+}
+.list {
+  list-style: none;
+  padding: 0;
+}
+.list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.list span {
+  display: block;
+  color: var(--muted);
+  font-size: 15px;
+}
+.foot {
+  padding: 1.5rem 1rem 3rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+}
+.report summary {
+  cursor: pointer;
+}
+.report form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  max-width: 28rem;
+}
+.report label {
+  display: grid;
+  gap: 0.25rem;
+}
+.report select,
+.report textarea,
+.report button {
+  font: inherit;
+  font-size: 16px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+.report button {
+  justify-self: start;
+  cursor: pointer;
+}

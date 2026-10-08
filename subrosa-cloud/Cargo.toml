@@ -43,6 +43,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 anyhow = "1"
+ammonia = "4"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 wiremock = "0.6"
 zeroize = { version = "1", features = ["derive"] }
 webauthn-rs = { version = "0.5.5", features = ["conditional-ui", "danger-allow-state-serialisation"] }

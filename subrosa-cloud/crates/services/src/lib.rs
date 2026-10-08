@@ -14,6 +14,7 @@ use subrosa_domain::{
 use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
 mod browser;
+pub mod publication;
 pub use browser::{
     AdmissionRequest, DEVICE_PROOF_HEADER, DEVICE_PROOF_TYPE, thumbprint as jwk_thumbprint,
 };
@@ -752,6 +753,7 @@ pub async fn maintain(
     // them; this is what hands their bytes back to the quota.
     repository.release_shares().await?;
     repository.prune_auth().await?;
+    repository.prune_reports().await?;
     for key in repository.cleanup_keys().await? {
         storage.delete(&key).await?;
         repository.cleaned_key(&key).await?;

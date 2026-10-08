@@ -1,0 +1,124 @@
+/* Publishing (ADR-0097): the dialogs and the account card. Quiet on purpose:
+   these surfaces are read, not scanned. */
+.publish-facts {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding-left: var(--sp-5);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+.publish-state,
+.publish-review {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.publish-review p {
+  margin: 0;
+}
+.publish-review-meta {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+.publish-review-text {
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.publish-review-quote {
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border);
+  color: var(--muted-foreground);
+}
+.publish-review-list {
+  margin: 0;
+  padding-left: var(--sp-5);
+}
+.publish-permissions {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.publish-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+.publish-switch {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--brand-ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+.publishing-card > summary {
+  cursor: pointer;
+}
+.publishing-section {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.publishing-heading {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+.publishing-list,
+.publishing-order {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.publishing-list > li,
+.publishing-order > li {
+  display: grid;
+  gap: var(--sp-1);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.publishing-item-title {
+  font-weight: var(--fw-medium);
+}
+.publishing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.publishing-site-form {
+  display: grid;
+  gap: var(--sp-4);
+}
+.publishing-file {
+  position: relative;
+  overflow: hidden;
+}
+.publishing-file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}

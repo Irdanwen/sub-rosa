@@ -6,6 +6,7 @@ pub mod crypto;
 mod files;
 pub mod login;
 pub mod pairing;
+pub mod publications;
 mod saved_items;
 pub mod security_events;
 mod session_folders;

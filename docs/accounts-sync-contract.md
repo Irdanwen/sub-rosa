@@ -229,6 +229,35 @@ the durable deletion queue, their rows are removed, and their bytes are returned
 to the account quota. A share's blobs are exclusive to it, so a share of a file
 stores a second copy of that file rather than pointing at the library's.
 
+## Publications (8 October 2026)
+
+Public content, in the clear on purpose ([ADR 0097](adr/0097-a-publication-is-plaintext-the-service-renders-on-an-origin-of-its-own.md)).
+Nothing here touches the journal, the vault or a share. Every route answers
+`404` when the deployment has no `[publication]` section. Refusals name a rule:
+`422 content_policy` with `error.rule` (see
+[public-content-rules.md](public-content-rules.md)), `409 slug_taken`,
+`403 taken_down`, `403 publishing_suspended`. Full shapes: `subrosa-cloud/openapi.json`.
+
+| Route | Contract |
+| --- | --- |
+| `GET /api/v1/publications` | Session. `{ publication_url, profile, pages, sites, assistants }` for this account, taken-down items included and flagged. |
+| `PUT /api/v1/publications/pages/{id}` | Session, CSRF for cookies. `{ slug, title, kind: note\|canvas, source_id, markdown }`. The service renders and keeps the sanitized HTML and `source_digest` = hex SHA-256 of `title`, a zero byte, `markdown`. One page per `source_id` per account. |
+| `DELETE /api/v1/publications/pages/{id}` | Session. Deletes the page and its text at once. |
+| `PUT` / `DELETE /api/v1/publications/sites/{id}` | Session. `{ title, home_page_id?, page_ids }`: the owner's live pages, once each, in navigation order. Deleting a site keeps its pages. |
+| `PUT` / `DELETE /api/v1/publications/profile` | Session. `{ handle, display_name, bio }`. Opt-in; deleting removes the page. |
+| `PUT` / `DELETE /api/v1/publications/profile/avatar` | Session. `application/octet-stream`, PNG, JPEG or WebP by its bytes, 256 KiB at most. |
+| `PUT` / `DELETE /api/v1/publications/assistants/{id}` | Session. `{ source_id, name, description, category, instructions, starter, permissions, references }`. Permissions are tool keys, `notes` and `memory`; references are `{ name, text }` the publisher ticked. |
+| `GET /api/v1/catalog/assistants` | **No session.** `?q=&category=&page=`, 24 summaries a page, most imported first. |
+| `GET /api/v1/catalog/assistants/{id}` | **No session.** One live listing in full (`source_id` empty). |
+| `POST /api/v1/catalog/assistants/{id}/import` | **No session.** The same, counted as one import. |
+| `POST /api/v1/reports` | **No session.** `{ target_kind: page\|profile\|assistant, target \| target_id, reason, detail }`. One per address and target. |
+
+On the publication origin only (the `Host` must be `[publication] url`, which
+outside development is another host than `public_url`): `GET /p/{slug}`,
+`GET /u/{handle}`, `GET /u/{handle}/avatar`, `GET /_pub/style.css` and the
+report form `POST /_pub/report` (form-encoded). HTML pages carry
+`Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`.
+
 ## Carpe Diem device keys (30 September 2026)
 
 The service can vouch to Carpe Diem for a device so that the device obtains its own `cdm_` key, and it asks Carpe Diem to revoke that key when the device goes. It never sees the key. The full wire contract, shared with Carpe Diem, is [`carpe-diem-partner-contract.md`](carpe-diem-partner-contract.md); the decision and its bound are [ADR-0069](adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md).
