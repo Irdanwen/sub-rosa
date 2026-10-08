@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 80
+Gaps: 77
 
 ## Matrix
 
@@ -84,7 +84,7 @@ Gaps: 80
 | Share into the app | n/a | yes | yes | n/a | `src-tauri/gen/apple/ShareExtension` `src-tauri/android/src/main/java/xyz/carpediem/subrosa/nativebridge/ShareReceiverActivity.kt` `src-tauri/src/share_inbox.rs` |  |
 | Siri and Shortcuts | n/a | yes | n/a | n/a | `src-tauri/gen/apple/Sources/os-june/Intents` | |
 | Spotlight | yes | yes | n/a | n/a | `src-tauri/src/spotlight.rs` | |
-| Interface languages | partial | partial | partial | partial | `src/locales/fr.json` | P8 |
+| Interface languages | yes | yes | yes | partial | `src/locales/fr.json` `src/locales/de.json` `src/locales/it.json` `src/locales/es.json` `src/locales/pt-BR.json` `scripts/i18n/verify-catalogs.mjs` | P9 |
 | Meeting record mode | yes | yes | yes | n/a | `src-tauri/src/meeting_detection.rs` | |
 | Audio uploads to notes | yes | yes | yes | n/a | `src-tauri/src/audio/decode.rs` `src-tauri/src/ingest` | |
 | Custom assistants: create | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` | P9 |
