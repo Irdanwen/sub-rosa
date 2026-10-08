@@ -350,9 +350,18 @@ export function collectWebsiteSentences() {
   return { sentences, byPart, problems };
 }
 
+/**
+ * Sentences that stay as written in every language: a prompt for a voice
+ * that speaks only English.
+ */
+const AS_WRITTEN = new Set([
+  "Tara: <laugh> You really did that? Leo: <sigh> Yes, and I regret it.",
+]);
+
 /** Sentences the code leaves identical in French may stay identical everywhere. */
 function identicalInFrench(sentences, keys) {
   return keys.filter((key) => {
+    if (AS_WRITTEN.has(key)) return true;
     const fr = sentences.get(key)?.fr;
     return fr && fr.size > 0 && [...fr].every((value) => value === key);
   });
