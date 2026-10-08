@@ -2,9 +2,14 @@ import { execSync } from "node:child_process";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { pyodidePlugin } from "./scripts/pyodide-assets.mjs";
 
 export default defineConfig({
-  plugins: [react()],
+  // Pyodide rides only in the phone bundles (ADR-0086).
+  plugins: [react(), pyodidePlugin()],
+  // The Python worker loads Pyodide with a dynamic import, which a classic
+  // worker cannot do.
+  worker: { format: "es" },
   clearScreen: false,
   define: {
     __APP_COMMIT_HASH__: JSON.stringify(gitCommitHash()),

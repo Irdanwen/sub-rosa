@@ -27,6 +27,7 @@ import type { Destination } from "../../lib/destinations";
 import type { IntentRequest } from "../../lib/intents";
 import { importSharedItem } from "../../lib/share-inbox";
 import { useAmbientActivity } from "./useAmbientActivity";
+import { usePythonBridge } from "../../lib/python/usePythonBridge";
 import { observeStandaloneImageJobs } from "../../lib/studio/image-job-recovery";
 import { OPEN_COMPOSE_EVENT } from "../../lib/studio/compose/jobs";
 import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
@@ -145,6 +146,8 @@ export function MobileApp() {
   const [state, dispatch] = useReducer(notesReducer, undefined, createInitialState);
   const [error, setError] = useState<string | null>(null);
   const { chatBusy, studioBusy } = useAmbientActivity();
+  // The chat's run_python tool answers through here (ADR-0086).
+  usePythonBridge();
 
   // Errors slide in at the top and clear themselves; lingering red banners
   // read as a broken app and can sit over the header forever.

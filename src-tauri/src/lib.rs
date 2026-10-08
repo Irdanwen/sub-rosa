@@ -28,6 +28,7 @@ pub mod commands;
 pub mod conversation_export;
 #[cfg(desktop)]
 pub mod council;
+pub mod data_cards;
 pub mod db;
 pub mod destinations;
 pub mod diagnostics;
@@ -338,6 +339,7 @@ pub fn run() {
             commands::retry_agent_task,
             commands::fork_agent_task,
             agent_lite::cancel::agent_lite_cancel,
+            agent_lite::python::agent_lite_python_reply,
             agent_lite::controls::agent_lite_regenerate,
             agent_lite::controls::agent_lite_edit_last,
             agent_lite::controls::agent_lite_edit_branch,
@@ -567,6 +569,7 @@ pub fn run() {
             reply_ratings::reply_rating_set,
             reply_ratings::reply_ratings_list,
             conversation_export::export_conversation,
+            conversation_export::data::export_chat_data,
             temporary_chat::temporary_chat_create,
             temporary_chat::temporary_chat_register,
             temporary_chat::temporary_chat_discard,
@@ -836,6 +839,7 @@ pub fn run() {
         dictation_mobile::mobile_delete_dictation_history_item,
         agent_lite::agent_lite_run,
         agent_lite::cancel::agent_lite_cancel,
+        agent_lite::python::agent_lite_python_reply,
         agent_lite::controls::agent_lite_regenerate,
         agent_lite::controls::agent_lite_edit_last,
         agent_lite::controls::agent_lite_edit_branch,
@@ -893,6 +897,7 @@ pub fn run() {
         reply_ratings::reply_rating_set,
         reply_ratings::reply_ratings_list,
         conversation_export::export_conversation,
+        conversation_export::data::export_chat_data,
         temporary_chat::temporary_chat_create,
         temporary_chat::temporary_chat_register,
         temporary_chat::temporary_chat_discard,

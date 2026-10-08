@@ -304,6 +304,20 @@ transcripts and `agent_messages` unchanged, and degrades to a readable code
 block anywhere the parser is absent (ADR-0024).
 _Avoid_: widget, embed, rich message (unqualified).
 
+**Chart block / table block**:
+The two data kinds of chat block, `subrosa:chart` (bar, line, area, pie,
+donut, scatter) and `subrosa:table` (sortable rows), drawn by the app in
+SVG and HTML from the numbers in the payload, with a data view and PNG, SVG
+and CSV saving (ADR-0086). Their numbers come from a computation or a source,
+never from the model's estimate.
+_Avoid_: graph, plot (for the block), matplotlib image.
+
+**Data analysis (phone)**:
+The `run_python` tool of the phone's chat: Python with numpy and pandas run
+by Pyodide in a worker of the webview, bundled with the app, on the turn's
+attached files under `/data`, only while the app is on screen (ADR-0086).
+_Avoid_: code interpreter, sandbox, notebook.
+
 **Hermes**:
 The embedded upstream (Nous Research) agent runtime June bundles, pinned to a
 commit and SHA-verified. June drives it as the chat/agent brain but presents

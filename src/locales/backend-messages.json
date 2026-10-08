@@ -365,6 +365,7 @@
   "This file contains no audio.",
   "This file could not be read as audio. Use an MP3, WAV, FLAC or M4A recording.",
   "This file could not be read. Choose it again.",
+  "This file could not be saved.",
   "This file has no audio extension.",
   "This file has no audio track this app can read.",
   "This file is no longer in the project.",

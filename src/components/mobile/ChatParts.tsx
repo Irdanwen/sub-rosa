@@ -95,6 +95,7 @@ export function stageText(stage: AgentLiteStatusDto["stage"]): string {
     "writing-note": t("Writing to your notes"),
     remembering: t("Remembering that"),
     "reading-page": t("Reading a page"),
+    "analysing-data": t("Analysing the data"),
   };
   return labels[stage] ?? t("Thinking");
 }
