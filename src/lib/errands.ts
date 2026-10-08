@@ -32,10 +32,17 @@ export type ErrandTarget = { id: string; name: string };
 export const errandRequest = (url: string, deviceId: string, folderId?: string) =>
   invoke<Errand>("errand_request", { url, deviceId, folderId });
 
+/** An errand that asks another device to run an assignment now (ADR-0091).
+ * Its outcome shows on the assignment, so the import surfaces leave it out. */
+const ASSIGNMENT_ERRAND_PREFIX = "subrosa://assignment/";
+
 /** A list, whatever came back. The IPC boundary is not a type system: a
  * command that answers with nothing must leave the surface empty rather than
  * throw inside a render. */
-const asErrands = (value: unknown): Errand[] => (Array.isArray(value) ? (value as Errand[]) : []);
+const asErrands = (value: unknown): Errand[] =>
+  Array.isArray(value)
+    ? (value as Errand[]).filter((errand) => !errand.url?.startsWith(ASSIGNMENT_ERRAND_PREFIX))
+    : [];
 
 export const errandList = () => invoke<Errand[]>("errand_list").then(asErrands);
 export const errandCancel = (id: string) => invoke<void>("errand_cancel", { id });

@@ -156,6 +156,11 @@ pub fn allows_tool(snapshot: Option<&AssistantSnapshot>, name: &str, memory_enab
     if matches!(name, "remember" | "search_memories") && !memory_enabled {
         return false;
     }
+    // A scheduled run offers what its assignment allows, nothing more
+    // (ADR-0091). Outside one, this says nothing.
+    if crate::assignments::lite::scoped_allows(name) == Some(false) {
+        return false;
+    }
     let Some(snapshot) = snapshot else {
         return true;
     };

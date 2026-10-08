@@ -331,18 +331,19 @@ pub async fn run_pending(app: &AppHandle) {
             .await;
             continue;
         }
+        let assignment = crate::assignments::errand_assignment(&errand.url);
         if !accepting {
-            let _ = settle(
-                app,
-                &pool,
-                &errand.id,
-                "declined",
-                None,
-                Some(
-                    "This device is not accepting links from your other devices. Turn on \"Run links sent from your other devices\" in Settings, Import.",
-                ),
-            )
-            .await;
+            let refusal = if assignment.is_some() {
+                "This device is not accepting work from your other devices. Turn on \"Run links sent from your other devices\" in Settings, Import."
+            } else {
+                "This device is not accepting links from your other devices. Turn on \"Run links sent from your other devices\" in Settings, Import."
+            };
+            let _ = settle(app, &pool, &errand.id, "declined", None, Some(refusal)).await;
+            continue;
+        }
+        // An assignment to run now (ADR-0091) waits, unrefused, for a
+        // runtime that is not up yet: the next sweep finds it again.
+        if assignment.is_some() && !crate::assignments::ready_for_errand(app).await {
             continue;
         }
         // Durable before paid: if this device dies between here and the
@@ -356,6 +357,29 @@ pub async fn run_pending(app: &AppHandle) {
             .unwrap_or(0)
             == 0
         {
+            continue;
+        }
+        if let Some(assignment_id) = assignment {
+            match crate::assignments::run_for_errand(app, assignment_id, &errand.id).await {
+                Ok(run_id) => {
+                    let _ = query("UPDATE account_errand_runs SET ingest_id=? WHERE errand_id=?")
+                        .bind(&run_id)
+                        .bind(&errand.id)
+                        .execute(&pool)
+                        .await;
+                }
+                Err(refusal) => {
+                    let _ = settle(
+                        app,
+                        &pool,
+                        &errand.id,
+                        "declined",
+                        None,
+                        Some(&refusal.message),
+                    )
+                    .await;
+                }
+            }
             continue;
         }
         match crate::ingest::start_link_ingest(
@@ -391,11 +415,23 @@ pub async fn run_pending(app: &AppHandle) {
 
 /// Close errands whose import has landed one way or the other.
 async fn reconcile(app: &AppHandle, pool: &SqlitePool) -> Result<(), AppError> {
-    let rows = query("SELECT r.errand_id, r.ingest_id, i.status, i.note_id, i.title FROM account_errand_runs r JOIN account_errands e ON e.id=r.errand_id LEFT JOIN ingests i ON i.id=r.ingest_id WHERE e.state='requested' AND r.ingest_id IS NOT NULL")
+    let rows = query("SELECT r.errand_id, r.ingest_id, e.url, i.status, i.note_id, i.title FROM account_errand_runs r JOIN account_errands e ON e.id=r.errand_id LEFT JOIN ingests i ON i.id=r.ingest_id WHERE e.state='requested' AND r.ingest_id IS NOT NULL")
         .fetch_all(pool)
         .await?;
     for row in rows {
         let id: String = row.get("errand_id");
+        // An assignment run (ADR-0091): its own row says how it ended.
+        if crate::assignments::errand_assignment(&row.get::<String, _>("url")).is_some() {
+            let run_id: String = row.get("ingest_id");
+            match crate::assignments::errand_outcome(pool, &run_id).await {
+                None => {}
+                Some(Ok(())) => settle(app, pool, &id, "done", None, None).await?,
+                Some(Err(message)) => {
+                    settle(app, pool, &id, "declined", None, Some(&message)).await?
+                }
+            }
+            continue;
+        }
         match row.get::<Option<String>, _>("status").as_deref() {
             Some("done") => {
                 settle(
@@ -522,6 +558,54 @@ mod tests {
         assert_eq!(
             pending, 0,
             "a row that came back as requested is still spent"
+        );
+    }
+
+    /// "Run it now" from the phone is an ordinary errand (ADR-0091): the row
+    /// names the computer, carries the assignment's address, and is picked up
+    /// by the same sweep that runs links.
+    #[tokio::test]
+    async fn an_assignment_run_travels_as_an_ordinary_errand() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        crate::db::migrations::run_migrations(&pool).await.unwrap();
+        let row = crate::assignments::normalize(
+            &crate::assignments::AssignmentInput {
+                id: None,
+                kind: None,
+                title: "Veille".into(),
+                goal: "Watch the tenders".into(),
+                cadence: "daily".into(),
+                at_minute: None,
+                weekday: None,
+                every_hours: None,
+                autonomy: "ask".into(),
+                tools: vec!["web".into()],
+                device_id: Some("desk".into()),
+                device_name: Some("Mac".into()),
+            },
+            None,
+            "phone",
+            "2026-10-08T07:00:00Z",
+        )
+        .unwrap();
+        let errand_id = crate::assignments::insert_errand(&pool, &row)
+            .await
+            .unwrap();
+        let stored = query("SELECT * FROM account_errands WHERE id=?")
+            .bind(&errand_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let errand = row_to_dto(&stored);
+        assert_eq!(errand.device_id, "desk");
+        assert_eq!(errand.state, "requested");
+        assert_eq!(
+            crate::assignments::errand_assignment(&errand.url),
+            Some(row.id.as_str())
+        );
+        assert_eq!(
+            crate::assignments::errand_assignment("https://example.com/a.mp3"),
+            None
         );
     }
 

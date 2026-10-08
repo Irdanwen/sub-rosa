@@ -30,6 +30,7 @@ import { IconNoteText } from "central-icons/IconNoteText";
 import { IconSparklesSoft } from "central-icons/IconSparklesSoft";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconLibrary } from "central-icons/IconLibrary";
+import { IconSunrise } from "central-icons/IconSunrise";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
@@ -128,6 +129,8 @@ type AgentScreenProps = {
   onBack?: () => void;
   /** The Library: what the chats made and what was kept from them. */
   onOpenLibrary?: () => void;
+  /** Today: the daily brief, results to review, assignments (ADR-0091). */
+  onOpenToday?: () => void;
 };
 
 /** Session list for the mobile chat (agent-lite), with swipe to archive
@@ -138,6 +141,7 @@ export function AgentScreen({
   archiveFolderId,
   onBack,
   onOpenLibrary,
+  onOpenToday,
 }: AgentScreenProps) {
   const [tasks, setTasks] = useState<ChatSessionItem[]>([]);
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
@@ -307,6 +311,16 @@ export function AgentScreen({
         onBack={onBack}
         trailing={
           <>
+            {onOpenToday ? (
+              <button
+                type="button"
+                className="mobile-icon-button"
+                aria-label={t("Today")}
+                onClick={onOpenToday}
+              >
+                <IconSunrise size={20} />
+              </button>
+            ) : null}
             {onOpenLibrary ? (
               <button
                 type="button"

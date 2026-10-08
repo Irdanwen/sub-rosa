@@ -45,6 +45,9 @@ export type Destination =
   | { kind: "studio"; retouch?: { rootId: string; versionId: string } }
   /** Start a recording. */
   | { kind: "record" }
+  /** The Today view: the daily brief and the results waiting for review
+   * (ADR-0091). */
+  | { kind: "today" }
   /** Fetch a link and turn it into a note (ADR-0028). The one destination
    * that carries a payload from outside the app, so its URL is validated
    * here and again by the Rust side before a single byte is fetched. */
@@ -123,6 +126,8 @@ export function parseDestination(raw: string): Destination | null {
     }
     case "record":
       return { kind: "record" };
+    case "today":
+      return segment ? null : { kind: "today" };
     case "share":
       return ID_RE.test(segment) ? { kind: "share", itemId: segment } : null;
     // `subrosa://auth/callback?request=…&code=…` finishes a sign-in. The return

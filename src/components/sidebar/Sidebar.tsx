@@ -2,6 +2,7 @@ import { AgentSessionContextMenu, formatSessionTime, NoteContextMenu } from "./s
 import { t } from "../../lib/i18n";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconLibrary } from "central-icons/IconLibrary";
+import { IconSunrise } from "central-icons/IconSunrise";
 import { IconZap } from "central-icons/IconZap";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconRobot2 } from "central-icons/IconRobot2";
@@ -93,6 +94,7 @@ export type SidebarView =
   | "studio"
   | "library"
   | "routines"
+  | "today"
   | "agent"
   | "agent-sessions";
 
@@ -1177,6 +1179,18 @@ export function Sidebar({
                 <IconZap size={16} />
               </span>
               <span className="sidebar-nav-label">{t("Routines")}</span>
+            </button>
+            <button
+              type="button"
+              className="sidebar-nav-item"
+              data-active={activeView === "today"}
+              aria-current={activeView === "today" ? "page" : undefined}
+              onClick={() => onChangeView("today")}
+            >
+              <span className="sidebar-nav-icon">
+                <IconSunrise size={16} />
+              </span>
+              <span className="sidebar-nav-label">{t("Today")}</span>
             </button>
           </nav>
 

@@ -292,13 +292,29 @@ it. One confirmation surface for every kind.
 _Avoid_: automation, auto-apply, agent action (unqualified).
 
 **Moment**:
-One of the two times the app speaks first: the **brief** (ten minutes before
+One of the times the app speaks first: the **brief** (ten minutes before
 a meeting with other people, what was last decided with them) and the
 **recap** ("your note is ready", when a recording has become one). Both are
 durable rows re-driven by the sweep, never timers, and both obey the rule
 that silence is a feature — nothing to say means nothing is said. The brief
-is off until asked for; the recap is on.
+is off until asked for; the recap is on. The **daily brief** is the third
+(ADR-0091).
 _Avoid_: reminder, alert, digest, push.
+
+**Daily brief**:
+The third **moment**: one card a morning, at the time the person chose,
+with the day's agenda as one sentence, yesterday's notes and their
+follow-ups, results to review, runs that failed, and news on the
+**followed topics** (at most five, one web search each a day). Off until
+asked for, silent on a morning with nothing to say, and under the moments'
+daily cap (ADR-0091). Shown as a notification and in **Today**.
+_Avoid_: digest, newsletter, pulse, feed.
+
+**Today**:
+The surface, on both shells, that holds the daily brief, the results
+waiting for review, and the assignments and scheduled tasks. Not a
+calendar: the agenda is a sentence in the card (ADR-0025).
+_Avoid_: dashboard, home, agenda (as a screen).
 
 **Calendar context**:
 What the day says about a note: the event it was recorded inside, when that
@@ -1496,6 +1512,29 @@ after the `#` is the key, it never reaches the service, and it is what makes
 the link a bearer credential rather than an address.
 _Avoid:_ "share URL" when only the address is meant (half a link opens nothing).
 
+**Assignment** (French copy: *mission*): a standing goal the assistant
+works on again and again, on a cadence, on the one device the row names, and
+only while an app is open there, the menu bar included (ADR-0091). It has an
+autonomy ("ask before anything leaves the device" or "act within these
+tools"), the tool groups it may use, a **results inbox** where each run waits
+for Approve or Reject with feedback the next run reads, and a history. A
+missed slot runs once, late, and says so.
+_Avoid:_ "agent" alone (the assistant is the agent), "job" (Studio's),
+"routine" (a desktop Hermes cron job the person set up directly), "task"
+alone (the agent's chat record).
+
+**Scheduled task** (French copy: *tâche programmée*): an assignment whose
+results need no review: it runs on its cadence and notifies. The phones'
+answer to the desktop's routines, kept in the same rows as assignments.
+_Avoid:_ "routine" for the phone's (that word stays with Hermes cron),
+"reminder" (nothing is reminded, something is done).
+
+**Run** (of an assignment): one execution, a row in `assignment_runs` that
+answers one slot. Running, to review, approved, rejected, done or failed.
+On the desktop it rides a one-shot Hermes cron job, on the phone an
+agent-lite chat.
+_Avoid:_ "research run" (deep research's), "session" (Hermes').
+
 **Errand**: one of your devices asking another of your devices to fetch a
 link, because that one has the extractor and this one cannot
 ([ADR-0054](docs/adr/0054-an-errand-runs-on-the-device-that-has-the-means.md)).
@@ -1505,6 +1544,8 @@ instruction rather than a record.
 _Avoid:_ "job" or "task" (those are Studio's and the agent's, and both are
 records of work already done), "remote import" (nothing is remote: the import
 happens on your own machine), "queue" (an errand is addressed, not taken).
+An errand can also ask a device to run one of the account's assignments now
+(`subrosa://assignment/<id>`, ADR-0091).
 
 **Device key** (French copy: *clé d'appareil*): a `cdm_` key that one device
 obtained from Carpe Diem because its Sub Rosa account vouched for it

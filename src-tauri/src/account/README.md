@@ -146,6 +146,7 @@ It is excluded from the AI usage counters.
 | Conversations | Portable visible user/assistant history; explicit continuation starts a new turn |
 | Imports | Historical ingest metadata and resulting notes/transcripts; no remote download or paid execution |
 | Studio | Completed gallery files and available prompt/model metadata; the gallery's collections, favourites and hidden marks (ADR-0073); a gallery delete removes the file on every device; no remote job execution |
+| Assignments | Assignments and scheduled tasks (`assignments`) and their runs with verdicts and feedback (`assignment_runs`); only the device a row names runs it, under the errand guards, and the slot ledger stays local (ADR-0091) |
 | Provider configuration | Encrypted URL/key, activated only after explicit authenticated validation |
 | Usage | Observed request counts/bytes, available turn counters, and dated balance snapshots |
 

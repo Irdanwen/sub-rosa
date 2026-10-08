@@ -41,6 +41,12 @@ pub async fn sweep(app: &AppHandle) {
     // A dictation whose transcription never came back.
     #[cfg(mobile)]
     crate::dictation_mobile::resume_pending(app).await;
+    // Assignments and scheduled tasks (ADR-0091): close the runs that
+    // finished, run the slot that came due while the app was away, once and
+    // late. Before the chat resume, so a run's turn is resumed with its own
+    // tools rather than a chat's.
+    crate::assignments::tick(app).await;
+    crate::moments::daily::tick(app).await;
     // A chat turn cut off between the user's message and the reply.
     crate::agent_lite::resume_interrupted_turns(app).await;
     // A chat whose first reply landed but whose title never came back.
@@ -96,5 +102,9 @@ pub fn sweep_detached(app: &AppHandle) {
 /// waking the app up for a background window that finds nothing to do costs
 /// future scheduling priority.
 pub fn has_pending_work() -> bool {
-    crate::ios_background::work_in_flight() || crate::carpe_diem::jobs::has_active()
+    crate::ios_background::work_in_flight()
+        || crate::carpe_diem::jobs::has_active()
+        // A scheduled task or assignment this phone runs: iOS may wake the
+        // app now and then to look, opportunistically (ADR-0091).
+        || crate::assignments::has_scheduled_work()
 }

@@ -311,6 +311,55 @@ pub(super) const TABLES: &[Table] = &[
             "model",
         ],
     },
+    // Assignments and their runs (ADR-0091). The row names the one device
+    // that runs it, so it travels as a record: any device can create, pause
+    // or review one, and only the named device acts on it, with the errand
+    // guards. A run is history wherever it lands: a device only ever closes
+    // the runs it started itself.
+    Table {
+        name: "assignments",
+        kind: "settings",
+        columns: &[
+            "id",
+            "kind",
+            "title",
+            "goal",
+            "cadence",
+            "at_minute",
+            "weekday",
+            "every_hours",
+            "autonomy",
+            "tools",
+            "device_id",
+            "device_name",
+            "origin_device_id",
+            "paused",
+            "active_since",
+            "created_at",
+            "updated_at",
+        ],
+    },
+    Table {
+        name: "assignment_runs",
+        kind: "artifact",
+        columns: &[
+            "id",
+            "assignment_id",
+            "slot",
+            "late",
+            "device_id",
+            "device_name",
+            "handle",
+            "state",
+            "result",
+            "error",
+            "feedback",
+            "reviewed_at",
+            "started_at",
+            "finished_at",
+            "updated_at",
+        ],
+    },
     // An errand travels as an ordinary revision: the service carries it without
     // being able to read the link inside, and the device it names is the only
     // one that acts on it (ADR-0054).

@@ -151,6 +151,7 @@ describe("destination addresses", () => {
       { kind: "dictation" },
       { kind: "studio" },
       { kind: "record" },
+      { kind: "today" },
     ] as const;
     for (const destination of cases) {
       expect(parseDestination(destinationUrl(destination))).toMatchObject(destination);
@@ -161,6 +162,8 @@ describe("destination addresses", () => {
     expect(destinationUrl({ kind: "chat" })).toBe("subrosa://chat");
     expect(destinationUrl({ kind: "dictation" })).toBe("subrosa://dictation");
     expect(destinationUrl({ kind: "studio" })).toBe("subrosa://studio");
+    expect(destinationUrl({ kind: "today" })).toBe("subrosa://today");
+    expect(parseDestination("subrosa://today/extra")).toBeNull();
   });
 });
 

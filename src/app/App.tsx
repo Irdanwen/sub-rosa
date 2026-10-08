@@ -56,6 +56,7 @@ import type { ReportCategory } from "../components/agent/composer/reportCategory
 import { DictationHistoryView } from "../components/dictation/DictationHistoryView";
 import { FoldersWorkspace } from "../components/folders/FoldersWorkspace";
 import { RoutinesView } from "../components/routines/RoutinesView";
+import { TodayView } from "../components/assignments/TodayView";
 import { MoveNoteToFolderDialog } from "../components/folders/MoveNoteToFolderDialog";
 import { MoveSessionToProjectDialog } from "../components/folders/MoveSessionToProjectDialog";
 import { NoteEditor } from "../components/note-editor/NoteEditor";
@@ -1529,6 +1530,9 @@ export function App() {
         break;
       case "record":
         void handleStartMeetingDetectedRecording();
+        break;
+      case "today":
+        setActiveView("today");
         break;
       // Shared in from outside the app. Land on the notes list, where the
       // download is visible, rather than starting something invisible.
@@ -3061,6 +3065,8 @@ export function App() {
                 <StudioView />
               ) : activeView === "library" ? (
                 <LibraryView header={<h1 className="library-view-title">{t("Library")}</h1>} />
+              ) : activeView === "today" ? (
+                <TodayView />
               ) : activeView === "routines" ? (
                 <RoutinesView
                   onCreateRoutine={(prompt) => {
