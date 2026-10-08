@@ -14,13 +14,14 @@
  * values: the call sites stay pairs of plain template strings.
  *
  * Catalogs are loaded per language and per part, with the code that shows
- * them: `site` before the first render, `app` with the web client, `models`
+ * them: `site` before the first render, `app` with the web client, `addins`
+ * with an Office task pane (after `app`, which the panes reuse), `models`
  * with the model catalog and `models:<kind>` with a kind's detail chunk.
  */
 
 export type SiteLocale = "en" | "fr" | "de" | "it" | "es" | "pt-BR";
 /** `models:<kind>` is a kind's family depth, loaded with its detail chunk. */
-export type MessagePart = "site" | "app" | "models" | `models:${string}`;
+export type MessagePart = "site" | "app" | "addins" | "models" | `models:${string}`;
 
 /** Every language the site speaks, in the order the picker lists them. */
 export const SITE_LOCALES: readonly SiteLocale[] = ["en", "fr", "de", "it", "es", "pt-BR"];

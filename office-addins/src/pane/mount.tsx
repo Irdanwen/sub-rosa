@@ -1,6 +1,10 @@
 import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { setWebsiteLocale } from "../../../website/src/lib/i18n";
+import {
+  requireWebsiteMessages,
+  setWebsiteLocale,
+  siteLocaleFromTag,
+} from "../../../website/src/lib/i18n";
 import {
   displayLanguage,
   type HostName,
@@ -11,9 +15,21 @@ import {
 import { OfficeAccess, type Ready } from "./Access";
 import "../office.css";
 
-/** The site's copy follows Office's display language. */
-export function applyOfficeLanguage(office: OfficeGlobal | null) {
-  setWebsiteLocale(displayLanguage(office).toLowerCase().startsWith("fr") ? "fr" : "en");
+/**
+ * The site's copy follows Office's display language, in any of the site's
+ * six. The four catalog languages need their words before the first render:
+ * the site's, the web client's the panes reuse, and the panes' own (`addins`,
+ * kept by `scripts/i18n/website.mjs`).
+ */
+export async function applyOfficeLanguage(office: OfficeGlobal | null) {
+  const locale = siteLocaleFromTag(displayLanguage(office)) ?? "en";
+  setWebsiteLocale(locale);
+  await Promise.all([
+    requireWebsiteMessages("app", locale),
+    requireWebsiteMessages("addins", locale),
+  ]).catch(() => {
+    // A catalog that fails to load leaves the pane in English, never blank.
+  });
 }
 
 /** Mounts a host's pane once Office is ready, behind the account gate. */
@@ -25,7 +41,7 @@ export async function mountPane(
   const ready = await officeReady(found);
   // A page opened outside Office still renders, and says so.
   const office = ready ? found : null;
-  applyOfficeLanguage(office);
+  await applyOfficeLanguage(office);
   const root = document.getElementById("root");
   if (!root) return;
   createRoot(root).render(

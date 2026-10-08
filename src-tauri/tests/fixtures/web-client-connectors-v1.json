@@ -1,0 +1,30 @@
+{
+  "account": "0191d1a4-0000-7000-8000-00000000a11c",
+  "key": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
+  "changes": [
+    {
+      "sequence": 1,
+      "operation_id": "89f7a12c-6c0a-4f53-b5e0-67b717084568",
+      "object_id": "30d6d457-5215-5277-8982-cdf85fe0357b",
+      "revision": "0192f000-0000-7000-8000-000000000001",
+      "parent_revision": null,
+      "resolved_revisions": [],
+      "kind": "settings",
+      "ciphertext": "{\"v\":1,\"nonce\":\"r1sWYfuL9yBmf3sE\",\"ciphertext\":\"bXCeMlHxdiPIFk5FIbindGNJLCvRgSQ1Od1-7zQylvjSZNQto2mfY_5tUuXPFDvwSQOVHWssKvoHbx_rbgt14CA9OGQ9gz7pDQHUiSY6KE4x7LtY_3beydPMSQkU9DBswYLpZ4VtnRejHHZefXQb4aSyFq8aBte2L9HEPu_n5Lgp1HH4KJO9XfUcfPAln6gBbHhHwi2bF9nMwyPE7eBATccBB2tYMNgD4PXD9D2-ns1_VDDUETvBNtE4W9DzfmVPCubTWApGO_WlIRDjpoS3HBFPESl8nUMDCZYm296SzIwB_olARnH22GmayFiz3ZmnBZleYOJcEYQLvi098yq7F8uW1fKs0AiPCOS9crtebu25aQ11DqWv-01eHOJJMla6ZpbyWtxCrNW_2Vjp-WsyGLfbank-5rz9OUrBbpNSWUwU5X0_LS6UNFLaerhpKokKm2PFJl40srpgAFZ--bToC9t1Y-6IvVyJ5woSgz6Pk2LavWP5XYzdMMpkq0Fn86Peu_QS-CJczFvcTFuUO8VZh5tUNLH9XKc0\"}",
+      "deleted": false,
+      "device_id": "device"
+    },
+    {
+      "sequence": 2,
+      "operation_id": "6508480b-b1ca-4ecd-a2e6-f7af53fc7818",
+      "object_id": "33f5ab74-9a79-5741-b463-bc2823b54444",
+      "revision": "0192f000-0000-7000-8000-000000000002",
+      "parent_revision": null,
+      "resolved_revisions": [],
+      "kind": "settings",
+      "ciphertext": "{\"v\":1,\"nonce\":\"vNkxnNk50Yuu81WA\",\"ciphertext\":\"6YHoP8U_YBkPsyrJYWnlB9croydYuytXqEc2Gh-LJxbBs1VYLNX3ZYGaG3mz6aXXtqawYuXv9374ZxQJt6uq05SCDaRZF_uZAXQv6tDGSpe7xiHakZnG5teBi-EMep3zEhZ3J1nkVwqyx5FJPtRnLyvO9HWV-O5ZIBb5lrb8q8AZJnr2RhmmWtB0gPYtHZqahultKqpAOGg0peB4OmZHuDEyXyiFbOoXl449LoacG7tifVNUqumOhvDbhCVLdkv0B0w2qq6mRqk2QZSfSNovkjVYiCYqTEkK0dqA3BTSHBLfC5ZKCxqomvQW6JpHuxETXnsSSj1nDpLcdKIdNHMDCS6h4mbSHMRDxr3k9oVv_L6axKIWUizhcejNUgfVZjjd2UtWBnQaCPkmE0b8I0q8nxEJ2zV2YrmBpiC92kRdm1V7kvGPkg4RVOvayLCMq_52zsYPMaLyqJ0VBvadYpuGS-uZzRmVbeKJjrLAo74pfv4aSqyFONOslBQ3ckO63qN1LxWwIwMKVQ\"}",
+      "deleted": false,
+      "device_id": "device"
+    }
+  ]
+}

@@ -3,7 +3,9 @@ import type { Account } from "../../lib/api";
 import { t } from "../../lib/i18n";
 import type { Operator } from "../carpe-diem";
 import { type FeatureStore, featureStore } from "../feature";
+import { listProjects } from "../projects";
 import { type ClientStore, availableClientStore } from "../store";
+import type { SyncClient } from "../sync";
 import {
   type Me,
   type OpenedInvitation,
@@ -28,6 +30,7 @@ import {
   type PendingInvitation,
   admit,
   createInvitation,
+  createSpace,
   pendingInvitations,
   removeMember,
   revokeInvitation,
@@ -108,6 +111,7 @@ export function SpacesEntry({
   model,
   transport = serviceSpaces,
   store: givenStore,
+  sync = null,
 }: {
   account: Account;
   vaultKey: Key;
@@ -116,6 +120,8 @@ export function SpacesEntry({
   model: string;
   transport?: SpacesTransport;
   store?: ClientStore;
+  /** The account's projects, the ones a person may share from here. */
+  sync?: SyncClient | null;
 }) {
   const [store, setStore] = useState<ClientStore | null>(givenStore ?? null);
   const [enabled, setEnabled] = useState(false);
@@ -127,7 +133,9 @@ export function SpacesEntry({
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sharing, setSharing] = useState("");
   const code = useMemo(codeInAddress, []);
+  const projects = sync ? listProjects(sync) : [];
   const secrets = useMemo(
     () => (store ? featureStore(account.id, vaultKey, store, "spaces") : null),
     [store, account.id, vaultKey],
@@ -272,9 +280,52 @@ export function SpacesEntry({
           {spaces.length === 0 && (
             <li className="quiet">
               {t(
-                "No shared projects yet. Share a project from the app, or open an invitation link.",
-                "Aucun projet partagé pour l’instant. Partagez un projet depuis l’app, ou ouvrez un lien d’invitation.",
+                "No shared projects yet. Share one of your projects, or open an invitation link.",
+                "Aucun projet partagé pour l’instant. Partagez l’un de vos projets, ou ouvrez un lien d’invitation.",
               )}
+            </li>
+          )}
+          {projects.length > 0 && (
+            <li className="wc-spaces-card wc-spaces-share">
+              <label>
+                {t("Share a project", "Partager un projet")}
+                <select
+                  className="wc-spaces-input"
+                  value={sharing}
+                  onChange={(event) => setSharing(event.target.value)}
+                >
+                  <option value="">{t("Choose a project", "Choisissez un projet")}</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="quiet">
+                {t(
+                  "The shared project starts as a copy of its name, instructions and files. Your project stays as it is.",
+                  "Le projet partagé commence par une copie de son nom, de ses instructions et de ses fichiers. Votre projet reste tel quel.",
+                )}
+              </p>
+              <button
+                type="button"
+                className="button primary"
+                disabled={busy || !store || !sharing}
+                onClick={() =>
+                  void run(async () => {
+                    const project = projects.find((item) => item.id === sharing);
+                    if (!store || !project) return;
+                    // Only what was read from a file travels, as in the app.
+                    const files = project.files.filter((file) => file.status === "ready");
+                    setView(await createSpace(transport, store, me, { ...project, files }));
+                    setSharing("");
+                    void listSpaces(transport).then(setSpaces);
+                  })
+                }
+              >
+                {t("Share", "Partager")}
+              </button>
             </li>
           )}
           {spaces.map((space) => (

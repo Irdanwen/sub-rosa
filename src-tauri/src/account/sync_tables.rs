@@ -538,3 +538,25 @@ pub(crate) fn columns_of(name: &str) -> Option<(&'static str, &'static [&'static
         .find(|t| t.name == name)
         .map(|t| (t.kind, t.columns))
 }
+
+/// The column a table's object id is read from. A row is its own object
+/// everywhere but in `connectors`, whose ids are catalog names (`sentry`) the
+/// service refuses: there the object is the UUID derived from the id
+/// (`connectors::object_id`), kept in a local column that never travels.
+pub(super) fn object_column(t: &Table) -> &'static str {
+    if t.name == "connectors" {
+        "object_id"
+    } else {
+        "id"
+    }
+}
+
+/// The object a received row of `table` must arrive under: its own id, or
+/// for a connector the UUID every device derives from it.
+pub(super) fn object_of(table: &str, row_id: &str) -> String {
+    if table == "connectors" {
+        crate::connectors::object_id(row_id)
+    } else {
+        row_id.to_string()
+    }
+}

@@ -1572,6 +1572,52 @@ th {
   border-top: 1px solid var(--border);
 }
 
+/* Pipe tables in a note or a reply (lib/markdown.tsx). The table keeps its
+   natural width and its box scrolls sideways, so a phone scrolls the table
+   rather than the page. Cells wrap at word boundaries only: `.reader`'s
+   `anywhere` would let a column collapse to a letter wide instead of
+   scrolling. Alignment comes from classes, never a `style` attribute (CSP). */
+.reader-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.reader-table {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: 0.9375rem;
+}
+.reader-table th,
+.reader-table td {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+  min-width: 6ch;
+  max-width: 40ch;
+  border-bottom: 1px solid var(--border);
+}
+.reader-table th + th,
+.reader-table td + td {
+  border-left: 1px solid var(--border);
+}
+.reader-table thead th {
+  font-weight: 600;
+  background: var(--surface);
+}
+.reader-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.reader-table .align-center {
+  text-align: center;
+}
+.reader-table .align-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* End of pipe tables. */
+
 .note-list {
   display: grid;
   gap: 8px;

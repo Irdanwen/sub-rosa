@@ -149,3 +149,17 @@ protocol and nothing new on the service
   "Preview", with the sentence that the protocol has not been independently
   reviewed. Creating a space still starts from a project in the app.
 
+
+## Addendum (2026-10-08, later): a tab creates a space too
+
+The last sentence above no longer holds. Behind the same Preview switch, the
+web client shares one of the account's projects as a new space
+(`createSpace` in `website/src/client/spaces/membership.ts`), as
+`spaces_create` does in the app: the first head signed by its owner alone,
+the first key sealed to that owner, then the project's name, instructions
+and the text of its ready files, each written under epoch 1. The project
+itself is untouched. `client::compose_creation` (Rust) and `composeCreation`
+(TypeScript) build the request, and the shared vectors
+(`operations.creation` in `spaces-v1.json`) hold them to the same bytes; the
+created head is the chain's epoch 1. A tab carries no display name and no
+notes into the space, since it holds neither for a project.

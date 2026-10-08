@@ -213,7 +213,8 @@ fn known_keys(
 /// the browser's `composeRotation` is held to the same request bytes:
 /// - the owner admits Carol at epoch 3 (her earlier keys sealed to her);
 /// - the owner removes Bob at epoch 4 (no departure, no key for him);
-/// - Carol rotates Bob out at epoch 4 after he signed a leave statement.
+/// - Carol rotates Bob out at epoch 4 after he signed a leave statement;
+/// - Alice creates the space (`client::compose_creation`) as epoch 1.
 fn operations() -> Value {
     use crate::account::spaces::client::{compose_rotation, Admission};
     let heads = chain();
@@ -307,6 +308,19 @@ fn operations() -> Value {
             unwrap_key(&secret, wrapped["sealed"].as_str().unwrap(), head, account).unwrap();
         }
     }
+    // Alice shares a project: epoch 1, her key sealed to her alone.
+    let creation = crate::account::spaces::client::compose_creation(
+        &alice(),
+        ALICE,
+        &alice().bundle(ALICE, CREATED),
+        SPACE,
+        &key(1),
+        CREATED,
+        &[0xb0; 32],
+    )
+    .unwrap();
+    assert_eq!(creation.head, heads[0], "a creation is the chain's epoch 1");
+    unwrap_key(&alice(), &creation.wrapped_key, &creation.head, ALICE).unwrap();
     let expires_at = "2026-10-15T12:00:00Z";
     let payload = InvitePayload {
         v: 1,
@@ -317,6 +331,14 @@ fn operations() -> Value {
     };
     json!({
         "ephemerals_from": b64(&[0xa0u8; 32]),
+        "creation": {
+            "space_id": SPACE,
+            "key": b64(&key(1)),
+            "created_at": CREATED,
+            "ephemeral_secret": b64(&[0xb0u8; 32]),
+            "request": creation.body(),
+            "hash": creation.head.hash(),
+        },
         "invitation_request": {
             "id": INVITATION,
             "token_hash": token_hash(&invite_token(&invite_secret, INVITATION)),

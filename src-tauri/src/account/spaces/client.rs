@@ -601,6 +601,47 @@ pub async fn rotate_if_due(ctx: &Ctx, space_id: &str, v: &Verified) -> Result<bo
 
 // --- Creating, inviting, joining ---------------------------------------------
 
+/// A new space, before the network: its first head, signed by its owner
+/// alone, and the first key sealed to that owner. The browser builds the same
+/// one (`composeCreation` in `website/src/client/spaces/membership.ts`), and
+/// the shared vectors hold the two to the same bytes.
+pub struct Creation {
+    pub head: EpochHead,
+    pub wrapped_key: String,
+}
+impl Creation {
+    /// The body of `POST /api/v1/spaces`.
+    pub fn body(&self) -> Value {
+        json!({"head": self.head, "wrapped_key": self.wrapped_key})
+    }
+}
+pub fn compose_creation(
+    identity: &IdentitySecret,
+    me: &str,
+    bundle: &IdentityBundle,
+    space_id: &str,
+    key: &[u8; 32],
+    created_at: &str,
+    ephemeral: &[u8; 32],
+) -> Result<Creation, AppError> {
+    let head = EpochHead::sign(
+        HeadDraft {
+            space_id,
+            epoch: 1,
+            prev: None,
+            owner: me,
+            members: vec![HeadMember::from_bundle(bundle, ROLE_OWNER)],
+            key,
+            author: me,
+            departures: vec![],
+            created_at,
+        },
+        identity,
+    );
+    let wrapped_key = protocol::wrap_key_with(ephemeral, key, &bundle.x25519, space_id, 1, me)?;
+    Ok(Creation { head, wrapped_key })
+}
+
 pub async fn create(
     pool: &SqlitePool,
     ctx: &Ctx,
@@ -609,28 +650,23 @@ pub async fn create(
 ) -> Result<String, AppError> {
     let space_id = uuid::Uuid::new_v4().to_string();
     let key = protocol::random_space_key();
-    let head = EpochHead::sign(
-        HeadDraft {
-            space_id: &space_id,
-            epoch: 1,
-            prev: None,
-            owner: ctx.me(),
-            members: vec![HeadMember::from_bundle(&ctx.bundle, ROLE_OWNER)],
-            key: &key,
-            author: ctx.me(),
-            departures: vec![],
-            created_at: &chrono::Utc::now().to_rfc3339(),
-        },
+    let creation = compose_creation(
         &ctx.identity,
-    );
-    let wrapped = protocol::wrap_key(&key, &ctx.bundle.x25519, &space_id, 1, ctx.me())?;
+        ctx.me(),
+        &ctx.bundle,
+        &space_id,
+        &key,
+        &chrono::Utc::now().to_rfc3339(),
+        &Zeroizing::new(rand::random()),
+    )?;
     call(
         &ctx.s,
         Method::POST,
         "/api/v1/spaces",
-        Some(json!({"head": head, "wrapped_key": wrapped})),
+        Some(creation.body()),
     )
     .await?;
+    let head = creation.head;
     store::insert_space(
         pool,
         store::NewSpace {

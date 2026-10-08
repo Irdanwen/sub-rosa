@@ -213,3 +213,36 @@ the last consequence above.
 Release gates added: registering the GitHub OAuth app with the device flow
 enabled, and a check on real hardware that Hermes's approval card shows the
 connector sentence.
+
+## Addendum (2026-10-08): a connector travels under a UUID derived from its id
+
+The definition row never travelled. A catalog connector's id is its catalog
+name (`sentry`, `google`) and a custom one's is a slug with a short suffix,
+while the account service accepts only UUID object ids: every push was
+refused, held as a sync issue on the device and as a failed write in a tab,
+so a connector added anywhere stayed there (recorded in ADR-0107).
+
+- **The object id is derived, the row id is kept.** A connector's object is
+  `uuid5(NAMESPACE_URL, "subrosa:connector:<id>")`
+  (`connectors::object_id`, `connectorObjectId` in the web client, the same
+  vectors asserted on both sides). The row keeps the id its keychain slots,
+  tool names (`<slug>__<tool>`), triggers, relays and errands are filed
+  under, so nothing a person set up is renamed. Two devices that add the same
+  catalog connector write one object.
+- **The derivation is checked, not trusted.** A received connector applies
+  only when its object is the one its row's id derives; the app keeps the
+  object id in a local column (`connectors.object_id`, migration
+  `075_connector_object_ids.sql`) that never travels, so no released app
+  meets an unknown column. The sync engine reads the object from that column
+  for this table alone (`sync_tables::object_column`), deletes a received
+  tombstone by it, and keeps a local copy for review by it.
+- **What was refused is sent again.** The migration drops the outbox rows
+  and sync issues queued under the old ids; the app names its existing rows
+  as it opens and queues those that never left. A tab re-keys a write it
+  queued under an old id when it loads, dropping the refusal and the frozen
+  bytes the service never accepted.
+- **Changing the row id to a UUID was rejected**: it would have moved every
+  keychain entry (a fresh sign-in on each device) and renamed every tool a
+  skill pack, an assistant or an assignment names. Skill packs, connector
+  relays, connector errands and daily brief cards already travel under UUIDs
+  and are unchanged.

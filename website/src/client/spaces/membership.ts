@@ -1,10 +1,10 @@
 /**
- * Changing who is in a shared project, from this tab (ADR-0098): the owner
- * makes an invitation link, checks the acceptance that comes back, admits,
+ * Making a shared project and changing who is in it, from this tab
+ * (ADR-0098): the owner shares a project as a new space, makes an invitation link, checks the acceptance that comes back, admits,
  * and removes; any member rotates out someone who signed themselves out.
  * The same steps as the app (`account/spaces/client.rs`, `commands.rs`),
- * and the shared vectors hold `composeRotation` to `compose_rotation`'s
- * bytes.
+ * and the shared vectors hold `composeCreation` and `composeRotation` to
+ * `compose_creation`'s and `compose_rotation`'s bytes.
  *
  * An invitation's secret never leaves the browser that made the link: it is
  * kept in the feature's store, sealed under the vault key, because the
@@ -12,7 +12,15 @@
  * in the app is admitted from the app, and the reverse.
  */
 import type { FeatureStore } from "../feature";
-import type { DetailInvitation, Me, SpaceView, SpacesTransport } from "./client";
+import type { ClientStore } from "../store";
+import {
+  type DetailInvitation,
+  type Me,
+  openSpace,
+  type SpaceView,
+  type SpacesTransport,
+  write,
+} from "./client";
 import {
   type Bytes,
   b64,
@@ -28,6 +36,7 @@ import {
   inviteToken,
   memberFromBundle,
   ROLE_MEMBER,
+  ROLE_OWNER,
   safetyNumber,
   sealPayload,
   signHead,
@@ -50,6 +59,102 @@ export class MembershipError extends Error {
   ) {
     super(code);
   }
+}
+
+// --- Creating ----------------------------------------------------------------
+
+export interface Creation {
+  head: EpochHead;
+  wrapped_key: string;
+}
+
+/**
+ * A new space, without the network: its first head, signed by its owner
+ * alone, and the first key sealed to that owner. `compose_creation`'s
+ * bytes; `ephemeral` is for the vectors only.
+ */
+export async function composeCreation(draft: {
+  identity: IdentitySecret;
+  me: string;
+  bundle: IdentityBundle;
+  spaceId: string;
+  key: Bytes;
+  createdAt: string;
+  ephemeral?: Bytes;
+}): Promise<Creation> {
+  const head = await signHead(
+    {
+      spaceId: draft.spaceId,
+      epoch: 1,
+      prev: null,
+      owner: draft.me,
+      members: [memberFromBundle(draft.bundle, ROLE_OWNER)],
+      key: draft.key,
+      author: draft.me,
+      departures: [],
+      createdAt: draft.createdAt,
+    },
+    draft.identity,
+  );
+  await verifyNext(null, head);
+  const wrapped_key = await wrapKey(
+    draft.key,
+    draft.bundle.x25519,
+    draft.spaceId,
+    1,
+    draft.me,
+    draft.ephemeral,
+  );
+  return { head, wrapped_key };
+}
+
+/** What a shared project starts with: a copy of the project, which itself
+ * stays as it is. Files are carried as the text read from them. */
+export interface ProjectCopy {
+  name: string;
+  instructions: string;
+  files: { name: string; format: string; text: string }[];
+}
+
+/** `commands.rs`'s `clean`: trimmed, and cut to the protocol's bound. */
+const clean = (value: string, max: number) => Array.from(value.trim()).slice(0, max).join("");
+
+/**
+ * Shares a project from this tab, as `spaces_create` does in the app: a new
+ * space this account owns, then the project's name and instructions and its
+ * files, each written under the first epoch. (A tab has no display name to
+ * carry: members show as "a member" until the person sets one in an app.) Answers the space, read back as any member reads it.
+ */
+export async function createSpace(
+  transport: SpacesTransport,
+  store: ClientStore,
+  me: Me,
+  project: ProjectCopy,
+): Promise<SpaceView> {
+  const spaceId = crypto.randomUUID();
+  const creation = await composeCreation({
+    identity: me.identity,
+    me: me.accountId,
+    bundle: me.bundle,
+    spaceId,
+    key: crypto.getRandomValues(new Uint8Array(32)) as Bytes,
+    createdAt: new Date().toISOString(),
+  });
+  await transport.send("POST", "/api/v1/spaces", creation);
+  const view = await openSpace(transport, store, me, spaceId);
+  const name = clean(project.name, 200);
+  await write(transport, me, view, "project", spaceId, {
+    name,
+    instructions: clean(project.instructions, 8000),
+  });
+  for (const file of project.files)
+    if (file.text.trim())
+      await write(transport, me, view, "file", crypto.randomUUID(), {
+        name: clean(file.name, 300),
+        format: clean(file.format, 40),
+        text: clean(file.text, 400_000),
+      });
+  return openSpace(transport, store, me, spaceId);
 }
 
 // --- Rotations ---------------------------------------------------------------

@@ -634,7 +634,21 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/074_connector_relays.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "075_connector_object_ids.sql",
+        include_str!("../../migrations/075_connector_object_ids.sql"),
+    )
+    .await?;
+    let named = crate::connectors::assign_object_ids(_pool).await?;
     crate::account::sync::install(_pool).await?;
+    // A connector that predates its object id never reached the service:
+    // it leaves now, under the id the service accepts.
+    if named > 0 {
+        if let Err(error) = crate::account::sync::enqueue_existing(_pool, "connectors", "1").await {
+            tracing::warn!(code = %error.code, "connector definitions not queued again");
+        }
+    }
     crate::diagnostics::mark("migrations");
 
     Ok(())

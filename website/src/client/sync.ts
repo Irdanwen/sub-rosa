@@ -35,6 +35,7 @@ import {
   validRow,
   WEB_KINDS,
 } from "./codec";
+import { objectIdOf } from "./object-ids";
 import type { ClientStore } from "./store";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -194,6 +195,7 @@ export class SyncClient {
         this.localContext(entry.operationId),
       ).catch(() => null);
       if (!body) continue;
+      await this.renamed(entry, body);
       this.outbox.push(entry);
       this.nextSequence = Math.max(this.nextSequence, entry.sequence + 1);
       this.overlay(entry.objectId, entry.kind, body, entry.deleted);
@@ -204,7 +206,7 @@ export class SyncClient {
   /** Authenticates a received revision the way `sync.rs::verify` does: the
    * AEAD context, the envelope against the service's metadata, a known table
    * of the right kind, a row naming only allowlisted columns, and the row's
-   * id equal to the object's. */
+   * id naming the object (`objectIdOf`). */
   private async verify(change: Change): Promise<Body | null> {
     if (!(WEB_KINDS as readonly string[]).includes(change.kind)) return null;
     const value: ProtectedObject = await decryptObject(this.key, this.accountId, change);
@@ -215,7 +217,10 @@ export class SyncClient {
     if (!isKnownTable(value.table)) return null;
     const table = tableOf(value.table);
     if (table.kind !== change.kind) throw new Error("Table and kind disagree");
-    if (!validRow(value.table, value.row) || value.row.id !== change.object_id)
+    if (
+      !validRow(value.table, value.row) ||
+      (await objectIdOf(table.name, value.row.id)) !== change.object_id
+    )
       throw new Error("Invalid row");
     const extra: Record<string, unknown> = {};
     for (const [field, content] of Object.entries(value))
@@ -366,7 +371,7 @@ export class SyncClient {
   // ── Writing ──────────────────────────────────────────────────────────────
 
   /**
-   * Queues an edit of `row` (its `id` is the object). Like the app's
+   * Queues an edit of `row` (its `id` names the object, `objectIdOf`). Like the app's
    * triggers, an edit rewrites the object's last unsent, never-sent write in
    * place instead of queueing another; one that may already be on the
    * service, or a resolution, is never rewritten.
@@ -376,8 +381,8 @@ export class SyncClient {
     row: Row,
     options: { deleted?: boolean; extra?: Record<string, unknown>; bodyTable?: string } = {},
   ): Promise<void> {
-    const id = row.id;
-    if (typeof id !== "string" || !validRow(table, row)) throw new Error("Invalid row");
+    const id = await objectIdOf(table, row.id);
+    if (id === null || !validRow(table, row)) throw new Error("Invalid row");
     const { kind } = tableOf(table);
     const existing = this.object(table, id);
     const bodyTable = existing?.bodyTable ?? options.bodyTable ?? table;
@@ -415,6 +420,20 @@ export class SyncClient {
 
   private outboxKey(entry: OutboxEntry) {
     return `${this.prefix}${String(entry.sequence).padStart(12, "0")}`;
+  }
+
+  /** A write queued under an object id the service refuses (a connector
+   * before its object was derived from its id) is queued again under the
+   * right one. The service never accepted it, so nothing of it is sealed for
+   * keeps: its frozen bytes and its refusal go with the old id. */
+  private async renamed(entry: OutboxEntry, body: Body) {
+    if (!isKnownTable(body.table)) return;
+    const id = await objectIdOf(tableOf(body.table).name, body.row?.id);
+    if (id === null || id === entry.objectId) return;
+    entry.objectId = id;
+    entry.sealed = undefined;
+    entry.failed = undefined;
+    await this.store.put("outbox", this.outboxKey(entry), entry);
   }
 
   /** Sends what waits, one object's writes in order. Stops at the first

@@ -68,11 +68,15 @@ export function listConnectors(sync: SyncClient): Connector[] {
     .map((entry) => entry.connector);
 }
 
+/** A connector's object is a UUID derived from its id (`objectIdOf`), so it
+ * is found by the id its row carries. */
+function objectOf(sync: SyncClient, id: string) {
+  return sync.rows("connectors").find((object) => object.row.id === id);
+}
+
 export function getConnector(sync: SyncClient, id: string): Connector | null {
-  const object = sync.objects.get(id);
-  return object && !object.deleted && object.table === "connectors"
-    ? connectorOf(object.row)
-    : null;
+  const object = objectOf(sync, id);
+  return object ? connectorOf(object.row) : null;
 }
 
 export class ConnectorError extends Error {
@@ -137,8 +141,8 @@ export async function addConnector(sync: SyncClient, connector: Connector) {
 }
 
 async function rewrite(sync: SyncClient, id: string, change: (connector: Connector) => Connector) {
-  const object = sync.objects.get(id);
-  if (!object || object.deleted) throw new ConnectorError("connector_not_found");
+  const object = objectOf(sync, id);
+  if (!object) throw new ConnectorError("connector_not_found");
   await sync.write(
     "connectors",
     rowOf(change(connectorOf(object.row)), String(object.row.created_at ?? timestamp())),
@@ -155,8 +159,8 @@ export const setToolRule = (sync: SyncClient, id: string, tool: string, rule: Ru
   }));
 
 export async function removeConnector(sync: SyncClient, id: string) {
-  const object = sync.objects.get(id);
-  if (!object || object.deleted) return;
+  const object = objectOf(sync, id);
+  if (!object) return;
   await sync.write("connectors", object.row, { deleted: true });
 }
 
