@@ -679,29 +679,50 @@ th {
 .button:active {
   transform: scale(0.97);
 }
+/* The language switch shows the current language's code; the native select
+   laid over it lists the six languages by their own names. */
 .locale-switch {
+  position: relative;
   display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
   margin: 0;
-  padding: 3px;
-  gap: 2px;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
-}
-.locale-switch button {
-  min-width: 37px;
-  min-height: 34px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
+  color: var(--foreground);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
-.locale-switch button[aria-pressed="true"] {
-  background: var(--foreground);
-  color: var(--background);
+.locale-switch:hover {
+  border-color: var(--border-hover);
+}
+.locale-switch span::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 0 3px 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+}
+.locale-switch select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  /* 16px keeps a phone from zooming the page when the list opens. */
+  font-size: 16px;
+}
+.locale-switch:has(select:focus-visible) {
+  outline: 3px solid var(--brand);
+  outline-offset: 3px;
 }
 .hero {
   min-height: 680px;

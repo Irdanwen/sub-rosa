@@ -1,8 +1,15 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
   initialWebsiteLocale,
+  LOCALE_CODES,
+  LOCALE_NAMES,
+  loadWebsiteMessages,
+  localizedPublicPath,
   rememberWebsiteLocale,
+  requireWebsiteMessages,
+  SITE_LOCALES,
   setWebsiteLocale,
+  splitLocalePath,
   t,
   type SiteLocale,
 } from "./lib/i18n";
@@ -16,9 +23,11 @@ import { modelsPath, useModelCatalog } from "./models/loader";
 import { SharePage } from "./pages/share";
 import { AssistantCatalog } from "./pages/assistants";
 
-/** The web client is its own chunk: the marketing pages never load it. */
+/** The web client is its own chunk, with its own words: the marketing pages never load them. */
 const WebAppPage = lazy(() =>
-  import("./pages/web-app").then((module) => ({ default: module.WebAppPage })),
+  Promise.all([import("./pages/web-app"), requireWebsiteMessages("app")]).then(([module]) => ({
+    default: module.WebAppPage,
+  })),
 );
 import "./style.css";
 import { registerAccountNavigation } from "./lib/webmcp";
@@ -26,8 +35,9 @@ import { accountsUnavailable, localizedSiteHref, siteHref, sitePaths } from "./l
 import releases from "./releases.json";
 
 const currentPath = () => (sitePaths.route(location.pathname) ?? "/not-found") + location.search;
-const publicRoute = (path: string) =>
-  path === "/fr" ? "/" : path.startsWith("/fr/") ? path.slice(3) : path;
+const publicRoute = (path: string) => splitLocalePath(path).page;
+const browserLanguages = () =>
+  typeof navigator === "undefined" ? "en" : (navigator.languages ?? navigator.language);
 
 function HomePage({ locale }: { locale: SiteLocale }) {
   const href = (path: string) => localizedSiteHref(path, locale);
@@ -320,21 +330,28 @@ export function App({ initialPath }: { initialPath?: string }) {
   // The assistant catalog (ADR-0097) lives with the account service it reads.
   const catalogPath = rawPathname === "/assistants" || rawPathname.startsWith("/assistants/");
   const returnPath = rawPathname === "/account/devices/return";
-  const [locale, setLocale] = useState<SiteLocale>(() =>
-    rawPathname === "/fr" || rawPathname.startsWith("/fr/")
-      ? "fr"
-      : accountPath || sharePath || catalogPath
-        ? initialWebsiteLocale(
-            rawPathname,
-            path.split("?")[1] ?? "",
-            typeof navigator === "undefined" ? "en" : navigator.language,
-          )
-        : "en",
+  const [locale, setLocale] = useState<SiteLocale>(
+    () =>
+      splitLocalePath(rawPathname).locale ??
+      (accountPath || sharePath || catalogPath
+        ? initialWebsiteLocale(rawPathname, path.split("?")[1] ?? "", browserLanguages())
+        : "en"),
   );
   const pathname = publicRoute(rawPathname);
   const catalog = useModelCatalog(modelsPath(pathname));
   setWebsiteLocale(locale);
   const href = (target: string) => localizedSiteHref(target, locale);
+  // `main.tsx` loads the words before the first render; this covers a
+  // render that did not go through it.
+  const [, setMessagesFor] = useState<SiteLocale | null>(null);
+  useEffect(() => {
+    if (locale === "en" || locale === "fr") return;
+    let live = true;
+    loadWebsiteMessages(locale).then(() => live && setMessagesFor(locale));
+    return () => {
+      live = false;
+    };
+  }, [locale]);
 
   useEffect(() => {
     if (new URLSearchParams(path.split("?")[1] ?? "").has("lang")) rememberWebsiteLocale(locale);
@@ -357,9 +374,10 @@ export function App({ initialPath }: { initialPath?: string }) {
     const changed = () => {
       const next = currentPath();
       setPath(next);
-      if (next === "/fr" || next.startsWith("/fr/")) {
-        rememberWebsiteLocale("fr");
-        setLocale("fr");
+      const prefixed = splitLocalePath(next.split("?")[0]).locale;
+      if (prefixed) {
+        rememberWebsiteLocale(prefixed);
+        loadWebsiteMessages(prefixed).then(() => setLocale(prefixed));
       } else if (
         !next.startsWith("/account") &&
         !next.startsWith("/s/") &&
@@ -414,7 +432,8 @@ export function App({ initialPath }: { initialPath?: string }) {
                     ? "Sub Rosa"
                     : `${t("Information", "Informations")} · Sub Rosa`;
   }, [locale, appPath, accountPath, sharePath, catalogPath, pathname, catalog]);
-  const changeLocale = (next: SiteLocale) => {
+  const changeLocale = async (next: SiteLocale) => {
+    await loadWebsiteMessages(next);
     rememberWebsiteLocale(next);
     setLocale(next);
     if (accountPath) {
@@ -428,7 +447,7 @@ export function App({ initialPath }: { initialPath?: string }) {
     if (sharePath || catalogPath) return;
     const destination = localizedSiteHref(pathname, next);
     history.pushState(null, "", destination);
-    setPath(next === "fr" ? (pathname === "/" ? "/fr/" : `/fr${pathname}`) : pathname);
+    setPath(localizedPublicPath(pathname, next));
   };
 
   return (
@@ -456,15 +475,20 @@ export function App({ initialPath }: { initialPath?: string }) {
               {t("Your account", "Votre compte")} <span aria-hidden="true">↗</span>
             </a>
           </nav>
-          <fieldset className="locale-switch">
-            <legend className="sr-only">{t("Website language", "Langue du site")}</legend>
-            <button type="button" aria-pressed={locale === "en"} onClick={() => changeLocale("en")}>
-              EN
-            </button>
-            <button type="button" aria-pressed={locale === "fr"} onClick={() => changeLocale("fr")}>
-              FR
-            </button>
-          </fieldset>
+          <label className="locale-switch">
+            <span aria-hidden="true">{LOCALE_CODES[locale]}</span>
+            <select
+              aria-label={t("Website language", "Langue du site")}
+              value={locale}
+              onChange={(event) => changeLocale(event.target.value as SiteLocale)}
+            >
+              {SITE_LOCALES.map((option) => (
+                <option key={option} value={option} lang={option}>
+                  {LOCALE_NAMES[option]}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </header>
       <main id="main" tabIndex={-1}>

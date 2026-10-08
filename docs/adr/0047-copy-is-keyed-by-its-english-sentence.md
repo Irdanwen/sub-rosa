@@ -171,3 +171,52 @@ native tables.
   `Contents/Resources/<lang>.lproj`. The plists keep the English as the
   fallback; `src/test/ios-privacy-usage.test.ts` holds every language to
   every key either plist declares.
+
+## Addendum (2026-10-08): the website speaks the same six languages
+
+The website (`website/`: public pages, guides, model catalog, account, shares,
+assistant catalog, the web client at `/app`) wrote its copy as pairs,
+`t("English", "Français")` and `Copy` data `[en, fr]`, roughly 4,300
+sentences in two hundred files that other work keeps editing. It now speaks
+German, Italian, Spanish and Brazilian Portuguese too, without touching a
+call site:
+
+- **The pairs stay; the other four languages are catalogs keyed by the
+  English**, as in the app. `t(en, fr)` returns `en` or `fr` for those two
+  languages and otherwise looks the English up in
+  `website/src/locales/**/<lang>.json`. A sentence a catalog lacks reads in
+  English. Rewriting 1,600 call sites to `t("…")` plus a French catalog was
+  the alternative; it would have conflicted with every branch in flight and
+  moved French out of the code its authors read.
+- **Templates are matched back, not rewritten.** A call such as
+  ``t(`${n} tools`, `${n} outils`)`` reaches `t` already filled in. The
+  extractor keys it as `{count} tools` (placeholder names from the
+  expressions); at run time a sentence with no exact entry is matched against
+  the templated keys, most specific first, and the translation is filled with
+  the captured values. Keys with fewer than three letters of their own are
+  never matched, so `{high} s` cannot swallow other sentences.
+- **An English word French reads two ways gets a key per reading**
+  (`Back [fr: Verso]`, `Back [fr: Retour]`), which `t` tries before the bare
+  English: the French already tells the senses apart, so the other languages
+  can too.
+- **Catalogs load with the code that shows them**: `site` before the first
+  render (`main.tsx` waits for it, as it waits for the catalog chunk),
+  `app` with the web client's chunk, `models` with the model catalog and
+  `models:<kind>` with each kind's detail chunk, so a catalog page still loads
+  only the depth it shows.
+- **The gate is the app's.** `scripts/i18n/website.mjs` finds every English
+  sentence (literal, conditional and template `t` arguments, constants typed
+  as literals, `Copy`-typed arrays, the `Copy` fields of the catalog JSON,
+  and a short list of variables it resolves); a `t` it cannot read is an
+  error. `src/test/website-i18n-catalog.test.tsx` runs it and holds each
+  catalog to every sentence through `verify-catalogs.mjs` (placeholders, no
+  typographic dash, product names kept, nothing left in English unless the
+  French also kept it), with the app's glossaries.
+- **Routes follow French's scheme:** each public page is prerendered under
+  `/de/`, `/it/`, `/es/` and `/pt-br/` as well, every page naming all six as
+  `hreflang` alternates plus `x-default`. Account, share, `/app` and
+  assistant URLs stay unprefixed and take `?lang=`. A first visit to the home
+  page follows the first of the browser's languages the site speaks. The
+  EN/FR buttons became a select naming each language in itself.
+- The four languages use the app's informal register (du, tu, tú, você);
+  the website's French keeps its "vous".

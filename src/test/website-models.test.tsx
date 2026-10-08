@@ -161,13 +161,16 @@ describe("model catalog", () => {
     }
   });
 
-  it("routes the catalog and every family in both locales", () => {
+  it("routes the catalog and every family in every locale", () => {
     const site = createSitePaths("/subrosa/", "https://accounts.example");
     const origin = "https://marketing.example";
-    for (const path of ["/subrosa/models", "/subrosa/fr/models"])
-      expect(site.handles(new URL(path, origin), origin)).toBe(true);
-    for (const family of families)
-      expect(site.handles(new URL(`/subrosa/fr/models/${family.slug}`, origin), origin)).toBe(true);
+    for (const language of ["", "/fr", "/de", "/it", "/es", "/pt-br"]) {
+      expect(site.handles(new URL(`/subrosa${language}/models`, origin), origin)).toBe(true);
+      for (const family of families)
+        expect(
+          site.handles(new URL(`/subrosa${language}/models/${family.slug}`, origin), origin),
+        ).toBe(true);
+    }
   });
 
   it("renders the French catalog and a family page on direct navigation", async () => {
