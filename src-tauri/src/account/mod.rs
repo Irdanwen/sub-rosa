@@ -25,6 +25,8 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
+#[cfg(test)]
+pub(crate) use sync_tables::columns_of;
 use tauri::AppHandle;
 use zeroize::Zeroizing;
 
@@ -993,7 +995,13 @@ pub async fn account_vault_create(app: AppHandle) -> Result<RecoveryKit, AppErro
         &s,
         reqwest::Method::PUT,
         "/api/v1/vault",
-        Some(json!({"expected_version":0,"envelope":envelope})),
+        // The verifier travels with the envelope, so this recovery key can
+        // admit a browser as a device later (ADR-0096). It is one-way.
+        Some(json!({
+            "expected_version": 0,
+            "envelope": envelope,
+            "admission_verifier": crypto::admission_verifier(&s.account.id, &recovery),
+        })),
     )
     .await
     {

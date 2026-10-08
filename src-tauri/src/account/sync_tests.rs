@@ -1929,3 +1929,68 @@ async fn items_saved_before_the_account_was_bound_leave_when_sync_turns_on() {
     set_enabled(&pool, true).await.unwrap();
     assert_eq!(outbox_rows(&pool, &saved.id).await.len(), 1);
 }
+
+/// What a browser device writes (WP19, ADR-0096) is what the app applies: the
+/// fixture is written by the web client's TypeScript sync writer
+/// (`src/test/website-sync.test.ts`), sealed with WebCrypto, and must pass
+/// this device's authentication and codec before it lands as ordinary rows.
+#[tokio::test]
+async fn a_browser_devices_writes_apply_as_ordinary_rows() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../tests/fixtures/web-client-objects-v1.json"
+    ))
+    .unwrap();
+    let pool = database().await;
+    let mut s = session_fixture();
+    s.account.id = fixture["account"].as_str().unwrap().to_string();
+    let key = crypto::decode_key(fixture["key"].as_str().unwrap()).unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    for raw in fixture["changes"].as_array().unwrap() {
+        let mut raw = raw.clone();
+        raw.as_object_mut().unwrap().remove("device_id");
+        let c: Change = serde_json::from_value(raw).unwrap();
+        let body = verify(&s, &key, &c).expect("a browser's revision authenticates");
+        assert!(apply(&mut tx, &c, &body).await.unwrap(), "{}", c.kind);
+    }
+    tx.commit().await.unwrap();
+    let task = query("SELECT id,title,status,model FROM agent_tasks")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(task.get::<String, _>("title"), "From the browser");
+    assert_eq!(task.get::<String, _>("status"), "completed");
+    let task_id: String = task.get("id");
+    let messages: Vec<String> =
+        query("SELECT role FROM agent_messages WHERE task_id=? ORDER BY created_at,id")
+            .bind(&task_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap()
+            .iter()
+            .map(|row| row.get("role"))
+            .collect();
+    assert_eq!(messages, ["user", "assistant"]);
+    let note = query("SELECT title,edited_content FROM notes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        note.get::<String, _>("edited_content"),
+        "Written in a browser."
+    );
+    let memory: String = query("SELECT text FROM memories")
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("text");
+    assert_eq!(memory, "Writes from a browser.");
+    let archived = query("SELECT 1 FROM session_folders sf JOIN folders f ON f.id=sf.folder_id WHERE sf.session_id=? AND f.name='Archive'")
+        .bind(&task_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+    assert!(
+        archived.is_some(),
+        "the archive travels as the app's folder membership"
+    );
+}

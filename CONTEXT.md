@@ -1702,6 +1702,15 @@ in that tab. Same page and same decryptor as the share viewer, different door.
 _Avoid:_ "web app", "web client" (it neither writes nor syncs). The web client
 that does both runs in a **browser device** (ADR-0096).
 
+**Web client** (French copy: *vos discussions* on the site): the chat at `/app`
+on the account website, run in a **browser device** with its bounded device key
+([ADR-0101](docs/adr/0101-the-web-client-runs-agent-lite-from-rusts-own-words.md)).
+It reads and writes the account's chats, notes and memories as the app's own
+rows, through the app's revision rules, and runs agent-lite's prompt and tools
+in the tab. Distinct from the **web reader**, which only reads notes.
+_Avoid:_ "web app" (it is the same Sub Rosa, not a second product), "online
+mode" (the app is not offline without it).
+
 ## Charter vocabulary
 
 The visual charter is [docs/design/charte.md](docs/design/charte.md); the values

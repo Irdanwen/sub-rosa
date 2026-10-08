@@ -17,7 +17,10 @@ export function createSitePaths(base = "/", accountOrigin = "") {
     if (!path.startsWith("/") || path.startsWith("//") || /[\\#]/.test(path))
       throw new Error("Invalid website path.");
     if (
-      (path === "/account" || path.startsWith("/account/") || path.startsWith("/account?")) &&
+      (path === "/account" ||
+        path.startsWith("/account/") ||
+        path.startsWith("/account?") ||
+        path === "/app") &&
       accountOrigin
     )
       return `${accountOrigin}${path}`;
@@ -48,7 +51,9 @@ export function createSitePaths(base = "/", accountOrigin = "") {
     // which `handles` refuses to intercept anyway, and it must not inherit the
     // state of whatever tab the reader clicked from.
     if (path.startsWith("/s/")) return false;
-    return !accountOrigin && (path === "/account" || path.startsWith("/account/"));
+    return (
+      !accountOrigin && (path === "/account" || path.startsWith("/account/") || path === "/app")
+    );
   };
   return {
     base,

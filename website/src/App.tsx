@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   initialWebsiteLocale,
   rememberWebsiteLocale,
@@ -14,6 +14,11 @@ import { guideBySlug, read } from "./pages/docs-content";
 import { modelsPath, useModelCatalog } from "./models/loader";
 
 import { SharePage } from "./pages/share";
+
+/** The web client is its own chunk: the marketing pages never load it. */
+const WebAppPage = lazy(() =>
+  import("./pages/web-app").then((module) => ({ default: module.WebAppPage })),
+);
 import "./style.css";
 import { registerAccountNavigation } from "./lib/webmcp";
 import { accountsUnavailable, localizedSiteHref, siteHref, sitePaths } from "./lib/paths";
@@ -308,7 +313,8 @@ function HomePage({ locale }: { locale: SiteLocale }) {
 export function App({ initialPath }: { initialPath?: string }) {
   const [path, setPath] = useState(initialPath ?? currentPath());
   const rawPathname = path.split("?")[0];
-  const accountPath = rawPathname === "/account" || rawPathname.startsWith("/account/");
+  const appPath = rawPathname === "/app";
+  const accountPath = appPath || rawPathname === "/account" || rawPathname.startsWith("/account/");
   const sharePath = rawPathname.startsWith("/s/");
   const returnPath = rawPathname === "/account/devices/return";
   const [locale, setLocale] = useState<SiteLocale>(() =>
@@ -384,18 +390,20 @@ export function App({ initialPath }: { initialPath?: string }) {
     document.documentElement.lang = locale;
     document.title = sharePath
       ? `${t("Shared with you", "Partagé avec vous")} · Sub Rosa`
-      : accountPath
-        ? `${t("Your account", "Votre compte")} · Sub Rosa`
-        : documentationPath(pathname) || pathname === "/help"
-          ? `${pathname.startsWith("/docs/") ? read(guideBySlug(pathname.slice(6))?.title ?? ["Documentation", "Documentation"]) : t("Documentation", "Documentation")} · Sub Rosa`
-          : modelsPath(pathname)
-            ? `${catalog ? catalog.modelCatalogTitle(pathname) : t("Model catalog", "Catalogue des modèles")} · Sub Rosa`
-            : pathname === "/downloads"
-              ? `${t("Download", "Télécharger")} · Sub Rosa`
-              : pathname === "/"
-                ? "Sub Rosa"
-                : `${t("Information", "Informations")} · Sub Rosa`;
-  }, [locale, accountPath, sharePath, pathname, catalog]);
+      : appPath
+        ? `${t("Chats", "Discussions")} · Sub Rosa`
+        : accountPath
+          ? `${t("Your account", "Votre compte")} · Sub Rosa`
+          : documentationPath(pathname) || pathname === "/help"
+            ? `${pathname.startsWith("/docs/") ? read(guideBySlug(pathname.slice(6))?.title ?? ["Documentation", "Documentation"]) : t("Documentation", "Documentation")} · Sub Rosa`
+            : modelsPath(pathname)
+              ? `${catalog ? catalog.modelCatalogTitle(pathname) : t("Model catalog", "Catalogue des modèles")} · Sub Rosa`
+              : pathname === "/downloads"
+                ? `${t("Download", "Télécharger")} · Sub Rosa`
+                : pathname === "/"
+                  ? "Sub Rosa"
+                  : `${t("Information", "Informations")} · Sub Rosa`;
+  }, [locale, appPath, accountPath, sharePath, pathname, catalog]);
   const changeLocale = (next: SiteLocale) => {
     rememberWebsiteLocale(next);
     setLocale(next);
@@ -482,6 +490,16 @@ export function App({ initialPath }: { initialPath?: string }) {
               {t("Download the current app", "Télécharger l’app actuelle")}
             </a>
           </section>
+        ) : appPath ? (
+          <Suspense
+            fallback={
+              <section className="page wrap" aria-busy="true">
+                <p role="status">{t("Opening your chats…", "Ouverture de vos discussions…")}</p>
+              </section>
+            }
+          >
+            <WebAppPage />
+          </Suspense>
         ) : accountPath ? (
           <AccountPage path={path} />
         ) : documentationPath(pathname) || pathname === "/help" ? (

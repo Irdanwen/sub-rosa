@@ -424,3 +424,14 @@ pub(super) const TABLES: &[Table] = &[
         ],
     },
 ];
+
+/// The routing kind and columns of one travelling table. The web client's
+/// codec is exported from here rather than written a second time
+/// (`agent_lite::web_client_export`).
+#[cfg(test)]
+pub(crate) fn columns_of(name: &str) -> Option<(&'static str, &'static [&'static str])> {
+    TABLES
+        .iter()
+        .find(|t| t.name == name)
+        .map(|t| (t.kind, t.columns))
+}

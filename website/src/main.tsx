@@ -26,7 +26,7 @@ if (redirectToFrench) {
   setWebsiteLocale(
     route === "/fr" || route.startsWith("/fr/")
       ? "fr"
-      : route.startsWith("/account") || route.startsWith("/s/")
+      : route.startsWith("/account") || route.startsWith("/s/") || route.startsWith("/app")
         ? initialWebsiteLocale(route, location.search, navigator.language)
         : "en",
   );

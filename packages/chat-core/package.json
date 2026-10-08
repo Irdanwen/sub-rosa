@@ -1,0 +1,16 @@
+{
+  "name": "@subrosa/chat-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The chat logic the Sub Rosa app and its web client share: no framework, no shell, no copy of their own.",
+  "type": "module",
+  "exports": {
+    "./context-gauge": "./src/context-gauge.ts",
+    "./reasoning-effort": "./src/reasoning-effort.ts",
+    "./speakable-text": "./src/speakable-text.ts",
+    "./chat-block-fence": "./src/chat-block-fence.ts",
+    "./conversation-markdown": "./src/conversation-markdown.ts",
+    "./agent-lite.json": "./agent-lite.json"
+  },
+  "files": ["src", "agent-lite.json"]
+}

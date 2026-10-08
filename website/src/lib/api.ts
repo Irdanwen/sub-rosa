@@ -138,11 +138,24 @@ export function revisionHeads(changes: Change[]): Change[] {
 }
 
 /** The kinds a browser reads. Bounded on purpose: the page holds a decryption
- * key, so what it is allowed to pull is a decision, not a parameter. */
-export type ReadableKind = "settings" | "usage" | "note";
+ * key, so what it is allowed to pull is a decision, not a parameter. The
+ * library and usage pages read notes, settings and usage; a browser device's
+ * web client also reads and writes conversations, memories and folders
+ * (ADR-0096). */
+export type ReadableKind = "settings" | "usage" | "note" | "conversation" | "memory" | "folder";
 
 export async function readChanges(signal?: AbortSignal, kind?: ReadableKind): Promise<Change[]> {
-  let cursor = 0;
+  return (await readChangesFrom(0, signal, kind)).changes;
+}
+
+/** Every change after `after`, and the cursor to resume from. A cursor is
+ * kept per filter: a notes cursor is never reused for settings. */
+export async function readChangesFrom(
+  after: number,
+  signal?: AbortSignal,
+  kind?: ReadableKind,
+): Promise<{ changes: Change[]; cursor: number }> {
+  let cursor = after;
   let bytes = 0;
   const changes: Change[] = [];
   // Bounded to avoid a hostile service exhausting browser memory.
@@ -177,7 +190,7 @@ export async function readChanges(signal?: AbortSignal, kind?: ReadableKind): Pr
         throw new ApiError("history_too_large", "Open the app to view this history.", 413);
       changes.push(change);
     }
-    if (!result.has_more) return changes;
+    if (!result.has_more) return { changes, cursor: result.cursor };
     if (result.cursor === cursor) throw new Error("Sync cursor did not advance");
     cursor = result.cursor;
   }
