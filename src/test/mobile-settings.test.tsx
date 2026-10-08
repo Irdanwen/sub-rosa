@@ -46,6 +46,11 @@ vi.mock("../lib/credits-purchase", () => ({
   usePayPolicy: () => purchase.policy,
   usePurchaseLinksAllowed: () => purchase.policy?.linkAllowed === true,
 }));
+const locale = vi.hoisted(() => ({ chooseLocaleAndReload: vi.fn() }));
+vi.mock("../lib/i18n", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/i18n")>()),
+  chooseLocaleAndReload: locale.chooseLocaleAndReload,
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: () => Promise.resolve("1.30.0") }));
 vi.mock("../lib/haptics", () => ({
@@ -134,6 +139,29 @@ describe("mobile settings root", () => {
     const card = screen.getByRole("button", { name: /balance, opens its details/i });
     expect(card).not.toHaveTextContent("Top up");
     expect(card).toHaveTextContent("Details");
+  });
+
+  it("lists every language by its own name in a sheet, and switches to the one picked", async () => {
+    render(<SettingsScreen onOpen={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /Language/ }));
+    const sheet = screen.getByRole("dialog", { name: "Language" });
+    expect(
+      within(sheet)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(
+      expect.arrayContaining([
+        "System",
+        "English",
+        "Français",
+        "Deutsch",
+        "Italiano",
+        "Español",
+        "Português (Brasil)",
+      ]),
+    );
+    await userEvent.click(within(sheet).getByRole("button", { name: "Deutsch" }));
+    expect(locale.chooseLocaleAndReload).toHaveBeenCalledWith("de");
   });
 
   it("explains a shortcut instead of copying it silently", async () => {
