@@ -8,28 +8,17 @@
 //! stream: the frame goes with the turn the person just finished saying,
 //! as an image attachment, and nothing is recorded between turns.
 
+use super::screen_frame::{capture_error, next_frame_path};
 use crate::domain::types::AppError;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn frames_dir() -> PathBuf {
-    std::env::temp_dir().join("subrosa-voice-frames")
-}
-
 pub fn permission_error() -> AppError {
     AppError::new(
         "voice_screen_permission",
         "Allow Sub Rosa in System Settings, Privacy and Security, Screen and System Audio Recording, then share your screen again.",
-    )
-}
-
-fn capture_error(detail: &str) -> AppError {
-    tracing::warn!(%detail, "voice screen frame failed");
-    AppError::new(
-        "voice_screen_failed",
-        "The screen could not be captured. Try again.",
     )
 }
 
@@ -39,11 +28,7 @@ pub fn capture() -> Result<PathBuf, AppError> {
     if !helper.exists() {
         return Err(capture_error("helper missing"));
     }
-    let dir = frames_dir();
-    // Only the newest frame is ever needed: the turn before has sent its own.
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).map_err(|error| capture_error(&error.to_string()))?;
-    let output = dir.join(format!("screen-{}.jpg", uuid::Uuid::new_v4()));
+    let output = next_frame_path()?;
     let status = output.with_extension("status.json");
     let launched = std::process::Command::new("/usr/bin/open")
         .arg("-n")

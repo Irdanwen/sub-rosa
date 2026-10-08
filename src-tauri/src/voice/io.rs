@@ -3,16 +3,17 @@
 //! The loop needs both at once, and it needs the speaker's sound kept out
 //! of the microphone. Where the platform can cancel that echo, it is used:
 //!
-//! - **iOS**: one Voice-Processing I/O unit for both directions
-//!   (`io_ios.rs`), with the audio session in `.voiceChat` mode. The unit
-//!   cancels what it plays itself, so the reply is played through it, not
-//!   beside it.
+//! - **iOS and macOS**: one Voice-Processing I/O unit for both directions
+//!   (`io_apple.rs`), on iOS with the audio session in `.voiceChat` mode.
+//!   The unit cancels what it plays itself, so the reply is played through
+//!   it, not beside it.
 //! - **Android**: the microphone opens with the `VoiceCommunication` input
 //!   preset (`io_android.rs`), the source Android attaches its echo
 //!   canceller and noise suppressor to.
-//! - **macOS and Windows**: plain cpal streams. cpal has no voice-processing
-//!   unit, so the detector raises its barge-in threshold over the reply
-//!   (`VadConfig::default`) and the voice screen suggests headphones.
+//! - **Windows**, and wherever the above cannot start: plain cpal streams.
+//!   cpal has no voice-processing unit, so the detector raises its barge-in
+//!   threshold over the reply (`VadConfig::default`) and the voice screen
+//!   suggests headphones.
 //!
 //! Whatever opens, the session reads the same thing: mono microphone
 //! samples at `input_rate` through the sink, a [`Player`] the output pulls
@@ -43,46 +44,69 @@ pub fn open(sink: MicSink, allow_platform_echo_cancelling: bool) -> Result<Audio
     open_platform(sink, allow_platform_echo_cancelling)
 }
 
+/// The platform's echo-cancelling route when it is allowed and starts,
+/// otherwise the plain one. `allow` false (the watchdog's reopen) never
+/// tries the echo-cancelling route again.
+fn prefer_echo_cancelling<T>(
+    allow: bool,
+    echo_cancelling: impl FnOnce() -> Result<T, String>,
+    plain: impl FnOnce() -> Result<T, AppError>,
+) -> Result<T, AppError> {
+    if allow {
+        match echo_cancelling() {
+            Ok(io) => return Ok(io),
+            Err(error) => {
+                tracing::warn!(%error, "voice echo cancellation unavailable, using plain streams");
+            }
+        }
+    }
+    plain()
+}
+
 #[cfg(target_os = "ios")]
 fn open_platform(sink: MicSink, allow_echo_cancelling: bool) -> Result<AudioIo, AppError> {
     crate::audio::ios_session::ensure_record_permission()?;
     crate::audio::ios_session::configure_for_voice_chat()?;
-    if allow_echo_cancelling {
-        match super::io_ios::open(Arc::clone(&sink)) {
-            Ok(io) => return Ok(io),
-            Err(error) => {
-                tracing::warn!(%error, "voice processing unit unavailable, using plain streams");
-            }
-        }
-    }
-    open_plain(sink)
+    prefer_echo_cancelling(
+        allow_echo_cancelling,
+        || super::io_apple::open(Arc::clone(&sink)),
+        || open_plain(sink.clone()),
+    )
+}
+
+/// The Mac has the same voice-processing unit as the iPhone. The microphone
+/// permission is the app's own (the first open asks), as with cpal.
+#[cfg(target_os = "macos")]
+fn open_platform(sink: MicSink, allow_echo_cancelling: bool) -> Result<AudioIo, AppError> {
+    prefer_echo_cancelling(
+        allow_echo_cancelling,
+        || super::io_apple::open(Arc::clone(&sink)),
+        || open_plain(sink.clone()),
+    )
 }
 
 #[cfg(target_os = "android")]
 fn open_platform(sink: MicSink, allow_echo_cancelling: bool) -> Result<AudioIo, AppError> {
     let recording = crate::android::RecordingGuard::start()?;
-    if allow_echo_cancelling {
-        match super::io_android::open(Arc::clone(&sink)) {
-            Ok((input_rate, stream)) => {
-                let (player, output) = open_output()?;
-                return Ok(AudioIo {
-                    input_rate,
-                    player,
-                    echo_cancelled: true,
-                    _keep: vec![stream, output, Box::new(recording)],
-                });
-            }
-            Err(error) => {
-                tracing::warn!(%error, "voice communication input unavailable, using cpal");
-            }
-        }
-    }
-    let mut io = open_plain(sink)?;
+    let mut io = prefer_echo_cancelling(
+        allow_echo_cancelling,
+        || {
+            let (input_rate, stream) = super::io_android::open(Arc::clone(&sink))?;
+            let (player, output) = open_output().map_err(|error| error.message)?;
+            Ok(AudioIo {
+                input_rate,
+                player,
+                echo_cancelled: true,
+                _keep: vec![stream, output],
+            })
+        },
+        || open_plain(sink.clone()),
+    )?;
     io._keep.push(Box::new(recording));
     Ok(io)
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
 fn open_platform(sink: MicSink, _allow_echo_cancelling: bool) -> Result<AudioIo, AppError> {
     open_plain(sink)
 }
@@ -190,4 +214,67 @@ fn open_output() -> Result<(Arc<Player>, Box<dyn std::any::Any>), AppError> {
     .map_err(speaker_error)?;
     stream.play().map_err(speaker_error)?;
     Ok((player, Box::new(stream)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn plain_error() -> AppError {
+        microphone_error("no default input device")
+    }
+
+    #[test]
+    fn echo_cancelling_is_preferred_when_it_starts() {
+        let plain_tried = Cell::new(false);
+        let route = prefer_echo_cancelling(
+            true,
+            || Ok("voice processing"),
+            || {
+                plain_tried.set(true);
+                Ok("plain")
+            },
+        );
+        assert_eq!(route.map_err(|error| error.code), Ok("voice processing"));
+        assert!(
+            !plain_tried.get(),
+            "the plain streams must not open as well"
+        );
+    }
+
+    #[test]
+    fn a_unit_that_cannot_start_falls_back_to_the_plain_streams() {
+        let route = prefer_echo_cancelling(
+            true,
+            || Err("AudioUnitInitialize -10875".to_string()),
+            || Ok("plain"),
+        );
+        assert_eq!(route.map_err(|error| error.code), Ok("plain"));
+    }
+
+    #[test]
+    fn the_watchdog_reopen_never_tries_the_unit_again() {
+        let unit_tried = Cell::new(false);
+        let route = prefer_echo_cancelling(
+            false,
+            || {
+                unit_tried.set(true);
+                Ok("voice processing")
+            },
+            || Ok("plain"),
+        );
+        assert_eq!(route.map_err(|error| error.code), Ok("plain"));
+        assert!(!unit_tried.get());
+    }
+
+    #[test]
+    fn when_both_fail_the_plain_error_is_the_one_shown() {
+        let route: Result<&str, AppError> =
+            prefer_echo_cancelling(true, || Err("no unit".to_string()), || Err(plain_error()));
+        assert_eq!(
+            route.map_err(|error| error.code),
+            Err("voice_microphone_unavailable".to_string())
+        );
+    }
 }

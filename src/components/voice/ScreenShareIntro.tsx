@@ -1,7 +1,9 @@
 // The explanation before the screen is shared for the first time: what is
-// taken, when, and that macOS will ask for Screen Recording.
+// taken, when, and what the system asks. macOS asks for Screen Recording;
+// Windows asks nothing, so this explanation is the whole consent there.
 
 import { t } from "../../lib/i18n";
+import { isMacDesktopPlatform } from "../../lib/platform";
 
 const SCREEN_INTRO_KEY = "subrosa:voice-screen-intro-seen";
 
@@ -31,9 +33,13 @@ export function ScreenShareIntro({
         )}
       </p>
       <p className="voice-intro-hint">
-        {t(
-          "The first time, macOS asks to allow Screen Recording. Allow it in System Settings, then share again.",
-        )}
+        {isMacDesktopPlatform()
+          ? t(
+              "The first time, macOS asks to allow Screen Recording. Allow it in System Settings, then share again.",
+            )
+          : t(
+              "Windows does not ask for permission. Turn sharing off whenever something private is on screen.",
+            )}
       </p>
       <div className="voice-intro-actions">
         <button type="button" className="voice-secondary" onClick={onCancel}>

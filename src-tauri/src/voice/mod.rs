@@ -24,14 +24,20 @@ mod engine;
 mod io;
 #[cfg(target_os = "android")]
 mod io_android;
-#[cfg(target_os = "ios")]
-mod io_ios;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod io_apple;
 pub mod machine;
 mod player;
 mod requests;
 mod resample;
 #[cfg(target_os = "macos")]
 mod screen;
+#[cfg(any(target_os = "macos", windows, test))]
+mod screen_frame;
+#[cfg(windows)]
+mod screen_windows;
+#[cfg(debug_assertions)]
+pub mod selftest;
 mod sentences;
 mod session;
 mod vad;
@@ -168,7 +174,7 @@ pub fn voice_availability() -> VoiceAvailabilityDto {
     VoiceAvailabilityDto {
         allowed: refusal.is_none(),
         reason: refusal.map(|error| crate::i18n::translate_known(&error.message)),
-        screen: cfg!(target_os = "macos"),
+        screen: cfg!(any(target_os = "macos", windows)),
     }
 }
 
@@ -280,7 +286,7 @@ pub fn voice_interrupt(session_id: String) -> Result<(), AppError> {
     send(&session_id, session::Message::Input(Input::Interrupt))
 }
 
-/// One picture of the screen for the turn about to be sent (macOS).
+/// One picture of the screen for the turn about to be sent (macOS, Windows).
 #[tauri::command]
 pub async fn voice_screen_frame() -> Result<String, AppError> {
     tokio::task::spawn_blocking(capture_screen_frame)
@@ -298,11 +304,16 @@ fn capture_screen_frame() -> Result<String, AppError> {
     screen::capture().map(|path| path.to_string_lossy().into_owned())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+fn capture_screen_frame() -> Result<String, AppError> {
+    screen_windows::capture().map(|path| path.to_string_lossy().into_owned())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 fn capture_screen_frame() -> Result<String, AppError> {
     Err(AppError::new(
         "voice_screen_unavailable",
-        "Screen sharing in a voice conversation needs the Mac app.",
+        "Screen sharing in a voice conversation needs the app on your computer.",
     ))
 }
 

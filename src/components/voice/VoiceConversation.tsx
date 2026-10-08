@@ -1,5 +1,5 @@
 // The voice conversation surface (ADR-0093), on the desktop and the phone:
-// a level orb, captions, mute, the camera (phone) or the screen (Mac), and
+// a level orb, captions, mute, the camera (phone) or the screen (computer), and
 // end. The loop runs in Rust; this surface starts it, shows it, and hands
 // the turns it asks for to the shell's chat through `send` and `stop`.
 
@@ -109,7 +109,7 @@ export function VoiceConversation({
   const heldFrameRef = useRef<string | null>(null);
   heldFrameRef.current = heldFrame;
 
-  // The Mac's screen: on or off, with its explanation the first time.
+  // The computer's screen: on or off, with its explanation the first time.
   const [screenOn, setScreenOn] = useState(false);
   const screenOnRef = useRef(false);
   screenOnRef.current = screenOn;

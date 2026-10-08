@@ -125,3 +125,34 @@ differently, with echo cancellation in three different places.
   still works one photo at a time.
 - A voice turn is billed like a typed one plus its transcription and its
   speech; nothing is billed while the person is silent.
+
+## Addendum (2026-10-08): the Mac cancels echo, Windows shares its screen, the chain was measured
+
+- **macOS uses the voice-processing unit too.** The Mac has the same
+  Voice-Processing I/O audio unit as the iPhone, and `coreaudio-rs` was
+  already linked by cpal with the same features, so `io_ios.rs` became
+  `io_apple.rs` for both. On macOS the unit follows the default devices.
+  Selection is one tested function (`io::prefer_echo_cancelling`): the unit
+  when it starts, else cpal with the raised barge-in threshold; the
+  watchdog's reopen never tries the unit again. Opened on a Mac (the
+  ignored `io_apple` test), both directions run. Windows keeps the plain
+  streams, and decision 6 now reads "Windows uses plain cpal streams".
+- **Windows shares its screen** with one GDI `BitBlt` of the primary display
+  (`screen_windows.rs`), scaled and encoded like the Mac's helper (1600 px,
+  JPEG 80, `screen_frame.rs`). Windows.Graphics.Capture was rejected: a
+  capture session, a Direct3D device and a capture border for one frame per
+  turn, where Windows asks no permission for a GDI copy anyway. The app's
+  own windows are marked `WDA_EXCLUDEFROMCAPTURE` for the instant of the
+  copy (Windows 10 2004 and later). The explanation before the first share
+  is the consent on both systems; on Windows it says no permission is
+  asked. No new crate: a feature of the `windows` crate already used.
+  Unverified on Windows hardware; the pure parts are tested everywhere and
+  the module type-checks for `x86_64-pc-windows-msvc`.
+- **The real chain, measured once** (`voice/selftest.rs`, debug only,
+  2026-10-08, this Mac, Carpe Diem): question rendered by `tts-kokoro`,
+  cut by the detector, transcribed by Parakeet on `/v1/dictate` in 2.0 s
+  (word for word), answered by `zai-org-glm-5-2` with its whole first
+  sentence after 1.25 s, that sentence rendered in 1.96 s. With the 700 ms
+  hangover, about 5.9 s from the end of speech to the first sound. The
+  transcription and the speech render dominate; streamed speech on the
+  operator remains the biggest single saving.

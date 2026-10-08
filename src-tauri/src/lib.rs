@@ -1200,6 +1200,10 @@ pub fn run() {
             // checks (ADR-0086) through the real bridge once it answers.
             #[cfg(debug_assertions)]
             agent_lite::python::selftest::spawn_if_requested(app.handle());
+            // Debug-only: `SUBROSA_VOICE_SELFTEST=1` runs the voice loop once
+            // against the real services, without a microphone (ADR-0093).
+            #[cfg(debug_assertions)]
+            voice::selftest::spawn_if_requested(app.handle());
             // Pause an active recording when a call or Siri interrupts the
             // audio session (the input goes silent anyway; a clean pause is
             // resumable from the UI).

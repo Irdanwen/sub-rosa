@@ -2262,11 +2262,21 @@ et l'entendre répondre, mains libres.
   composer (desktop : `submitHermesSession` ; téléphone : `send` de
   `AgentScreen`) et renvoie la réponse au fil du flux
   (`src/lib/voice/voice-controller.ts`, `reply-snapshot.ts`).
-- **Écho** : Voice-Processing I/O sur iOS (`io_ios.rs`, session
-  `.voiceChat`), préréglage `VoiceCommunication` d'Oboe sur Android
-  (`io_android.rs`), seuil d'interruption relevé sur desktop.
+- **Écho** : Voice-Processing I/O sur iOS et macOS (`io_apple.rs`, session
+  `.voiceChat` sur iOS ; `coreaudio-rs` est désormais une dépendance macOS
+  aussi, déjà tirée par cpal), préréglage `VoiceCommunication` d'Oboe sur
+  Android (`io_android.rs`), seuil d'interruption relevé sur Windows et
+  partout où l'unité ne démarre pas (`prefer_echo_cancelling` dans `io.rs`).
 - **Caméra / écran** : aperçu caméra dans la webview (téléphones), image
-  d'écran par le helper audio système (`--screenshot`, ScreenCaptureKit).
+  d'écran par le helper audio système sur Mac (`--screenshot`,
+  ScreenCaptureKit), par un `BitBlt` GDI de l'écran principal sur Windows
+  (`screen_windows.rs`, fenêtres de l'app exclues par
+  `WDA_EXCLUDEFROMCAPTURE` le temps de la copie ; feature
+  `Win32_Graphics_Gdi` ajoutée à `windows`).
+- **Auto-test réel** (debug) : `SUBROSA_VOICE_SELFTEST=1` ou le test ignoré
+  `voice::selftest` fait passer une question parlée (rendue par la vraie
+  voix) par détecteur, dictée, chat, découpe et voix, et chronomètre chaque
+  étape (`voice/selftest.rs`, commande dans son en-tête).
 - **Mode protégé** : « Voix » coupée appliquée en Rust
   (`protected_mode::check_voice`).
 
