@@ -16,6 +16,12 @@ import { Switch } from "../ui/Switch";
  * a click in the chat or the chat bar attaches the app, its window title
  * and the selected text. A window picture is a second opt-in, explained
  * before macOS asks for Screen Recording.
+ *
+ * The capture runs in the dictation helper, a separate app bundle the app
+ * starts, and macOS holds the helper responsible for its own permission
+ * requests: the prompt and the System Settings entry say "Sub Rosa
+ * Dictation Helper", not "Sub Rosa" (ADR-0094, addendum). The copy names it
+ * so the person turns on the right switch.
  */
 export function ScreenAwarenessCard() {
   const [settings, setSettings] = useState<ScreenAwarenessSettings | null>(null);
@@ -58,7 +64,7 @@ export function ScreenAwarenessCard() {
       if (!granted) {
         setError(
           t(
-            "macOS did not allow Screen Recording yet. Allow Sub Rosa in System Settings, Privacy and Security, Screen Recording, then turn this on again.",
+            "macOS did not allow Screen Recording yet. In System Settings, Privacy and Security, Screen Recording, turn on Sub Rosa Dictation Helper, restart Sub Rosa, then turn this on again.",
           ),
         );
         return;
@@ -121,13 +127,17 @@ export function ScreenAwarenessCard() {
           </div>
         ) : null}
       </div>
-      {error ? <p className="settings-row-description">{error}</p> : null}
+      {error ? (
+        <p className="settings-row-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       <Dialog
         open={explaining}
         onClose={() => setExplaining(false)}
         title={t("Pictures of a window")}
         description={t(
-          "To take a picture of a window, macOS needs you to allow Screen Recording for Sub Rosa. It will ask you next.",
+          "To take a picture of a window, macOS needs you to allow Screen Recording. It asks for Sub Rosa Dictation Helper, the part of Sub Rosa that reads the window you are in, and lists it under that name in System Settings.",
         )}
         footer={
           <>

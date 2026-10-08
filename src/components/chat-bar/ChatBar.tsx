@@ -244,7 +244,11 @@ export function ChatBar() {
       </form>
 
       {lookingAt ? <LookingAtChip value={lookingAt} onRemove={() => setLookingAt(null)} /> : null}
-      {notice ? <p className="chat-bar-notice">{notice}</p> : null}
+      {notice ? (
+        <p className="chat-bar-error" role="alert">
+          {notice}
+        </p>
+      ) : null}
       {browser?.pending.map((pending) => (
         <AgentBrowserConsentCard key={pending.id} pending={pending} />
       ))}
@@ -258,7 +262,9 @@ export function ChatBar() {
             <p className="chat-bar-thinking">{t("Thinking…")}</p>
           ) : null}
           {turn.phase === "error" && turn.error ? (
-            <p className="chat-bar-notice">{turn.error}</p>
+            <p className="chat-bar-error" role="alert">
+              {turn.error}
+            </p>
           ) : null}
           {turn.needsApp ? (
             <p className="chat-bar-notice">

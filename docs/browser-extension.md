@@ -60,11 +60,27 @@ between them, reopen the one you are testing.
 
 What the automated tests cover and what they do not: the protocol, pairing,
 manifest generation, the relay's argument detection and byte pump, the
-session decisions and the framing loop are unit tested (Rust and vitest), and
-the debug relay binary was driven by hand once, end to end, against a fake
-app socket (2026-10-08). The panel
-in a real browser, the registry half on Windows, and a full turn through a
-running app need the manual steps above.
+session decisions and the framing loop are unit tested (Rust and vitest).
+
+A real-browser run (2026-10-08): the built `dist/chrome` loaded into Chrome
+for Testing 151 (new headless, throwaway `--user-data-dir`, driven over
+DevTools), English and French UI. Without a host manifest the panel says the
+browser is not set up; with one pointing at the debug `os-june` and no app,
+the relay answers "Sub Rosa is not open"; against a stand-in app socket that
+speaks `protocol.rs`, a wrong code, the right code, then the toolbar action
+on a local page (`Extensions.triggerAction`, which grants `activeTab`) and a
+question streamed back through the real relay, followed by Save link and Add
+to a note. It found one bug, since fixed: the main view showed under the
+pairing form, because blocks that set `display` beat the `hidden` attribute.
+Not covered: the registry half on Windows, and a full turn through a running
+app (the stand-in does not run agent-lite).
+
+Testing with a throwaway profile: Chromium looks for user-level host
+manifests in `<user data dir>/NativeMessagingHosts/`, so a browser started
+with `--user-data-dir` does not see the manifests the app writes in the
+default profile's folder (`~/Library/Application Support/Google/Chrome/...`).
+Copy the manifest into the throwaway profile's `NativeMessagingHosts`, or
+test in the browser's normal profile.
 
 ## Publishing (not automated)
 

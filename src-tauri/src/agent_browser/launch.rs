@@ -1,7 +1,7 @@
 //! Finding the person's browser and starting it for the agent.
 //!
 //! Nothing is downloaded: the agent uses a Chromium-family browser already
-//! on the machine (Chrome, Edge, Brave, Arc, Chromium), started by the app
+//! on the machine (Chrome, Edge, Brave, Chromium), started by the app
 //! process itself, outside the agent runtime's write jail (ADR-0006), with a
 //! profile directory of its own under the app's data. The person's own
 //! profile, its cookies and its saved passwords are never opened; a site the
@@ -33,7 +33,15 @@ pub struct InstalledBrowser {
 
 /// Where each browser lives, in the order one is picked when the person has
 /// not chosen.
-fn candidates() -> Vec<(&'static str, &'static str, PathBuf)> {
+///
+/// Arc is left out on purpose. It is Chromium inside, but nothing it
+/// documents promises that `--user-data-dir` gives a separate profile rather
+/// than the person's own (whose cookies and passwords this design never
+/// opens), it crashes when a tab is created over DevTools
+/// (`Target.createTarget`, which `cdp::attach_to_page` falls back to), and its
+/// updater relaunches it without the flags. Not installed here to try, so it
+/// stays out until someone verifies all three (ADR-0094, addendum).
+pub(super) fn candidates() -> Vec<(&'static str, &'static str, PathBuf)> {
     let mut out = Vec::new();
     #[cfg(target_os = "macos")]
     {
@@ -56,7 +64,6 @@ fn candidates() -> Vec<(&'static str, &'static str, PathBuf)> {
                     "Microsoft Edge",
                 ),
                 ("brave", "Brave", "Brave Browser.app", "Brave Browser"),
-                ("arc", "Arc", "Arc.app", "Arc"),
                 ("chromium", "Chromium", "Chromium.app", "Chromium"),
             ] {
                 out.push((

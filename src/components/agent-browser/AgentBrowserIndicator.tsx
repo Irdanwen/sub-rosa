@@ -140,7 +140,9 @@ export function AgentBrowserIndicator() {
         </div>
       ) : null}
       {status.active && journalOpen ? (
-        <ol className="agent-browser-journal">
+        // Newest first, numbered as steps were taken: `reversed` counts down,
+        // so the top line is the last step, not "1."
+        <ol className="agent-browser-journal" reversed>
           {journal.length === 0 ? <li>{t("Nothing yet.")}</li> : null}
           {journal.map((entry) => (
             <li key={`${entry.at}-${entry.action}-${entry.target}`}>{journalLine(entry)}</li>

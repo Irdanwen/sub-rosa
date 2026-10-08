@@ -550,7 +550,7 @@ async fn start(app: &AppHandle, settings: &AgentBrowserSettings) -> Result<Live,
     let chosen = launch::pick(settings.browser.as_deref()).ok_or_else(|| {
         agent_error(
             "browser_not_installed",
-            "No Chromium-family browser (Chrome, Edge, Brave, Arc or Chromium) is installed. Tell the person the agent browser needs one, or use web_fetch.",
+            "No Chromium-family browser (Chrome, Edge, Brave or Chromium) is installed. Tell the person the agent browser needs one, or use web_fetch.",
         )
     })?;
     let profile_dir = crate::app_paths::app_data_dir(app)

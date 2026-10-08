@@ -8,6 +8,13 @@ html.chat-bar-page body {
   overflow: hidden;
 }
 
+/* app.css gives the main window's body a 720px floor; the panel is 640px
+ * wide, so without this its right edge (the send button, "Open in Sub
+ * Rosa", a consent card's last answer) was cut off. */
+html.chat-bar-page body {
+  min-width: 0;
+}
+
 .chat-bar {
   display: flex;
   flex-direction: column;
@@ -90,6 +97,12 @@ html.chat-bar-page body {
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--muted-foreground);
+}
+
+.chat-bar-error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--destructive);
 }
 
 .chat-bar-actions {

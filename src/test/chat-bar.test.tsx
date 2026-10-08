@@ -49,6 +49,9 @@ import {
   shortcutLabel,
 } from "../lib/chat-bar";
 import type { JuneHermesEvent } from "../lib/hermes-control-plane/events";
+import chatBarRust from "../../src-tauri/src/chat_bar/mod.rs?raw";
+import appCss from "../styles/app.css?raw";
+import chatBarCss from "../styles/chat-bar.css?raw";
 
 beforeEach(() => {
   invokeMock.mockClear();
@@ -164,5 +167,17 @@ describe("the streamed answer", () => {
       "rt-1",
     );
     expect(failed).toMatchObject({ phase: "error", error: "Boom" });
+  });
+});
+
+describe("the panel's width", () => {
+  // The panel is a 640px window and imports app.css, whose body has a 720px
+  // floor for the main window: a real render cut off the send button and
+  // "Open in Sub Rosa". The panel's stylesheet lifts the floor.
+  it("lifts the main window's minimum width inside the panel", () => {
+    expect(chatBarCss).toMatch(/html\.chat-bar-page body \{\s*min-width: 0;\s*\}/);
+    const width = Number(/const WIDTH: f64 = (\d+)/.exec(chatBarRust)?.[1]);
+    const floor = Number(/body \{[^}]*min-width: (\d+)px/.exec(appCss)?.[1]);
+    expect(width).toBeLessThan(floor);
   });
 });
