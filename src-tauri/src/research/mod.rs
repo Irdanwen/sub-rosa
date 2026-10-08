@@ -388,7 +388,7 @@ fn announce(app: &AppHandle, run: &store::RunRow) {
         .notification()
         .builder()
         .title(title)
-        .body("Your research report is ready in your notes.")
+        .body(crate::tr!("Your research report is ready in your notes."))
         .extra(
             crate::destinations::EXTRA_KEY,
             crate::destinations::note(note_id),

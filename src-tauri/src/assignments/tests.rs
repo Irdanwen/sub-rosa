@@ -309,3 +309,40 @@ fn only_our_address_is_an_assignment_errand() {
     assert_eq!(errand_assignment("subrosa://assignment/../x"), None);
     assert_eq!(errand_assignment("https://example.com/watch?v=1"), None);
 }
+
+#[test]
+fn notifications_speak_the_apps_language() {
+    use crate::i18n::{with_locale, Locale};
+    assert_eq!(
+        with_locale(Locale::Fr, || review_body("")),
+        "Un résultat attend votre relecture."
+    );
+    assert_eq!(
+        with_locale(Locale::Fr, || review_body("Deux appels d'offres.")),
+        "À relire : Deux appels d'offres."
+    );
+    assert_eq!(
+        with_locale(Locale::En, || review_body("Two tenders.")),
+        "To review: Two tenders."
+    );
+    // A reason this module wrote is translated, a provider's words are not.
+    assert_eq!(
+        with_locale(Locale::Fr, || failed_body(
+            "The run did not finish in time."
+        )),
+        "Cette exécution n'est pas allée au bout. L'exécution n'a pas abouti à temps."
+    );
+    assert_eq!(
+        with_locale(Locale::Fr, || failed_body("upstream 503")),
+        "Cette exécution n'est pas allée au bout. upstream 503"
+    );
+}
+
+#[test]
+fn a_run_job_carries_the_assignment_tag_before_its_title() {
+    assert_eq!(
+        super::hermes::job_name("  Veille énergie "),
+        "[assignment] Veille énergie"
+    );
+    assert!(super::hermes::job_name("x").starts_with(ASSIGNMENT_JOB_TAG));
+}

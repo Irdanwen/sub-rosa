@@ -14,12 +14,18 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager as _};
 
 use super::lite::Outcome;
+use super::ASSIGNMENT_JOB_TAG;
 use crate::domain::types::AppError;
 use crate::hermes_bridge::{CreateHermesCronJobRequest, HermesBridge, UpdateHermesCronJobRequest};
 
 /// A job still listed this long after it started has not finished and is
 /// not going to.
 const RUN_TIMEOUT_HOURS: i64 = 3;
+
+/// The job name for a run of the assignment titled `title`.
+pub fn job_name(title: &str) -> String {
+    format!("{ASSIGNMENT_JOB_TAG}{}", title.trim())
+}
 
 /// Whether a run can start now. When the runtime is not up yet (the app has
 /// just launched), the slot stays due and the next tick takes it.
@@ -51,7 +57,7 @@ pub async fn start(
         CreateHermesCronJobRequest {
             prompt: prompt.to_string(),
             schedule: "1m".into(),
-            name: Some(format!("Assignment: {}", title.trim())),
+            name: Some(job_name(title)),
             deliver: Some("local".into()),
         },
     )

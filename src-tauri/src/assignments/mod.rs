@@ -31,6 +31,14 @@
 
 #[cfg(desktop)]
 mod hermes;
+
+/// What every desktop run's Hermes job name starts with. A machine tag,
+/// never translated: Hermes titles the run's session from the job name, and
+/// the tag is how the webview keeps these runs out of the Routines list and
+/// history and shows the session under the assignment's own title
+/// (`ASSIGNMENT_JOB_TAG` in `src/lib/hermes-routines.ts`), and how the daily
+/// brief tells them from routines (ADR-0091).
+pub const ASSIGNMENT_JOB_TAG: &str = "[assignment] ";
 pub mod lite;
 pub mod prompt;
 pub mod schedule;
@@ -515,12 +523,12 @@ fn notify(app: &AppHandle, title: &str, body: &str, destination: String) {
 fn notify_finished(app: &AppHandle, row: &AssignmentRow, state: &str, answer: &str, handle: &str) {
     let summary = prompt::result_summary(answer);
     if state == "needs_review" {
-        let body = if summary.is_empty() {
-            "A result is waiting for your review.".to_string()
-        } else {
-            format!("To review: {summary}")
-        };
-        notify(app, &row.title, &body, crate::destinations::today());
+        notify(
+            app,
+            &row.title,
+            &review_body(&summary),
+            crate::destinations::today(),
+        );
     } else {
         // On the phone the run is a chat, and the tap opens it.
         let destination = if cfg!(mobile) {
@@ -536,9 +544,28 @@ fn notify_failed(app: &AppHandle, row: &AssignmentRow, message: &str) {
     notify(
         app,
         &row.title,
-        &format!("This run did not finish. {message}"),
+        &failed_body(message),
         crate::destinations::today(),
     );
+}
+
+/// What a result waiting for review says, in the app's language.
+pub(crate) fn review_body(summary: &str) -> String {
+    if summary.is_empty() {
+        crate::tr!("A result is waiting for your review.")
+    } else {
+        crate::tr!("To review: {summary}", summary = summary)
+    }
+}
+
+/// What a failed run says. The stored reason is one of the sentences this
+/// module writes (kept in English in the row, the webview translates it
+/// too), or a provider's own words, which pass as they came.
+pub(crate) fn failed_body(message: &str) -> String {
+    crate::tr!(
+        "This run did not finish. {reason}",
+        reason = crate::i18n::translate_known(message)
+    )
 }
 
 /// Run what is due here, close what has finished, and carry out what was

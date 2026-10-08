@@ -301,8 +301,8 @@
 .assignment-badge {
   padding: 0 var(--sp-2);
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: var(--accent-foreground);
+  background: var(--brand-tint-strong);
+  color: var(--foreground);
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
@@ -376,7 +376,7 @@
 }
 
 .assignment-state[data-state="needs_review"] {
-  border-color: var(--accent);
+  border-color: var(--brand-ink);
 }
 
 .daily-card-agenda {
@@ -447,4 +447,22 @@
 .today-mobile .today-scroll {
   padding: 0 var(--mobile-gutter) calc(var(--sp-12) + env(safe-area-inset-bottom));
   -webkit-overflow-scrolling: touch;
+}
+
+/* The topic field takes the row, so its placeholder reads in full. */
+.daily-follow .assignment-row .assignment-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+/* The platform's blue is not in the palette. */
+.assignment-form input[type="radio"],
+.assignment-form input[type="checkbox"] {
+  accent-color: var(--brand-ink);
+}
+
+/* A link that wraps keeps its bullet on its first line: a button is an
+ * inline block, and the marker otherwise sits on its last baseline. */
+.daily-card-list .assignment-link-button {
+  vertical-align: top;
 }

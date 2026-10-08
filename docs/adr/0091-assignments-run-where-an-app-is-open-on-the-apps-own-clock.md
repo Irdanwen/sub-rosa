@@ -120,3 +120,19 @@ first written more than four hours after its time waits quietly in Today.
   conversations.
 - **WorkManager on Android.** A new dependency and a headless runtime, for
   wake-ups the platform may defer anyway.
+
+## Addendum (2026-10-08): run jobs carry a tag, and notifications are translated
+
+- The Consequences above said routine history would list the assignments'
+  one-shot jobs. It no longer does. Each run's job is named with a machine
+  tag before the assignment's title (`ASSIGNMENT_JOB_TAG`, `"[assignment] "`,
+  in `assignments/mod.rs`, mirrored in `src/lib/assignment-runs.ts` and
+  tested equal), never a translated word. Hermes titles the run's session
+  from the job name, so a finished run is recognised by its title (the
+  adapter gives it the source `assignment` and shows the title without the
+  tag, in the chat list too); a run still going has no title yet and is
+  recognised by its job, which is still listed. The Routines list, its run
+  history and the daily brief's failed routines leave both out.
+- Notifications posted from Rust are rendered in the app's language (the
+  addendum of 2026-10-08 to ADR-0047), so the last Consequence above no
+  longer holds.

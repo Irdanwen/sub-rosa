@@ -52,6 +52,7 @@ pub mod hermes_image_fit;
 #[cfg(desktop)]
 pub mod hermes_working_dir;
 pub mod http_client;
+pub mod i18n;
 pub mod image_refine;
 pub mod ingest;
 pub mod intent_inbox;
@@ -436,6 +437,7 @@ pub fn run() {
             moments::daily::follow_remove,
             moments::moments_get_settings,
             moments::moments_set_settings,
+            i18n::i18n_set_locale,
             actions::action_execute,
             assistants::assistant_list,
             assistants::assistant_save,
@@ -833,6 +835,7 @@ pub fn run() {
         moments::daily::follow_remove,
         moments::moments_get_settings,
         moments::moments_set_settings,
+        i18n::i18n_set_locale,
         actions::action_execute,
         assistants::assistant_list,
         assistants::assistant_save,
@@ -1107,6 +1110,8 @@ pub fn run() {
                 menu_bar::setup(app)?;
             }
             providers::setup(app);
+            // Before anything can post a notification (ADR-0047 addendum).
+            i18n::setup(app);
             // Debug-only keychain self-test for mobile bring-up: the iOS
             // keychain needs the app's signing identity/entitlements, which a
             // bare test binary can't exercise. Logs a round-trip result to the

@@ -71,3 +71,33 @@ is a visible English sentence, never a broken key.
   switch in Settings reloads the page (`chooseLocaleAndReload`) rather
   than only re-mounting the shell, so module-scope copy follows too.
 - Adding a language is a JSON file and one entry in `SUPPORTED_LOCALES`.
+
+## Addendum (2026-10-08): Rust renders its own sentences from the same catalog
+
+Notifications are posted from Rust, often while the webview is frozen or
+not loaded at all, so `messageFromError` never sees them and they were
+always English. Rust now renders them itself:
+
+- **One catalog.** `src-tauri/src/i18n.rs` compiles `src/locales/fr.json`
+  in (`include_str!`) and renders `crate::tr!("…")` exactly as `t()` does:
+  the English sentence is the key and the fallback (an empty translation
+  counts as missing), `{name}` placeholders are named arguments, plurals
+  are two sentences chosen in code.
+- **The macro takes a literal**, so the extractor sees every sentence:
+  `scripts/i18n/rust-sentences.mjs` collects `tr!` literals beside the
+  `AppError::new` ones (comments skipped), `pnpm i18n:extract` writes
+  `backend-messages.json` itself, and `pnpm i18n:check` now fails when that
+  file is behind the Rust source. It was: six Code mode errors had never
+  reached the catalog.
+- **The language is the webview's.** The webview resolves the choice
+  (`system` included) and tells Rust at every boot (`i18n_set_locale`,
+  `src/lib/i18n-native.ts`); Rust keeps it in `locale.json` so a
+  background launch that posts before the webview loads speaks it too.
+  With nothing stored, the system's language decides. A switch reloads the
+  page, so the boot covers it.
+- **What stays as it came.** Text a person or a model wrote (a note title,
+  a result summary, a provider's error) is never translated. A stored run
+  failure keeps its English in the row, because the webview and every
+  device translate that sentence themselves, and `translate_known` renders
+  it for the notification. The meeting brief asks the model to write in the
+  app's language.

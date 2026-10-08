@@ -154,30 +154,34 @@ impl DailyCard {
             && self.topics.iter().all(|topic| topic.links.is_empty())
     }
 
-    /// The notification's one line: what is in the card, counted. Read on a
-    /// lock screen, so short.
+    /// The notification's one line: what is in the card, counted, in the
+    /// app's language. Read on a lock screen, so short. Plurals are two
+    /// sentences chosen here, as in the webview (ADR-0047).
     pub fn headline(&self) -> String {
         let mut parts = Vec::new();
         if let Some(agenda) = &self.agenda {
-            parts.push(plural(agenda.count, "meeting", "meetings"));
+            parts.push(match agenda.count {
+                1 => crate::tr!("1 meeting"),
+                count => crate::tr!("{count} meetings", count = count),
+            });
         }
         if !self.notes.is_empty() {
-            parts.push(format!(
-                "{} from yesterday",
-                plural(self.notes.len(), "note", "notes")
-            ));
+            parts.push(match self.notes.len() {
+                1 => crate::tr!("1 note from yesterday"),
+                count => crate::tr!("{count} notes from yesterday", count = count),
+            });
         }
         if !self.reviews.is_empty() {
-            parts.push(format!(
-                "{} to review",
-                plural(self.reviews.len(), "result", "results")
-            ));
+            parts.push(match self.reviews.len() {
+                1 => crate::tr!("1 result to review"),
+                count => crate::tr!("{count} results to review", count = count),
+            });
         }
         if !self.failures.is_empty() {
-            parts.push(format!(
-                "{} that failed",
-                plural(self.failures.len(), "run", "runs")
-            ));
+            parts.push(match self.failures.len() {
+                1 => crate::tr!("1 run that failed"),
+                count => crate::tr!("{count} runs that failed", count = count),
+            });
         }
         let news = self
             .topics
@@ -185,17 +189,13 @@ impl DailyCard {
             .filter(|topic| !topic.links.is_empty())
             .count();
         if news > 0 {
-            parts.push(format!(
-                "news on {}",
-                plural(news, "followed topic", "followed topics")
-            ));
+            parts.push(match news {
+                1 => crate::tr!("news on 1 followed topic"),
+                count => crate::tr!("news on {count} followed topics", count = count),
+            });
         }
         parts.join(", ")
     }
-}
-
-fn plural(count: usize, one: &str, many: &str) -> String {
-    format!("{count} {}", if count == 1 { one } else { many })
 }
 
 /// The follow-ups a note wrote down: the items under a heading that names
@@ -398,6 +398,14 @@ pub fn failed_jobs(jobs: &serde_json::Value, since: &str) -> Vec<CardItem> {
         .into_iter()
         .flatten()
         .filter(|job| job.get("last_status").and_then(serde_json::Value::as_str) == Some("error"))
+        // An assignment's run job is reported through its run row, not as a
+        // routine.
+        .filter(|job| {
+            !job.get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .starts_with(crate::assignments::ASSIGNMENT_JOB_TAG.trim_end())
+        })
         .filter(|job| {
             let ran = job
                 .get("last_run_at")
@@ -589,7 +597,7 @@ pub async fn tick(app: &AppHandle) {
         let _ = app
             .notification()
             .builder()
-            .title("Your day")
+            .title(crate::tr!("Your day"))
             .body(card.headline())
             .extra(crate::destinations::EXTRA_KEY, crate::destinations::today())
             .show();
@@ -788,6 +796,8 @@ mod tests {
         };
         assert!(!busy.is_empty());
         assert_eq!(busy.headline(), "3 meetings, 1 result to review");
+        let french = crate::i18n::with_locale(crate::i18n::Locale::Fr, || busy.headline());
+        assert_eq!(french, "3 réunions, 1 résultat à relire");
     }
 
     #[test]
@@ -829,7 +839,8 @@ mod tests {
         let jobs = serde_json::json!([
             { "name": "Veille", "last_status": "error", "last_error": "timeout", "last_run_at": "2026-10-08T06:00:00+00:00" },
             { "name": "Old", "last_status": "error", "last_run_at": "2026-10-01T06:00:00+00:00" },
-            { "name": "Fine", "last_status": "ok", "last_run_at": "2026-10-08T06:00:00+00:00" }
+            { "name": "Fine", "last_status": "ok", "last_run_at": "2026-10-08T06:00:00+00:00" },
+            { "name": "[assignment] Veille énergie", "last_status": "error", "last_run_at": "2026-10-08T06:00:00+00:00" }
         ]);
         let failed = failed_jobs(&jobs, "2026-10-07T07:00:00+00:00");
         assert_eq!(failed.len(), 1);

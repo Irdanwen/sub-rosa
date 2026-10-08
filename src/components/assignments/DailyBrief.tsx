@@ -1,7 +1,7 @@
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconPlusSmall } from "central-icons/IconPlusSmall";
 import { useEffect, useId, useState } from "react";
-import { minuteFromTime, timeFromMinute, formatMinute } from "../../lib/assignments";
+import { formatMinute, minuteFromTime, runErrorLabel, timeFromMinute } from "../../lib/assignments";
 import { requestOpenNoteFromChat } from "../../lib/chat-blocks-nav";
 import {
   type DailyCard,
@@ -222,7 +222,10 @@ function ItemButton({
   item: DailyCard["reviews"][number];
   onOpenAssignment: (assignmentId: string) => void;
 }) {
-  const label = item.detail ? `${item.title}: ${item.detail}` : item.title;
+  // A failed run's detail is the reason Rust stored, in English: translated
+  // like everywhere else it is shown. A result summary passes as it is.
+  const detail = item.assignmentId ? runErrorLabel(item.detail) : item.detail;
+  const label = detail ? `${item.title}: ${detail}` : item.title;
   if (!item.assignmentId) return <span>{label}</span>;
   const assignmentId = item.assignmentId;
   return (
@@ -296,9 +299,9 @@ function FollowList() {
           placeholder={t("A topic, a company, a person")}
           onChange={(event) => setDraft(event.target.value)}
         />
-        <button type="submit" className="assignment-button" aria-label={t("Follow")}>
+        <button type="submit" className="assignment-button" aria-label={t("Follow topic")}>
           <IconPlusSmall size={16} aria-hidden />
-          {t("Follow")}
+          {t("Follow topic")}
         </button>
       </form>
       <p className="assignment-meta">{t("Each topic is one web search a day.")}</p>
