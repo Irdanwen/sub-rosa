@@ -17,6 +17,7 @@ import {
   type AssistantTool,
   applyAssistantRevision,
   assistantMediaIds,
+  connectorIdOf,
   getAssistantChat,
   getAssistantChatDefinition,
   listAssistantChats,
@@ -695,5 +696,9 @@ export function toolLabel(tool: AssistantTool): string {
       return t("Music");
     case "speech":
       return t("Speech");
+    case "documents":
+      return t("Office files");
+    default:
+      return t("Connector: {name}", { name: connectorIdOf(tool) ?? tool });
   }
 }

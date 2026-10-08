@@ -15,9 +15,39 @@
  * call site (return null — never a half-valid card).
  */
 
+import { CHAT_BLOCK_FENCE_PREFIX, chatBlockKindOf } from "@subrosa/chat-core/chat-block-fence";
+import {
+  type ChartChatBlock,
+  dataBlockPlainText,
+  parseChartBlock,
+  parseTableBlock,
+  type TableChatBlock,
+} from "./chat-blocks-data";
+import { type CanvasChatBlock, canvasMarkdown, parseCanvasPayload } from "./canvas-block";
 import { safeExternalUrl } from "./external-link";
+import {
+  type FlashcardsChatBlock,
+  flashcardsPlainText,
+  parseFlashcardsPayload,
+  parseQuizPayload,
+  type QuizChatBlock,
+  quizPlainText,
+} from "./study-blocks";
+import { type TryOnChatBlock, parseTryOnPayload, tryOnPlainText } from "./try-on-block";
+import { type FileChatBlock, filePlainText, parseFilePayload } from "./file-block";
+import {
+  type ConnectorAppChatBlock,
+  type ConnectorCallChatBlock,
+  parseAppPayload,
+  parseConnectorPayload,
+} from "./connector-blocks";
 
-export const CHAT_BLOCK_FENCE_PREFIX = "subrosa:";
+export type { ChartChatBlock, TableChatBlock } from "./chat-blocks-data";
+export type { FlashcardsChatBlock, QuizChatBlock } from "./study-blocks";
+export type { FileChatBlock } from "./file-block";
+export type { ConnectorAppChatBlock, ConnectorCallChatBlock } from "./connector-blocks";
+
+export { CHAT_BLOCK_FENCE_PREFIX, chatBlockKindOf };
 
 export type ChatBlockLink = {
   title: string;
@@ -96,7 +126,16 @@ export type ChatBlock =
   | PlacesChatBlock
   | NotesChatBlock
   | ProposalChatBlock
-  | MediaChatBlock;
+  | MediaChatBlock
+  | ChartChatBlock
+  | TableChatBlock
+  | CanvasChatBlock
+  | TryOnChatBlock
+  | QuizChatBlock
+  | FlashcardsChatBlock
+  | FileChatBlock
+  | ConnectorCallChatBlock
+  | ConnectorAppChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -114,14 +153,6 @@ const MAX_PHOTO_REF = 512;
 const MAX_NOTES = 6;
 const MAX_NOTE_ID = 64;
 const MAX_ACTIONS = 5;
-
-/** The `<kind>` of a `subrosa:<kind>` fence info string, or null. */
-export function chatBlockKindOf(info: string): string | null {
-  const lang = info.trim().toLowerCase();
-  if (!lang.startsWith(CHAT_BLOCK_FENCE_PREFIX)) return null;
-  const kind = lang.slice(CHAT_BLOCK_FENCE_PREFIX.length).trim();
-  return kind || null;
-}
 
 function asObject(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -380,6 +411,19 @@ function chatBlockPlainText(block: ChatBlock): string[] {
         block.title || "Suggested follow-ups",
         ...block.actions.map((action) => `- ${action.label}`),
       ];
+    case "chart":
+    case "table":
+      return dataBlockPlainText(block);
+    case "canvas":
+      return [block.title, "", ...canvasMarkdown(block).split("\n")];
+    case "tryon":
+      return tryOnPlainText(block);
+    case "quiz":
+      return quizPlainText(block);
+    case "flashcards":
+      return flashcardsPlainText(block);
+    case "file":
+      return filePlainText(block);
     default:
       return [];
   }
@@ -414,6 +458,24 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parseNotes(payload);
     case "proposal":
       return parseProposal(payload);
+    case "chart":
+      return parseChartBlock(payload);
+    case "table":
+      return parseTableBlock(payload);
+    case "canvas":
+      return parseCanvasPayload(payload);
+    case "tryon":
+      return parseTryOnPayload(payload);
+    case "quiz":
+      return parseQuizPayload(payload);
+    case "flashcards":
+      return parseFlashcardsPayload(payload);
+    case "file":
+      return parseFilePayload(payload);
+    case "connector":
+      return parseConnectorPayload(payload);
+    case "app":
+      return parseAppPayload(payload);
     default:
       return null;
   }

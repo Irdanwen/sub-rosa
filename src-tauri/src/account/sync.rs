@@ -11,296 +11,7 @@ pub(super) use super::sync_issues::{
     isolatable_file_error, isolatable_outbox_error, issue_count, issues, reconcile_issues,
     record_issue, retry_issues,
 };
-struct Table {
-    name: &'static str,
-    kind: &'static str,
-    columns: &'static [&'static str],
-}
-const TABLES: &[Table] = &[
-    Table {
-        name: "assistants",
-        kind: "settings",
-        columns: &[
-            "id",
-            "name",
-            "description",
-            "instructions",
-            "model",
-            "opening_message",
-            "tools_json",
-            "allow_notes",
-            "allow_memory",
-            "avatar_ref",
-            "cover_ref",
-            "revision",
-            "created_at",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "assistant_references",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "assistant_id",
-            "name",
-            "format",
-            "text",
-            "status",
-            "error",
-            "note_id",
-            "file_name",
-            "created_at",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "ingests",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "url",
-            "kind",
-            "status",
-            "title",
-            "note_id",
-            "folder_id",
-            "bytes_done",
-            "bytes_total",
-            "created_at",
-            "updated_at",
-        ],
-    },
-    // The gallery's organisation (ADR-0073). Collections route as folders,
-    // marks as artifacts; neither column is a dependency `apply` waits on.
-    Table {
-        name: "studio_collections",
-        kind: "folder",
-        columns: &["id", "name", "created_at", "updated_at"],
-    },
-    Table {
-        name: "studio_marks",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "file_id",
-            "collection_id",
-            "favorite",
-            "hidden",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "account_studio_files",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "file_name",
-            "format",
-            "bytes",
-            "created_at",
-            "model",
-            "prompt",
-        ],
-    },
-    Table {
-        name: "account_turn_usage",
-        kind: "usage",
-        columns: &[
-            "id",
-            "device_id",
-            "sampled_at",
-            "turns",
-            "prompt_tokens",
-            "completion_tokens",
-            "cached_tokens",
-            "cost_usdc_micro",
-            "cache_saved_usdc_micro",
-        ],
-    },
-    Table {
-        name: "account_billing",
-        kind: "usage",
-        columns: &[
-            "id",
-            "device_id",
-            "sampled_at",
-            "available_credits",
-            "escrow_credits",
-            "rail",
-            "price_multiplier",
-        ],
-    },
-    Table {
-        name: "account_note_folders",
-        kind: "folder",
-        columns: &["id", "note_id", "folder_id", "assigned_at", "deleted"],
-    },
-    Table {
-        name: "account_usage",
-        kind: "usage",
-        columns: &[
-            "id",
-            "device_id",
-            "day",
-            "model",
-            "request_count",
-            "request_bytes",
-            "response_bytes",
-        ],
-    },
-    Table {
-        name: "account_file_manifests",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "artifact_id",
-            "bytes",
-            "format",
-            "chunks_json",
-            "created_at",
-            "source_kind",
-        ],
-    },
-    Table {
-        name: "folders",
-        kind: "folder",
-        columns: &[
-            "id",
-            "name",
-            "description",
-            "created_at",
-            "updated_at",
-            "deleted_at",
-        ],
-    },
-    Table {
-        name: "notes",
-        kind: "note",
-        columns: &[
-            "id",
-            "title",
-            "generated_content",
-            "edited_content",
-            "active_tab",
-            "processing_status",
-            "created_at",
-            "updated_at",
-            "calendar_event_id",
-            "scheduled_start",
-            "attendees_json",
-        ],
-    },
-    Table {
-        name: "recording_sessions",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "note_id",
-            "status",
-            "started_at",
-            "ended_at",
-            "expected_elapsed_ms",
-            "source_mode",
-        ],
-    },
-    Table {
-        name: "audio_artifacts",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "note_id",
-            "recording_session_id",
-            "format",
-            "duration_ms",
-            "size_bytes",
-            "checksum",
-            "created_at",
-            "source",
-        ],
-    },
-    Table {
-        name: "transcripts",
-        kind: "transcript",
-        columns: &[
-            "id",
-            "note_id",
-            "audio_artifact_id",
-            "text",
-            "language",
-            "provider",
-            "status",
-            "created_at",
-            "updated_at",
-            "recording_session_id",
-            "source",
-            "start_ms",
-            "end_ms",
-            "turn_index",
-            "source_mode",
-        ],
-    },
-    Table {
-        name: "memories",
-        kind: "memory",
-        columns: &[
-            "id",
-            "text",
-            "source",
-            "importance",
-            "disabled",
-            "created_at",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "agent_tasks",
-        kind: "conversation",
-        columns: &[
-            "id",
-            "title",
-            "prompt",
-            "status",
-            "safety_profile",
-            "progress_summary",
-            "created_at",
-            "updated_at",
-            "completed_at",
-            "model",
-        ],
-    },
-    // An errand travels as an ordinary revision: the service carries it without
-    // being able to read the link inside, and the device it names is the only
-    // one that acts on it (ADR-0054).
-    Table {
-        name: "account_errands",
-        kind: "errand",
-        columns: &[
-            "id",
-            "device_id",
-            "url",
-            "folder_id",
-            "requested_by",
-            "requested_at",
-            "state",
-            "note_id",
-            "message",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "agent_messages",
-        kind: "conversation",
-        columns: &[
-            "id",
-            "task_id",
-            "role",
-            "content",
-            "created_at",
-            "external_id",
-        ],
-    },
-];
+use super::sync_tables::{object_column, object_of, Table, TABLES};
 const UUID_SQL:&str="(lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-a'||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6))))";
 fn table(name: &str) -> Result<&'static Table, AppError> {
     // A distinct authenticated wire codec is mandatory: older clients ignore
@@ -317,14 +28,25 @@ fn table(name: &str) -> Result<&'static Table, AppError> {
         .ok_or_else(|| error("sync_format_invalid"))
 }
 fn row_json(t: &Table, prefix: &str) -> String {
-    format!(
+    let object = format!(
         "json_object({})",
         t.columns
             .iter()
+            .filter(|c| !(t.name == "memories" && **c == "scope"))
             .map(|c| format!("'{c}',{prefix}{c}"))
             .collect::<Vec<_>>()
             .join(",")
-    )
+    );
+    // A memory carries its scope only when it has one (ADR-0085). The
+    // person's own memories keep the shape every device already reads; a
+    // project's is refused by a device too old to know scopes, which is the
+    // safe outcome: applied without its scope, it would join the person's
+    // own memory there.
+    if t.name == "memories" {
+        format!("json_patch({object},CASE WHEN {prefix}scope IS NULL THEN '{{}}' ELSE json_object('scope',{prefix}scope) END)")
+    } else {
+        object
+    }
 }
 fn snapshot_body(t: &Table, prefix: &str) -> String {
     if t.name == "agent_tasks" {
@@ -342,6 +64,53 @@ fn snapshot_body(t: &Table, prefix: &str) -> String {
             row_json(t, prefix)
         )
     }
+}
+/// A temporary chat (ADR-0083) never leaves the device: its task and its
+/// messages queue nothing, not even the tombstone of their deletion. The
+/// messages of a temporary chat are deleted before the chat itself, so the
+/// parent row is still there to be asked.
+fn stays_local(t: &Table, prefix: &str) -> String {
+    match t.name {
+        "agent_tasks" => format!(" AND {prefix}ephemeral=0"),
+        "agent_messages" => outside_temporary_chat(prefix),
+        "saved_items" => super::saved_items::outside_temporary_chat(prefix),
+        // Health and finances leave only by the person's own choice on this
+        // device (ADR-0099). A received row is applied with `applying=1`, so
+        // a device that never opted in still shows what another one sent.
+        "health_days" => {
+            format!(" AND {prefix}metric IN (SELECT metric FROM health_metrics WHERE sync=1)")
+        }
+        "transactions" | "finance_rules" => {
+            " AND (SELECT sync FROM finance_settings WHERE id=1)=1".to_string()
+        }
+        // A connector row is named before it can leave (`object_column`).
+        "connectors" => format!(" AND {prefix}object_id IS NOT NULL"),
+        _ => String::new(),
+    }
+}
+/// Queues the rows of `table_name` matching `filter` that have never left
+/// this device: what a person kept local until they opted in (ADR-0099).
+/// A library with no account queues nothing; its first inventory will.
+pub(crate) async fn enqueue_existing(
+    pool: &SqlitePool,
+    table_name: &str,
+    filter: &str,
+) -> Result<(), AppError> {
+    let t = table(table_name)?;
+    let bound = query("SELECT 1 FROM account_sync_control WHERE id=1 AND account_id IS NOT NULL")
+        .fetch_optional(pool)
+        .await?
+        .is_some();
+    if !bound {
+        return Ok(());
+    }
+    let object = object_column(t);
+    query(&format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},{object},'{}',{},0 FROM {} WHERE {object} NOT IN (SELECT object_id FROM account_sync_outbox) AND {object} NOT IN (SELECT object_id FROM account_sync_heads) AND ({filter}){}",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name,stays_local(t,&format!("{}.",t.name)))).execute(pool).await?;
+    Ok(())
+}
+/// For a row that belongs to a chat through its `task_id`.
+fn outside_temporary_chat(prefix: &str) -> String {
+    format!(" AND NOT EXISTS(SELECT 1 FROM agent_tasks WHERE agent_tasks.id={prefix}task_id AND agent_tasks.ephemeral=1)")
 }
 /// Only a change to a column that travels is a change worth sending. Without
 /// this, a local-only write (a memory's embedding) or a write that changes
@@ -451,9 +220,9 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
                 changed_columns(t)
             } else {
                 String::new()
-            };
+            } + &stays_local(t, prefix);
             let name = format!("account_sync_{}_{}", t.name, action.to_lowercase());
-            let sql=format!("CREATE TRIGGER {name} AFTER {action} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN {} END",t.name,enqueue(&format!("{prefix}id"),t.kind,&snapshot_body(t,prefix),deleted,""));
+            let sql=format!("CREATE TRIGGER {name} AFTER {action} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN {} END",t.name,enqueue(&format!("{prefix}{}",object_column(t)),t.kind,&snapshot_body(t,prefix),deleted,""));
             managed.push((name, sql));
         }
     }
@@ -463,7 +232,7 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
         .ok_or_else(|| sqlx::error::Error::Protocol("task schema missing".into()))?;
     for action in ["INSERT", "UPDATE"] {
         let name = format!("account_assistant_snapshot_{}", action.to_lowercase());
-        let sql = format!("CREATE TRIGGER {name} AFTER {action} ON assistant_conversations WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN {} END",enqueue("NEW.task_id","conversation",&snapshot_body(tasks,"agent_tasks."),0," FROM agent_tasks WHERE agent_tasks.id=NEW.task_id"));
+        let sql = format!("CREATE TRIGGER {name} AFTER {action} ON assistant_conversations WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){} BEGIN {} END",outside_temporary_chat("NEW."),enqueue("NEW.task_id","conversation",&snapshot_body(tasks,"agent_tasks."),0," FROM agent_tasks WHERE agent_tasks.id=NEW.task_id"));
         managed.push((name, sql));
     }
     let notes = TABLES
@@ -479,6 +248,7 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
         let sql = format!("CREATE TRIGGER {name} AFTER {action} ON note_summaries WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){ready} BEGIN {} END",enqueue(&format!("{prefix}note_id"),"note",&snapshot_body(notes,"notes."),0,&format!(" FROM notes WHERE notes.id={prefix}note_id")));
         managed.push((name, sql));
     }
+    managed.extend(super::session_folders::triggers(UUID_SQL));
     install_managed(pool, &managed).await?;
     query(&format!("CREATE TRIGGER IF NOT EXISTS account_membership_insert AFTER INSERT ON note_folders WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_note_folders(id,note_id,folder_id,assigned_at) SELECT {UUID_SQL},NEW.note_id,NEW.folder_id,NEW.assigned_at WHERE NOT EXISTS(SELECT 1 FROM account_note_folders WHERE note_id=NEW.note_id AND folder_id=NEW.folder_id); UPDATE account_note_folders SET deleted=0,assigned_at=NEW.assigned_at WHERE note_id=NEW.note_id AND folder_id=NEW.folder_id; END")).execute(pool).await?;
     query("CREATE TRIGGER IF NOT EXISTS account_membership_delete AFTER DELETE ON note_folders WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN UPDATE account_note_folders SET deleted=1 WHERE note_id=OLD.note_id AND folder_id=OLD.folder_id; END").execute(pool).await?;
@@ -489,6 +259,7 @@ pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppErro
     let mut tx = pool.begin().await?;
     if enabled {
         query(&format!("INSERT INTO account_note_folders(id,note_id,folder_id,assigned_at) SELECT {UUID_SQL},nf.note_id,nf.folder_id,nf.assigned_at FROM note_folders nf WHERE NOT EXISTS(SELECT 1 FROM account_note_folders s WHERE s.note_id=nf.note_id AND s.folder_id=nf.folder_id)")).execute(&mut *tx).await?;
+        super::session_folders::backfill(&mut tx, UUID_SQL).await?;
         let count: i64 = query("SELECT count(*) AS n FROM account_sync_heads")
             .fetch_one(&mut *tx)
             .await?
@@ -496,10 +267,15 @@ pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppErro
         // The first inventory is captured in the same write transaction as enable.
         if count == 0 {
             for t in TABLES {
-                let sql=format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM {} WHERE id NOT IN (SELECT object_id FROM account_sync_outbox)",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name);
+                let object = object_column(t);
+                let sql=format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},{object},'{}',{},0 FROM {} WHERE {object} NOT IN (SELECT object_id FROM account_sync_outbox){}",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name,stays_local(t,&format!("{}.",t.name)));
                 query(&sql).execute(&mut *tx).await?;
             }
         }
+        // Saved items joined the registry after most accounts took their first
+        // inventory (ADR-0088): what was saved before that leaves now.
+        let saved = table("saved_items")?;
+        query(&format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM saved_items WHERE id NOT IN (SELECT object_id FROM account_sync_outbox) AND id NOT IN (SELECT object_id FROM account_sync_heads){}",saved.kind,snapshot_body(saved,"saved_items."),stays_local(saved,"saved_items."))).execute(&mut *tx).await?;
     }
     query("UPDATE account_sync_control SET enabled=? WHERE id=1")
         .bind(enabled)
@@ -758,6 +534,9 @@ async fn conflict_matches_local(
     };
     let local: Value = serde_json::from_str(&local.get::<String, _>("body"))
         .map_err(|_| error("sync_local_object_invalid"))?;
+    if t.name == "saved_items" {
+        return Ok(super::saved_items::same_item(&local, &remote));
+    }
     Ok(same_content(&local, &remote))
 }
 
@@ -990,7 +769,10 @@ fn verify(s: &Session, key: &[u8; 32], c: &Change) -> Result<Value, AppError> {
             return Err(error("sync_format_invalid"));
         }
     }
-    if body["row"]["id"] != c.object_id {
+    let row_id = body["row"]["id"]
+        .as_str()
+        .ok_or_else(|| error("sync_format_invalid"))?;
+    if object_of(name, row_id) != c.object_id {
         return Err(error("sync_format_invalid"));
     }
     Ok(body)
@@ -1090,7 +872,7 @@ pub(super) async fn delete_locally(
                 .execute(&mut *conn)
                 .await?;
         }
-        "account_studio_files" | "assistant_references" => {
+        "account_studio_files" | "assistant_references" | "project_files" => {
             let lane = if table == "account_studio_files" {
                 "studio"
             } else {
@@ -1139,6 +921,19 @@ pub(super) async fn delete_locally(
                 .bind(id)
                 .execute(&mut *conn)
                 .await?;
+        }
+        "account_session_folders" => super::session_folders::delete_locally(conn, id).await?,
+        // A connector is deleted by its object, and what this device kept
+        // about it goes with it, as its own removal would take it. Its
+        // keychain entries are this device's, and a sign-in reuses them.
+        "connectors" => {
+            for sql in [
+                "DELETE FROM connector_state WHERE connector_id IN (SELECT id FROM connectors WHERE object_id=?)",
+                "DELETE FROM connector_triggers WHERE connector_id IN (SELECT id FROM connectors WHERE object_id=?)",
+                "DELETE FROM connectors WHERE object_id=?",
+            ] {
+                query(sql).bind(id).execute(&mut *conn).await?;
+            }
         }
         "account_note_folders" => {
             query("DELETE FROM note_folders WHERE (note_id,folder_id) IN (SELECT note_id,folder_id FROM account_note_folders WHERE id=?)")
@@ -1305,6 +1100,14 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
     if t.name == "ingests" {
         row.insert("status".into(), json!("done"));
     }
+    // The object a connector arrived under is the one it leaves under again.
+    if t.name == "connectors" {
+        row.insert("object_id".into(), json!(c.object_id));
+    }
+    // A memory without a scope is the person's own (see `row_json`).
+    if t.name == "memories" && !row.contains_key("scope") {
+        row.insert("scope".into(), Value::Null);
+    }
     // `account_errands` is deliberately absent from these coercions, and it is
     // the only table that is. Every other incoming row describes work another
     // device already did, so arriving in a running state would make this
@@ -1349,7 +1152,7 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
                 .await?
                 .is_some();
             if !found && field == "artifact_id" && artifact_table == "assistant_references" {
-                found=query("SELECT 1 FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j WHERE json_extract(j.value,'$.id')=? LIMIT 1").bind(id).fetch_optional(&mut *conn).await?.is_some();
+                found=query("SELECT 1 FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j WHERE json_extract(j.value,'$.id')=? UNION SELECT 1 FROM project_files WHERE id=? LIMIT 1").bind(id).bind(id).fetch_optional(&mut *conn).await?.is_some();
             }
             if !found {
                 return Ok(false);
@@ -1362,6 +1165,9 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
     {
         if t.name == "audio_artifacts" {
             row.insert("path".into(), json!(""));
+        }
+        if t.name == "saved_items" {
+            super::saved_items::make_room(conn, &row).await?;
         }
         let columns: Vec<_> = row.keys().cloned().collect();
         let assignments = columns
@@ -1403,6 +1209,9 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
             if let Some(summary) = body.get("summary") {
                 super::summaries::apply(conn, &c.object_id, summary).await?;
             }
+        }
+        if t.name == "account_session_folders" {
+            super::session_folders::apply(conn, &row).await?;
         }
         if t.name == "account_note_folders" {
             if row.get("deleted").and_then(Value::as_i64).unwrap_or(0) != 0 {
@@ -1673,9 +1482,10 @@ pub(super) async fn resolve_in_store(
         } else {
             let t = table(name)?;
             let local = query(&format!(
-                "SELECT {} AS body FROM {} WHERE id=?",
+                "SELECT {} AS body FROM {} WHERE {}=?",
                 snapshot_body(t, &format!("{}.", t.name)),
-                t.name
+                t.name,
+                object_column(t)
             ))
             .bind(&c.object_id)
             .fetch_optional(&mut *tx)
@@ -1922,3 +1732,11 @@ async fn capture_balance(pool: &SqlitePool) -> Result<(), AppError> {
 #[cfg(test)]
 #[path = "sync_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "sync_web_tests.rs"]
+mod web_tests;
+
+#[cfg(test)]
+#[path = "sync_connector_tests.rs"]
+mod connector_tests;

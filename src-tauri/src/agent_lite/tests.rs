@@ -147,12 +147,27 @@ fn provider_failure_detail_matches_sidecar_and_gateway_wording() {
 #[test]
 fn system_prompt_appends_memory_block_when_present() {
     let plain = build_system_prompt(None);
-    assert_eq!(plain, SYSTEM_PROMPT);
+    assert_eq!(
+        plain,
+        format!("{SYSTEM_PROMPT}{}", python::prompt_section())
+    );
 
     let block = "User memory: facts.\n- Répond toujours en français.\n";
     let with_memory = build_system_prompt(Some(block));
     assert!(with_memory.starts_with(SYSTEM_PROMPT));
     assert!(with_memory.ends_with(block));
+}
+
+#[test]
+fn protected_mode_closes_the_phone_prompt_whatever_built_it() {
+    use crate::protected_mode::guards::guard_system_prompt;
+    let block = "User memory: facts.\n- likes tea\n";
+    let base = build_system_prompt(Some(block));
+    assert_eq!(guard_system_prompt(base.clone(), false), base);
+    let guarded = guard_system_prompt(base, true);
+    assert!(guarded.starts_with(SYSTEM_PROMPT));
+    assert!(guarded.contains("- likes tea\n\nProtected mode:"));
+    assert!(guarded.contains("general audience"));
 }
 
 fn tool_names(tools: &serde_json::Value) -> Vec<String> {
@@ -445,6 +460,10 @@ fn the_system_prompt_teaches_both_chat_block_kinds() {
     assert!(prompt.contains("subrosa:links"));
     assert!(prompt.contains("subrosa:places"));
     assert!(prompt.contains("Never invent a place or a coordinate."));
+    // Charts and tables (ADR-0086), with the parser's exact shapes.
+    assert!(prompt.contains("subrosa:chart"));
+    assert!(prompt.contains("subrosa:table"));
+    assert_eq!(prompt.contains("run_python"), cfg!(mobile));
 }
 
 #[test]
@@ -710,4 +729,322 @@ fn a_replayed_stream_repeats_the_answer_try_instead_of_spending_the_next() {
         }
     );
     assert_eq!(budget.next_completion(), Completion::GiveUp);
+}
+
+// --- Stop, regenerate, edit, branch -----------------------------------------
+
+async fn conversation() -> (
+    crate::db::repositories::Repositories,
+    crate::domain::types::AgentTaskDto,
+) {
+    let pool = sqlx_sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    crate::db::migrations::run_migrations(&pool).await.unwrap();
+    let repos = crate::db::repositories::Repositories::new(pool);
+    let task = repos
+        .create_agent_task("First question", None, Default::default(), None)
+        .await
+        .unwrap();
+    (repos, task)
+}
+
+async fn say(
+    repos: &crate::db::repositories::Repositories,
+    task_id: &str,
+    role: AgentMessageRole,
+    content: &str,
+) -> String {
+    // Messages order by created_at, which has millisecond precision.
+    tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+    repos
+        .add_agent_message(task_id, role, content)
+        .await
+        .unwrap()
+        .id
+}
+
+fn contents(task: &crate::domain::types::AgentTaskDto) -> Vec<&str> {
+    task.messages
+        .iter()
+        .map(|message| message.content.as_str())
+        .collect()
+}
+
+/// A body that sends one fragment of the reply and then goes quiet, the way a
+/// model mid-thought does.
+struct OneChunkThenSilence(Option<Vec<u8>>);
+
+impl crate::sse_lines::ChunkSource for OneChunkThenSilence {
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, AppError> {
+        match self.0.take() {
+            Some(chunk) => Ok(Some(chunk)),
+            None => std::future::pending().await,
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_stop_interrupts_a_stream_mid_reply_and_keeps_what_was_shown() {
+    let signal = std::sync::Arc::new(cancel::StopSignal::default());
+    let mut source = OneChunkThenSilence(Some(
+        b"data: {\"choices\":[{\"delta\":{\"content\":\"Half an\"}}]}\n\n".to_vec(),
+    ));
+    let mut reply = StreamedReply::default();
+    let mut shown = String::new();
+    let stopper = signal.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        stopper.stop();
+    });
+    let read = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        cancel::unless_stopped(
+            &signal,
+            collect_stream(&mut source, &mut reply, |text| shown.push_str(text)),
+        ),
+    )
+    .await
+    .expect("the stop lands while the stream is still open");
+    assert!(read.is_none());
+    assert_eq!(shown, "Half an");
+    let error = signal.halt(&shown);
+    assert_eq!(error.code, cancel::STOPPED);
+}
+
+#[tokio::test]
+async fn a_stop_pressed_before_the_turn_waits_is_not_missed() {
+    let signal = cancel::StopSignal::default();
+    signal.stop();
+    tokio::time::timeout(std::time::Duration::from_secs(1), signal.stopped())
+        .await
+        .expect("an earlier stop still counts");
+    assert!(cancel::unless_stopped(&signal, async { "never needed" })
+        .await
+        .is_none());
+}
+
+#[test]
+fn each_claimed_turn_gets_its_own_stop_signal() {
+    let task_id = "stop-signal-lifecycle-test";
+    let claim = TurnClaim::try_hold(task_id).expect("claimed");
+    cancel::signal(task_id).stop();
+    assert!(cancel::signal(task_id).is_stopped());
+    drop(claim);
+    // A stop meant for the last turn never stops the next one.
+    let _next = TurnClaim::try_hold(task_id).expect("claimed again");
+    assert!(!cancel::signal(task_id).is_stopped());
+}
+
+#[tokio::test]
+async fn a_stopped_reply_keeps_its_partial_text_and_is_never_resumed() {
+    let (repos, task) = conversation().await;
+    assert!(repos
+        .agent_tasks_awaiting_reply()
+        .await
+        .unwrap()
+        .contains(&task.id));
+    cancel::persist_stopped(&repos, &task.id, "  Half an answer ")
+        .await
+        .unwrap();
+    let stopped = repos.get_agent_task(&task.id).await.unwrap();
+    assert_eq!(stopped.status, AgentTaskStatus::Cancelled);
+    assert_eq!(contents(&stopped), ["First question", "Half an answer"]);
+    assert!(!turn_needs_resume(&stopped));
+    assert!(!repos
+        .agent_tasks_awaiting_reply()
+        .await
+        .unwrap()
+        .contains(&task.id));
+}
+
+#[tokio::test]
+async fn a_reply_stopped_before_any_text_is_never_resumed_or_billed_again() {
+    let (repos, task) = conversation().await;
+    cancel::persist_stopped(&repos, &task.id, "").await.unwrap();
+    let stopped = repos.get_agent_task(&task.id).await.unwrap();
+    assert_eq!(stopped.status, AgentTaskStatus::Cancelled);
+    // The question is still the last message, and still not resumed.
+    assert_eq!(contents(&stopped), ["First question"]);
+    assert!(!turn_needs_resume(&stopped));
+    assert!(!repos
+        .agent_tasks_awaiting_reply()
+        .await
+        .unwrap()
+        .contains(&task.id));
+
+    // A later message works as on any chat: send_agent_message queues it.
+    say(&repos, &task.id, AgentMessageRole::User, "Second question").await;
+    let next = repos
+        .update_agent_task_status(&task.id, AgentTaskStatus::Queued, None, None)
+        .await
+        .unwrap();
+    assert!(turn_needs_resume(&next));
+}
+
+#[tokio::test]
+async fn regenerate_drops_the_replies_after_the_last_question() {
+    let (repos, task) = conversation().await;
+    say(
+        &repos,
+        &task.id,
+        AgentMessageRole::Assistant,
+        "First answer",
+    )
+    .await;
+    say(&repos, &task.id, AgentMessageRole::User, "Second question").await;
+    say(
+        &repos,
+        &task.id,
+        AgentMessageRole::Assistant,
+        "Second answer",
+    )
+    .await;
+    repos
+        .update_agent_task_status(&task.id, AgentTaskStatus::Completed, None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        repos.rewind_to_last_user_message(&task.id).await.unwrap(),
+        1
+    );
+    let rewound = repos.get_agent_task(&task.id).await.unwrap();
+    assert_eq!(
+        contents(&rewound),
+        ["First question", "First answer", "Second question"]
+    );
+    // Queued with its question last: what the run (or a resume) answers.
+    assert_eq!(rewound.status, AgentTaskStatus::Queued);
+    assert!(turn_needs_resume(&rewound));
+}
+
+#[tokio::test]
+async fn editing_the_last_question_rewrites_it_and_drops_what_followed() {
+    let (repos, task) = conversation().await;
+    let first = task.messages[0].id.clone();
+    say(
+        &repos,
+        &task.id,
+        AgentMessageRole::Assistant,
+        "First answer",
+    )
+    .await;
+    let second = say(&repos, &task.id, AgentMessageRole::User, "Second question").await;
+    say(
+        &repos,
+        &task.id,
+        AgentMessageRole::Assistant,
+        "Second answer",
+    )
+    .await;
+
+    // An earlier question is branched, never rewritten in place.
+    assert!(!repos
+        .rewrite_last_user_message(&task.id, &first, "Changed")
+        .await
+        .unwrap());
+    assert_eq!(
+        repos.get_agent_task(&task.id).await.unwrap().messages.len(),
+        4
+    );
+
+    assert!(repos
+        .rewrite_last_user_message(&task.id, &second, "Second question, better")
+        .await
+        .unwrap());
+    let edited = repos.get_agent_task(&task.id).await.unwrap();
+    assert_eq!(
+        contents(&edited),
+        ["First question", "First answer", "Second question, better"]
+    );
+    assert_eq!(edited.messages[2].id, second);
+    assert_eq!(edited.status, AgentTaskStatus::Queued);
+}
+
+#[tokio::test]
+async fn a_branch_ends_where_it_was_cut_and_the_original_stays_whole() {
+    use crate::db::repositories::conversations::ForkCut;
+    let (repos, task) = conversation().await;
+    let answer = say(
+        &repos,
+        &task.id,
+        AgentMessageRole::Assistant,
+        "First answer",
+    )
+    .await;
+    let second = say(&repos, &task.id, AgentMessageRole::User, "Second question").await;
+    say(
+        &repos,
+        &task.id,
+        AgentMessageRole::Assistant,
+        "Second answer",
+    )
+    .await;
+
+    // "Branch from here" keeps the message it was pressed on.
+    let branch = repos
+        .fork_agent_task_until(&task.id, None, Some(ForkCut::Through(&answer)), None)
+        .await
+        .unwrap();
+    assert_eq!(contents(&branch), ["First question", "First answer"]);
+    assert_eq!(branch.status, AgentTaskStatus::Completed);
+
+    // Editing an earlier question: everything before it, then the new one,
+    // queued in the same write so the resume sweep can finish it.
+    let edited = repos
+        .fork_agent_task_until(
+            &task.id,
+            None,
+            Some(ForkCut::Before(&second)),
+            Some("Second question, rephrased"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        contents(&edited),
+        [
+            "First question",
+            "First answer",
+            "Second question, rephrased"
+        ]
+    );
+    assert_eq!(edited.status, AgentTaskStatus::Queued);
+    assert!(repos
+        .agent_tasks_awaiting_reply()
+        .await
+        .unwrap()
+        .contains(&edited.id));
+
+    assert_eq!(
+        repos.get_agent_task(&task.id).await.unwrap().messages.len(),
+        4
+    );
+    assert!(matches!(
+        repos
+            .fork_agent_task_until(&task.id, None, Some(ForkCut::Through("missing")), None)
+            .await,
+        Err(sqlx::error::Error::RowNotFound)
+    ));
+}
+
+#[test]
+fn only_the_three_known_efforts_reach_the_wire() {
+    for effort in ["low", "medium", "high"] {
+        assert_eq!(
+            controls::accepted_effort(Some(effort.to_string())).as_deref(),
+            Some(effort)
+        );
+    }
+    for effort in ["", "max", "HIGH"] {
+        assert_eq!(controls::accepted_effort(Some(effort.to_string())), None);
+    }
+    let request: AgentLiteRunRequest =
+        serde_json::from_value(serde_json::json!({ "taskId": "t", "reasoningEffort": "high" }))
+            .unwrap();
+    assert_eq!(request.reasoning_effort.as_deref(), Some("high"));
+    let request: AgentLiteRunRequest =
+        serde_json::from_value(serde_json::json!({ "taskId": "t" })).unwrap();
+    assert!(request.reasoning_effort.is_none());
 }

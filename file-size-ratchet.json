@@ -1,14 +1,14 @@
 {
   "ceiling": 2000,
   "exceptions": {
-    "src/components/agent/AgentWorkspace.tsx": 13716,
-    "src-tauri/src/hermes_bridge.rs": 11723,
+    "src/components/agent/AgentWorkspace.tsx": 13629,
+    "src-tauri/src/hermes_bridge.rs": 11564,
     "src-tauri/src/dictation.rs": 5775,
-    "src-tauri/src/db/repositories.rs": 5592,
-    "src/app/App.tsx": 3942,
-    "src-tauri/src/domain/processing.rs": 2438,
-    "src-tauri/src/commands.rs": 2717,
+    "src-tauri/src/db/repositories.rs": 5350,
+    "src/app/App.tsx": 3875,
+    "src-tauri/src/commands.rs": 2691,
     "src/lib/tauri.ts": 2681,
-    "src-tauri/src/audio/turns.rs": 2497
+    "src-tauri/src/audio/turns.rs": 2497,
+    "src-tauri/src/domain/processing.rs": 2438
   }
 }

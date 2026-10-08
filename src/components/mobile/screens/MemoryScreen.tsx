@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { messageFromError } from "../../../lib/errors";
 import {
   type MemoryDto,
-  type MemorySettings,
   memoryAdd,
   memoryClear,
   memoryDelete,
@@ -11,6 +10,7 @@ import {
   memorySetSettings,
   memoryUpdate,
 } from "../../../lib/tauri";
+import type { MemorySettingsWithHistory } from "../../../lib/personalization";
 import { SettingsActionRow, SettingsGroup, SettingsRow, SettingsToggleRow } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
 import { SwipeableRow } from "../SwipeableRow";
@@ -26,7 +26,7 @@ import { ReflexJournalGroup } from "../../settings/ReflexJournal";
  */
 export function MemoryScreen({ onBack }: { onBack: () => void }) {
   const [items, setItems] = useState<MemoryDto[]>([]);
-  const [settings, setSettings] = useState<MemorySettings | null>(null);
+  const [settings, setSettings] = useState<MemorySettingsWithHistory | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -46,7 +46,7 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
-  async function updateSettings(next: MemorySettings) {
+  async function updateSettings(next: MemorySettingsWithHistory) {
     try {
       setSettings(await memorySetSettings(next));
       setError(null);
@@ -104,20 +104,25 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
   }
 
   const enabled = settings?.enabled === true;
+  const held = settings?.heldByProtectedMode === true;
 
   return (
     <div className="mobile-screen-root">
       <StackHeader title={t("Memory")} onBack={onBack} backLabel={t("Settings")} />
       <div className="mobile-settings-scroll">
         <SettingsGroup
-          footer={t(
-            "Sub Rosa remembers durable facts about you and uses them in future conversations. Turning memory off stops it being used but never deletes anything.",
-          )}
+          footer={
+            held
+              ? t("Protected mode keeps memory or past chats off on this device.")
+              : t(
+                  "Sub Rosa remembers durable facts about you and uses them in future conversations. Turning memory off stops it being used but never deletes anything.",
+                )
+          }
         >
           <SettingsToggleRow
             label={t("Use memory in chats")}
             checked={enabled}
-            disabled={settings === null}
+            disabled={settings === null || held}
             onChange={(next) =>
               void updateSettings({ enabled: next, autoExtract: settings?.autoExtract ?? true })
             }
@@ -126,9 +131,23 @@ export function MemoryScreen({ onBack }: { onBack: () => void }) {
             label={t("Learn from conversations")}
             detail={t("Pick up new facts automatically")}
             checked={settings?.autoExtract === true}
-            disabled={settings === null || !enabled}
+            disabled={settings === null || held || !enabled}
             onChange={(next) =>
               void updateSettings({ enabled: settings?.enabled ?? true, autoExtract: next })
+            }
+          />
+          <SettingsToggleRow
+            label={t("Reference past chats")}
+            detail={t("Look through your other chats when they help")}
+            checked={enabled && settings?.referenceChatHistory !== false}
+            disabled={settings === null || held || !enabled}
+            onChange={(next) =>
+              void updateSettings({
+                enabled: settings?.enabled ?? true,
+                autoExtract: settings?.autoExtract ?? true,
+                extractionModel: settings?.extractionModel,
+                referenceChatHistory: next,
+              })
             }
           />
         </SettingsGroup>

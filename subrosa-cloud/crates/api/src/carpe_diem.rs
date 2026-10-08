@@ -35,5 +35,7 @@ async fn assertion(
         return Err(Error::NotFound.into());
     }
     let a = session(&s, &h, true).await?;
-    Ok(ok(s.carpe_diem_assertion(&a, &b.jkt).await?).into_response())
+    // Only a browser device sends a proof; an app's bearer session is enough.
+    let proof = super::browser_devices::proof(&h);
+    Ok(ok(s.carpe_diem_assertion(&a, &b.jkt, proof).await?).into_response())
 }

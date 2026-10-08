@@ -176,13 +176,19 @@ pub async fn workflow_run_finish(
         .await?;
     if let Some(run) = updated {
         match status {
-            WorkflowRunStatus::Completed => notify(&app, &run.name, "Your production is ready"),
-            WorkflowRunStatus::Failed => notify(&app, &run.name, "Your production stopped"),
+            WorkflowRunStatus::Completed => {
+                notify(&app, &run.name, &crate::tr!("Your production is ready"))
+            }
+            WorkflowRunStatus::Failed => {
+                notify(&app, &run.name, &crate::tr!("Your production stopped"))
+            }
             // The production is holding for a decision only the user can
             // make - the one notification that shortens a pause.
-            WorkflowRunStatus::AwaitingGate => {
-                notify(&app, &run.name, "Your production is waiting on you")
-            }
+            WorkflowRunStatus::AwaitingGate => notify(
+                &app,
+                &run.name,
+                &crate::tr!("Your production is waiting on you"),
+            ),
             // A cancel is the user's own act; telling them about it is noise.
             _ => {}
         }
@@ -205,7 +211,7 @@ pub async fn workflow_run_dismiss(app: AppHandle, id: String) -> Result<(), AppE
 /// permission was asked for when the production started, a refusal is fine.
 fn notify(app: &AppHandle, name: &str, title: &str) {
     let body = if name.trim().is_empty() {
-        "Open Sub Rosa to see it.".to_string()
+        crate::tr!("Open Sub Rosa to see it.")
     } else {
         name.trim().chars().take(120).collect::<String>()
     };

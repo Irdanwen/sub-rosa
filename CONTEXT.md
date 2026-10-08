@@ -168,6 +168,28 @@ is already written.
 _Avoid_: slash command (that is the composer's, and it does other things),
 block menu.
 
+**Canvas**:
+A note opened beside the chat (a split view on the desktop, a screen of its
+own on the phone) to work on a draft or a file of code with the assistant
+(ADR-0087). It *is* a note: no canvas table, no canvas format. A **code
+canvas** is a note whose body is one fenced code block. The assistant reaches
+it only through **proposed versions**.
+_Avoid_: artifact (that is a Studio gallery file and the published page of the
+tooling), document (a canvas is a note), editor (that is the component).
+
+**Proposed version**:
+A whole new body for a canvas, from a `subrosa:canvas` block naming it or from
+an instruction typed under it, shown in place of the document until it is
+accepted or discarded. The whole-document form of a **revision**, under the
+same rule: never stored, never applied without a gesture.
+_Avoid_: diff, patch, edit (that is what the person does by typing).
+
+**Ask about a selection**:
+"Ask Sub Rosa" on the **selection toolbar**: the selected passage goes to the
+chat composer as a markdown quote, taken once by whichever composer is on
+screen or mounts next. It changes nothing in the note.
+_Avoid_: share selection, send to chat.
+
 ### Imports (fork)
 
 **Import**:
@@ -270,13 +292,29 @@ it. One confirmation surface for every kind.
 _Avoid_: automation, auto-apply, agent action (unqualified).
 
 **Moment**:
-One of the two times the app speaks first: the **brief** (ten minutes before
+One of the times the app speaks first: the **brief** (ten minutes before
 a meeting with other people, what was last decided with them) and the
 **recap** ("your note is ready", when a recording has become one). Both are
 durable rows re-driven by the sweep, never timers, and both obey the rule
 that silence is a feature — nothing to say means nothing is said. The brief
-is off until asked for; the recap is on.
+is off until asked for; the recap is on. The **daily brief** is the third
+(ADR-0091).
 _Avoid_: reminder, alert, digest, push.
+
+**Daily brief**:
+The third **moment**: one card a morning, at the time the person chose,
+with the day's agenda as one sentence, yesterday's notes and their
+follow-ups, results to review, runs that failed, and news on the
+**followed topics** (at most five, one web search each a day). Off until
+asked for, silent on a morning with nothing to say, and under the moments'
+daily cap (ADR-0091). Shown as a notification and in **Today**.
+_Avoid_: digest, newsletter, pulse, feed.
+
+**Today**:
+The surface, on both shells, that holds the daily brief, the results
+waiting for review, and the assignments and scheduled tasks. Not a
+calendar: the agenda is a sentence in the card (ADR-0025).
+_Avoid_: dashboard, home, agenda (as a screen).
 
 **Calendar context**:
 What the day says about a note: the event it was recorded inside, when that
@@ -303,6 +341,20 @@ previews, places). The payload travels in the message text so it persists in
 transcripts and `agent_messages` unchanged, and degrades to a readable code
 block anywhere the parser is absent (ADR-0024).
 _Avoid_: widget, embed, rich message (unqualified).
+
+**Chart block / table block**:
+The two data kinds of chat block, `subrosa:chart` (bar, line, area, pie,
+donut, scatter) and `subrosa:table` (sortable rows), drawn by the app in
+SVG and HTML from the numbers in the payload, with a data view and PNG, SVG
+and CSV saving (ADR-0086). Their numbers come from a computation or a source,
+never from the model's estimate.
+_Avoid_: graph, plot (for the block), matplotlib image.
+
+**Data analysis (phone)**:
+The `run_python` tool of the phone's chat: Python with numpy and pandas run
+by Pyodide in a worker of the webview, bundled with the app, on the turn's
+attached files under `/data`, only while the app is on screen (ADR-0086).
+_Avoid_: code interpreter, sandbox, notebook.
 
 **Hermes**:
 The embedded upstream (Nous Research) agent runtime June bundles, pinned to a
@@ -402,6 +454,108 @@ Hermes' own memory *directory* (runtime workspace files) and from note
 content.
 _Avoid_: history, context (unqualified), Hermes memory (that is the runtime's
 folder, not this store).
+
+**Personalization**:
+What the user tells Sub Rosa about themselves, how it should respond, and a
+**personality** preset, rendered as one block into the default chat on both
+shells and never into a custom assistant (ADR-0081). Kept on the device.
+_Avoid_: custom instructions (the vendor's name), system prompt (that is the
+whole prompt, of which this is one block), profile.
+
+**Past chats (reference chat history)**:
+What was said in the user's other general chats, read from
+`agent_messages_fts` when a turn needs it, as excerpts or through
+`search_past_chats` (ADR-0081). Not memory: nothing is extracted or stored.
+_Avoid_: chat memory, history (unqualified).
+
+**Temporary chat**:
+A chat that is not saved and not remembered: kept out of every list, index,
+memory pass, title, synchronisation, archive and share, and deleted when the
+person leaves it or at the next launch (ADR-0083). In code, `ephemeral`.
+_Avoid_: incognito, private chat (every chat here is private), ephemeral chat
+in copy.
+
+**Quiet hours**:
+A daily window, set behind the protected mode PIN, when chat and Studio
+refuse new work (ADR-0084 addendum). One of the protected mode **limits**,
+with memory, image and video generation, voice and past chats.
+_Avoid_: downtime, bedtime, do not disturb (the system's own feature).
+
+**Memory sources**:
+The memories a reply was given, recorded per phone turn (by the user message
+that opened it) and per desktop session (ADR-0081).
+_Avoid_: citations (those point at notes and pages).
+
+**Project (chat project)**:
+A note folder seen from its chats: the folder the UI calls a project, given
+**project instructions**, **project files** and a **memory mode** (ADR-0085).
+A chat belongs to the project whose folder it is filed in last; the shared
+"Archive" folder is never one. Distinct from a **film project**, which is
+Studio's editing document; qualify when both could be meant.
+_Avoid_: workspace (the agent's working directory), space.
+
+**Project files**:
+Documents added to a project, stored and read once like assistant references
+(`project_files`), searched by `search_project_files` on both shells. Evidence,
+never instructions.
+_Avoid_: attachments (those ride with one message), uploads.
+
+**Memory mode (Default, Project only)**:
+Whether a project's chats use the person's own memory (Default) or keep their
+own (Project only): a memory a "Project only" chat learns carries the folder id
+in `memories.scope`, and only such memories reach that project's chats.
+_Avoid_: private memory, project memory (unqualified).
+**Reasoning effort**:
+How hard a model thinks before it answers (default, low, medium, high),
+offered only for a model whose catalog entry says `supportsReasoningEffort`.
+On the desktop it travels as a **reasoning-effort alias**,
+`<model-id>@reasoning-effort=<level>`, which the provider proxy turns back into
+the model id and the `reasoning_effort` field (ADR-0080). The alias is never a
+model: nothing shows, prices or meters it.
+_Avoid_: thinking mode, model variant.
+
+**Regenerate / Edit (a sent message)**:
+Regenerate asks the last question again in place of its reply; Edit replaces a
+sent message and everything after it. Both rewind the stored transcript with
+the runtime's `/undo` before a new turn. Editing an earlier message happens in
+a **branch**, so the original conversation stays as it was (ADR-0080).
+_Avoid_: retry (that re-asks after a failure), rewrite (a note rewrite).
+
+**Read aloud (a reply)**:
+A finished reply spoken through the one-call speech rail, the engine and voice
+the spoken recap of a note uses, cut into chunks so the first sentence plays in
+seconds. A chat card or a code block is named ("There are links here"), never
+read. One reply speaks at a time.
+_Avoid_: TTS (the rail, not the action), voice mode (a spoken conversation,
+which this is not).
+
+**Voice conversation**:
+Talking with the assistant out loud: the person speaks, the words go out as
+an ordinary chat turn, and the reply is spoken back sentence by sentence while
+it streams; talking over it stops it (**barge-in**). Its turns are the chat's
+turns, saved like typed ones (ADR-0093). Distinct from **dictation** (text
+into the foreground app) and from **read aloud** (one finished reply).
+_Avoid_: voice mode (the button's name only), realtime voice (there is no
+realtime rail), call.
+
+**Reply rating**:
+A thumbs up or down a person gives a reply, with an optional reason on a
+thumbs down. For themselves only: kept on the device, never synchronised,
+never sent, carried only by an **archive** they write (ADR-0082).
+_Avoid_: feedback (implies someone receives it), vote, review.
+
+**Conversation export**:
+One chat written as a Markdown or PDF file: title, date, model, each turn
+under its speaker, cards as lists. The desktop saves it where the person
+points; the phone hands it to the share sheet (ADR-0082).
+_Avoid_: share (a share link is another thing), archive (that is the whole
+corpus).
+
+**Archived chat**:
+A chat filed in the shared folder named "Archive". The membership is
+synchronised, so archiving on one device archives on every device; restoring
+removes it. The archive is a state, never a project.
+_Avoid_: hidden chat, deleted chat.
 
 ### The council (fork)
 
@@ -784,8 +938,27 @@ generation provenance; the older browser index remains an import source. It is a
 surfaces: anything produced can be pulled into any image input, and anything
 worth keeping is written into it rather than held in a form's state. See
 [ADR-0020](docs/adr/0020-the-gallery-is-the-studio-exchange-format.md).
-_Avoid_: library, assets, media pool, uploads (nothing is uploaded); "the
-gallery" is the word in the code, the desktop UI, and the mobile sheet alike.
+_Avoid_: library (that is the chat **Library**, which reads the gallery),
+assets, media pool, uploads (nothing is uploaded); "the gallery" is the word
+in the code, the desktop UI, and the mobile sheet alike.
+
+**Chat picture**:
+A gallery file asked for in a conversation, tagged in its generation metadata
+with `origin: {surface: "chat", taskId?}` (ADR-0088). It is an ordinary gallery
+file; the origin is only how the **Library** finds it.
+_Avoid_: chat image (fine in prose, but the code field is `origin`).
+
+**Refine**:
+Image generation "with thinking": a vision critique of a picture against its
+prompt, then, unless it already matches, one edit, at most twice; each edit is
+a durable media job whose result is a new gallery version with lineage
+`op: "refine"`. Its extra price is shown before it runs (ADR-0088).
+_Avoid_: improve, upscale (that is a different operation), retouch (that is
+the person's own instruction).
+
+**Try-on**:
+A picture of a person wearing a garment, made with `/image/multi-edit` from a
+photo of each, from the Studio or a `subrosa:tryon` card in a chat.
 
 **Collection**:
 A named group of gallery files, shown to the user as a folder ("Dossier"). A
@@ -1070,6 +1243,26 @@ restored on purpose (ADR-0042). Importing is an upsert by id.
 _Avoid_: backup (implies a schedule), sync (there is none, by decision), export
 alone (that is one note to PDF or Markdown).
 
+**Library**:
+What the chats made and what the person kept from them, on both shells: the
+**chat pictures** in the gallery, and the **saved items** (ADR-0088). A view,
+not a store.
+_Avoid_: gallery (that is every Studio file), collection (a gallery folder).
+
+**Saved item**:
+A reply, a link or a place kept from a chat with "Save", a `saved_items` row
+keyed by what it is, so saving twice keeps one, and under an id derived from
+that key, so the same thing saved on two devices is one item. It synchronises
+with an account (ADR-0088 addendum). Refused in a temporary chat.
+_Avoid_: bookmark, favourite (that is a gallery **mark**), pin (a pinned chat).
+
+**Scan**:
+Paper read by the phone's document camera into a note: the recognized text is
+the body and the PDF is kept beside it, named by the note (ADR-0088). The PDF
+stays on the device.
+_Avoid_: import (that is media fetched or dropped), attachment (notes have
+none).
+
 **Report**:
 A bug, feedback or feature request filed as a GitHub Issue with the user's own
 credential, or opened pre-filled in the browser (ADR-0036). Never sent to a
@@ -1206,6 +1399,120 @@ the memory still holds the state after. Settings › Memory calls the journal
 _Avoid:_ "auto-edit", "AI edit", "suggestion" (nothing is proposed: it is
 done, and can be undone).
 
+### Research and study (fork)
+
+**Deep research** — a question read across the web and the person's own
+notes and project files, written up as a note (ADR-0089). It moves in four
+steps the person sees: clarifying questions (at most three, often none), a
+**research plan** (sections and their searches, edited and approved, with
+its **depth** and what it costs at most), the **run**, and the **report**.
+_Avoid:_ "deep search", "agent mode", "investigation".
+
+**Research run** — one deep research, a row (`research_runs`) with one row
+per search (`research_steps`) and per source read (`research_sources`), so
+it survives the app being suspended or quit and the background sweep picks
+it up again (ADR-0018). It is running, stopped, done or failed; a stopped
+run resumes, or writes its report from what it read.
+_Avoid:_ "job" (Studio's), "task" (the agent's).
+
+**Depth** — the budget of a run: Quick (up to 10 sources), Standard (25) or
+Deep (50), which also caps the searches the plan may hold.
+
+**Research source** — a web page, note or project file a run read, numbered
+by the app when the report is written. Always "research source" in code; in
+copy, "source" only inside the research surfaces.
+_Avoid:_ "source" alone in code (an audio lane), "reference" (an
+assistant's file), "link" (a chat card).
+
+**Report** — the note a run writes: a summary, sections, citations the app
+resolved and a sources list the app wrote (the ADR-0044 discipline). It is
+an ordinary note and exports as Markdown, PDF or Word.
+_Avoid:_ "research note", "document".
+
+**Study mode** — a chat that teaches: the assistant guides with questions
+and hints rather than giving answers, checks understanding with a **quiz**
+(`subrosa:quiz`) and helps memorise with **flashcards**
+(`subrosa:flashcards`). Switched per chat from the composer, on both shells.
+_Avoid:_ "tutor mode", "learning mode".
+
+**Review** — the cards a person added from flashcards, brought back when
+they are due by spaced repetition (SM-2, `study_cards`, kept on this
+device). Each answer is Again, Hard, Good or Easy.
+_Avoid:_ "deck" for the review (a deck is one flashcards block), "quiz"
+(answered in the chat, never stored).
+
+### Work files and Code mode (fork)
+
+**Office file** — a Word document, Excel workbook or PowerPoint deck the
+assistant makes on request with `make_document`, on both shells, written by
+the app's own writers and kept in the gallery's `documents` folder
+(ADR-0090). The chat shows it as a `subrosa:file` card that opens, shares or
+saves it.
+_Avoid:_ "deliverable" in copy (the code's module name only), "export" (a
+note leaving the app), "attachment".
+
+**Code mode** — a desktop chat with a working folder whose file changes are
+reviewed: turned on from the session bar, it records where the folder
+starts (git's commit plus a copy of files already changed, or a copy of the
+folder), and the **change review** lists every file changed since, each
+one kept or reverted (ADR-0090). Not the study **review**.
+_Avoid:_ "coding agent", "IDE mode".
+
+**Keep / revert (a change)** — keeping makes a changed file's current state
+its new start, so it leaves the change review; reverting puts back the start (or
+removes a file that did not exist). Only a file listed as changed, inside
+the folder, can be reverted.
+
+### Connectors and skill packs (fork)
+
+**Connector** — another service the assistant may read and act in: a remote
+MCP server, or the built-in Google, Microsoft or GitHub (ADR-0092). Its
+definition (name, address, the person's **tool rules**) synchronises; its
+access never does, it is in each device's keychain. Every runtime reaches it
+through the app's own client: agent-lite directly, Hermes through the app's
+`subrosa_connectors` MCP server, so one sign-in per device serves both. A
+custom assistant reaches only the connectors its **connector grant** names.
+_Avoid:_ "integration", "plugin", "app" (an MCP server is not an "app" in
+copy; the "interactive view" is).
+
+**Tool rule** — what one connector tool may do: allow (runs), ask first (a
+**connector call** waits as a card until the person approves), or off. A
+tool nobody ruled on follows its server's hint: reading runs, anything else
+asks.
+_Avoid:_ "permission" (an assistant's, ADR-0058), "scope" (OAuth's).
+
+**Connector grant** — an assistant's permission to use one connector, a
+`connector:<id>` entry in its tools (ADR-0092 addendum, ADR-0058). Without
+one, an assistant reaches no connector.
+_Avoid:_ "connector scope" (an OAuth scope is the service's).
+
+**Device sign-in** — signing in by typing a short code on the service's own
+page (GitHub, RFC 8628) while the app waits, for a service that registers no
+client by itself and whose app cannot hold a secret.
+
+**Connector call** — one call the assistant made or asked to make through a
+connector, a `connector_calls` row with its result, shown under the reply as
+a `subrosa:connector` card. A pending call is the durable proposal behind an
+"ask first"; approving claims it once and runs it.
+
+**Interactive view** — the HTML a connector tool returns as a `ui://`
+resource, drawn in a sandboxed frame (`subrosa:app`) that can reach only its
+server's origin and talks to the app through a checked bridge.
+_Avoid:_ "widget", "mini app", "canvas" (the editable draft).
+
+**Connector trigger** — "when this happens" for an assignment: a new
+calendar event, a new message matching a search, a new item a connector
+lists, or a resource it says changed. Looked at while the app is open on the
+device that runs the assignment; the first look only learns.
+_Avoid:_ "webhook", "automation".
+
+**Skill pack** — a `SKILL.md` made portable (name, description, body, the
+tools it narrows a turn to), synchronised as a definition and read by
+agent-lite: described every turn, loaded with `load_skill`, or picked with
+`/name` at the start of a phone message. A desktop Hermes skill is not a
+skill pack until it is imported as one.
+_Avoid:_ "plugin", "prompt template".
+
 ### Sharing in (fork)
 
 **Share inbox** — the folder in the app group container where the iOS
@@ -1213,6 +1520,38 @@ share extension leaves a manifest (a link, a file or a text) for the app
 to act on once, through `subrosa://share/<id>` (ADR-0048). Not a queue the
 app polls, not storage: consumed on open, deleted after.
 _Avoid:_ "shared folder" (nothing is shared with anyone), "import queue".
+
+### The desktop around the app (fork)
+
+**Agent browser** — a Chromium-family browser the person already has,
+started by the app in a profile of its own, that the desktop agent drives
+one site at a time with their consent (ADR-0094). The person watches it and
+can Stop it; it never types a password or a card number.
+_Avoid:_ "headless browser" (it is a window the person sees), "web fetch"
+(that reads a page without a browser, `june_web`).
+
+**Site (agent browser)** — a registrable domain (`example.co.uk`), the unit
+the person allows. Not a host, not a URL.
+
+**Chat bar** — the floating field a system-wide shortcut opens, where a
+question is asked without switching to Sub Rosa; its chat is an ordinary
+chat ("Open in Sub Rosa").
+_Avoid:_ "launcher", "spotlight" (Spotlight is macOS's own search, which
+the notes also feed).
+
+**What I'm looking at** — the app the person was in, its window title, the
+text selected there and, on request, one window's picture, attached to a
+question as a removable chip, read only on a click (ADR-0094).
+_Avoid:_ "screen capture" for the whole feature (a picture is the optional
+part), "context" alone (overloaded).
+
+**Browser pairing** — the consent that lets one browser extension ask the
+desktop app anything: a six-digit code shown in Settings › Browser extension,
+typed into the extension, traded for a token bound to that extension
+(ADR-0100). Registering the host only lets the browser start the relay;
+pairing is what the app checks.
+_Avoid:_ "login" (no account is involved), "connection" for the pairing
+itself (the port connects and disconnects all the time).
 
 ### The app in your language (fork)
 
@@ -1230,6 +1569,41 @@ _Avoid:_ "translation file" (it is a catalog: the whole set, gated).
 Settings and applied before the first render. Distinct from the
 transcription language (what the model should expect to hear).
 _Avoid:_ "locale" in copy (the person picks a language, not a locale).
+
+### Health and finances (fork)
+
+**Measure** — one kind of health reading the person can pick: steps, sleep,
+heart rate, resting heart rate, workouts, weight (ADR-0099). Picked per
+device; each measure has its own sync switch.
+_Avoid:_ "metric" in copy (it is the code's word), "permission" (the system
+grants it; the person picks a measure).
+
+**Health day** — one measure on one local calendar day, as the app keeps it
+(`health_days`): a step total, minutes asleep counted on the morning the
+night ended, an average heart rate with its range. The app never keeps the
+store's raw samples.
+_Avoid:_ "sample" (HealthKit's and Health Connect's word for one reading).
+
+**Statement** — a file the person exported from their bank (CSV, OFX or QFX,
+camt.053) and read into the app. It is not an **import**: an import is a
+note, and a statement becomes **transactions**, never a note.
+_Avoid:_ "import" for the file (that word names a note), "bank sync" (no bank
+is ever contacted), "aggregator".
+
+**Transaction** — one booking from a statement: a day, a signed amount in
+minor units, a description, its **category**. Read again from an overlapping
+statement it is recognised by its dedup key, never added twice.
+_Avoid:_ "operation", "entry" (the budget engine's words for its own ledger).
+
+**Category / rule / suggestion** — where a transaction's money went. A
+**rule** files every transaction whose description or payee matches; the
+person's own choice always wins over a rule. A **suggestion** is a category
+the model proposed that waits until the person accepts or declines it.
+_Avoid:_ "auto-categorised" (nothing is filed on the model's word alone).
+
+**Budget engine** — the household's separate budget program on the home
+server. The app reaches it only through files the person carries
+(transactions CSV, `rules.json`), never a call.
 
 ## Account and synchronisation vocabulary
 
@@ -1286,6 +1660,56 @@ after the `#` is the key, it never reaches the service, and it is what makes
 the link a bearer credential rather than an address.
 _Avoid:_ "share URL" when only the address is meant (half a link opens nothing).
 
+**Publication**: a note, a canvas, a profile or an assistant made public on
+purpose, in the clear, with no end date, until it is unpublished
+([ADR-0097](docs/adr/0097-a-publication-is-plaintext-the-service-renders-on-an-origin-of-its-own.md)).
+_Avoid_: "share" for it; a share is sealed and dated, a publication is neither.
+
+**Page** (published page): one note or canvas as the service rendered it at the
+last publish, at `/p/<slug>` on the publication origin. "Publish changes"
+replaces it; unpublishing deletes it.
+
+**Site**: an ordered set of one account's pages with a home page and
+navigation. Its address is its home page's.
+
+**Public profile**: the opt-in page `/u/<handle>` listing what one account
+published. A page never names its author; a profile lists, it does not
+attribute.
+
+**Catalog listing**: an assistant definition published to the public catalog,
+with only the references the publisher ticked. "Add to Sub Rosa" imports it as
+an ordinary assistant, with the permissions the importer chose.
+
+**Publication origin**: the host public pages are served from, apart from the
+account origin, so content anybody wrote never shares its cookies or vault.
+
+**Takedown**: the operator hiding public content with its tool, recorded so an
+identical copy is refused and three suspend publishing. Distinct from
+unpublishing, which is the owner's.
+
+**Assignment** (French copy: *mission*): a standing goal the assistant
+works on again and again, on a cadence, on the one device the row names, and
+only while an app is open there, the menu bar included (ADR-0091). It has an
+autonomy ("ask before anything leaves the device" or "act within these
+tools"), the tool groups it may use, a **results inbox** where each run waits
+for Approve or Reject with feedback the next run reads, and a history. A
+missed slot runs once, late, and says so.
+_Avoid:_ "agent" alone (the assistant is the agent), "job" (Studio's),
+"routine" (a desktop Hermes cron job the person set up directly), "task"
+alone (the agent's chat record).
+
+**Scheduled task** (French copy: *tâche programmée*): an assignment whose
+results need no review: it runs on its cadence and notifies. The phones'
+answer to the desktop's routines, kept in the same rows as assignments.
+_Avoid:_ "routine" for the phone's (that word stays with Hermes cron),
+"reminder" (nothing is reminded, something is done).
+
+**Run** (of an assignment): one execution, a row in `assignment_runs` that
+answers one slot. Running, to review, approved, rejected, done or failed.
+On the desktop it rides a one-shot Hermes cron job, on the phone an
+agent-lite chat.
+_Avoid:_ "research run" (deep research's), "session" (Hermes').
+
 **Errand**: one of your devices asking another of your devices to fetch a
 link, because that one has the extractor and this one cannot
 ([ADR-0054](docs/adr/0054-an-errand-runs-on-the-device-that-has-the-means.md)).
@@ -1295,6 +1719,20 @@ instruction rather than a record.
 _Avoid:_ "job" or "task" (those are Studio's and the agent's, and both are
 records of work already done), "remote import" (nothing is remote: the import
 happens on your own machine), "queue" (an errand is addressed, not taken).
+An errand can also ask a device to run one of the account's assignments now
+(`subrosa://assignment/<id>`, ADR-0091).
+
+**Connector relay**: a connector call a browser tab cannot make, made for it
+by one of the person's own apps
+([ADR-0107](docs/adr/0107-a-connector-a-tab-cannot-reach-is-an-errand-to-an-open-app.md)).
+The app files an **offer** (`connector_relays`: which connector, which tools,
+under which rule) only while its owner switched on "Run connectors for my
+browser"; the tab sends each call as a **connector errand**
+(`connector_errands`), addressed, single use, and perishable within minutes,
+and the answer comes back in the same row.
+_Avoid:_ "proxy" (nothing passes through the account service, which only
+carries ciphertext), "remote connector" (the connector is the person's own,
+on their own machine).
 
 **Device key** (French copy: *clé d'appareil*): a `cdm_` key that one device
 obtained from Carpe Diem because its Sub Rosa account vouched for it
@@ -1305,6 +1743,16 @@ Carpe Diem balance. Distinct from a **pasted key**, which the person created at
 Carpe Diem themselves and which travels between devices through the vault.
 _Avoid:_ "account key" (the account holds no key), "generated key" (Carpe Diem
 creates every key; what differs is who asked), "shared key".
+
+**Browser device** (French copy: *navigateur* in the device list, *utiliser ce
+navigateur comme appareil* for the action): a browser admitted as a device of
+its account ([ADR-0096](docs/adr/0096-a-browser-is-a-device.md)). It holds a
+non-extractable WebCrypto key the service knows the public half of, was
+admitted by another device's approval or the recovery key, and obtains a
+**bounded device key**: a daily spending cap and a one week life, renewed while
+it stays a device, refused on the router and x402. Revoked like any device.
+_Avoid:_ "web session" (a session is not a device), "trusted browser" (nothing
+is trusted beyond the admission), "web key" (it is a device key with a bound).
 
 **Carpe Diem link**: Carpe Diem's record that a Sub Rosa account is one of its
 accounts. Created on the first device key when Carpe Diem had no account for
@@ -1325,7 +1773,69 @@ _Avoid:_ "purchase in Sub Rosa", "subscription" (nothing renews), "deposit"
 
 **Web reader**: the account website showing your own notes, read only, decrypted
 in that tab. Same page and same decryptor as the share viewer, different door.
-_Avoid:_ "web app", "web client" (it neither writes nor syncs).
+_Avoid:_ "web app", "web client" (it neither writes nor syncs). The web client
+that does both runs in a **browser device** (ADR-0096).
+
+**Web client** (French copy: *vos discussions* on the site): the chat at `/app`
+on the account website, run in a **browser device** with its bounded device key
+([ADR-0101](docs/adr/0101-the-web-client-runs-agent-lite-from-rusts-own-words.md)).
+It reads and writes the account's chats, notes and memories as the app's own
+rows, through the app's revision rules, and runs agent-lite's prompt and tools
+in the tab. Distinct from the **web reader**, which only reads notes.
+_Avoid:_ "web app" (it is the same Sub Rosa, not a second product), "online
+mode" (the app is not offline without it).
+
+**Office add-in** (French copy: *complément Office*): Sub Rosa in a Word, Excel
+or PowerPoint task pane, a **browser device** of its own that reads nothing of
+the account and proposes every change before making it
+([ADR-0102](docs/adr/0102-an-office-task-pane-is-a-browser-device-whose-session-a-sign-in-window-carries.md)).
+Its **sign-in window** is the Office dialog on the account origin that signs in
+and carries the pane's few device calls when the pane's own frame has no
+session (Office on the web). The window holds no key.
+_Avoid:_ "plugin" or "extension" (the browser extension is another thing),
+"Office integration" (it writes nothing to the account), "login popup" for the
+sign-in window (it stays open to carry calls).
+
+**Shared project** (code and service: **space**): a project several accounts
+read and write, end-to-end encrypted, with its own members, chats, notes and
+file texts ([ADR-0098](docs/adr/0098-a-shared-project-is-a-space-whose-key-changes-with-its-members.md)).
+Sharing a project copies it into a space; the local project stays as it was.
+"Space" is the protocol's and the service's word; the screens say "shared
+project". A preview until an independent review of
+[the protocol](docs/security/spaces-protocol.md).
+_Avoid:_ "share" (a share is a dated read-only envelope for whoever holds a
+link), "team", "workspace", "shared folder".
+
+**Group chat**: a conversation in a shared project whose messages, and the
+assistant's replies, reach every member. When someone asks the assistant,
+their own device answers with their own key, and the reply says who paid.
+_Avoid:_ "channel", "room".
+
+**Identity** (identity keys): an account's X25519 and Ed25519 key pairs for
+shared projects, the private halves sealed in the vault. One per account, not
+per device. Distinct from the **device key** (ADR-0069, ADR-0096) and the
+**vault key**.
+
+**Epoch**: one stretch of a shared project's life with one membership and one
+key. Every membership change starts a new epoch. A member removed at an epoch
+keeps the keys of the epochs before it and none after.
+
+**Head** (epoch head): the signed statement of an epoch's members and a
+commitment to its key, chained to the previous head by hash. A device that
+sees an older head than one it verified reports a **rollback**.
+
+**Owner** (of a shared project): the account that created it, fixed for its
+life. Only the owner invites, admits and removes; any member may leave.
+_Avoid:_ "admin".
+
+**Invitation link**: a link that admits one account to one shared project
+once, within seven days, whose fragment carries a secret and the owner's
+identity. Accepting it asks; the owner admits.
+_Avoid:_ "share link" (that is ADR-0053's).
+
+**Safety number**: sixty digits, twelve groups of five, computed from two
+identities, the same on both devices. Compared out of band, matching numbers
+mean nobody is in between.
 
 ## Charter vocabulary
 

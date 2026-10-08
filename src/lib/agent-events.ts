@@ -1,4 +1,5 @@
 import type { HermesSessionInfo } from "./tauri";
+import { withoutTemporaryChats } from "./temporary-chat";
 
 export const AGENT_NEW_SESSION_EVENT = "june:agent:new-session";
 export const AGENT_DELETE_SESSION_EVENT = "june:agent:delete-session";
@@ -84,7 +85,9 @@ export function dispatchAgentSessionStatus(detail: AgentSessionStatusDetail) {
     .catch(() => {});
 }
 
-export function dispatchAgentSessionsChanged(detail: AgentSessionsChangedDetail) {
+export function dispatchAgentSessionsChanged(announced: AgentSessionsChangedDetail) {
+  // Every history list hears this, and none of them shows a temporary chat.
+  const detail = { ...announced, sessions: withoutTemporaryChats(announced.sessions) };
   window.dispatchEvent(
     new CustomEvent<AgentSessionsChangedDetail>(AGENT_SESSIONS_CHANGED_EVENT, {
       detail,

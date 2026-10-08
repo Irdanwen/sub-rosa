@@ -30,6 +30,27 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=AVFAudio");
         // photos_ios.rs: UIImageWriteToSavedPhotosAlbum / UISaveVideoAtPath...
         println!("cargo:rustc-link-lib=framework=UIKit");
+        // crate::scan: VisionKit's document camera and Vision's text
+        // recognition, driven from a small Objective-C file. Xcode links the
+        // two frameworks into the app too (project.yml).
+        println!("cargo:rustc-link-lib=framework=VisionKit");
+        println!("cargo:rustc-link-lib=framework=Vision");
+        println!("cargo:rerun-if-changed=native/document-scanner/DocumentScanner.m");
+        cc::Build::new()
+            .file("native/document-scanner/DocumentScanner.m")
+            .flag("-fobjc-arc")
+            .flag("-fmodules")
+            .compile("subrosa_document_scanner");
+        // crate::health: HealthKit, read only (ADR-0099). Xcode links the
+        // framework into the app too (project.yml).
+        println!("cargo:rustc-link-lib=framework=HealthKit");
+        println!("cargo:rerun-if-changed=native/health-kit/HealthBridge.m");
+        cc::Build::new()
+            .file("native/health-kit/HealthBridge.m")
+            .flag("-fobjc-arc")
+            .flag("-fmodules")
+            .flag("-Wno-unused-parameter")
+            .compile("subrosa_health_kit");
     }
     // crate::calendar reads EventKit on both Apple platforms; the classes only
     // resolve if the framework is linked.
@@ -191,6 +212,9 @@ fn build_system_audio_helper() {
                 "AVFoundation",
                 "CoreAudio",
                 "AudioToolbox",
+                "ScreenCaptureKit",
+                "ImageIO",
+                "UniformTypeIdentifiers",
             ],
         );
         if !built {
@@ -303,6 +327,8 @@ fn build_dictation_helper() {
                 "Carbon",
                 "CoreMedia",
                 "CoreGraphics",
+                // "What I'm looking at": one window's picture (ADR-0094).
+                "ScreenCaptureKit",
             ],
         );
         if !built {

@@ -61,6 +61,12 @@ describe("destination addresses", () => {
       sessionId: undefined,
       query: undefined,
     });
+    // The widgets' "Ask" (ADR-0095): a fresh chat, never a session named "new".
+    expect(parseDestination("subrosa://chat/new")).toEqual({
+      kind: "chat",
+      sessionId: undefined,
+      query: undefined,
+    });
     expect(parseDestination("subrosa://dictation")).toEqual({ kind: "dictation" });
     expect(parseDestination("subrosa://studio")).toEqual({ kind: "studio" });
     expect(parseDestination("subrosa://record")).toEqual({ kind: "record" });
@@ -151,6 +157,7 @@ describe("destination addresses", () => {
       { kind: "dictation" },
       { kind: "studio" },
       { kind: "record" },
+      { kind: "today" },
     ] as const;
     for (const destination of cases) {
       expect(parseDestination(destinationUrl(destination))).toMatchObject(destination);
@@ -161,6 +168,8 @@ describe("destination addresses", () => {
     expect(destinationUrl({ kind: "chat" })).toBe("subrosa://chat");
     expect(destinationUrl({ kind: "dictation" })).toBe("subrosa://dictation");
     expect(destinationUrl({ kind: "studio" })).toBe("subrosa://studio");
+    expect(destinationUrl({ kind: "today" })).toBe("subrosa://today");
+    expect(parseDestination("subrosa://today/extra")).toBeNull();
   });
 });
 

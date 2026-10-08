@@ -12,6 +12,8 @@ import type {
   RecordingStatusDto,
 } from "../../../lib/tauri";
 import { shareText } from "../../../lib/tauri";
+import { shareScanPdf, useScanPdf } from "../../../lib/scan";
+import { messageFromError } from "../../../lib/errors";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Spinner } from "../../ui/Spinner";
 import { NoteEditor } from "../../note-editor/NoteEditor";
@@ -102,6 +104,9 @@ export function NoteDetailScreen({
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
   const unlisted = archiveFolderId ? [archiveFolderId] : [];
+  // A scanned note keeps its PDF on this device (crate::scan).
+  const hasScan = useScanPdf(note?.id);
+  const [scanShareError, setScanShareError] = useState<string | null>(null);
 
   const exportNote = () => {
     if (!note) return;
@@ -146,6 +151,17 @@ export function NoteDetailScreen({
           subtitle={t("What would you like to do with this note?")}
           actions={[
             { label: t("Export note"), onAction: exportNote },
+            ...(hasScan
+              ? [
+                  {
+                    label: t("Share the scanned PDF"),
+                    onAction: () =>
+                      void shareScanPdf(note.id).catch((err: unknown) =>
+                        setScanShareError(messageFromError(err)),
+                      ),
+                  },
+                ]
+              : []),
             {
               label: t("Move to a folder"),
               // Opens once this sheet has closed and handed focus back.
@@ -222,6 +238,15 @@ export function NoteDetailScreen({
           </section>
         )}
       </div>
+      {scanShareError ? (
+        <ActionSheet
+          title={t("The PDF could not be shared")}
+          subtitle={scanShareError}
+          actions={[]}
+          closeLabel={t("OK")}
+          onClose={() => setScanShareError(null)}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirmDelete}
         title={t("Delete this note?")}

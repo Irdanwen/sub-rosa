@@ -1,0 +1,107 @@
+/* The assistant catalog (ADR-0097). */
+.catalog-search {
+  display: flex;
+  gap: 12px;
+  margin: 32px 0 16px;
+  max-width: 640px;
+}
+.catalog-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 16px;
+  color: inherit;
+}
+.catalog-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 28px;
+  padding: 0;
+  border: 0;
+}
+.catalog-categories button {
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: inherit;
+  cursor: pointer;
+}
+.catalog-categories button[aria-pressed="true"] {
+  border-color: var(--border-hover);
+  background: var(--surface);
+  font-weight: 600;
+}
+.catalog-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 18px;
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+}
+.catalog-list h2 {
+  font-size: 22px;
+  margin: 4px 0 8px;
+  overflow-wrap: anywhere;
+}
+.catalog-list a {
+  color: inherit;
+}
+.catalog-detail {
+  max-width: 760px;
+  margin-top: 36px;
+}
+.catalog-detail h2 {
+  font-size: 22px;
+  margin: 28px 0 10px;
+}
+.catalog-text {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font: inherit;
+  font-size: 15px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.catalog-reference {
+  margin: 0 0 10px;
+}
+.catalog-reference summary,
+.catalog-report summary {
+  cursor: pointer;
+}
+.catalog-report {
+  margin-top: 36px;
+}
+.catalog-report .form {
+  margin-top: 16px;
+}
+.catalog-report textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 16px;
+  color: inherit;
+}
+@media (max-width: 560px) {
+  .catalog-search {
+    flex-direction: column;
+  }
+}

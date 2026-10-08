@@ -34,6 +34,10 @@ export type Destination =
   | { kind: "assistant"; taskId: string }
   /** Open the assistants library (the phone's Assistants tab). */
   | { kind: "assistants" }
+  /** "Add to Sub Rosa" from the public catalog (ADR-0097). The id names a
+   * listing on this app's own account site; the app reads it from there and
+   * shows it for review. Nothing is added without a tap. */
+  | { kind: "assistantImport"; listingId: string }
   /** Open the dictation surface; `start` also starts listening. Only an
    * address can ask for that: a notification tap never turns a microphone on. */
   | { kind: "dictation"; start?: boolean }
@@ -45,6 +49,9 @@ export type Destination =
   | { kind: "studio"; retouch?: { rootId: string; versionId: string } }
   /** Start a recording. */
   | { kind: "record" }
+  /** The Today view: the daily brief and the results waiting for review
+   * (ADR-0091). */
+  | { kind: "today" }
   /** Fetch a link and turn it into a note (ADR-0028). The one destination
    * that carries a payload from outside the app, so its URL is validated
    * here and again by the Rust side before a single byte is fetched. */
@@ -65,6 +72,8 @@ export type Destination =
 const ID_RE = /^[\w-]{1,64}$/;
 /** Gallery ids are file names the app minted: a token and an image extension. */
 const GALLERY_ID_RE = /^[\w-]{1,64}\.(png|jpe?g|webp)$/;
+/** A catalog listing id: a UUID, which is all the service hands out. */
+const LISTING_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_QUERY = 200;
 const MAX_IMPORT_URL = 2048;
 
@@ -97,14 +106,25 @@ export function parseDestination(raw: string): Destination | null {
       return ID_RE.test(segment) ? { kind: "note", noteId: segment } : null;
     case "chat": {
       const query = url.searchParams.get("q")?.trim();
+      // `chat/new` is a fresh chat (the widgets' "Ask"), never a session id.
       return {
         kind: "chat",
-        sessionId: ID_RE.test(segment) ? segment : undefined,
+        sessionId: ID_RE.test(segment) && segment !== "new" ? segment : undefined,
         query: query ? query.slice(0, MAX_QUERY) : undefined,
       };
     }
-    case "assistant":
+    case "assistant": {
+      // `assistant/import?id=…` is the catalog's "Add to Sub Rosa"; any other
+      // segment is a conversation. The id is the only thing read from the
+      // link: where the listing comes from is the app's own account site.
+      if (segment === "import") {
+        const listingId = url.searchParams.get("id") ?? "";
+        return LISTING_ID_RE.test(listingId)
+          ? { kind: "assistantImport", listingId: listingId.toLowerCase() }
+          : null;
+      }
       return ID_RE.test(segment) ? { kind: "assistant", taskId: segment } : null;
+    }
     case "assistants":
       return segment ? null : { kind: "assistants" };
     case "dictation":
@@ -123,6 +143,8 @@ export function parseDestination(raw: string): Destination | null {
     }
     case "record":
       return { kind: "record" };
+    case "today":
+      return segment ? null : { kind: "today" };
     case "share":
       return ID_RE.test(segment) ? { kind: "share", itemId: segment } : null;
     // `subrosa://auth/callback?request=…&code=…` finishes a sign-in. The return
@@ -152,6 +174,8 @@ export function destinationUrl(destination: Destination): string {
       return `${DESTINATION_SCHEME}note/${destination.noteId}`;
     case "assistant":
       return `${DESTINATION_SCHEME}assistant/${destination.taskId}`;
+    case "assistantImport":
+      return `${DESTINATION_SCHEME}assistant/import?id=${destination.listingId}`;
     case "import":
       return `${DESTINATION_SCHEME}import?url=${encodeURIComponent(destination.url)}`;
     case "share":
@@ -244,6 +268,9 @@ export function subscribeToDestinations(handle: (destination: Destination) => vo
   let last = { url: "", at: 0 };
   const dispatchUrl = (raw: unknown, source: "launch" | "open") => {
     if (typeof raw !== "string") return;
+    // A connector sign-in coming back carries its code: Rust spends it, and
+    // the webview neither handles nor remembers it (ADR-0092).
+    if (raw.toLowerCase().startsWith(`${DESTINATION_SCHEME}connector/`)) return;
     if (source === "launch" && readHandled().includes(raw)) return;
     const now = Date.now();
     if (raw === last.url && now - last.at < 2_000) return;

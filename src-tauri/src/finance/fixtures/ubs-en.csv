@@ -1,0 +1,14 @@
+﻿Account number:;0230 00123456.01;
+IBAN:;CH93 0023 0230 1234 5601 X;
+From:;2026-09-01;
+Until:;2026-09-30;
+Opening balance:;4520.35;
+Closing balance:;3962.70;
+Valued in:;CHF;
+Numbers of transactions in this period:;4;
+
+Trade date;Trade time;Booking date;Value date;Currency;Debit;Credit;Individual amount;Balance;Transaction no.;Description1;Description2;Description3;Footnotes;
+2026-09-29;12:41:07;2026-09-29;2026-09-29;CHF;-84.05;;;3962.70;9930272TI3460588;"Migros M Lausanne Flon";"Card number: XXXX XXXX XXXX 1234";"Debit card payment";;
+2026-09-25;;2026-09-25;2026-09-25;CHF;-1850.00;;;4046.75;9930268LK9123456;"Régie du Rhône SA, Lausanne";"Loyer octobre";"e-banking payment order";;
+2026-09-25;;2026-09-25;2026-09-25;CHF;;5200.00;;5896.75;9930268BC0011223;"Employer AG, Zurich";"Salaire septembre";"Credit";;
+2026-09-02;;2026-09-02;2026-09-02;CHF;-3823.60;;;696.75;9930245XX7766554;"Steuerverwaltung Kanton Waadt";"Acompte impots 2026";"e-banking payment order";;

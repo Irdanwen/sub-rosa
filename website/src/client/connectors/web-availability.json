@@ -1,0 +1,619 @@
+{
+  "probedAt": "2026-10-08",
+  "origin": "https://subrosa.furetier.com",
+  "browser": "Chromium headless shell 1234",
+  "servers": {
+    "notion": {
+      "web": true,
+      "reason": null,
+      "connect": ["https://mcp.notion.com"],
+      "authorize": "https://mcp.notion.com/authorize",
+      "preflight": {
+        "status": 204,
+        "allowOrigin": "https://subrosa.furetier.com",
+        "allowHeaders": "Authorization, *",
+        "exposeHeaders": "WWW-Authenticate, Retry-After"
+      },
+      "steps": {
+        "id": "notion",
+        "url": "https://mcp.notion.com/mcp",
+        "auth": "oauth",
+        "mcp": {
+          "ok": true,
+          "status": 401,
+          "wwwAuthenticate": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.notion.com/.well-known/oauth-protected-resource/mcp\", scope=\"default\"",
+          "sessionId": null,
+          "refusal": null
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.notion.com/.well-known/oauth-protected-resource/mcp",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://mcp.notion.com",
+        "authServerMetadata": [
+          {
+            "url": "https://mcp.notion.com/.well-known/oauth-authorization-server",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://mcp.notion.com/authorize",
+          "token": "https://mcp.notion.com/token",
+          "registration": "https://mcp.notion.com/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": false,
+          "status": null
+        },
+        "token": {
+          "ok": true,
+          "status": 401,
+          "error": null
+        },
+        "registration": {
+          "status": 204,
+          "allowOrigin": "https://subrosa.furetier.com",
+          "allowHeaders": "Authorization, *",
+          "exposeHeaders": "WWW-Authenticate, Retry-After",
+          "ok": true
+        }
+      }
+    },
+    "linear": {
+      "web": true,
+      "reason": null,
+      "connect": ["https://mcp.linear.app"],
+      "authorize": "https://mcp.linear.app/authorize",
+      "preflight": {
+        "status": 204,
+        "allowOrigin": "https://subrosa.furetier.com",
+        "allowHeaders": "Authorization, *",
+        "exposeHeaders": "WWW-Authenticate, Retry-After"
+      },
+      "steps": {
+        "id": "linear",
+        "url": "https://mcp.linear.app/mcp",
+        "auth": "oauth",
+        "mcp": {
+          "ok": true,
+          "status": 401,
+          "wwwAuthenticate": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.linear.app/.well-known/oauth-protected-resource/mcp\", scope=\"read write\"",
+          "sessionId": null,
+          "refusal": null
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.linear.app/.well-known/oauth-protected-resource/mcp",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://mcp.linear.app",
+        "authServerMetadata": [
+          {
+            "url": "https://mcp.linear.app/.well-known/oauth-authorization-server",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://mcp.linear.app/authorize",
+          "token": "https://mcp.linear.app/token",
+          "registration": "https://mcp.linear.app/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": true,
+          "status": 400
+        },
+        "token": {
+          "ok": true,
+          "status": 401,
+          "error": null
+        },
+        "registration": {
+          "status": 204,
+          "allowOrigin": "https://subrosa.furetier.com",
+          "allowHeaders": "Authorization, *",
+          "exposeHeaders": "WWW-Authenticate, Retry-After",
+          "ok": true
+        }
+      }
+    },
+    "sentry": {
+      "web": false,
+      "reason": "mcp_cors",
+      "connect": ["https://mcp.sentry.dev"],
+      "authorize": "https://mcp.sentry.dev/oauth/authorize",
+      "preflight": {
+        "status": 204,
+        "allowOrigin": null,
+        "allowHeaders": null,
+        "exposeHeaders": null
+      },
+      "steps": {
+        "id": "sentry",
+        "url": "https://mcp.sentry.dev/mcp",
+        "auth": "oauth",
+        "mcp": {
+          "ok": false,
+          "error": "Failed to fetch"
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.sentry.dev/.well-known/oauth-protected-resource/mcp",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://mcp.sentry.dev",
+        "authServerMetadata": [
+          {
+            "url": "https://mcp.sentry.dev/.well-known/oauth-authorization-server",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://mcp.sentry.dev/oauth/authorize",
+          "token": "https://mcp.sentry.dev/oauth/token",
+          "registration": "https://mcp.sentry.dev/oauth/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": false,
+          "status": null
+        },
+        "token": {
+          "ok": false,
+          "status": null,
+          "error": "Failed to fetch"
+        },
+        "registration": {
+          "status": 204,
+          "allowOrigin": null,
+          "allowHeaders": null,
+          "exposeHeaders": null,
+          "ok": false
+        }
+      }
+    },
+    "stripe": {
+      "web": false,
+      "reason": "mcp_cors",
+      "connect": ["https://access.stripe.com", "https://mcp.stripe.com"],
+      "authorize": "https://access.stripe.com/mcp/oauth2/authorize",
+      "preflight": {
+        "status": 204,
+        "allowOrigin": null,
+        "allowHeaders": null,
+        "exposeHeaders": null
+      },
+      "steps": {
+        "id": "stripe",
+        "url": "https://mcp.stripe.com",
+        "auth": "oauth",
+        "mcp": {
+          "ok": false,
+          "error": "Failed to fetch"
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.stripe.com/.well-known/oauth-protected-resource",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://access.stripe.com/mcp",
+        "authServerMetadata": [
+          {
+            "url": "https://access.stripe.com/.well-known/oauth-authorization-server/mcp",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://access.stripe.com/mcp/oauth2/authorize",
+          "token": "https://access.stripe.com/mcp/oauth2/token",
+          "registration": "https://access.stripe.com/mcp/oauth2/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": true,
+          "status": 400
+        },
+        "token": {
+          "ok": true,
+          "status": 400,
+          "error": null
+        },
+        "registration": {
+          "status": 204,
+          "allowOrigin": "*",
+          "allowHeaders": "content-type",
+          "exposeHeaders": null,
+          "ok": true
+        }
+      }
+    },
+    "zapier": {
+      "web": false,
+      "reason": "mcp_cors",
+      "connect": ["https://mcp.zapier.com"],
+      "authorize": "https://mcp.zapier.com/oauth/authorize",
+      "preflight": {
+        "status": 204,
+        "allowOrigin": null,
+        "allowHeaders": "content-type,mcp-protocol-version,authorization,mcp-session-id",
+        "exposeHeaders": null
+      },
+      "steps": {
+        "id": "zapier",
+        "url": "https://mcp.zapier.com/api/v1/connect",
+        "auth": "oauth",
+        "mcp": {
+          "ok": false,
+          "error": "Failed to fetch"
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.zapier.com/.well-known/oauth-protected-resource/api/v1/connect",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://mcp.zapier.com",
+        "authServerMetadata": [
+          {
+            "url": "https://mcp.zapier.com/.well-known/oauth-authorization-server",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://mcp.zapier.com/oauth/authorize",
+          "token": "https://mcp.zapier.com/api/v1/oauth/token",
+          "registration": "https://mcp.zapier.com/api/v1/oauth/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": false,
+          "status": null
+        },
+        "token": {
+          "ok": false,
+          "status": null,
+          "error": "Failed to fetch"
+        },
+        "registration": {
+          "status": 204,
+          "allowOrigin": null,
+          "allowHeaders": "content-type",
+          "exposeHeaders": null,
+          "ok": false
+        }
+      }
+    },
+    "square": {
+      "web": true,
+      "reason": null,
+      "connect": ["https://mcp.squareup.com"],
+      "authorize": "https://mcp.squareup.com/authorize",
+      "preflight": {
+        "status": 204,
+        "allowOrigin": "https://subrosa.furetier.com",
+        "allowHeaders": "Authorization, *",
+        "exposeHeaders": null
+      },
+      "steps": {
+        "id": "square",
+        "url": "https://mcp.squareup.com/mcp",
+        "auth": "oauth",
+        "mcp": {
+          "ok": true,
+          "status": 401,
+          "wwwAuthenticate": null,
+          "sessionId": null,
+          "refusal": null
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.squareup.com/.well-known/oauth-protected-resource/mcp",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://mcp.squareup.com",
+        "authServerMetadata": [
+          {
+            "url": "https://mcp.squareup.com/.well-known/oauth-authorization-server",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://mcp.squareup.com/authorize",
+          "token": "https://mcp.squareup.com/token",
+          "registration": "https://mcp.squareup.com/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": false,
+          "status": null
+        },
+        "token": {
+          "ok": true,
+          "status": 401,
+          "error": null
+        },
+        "registration": {
+          "status": 204,
+          "allowOrigin": "https://subrosa.furetier.com",
+          "allowHeaders": "Authorization, *",
+          "exposeHeaders": null,
+          "ok": true
+        }
+      }
+    },
+    "intercom": {
+      "web": true,
+      "reason": null,
+      "connect": ["https://mcp.intercom.com"],
+      "authorize": "https://mcp.intercom.com/authorize",
+      "preflight": {
+        "status": 204,
+        "allowOrigin": "https://subrosa.furetier.com",
+        "allowHeaders": "Authorization, *",
+        "exposeHeaders": null
+      },
+      "steps": {
+        "id": "intercom",
+        "url": "https://mcp.intercom.com/mcp",
+        "auth": "oauth",
+        "mcp": {
+          "ok": true,
+          "status": 401,
+          "wwwAuthenticate": "Bearer realm=\"OAuth\", error=\"invalid_token\", error_description=\"Missing or invalid access token\", resource_metadata=\"https://mcp.intercom.com/.well-known/oauth-protected-resource/mcp\", scope=\"mcp\"",
+          "sessionId": null,
+          "refusal": null
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.intercom.com/.well-known/oauth-protected-resource/mcp",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://mcp.intercom.com",
+        "authServerMetadata": [
+          {
+            "url": "https://mcp.intercom.com/.well-known/oauth-authorization-server",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://mcp.intercom.com/authorize",
+          "token": "https://mcp.intercom.com/token",
+          "registration": "https://mcp.intercom.com/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": false,
+          "status": null
+        },
+        "token": {
+          "ok": true,
+          "status": 401,
+          "error": null
+        },
+        "registration": {
+          "status": 204,
+          "allowOrigin": "https://subrosa.furetier.com",
+          "allowHeaders": "Authorization, *",
+          "exposeHeaders": null,
+          "ok": true
+        }
+      }
+    },
+    "monday": {
+      "web": false,
+      "reason": "mcp_cors",
+      "connect": ["https://mcp.monday.com"],
+      "authorize": null,
+      "preflight": {
+        "status": 401,
+        "allowOrigin": null,
+        "allowHeaders": null,
+        "exposeHeaders": null
+      },
+      "steps": {
+        "id": "monday",
+        "url": "https://mcp.monday.com/mcp",
+        "auth": "oauth",
+        "mcp": {
+          "ok": false,
+          "error": "Failed to fetch"
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.monday.com/.well-known/oauth-protected-resource/mcp",
+            "ok": false,
+            "status": null
+          },
+          {
+            "url": "https://mcp.monday.com/.well-known/oauth-protected-resource",
+            "ok": false,
+            "status": null
+          }
+        ],
+        "issuer": "https://mcp.monday.com",
+        "authServerMetadata": [
+          {
+            "url": "https://mcp.monday.com/.well-known/oauth-authorization-server",
+            "ok": false,
+            "status": null
+          },
+          {
+            "url": "https://mcp.monday.com/.well-known/openid-configuration",
+            "ok": false,
+            "status": null
+          }
+        ],
+        "registration": null
+      }
+    },
+    "webflow": {
+      "web": true,
+      "reason": null,
+      "connect": ["https://mcp.webflow.com"],
+      "authorize": "https://mcp.webflow.com/oauth/authorize",
+      "preflight": {
+        "status": 204,
+        "allowOrigin": null,
+        "allowHeaders": null,
+        "exposeHeaders": null
+      },
+      "steps": {
+        "id": "webflow",
+        "url": "https://mcp.webflow.com/mcp",
+        "auth": "oauth",
+        "mcp": {
+          "ok": true,
+          "status": 401,
+          "wwwAuthenticate": null,
+          "sessionId": null,
+          "refusal": null
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://mcp.webflow.com/.well-known/oauth-protected-resource/mcp",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://mcp.webflow.com",
+        "authServerMetadata": [
+          {
+            "url": "https://mcp.webflow.com/.well-known/oauth-authorization-server",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://mcp.webflow.com/oauth/authorize",
+          "token": "https://mcp.webflow.com/oauth/token",
+          "registration": "https://mcp.webflow.com/oauth/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": true,
+          "status": 400
+        },
+        "token": {
+          "ok": true,
+          "status": 401,
+          "error": null
+        },
+        "registration": {
+          "status": 204,
+          "allowOrigin": null,
+          "allowHeaders": null,
+          "exposeHeaders": null,
+          "ok": true
+        }
+      }
+    },
+    "huggingface": {
+      "web": true,
+      "reason": null,
+      "connect": ["https://huggingface.co"],
+      "authorize": "https://huggingface.co/oauth/authorize",
+      "preflight": {
+        "status": 200,
+        "allowOrigin": "https://subrosa.furetier.com",
+        "allowHeaders": "content-type,mcp-protocol-version,authorization,mcp-session-id",
+        "exposeHeaders": null
+      },
+      "steps": {
+        "id": "huggingface",
+        "url": "https://huggingface.co/mcp",
+        "auth": "oauth",
+        "mcp": {
+          "ok": true,
+          "status": 200,
+          "wwwAuthenticate": null,
+          "sessionId": "0edc0404-91e6-4630-ac35-78fc60f41c3a",
+          "refusal": null
+        },
+        "resourceMetadata": [
+          {
+            "url": "https://huggingface.co/.well-known/oauth-protected-resource/mcp",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "issuer": "https://huggingface.co",
+        "authServerMetadata": [
+          {
+            "url": "https://huggingface.co/.well-known/oauth-authorization-server",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "endpoints": {
+          "authorization": "https://huggingface.co/oauth/authorize",
+          "token": "https://huggingface.co/oauth/token",
+          "registration": "https://huggingface.co/oauth/register"
+        },
+        "s256": true,
+        "registrationFromTab": {
+          "ok": false,
+          "status": null
+        },
+        "token": {
+          "ok": true,
+          "status": 400,
+          "error": null
+        },
+        "registration": {
+          "status": 200,
+          "allowOrigin": "*",
+          "allowHeaders": "content-type",
+          "exposeHeaders": "X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash",
+          "ok": true
+        }
+      }
+    },
+    "cloudflare-docs": {
+      "web": false,
+      "reason": "origin_refused",
+      "connect": ["https://docs.mcp.cloudflare.com"],
+      "authorize": null,
+      "preflight": {
+        "status": 403,
+        "allowOrigin": "*",
+        "allowHeaders": "Content-Type, Accept, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name, cf-account-id",
+        "exposeHeaders": "MCP-Protocol-Version"
+      },
+      "steps": {
+        "id": "cloudflare-docs",
+        "url": "https://docs.mcp.cloudflare.com/mcp",
+        "auth": "none",
+        "mcp": {
+          "ok": true,
+          "status": 403,
+          "wwwAuthenticate": null,
+          "sessionId": null,
+          "refusal": "Invalid Origin: subrosa.furetier.com"
+        },
+        "registration": null
+      }
+    }
+  }
+}

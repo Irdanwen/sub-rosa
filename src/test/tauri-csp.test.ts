@@ -77,6 +77,13 @@ describe("asset protocol CSP", () => {
     expect(directive("media-src")).toContain("blob:");
   });
 
+  // The phone's Python worker starts from a blob so it inherits this policy
+  // (ADR-0086, worker-url.ts). Without `blob:` the worker never starts; with
+  // anything wider, a worker could start under a policy of its own.
+  it("lets workers start from the bundle or a blob, and nothing else", () => {
+    expect(directive("worker-src")).toEqual(["'self'", "blob:"]);
+  });
+
   it("declares every directive the loaders in this app actually need", () => {
     // Anything not listed here falls back to `default-src`, which is `'self'` -
     // and `'self'` matches none of the schemes below.

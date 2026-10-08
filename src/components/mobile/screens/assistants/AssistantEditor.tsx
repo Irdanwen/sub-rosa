@@ -16,6 +16,7 @@ import {
   listAssistants,
   saveAssistant,
 } from "../../../../lib/assistants";
+import { PublishAssistantAction } from "../../../publishing/PublishAssistantDialog";
 import {
   clearEditorDraft,
   readEditorDraft,
@@ -38,6 +39,11 @@ import {
   SettingsToggleRow,
 } from "../../SettingsList";
 import { StackHeader } from "../../StackHeader";
+import {
+  connectorChoicesNote,
+  noConnectorsNote,
+  useConnectorChoices,
+} from "../../../connectors/AssistantConnectors";
 import { AssistantAvatar, AvatarSheet } from "./AssistantAvatar";
 import { toolLabel } from "./AssistantChatScreen";
 
@@ -493,7 +499,7 @@ export function AssistantEditor({
           title={t("Tools")}
           footer={t("Media generation always asks you to confirm before spending credits.")}
         >
-          {(["web", "image", "video", "music", "speech"] as const).map((tool) => (
+          {(["web", "image", "video", "music", "speech", "documents"] as const).map((tool) => (
             <SettingsToggleRow
               key={tool}
               label={toolLabel(tool)}
@@ -510,6 +516,11 @@ export function AssistantEditor({
           ))}
         </SettingsGroup>
 
+        <ConnectorChoices
+          tools={draft.tools}
+          onChange={(tools) => patch({ tools: sortTools(tools) })}
+        />
+
         {saved ? (
           <SettingsGroup>
             <SettingsActionRow
@@ -521,6 +532,16 @@ export function AssistantEditor({
               label={t("Duplicate")}
               disabled={busy}
               onClick={() => void duplicate()}
+            />
+            <PublishAssistantAction
+              assistant={saved}
+              trigger={(open) => (
+                <SettingsActionRow
+                  label={t("Publish to the catalog")}
+                  disabled={busy || dirty}
+                  onClick={open}
+                />
+              )}
             />
             <SettingsActionRow
               label={t("Delete assistant")}
@@ -631,5 +652,36 @@ function toolDetail(tool: AssistantTool): string {
       return t("Propose songs and instrumental tracks.");
     case "speech":
       return t("Propose spoken audio from your text.");
+    case "documents":
+      return t("Make Word, Excel and PowerPoint files you can open and share.");
+    default:
+      return t("Read and act in {name} under your rules.", { name: tool });
   }
+}
+
+/** The assistant's "Connectors" permission, as the phone's settings rows. */
+function ConnectorChoices({
+  tools,
+  onChange,
+}: {
+  tools: AssistantTool[];
+  onChange: (tools: AssistantTool[]) => void;
+}) {
+  const choices = useConnectorChoices(tools, onChange);
+  if (!choices) return null;
+  return (
+    <SettingsGroup
+      title={t("Connectors")}
+      footer={choices.length === 0 ? noConnectorsNote() : connectorChoicesNote()}
+    >
+      {choices.map((choice) => (
+        <SettingsToggleRow
+          key={choice.id}
+          label={choice.name}
+          checked={choice.granted}
+          onChange={choice.toggle}
+        />
+      ))}
+    </SettingsGroup>
+  );
 }

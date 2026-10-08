@@ -179,6 +179,10 @@ Follow-up cards: after a meeting note, or when the user agrees to something, you
 Note cards: when your answer rests on the user's own notes, you may end it with one fenced block whose info string is `subrosa:notes` and whose body is {"v":1,"title":"From your notes","notes":[{"id":"…","title":"…","snippet":"…"}]}. The app opens the note when the user clicks the card. Use the ids and titles exactly as the `june_context` tools returned them — never invent a note id — and list only the notes your answer actually used.
 
 Place cards: when you answer with `places_search` results (a `june_web` tool), embed them as one fenced block whose info string is `subrosa:places` and whose body is {"v":1,"title":"…","attribution":"<the tool result's provider>","places":[{"name","lat","lng","address"?,"category"?,"rating"?,"reviews"?,"url"?,"photoRef"?,"note"?}]}. The app draws the map and the list. Copy name, lat, lng, address, category, rating, reviews, url and photoRef verbatim from the tool result; "note" is yours — one short helpful sentence per place at most. Never invent a place or a coordinate.
+
+Try-on cards: when the user wants to see how a garment would look on them, embed one fenced block whose info string is `subrosa:tryon` and whose body is {"v":1,"title":"Try it on","garment":"<a few words describing the garment, optional>"}. The app renders a card where the user picks a photo of themselves and a photo of the garment, sees the price and starts the try-on themselves. Never claim the picture exists until they have run it.
+
+Canvas: when the user asks you to write or draft something they will keep working on (a document, a letter, a plan, code longer than a few lines), put the draft in one fenced block whose info string is `subrosa:canvas` and whose body is {"v":1,"title":"…","kind":"document" or "code","language":"<code only>","content":"<the whole draft, markdown for a document>"}, with a sentence of your own around it. The app shows a card that opens the draft as a canvas, a note the user edits beside the chat. To propose a new version of a canvas they already have, send the same block with its "noteId" and the whole new content: the app shows it for review and nothing changes until the user accepts it, so never write as if a change was applied. Keep the content under 24000 characters.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. The media tools are discovered
@@ -189,7 +193,7 @@ Place cards: when you answer with `places_search` results (a `june_web` tool), e
 /// also part of the unsandboxed soul, which must not claim jail protections
 /// (see `unsandboxed_soul_makes_no_sandbox_claims`).
 const JUNE_SOUL_MEDIA_MD: &str = r#"
-Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path.
+Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path. `generate_image` can also refine its picture: with `refine_passes` (1 or 2) it looks at the result against the prompt and fixes what is wrong with one edit per pass. Each pass may cost one edit, so call `estimate_image_refine` first, tell the user that price, and only set `refine_passes` once they agree. For a Word, Excel or PowerPoint file, call `make_document` instead of writing one with code: it saves the file in the gallery and returns a `subrosa:file` block to copy into your reply.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. Long-running work must ride the
@@ -855,6 +859,9 @@ pub struct ImportedHermesFile {
     pub root_label: String,
     pub size: u64,
     pub preview_data_url: Option<String>,
+    /// A document's text, written beside it so the agent reads words (ADR-0085).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1141,6 +1148,7 @@ async fn start_hermes_bridge_inner(
         &june_studio_mcp,
     )
     .await?;
+    guard::install(app, &hermes_home).await?;
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
     // its tool calls, and any subprocess it forks all inherit the profile, so
@@ -1167,7 +1175,7 @@ async fn start_hermes_bridge_inner(
     } else {
         sandboxed
     };
-    let user_memory = crate::memory::prompt_block_for_app(app).await;
+    let user_memory = crate::personalization::soul_section_for_app(app).await;
     sync_june_soul(
         &hermes_home,
         sandbox_available,
@@ -1378,45 +1386,6 @@ async fn ensure_provider_proxy(
 struct SharedProviderProxyInfo {
     port: u16,
     token: String,
-}
-
-#[derive(Debug, Clone)]
-struct JuneContextMcpConfig {
-    command: String,
-    script_path: PathBuf,
-    database_path: PathBuf,
-    /// Snapshot of the user's memory master toggle at spawn time: when off,
-    /// the MCP is launched with `--memory=off` so the recall tool is not even
-    /// advertised to the agent.
-    memory_enabled: bool,
-    /// The provider-proxy coordinates file. The calendar is local data like
-    /// the notes, but it lives in EventKit rather than SQLite, so that one
-    /// tool round-trips through the app instead of reading the database.
-    coordinates_path: PathBuf,
-}
-
-#[derive(Debug, Clone)]
-struct JuneWebMcpConfig {
-    command: String,
-    script_path: PathBuf,
-    /// Path to the proxy-coordinates JSON the script re-reads per tool call
-    /// (see [`JUNE_WEB_MCP_COORDS_NAME`]).
-    coordinates_path: PathBuf,
-}
-
-/// The media MCP shares the provider proxy and its coordinates file with the
-/// web MCP; only the script differs.
-#[derive(Debug, Clone)]
-struct JuneMediaMcpConfig {
-    command: String,
-    script_path: PathBuf,
-    coordinates_path: PathBuf,
-}
-
-struct JuneStudioMcpConfig {
-    command: String,
-    script_path: PathBuf,
-    coordinates_path: PathBuf,
 }
 
 #[tauri::command]
@@ -2550,16 +2519,19 @@ pub async fn hermes_bridge_session_messages(
 
 #[tauri::command]
 pub async fn delete_hermes_bridge_session(
+    app: AppHandle,
     bridge: State<'_, HermesBridge>,
     request: DeleteHermesSessionRequest,
 ) -> Result<serde_json::Value, AppError> {
-    hermes_api_json(
+    let deleted = hermes_api_json(
         &bridge,
         reqwest::Method::DELETE,
         &format!("/api/sessions/{}", urlencoding::encode(&request.session_id)),
         None,
     )
-    .await
+    .await?;
+    crate::reply_ratings::forget_deleted_session(&app, &request.session_id).await;
+    Ok(deleted)
 }
 
 /// The bridge's cron dashboard API spans Hermes profiles; June only ever
@@ -3110,6 +3082,7 @@ pub async fn import_hermes_bridge_file(
         root_label: "Workspace".to_string(),
         size,
         preview_data_url: image_preview_data_url(&destination)?,
+        text_path: crate::documents::extract_beside(&destination),
     })
 }
 
@@ -3161,6 +3134,7 @@ pub fn import_hermes_bridge_file_bytes(
         root_label: "Workspace".to_string(),
         size: bytes.len() as u64,
         preview_data_url: image_preview_data_url(&destination)?,
+        text_path: crate::documents::extract_beside(&destination),
     })
 }
 
@@ -3198,7 +3172,8 @@ fn validate_hermes_file_path(app: &AppHandle, path: &str) -> Result<PathBuf, App
         .collect();
     let requested = crate::path_confinement::confine_existing(
         &roots,
-        Path::new(path),
+        // A prompt names an upload by its path in the workspace.
+        &crate::path_confinement::resolve_relative_to(&hermes_home.join("workspace"), path),
         "hermes_file_download_denied",
         "Only files in this app's Hermes workspace, memory, or the active working folder can be downloaded.",
     )?;
@@ -7404,6 +7379,8 @@ fn sync_june_studio_mcp(
     let script_path = mcp_dir.join(JUNE_STUDIO_MCP_SCRIPT_NAME);
     fs::write(&script_path, JUNE_STUDIO_MCP_SCRIPT)
         .map_err(|error| AppError::new("june_studio_mcp_failed", error.to_string()))?;
+    builtin_mcp::write_browser_script(&mcp_dir)
+        .map_err(|error| AppError::new("june_studio_mcp_failed", error.to_string()))?;
 
     Ok(JuneStudioMcpConfig {
         command: hermes_python_command(hermes_command),
@@ -7490,7 +7467,7 @@ async fn sync_hermes_config(
         &model,
         &base_url,
         provider_proxy_token,
-        &CRON_SANDBOXED_TOOLSETS.join(", "),
+        &builtin_mcp::cron_toolsets(CRON_SANDBOXED_TOOLSETS),
         external_skill_dirs,
         // Catalog-sourced, never assumed: an unreachable catalog writes no key
         // and leaves Hermes on its own detection (see the function's docs).
@@ -7500,7 +7477,8 @@ async fn sync_hermes_config(
         Some(june_media_mcp),
         Some(june_studio_mcp),
     );
-    std::fs::write(hermes_home.join("config.yaml"), config)
+    let guard = guard::config_block(crate::protected_mode::restrictions().memory_off);
+    std::fs::write(hermes_home.join("config.yaml"), config + &guard)
         .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))
 }
 
@@ -7581,136 +7559,6 @@ skills:
     )
 }
 
-/// Renders the `mcp_servers:` block listing every built-in MCP server June
-/// registers. All entries live under one key so Hermes deep-merges a single
-/// map; an empty map is emitted when none is configured.
-fn render_mcp_servers_config(
-    context: Option<&JuneContextMcpConfig>,
-    web: Option<&JuneWebMcpConfig>,
-    media: Option<&JuneMediaMcpConfig>,
-    studio: Option<&JuneStudioMcpConfig>,
-) -> String {
-    let mut entries = String::new();
-    if let Some(config) = context {
-        entries.push_str(&render_context_mcp_entry(config));
-    }
-    if let Some(config) = web {
-        entries.push_str(&render_web_mcp_entry(config));
-    }
-    if let Some(config) = media {
-        entries.push_str(&render_media_mcp_entry(config));
-    }
-    if let Some(config) = studio {
-        entries.push_str(&render_studio_mcp_entry(config));
-    }
-    if entries.is_empty() {
-        return "mcp_servers: {}\n".to_string();
-    }
-    format!("mcp_servers:\n{entries}")
-}
-
-fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
-    let memory_arg = if config.memory_enabled {
-        String::new()
-    } else {
-        "      - \"--memory=off\"\n".to_string()
-    };
-    format!(
-        r#"  {server_name}:
-    enabled: true
-    command: {command}
-    args:
-      - {script_path}
-      - {database_path}
-{memory_arg}      - {proxy_arg}
-    env:
-      PYTHONUNBUFFERED: "1"
-    timeout: 30
-    connect_timeout: 10
-"#,
-        server_name = JUNE_CONTEXT_MCP_SERVER_NAME,
-        command = yaml_string(&config.command),
-        script_path = yaml_string(&config.script_path.to_string_lossy()),
-        database_path = yaml_string(&config.database_path.to_string_lossy()),
-        proxy_arg = yaml_string(&format!(
-            "--proxy={}",
-            config.coordinates_path.to_string_lossy()
-        )),
-    )
-}
-
-/// The web MCP gets the path to the proxy-coordinates file as its argument,
-/// not the proxy URL/token themselves: the script re-reads that file on every
-/// tool call, so a server hosted by the long-lived Hermes gateway keeps
-/// working after the app relaunches on a new ephemeral proxy port. The token
-/// lives in the (0600) coordinates file rather than argv or env.
-fn render_web_mcp_entry(config: &JuneWebMcpConfig) -> String {
-    format!(
-        r#"  {server_name}:
-    enabled: true
-    command: {command}
-    args:
-      - {script_path}
-      - {coordinates_path}
-    env:
-      PYTHONUNBUFFERED: "1"
-    timeout: 30
-    connect_timeout: 10
-"#,
-        server_name = JUNE_WEB_MCP_SERVER_NAME,
-        command = yaml_string(&config.command),
-        script_path = yaml_string(&config.script_path.to_string_lossy()),
-        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
-    )
-}
-
-/// Same coordinates-file contract as the web MCP. The timeout is much higher
-/// than the web tools': a synchronous image generation legitimately runs up
-/// to the backend's ~60 s edge cap (plus the queue fallback), and completing
-/// a video/music job downloads the file before returning.
-/// Same coordinates-file contract again. The studio surface is typed actions
-/// against the app's own commands, so 300 seconds is generous: the slowest of
-/// them starts a background reading and returns immediately.
-fn render_studio_mcp_entry(config: &JuneStudioMcpConfig) -> String {
-    format!(
-        r#"  {server_name}:
-    enabled: true
-    command: {command}
-    args:
-      - {script_path}
-      - {coordinates_path}
-    env:
-      PYTHONUNBUFFERED: "1"
-    timeout: 300
-    connect_timeout: 10
-"#,
-        server_name = JUNE_STUDIO_MCP_SERVER_NAME,
-        command = yaml_string(&config.command),
-        script_path = yaml_string(&config.script_path.to_string_lossy()),
-        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
-    )
-}
-
-fn render_media_mcp_entry(config: &JuneMediaMcpConfig) -> String {
-    format!(
-        r#"  {server_name}:
-    enabled: true
-    command: {command}
-    args:
-      - {script_path}
-      - {coordinates_path}
-    env:
-      PYTHONUNBUFFERED: "1"
-    timeout: 300
-    connect_timeout: 10
-"#,
-        server_name = JUNE_MEDIA_MCP_SERVER_NAME,
-        command = yaml_string(&config.command),
-        script_path = yaml_string(&config.script_path.to_string_lossy()),
-        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
-    )
-}
-
 /// User-global skill directories Hermes loads in addition to its built-in
 /// `$HERMES_HOME/skills`. June advertises the conventional `~/.agents/skills`
 /// folder (where the `skills` CLI installs) when it exists, so a user or team
@@ -7765,8 +7613,8 @@ fn merge_external_skill_dirs(user_dirs: Vec<PathBuf>, bundled: Option<PathBuf>) 
 /// missing or the escape-hatch env var disabled it, so the agent never
 /// claims a protection that isn't enforced).
 ///
-/// `user_memory` is the cross-conversation facts block from
-/// `memory::prompt_block_for_app` (None when memory is disabled or empty).
+/// `user_memory` is the personal section (personalization, memory facts,
+/// past chats) from `personalization::soul_section_for_app` (ADR-0081).
 /// SOUL.md is written at spawn time, so facts extracted mid-session appear
 /// at the next runtime start; on-demand recall covers the gap through the
 /// `june_context` MCP.
@@ -7779,6 +7627,7 @@ fn sync_june_soul(
     let memory_section = user_memory
         .map(|block| format!("\n{block}"))
         .unwrap_or_default();
+    let data_section = crate::data_cards::desktop_soul_section(); // ADR-0086
     let soul = if sandbox_available {
         let cli_section = if agent_cli_access {
             JUNE_SOUL_CLI_ALLOWED_MD
@@ -7786,10 +7635,10 @@ fn sync_june_soul(
             JUNE_SOUL_CLI_BLOCKED_MD
         };
         format!(
-            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_STUDIO_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
+            "{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{data_section}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_STUDIO_MD}{JUNE_SOUL_SANDBOX_MD}{cli_section}"
         )
     } else {
-        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_STUDIO_MD}")
+        format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{data_section}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_STUDIO_MD}")
     };
     std::fs::write(hermes_home.join("SOUL.md"), soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
@@ -8003,8 +7852,10 @@ async fn handle_june_provider_connection(
             write_json_response(&mut stream, 200, body).await?;
         }
         ("POST", "/v1/chat/completions") => {
-            let body = serde_json::from_slice::<serde_json::Value>(&request.body)
+            let mut body = serde_json::from_slice::<serde_json::Value>(&request.body)
                 .unwrap_or_else(|_| serde_json::json!({}));
+            provider_proxy::apply_reasoning_effort_alias(&mut body);
+            project_memory::apply(&app, &mut body).await;
             match crate::june_api::proxy_agent_chat_completions(body).await {
                 Ok(response) if response.status >= 400 => {
                     // Error bodies are small enough to buffer whole, and
@@ -8026,9 +7877,11 @@ async fn handle_june_provider_connection(
                     write_streaming_response(&mut stream, response).await?;
                 }
                 Err(error) => {
+                    // A protected-mode refusal is final: a 5xx would be retried.
+                    let refused = error.code.starts_with("protected_mode");
                     write_json_response(
                         &mut stream,
-                        502,
+                        if refused { 403 } else { 502 },
                         serde_json::json!({
                             "error": {
                                 "message": format!("Sub Rosa agent provider failed: {}", error.message),
@@ -8073,16 +7926,25 @@ async fn handle_june_provider_connection(
         ("POST", "/v1/studio/request") => {
             forward_studio_request(&app, &mut stream, &request.body).await?;
         }
+        ("POST", "/v1/browser/request") => {
+            builtin_mcp::forward_browser_request(&app, &mut stream, &request.body).await?;
+        }
         ("POST", "/v1/media/save") => {
             forward_media_save(&app, &mut stream, &request.body).await?;
         }
+        ("POST", "/v1/media/document") => {
+            let (status, body) = crate::deliverables::proxy_route(&app, &request.body).await;
+            write_json_response(&mut stream, status, body).await?;
+        }
+        ("POST", "/v1/connectors") => connectors_mcp::route(&app, &mut stream, &request).await?,
+        ("POST", "/v1/media/refine") => {
+            let (status, body) = crate::image_refine::proxy_route(&app, &request.body).await;
+            write_json_response(&mut stream, status, body).await?;
+        }
         _ => {
-            write_json_response(
-                &mut stream,
-                404,
-                serde_json::json!({ "error": { "message": "Not found" } }),
-            )
-            .await?;
+            let (status, body) =
+                crate::personal_data::proxy_route(&app, &request.path, &request.body).await;
+            write_json_response(&mut stream, status, body).await?;
         }
     }
     Ok(())
@@ -8254,19 +8116,6 @@ fn translate_context_overflow_error(body: &[u8]) -> Option<serde_json::Value> {
 /// by bouncing off the backend's prompt_too_long rejection. When the window
 /// is unknown the field is omitted and Hermes falls back to its own probing,
 /// exactly the previous behavior.
-fn provider_models_body(model: String, context_tokens: Option<i64>) -> serde_json::Value {
-    let mut entry = serde_json::json!({
-        "id": model,
-        "object": "model",
-        "created": 0,
-        "owned_by": "june"
-    });
-    if let Some(context_tokens) = context_tokens {
-        entry["context_length"] = serde_json::json!(context_tokens);
-    }
-    serde_json::json!({ "object": "list", "data": [entry] })
-}
-
 fn provider_proxy_authorized(request: &HttpRequest, token: &str) -> bool {
     request
         .headers
@@ -8510,6 +8359,8 @@ struct MediaSaveRequest {
     url: Option<String>,
     base64: Option<String>,
     extension: String,
+    /// What was asked for; filed as a chat picture (`crate::image_refine`).
+    generation: Option<serde_json::Value>,
 }
 
 /// Persists a generation into the Studio gallery on the agent's behalf and
@@ -8568,6 +8419,7 @@ async fn forward_media_save(
     };
     match saved {
         Ok(artifact) => {
+            crate::image_refine::file_chat_media(app, &artifact, request.generation.as_ref()).await;
             let body = serde_json::to_value(&artifact).unwrap_or_else(|_| serde_json::json!({}));
             write_json_response(stream, 200, body).await
         }
@@ -8752,7 +8604,19 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
     ))
 }
 
+mod builtin_mcp;
+mod connectors_mcp;
+#[cfg(test)]
+use builtin_mcp::render_context_mcp_entry;
+use builtin_mcp::{
+    render_mcp_servers_config, JuneContextMcpConfig, JuneMediaMcpConfig, JuneStudioMcpConfig,
+    JuneWebMcpConfig,
+};
+pub mod guard;
 mod local_reads;
+mod project_memory;
+mod provider_proxy;
+use provider_proxy::provider_models_body;
 
 #[cfg(test)]
 mod config_tests;
@@ -9612,29 +9476,6 @@ mod tests {
     }
 
     #[test]
-    fn models_listing_advertises_the_context_window_when_known() {
-        let body = provider_models_body("zai-org-glm-5".to_string(), Some(202_752));
-
-        let entry = &body["data"][0];
-        assert_eq!(entry["id"], "zai-org-glm-5");
-        // The key hermes-agent's _CONTEXT_LENGTH_KEYS reads; renaming it
-        // silently puts the agent back on reactive overflow recovery.
-        assert_eq!(entry["context_length"], 202_752);
-    }
-
-    #[test]
-    fn models_listing_omits_the_context_window_when_unknown() {
-        // Offline or signed out: the listing must still serve (hermes needs
-        // it to enumerate the model at all) and just skip the window, which
-        // returns hermes to its own probing.
-        let body = provider_models_body("zai-org-glm-5".to_string(), None);
-
-        let entry = &body["data"][0];
-        assert_eq!(entry["id"], "zai-org-glm-5");
-        assert!(entry.get("context_length").is_none());
-    }
-
-    #[test]
     fn start_request_full_mode_is_opt_in_and_defaults_to_no_preference() {
         // Background callers (auto-start, routines, older frontends) send no
         // fullMode — that must deserialize as "no preference", never as an
@@ -10442,7 +10283,7 @@ mod tests {
 
         let config = std::fs::read_to_string(home.path().join("config.yaml")).expect("read config");
         assert!(config.contains("platform_toolsets:"));
-        assert!(config.contains(&format!("cron: [{}]", CRON_SANDBOXED_TOOLSETS.join(", "))));
+        assert!(config.contains(&builtin_mcp::cron_entry(CRON_SANDBOXED_TOOLSETS)));
         for toolset in [
             "terminal",
             "file",

@@ -15,6 +15,7 @@
  * as a tab.
  */
 
+import { stripReasoningEffortAlias } from "./reasoning-effort";
 import { asRecord, pickNumber, pickString } from "./hermes-control-plane";
 
 /** A single tool or subagent cost line, when the gateway breaks costs down. */
@@ -178,7 +179,9 @@ export function parseSessionUsage(sessionId: string, raw: unknown): SessionUsage
   return {
     sessionId,
     provider: pickString([root], ["provider", "provider_name", "vendor"]),
-    model: pickString([root], ["model", "model_name", "model_id", "modelId"]),
+    model: stripReasoningEffortAlias(
+      pickString([root], ["model", "model_name", "model_id", "modelId"]),
+    ),
     // Each list ends with Hermes's own `SessionUsageResponse` names
     // (input/output/total, context_used/context_max) so the live gateway's
     // shape is read directly, not just the generic OpenAI-style aliases.

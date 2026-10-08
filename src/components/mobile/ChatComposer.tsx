@@ -1,11 +1,15 @@
 // The phone's one way to write to a model: the field, its attachments, and a
 // single round button that is the microphone until there is something to
-// send, then the arrow. The Chat tab and an assistant's conversation share it,
+// send, then the arrow, and the stop square while a reply is being written.
+// The Chat tab and an assistant's conversation share it,
 // so the two never drift into two ways of typing a message.
 
 import { IconArrowUp } from "central-icons/IconArrowUp";
+import { ASK_ABOUT_SELECTION_EVENT, takePendingQuote } from "../../lib/ask-selection";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
+import { IconScanTextSparkle } from "central-icons/IconScanTextSparkle";
+import { IconStop } from "central-icons/IconStop";
 import {
   type Dispatch,
   type ReactNode,
@@ -20,6 +24,9 @@ import { messageFromError } from "../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../lib/haptics";
 import { t } from "../../lib/i18n";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
+import { SkillSlashMenu } from "./SkillSlashMenu";
+import { documentExtract, isExtractableDocument } from "../../lib/projects";
+import { scanDocument, scanTitle, supportsDocumentScan } from "../../lib/scan";
 import {
   type AgentLiteAttachment,
   mobileDictationStart,
@@ -38,6 +45,10 @@ export function ChatComposer({
   chip,
   above,
   inputRef,
+  running = false,
+  onStop,
+  skills = false,
+  voice,
 }: {
   draft: string;
   onDraftChange: Dispatch<SetStateAction<string>>;
@@ -53,9 +64,31 @@ export function ChatComposer({
   /** What sits above the card: openers on an empty conversation. */
   above?: ReactNode;
   inputRef?: RefObject<HTMLTextAreaElement>;
+  /** A reply is being written. With `onStop`, the round button stops it. */
+  running?: boolean;
+  onStop?: () => void;
+  /** Offer the skill packs on `/` (ADR-0092): the Chat tab, not an
+   * assistant, whose definition decides what it follows. */
+  skills?: boolean;
+  /** The voice conversation's button, beside the round one. */
+  voice?: ReactNode;
 }) {
   const ownInput = useRef<HTMLTextAreaElement>(null);
   const field = inputRef ?? ownInput;
+  // "Ask Sub Rosa" on a selection (lib/ask-selection): the quote goes on top
+  // of the draft, taken once, whether it was asked for before this composer
+  // mounted or while it is on screen.
+  useEffect(() => {
+    const take = () => {
+      const quote = takePendingQuote();
+      if (!quote) return;
+      onDraftChange((current) => `${quote}${current}`);
+      field.current?.focus();
+    };
+    take();
+    window.addEventListener(ASK_ABOUT_SELECTION_EVENT, take);
+    return () => window.removeEventListener(ASK_ABOUT_SELECTION_EVENT, take);
+  }, [onDraftChange, field]);
   const fileInput = useRef<HTMLInputElement>(null);
   const keyboardInset = useKeyboardInset();
   const [dictating, setDictating] = useState(false);
@@ -84,6 +117,19 @@ export function ChatComposer({
           .catch(() => onError(t("This image could not be read.")));
         return;
       }
+      // PDF and Office documents are read on the device, and their text
+      // rides as a text attachment (ADR-0085). A scan says so.
+      if (isExtractableDocument(file.name)) {
+        void documentExtract(file)
+          .then((document) =>
+            onAttachmentsChange((current) => [
+              ...current,
+              { kind: "text", name: file.name, data: document.text },
+            ]),
+          )
+          .catch((err: unknown) => onError(messageFromError(err)));
+        return;
+      }
       if (file.size > 512 * 1024) {
         onError(t("Text files up to 512 KB can be attached."));
         return;
@@ -99,6 +145,30 @@ export function ChatComposer({
     },
     [onAttachmentsChange, onError],
   );
+
+  // Paper into the conversation: the scan becomes a note of its own, and its
+  // text rides this turn the way a PDF's does.
+  const [scanning, setScanning] = useState(false);
+  const scan = useCallback(async () => {
+    setScanning(true);
+    try {
+      const result = await scanDocument();
+      if (!result) return;
+      if (!result.text.trim()) {
+        onError(t("No text was found on these pages. The scan is saved in your notes."));
+        return;
+      }
+      onAttachmentsChange((current) => [
+        ...current,
+        { kind: "text", name: scanTitle(), data: result.text },
+      ]);
+      hapticNotify("success");
+    } catch (err) {
+      onError(messageFromError(err));
+    } finally {
+      setScanning(false);
+    }
+  }, [onAttachmentsChange, onError]);
 
   const toggleDictation = useCallback(async () => {
     if (dictating) {
@@ -152,11 +222,20 @@ export function ChatComposer({
         </div>
       ) : null}
       {above}
+      {skills ? (
+        <SkillSlashMenu
+          draft={draft}
+          onPick={(next) => {
+            onDraftChange(next);
+            field.current?.focus();
+          }}
+        />
+      ) : null}
       <div className="mobile-chat-composer-card">
         <input
           ref={fileInput}
           type="file"
-          accept="image/*,.txt,.md,.csv,.json,text/plain"
+          accept="image/*,.txt,.md,.csv,.json,text/plain,.pdf,.docx,.xlsx,.pptx"
           multiple
           hidden
           onChange={(event) => {
@@ -198,11 +277,36 @@ export function ChatComposer({
           >
             <IconPaperclip1 size={19} />
           </button>
+          {supportsDocumentScan() ? (
+            <button
+              type="button"
+              className="mobile-composer-bare"
+              aria-label={t("Scan a document")}
+              disabled={scanning}
+              onClick={() => void scan()}
+            >
+              <IconScanTextSparkle size={19} />
+            </button>
+          ) : null}
           {chip}
           <span className="mobile-composer-spacer" />
+          {voice}
           {/* One round button that changes with the field: the microphone
-              while there is nothing to send, the arrow once there is. */}
-          {hasDraft && !dictating ? (
+              while there is nothing to send, the arrow once there is, and
+              the stop square for as long as a reply is being written. */}
+          {running && onStop ? (
+            <button
+              type="button"
+              className="mobile-chat-send"
+              aria-label={t("Stop reply")}
+              onClick={() => {
+                hapticImpact("medium");
+                onStop();
+              }}
+            >
+              <IconStop size={18} />
+            </button>
+          ) : hasDraft && !dictating ? (
             <button
               type="button"
               className="mobile-chat-send"

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home screen widget (AskWidgetProvider): three buttons, each opening
+     an address of the app. RemoteViews only: plain views, no custom ones. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/subrosa_widget_background"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/subrosa_widget_ask"
+        style="@style/SubRosaWidgetButton"
+        android:drawableTop="@android:drawable/ic_menu_help"
+        android:text="@string/subrosa_widget_ask" />
+
+    <TextView
+        android:id="@+id/subrosa_widget_dictate"
+        style="@style/SubRosaWidgetButton"
+        android:drawableTop="@android:drawable/ic_btn_speak_now"
+        android:text="@string/subrosa_widget_dictate" />
+
+    <TextView
+        android:id="@+id/subrosa_widget_record"
+        style="@style/SubRosaWidgetButton"
+        android:drawableTop="@android:drawable/presence_audio_online"
+        android:text="@string/subrosa_widget_record" />
+</LinearLayout>

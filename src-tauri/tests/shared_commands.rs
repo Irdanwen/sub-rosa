@@ -25,6 +25,12 @@ fn platform_specific(name: &str) -> bool {
         "updates::",
         "menu_bar::",
         "agent_hud::",
+        // The agent browser, the chat bar and screen awareness drive a
+        // desktop browser, a global shortcut and the frontmost window
+        // (ADR-0094); a phone has none of them.
+        "agent_browser::",
+        "chat_bar::",
+        "screen_awareness::",
         "meeting_hud::",
         "win_console::",
         "autostart",
@@ -34,6 +40,11 @@ fn platform_specific(name: &str) -> bool {
         // A council issues a mandate for one agent to execute, and there is
         // no agent runtime on iOS to hand it to (ADR-0034).
         "council::",
+        // Code mode reviews a working folder the desktop agent edits (ADR-0090).
+        "code_review::",
+        // A browser extension reaches the desktop app through native
+        // messaging; no phone browser loads one that way (ADR-0100).
+        "browser_extension::",
         // The extractor rail runs a binary the user installed; iOS cannot
         // execute one at all (ADR-0028).
         "ingest::extractor::",
@@ -44,6 +55,8 @@ fn platform_specific(name: &str) -> bool {
         "photos_ios::",
         "share_ios::",
         "android_exports::",
+        // The document camera exists on the phone only (VisionKit, ML Kit).
+        "scan::",
         // The share sheet's inbox (ADR-0048): only the phone has a share
         // extension to fill it.
         "share_inbox::",

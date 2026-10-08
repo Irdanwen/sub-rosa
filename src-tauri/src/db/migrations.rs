@@ -122,7 +122,15 @@ pub async fn applied_migrations(
         .collect())
 }
 
+/// Migrations run one at a time per process. Two pools opening the same file
+/// at once (a resume sweep and the first command, or the test that starts
+/// eight) used to race on `CREATE VIRTUAL TABLE notes_fts`, and the loser
+/// failed with SQLITE_SCHEMA ("vtable constructor failed"). Every statement
+/// is idempotent, so the second runner finds the work done.
+static MIGRATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
+    let _serialised = MIGRATION_LOCK.lock().await;
     crate::diagnostics::mark("database open");
     query(SCHEMA_LEDGER).execute(_pool).await?;
     replay(
@@ -526,7 +534,121 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/041_cloned_voices.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "043_session_folder_sync.sql",
+        include_str!("../../migrations/043_session_folder_sync.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "044_memory_sources.sql",
+        include_str!("../../migrations/044_memory_sources.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "045_reply_ratings.sql",
+        include_str!("../../migrations/045_reply_ratings.sql"),
+    )
+    .await?;
+    replay_statements(
+        _pool,
+        "046_temporary_chats.sql",
+        include_str!("../../migrations/046_temporary_chats.sql"),
+        split_sql_statements(include_str!("../../migrations/046_temporary_chats.sql")),
+    )
+    .await?;
+    replay(
+        _pool,
+        "048_projects.sql",
+        include_str!("../../migrations/048_projects.sql"),
+    )
+    .await?;
+    replay_statements(
+        _pool,
+        "050_reply_ratings_follow_chats.sql",
+        include_str!("../../migrations/050_reply_ratings_follow_chats.sql"),
+        split_sql_statements(include_str!(
+            "../../migrations/050_reply_ratings_follow_chats.sql"
+        )),
+    )
+    .await?;
+    replay(
+        _pool,
+        "054_saved_items.sql",
+        include_str!("../../migrations/054_saved_items.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "057_research.sql",
+        include_str!("../../migrations/057_research.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "058_study.sql",
+        include_str!("../../migrations/058_study.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "060_assignments.sql",
+        include_str!("../../migrations/060_assignments.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "063_connectors.sql",
+        include_str!("../../migrations/063_connectors.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "064_skill_packs.sql",
+        include_str!("../../migrations/064_skill_packs.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "068_health.sql",
+        include_str!("../../migrations/068_health.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "069_finance.sql",
+        include_str!("../../migrations/069_finance.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "071_spaces.sql",
+        include_str!("../../migrations/071_spaces.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "074_connector_relays.sql",
+        include_str!("../../migrations/074_connector_relays.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "075_connector_object_ids.sql",
+        include_str!("../../migrations/075_connector_object_ids.sql"),
+    )
+    .await?;
+    let named = crate::connectors::assign_object_ids(_pool).await?;
     crate::account::sync::install(_pool).await?;
+    // A connector that predates its object id never reached the service:
+    // it leaves now, under the id the service accepts.
+    if named > 0 {
+        if let Err(error) = crate::account::sync::enqueue_existing(_pool, "connectors", "1").await {
+            tracing::warn!(code = %error.code, "connector definitions not queued again");
+        }
+    }
     crate::diagnostics::mark("migrations");
 
     Ok(())

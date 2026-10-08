@@ -1,0 +1,146 @@
+{
+  "extName": {
+    "message": "Sub Rosa"
+  },
+  "extDescription": {
+    "message": "Pregunta a Sub Rosa sobre la página que estás leyendo. Funciona con la app Sub Rosa de tu computadora."
+  },
+  "actionTitle": {
+    "message": "Preguntar a Sub Rosa"
+  },
+  "menuAskSelection": {
+    "message": "Preguntar a Sub Rosa"
+  },
+  "pairTitle": {
+    "message": "Conectar este navegador"
+  },
+  "pairBody": {
+    "message": "En Sub Rosa, en esta computadora, abre Ajustes, luego Extensión del navegador, y elige Conectar un navegador. Escribe el código que aparece."
+  },
+  "pairCodeLabel": {
+    "message": "Código"
+  },
+  "pairButton": {
+    "message": "Conectar"
+  },
+  "paired": {
+    "message": "Este navegador está conectado a Sub Rosa."
+  },
+  "summarize": {
+    "message": "Resumir"
+  },
+  "summarizePrompt": {
+    "message": "Resume esta página."
+  },
+  "addToNote": {
+    "message": "Añadir a una nota"
+  },
+  "saveLink": {
+    "message": "Guardar el enlace en la biblioteca"
+  },
+  "openSidePanel": {
+    "message": "Abrir en el panel lateral"
+  },
+  "askPlaceholder": {
+    "message": "Pregunta sobre esta página"
+  },
+  "includePage": {
+    "message": "Incluir esta página"
+  },
+  "send": {
+    "message": "Enviar"
+  },
+  "stop": {
+    "message": "Detener"
+  },
+  "newChat": {
+    "message": "Nuevo chat"
+  },
+  "forget": {
+    "message": "Desconectar este navegador"
+  },
+  "you": {
+    "message": "Tú"
+  },
+  "assistant": {
+    "message": "Sub Rosa"
+  },
+  "selectionLabel": {
+    "message": "Texto seleccionado"
+  },
+  "noteSaved": {
+    "message": "Añadido a una nota nueva: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "linkSaved": {
+    "message": "Guardado en tu biblioteca: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "continuesInApp": {
+    "message": "Este chat también está en Sub Rosa, entre tus chats."
+  },
+  "stageThinking": {
+    "message": "Pensando"
+  },
+  "stageSearchingWeb": {
+    "message": "Buscando en la web"
+  },
+  "stageReadingPage": {
+    "message": "Leyendo una página"
+  },
+  "stageSearchingNotes": {
+    "message": "Buscando en tus notas"
+  },
+  "stageSearchingMemory": {
+    "message": "Revisando lo que Sub Rosa recuerda"
+  },
+  "errorAppNotRunning": {
+    "message": "Sub Rosa no está abierto en esta computadora. Ábrelo y vuelve a intentarlo."
+  },
+  "errorHostNotFound": {
+    "message": "Este navegador todavía no está configurado para Sub Rosa. En Sub Rosa, abre Ajustes, luego Extensión del navegador, y elige Conectar un navegador."
+  },
+  "errorNotPaired": {
+    "message": "Este navegador ya no está conectado a Sub Rosa. Escribe un código nuevo para volver a conectarlo."
+  },
+  "errorPairingNotStarted": {
+    "message": "Sub Rosa no muestra ningún código. En Ajustes, Extensión del navegador, elige primero Conectar un navegador."
+  },
+  "errorPairingWrong": {
+    "message": "Ese código no es el que muestra Sub Rosa. Revísalo y vuelve a intentarlo."
+  },
+  "errorPairingExpired": {
+    "message": "Ese código caducó. Muestra uno nuevo en Sub Rosa."
+  },
+  "errorPairingExhausted": {
+    "message": "Demasiados códigos incorrectos. Muestra uno nuevo en Sub Rosa."
+  },
+  "errorNotAPage": {
+    "message": "Sub Rosa solo puede leer páginas web."
+  },
+  "errorNoAccess": {
+    "message": "Haz clic en el botón de Sub Rosa en la barra de herramientas para que pueda leer esta página."
+  },
+  "errorUpdateApp": {
+    "message": "Actualiza Sub Rosa para usar esta versión de la extensión."
+  },
+  "errorBusy": {
+    "message": "Este chat todavía está respondiendo. Espera y luego vuelve a preguntar."
+  },
+  "errorEmptyQuestion": {
+    "message": "Escribe primero una pregunta."
+  },
+  "errorGeneric": {
+    "message": "Algo salió mal. Inténtalo de nuevo."
+  }
+}

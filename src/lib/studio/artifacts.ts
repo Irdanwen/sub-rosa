@@ -5,7 +5,13 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { MediaFileResult } from "./async-job";
-import type { ArtifactFile, ArtifactKind, RetouchLineage, StudioArtifact } from "./types";
+import type {
+  ArtifactFile,
+  ArtifactKind,
+  ArtifactOrigin,
+  RetouchLineage,
+  StudioArtifact,
+} from "./types";
 
 const GALLERY_STORAGE_KEY = "os-june:studio-gallery";
 const MAX_GALLERY_ENTRIES = 200;
@@ -111,6 +117,8 @@ interface ArtifactMetadata {
   costCredits?: number;
   /** Retouch lineage, when this image is a version of another one. */
   edit?: RetouchLineage;
+  /** The surface that asked for it, when it was not the Studio (a chat). */
+  origin?: ArtifactOrigin;
 }
 
 function register(
@@ -132,6 +140,7 @@ function register(
     sourceTimeSeconds: metadata.sourceTimeSeconds,
     costCredits: metadata.costCredits,
     ...(metadata.edit ? { edit: metadata.edit } : {}),
+    ...(metadata.origin ? { origin: metadata.origin } : {}),
   };
   writeIndex([artifact, ...readIndex().filter((entry) => entry.id !== artifact.id)]);
   const { path: _path, ...generation } = artifact;

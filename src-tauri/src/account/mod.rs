@@ -6,11 +6,17 @@ pub mod crypto;
 mod files;
 pub mod login;
 pub mod pairing;
+pub mod publications;
+mod saved_items;
+pub mod security_events;
+mod session_folders;
 pub mod shares;
+pub mod spaces;
 pub(crate) mod studio;
 mod summaries;
 pub mod sync;
 mod sync_issues;
+mod sync_tables;
 use crate::{domain::types::AppError, redacted::Redacted};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -21,6 +27,8 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
+#[cfg(test)]
+pub(crate) use sync_tables::columns_of;
 use tauri::AppHandle;
 use zeroize::Zeroizing;
 
@@ -116,6 +124,8 @@ fn error(code: &str) -> AppError {
             "share_window_invalid" => "Choose how long the link should work.",
             "share_too_large" => "This is too large to share as a link.",
             "share_failed" => "The link could not be created.",
+            "share_temporary" => "A temporary chat cannot be shared.",
+            "share_empty" => "This conversation has nothing to share yet.",
             _ => "The account operation could not be completed.",
         },
     )
@@ -987,7 +997,13 @@ pub async fn account_vault_create(app: AppHandle) -> Result<RecoveryKit, AppErro
         &s,
         reqwest::Method::PUT,
         "/api/v1/vault",
-        Some(json!({"expected_version":0,"envelope":envelope})),
+        // The verifier travels with the envelope, so this recovery key can
+        // admit a browser as a device later (ADR-0096). It is one-way.
+        Some(json!({
+            "expected_version": 0,
+            "envelope": envelope,
+            "admission_verifier": crypto::admission_verifier(&s.account.id, &recovery),
+        })),
     )
     .await
     {
@@ -1146,6 +1162,15 @@ pub async fn account_share_note(
     window_hours: i64,
 ) -> Result<shares::ShareLink, AppError> {
     shares::create_note_share(&app, &note_id, window_hours).await
+}
+/// A conversation as a link (ADR-0053, addendum). The phone names it by its
+/// task, the desktop by its Hermes session and the title it shows.
+#[tauri::command]
+pub async fn account_share_conversation(
+    app: AppHandle,
+    request: shares::ShareConversationRequest,
+) -> Result<shares::ShareLink, AppError> {
+    shares::create_conversation_share(&app, request).await
 }
 #[tauri::command]
 pub async fn account_shares(app: AppHandle) -> Result<Vec<shares::ShareSummary>, AppError> {
@@ -1307,6 +1332,11 @@ pub fn setup(app: &AppHandle) {
         loop {
             interval.tick().await;
             sync::resume(&app).await;
+            spaces::resume(&app).await;
+            // A connector call a browser tab asked this device to make
+            // (ADR-0107): somebody is waiting for it, so it is looked for
+            // after every synchronisation rather than every minute.
+            crate::connectors::relay::run_pending(&app).await;
         }
     });
 }

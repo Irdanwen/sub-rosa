@@ -1,0 +1,324 @@
+/* -- Health and Finances (ADR-0099) ---------------------------------------- */
+.personal-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--sp-4) var(--sp-8);
+  min-height: 0;
+}
+
+.personal-view-title {
+  margin: var(--sp-6) 0 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: 400;
+  line-height: var(--leading-2xl);
+  letter-spacing: var(--tracking-2xl);
+}
+
+.personal-view-lead {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.personal-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.personal-section-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.personal-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.personal-row-spread {
+  justify-content: space-between;
+}
+
+.personal-quiet {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.personal-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+}
+
+.personal-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-height: var(--control-md);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.personal-button[data-tone="primary"] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.personal-button[data-tone="danger"] {
+  color: var(--destructive);
+}
+
+.personal-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.personal-button:focus-visible,
+.personal-input:focus-visible,
+.personal-select:focus-visible,
+.personal-check input:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.personal-input,
+.personal-select {
+  min-height: var(--control-md);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--input);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+
+/* 16px keeps the phone from zooming into the field. Only there: on the
+ * computer it made every field and category menu larger than its row. */
+:root[data-shell="mobile"] .personal-input,
+:root[data-shell="mobile"] .personal-select {
+  font-size: max(16px, var(--fs-sm));
+}
+
+/* Grows along a row only: in a column (a labelled field) a 12rem basis is a
+ * height, and stretched the account field to a box. */
+.personal-row > .personal-input,
+.personal-search > .personal-input {
+  flex: 1 1 12rem;
+}
+
+/* The dialog card does not scroll; its body does, so the mapping and the
+ * sample never push the import button out of the card. The padding keeps
+ * the focus rings inside the scroller. */
+.personal-dialog-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-1);
+  margin: calc(-1 * var(--sp-1));
+}
+
+/* The mapping's group: the legend is its heading, not a browser frame. */
+fieldset.personal-section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+fieldset.personal-section > legend {
+  padding: 0;
+  margin-bottom: var(--sp-3);
+}
+
+/* The search field's label: the icon and the field on one line, the field
+ * drawing the only border. */
+.personal-search {
+  display: flex;
+  flex: 1 1 12rem;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--muted-foreground);
+}
+
+/* A time range or a filter is as wide as its choices, not the column. */
+.personal-section > .segmented {
+  align-self: flex-start;
+}
+
+/* On the phone the screen already draws the gutter. */
+.mobile-list-scroll > .personal-view {
+  padding-inline: 0;
+}
+
+.personal-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.personal-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--sp-2);
+}
+
+.personal-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.personal-tile-label {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.personal-tile-value {
+  font-size: var(--fs-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.personal-metric-list,
+.personal-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.personal-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-lg);
+}
+
+.personal-list-row:hover {
+  background: var(--surface-subtle);
+}
+
+.personal-list-main {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.personal-list-title {
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-list-meta {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+/* A date and an account number: cut at the end rather than broken inside
+ * the number. */
+.personal-one-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-amount {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.personal-amount[data-sign="in"] {
+  color: var(--success);
+}
+
+.personal-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.personal-mapping {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--sp-2) var(--sp-3);
+}
+
+.personal-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.personal-sample {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+}
+
+.personal-sample th,
+.personal-sample td {
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.personal-sample td[data-nowrap] {
+  white-space: nowrap;
+}
+
+.personal-sample td[data-numeric] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.personal-scroll-x {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.personal-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--sp-3);
+}

@@ -98,6 +98,10 @@ export interface MediaModel {
   traits?: string[];
   /** Whether the model declares image (vision) input support. */
   supportsVision?: boolean;
+  /** Whether the model honours `reasoning_effort` (text models). */
+  supportsReasoningEffort?: boolean;
+  /** How many tokens of conversation the model reads (text models). */
+  contextTokens?: number;
   /** Venice `model_spec.pricing`, verbatim (music duration brackets, etc). */
   pricing?: Record<string, unknown>;
   /** Flat per-generation price in credits, when the backend publishes one. */
@@ -107,6 +111,8 @@ export interface MediaModel {
 export interface MediaCatalog {
   backend: "carpe-diem" | "venice";
   priceMultiplier?: number;
+  /** Protected mode left adult families out (ADR-0084). */
+  protectedMode?: boolean;
   models: MediaModel[];
 }
 
@@ -172,10 +178,20 @@ export interface StudioArtifact {
   height?: number;
   peaks?: number[];
   posterVersion?: number;
+  /** Where the request came from, when it was not the Studio itself. A chat
+   * image carries `{ surface: "chat" }` (and the chat's task id when known),
+   * which is how the Library finds every picture made in a conversation. */
+  origin?: ArtifactOrigin;
+}
+
+/** The surface that asked for a gallery file. */
+export interface ArtifactOrigin {
+  surface: "chat";
+  taskId?: string;
 }
 
 /** How a retouch version was made. */
-export type RetouchOperation = "prompt" | "zone" | "variant" | "upscale" | "extend";
+export type RetouchOperation = "prompt" | "zone" | "variant" | "upscale" | "extend" | "refine";
 
 /** The lineage a retouch version carries, stored with its generation metadata
  * so the version tree survives a restart without a table of its own. */

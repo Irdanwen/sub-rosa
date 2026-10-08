@@ -727,6 +727,10 @@ pub struct MemoryDto {
     pub has_embedding: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// The project (folder id) that keeps this memory to itself, or `None`
+    /// for the user's own memory (ADR-0085).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -816,6 +820,10 @@ pub struct ForkAgentTaskRequest {
     /// source chat's own model.
     #[serde(default)]
     pub model: Option<String>,
+    /// Branch at this message, keeping it and everything before it. Absent
+    /// copies the whole conversation.
+    #[serde(default)]
+    pub up_to_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

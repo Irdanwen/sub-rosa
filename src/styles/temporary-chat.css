@@ -1,0 +1,60 @@
+/* Temporary chats (ADR-0083): unmistakable on purpose. The banner borrows the
+ * warning tone so it never reads as an ordinary chat's chrome. */
+
+.agent-hero-heading:has(.temporary-chat-start) {
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.temporary-chat-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.temporary-chat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.temporary-chat-toggle:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+.temporary-chat-toggle[aria-pressed="true"] {
+  border-color: var(--warning);
+  background: color-mix(in oklch, var(--warning) 14%, transparent);
+  color: var(--foreground);
+}
+
+.temporary-chat-toggle:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.temporary-chat-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px dashed var(--warning);
+  border-radius: var(--r-md);
+  background: color-mix(in oklch, var(--warning) 10%, transparent);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+}
+
+.temporary-chat-start .temporary-chat-banner {
+  margin: 0;
+}

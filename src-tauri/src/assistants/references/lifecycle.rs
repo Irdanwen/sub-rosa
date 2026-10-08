@@ -1,4 +1,5 @@
-//! A reference file belongs to live metadata or an immutable chat snapshot.
+//! A reference file belongs to live metadata (an assistant's reference or a
+//! project's file, ADR-0085) or an immutable chat snapshot.
 //! Serialize local snapshot capture/deletion and recheck owners under SQLite's
 //! writer lock so sync cannot add an owner between the check and unlink.
 use super::*;
@@ -15,7 +16,7 @@ pub(crate) async fn reference_lifecycle_lock() -> tokio::sync::MutexGuard<'stati
 async fn retained_on(
     connection: &mut sqlx_sqlite::SqliteConnection,
 ) -> Result<HashSet<String>, AppError> {
-    let rows = query("SELECT file_name AS body,0 AS snapshot FROM assistant_references WHERE file_name IS NOT NULL UNION ALL SELECT snapshot_json AS body,1 AS snapshot FROM assistant_conversations")
+    let rows = query("SELECT file_name AS body,0 AS snapshot FROM assistant_references WHERE file_name IS NOT NULL UNION ALL SELECT file_name AS body,0 AS snapshot FROM project_files WHERE file_name IS NOT NULL UNION ALL SELECT snapshot_json AS body,1 AS snapshot FROM assistant_conversations")
         .fetch_all(connection).await?;
     let mut retained = HashSet::new();
     for row in rows {

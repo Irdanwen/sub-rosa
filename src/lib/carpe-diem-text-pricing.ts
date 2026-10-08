@@ -15,6 +15,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { stripReasoningEffortAlias } from "./reasoning-effort";
 
 export interface TextPrice {
   model: string;
@@ -44,14 +45,36 @@ export function textPricing(): Promise<TextPrice[]> {
   return inflight;
 }
 
-/** Forget the cached table (a key or base URL change makes it stale). */
+/** What one web search and one page read cost, USD per call, multiplier
+ * applied (`carpe_diem_web_pricing`). A price the operator does not publish
+ * is absent. */
+export interface WebPrice {
+  searchUsd?: number;
+  readUsd?: number;
+}
+
+let webInflight: Promise<WebPrice> | null = null;
+
+export function webPricing(): Promise<WebPrice> {
+  if (!webInflight) {
+    webInflight = invoke<WebPrice>("carpe_diem_web_pricing").catch(() => {
+      webInflight = null;
+      return {};
+    });
+  }
+  return webInflight;
+}
+
+/** Forget the cached tables (a key or base URL change makes them stale). */
 export function forgetTextPricing(): void {
   inflight = null;
+  webInflight = null;
 }
 
 export function priceFor(model: string | undefined, prices: TextPrice[]): TextPrice | undefined {
   if (!model) return undefined;
-  return prices.find((price) => price.model === model);
+  const id = stripReasoningEffortAlias(model);
+  return prices.find((price) => price.model === id);
 }
 
 /**

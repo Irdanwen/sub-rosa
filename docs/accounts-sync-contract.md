@@ -8,16 +8,41 @@ JSON field names are snake_case. Successful JSON responses are `{ "data": T }`; 
 
 | Method and route | Contract |
 | --- | --- |
-| `GET /auth/login?intent=signin\|signup&return_to=/account` | Starts external OIDC. Allowed return paths: `/account`, `/account/`, `/account/devices`, `/account/library`, `/account/provider`, `/account/security`, `/account/top-up`, `/account/usage`, and `/account/devices/verify?code=XXXXXXXX` with a valid device code. No external return URLs. `signin` and `signup` share the configured identity provider; account creation/passkey UX belongs to it. |
+| `GET /auth/login?intent=signin\|signup&return_to=/account` | Starts external OIDC. Allowed return paths: `/account`, `/account/`, `/account/devices`, `/account/library`, `/account/provider`, `/account/security`, `/account/top-up`, `/account/usage`, `/app` (the web client), and `/account/devices/verify?code=XXXXXXXX` with a valid device code. No external return URLs. `signin` and `signup` share the configured identity provider; account creation/passkey UX belongs to it. |
 | `GET /auth/callback?state=...&code=...` | Consumes a ten-minute login attempt bound to its browser cookie; verifies code, S256 PKCE, signed ID token, exact issuer/audience, nonce, verified email and fresh `auth_time`. Maps `(issuer, subject)` to an internal UUID, never merges by email. Returns a 303 redirect with browser cookies. |
 | `POST /auth/logout` | Invalidates the current session. Native logout also revokes its refresh family. Clears browser cookies when present. |
 | `GET /api/v1/me` | `{ id, email, created_at }`. Dates are RFC3339. |
 | `DELETE /api/v1/me` | Requires authentication within five minutes. Persists independent signed deletion intent before deleting account rows, authorizations, sessions and encrypted-data references. Blob removal is a durable retry queue. Returns `{ deleted: true }` only after database erasure commits. |
-| `GET /api/v1/devices` | Array of `{ id, name, created_at, last_seen_at, revoked_at }`. This list contains native device authorizations. |
+| `GET /api/v1/devices` | Array of `{ id, name, created_at, last_seen_at, revoked_at, renewed_at, renew_count, kind }`. `kind` is `native` for an app and `browser` for a browser admitted as a device (ADR-0096). |
+| `POST /api/v1/browser-devices` | Browser session and CSRF, authenticated within five minutes (`403 recent_auth_required`), 5 per minute per account. Header `subrosa-device-proof` signed by the new non-extractable P-256 device key and carrying its public `jwk`. Body `{ name, admission }` where `admission` is exactly one of `{ pairing_request_id }` (a pairing request this browser session created and a live app approved within five minutes; consumed) or `{ recovery_proof }` (base64url of the 32 bytes derived from the recovery key, compared with the vault's `admission_verifier`). Otherwise `403 admission_required`. At most ten live browser devices (`403 forbidden`). Returns the device. See ADR-0096. |
+| `POST /api/v1/browser-devices/renounce` | Browser session and CSRF plus the device's proof. No step-up. Revokes the browser device and queues its Carpe Diem revocation (`signed_out`). |
 | `POST /api/v1/devices/{id}/name` | Renames a device you own. A browser session and CSRF, but no step-up: a label change alters nothing the device may do, and a name you cannot correct is how the list became unreadable. `{ name }`, at most 80 characters, no control characters. |
 | `DELETE /api/v1/devices/{id}` | Requires authentication within five minutes. Revokes the device's sessions/refresh families and pairing requests, and queues the revocation of any Carpe Diem device key it obtained (ADR-0069). Returns `{ revoked: true }`. Past downloaded data and a provider key the person pasted cannot be remotely erased. |
+| `GET /api/v1/security-events` | Browser or native session, read-only, honours `x-subrosa-account-id` like every account route. The account's security history, newest first: at most 200 events from the last 90 days, as an array of `{ id, kind, occurred_at, device_name }`. `device_name` is the device label at the time of the event, or `null` when no device was involved. See below. |
 
 The server uses confidential-client OIDC, exact registered callback, `client_secret_basic`, `openid email`, PKCE S256 and `max_age=0`. ID tokens must use RS256 or ES256 with a matching trusted discovery JWKS key. The OIDC client secret exists only at the service. Existing identity-provider passkeys remain valid for its OIDC sign-in; new Sub Rosa passkeys belong to the account origin and must be enrolled separately. Neither decrypts the vault.
+
+### Security history
+
+`security_events` is append-only. Each row is written in the transaction of the action it describes, so the action and its line commit together, and maintenance deletes rows older than 90 days. An account deletion removes its history with it. Rows hold a kind, a time and, when a device was involved, a copy of that device's label. They never hold a network address, a user agent or a location. The kinds, and where each is written:
+
+| Kind | Written by |
+| --- | --- |
+| `signed_in` | A browser session through OIDC (`/auth/callback`). |
+| `signed_in_passkey` | A browser session through a first-party passkey. |
+| `signed_out` | `POST /auth/logout`, with the device label for a native session. |
+| `device_added`, `device_signed_in` | A device exchange that creates a device row, or reuses one proven by its secret. |
+| `device_renamed`, `device_revoked` | `POST /api/v1/devices/{id}/name`, `DELETE /api/v1/devices/{id}`. |
+| `device_signed_out` | `POST /api/v1/session/renounce`. |
+| `refresh_reuse_blocked` | A consumed refresh token presented again, which revokes its family. |
+| `pairing_approved` | `POST /api/v1/pairing/{id}/approve`, with the approving device's label (none for a browser). |
+| `passkey_added`, `passkey_removed` | Passkey registration and removal. |
+| `vault_created`, `vault_updated` | `PUT /api/v1/vault` at version 0, then at any later version (a new recovery key). |
+| `carpe_diem_key_requested` | `POST /api/v1/carpe-diem/assertion`, written before the assertion is signed; a failed write refuses the assertion. |
+| `carpe_diem_key_revoked` | The first time Carpe Diem acknowledges a device key revocation, for an account that still exists. |
+| `sessions_reset` | `restore-sanitize`, once per account. |
+
+Refreshes, renewals and journal writes are deliberately not recorded. Refreshes and journal writes happen every few minutes and would bury the lines a person needs to see, and a renewal war from a cloned device secret is already visible through `renewed_at` and `renew_count` in the device list.
 
 ## First-party passkeys
 
@@ -82,7 +107,7 @@ A device authorisation does not expire. Refresh families still expire absolutely
 }
 ```
 
-`resolved_revisions` is optional and defaults to `[]`. A push has 1 to 100 operations, at most four MiB of ciphertext in total and at most one MiB of ciphertext per operation. Unknown kinds, invalid UUIDs or more than 64 resolution acknowledgements are rejected. Kinds are `note`, `folder`, `transcript`, `memory`, `conversation`, `settings`, `usage`, `artifact`, `tombstone`, `errand`; `kind` is a routing class, never a title. `errand` is the one kind whose object is an instruction rather than a record: one device asking another of the same account to fetch a link ([ADR 0054](adr/0054-an-errand-runs-on-the-device-that-has-the-means.md)). It is opaque here like every other kind, the service never runs it, and the device it names ignores it unless that machine's owner switched errands on.
+`resolved_revisions` is optional and defaults to `[]`. A push has 1 to 100 operations, at most four MiB of ciphertext in total and at most one MiB of ciphertext per operation. Unknown kinds, invalid UUIDs or more than 64 resolution acknowledgements are rejected. Kinds are `note`, `folder`, `transcript`, `memory`, `conversation`, `settings`, `usage`, `artifact`, `tombstone`, `errand`; `kind` is a routing class, never a title. `errand` is the one kind whose object is an instruction rather than a record: one device asking another of the same account to fetch a link ([ADR 0054](adr/0054-an-errand-runs-on-the-device-that-has-the-means.md)). It is opaque here like every other kind, the service never runs it, and the device it names ignores it unless that machine's owner switched errands on. An errand whose address is `subrosa://assignment/<id>` asks that device to run one of the account's assignments now ([ADR 0091](adr/0091-assignments-run-where-an-app-is-open-on-the-apps-own-clock.md)); it travels like any other errand. A connector call a browser tab asks one of the person's apps to make travels as an errand of its own table, its answer written back into the same object ([ADR 0107](adr/0107-a-connector-a-tab-cannot-reach-is-an-errand-to-an-open-app.md)); the service carries it like the others and never makes the call.
 
 The result is `{ results: [{ operation_id, revision, sequence, conflict }] }`. The server assigns a revision UUID and per-account monotonic sequence. The entire batch is atomic. An identical retry of `(account, operation_id)` returns its original result; changing its authenticated body/ciphertext under that ID returns 409. Freeze the encrypted payload, nonce, parent and operation ID durably before first transmission.
 
@@ -117,7 +142,7 @@ Clients authenticate decrypted metadata before committing an inbound revision. C
 
 ## Vault and cryptographic envelope v1
 
-`GET /api/v1/vault` returns `{ version, envelope }` or 404. `PUT /api/v1/vault` accepts `{ expected_version, envelope }` and returns `{ version }`. First creation requires `expected_version: 0`; subsequent versions compare-and-swap, returning 409 on mismatch. `envelope` is a **nonempty string**, bounded to 256 KiB serialized JSON, not an embedded object.
+`GET /api/v1/vault` returns `{ version, envelope }` or 404. `PUT /api/v1/vault` accepts `{ expected_version, envelope }`, optionally `admission_verifier`, and returns `{ version }`. The verifier is base64url SHA-256 of `HKDF-SHA256(recovery secret, salt = empty, info = "subrosa:admission:v1:{account_uuid}", 32 bytes)`, the value that later admits a browser as a device (ADR-0096); it belongs to the recovery key that sealed this envelope, an envelope written without one clears it, and sending one with `expected_version` above 0 requires an authentication within five minutes. First creation requires `expected_version: 0`; subsequent versions compare-and-swap, returning 409 on mismatch. `envelope` is a **nonempty string**, bounded to 256 KiB serialized JSON, not an embedded object.
 
 The string contains a strict envelope:
 
@@ -204,13 +229,78 @@ the durable deletion queue, their rows are removed, and their bytes are returned
 to the account quota. A share's blobs are exclusive to it, so a share of a file
 stores a second copy of that file rather than pointing at the library's.
 
+## Publications (8 October 2026)
+
+Public content, in the clear on purpose ([ADR 0097](adr/0097-a-publication-is-plaintext-the-service-renders-on-an-origin-of-its-own.md)).
+Nothing here touches the journal, the vault or a share. Every route answers
+`404` when the deployment has no `[publication]` section. Refusals name a rule:
+`422 content_policy` with `error.rule` (see
+[public-content-rules.md](public-content-rules.md)), `409 slug_taken`,
+`403 taken_down`, `403 publishing_suspended`. Full shapes: `subrosa-cloud/openapi.json`.
+
+| Route | Contract |
+| --- | --- |
+| `GET /api/v1/publications` | Session. `{ publication_url, profile, pages, sites, assistants }` for this account, taken-down items included and flagged. |
+| `PUT /api/v1/publications/pages/{id}` | Session, CSRF for cookies. `{ slug, title, kind: note\|canvas, source_id, markdown }`. The service renders and keeps the sanitized HTML and `source_digest` = hex SHA-256 of `title`, a zero byte, `markdown`. One page per `source_id` per account. |
+| `DELETE /api/v1/publications/pages/{id}` | Session. Deletes the page and its text at once. |
+| `PUT` / `DELETE /api/v1/publications/sites/{id}` | Session. `{ title, home_page_id?, page_ids }`: the owner's live pages, once each, in navigation order. Deleting a site keeps its pages. |
+| `PUT` / `DELETE /api/v1/publications/profile` | Session. `{ handle, display_name, bio }`. Opt-in; deleting removes the page. |
+| `PUT` / `DELETE /api/v1/publications/profile/avatar` | Session. `application/octet-stream`, PNG, JPEG or WebP by its bytes, 256 KiB at most. |
+| `PUT` / `DELETE /api/v1/publications/assistants/{id}` | Session. `{ source_id, name, description, category, instructions, starter, permissions, references }`. Permissions are tool keys, `notes` and `memory`; references are `{ name, text }` the publisher ticked. |
+| `GET /api/v1/catalog/assistants` | **No session.** `?q=&category=&page=`, 24 summaries a page, most imported first. |
+| `GET /api/v1/catalog/assistants/{id}` | **No session.** One live listing in full (`source_id` empty). |
+| `POST /api/v1/catalog/assistants/{id}/import` | **No session.** The same, counted as one import. |
+| `POST /api/v1/reports` | **No session.** `{ target_kind: page\|profile\|assistant, target \| target_id, reason, detail }`. One per address and target. |
+
+On the publication origin only (the `Host` must be `[publication] url`, which
+outside development is another host than `public_url`): `GET /p/{slug}`,
+`GET /u/{handle}`, `GET /u/{handle}/avatar`, `GET /_pub/style.css` and the
+report form `POST /_pub/report` (form-encoded). HTML pages carry
+`Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`.
+
+## Shared projects (8 October 2026)
+
+End-to-end encrypted projects and group chats between accounts, a preview
+until an independent review ([ADR-0098](adr/0098-a-shared-project-is-a-space-whose-key-changes-with-its-members.md)).
+The protocol (identities, epochs, heads, HPKE wraps, objects, invitations,
+safety numbers) is [security/spaces-protocol.md](security/spaces-protocol.md);
+this section is the wire. Every route takes the ordinary session (cookie with
+CSRF and origin, or a bearer) and the `x-subrosa-account-id` assertion. A
+space answers `404` to anyone who is not a member.
+
+| Method and route | Contract |
+| --- | --- |
+| `GET /api/v1/identity` | `{ version, public, sealed_private }` or `404`. `public` is the self-signed bundle `{ v, account_id, x25519, ed25519, created_at, signature }`; `sealed_private` an envelope under the vault key with context `subrosa:identity:v1:{account_uuid}`. |
+| `PUT /api/v1/identity` | `{ expected_version, public, sealed_private }`, compare-and-swap like the vault. The bundle must name the session's account. `409` while the account belongs to any space. |
+| `GET /api/v1/spaces` | The spaces this account is in: `{ id, owner_account_id, role, current_epoch, latest_sequence, member_count, pending_departures, created_at }`. At most 100 per account. |
+| `POST /api/v1/spaces` | `{ head, wrapped_key }`: the epoch 1 head (owner alone, author = owner = caller, keys equal to the published ones) and the key sealed to the owner. |
+| `GET /api/v1/spaces/{id}` | `{ id, owner_account_id, current_epoch, latest_sequence, members: [{ account_id, role, joined_epoch, identity }], heads: [{ epoch, head }], keys: [{ account_id, epoch, sealed }] (the caller's only), invitations (owner only: open or claimed, not admitted), departures: [{ account_id, epoch, statement }] }`. |
+| `DELETE /api/v1/spaces/{id}` | Owner only. Deletes the space and everything in it. |
+| `POST /api/v1/spaces/{id}/epochs` | `{ head, wrapped_keys: [{ account_id, epoch, sealed }], admit: [invitation_id] }`. The epoch must be `current + 1` (`409` otherwise); the author is the caller; the head's members, roles and keys become the service's rows; one key per member for the new epoch, earlier epochs only for newcomers; every newcomer through a claimed invitation in `admit`, admitted once. The owner may change anything but the owner; another member only removes the members with a pending departure (`403` otherwise). |
+| `POST /api/v1/spaces/{id}/invitations` | Owner only. `{ id, token_hash, payload, expires_at }`: base64url SHA-256 of the token the link derives, the payload sealed under a key the link derives, one minute to seven days. At most 20 open. |
+| `DELETE /api/v1/spaces/{id}/invitations/{invitation}` | Owner only. Withdraws an invitation not yet admitted. |
+| `POST /api/v1/space-invitations/{id}/open` | `{ token_hash }`. `{ space_id, payload, expires_at }` for an open, unclaimed invitation; `404` for anything else. |
+| `POST /api/v1/space-invitations/{id}/accept` | `{ token_hash, acceptance: { member, proof } }`. Claims once: the bundle must be the caller's published one; a second claim is `409`. The service cannot check `proof`; the owner's device does. |
+| `POST /api/v1/spaces/{id}/leave` | A member other than the owner: `{ epoch, statement }` signed for the current epoch (`409` otherwise). Removes the membership and its keys at once and records the departure. |
+| `GET /api/v1/spaces/{id}/objects?after=&limit=` | Members. `{ objects: [{ sequence, object_id, revision, parent_revision, kind, epoch, author_account_id, ciphertext, signature, deleted, created_at }], cursor, has_more }`, limit 1 to 500, pages under eight MiB. |
+| `POST /api/v1/spaces/{id}/objects` | Members. `{ objects: [{ object_id, revision, parent_revision, kind, epoch, ciphertext, signature, deleted }] }`, 1 to 100, four MiB, one MiB each, kinds `project`, `note`, `file`, `conversation`, `message`, `profile`. Only under the current epoch (`409`), in the caller's name. A revision retried with the same bytes answers its first `{ revision, sequence }`; other bytes are `409`. At most 256 MiB per space. |
+
+Associated data added to the table of section "Vault and cryptographic
+envelope v1":
+
+| Context | Associated data |
+| --- | --- |
+| Identity private keys, under the vault key | `subrosa:identity:v1:{account_uuid}` |
+| Space object, under the epoch key | `subrosa:space-object:v1:{space_uuid}:{epoch}:{kind}:{object_uuid}:{revision_uuid}:{author_uuid}` |
+| Invitation payload, under a key the link derives | `subrosa:invite:v1:{invitation_uuid}` |
+
 ## Carpe Diem device keys (30 September 2026)
 
 The service can vouch to Carpe Diem for a device so that the device obtains its own `cdm_` key, and it asks Carpe Diem to revoke that key when the device goes. It never sees the key. The full wire contract, shared with Carpe Diem, is [`carpe-diem-partner-contract.md`](carpe-diem-partner-contract.md); the decision and its bound are [ADR-0069](adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md).
 
 | Method and route | Contract |
 | --- | --- |
-| `POST /api/v1/carpe-diem/assertion` | `404 not_found` when the deployment has no Carpe Diem partner, before any session is read. Otherwise a native bearer session on a live device (`403 device_required` for a browser), authenticated within five minutes (`403 recent_auth_required`), 5 per minute per account. Body `{ jkt }`, the 43-character RFC 7638 thumbprint of the app's ephemeral P-256 key. Returns `{ assertion, expires_at }`: an ES256 JWS, `typ` `partner-assertion+jwt`, valid 120 seconds, which the app carries to Carpe Diem with a proof from the same key. |
+| `POST /api/v1/carpe-diem/assertion` | `404 not_found` when the deployment has no Carpe Diem partner, before any session is read. Otherwise a native bearer session on a live device, authenticated within five minutes (`403 recent_auth_required`), or a browser session with a `subrosa-device-proof` from a live browser device bound to the body's `jkt` (`ath`), which need not be recent; a browser session without one answers `403 device_required`. 5 per minute per account. A browser device's assertion carries `kind: "browser"` and `bound` (partner contract section 7). Body `{ jkt }`, the 43-character RFC 7638 thumbprint of the app's ephemeral P-256 key. Returns `{ assertion, expires_at }`: an ES256 JWS, `typ` `partner-assertion+jwt`, valid 120 seconds, which the app carries to Carpe Diem with a proof from the same key. |
 
 Revocations are durable rows (`partner_revocations`) written in the transaction of a device revocation (`device_revoked`), a native sign-out through `/api/v1/session/renounce` (`signed_out`) or an account deletion (`account_deleted`, every device, and Carpe Diem forgets the link). The maintenance loop delivers them in order until Carpe Diem answers `2xx`, backing off from one minute to six hours. Sanitising a restored database enqueues one `device_revoked` row per device that was live before it, and an explicit device revocation always enqueues, even for a device already marked revoked, so no key outlives a restore unrevocable. This is the service's only outbound call besides OIDC and object storage.
 
@@ -233,3 +323,14 @@ Revocations are durable rows (`partner_revocations`) written in the transaction 
 Independent signed erasure records are persisted in a separate production bucket and replayed before serving traffic. `restore-sanitize` invalidates restored sessions/refresh families and replays that ledger while the identity provider may be offline. Bucket retention/Object Lock, signing-key backup separation and the production restore rehearsal remain operator responsibilities. Details and threat boundaries are in the cloud README.
 
 Local verification includes real PostgreSQL, signed OIDC/JWKS fixtures, negative nonce/audience/signature/browser-binding cases, CSRF, PKCE, refresh replay including concurrent rotation, tenant isolation, CAS, retained siblings and explicit resolution, bounded filtered pagination, immutable blobs, quota, pairing across token rotation, restored-session invalidation and authenticated deletion replay after a simulated database restore. These tests do not claim a production passkey tenant, live S3 conditional-write/retention validation, independent security audit, load test, notarized app release or public deployment.
+
+## Browser device proof (8 October 2026)
+
+A browser device ([ADR-0096](adr/0096-a-browser-is-a-device.md)) holds no bearer session and no device secret. Each call that acts as the device carries `subrosa-device-proof`, a compact ES256 JWS signed with the browser's non-extractable P-256 key:
+
+- header `{ "alg": "ES256", "typ": "subrosa-device+jwt", "kid": "<device uuid>" }`, or, for the admission only, `"jwk": { "kty": "EC", "crv": "P-256", "x", "y" }` instead of `kid` (never both, never a private member);
+- claims `{ "htm": "POST", "htu": "<public_url><path>", "iat", "jti", "ath"? }`: `htu` compared exactly, `iat` within 60 seconds, `jti` 16 to 128 characters and single use (kept two minutes), `ath` = base64url(SHA-256(value)) where the call authorizes a value (the `jkt` of the assertion route);
+- signature raw `r||s`. The key must be a live `browser` device of the session's account. Any failure is `401 device_proof_invalid`.
+
+The browser seals the minted `cdm_` key with AES-GCM under a second non-extractable key, authenticated data `subrosa:browser-key:v1:{account_uuid}:{device_uuid}`, in IndexedDB; never in `localStorage`.
+

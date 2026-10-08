@@ -41,12 +41,15 @@ import type {
   VeniceModelDto,
 } from "../../lib/tauri";
 import { KeycapShortcut } from "../shortcuts/KeycapShortcut";
+import { AgentBrowserSettingsSection } from "./AgentBrowserSettingsSection";
+import { ChatBarShortcutCard } from "./ChatBarShortcutCard";
 import {
   MODIFIER_REQUIRED_MESSAGE,
   chordFromKeyEvent,
   shortcutFromCapturePayload,
 } from "../shortcuts/use-shortcut-capture";
 import {
+  Select,
   selectPopoverPlacement,
   selectPopoverStyle,
   type SelectPopoverPlacement,
@@ -84,6 +87,8 @@ import { ExternalDirsSection } from "./ExternalDirsSection";
 import { InstalledSkillsSection } from "./InstalledSkillsSection";
 import { McpDiagnosticsSection } from "./McpDiagnosticsSection";
 import { McpSecuritySection } from "./McpSecuritySection";
+import { ConnectorsSection } from "./ConnectorsSection";
+import { BrowserExtensionSection } from "./BrowserExtensionSection";
 import { McpServersSection } from "./McpServersSection";
 import { SetupSnapshotSection } from "./SetupSnapshotSection";
 import { ArchiveSection } from "./ArchiveSection";
@@ -92,6 +97,7 @@ import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { ImportSettingsSection } from "./ImportSettingsSection";
 import { CouncilSettingsSection } from "./CouncilSettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
+import { PersonalizationSettingsSection } from "./PersonalizationSettingsSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ReportsSettingsSection } from "./ReportsSettingsSection";
 import { StorageSettingsSection } from "./StorageSettingsSection";
@@ -170,12 +176,15 @@ export type SettingsTab =
   | "audio"
   | "models"
   | "agent"
+  | "personalization"
   | "memory"
   | "privacy"
   | "council"
   | "skills"
   | "external-dirs"
   | "mcp"
+  | "connectors"
+  | "browser-extension"
   | "mcp-diagnostics"
   | "mcp-security"
   | "toolsets"
@@ -193,12 +202,15 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "audio", label: t("Audio") },
   { id: "models", label: t("Models") },
   { id: "agent", label: t("Agent") },
+  { id: "personalization", label: t("Personalization") },
   { id: "memory", label: t("Memory") },
   { id: "privacy", label: t("Privacy") },
   { id: "council", label: t("Council") },
   { id: "skills", label: t("Installed skills") },
   { id: "external-dirs", label: t("External skill directories") },
   { id: "mcp", label: t("MCP servers") },
+  { id: "connectors", label: t("Connectors") },
+  { id: "browser-extension", label: t("Browser extension") },
   { id: "mcp-diagnostics", label: t("MCP diagnostics") },
   { id: "mcp-security", label: t("MCP security") },
   { id: "toolsets", label: t("Toolsets") },
@@ -922,13 +934,14 @@ export function AppSettings({
                       </p>
                     </div>
                     <div className="settings-row-control">
-                      <SegmentedControl<LocaleChoice>
-                        aria-label={t("Language")}
+                      <Select
+                        ariaLabel={t("Language")}
                         value={language}
-                        options={UI_LANGUAGE_OPTIONS}
-                        onValueChange={(next) => {
-                          setLanguage(next);
-                          chooseLocaleAndReload(next);
+                        placeholder={t("System")}
+                        options={[...UI_LANGUAGE_OPTIONS]}
+                        onChange={(next) => {
+                          setLanguage(next as LocaleChoice);
+                          chooseLocaleAndReload(next as LocaleChoice);
                         }}
                       />
                     </div>
@@ -1030,6 +1043,7 @@ export function AppSettings({
                 )}
               </div>
             </div>
+            <ChatBarShortcutCard />
           </section>
         ) : null}
 
@@ -1310,7 +1324,9 @@ export function AppSettings({
         ) : null}
 
         {activeTab === "agent" ? <AgentSettingsSection /> : null}
+        {activeTab === "agent" ? <AgentBrowserSettingsSection /> : null}
         {activeTab === "privacy" ? <PrivacySettingsSection /> : null}
+        {activeTab === "personalization" ? <PersonalizationSettingsSection /> : null}
         {activeTab === "memory" ? (
           <>
             <MemorySettingsSection />
@@ -1328,6 +1344,8 @@ export function AppSettings({
         {activeTab === "external-dirs" ? <ExternalDirsSection /> : null}
 
         {activeTab === "mcp" ? <McpServersSection /> : null}
+        {activeTab === "connectors" ? <ConnectorsSection /> : null}
+        {activeTab === "browser-extension" ? <BrowserExtensionSection /> : null}
         {activeTab === "mcp-diagnostics" ? <McpDiagnosticsSection /> : null}
         {activeTab === "mcp-security" ? <McpSecuritySection /> : null}
         {activeTab === "toolsets" ? <ToolsetsSection /> : null}

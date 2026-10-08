@@ -8,7 +8,7 @@ import {
 } from "../lib/hermes-model-switch";
 
 describe("switchActiveSessionModel — typed control-plane seam", () => {
-  it("dispatches the /model slash command to the active session", async () => {
+  it("switches the live session through config.set, kept to the session", async () => {
     const request = vi.fn(async () => ({ ok: true }));
     const methods = createHermesMethods(request);
 
@@ -18,11 +18,29 @@ describe("switchActiveSessionModel — typed control-plane seam", () => {
       model: "kimi-k2-6",
     });
 
-    // It must route through command.dispatch as `/model <model>`, never a
-    // bespoke model.switch request — the gateway ack is our source of truth.
-    expect(request).toHaveBeenCalledWith("command.dispatch", {
+    // The pinned gateway refuses `/model` on command.dispatch (it reads only
+    // name/arg there); config.set is its per-session switch, and `--session`
+    // keeps the profile default untouched. The ack is the source of truth.
+    expect(request).toHaveBeenCalledWith("config.set", {
       session_id: "sess-1",
-      command: "/model kimi-k2-6",
+      key: "model",
+      value: "kimi-k2-6 --session",
+    });
+    expect(request).not.toHaveBeenCalledWith("command.dispatch", expect.anything());
+  });
+
+  it("hands the runtime a reasoning-effort alias verbatim", async () => {
+    const request = vi.fn(async () => ({}));
+    await createHermesMethods(request).switchActiveSessionModel({
+      mode: "sandboxed",
+      sessionId: "sess-1",
+      model: "zai-org-glm-5-2@reasoning-effort=high",
+    });
+
+    expect(request).toHaveBeenCalledWith("config.set", {
+      session_id: "sess-1",
+      key: "model",
+      value: "zai-org-glm-5-2@reasoning-effort=high --session",
     });
   });
 

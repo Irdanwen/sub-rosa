@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { t, intlLocale } from "../../lib/i18n";
 import { messageFromError } from "../../lib/errors";
 import { listArtifacts, readArtifactBase64 } from "../../lib/studio/artifacts";
+import { RefinePanel } from "./RefinePanel";
 import "../../styles/assistant-media.css";
 
 export type AssistantMediaProposal = {
@@ -293,6 +294,15 @@ function MediaCard({ id, initial }: { id: string; initial?: AssistantMediaPropos
             )
           ) : null}
           {proposal.status === "completed" ? <p>{t("Saved in your Studio gallery.")}</p> : null}
+          {proposal.status === "completed" &&
+          proposal.artifact_file_name &&
+          (proposal.kind === "image" || proposal.kind === "edit") ? (
+            <RefinePanel
+              fileName={proposal.artifact_file_name}
+              prompt={proposal.prompt}
+              taskId={proposal.task_id}
+            />
+          ) : null}
         </>
       ) : (
         <p>{error || t("Loading generation")}</p>

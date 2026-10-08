@@ -452,6 +452,8 @@ pub async fn proxy_agent_chat_completions(
     mut body: serde_json::Value,
 ) -> Result<AgentChatCompletionsResponse, AppError> {
     normalize_agent_chat_request_for_proxy(&mut body);
+    // Every chat turn and side call leaves here: model and quiet hours (ADR-0084).
+    crate::protected_mode::check_chat(body.get("model").and_then(serde_json::Value::as_str))?;
     let send_venice_api_key = body_model_accepts_venice_api_key(&body);
     ensure_sidecar_ready().await;
     let url = format!("{}/v1/chat/completions", require_june_api_url()?);

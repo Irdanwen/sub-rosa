@@ -8,10 +8,21 @@ use subrosa_config::Config;
 use subrosa_domain::{
     BlobStore, CarpeDiemPartner, DeviceLogin, DeviceRequest, Error, IdentityProvider,
     IssuanceAssertion, IssuanceClaims, KINDS, Landing, LoginAttempt, NativeLogin, Operation,
-    OperationResult, Result, Secret, Session, Share, StartedDevice, TokenResponse,
+    OperationResult, Result, Secret, SecurityEventKind, Session, Share, StartedDevice,
+    TokenResponse,
 };
 use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
+mod browser;
+pub mod publication;
+/// Shared projects (ADR 0098): the routes call the repository directly, the
+/// service has no logic of its own to add over a blind courier.
+pub mod space {
+    pub use subrosa_persistence::{EpochWrite, InvitationWrite};
+}
+pub use browser::{
+    AdmissionRequest, DEVICE_PROOF_HEADER, DEVICE_PROOF_TYPE, thumbprint as jwk_thumbprint,
+};
 #[derive(Clone)]
 pub struct Service {
     pub config: Arc<Config>,
@@ -38,6 +49,11 @@ const RETURN_TO: &[&str] = &[
     "/account/security",
     "/account/top-up",
     "/account/usage",
+    // The web client (WP19) offers "sign in" from its own page.
+    "/app",
+    // An Office add-in signs in from a dialog window, whose session carries
+    // the pane's device calls (ADR-0102).
+    "/office/session.html",
 ];
 
 /// How many issuance assertions one account may ask for per minute. A person
@@ -110,21 +126,30 @@ impl Service {
     /// verified account may obtain its own key bound to `jkt`. The key itself
     /// is created and delivered by Carpe Diem to the app; it never passes here.
     ///
-    /// Only an app's session on a live device qualifies: a browser has no
-    /// device to bind the key to, and a session renewed by the device secret
-    /// is not recent (ADR 0056), so a stolen secret can keep a device signed in
-    /// but can never mint it a key.
+    /// An app's session on a live device qualifies when it is recent: a
+    /// session renewed by the device secret is not (ADR 0056), so a stolen
+    /// secret can keep a device signed in but can never mint it a key.
+    ///
+    /// A browser qualifies only as an admitted browser device (ADR 0096): its
+    /// session plus a `proof` signed by its non-extractable device key and
+    /// bound to `jkt`. It need not be recent, which is what lets its short
+    /// lived key be renewed while the device stays live, and its assertion
+    /// asks Carpe Diem for the browser bound.
     pub async fn carpe_diem_assertion(
         &self,
         session: &Session,
         jkt: &str,
+        proof: Option<&str>,
     ) -> Result<IssuanceAssertion> {
         let partner = self.carpe_diem.as_ref().ok_or(Error::NotFound)?;
-        let device_id = match session.device_id {
-            Some(id) if !session.browser => id,
+        let browser = match (session.browser, session.device_id, proof) {
+            (false, Some(_), _) => {
+                Self::recent(session)?;
+                None
+            }
+            (true, None, Some(proof)) => Some(proof),
             _ => return Err(Error::DeviceRequired),
         };
-        Self::recent(session)?;
         self.repository
             .rate_limit(
                 &hash(format!("carpe-diem-assertion:{}", session.account.id)),
@@ -134,9 +159,28 @@ impl Service {
         if !valid_thumbprint(jkt) {
             return Err(Error::Invalid);
         }
+        let (device_id, bound) = match (browser, session.device_id) {
+            (Some(proof), _) => (
+                self.browser_device(session, proof, browser::ASSERTION_PATH, Some(jkt))
+                    .await?,
+                Some(partner.browser_bound()),
+            ),
+            (None, Some(id)) => (id, None),
+            (None, None) => return Err(Error::DeviceRequired),
+        };
         let name = self
             .repository
             .live_device_name(session.account.id, device_id)
+            .await?;
+        // Written before signing, and fatal when it fails: a key minted for
+        // the account without a line in its history is the one thing this
+        // history exists to show.
+        self.repository
+            .record_security_event(
+                session.account.id,
+                SecurityEventKind::CarpeDiemKeyRequested,
+                Some(device_id),
+            )
             .await?;
         partner.issuance_assertion(&IssuanceClaims {
             subject: session.account.id,
@@ -144,6 +188,7 @@ impl Service {
             device_id,
             device_name: device_name(&name),
             jkt: jkt.into(),
+            browser: bound,
         })
     }
     /// Delivers due revocations. A failure stays in the outbox with its
@@ -530,6 +575,7 @@ impl Service {
         session: &Session,
         expected: i64,
         envelope: &serde_json::Value,
+        admission_verifier: Option<&str>,
     ) -> Result<i64> {
         if expected < 0
             || expected == i64::MAX
@@ -541,12 +587,29 @@ impl Service {
         {
             return Err(Error::Invalid);
         }
+        let verifier = admission_verifier
+            .map(|value| {
+                URL_SAFE_NO_PAD
+                    .decode(value)
+                    .ok()
+                    .filter(|bytes| bytes.len() == 32)
+                    .ok_or(Error::Invalid)
+            })
+            .transpose()?;
+        // A verifier admits browsers as devices (ADR 0096). The one written
+        // with a new vault comes from whoever just made its recovery key;
+        // replacing it later asks for a sign-in minutes old, the bar every
+        // other way of adding a device already has.
+        if verifier.is_some() && expected > 0 {
+            Self::recent(session)?;
+        }
         self.repository
             .save_vault(VaultParams {
                 owner: session.account.id,
                 expected,
                 envelope,
                 quota: self.config.account_quota_bytes,
+                admission_verifier: verifier.as_deref(),
             })
             .await
     }
@@ -698,6 +761,7 @@ pub async fn maintain(
     // them; this is what hands their bytes back to the quota.
     repository.release_shares().await?;
     repository.prune_auth().await?;
+    repository.prune_reports().await?;
     for key in repository.cleanup_keys().await? {
         storage.delete(&key).await?;
         repository.cleaned_key(&key).await?;
@@ -749,5 +813,17 @@ mod tests {
     #[test]
     fn the_top_up_page_can_be_returned_to_after_sign_in() {
         assert!(RETURN_TO.contains(&"/account/top-up"));
+    }
+
+    /// The web client offers "sign in" from `/app`, and lands back on it.
+    #[test]
+    fn the_web_client_can_be_returned_to_after_sign_in() {
+        assert!(RETURN_TO.contains(&"/app"));
+    }
+
+    /// An Office add-in's sign-in window lands back on itself (ADR-0102).
+    #[test]
+    fn the_office_sign_in_window_can_be_returned_to_after_sign_in() {
+        assert!(RETURN_TO.contains(&"/office/session.html"));
     }
 }

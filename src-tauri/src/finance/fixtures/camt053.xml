@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>MSG-20261001-0001</MsgId>
+      <CreDtTm>2026-10-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-2026-09-0001</Id>
+      <ElctrncSeqNb>9</ElctrncSeqNb>
+      <CreDtTm>2026-10-01T06:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+        <Svcr><FinInstnId><BICFI>BCVLCH2LXXX</BICFI><Othr><Id>CHE-105.926.002</Id></Othr></FinInstnId></Svcr>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">3000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2026-08-31</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">6170.55</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2026-09-30</Dt></Dt>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="CHF">5200.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-09-25</Dt></BookgDt>
+        <ValDt><Dt>2026-09-25</Dt></ValDt>
+        <AcctSvcrRef>20260925001234567</AcctSvcrRef>
+        <BkTxCd><Domn><Cd>PMNT</Cd><Fmly><Cd>RCDT</Cd><SubFmlyCd>SALA</SubFmlyCd></Fmly></Domn></BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>NOTPROVIDED</EndToEndId></Refs>
+            <Amt Ccy="CHF">5200.00</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+            <RltdPties>
+              <Dbtr><Nm>Exemple SA</Nm></Dbtr>
+              <DbtrAcct><Id><IBAN>CH5604835012345678009</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Salaire septembre 2026</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Crédit salaire</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">1850.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-09-26</Dt></BookgDt>
+        <ValDt><Dt>2026-09-26</Dt></ValDt>
+        <AcctSvcrRef>20260926004567890</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>E2E-LOYER-2026-10</EndToEndId></Refs>
+            <RltdPties>
+              <Cdtr><Nm>R&#233;gie du Rh&#244;ne SA</Nm></Cdtr>
+            </RltdPties>
+            <RmtInf><Ustrd>Loyer octobre</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Ordre e-banking</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">179.45</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-09-27</Dt></BookgDt>
+        <ValDt><Dt>2026-09-27</Dt></ValDt>
+        <AcctSvcrRef>20260927007777777</AcctSvcrRef>
+        <NtryDtls>
+          <Btch><NbOfTxs>2</NbOfTxs></Btch>
+          <TxDtls>
+            <Amt Ccy="CHF">84.05</Amt>
+            <RltdPties><Cdtr><Nm>Coop Lausanne</Nm></Cdtr></RltdPties>
+          </TxDtls>
+          <TxDtls>
+            <Amt Ccy="CHF">95.40</Amt>
+            <RltdPties><Cdtr><Nm>Migros Renens</Nm></Cdtr></RltdPties>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Achats carte de d&#233;bit &amp; TWINT</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">50.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>PDNG</Sts>
+        <BookgDt><Dt>2026-09-30</Dt></BookgDt>
+        <AddtlNtryInf>Reservation carte</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

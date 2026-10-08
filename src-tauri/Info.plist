@@ -2,8 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>fr</string>
+    <string>de</string>
+    <string>it</string>
+    <string>es</string>
+    <string>pt-BR</string>
+  </array>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Sub Rosa records microphone audio locally so it can transcribe and generate your notes.</string>
+  <string>Sub Rosa records microphone audio locally so it can transcribe and generate your notes, and hears you during a voice conversation.</string>
   <key>NSCalendarsUsageDescription</key>
   <string>Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>

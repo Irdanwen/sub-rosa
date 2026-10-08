@@ -1,6 +1,6 @@
 [package]
 name = "os-june"
-version = "1.88.1"
+version = "1.89.0"
 publish = false
 description = "Sub Rosa"
 authors = ["Open Software Network"]
@@ -67,9 +67,19 @@ rand = "0.9"
 # the backend's own dependencies, so no new crate is fetched; only ECDSA is
 # enabled, no PEM or JWK parsing.
 p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+# Shared projects (ADR-0098, docs/security/spaces-protocol.md): per-account
+# X25519 and Ed25519 identity keys. Both are already in the lockfile through
+# `age` and `jsonwebtoken`, so no new crate is fetched. HPKE is written out in
+# `account/spaces/hpke.rs` and checked against the `hpke` crate in tests.
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ed25519-dalek = "2"
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
 quick-xml = "0.41"
+# Bank statements (crate::finance): regular expression rules, as the budget
+# engine writes them, and the encodings older bank exports use.
+regex = "1"
+encoding_rs = "0.8"
 zip = { version = "4.6", default-features = false, features = ["deflate"] }
 pdf-extract = "0.12.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "cookies"] }
@@ -81,6 +91,11 @@ semver = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.11"
+# The protected mode PIN (ADR-0084): scrypt hashes it, subtle compares in
+# constant time. Both are already in the lockfile through `age`, so no new
+# crate is fetched; scrypt's password-hash front end stays off.
+scrypt = { version = "0.11", default-features = false }
+subtle = "2.6"
 # Avoid the SQLx umbrella crate here. Its optional macro/database dependencies
 # put unused MySQL/Postgres packages into Cargo.lock and cargo-audit.
 # sqlx-sqlite does not expose a public runtime-tokio feature in SQLx 0.8.x, so
@@ -114,8 +129,9 @@ tauri-plugin-haptics = "2.3.2"
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 # Spawning the user's own yt-dlp (ADR-0028, desktop rail). Declared per-target
 # rather than in the shared dependency so the iOS build carries no
-# process-spawning machinery it can never use.
-tokio = { version = "1.42", features = ["process"] }
+# process-spawning machinery it can never use. `io-std`: the binary run as a
+# browser's native messaging host relays stdin and stdout (ADR-0100).
+tokio = { version = "1.42", features = ["process", "io-std"] }
 tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2.10.1"
@@ -124,6 +140,11 @@ tauri-plugin-autostart = "2.5.1"
 # iOS keychains.
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# The voice conversation plays and records through one Voice-Processing I/O
+# unit on iOS and macOS so the system cancels the reply's echo; cpal only
+# opens Remote I/O (iOS) or HAL output (macOS). The same coreaudio-rs cpal
+# links on both, with the same features, so nothing new is fetched.
+coreaudio-rs = { version = "0.11", default-features = false, features = ["audio_unit", "core_audio"] }
 # Calendar context (crate::calendar). EventKit is the same framework on both
 # platforms, so one module serves the desktop and the phone; typed bindings
 # beat hand-rolled msg_send! for an API this shaped (dates, predicates,
@@ -181,6 +202,10 @@ cpal = { version = "0.15", features = ["oboe-shared-stdcxx"] }
 # cpal reads the JavaVM and Context from ndk-context; android.rs initializes it.
 ndk-context = "0.1"
 jni = "0.21"
+# The voice conversation opens its microphone with the VoiceCommunication
+# preset, the source Android attaches its echo canceller to; cpal cannot ask
+# for a preset. The same Oboe cpal links, so nothing new is fetched.
+oboe = { version = "0.6", features = ["java-interface", "shared-stdcxx"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = [
@@ -206,13 +231,18 @@ window-vibrancy = "0.8"
 keyring = { version = "3", features = ["windows-native"] }
 # ShellExecuteW, so an outbound link reaches the default browser even when
 # spawning explorer.exe would not (see os_accounts::open_in_browser).
+# GDI (`Win32_Graphics_Gdi`): the voice conversation's screen frame
+# (voice/screen_windows.rs) is one BitBlt of the primary display.
 windows = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
 [dev-dependencies]
+# An independent RFC 9180 implementation the spaces HPKE is opened by.
+hpke = { version = "0.12", default-features = false, features = ["alloc", "x25519"] }
 serde_yaml = "0.9"
 tempfile = "3.14"
 # Captures what `tracing` emits, so "the key is never logged" is a test rather

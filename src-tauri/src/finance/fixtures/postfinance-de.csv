@@ -1,0 +1,13 @@
+Datum von:;="2026-09-01"
+Datum bis:;="2026-09-30"
+Kontonummer:;="CH12 0900 0000 1234 5678 9"
+Währung:;="CHF"
+
+Buchungsdatum;Avisierungstext;Gutschrift in CHF;Lastschrift in CHF;Valuta;Saldo in CHF
+30.09.2026;"KAUF/DIENSTLEISTUNG VOM 29.09.2026 KARTEN NR. XXXX1234 COOP-4711 BERN BERN";;-63.40;30.09.2026;2381.60
+27.09.2026;"TWINT GESENDET AN +41791234567";;-25.00;27.09.2026;2445.00
+25.09.2026;"GUTSCHRIFT VON: BEISPIEL GMBH LOHN SEPTEMBER";4900.00;;25.09.2026;2470.00
+22.09.2026;"LASTSCHRIFT SWISSCOM (SCHWEIZ) AG";;-79.90;22.09.2026;-2430.00
+
+Disclaimer:
+Dies ist kein durch PostFinance AG erstelltes Dokument. PostFinance AG ist nicht verantwortlich für den Inhalt.

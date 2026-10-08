@@ -4,19 +4,28 @@ name: iOS release (TestFlight)
 # Connect / TestFlight. Manual dispatch while the lane stabilizes; wire it to
 # tags once two runs have passed cleanly.
 #
-# Required secrets (see HANDOFF.md §9 and the share-extension section):
+# Required secrets (see HANDOFF.md §9):
 # - APPLE_API_KEY_ID       App Store Connect API key id (e.g. 2X9R4HXF34)
 # - APPLE_API_ISSUER       App Store Connect issuer id (UUID)
 # - APPLE_API_KEY_P8       The AuthKey_<id>.p8 content, base64-encoded
 # - APPLE_TEAM_ID          Already set for macOS signing (H6N5V777LL)
 # - IOS_DIST_CERT_P12      Apple Distribution certificate, base64 .p12
 # - IOS_DIST_CERT_PASSWORD Password for the imported .p12
-# - IOS_PROVISION_PROFILE  App Store profile for the app, base64
-# - IOS_SHARE_PROVISION_PROFILE App Store profile for the share extension, base64
 #
-# Signing imports the distribution identity and both provisioning profiles.
-# Export uses manual signing; both profiles must authorize the shared App Group.
-# The API key authenticates App Store Connect access/upload, not cloud signing.
+# Fallback secrets, read only when App Store Connect cannot give a profile:
+# - IOS_PROVISION_PROFILE, IOS_SHARE_PROVISION_PROFILE,
+#   IOS_WIDGETS_PROVISION_PROFILE, IOS_WATCH_PROVISION_PROFILE,
+#   IOS_WATCH_WIDGETS_PROVISION_PROFILE (base64 .mobileprovision)
+#
+# Signing imports the distribution identity, then scripts/ios-provision.mjs
+# gets one App Store profile per bundle through the App Store Connect REST API
+# (ADR-0048, ADR-0095, ADR-0099): it registers missing bundle ids, turns on
+# HealthKit for the app, and makes a profile with the imported certificate
+# when one is missing or stale. A bundle it cannot sign is left out of the
+# archive with a warning; only the app is required. The App Group's
+# association with the app and the share extension is the one portal step the
+# API cannot take. The key's App Manager role allows all of this through the
+# REST API, but not xcodebuild cloud signing.
 
 on:
   workflow_dispatch:
@@ -74,6 +83,17 @@ jobs:
             exit 1
           fi
 
+      # The watch app's asset catalog (ADR-0095) is compiled by an actool that
+      # needs the watchOS platform installed, device build included. Runner
+      # images usually carry it; fetch it when this one does not.
+      - name: Make sure the watchOS platform is installed
+        run: |
+          if xcrun simctl list runtimes | grep -q 'watchOS'; then
+            echo "watchOS runtime present."
+          else
+            xcodebuild -downloadPlatform watchOS
+          fi
+
       - name: Setup Node + pnpm
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -105,21 +125,13 @@ jobs:
       # App Store Connect *App Manager* key cannot do xcodebuild cloud signing
       # (it can't create the distribution cert/profile on the fly — "Cloud
       # signing permission error"), so we sign against pre-provisioned assets.
-      - name: Import signing certificate + provisioning profile
+      - name: Import signing certificate
         env:
           IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
-          IOS_PROVISION_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE }}
-          IOS_SHARE_PROVISION_PROFILE: ${{ secrets.IOS_SHARE_PROVISION_PROFILE }}
         run: |
-          if [ -z "${IOS_DIST_CERT_P12:-}" ] || [ -z "${IOS_PROVISION_PROFILE:-}" ]; then
-            echo "Missing IOS_DIST_CERT_P12 / IOS_PROVISION_PROFILE secrets." >&2; exit 1
-          fi
-          # The share extension (ADR-0048) is its own bundle and needs its own
-          # App Store profile, with the app group on it. HANDOFF.md says how to
-          # make one; without it the export below cannot sign the extension.
-          if [ -z "${IOS_SHARE_PROVISION_PROFILE:-}" ]; then
-            echo "Missing IOS_SHARE_PROVISION_PROFILE (the share extension's profile, see HANDOFF.md)." >&2; exit 1
+          if [ -z "${IOS_DIST_CERT_P12:-}" ]; then
+            echo "Missing IOS_DIST_CERT_P12 secret." >&2; exit 1
           fi
           KC="$RUNNER_TEMP/sr-ios-sign.keychain-db"
           KCPASS=$(openssl rand -base64 24)
@@ -134,18 +146,30 @@ jobs:
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
           security default-keychain -s "$KC"
           security find-identity -v -p codesigning "$KC"
-          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
-          mkdir -p "$PROFILES_DIR"
-          printf '%s' "$IOS_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-appstore.mobileprovision"
-          printf '%s' "$IOS_SHARE_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-share-appstore.mobileprovision"
-          # Profiles renewed through Xcode have managed names. Resolve the
-          # installed UUIDs instead of requiring a portal-created display name.
-          APP_PROFILE_UUID=$(security cms -D -i "$PROFILES_DIR/subrosa-appstore.mobileprovision" | plutil -extract UUID raw -o - -)
-          SHARE_PROFILE_UUID=$(security cms -D -i "$PROFILES_DIR/subrosa-share-appstore.mobileprovision" | plutil -extract UUID raw -o - -)
-          echo "IOS_PROFILE_UUID=$APP_PROFILE_UUID" >> "$GITHUB_ENV"
-          echo "IOS_SHARE_PROFILE_UUID=$SHARE_PROFILE_UUID" >> "$GITHUB_ENV"
-          security cms -D -i "$PROFILES_DIR/subrosa-appstore.mobileprovision" > "$RUNNER_TEMP/app-profile.plist"
-          security cms -D -i "$PROFILES_DIR/subrosa-share-appstore.mobileprovision" > "$RUNNER_TEMP/share-profile.plist"
+          # The serial tells the API which distribution certificate the
+          # profiles must hold: the one whose private key is in this keychain.
+          SERIAL=$(security find-certificate -c "Apple Distribution" -p "$KC" \
+            | openssl x509 -noout -serial 2>/dev/null || true)
+          echo "IOS_DIST_CERT_SERIAL=${SERIAL#serial=}" >> "$GITHUB_ENV"
+
+      # One App Store profile per bundle, from App Store Connect: bundle ids
+      # registered and HealthKit turned on when missing, a profile made (or
+      # remade, when a capability came after it) with the imported
+      # certificate. The old profile secrets are read only when the API gives
+      # nothing; a bundle left without a profile is dropped from the archive
+      # below. Writes $RUNNER_TEMP/<bundle>-profile.plist and the manifest the
+      # export reads, and exports IOS_DROPPED_BUNDLES / IOS_EXPECTED_BUNDLES.
+      - name: Get the App Store profiles
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          IOS_PROVISION_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE }}
+          IOS_SHARE_PROVISION_PROFILE: ${{ secrets.IOS_SHARE_PROVISION_PROFILE }}
+          IOS_WIDGETS_PROVISION_PROFILE: ${{ secrets.IOS_WIDGETS_PROVISION_PROFILE }}
+          IOS_WATCH_PROVISION_PROFILE: ${{ secrets.IOS_WATCH_PROVISION_PROFILE }}
+          IOS_WATCH_WIDGETS_PROVISION_PROFILE: ${{ secrets.IOS_WATCH_WIDGETS_PROVISION_PROFILE }}
+        run: node scripts/ios-provision.mjs provision
 
       # Archive through the Tauri CLI (not a raw `xcodebuild archive`): the Xcode
       # "Build Rust Code" phase runs `tauri ios xcode-script`, which needs the
@@ -155,6 +179,26 @@ jobs:
       # Tauri (unset)" cert with the team unset), so we let it archive and export
       # the resulting xcarchive ourselves below. Tolerate Tauri's export failure
       # as long as it leaves a valid xcarchive.
+      # Health (ADR-0099) needs the HealthKit capability on the App ID and a
+      # profile that carries it. The step above turns it on and remakes the
+      # profile; should either fail, ship without it rather than fail the
+      # export: the app then says Health is unavailable instead of reading it.
+      - name: Keep HealthKit only when the profile allows it
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, plistlib
+          profile = plistlib.loads((pathlib.Path(os.environ["RUNNER_TEMP"]) / "app-profile.plist").read_bytes())
+          path = pathlib.Path("src-tauri/gen/apple/os-june_iOS/os-june_iOS.entitlements")
+          entitlements = plistlib.loads(path.read_bytes())
+          if "com.apple.developer.healthkit" in profile.get("Entitlements", {}):
+              print("HealthKit: the profile carries it.")
+          else:
+              for key in ("com.apple.developer.healthkit", "com.apple.developer.healthkit.access"):
+                  entitlements.pop(key, None)
+              path.write_bytes(plistlib.dumps(entitlements))
+              print("::warning::The app profile has no HealthKit capability; this build ships without Health (HANDOFF.md).")
+          PY
+
       - name: Stamp the iOS bundles with the app version
         # The run number is the build counter. Apple refuses a CFBundleVersion it
         # has already seen, so a delivery rejected for any reason could never be
@@ -175,6 +219,32 @@ jobs:
           pnpm tauri ios build --export-method app-store-connect --verbose || \
             echo "Tauri's own export failed (expected); exporting the xcarchive manually."
 
+      # A bundle without a profile cannot be signed by the export, so it
+      # leaves the archive here, loudly, and the app ships without it. The
+      # export re-signs the app, so its seal no longer lists what was removed.
+      - name: Leave out the bundles that have no profile
+        run: |
+          ARCHIVE=$(find src-tauri/gen/apple/build -name '*.xcarchive' -print | head -1)
+          if [ -z "$ARCHIVE" ]; then echo "No xcarchive produced by Tauri." >&2; exit 1; fi
+          if [ -z "${IOS_DROPPED_BUNDLES:-}" ]; then
+            echo "Every bundle has its profile."; exit 0
+          fi
+          for bundle in "$ARCHIVE"/Products/Applications/*.app/PlugIns/*.appex \
+                        "$ARCHIVE"/Products/Applications/*.app/Watch/*.app \
+                        "$ARCHIVE"/Products/Applications/*.app/Watch/*.app/PlugIns/*.appex; do
+            [ -f "$bundle/Info.plist" ] || continue
+            id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$bundle/Info.plist")
+            for dropped in $IOS_DROPPED_BUNDLES; do
+              if [ "$id" = "$dropped" ]; then
+                rm -rf "$bundle"
+                echo "::warning::Left $id out of this build: it has no App Store profile."
+              fi
+            done
+          done
+          for watch_dir in "$ARCHIVE"/Products/Applications/*.app/Watch; do
+            [ -d "$watch_dir" ] && rmdir "$watch_dir" 2>/dev/null || true
+          done
+
       # Tauri's archive rewrites CFBundleVersion from tauri.conf.json ("Updated
       # CFBundleVersion ... to 1.65.2"), undoing the stamp above, so the counter
       # has to be written into the archive itself. Export re-signs the bundle and
@@ -190,24 +260,43 @@ jobs:
           echo "Build number for this delivery: $BUILD"
           stamped=0
           for plist in "$ARCHIVE"/Products/Applications/*.app/Info.plist \
-                       "$ARCHIVE"/Products/Applications/*.app/PlugIns/*.appex/Info.plist; do
+                       "$ARCHIVE"/Products/Applications/*.app/PlugIns/*.appex/Info.plist \
+                       "$ARCHIVE"/Products/Applications/*.app/Watch/*.app/Info.plist \
+                       "$ARCHIVE"/Products/Applications/*.app/Watch/*.app/PlugIns/*.appex/Info.plist; do
             [ -f "$plist" ] || continue
             /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$plist"
             echo "  $plist -> $BUILD"
             stamped=$((stamped + 1))
           done
-          # The app and its share extension. Fewer means the archive layout moved
-          # and the delivery would go out carrying the version it must not reuse.
-          if [ "$stamped" -lt 2 ]; then
-            echo "::error::Stamped $stamped bundles, expected the app and its extension" >&2
+          # The app, its share extension, its widgets, the watch app and its
+          # complication, less any left out above. Fewer means the archive
+          # layout moved and the delivery would go out carrying the version it
+          # must not reuse (a watch app's build number must also equal its
+          # iPhone app's).
+          expected="${IOS_EXPECTED_BUNDLES:-5}"
+          if [ "$stamped" -lt "$expected" ]; then
+            echo "::error::Stamped $stamped bundles, expected $expected (the app and the bundles that have a profile)" >&2
             exit 1
           fi
           /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $BUILD" \
             "$ARCHIVE/Info.plist" || true
+          # Tauri archives with one architecture; a watch app also wants
+          # arm64_32 for the watches before Series 9 (ADR-0095). Say so loudly
+          # rather than ship a watch app most watches cannot install.
+          for watch_bin in "$ARCHIVE"/Products/Applications/*.app/Watch/*.app/SubRosaWatch; do
+            [ -f "$watch_bin" ] || continue
+            archs=$(lipo -archs "$watch_bin")
+            echo "Watch app architectures: $archs"
+            case " $archs " in
+              *" arm64_32 "*) ;;
+              *) echo "::warning::The watch app was archived without arm64_32 ($archs)." ;;
+            esac
+          done
 
       # Re-sign with the imported identity and installed App Store profiles.
-      # Match the signing style to the profile origin: Xcode-managed profiles
-      # require automatic selection, portal-created profiles allow UUID mapping.
+      # The ExportOptions map each bundle kept to its profile by name; a
+      # profile from an old secret that Xcode manages switches the export to
+      # automatic selection (scripts/ios-signing.mjs, exportOptions).
       # No provisioning updates or cloud credentials are granted to this step.
       - name: Export IPA (installed App Store signing assets)
         env:
@@ -217,29 +306,9 @@ jobs:
           if [ -z "$ARCHIVE" ]; then echo "No xcarchive produced by Tauri." >&2; exit 1; fi
           echo "Exporting archive: $ARCHIVE"
           mkdir -p build
-          python3 - <<'PY'
-          import os, pathlib, plistlib
-          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
-          profiles = [plistlib.loads((temp / name).read_bytes()) for name in ("app-profile.plist", "share-profile.plist")]
-          # Xcode rejects managed profiles under manual signing even when
-          # their UUID and certificate match. Automatic selection can reuse
-          # these installed profiles and the imported distribution identity.
-          managed = any(profile.get("IsXcodeManaged", False) for profile in profiles)
-          options = {
-              "method": "app-store-connect", "destination": "export",
-              "signingStyle": "automatic" if managed else "manual",
-              "teamID": os.environ["APPLE_TEAM_ID"],
-              "manageAppVersionAndBuildNumber": False,
-          }
-          if not managed:
-              options["signingCertificate"] = "Apple Distribution"
-              options["provisioningProfiles"] = {
-                  "xyz.carpediem.subrosa": os.environ["IOS_PROFILE_UUID"],
-                  "xyz.carpediem.subrosa.share": os.environ["IOS_SHARE_PROFILE_UUID"],
-              }
-          pathlib.Path("build/ExportOptions-asc.plist").write_bytes(plistlib.dumps(options))
-          print("Export signing style:", options["signingStyle"])
-          PY
+          node scripts/ios-provision.mjs export-options build/ExportOptions-asc.plist
+          plutil -lint build/ExportOptions-asc.plist
+          cat build/ExportOptions-asc.plist
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE" \
             -exportOptionsPlist build/ExportOptions-asc.plist \

@@ -11,7 +11,8 @@ use serde::Serialize;
 use std::time::Duration;
 use subrosa_config::Config;
 use subrosa_domain::{
-    CarpeDiemPartner, Error, IssuanceAssertion, IssuanceClaims, PendingRevocation, Result, Secret,
+    BrowserBound, CarpeDiemPartner, Error, IssuanceAssertion, IssuanceClaims, PendingRevocation,
+    Result, Secret,
 };
 use uuid::Uuid;
 
@@ -29,6 +30,7 @@ pub struct CarpeDiemPartnerProvider {
     issuer: String,
     audience: String,
     revoke_url: String,
+    browser: BrowserBound,
 }
 
 #[derive(Serialize)]
@@ -46,6 +48,12 @@ struct IssuanceBody<'a> {
     device_name: &'a str,
     scope: &'static str,
     cnf: Confirmation<'a>,
+    /// Absent for an app, so every assertion Carpe Diem already accepts reads
+    /// exactly as before. `browser` asks for the bound below (ADR 0096).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bound: Option<BrowserBound>,
     jti: Uuid,
     iat: i64,
     exp: i64,
@@ -83,6 +91,10 @@ impl CarpeDiemPartnerProvider {
             issuer: config.public_url.clone(),
             audience: partner.audience.clone(),
             revoke_url: format!("{}/partner/keys/revoke", partner.operator_url()),
+            browser: BrowserBound {
+                daily_cap_credits: partner.browser_daily_cap_credits,
+                valid_seconds: partner.browser_key_days * 86_400,
+            },
         };
         provider.sign(&serde_json::json!({"probe": true}))?;
         Ok(Some(provider))
@@ -119,6 +131,8 @@ impl CarpeDiemPartner for CarpeDiemPartnerProvider {
             device_name: &claims.device_name,
             scope: "key:issue",
             cnf: Confirmation { jkt: &claims.jkt },
+            kind: claims.browser.map(|_| "browser"),
+            bound: claims.browser,
             jti: Uuid::new_v4(),
             iat: issued.timestamp(),
             exp: expires.timestamp(),
@@ -127,6 +141,9 @@ impl CarpeDiemPartner for CarpeDiemPartnerProvider {
             assertion,
             expires_at: expires,
         })
+    }
+    fn browser_bound(&self) -> BrowserBound {
+        self.browser
     }
     async fn revoke(&self, revocation: &PendingRevocation) -> Result<()> {
         let (issued, expires) = Self::window();
@@ -192,6 +209,10 @@ mod tests {
                 issuer: "https://account.example.invalid".into(),
                 audience: "https://carpe-diem.example.invalid/api/operator".into(),
                 revoke_url: "http://127.0.0.1:9/partner/keys/revoke".into(),
+                browser: BrowserBound {
+                    daily_cap_credits: 200,
+                    valid_seconds: 7 * 86_400,
+                },
             },
             decoding,
         )
@@ -211,6 +232,7 @@ mod tests {
             device_id: device,
             device_name: "Alice's laptop".into(),
             jkt: "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I".into(),
+            browser: None,
         });
         let Ok(issued) = issued else {
             unreachable!("signing with a valid key succeeds")
@@ -281,6 +303,7 @@ mod tests {
             device_id: Uuid::new_v4(),
             device_name: "Phone".into(),
             jkt: "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I".into(),
+            browser: None,
         };
         let mut validation = Validation::new(Algorithm::ES256);
         validation.validate_aud = false;
@@ -294,6 +317,35 @@ mod tests {
                 .map(|d| d.claims["jti"].clone())
         };
         assert_ne!(jti(&provider), jti(&provider));
+    }
+
+    /// A browser device's assertion says so, and carries the bound Carpe Diem
+    /// is asked to hold. Nothing else about the claims changes.
+    #[test]
+    fn a_browser_assertion_names_its_kind_and_bound() {
+        let (provider, public) = provider();
+        let bound = provider.browser_bound();
+        let issued = provider.issuance_assertion(&IssuanceClaims {
+            subject: Uuid::new_v4(),
+            email: "a@example.test".into(),
+            device_id: Uuid::new_v4(),
+            device_name: "Browser - Firefox".into(),
+            jkt: "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I".into(),
+            browser: Some(bound),
+        });
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.validate_aud = false;
+        let claims = issued
+            .ok()
+            .and_then(|a| {
+                decode::<serde_json::Value>(a.assertion.expose(), &public, &validation).ok()
+            })
+            .map(|d| d.claims)
+            .unwrap_or_default();
+        assert_eq!(claims["kind"], "browser");
+        assert_eq!(claims["bound"]["daily_cap_credits"], 200);
+        assert_eq!(claims["bound"]["valid_seconds"], 7 * 86_400);
+        assert_eq!(claims["scope"], "key:issue");
     }
 
     /// A revocation that cannot be delivered is an error, so the outbox keeps it.

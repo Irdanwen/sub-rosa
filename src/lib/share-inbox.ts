@@ -1,18 +1,29 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AgentLiteAttachment } from "./tauri";
 
-/** What became of something shared in through the share sheet (ADR-0048). */
+/** What became of something shared in through the share sheet (ADR-0048,
+ * ADR-0095). */
 export type SharedImportDto = {
-  /** "platform": a video page this device cannot read, handed back as `url`. */
-  kind: "link" | "file" | "text" | "platform";
+  /** "platform": a video page this device cannot read, handed back as `url`.
+   * "attachment": a picture or a document, for a fresh chat's composer. */
+  kind: "link" | "file" | "text" | "platform" | "attachment";
   /** The note that was made, when one was made on the spot (a file, a text). */
   noteId?: string;
   /** The fetch that was started, for a link; the notes list shows it. */
   ingestId?: string;
   /** The link, for a video page this device cannot read (ADR-0054). */
   url?: string;
+  /** A picture (a data URL) or a document's text, as a chat turn carries it. */
+  attachment?: AgentLiteAttachment;
 };
 
 /** Read one manifest the share extension left in the app group inbox and act on it. */
 export async function importSharedItem(itemId: string): Promise<SharedImportDto> {
   return invoke<SharedImportDto>("import_shared_item", { request: { itemId } });
+}
+
+/** Shares still in the inbox whose address never reached the shell (a batch
+ * on Android, a lost cold-start link anywhere). Oldest first. */
+export async function pendingSharedItems(): Promise<string[]> {
+  return invoke<string[]>("pending_shared_items").catch(() => []);
 }

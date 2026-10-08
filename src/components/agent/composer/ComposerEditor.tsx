@@ -19,6 +19,7 @@ import {
   mentionsFromDoc,
 } from "./mentionChip";
 import type { ReportCategory } from "./reportCategory";
+import { ASK_ABOUT_SELECTION_EVENT, takePendingQuote } from "../../../lib/ask-selection";
 import type { HermesSkillInfo } from "../../../lib/tauri";
 import type { ComposerMention, ComposerMentionItem } from "../../../lib/agent-mentions";
 
@@ -232,6 +233,27 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         window.removeEventListener("resize", schedule);
         observer?.disconnect();
       };
+    }, [editor]);
+
+    // "Ask Sub Rosa" on a selection (lib/ask-selection): the quote lands on
+    // top of anything already typed, taken once, whether it was asked for
+    // before this composer mounted or while it is on screen.
+    useEffect(() => {
+      if (!editor) return;
+      const take = () => {
+        if (editor.isDestroyed) return;
+        const quote = takePendingQuote();
+        if (!quote) return;
+        if (editor.isEmpty) {
+          editor.commands.setContent(buildDoc(quote), { emitUpdate: true });
+        } else {
+          editor.commands.insertContentAt(0, buildDoc(quote.replace(/\n$/, "")).content);
+        }
+        focusEnd(editor);
+      };
+      take();
+      window.addEventListener(ASK_ABOUT_SELECTION_EVENT, take);
+      return () => window.removeEventListener(ASK_ABOUT_SELECTION_EVENT, take);
     }, [editor]);
 
     useImperativeHandle(

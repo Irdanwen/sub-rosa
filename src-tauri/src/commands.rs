@@ -467,8 +467,12 @@ pub async fn fork_agent_task(
     let repos = repositories(&app).await?;
     crate::assistants::general::ensure_general_continuation(&repos.pool, &request.source_task_id)
         .await?;
+    let cut = request
+        .up_to_message_id
+        .as_deref()
+        .map(crate::db::repositories::conversations::ForkCut::Through);
     Ok(repos
-        .fork_agent_task(&request.source_task_id, request.model.as_deref())
+        .fork_agent_task_until(&request.source_task_id, request.model.as_deref(), cut, None)
         .await?)
 }
 
@@ -2386,6 +2390,7 @@ pub(crate) async fn repositories(app: &AppHandle) -> Result<Repositories, AppErr
             run_migrations(&pool)
                 .await
                 .map_err(|error| AppError::new("migration_failed", error.to_string()))?;
+            crate::temporary_chat::sweep_on_open(&pool).await;
             Ok(Repositories::new(pool))
         })
         .await

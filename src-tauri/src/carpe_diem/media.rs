@@ -91,7 +91,7 @@ pub async fn carpe_diem_media_request(
 /// The proxy itself, callable from Rust. The durable job runner
 /// ([`super::jobs`]) polls through this rather than through the command, so
 /// the allowlist and the key handling stay in one place.
-pub(super) async fn send(
+pub(crate) async fn send(
     method: &str,
     path: &str,
     body: Option<&serde_json::Value>,
@@ -112,6 +112,10 @@ pub(super) async fn send(
             format!("Path {path} is not allowed on the media proxy."),
         ));
     }
+    // Protected mode is enforced here, where every Studio and assistant
+    // request leaves, not in the webview (ADR-0084).
+    let guarded = crate::protected_mode::guard_media_request(path, body)?;
+    let body = guarded.as_ref().or(body);
     let Some((credential_base, key)) = settings::credentials() else {
         return Err(AppError::new(
             "media_no_api_key",
@@ -247,6 +251,14 @@ pub struct MediaModelDto {
     pub traits: Vec<String>,
     /// Whether the model declares image (vision) input support.
     pub supports_vision: bool,
+    /// Whether the model honours `reasoning_effort` (its catalog capability
+    /// `supportsReasoningEffort`). The chat offers an effort only then.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub supports_reasoning_effort: bool,
+    /// How many tokens of conversation the model reads: the operator's
+    /// `context_length`, else Venice's `availableContextTokens`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u64>,
     /// Venice `model_spec.pricing`, verbatim (per-generation USD, per-duration
     /// brackets for music...).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -265,6 +277,9 @@ pub struct MediaCatalogDto {
     /// 1.0 on the Venice-direct path.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price_multiplier: Option<f64>,
+    /// Protected mode left adult families out of `models` (ADR-0084).
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub protected_mode: bool,
     pub models: Vec<MediaModelDto>,
 }
 
@@ -335,6 +350,61 @@ fn text_prices(pricing: &serde_json::Value) -> Vec<TextPriceDto> {
         .collect()
 }
 
+/// The operator's `fixedCost` ids for the two web routes the sidecar's
+/// `/v1/web/search` and `/v1/web/fetch` reach (Venice's `/augment/search`
+/// and `/augment/scrape`).
+const WEB_SEARCH_PRICE_ID: &str = "augment-search";
+const WEB_READ_PRICE_ID: &str = "augment-scrape";
+
+/// What one web search and one page read cost, as the operator prices them
+/// today (USD per call, multiplier already applied). A price the table does
+/// not carry is absent, and the screen says it does not know it rather than
+/// counting it as free.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebPriceDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_usd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_usd: Option<f64>,
+}
+
+/// The operator's per-call prices for web search and page reads, for the
+/// ceiling deep research announces before it runs (ADR-0089).
+#[tauri::command]
+pub async fn carpe_diem_web_pricing() -> Result<WebPriceDto, AppError> {
+    let Some((credential_base, key)) = settings::credentials() else {
+        return Err(AppError::new(
+            "media_no_api_key",
+            "No API key is stored yet.",
+        ));
+    };
+    if !key.expose_str().starts_with("cdm_") {
+        return Ok(WebPriceDto::default());
+    }
+    let client = media_http_client();
+    let operator_root = settings::operator_root_of(&credential_base);
+    let pricing = fetch_json(client, &format!("{operator_root}/pricing"), None).await?;
+    Ok(web_prices(&pricing))
+}
+
+fn web_prices(pricing: &serde_json::Value) -> WebPriceDto {
+    let usd = |id: &str| {
+        pricing
+            .get("fixedCost")?
+            .as_array()?
+            .iter()
+            .find(|entry| entry.get("model").and_then(serde_json::Value::as_str) == Some(id))?
+            .get("costUsd")?
+            .as_f64()
+            .filter(|usd| usd.is_finite() && *usd >= 0.0)
+    };
+    WebPriceDto {
+        search_usd: usd(WEB_SEARCH_PRICE_ID),
+        read_usd: usd(WEB_READ_PRICE_ID),
+    }
+}
+
 /// The last catalog fetched, and when. For a decision taken inside a turn
 /// (which models exist and read images), where three network reads per turn
 /// would be paid for nothing: prices are not what such a caller reads.
@@ -347,16 +417,24 @@ pub async fn recent_media_catalog(max_age: Duration) -> Result<MediaCatalogDto, 
     let mut slot = RECENT_CATALOG.lock().await;
     if let Some((fetched_at, catalog)) = slot.as_ref() {
         if fetched_at.elapsed() <= max_age {
-            return Ok(catalog.clone());
+            return Ok(crate::protected_mode::filter_media_catalog(catalog.clone()));
         }
     }
-    let catalog = carpe_diem_media_catalog().await?;
+    let catalog = fetch_media_catalog().await?;
     *slot = Some((std::time::Instant::now(), catalog.clone()));
-    Ok(catalog)
+    Ok(crate::protected_mode::filter_media_catalog(catalog))
 }
 
+/// The catalog every picker reads, without adult families while protected
+/// mode is on (ADR-0084).
 #[tauri::command]
 pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
+    fetch_media_catalog()
+        .await
+        .map(crate::protected_mode::filter_media_catalog)
+}
+
+async fn fetch_media_catalog() -> Result<MediaCatalogDto, AppError> {
     let Some((credential_base, key)) = settings::credentials() else {
         return Err(AppError::new(
             "media_no_api_key",
@@ -386,6 +464,7 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
         Ok(MediaCatalogDto {
             backend: "carpe-diem".to_string(),
             price_multiplier: pricing.as_ref().and_then(pricing_multiplier),
+            protected_mode: false,
             models: merge_carpe_diem_catalog(&primary, venice.as_ref(), pricing.as_ref()),
         })
     } else {
@@ -400,6 +479,7 @@ pub async fn carpe_diem_media_catalog() -> Result<MediaCatalogDto, AppError> {
         Ok(MediaCatalogDto {
             backend: "venice".to_string(),
             price_multiplier: Some(1.0),
+            protected_mode: false,
             models: venice_catalog_models(&catalog),
         })
     }
@@ -501,6 +581,12 @@ fn merge_carpe_diem_catalog(
                 model_sets: string_list(spec.and_then(|spec| spec.get("model_sets"))),
                 traits: string_list(spec.and_then(|spec| spec.get("traits"))),
                 supports_vision: supports_vision(entry) || spec.is_some_and(supports_vision),
+                supports_reasoning_effort: supports_reasoning_effort(entry)
+                    || spec.is_some_and(supports_reasoning_effort),
+                context_tokens: entry
+                    .get("context_length")
+                    .and_then(serde_json::Value::as_u64)
+                    .or_else(|| spec.and_then(context_tokens)),
                 pricing: spec
                     .and_then(|spec| spec.get("pricing"))
                     .filter(|value| !value.is_null())
@@ -553,6 +639,8 @@ fn venice_catalog_models(catalog: &serde_json::Value) -> Vec<MediaModelDto> {
                 model_sets: string_list(spec.and_then(|spec| spec.get("model_sets"))),
                 traits: string_list(spec.and_then(|spec| spec.get("traits"))),
                 supports_vision: spec.is_some_and(supports_vision),
+                supports_reasoning_effort: spec.is_some_and(supports_reasoning_effort),
+                context_tokens: spec.and_then(context_tokens),
                 cost_credits: pricing.and_then(flat_generation_usd).map(|usd| usd * 100.0),
                 constraints,
                 pricing: pricing.cloned(),
@@ -1308,8 +1396,52 @@ fn supports_vision(value: &serde_json::Value) -> bool {
         })
 }
 
+fn supports_reasoning_effort(value: &serde_json::Value) -> bool {
+    value
+        .pointer("/capabilities/supportsReasoningEffort")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn context_tokens(spec: &serde_json::Value) -> Option<u64> {
+    spec.get("availableContextTokens")
+        .and_then(serde_json::Value::as_u64)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn web_prices_are_read_from_the_fixed_costs_and_absent_when_missing() {
+        // The shape the operator's `/pricing` served on 2026-10-08.
+        let pricing = serde_json::json!({
+            "models": [],
+            "fixedCost": [
+                { "model": "gpt-image-1-5", "type": "image", "costUsd": 0.1082, "costCredits": 10.82 },
+                { "model": "augment-search", "type": "augment", "costUsd": 0.0042, "costCredits": 0.42 },
+                { "model": "augment-scrape", "type": "augment", "costUsd": 0.0051, "costCredits": 0.51 }
+            ]
+        });
+        assert_eq!(
+            super::web_prices(&pricing),
+            super::WebPriceDto {
+                search_usd: Some(0.0042),
+                read_usd: Some(0.0051),
+            }
+        );
+        let partial = serde_json::json!({ "fixedCost": [
+            { "model": "augment-search", "costUsd": "free" }
+        ]});
+        assert_eq!(super::web_prices(&partial), super::WebPriceDto::default());
+        assert_eq!(
+            serde_json::to_string(&super::WebPriceDto {
+                search_usd: Some(0.01),
+                read_usd: None,
+            })
+            .unwrap(),
+            r#"{"searchUsd":0.01}"#
+        );
+    }
+
     use super::*;
     use serde_json::json;
 
@@ -1626,6 +1758,34 @@ mod tests {
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].media_type, "image");
         assert!(models[0].constraints.is_none());
+    }
+
+    /// The chat's effort choice and its context gauge read these two. The
+    /// operator's own row wins; the Venice spec fills in what it leaves out.
+    #[test]
+    fn a_text_model_carries_its_reasoning_effort_and_context_length() {
+        let primary = json!({ "data": [
+            { "id": "thinker", "carpe_diem_type": "text", "context_length": 200_000,
+              "capabilities": { "supportsReasoningEffort": true } },
+            { "id": "spec-thinker", "carpe_diem_type": "text" },
+            { "id": "plain", "carpe_diem_type": "text" }
+        ]});
+        let venice = json!({ "data": [
+            { "id": "spec-thinker", "model_spec": { "availableContextTokens": 128_000,
+              "capabilities": { "supportsReasoningEffort": true } } },
+            { "id": "plain", "model_spec": { "capabilities": { "supportsReasoning": true } } }
+        ]});
+        let models = merge_carpe_diem_catalog(&primary, Some(&venice), None);
+        let find = |id: &str| models.iter().find(|model| model.id == id).expect("listed");
+        assert!(find("thinker").supports_reasoning_effort);
+        assert_eq!(find("thinker").context_tokens, Some(200_000));
+        assert!(find("spec-thinker").supports_reasoning_effort);
+        assert_eq!(find("spec-thinker").context_tokens, Some(128_000));
+        // Reasoning is not the same as honouring an effort.
+        assert!(!find("plain").supports_reasoning_effort);
+        assert_eq!(find("plain").context_tokens, None);
+        let wire = serde_json::to_value(find("plain")).expect("serializes");
+        assert!(wire.get("supportsReasoningEffort").is_none());
     }
 
     #[test]

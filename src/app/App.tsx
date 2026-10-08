@@ -1,5 +1,8 @@
 import { AssistantLauncher, openAssistants } from "../components/assistants/AssistantLauncher";
 import { useAccountLibrarySync } from "./useAccountLibrarySync";
+import { fileChatInProject, retryPendingProjectFilings } from "../lib/projects";
+import { useDesktopChatArchive } from "./useDesktopChatArchive";
+import { sessionFolderMap } from "../lib/chat-archive";
 import { t } from "../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
@@ -25,6 +28,11 @@ import { ImportLinkBar } from "../components/notes-list/ImportLinkBar";
 import { OfflineBanner, useOfflineState } from "../components/notes-list/OfflineBanner";
 import { startLinkIngest } from "../lib/tauri";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
+import { ASK_ABOUT_SELECTION_EVENT } from "../lib/ask-selection";
+import { CanvasHost } from "../components/canvas/CanvasHost";
+import { LibraryView } from "../components/library/LibraryView";
+import { FinancesView } from "../components/personal-data/FinancesView";
+import { HealthView } from "../components/personal-data/HealthView";
 import { FILM_FROM_NOTE_EVENT } from "../lib/film-from-note";
 import { STUDIO_FILM_NOTE_KEY, STUDIO_TAB_STORAGE_KEY } from "../components/studio/studio-keys";
 import { requestRetouch } from "../lib/studio/retouch/jobs";
@@ -50,6 +58,7 @@ import type { ReportCategory } from "../components/agent/composer/reportCategory
 import { DictationHistoryView } from "../components/dictation/DictationHistoryView";
 import { FoldersWorkspace } from "../components/folders/FoldersWorkspace";
 import { RoutinesView } from "../components/routines/RoutinesView";
+import { TodayView } from "../components/assignments/TodayView";
 import { MoveNoteToFolderDialog } from "../components/folders/MoveNoteToFolderDialog";
 import { MoveSessionToProjectDialog } from "../components/folders/MoveSessionToProjectDialog";
 import { NoteEditor } from "../components/note-editor/NoteEditor";
@@ -65,8 +74,13 @@ import { Sidebar, type SidebarView } from "../components/sidebar/Sidebar";
 import { TabBar, type TabItem } from "../components/tabs/TabBar";
 import { defaultNav, makeTabId, navEquals, type Tab, type TabNav } from "./tabs/tabs";
 import { agentSessionTabTitle, tabMeta } from "./tab-meta";
+import { AgentBrowserIndicator } from "../components/agent-browser/AgentBrowserIndicator";
 import { AskNoteOverlay } from "../components/ask/AskNoteOverlay";
 import { ShareNoteDialog } from "../components/share/ShareNoteDialog";
+import {
+  AssistantImportHost,
+  requestAssistantImport,
+} from "../components/publishing/AssistantImportDialog";
 import { useCanShare } from "../components/share/useCanShare";
 import { exportNoteMarkdown } from "../lib/note-export";
 import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
@@ -301,6 +315,9 @@ export function App() {
     folderId: string;
     knownSessionIds: Set<string>;
   } | null>(null);
+  useEffect(() => {
+    void retryPendingProjectFilings();
+  }, []);
   const agentMenuBarSessionsRef = useRef<HermesSessionInfo[]>([]);
   const agentMenuBarWorkingSessionIdsRef = useRef<Set<string>>(new Set());
   const agentMenuBarWaitingSessionIdsRef = useRef<Set<string>>(new Set());
@@ -1203,13 +1220,7 @@ export function App() {
     let cancelled = false;
     void listSessionFolders()
       .then((assignments) => {
-        if (cancelled) return;
-        const next: Record<string, string[]> = {};
-        for (const assignment of assignments) {
-          next[assignment.sessionId] ??= [];
-          next[assignment.sessionId].push(assignment.folderId);
-        }
-        setSessionFolders(next);
+        if (!cancelled) setSessionFolders(sessionFolderMap(assignments));
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(messageFromError(err));
@@ -1254,14 +1265,10 @@ export function App() {
         pendingSessionProjectRef.current = null;
         const sessionId = detail.selectedSessionId;
         if (!pendingProject.knownSessionIds.has(sessionId)) {
-          void assignSessionToFolder(sessionId, pendingProject.folderId)
-            .then(() =>
-              setSessionFolders((prev) => ({
-                ...prev,
-                [sessionId]: [pendingProject.folderId],
-              })),
-            )
-            .catch(() => {});
+          void fileChatInProject(sessionId, pendingProject.folderId).then((filed) => {
+            if (!filed) return;
+            setSessionFolders((prev) => ({ ...prev, [sessionId]: [pendingProject.folderId] }));
+          });
         } else {
           // User switched to an existing session — abandon the pending
           // project intent so the workspace doesn't show misleading crumbs.
@@ -1510,6 +1517,9 @@ export function App() {
       case "assistants":
         openAssistants();
         break;
+      case "assistantImport":
+        requestAssistantImport(destination.listingId);
+        break;
       case "dictation":
         setActiveView("dictation");
         break;
@@ -1530,6 +1540,9 @@ export function App() {
         break;
       case "record":
         void handleStartMeetingDetectedRecording();
+        break;
+      case "today":
+        setActiveView("today");
         break;
       // Shared in from outside the app. Land on the notes list, where the
       // download is visible, rather than starting something invisible.
@@ -1564,6 +1577,14 @@ export function App() {
     }
     window.addEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
     return () => window.removeEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
+  }, []);
+
+  // "Ask Sub Rosa" on a selection brings the chat forward; its composer takes
+  // the quote (lib/ask-selection), whether it is on screen or mounts now.
+  useEffect(() => {
+    const showChat = () => setActiveView("agent");
+    window.addEventListener(ASK_ABOUT_SELECTION_EVENT, showChat);
+    return () => window.removeEventListener(ASK_ABOUT_SELECTION_EVENT, showChat);
   }, []);
 
   // A note that has been read as shots is a film, and the way to it is the
@@ -1881,6 +1902,14 @@ export function App() {
   /** Reload the notes list. A fetched link creates its note in Rust, on a task
    * that outlives the click, so nothing else would ever tell the list. */
   useAccountLibrarySync(dispatch, state.selectedNoteId);
+  const chatArchive = useDesktopChatArchive({
+    folders: state.folders,
+    sessionFolders,
+    setSessionFolders,
+    createFolder: (name) => handleCreateFolder(name),
+    onError: (err) => setError(messageFromError(err)),
+  });
+  const splitAgentSessions = chatArchive.split(agentSessions);
 
   const refreshNotesList = useCallback(async () => {
     try {
@@ -2137,7 +2166,8 @@ export function App() {
     folderId: string,
     options?: { rethrow?: boolean },
   ) {
-    const current = sessionFolders[sessionId] ?? [];
+    // The archive is a state, not a project: a move keeps it.
+    const current = chatArchive.projectFolders[sessionId] ?? [];
     if (current.length === 1 && current[0] === folderId) return;
     try {
       for (const existing of current) {
@@ -2147,7 +2177,7 @@ export function App() {
       if (!current.includes(folderId)) {
         await assignSessionToFolder(sessionId, folderId);
       }
-      setSessionFolders((prev) => ({ ...prev, [sessionId]: [folderId] }));
+      await chatArchive.refresh();
     } catch (err) {
       setError(messageFromError(err));
       if (options?.rethrow) throw err;
@@ -2836,6 +2866,8 @@ export function App() {
       </button>
       <Sidebar
         notes={state.notes}
+        archivedAgentSessionIds={chatArchive.archivedIds}
+        onArchiveAgentSession={(sessionId) => void chatArchive.archive(sessionId)}
         folders={state.folders}
         onSelectFolder={(folderId) => {
           setActiveView("folders");
@@ -3041,6 +3073,14 @@ export function App() {
                 />
               ) : activeView === "studio" ? (
                 <StudioView />
+              ) : activeView === "library" ? (
+                <LibraryView header={<h1 className="library-view-title">{t("Library")}</h1>} />
+              ) : activeView === "health" ? (
+                <HealthView header={<h1 className="personal-view-title">{t("Health")}</h1>} />
+              ) : activeView === "finances" ? (
+                <FinancesView header={<h1 className="personal-view-title">{t("Finances")}</h1>} />
+              ) : activeView === "today" ? (
+                <TodayView />
               ) : activeView === "routines" ? (
                 <RoutinesView
                   onCreateRoutine={(prompt) => {
@@ -3068,65 +3108,72 @@ export function App() {
               ) : activeView === "agent" ? (
                 // The origin crumbs render inside the workspace's own sticky
                 // session bar, so they persist while the chat scrolls beneath.
-                <AgentWorkspace
-                  initialSession={activeAgentSessionSeed}
-                  initialSessionId={activeAgentSessionId}
-                  onSessionSelected={setActiveAgentSession}
-                  topUpLabel={topUpLabel}
-                  onTopUp={handleTopUp}
-                  origin={
-                    agentOriginFolder
-                      ? {
-                          backLabel: `Back to ${agentOriginFolder.name}`,
-                          onBack: handleReturnToAgentOriginFolder,
-                          crumbs: [
-                            {
-                              label: t("Projects"),
-                              onClick: () => {
-                                setActiveView("folders");
-                                dispatch({
-                                  type: "folderSelected",
-                                  folderId: undefined,
-                                });
-                                setActiveAgentSession(undefined);
-                                setAgentOrigin(undefined);
-                              },
-                            },
-                            {
-                              label: agentOriginFolder.name,
-                              onClick: handleReturnToAgentOriginFolder,
-                            },
-                          ],
-                        }
-                      : agentOrigin?.kind === "routines"
+                // The canvas opens beside it (ADR-0087).
+                <CanvasHost>
+                  <AgentWorkspace
+                    initialSession={activeAgentSessionSeed}
+                    initialSessionId={activeAgentSessionId}
+                    onSessionSelected={setActiveAgentSession}
+                    topUpLabel={topUpLabel}
+                    onTopUp={handleTopUp}
+                    origin={
+                      agentOriginFolder
                         ? {
-                            backLabel: "Back to routines",
-                            onBack: handleReturnToRoutines,
+                            projectFolderId: agentOriginFolder.id,
+                            backLabel: `Back to ${agentOriginFolder.name}`,
+                            onBack: handleReturnToAgentOriginFolder,
                             crumbs: [
                               {
-                                label: t("Routines"),
-                                onClick: handleReturnToRoutines,
+                                label: t("Projects"),
+                                onClick: () => {
+                                  setActiveView("folders");
+                                  dispatch({
+                                    type: "folderSelected",
+                                    folderId: undefined,
+                                  });
+                                  setActiveAgentSession(undefined);
+                                  setAgentOrigin(undefined);
+                                },
+                              },
+                              {
+                                label: agentOriginFolder.name,
+                                onClick: handleReturnToAgentOriginFolder,
                               },
                             ],
                           }
-                        : {
-                            backLabel: "Back to sessions",
-                            onBack: handleReturnToAgentsList,
-                            crumbs: [
-                              {
-                                label: t("Sessions"),
-                                onClick: handleReturnToAgentsList,
-                              },
-                            ],
-                          }
-                  }
-                />
+                        : agentOrigin?.kind === "routines"
+                          ? {
+                              backLabel: "Back to routines",
+                              onBack: handleReturnToRoutines,
+                              crumbs: [
+                                {
+                                  label: t("Routines"),
+                                  onClick: handleReturnToRoutines,
+                                },
+                              ],
+                            }
+                          : {
+                              backLabel: "Back to sessions",
+                              onBack: handleReturnToAgentsList,
+                              crumbs: [
+                                {
+                                  label: t("Sessions"),
+                                  onClick: handleReturnToAgentsList,
+                                },
+                              ],
+                            }
+                    }
+                  />
+                </CanvasHost>
               ) : activeView === "agent-sessions" ? (
                 <AgentSessionsList
                   ref={agentSessionsListRef}
-                  sessions={agentSessions}
+                  sessions={splitAgentSessions.active}
+                  archivedSessions={splitAgentSessions.archived}
+                  onArchiveSession={(sessionId) => void chatArchive.archive(sessionId)}
+                  onRestoreSession={(sessionId) => void chatArchive.restore(sessionId)}
                   folders={state.folders}
-                  sessionFolderIds={sessionFolders}
+                  sessionFolderIds={chatArchive.projectFolders}
                   workingSessionIds={agentWorkingSessionIds}
                   waitingSessionIds={agentWaitingSessionIds}
                   onSelectSession={(session) => {
@@ -3430,6 +3477,8 @@ export function App() {
           </AnimatePresence>
         </section>
       </div>
+      <AgentBrowserIndicator />
+      <AssistantImportHost onImported={() => openAssistants()} />
       {shareNoteId ? (
         <ShareNoteDialog noteId={shareNoteId} open={true} onClose={() => setShareNoteId(null)} />
       ) : null}
@@ -3502,7 +3551,7 @@ export function App() {
                 .filter((session): session is HermesSessionInfo => session !== undefined)
             : []
         }
-        sessionFolderIds={sessionFolders}
+        sessionFolderIds={chatArchive.projectFolders}
         folders={state.folders}
         onSetFolder={(sessionId, folderId) => handleSetSessionFolder(sessionId, folderId)}
         onMoved={() => agentSessionsListRef.current?.resetSelection()}

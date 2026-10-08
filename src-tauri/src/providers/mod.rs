@@ -202,8 +202,48 @@ pub fn transcription_model() -> String {
     current_settings().transcription_model
 }
 
+/// The chat default. While protected mode is on an adult model stored before
+/// it was switched on reads as the built-in default (ADR-0084).
 pub fn generation_model() -> String {
-    current_settings().generation_model
+    effective_generation_model(
+        current_settings().generation_model,
+        crate::protected_mode::is_on(),
+    )
+}
+
+fn effective_generation_model(stored: String, protected: bool) -> String {
+    if protected && crate::protected_mode::is_adult_model_id(&stored) {
+        return DEFAULT_GENERATION_MODEL.to_string();
+    }
+    stored
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultChatModelDto {
+    pub model_id: String,
+}
+
+/// The model a chat that names none runs on: what "Default" stands for in a
+/// picker, so the context gauge reads that model's window and not a guess.
+#[tauri::command]
+pub fn default_chat_model() -> DefaultChatModelDto {
+    DefaultChatModelDto {
+        model_id: generation_model(),
+    }
+}
+
+/// Puts the chat default back to the built-in one when it is an adult model,
+/// so the pickers do not show a choice protected mode has hidden (ADR-0084).
+pub fn drop_adult_generation_model(state: &ProviderSettingsState) -> Result<(), AppError> {
+    let stored = selected_model_for_mode(state, ModelMode::Generation)?;
+    if !crate::protected_mode::is_adult_model_id(&stored) {
+        return Ok(());
+    }
+    update_settings(state, |settings| {
+        settings.generation_model = DEFAULT_GENERATION_MODEL.to_string();
+    })
+    .map(|_| ())
 }
 
 pub fn image_model() -> String {
@@ -349,6 +389,7 @@ pub fn set_venice_model(
     if model_id.is_empty() {
         return Err(AppError::new("provider_model_required", "Select a model."));
     }
+    crate::protected_mode::check_model(Some(model_id))?;
     update_settings(&state, |settings| match request.mode {
         ModelMode::Transcription => {
             settings.transcription_provider =
@@ -437,6 +478,7 @@ pub async fn list_venice_models(
         .into_iter()
         .map(VeniceModelDto::from)
         .collect::<Vec<_>>();
+    crate::protected_mode::filter_chat_models(&mut models);
     models.sort_by(|left, right| {
         left.name
             .to_ascii_lowercase()
@@ -651,6 +693,21 @@ impl ModelMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_chat_model_is_the_stored_one_unless_protected_mode_hides_it() {
+        assert_eq!(
+            effective_generation_model("kimi-k2-6".into(), true),
+            "kimi-k2-6"
+        );
+        let adult = "venice-uncensored".to_string();
+        assert!(crate::protected_mode::is_adult_model_id(&adult));
+        assert_eq!(effective_generation_model(adult.clone(), false), adult);
+        assert_eq!(
+            effective_generation_model(adult, true),
+            DEFAULT_GENERATION_MODEL
+        );
+    }
 
     /// The catalog lists only the capability flags that are true, in the
     /// operator's casing. Matched the same loose way as the frontend's

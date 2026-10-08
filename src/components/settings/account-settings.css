@@ -165,3 +165,24 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+
+/* The account's security history (ADR-0049 addendum): one line per event,
+   what happened on the left, when on the right, wrapping on a phone. */
+.account-security-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.account-security-history li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--border);
+  padding-block: var(--sp-4);
+  min-width: 0;
+}
+.account-security-history li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

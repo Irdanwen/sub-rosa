@@ -141,10 +141,14 @@ It is excluded from the AI usage counters.
 | --- | --- |
 | Notes and folders | Body, title, metadata, folder membership and finished long-form summary |
 | Transcripts and recordings | Transcript rows, finalized recording metadata and bounded audio files |
-| User memory | Stored facts; no embeddings or provider authorization is transferred |
+| User memory | Stored facts, with a project's scope when it keeps its memory apart (sent only when set, ADR-0085); no embeddings or provider authorization is transferred |
+| Projects | A folder's instructions and memory mode (`project_settings`), its files and their extracted text (`project_files`, bytes on the assistant file lane) |
 | Conversations | Portable visible user/assistant history; explicit continuation starts a new turn |
 | Imports | Historical ingest metadata and resulting notes/transcripts; no remote download or paid execution |
 | Studio | Completed gallery files and available prompt/model metadata; the gallery's collections, favourites and hidden marks (ADR-0073); a gallery delete removes the file on every device; no remote job execution |
+| Assignments | Assignments and scheduled tasks (`assignments`) and their runs with verdicts and feedback (`assignment_runs`); only the device a row names runs it, under the errand guards, and the slot ledger stays local (ADR-0091) |
+| Connector relay and daily brief cards | What a device offers to run for a browser tab (`connector_relays`), the calls a tab addresses to it and their bounded answers (`connector_errands`, an errand kind under the errand guards, with a local single-use ledger), and each device's daily brief card with its agenda line (`daily_brief_cards`, history wherever it lands) (ADR-0107) |
+| Health and finances | Daily health summaries for each measure whose sync the person switched on (`health_days`), and, with finance sync on, transactions and rules (`transactions`, `finance_rules`); the choices themselves, model suggestions and statement files stay local (ADR-0099) |
 | Provider configuration | Encrypted URL/key, activated only after explicit authenticated validation |
 | Usage | Observed request counts/bytes, available turn counters, and dated balance snapshots |
 

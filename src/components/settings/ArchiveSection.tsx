@@ -70,7 +70,7 @@ export function ArchiveSection() {
   return (
     <section className="settings-group" aria-labelledby="archive-heading">
       <h2 id="archive-heading" className="settings-group-heading">
-        {t("Archive")}
+        {t("Archive file")}
       </h2>
       <p className="settings-group-description">
         {t(

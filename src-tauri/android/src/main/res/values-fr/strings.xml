@@ -5,4 +5,13 @@
     <string name="subrosa_processing_channel">Transcription</string>
     <string name="subrosa_processing_title">Sub Rosa transcrit votre note</string>
     <string name="subrosa_processing_description">Votre note sera bientôt prête.</string>
+    <string name="subrosa_share_failed">Sub Rosa n\'a pas pu recevoir ce que vous avez partagé. Réessayez.</string>
+    <string name="subrosa_share_label">Sub Rosa</string>
+    <string name="subrosa_widget_label">Sub Rosa</string>
+    <string name="subrosa_widget_description">Demandez, dictez ou enregistrez en un geste.</string>
+    <string name="subrosa_widget_ask">Demander</string>
+    <string name="subrosa_widget_dictate">Dicter</string>
+    <string name="subrosa_widget_record">Enregistrer</string>
+    <string name="subrosa_health_rationale_title">Votre santé dans Sub Rosa</string>
+    <string name="subrosa_health_rationale_body">Sub Rosa lit uniquement les mesures de santé que vous choisissez dans l\'app (pas, sommeil, fréquence cardiaque, fréquence cardiaque au repos, entraînements, poids). Il garde un résumé par jour sur ce téléphone pour vous montrer des graphiques et répondre à vos questions. Il n\'écrit jamais dans Health Connect. Rien ne quitte ce téléphone sauf si vous activez la synchronisation d\'une mesure dans Sub Rosa, et vous pouvez supprimer ce qu\'il a gardé à tout moment.</string>
 </resources>

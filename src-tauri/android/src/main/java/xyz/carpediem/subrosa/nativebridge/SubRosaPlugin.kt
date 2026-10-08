@@ -8,8 +8,11 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.GetPublicKeyCredentialOption
 import androidx.credentials.PublicKeyCredential
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.core.content.ContextCompat
 import app.tauri.PermissionState
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.Permission
@@ -231,4 +234,36 @@ class SubRosaPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun openUrl(invoke: Invoke) = AndroidExports.openUrl(activity, invoke)
+
+    @Command
+    fun scanDocument(invoke: Invoke) = DocumentScanner.start(this, activity, invoke)
+
+    @Command
+    fun shareScan(invoke: Invoke) = DocumentScanner.share(activity, invoke)
+
+    /** The scanner activity is Google's; its result comes back here, the only
+     * place Tauri looks for an [ActivityCallback]. */
+    fun startScan(invoke: Invoke, request: IntentSenderRequest) =
+        startIntentSenderForResult(invoke, request, "documentScanned")
+
+    @ActivityCallback
+    private fun documentScanned(invoke: Invoke, result: ActivityResult) =
+        DocumentScanner.finish(activity, invoke, result)
+
+    @Command
+    fun healthAvailability(invoke: Invoke) = HealthConnect.availability(activity, invoke)
+
+    @Command
+    fun healthRequest(invoke: Invoke) = HealthConnect.request(this, activity, invoke)
+
+    @Command
+    fun healthDaily(invoke: Invoke) = HealthConnect.daily(activity, invoke)
+
+    /** Health Connect's permission sheet; its answer comes back here. */
+    fun startHealthPermissions(invoke: Invoke, intent: Intent) =
+        startActivityForResult(invoke, intent, "healthPermissionsAnswered")
+
+    @ActivityCallback
+    @Suppress("UNUSED_PARAMETER")
+    private fun healthPermissionsAnswered(invoke: Invoke, result: ActivityResult) = HealthConnect.answered(invoke)
 }

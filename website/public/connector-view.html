@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Connector view</title>
+  </head>
+  <body>
+    <!--
+      The host of a connector's interactive view (ADR-0092, web client). The
+      page that frames it does so with sandbox="allow-scripts" and without
+      allow-same-origin, so this document has an opaque origin: no cookie, no
+      storage, no access to the page around it. It says it is ready, takes
+      one document from its parent (the view, its policy already at the top
+      of its head, the bridge after it), writes it, and is gone. The response
+      itself is served with a policy that admits inline script and https
+      origins only, which the written document's own policy narrows to the
+      view's server.
+    -->
+    <script>
+      (function () {
+        var written = false;
+        window.addEventListener("message", function (event) {
+          if (written || event.source !== window.parent) return;
+          var message = event.data;
+          if (
+            !message ||
+            message.type !== "subrosa-view" ||
+            typeof message.document !== "string" ||
+            message.document.length > 600000
+          )
+            return;
+          written = true;
+          document.open();
+          document.write(message.document);
+          document.close();
+        });
+        window.parent.postMessage({ type: "subrosa-view-ready" }, "*");
+      })();
+    </script>
+  </body>
+</html>

@@ -16,18 +16,25 @@ export type MobileTab = "notes" | "assistants" | "agent" | "studio" | "settings"
 export type SettingsSection =
   | "account"
   | "memory"
+  | "connectors"
+  | "skills"
+  | "personalization"
   | "connection"
   | "usage"
   | "privacy"
   | "archive"
   | "reports"
   | "models"
+  | "health"
+  | "finances"
   | "about";
 
 export type MobileRoute =
   | { view: "note"; noteId: string }
   | { view: "folder"; folderId: string }
-  | { view: "agent-session"; sessionId?: string }
+  /** `projectFolderId` files a new chat in that project (ADR-0085). */
+  | { view: "agent-session"; sessionId?: string; projectFolderId?: string }
+  | { view: "project-settings"; folderId: string }
   | { view: "agent-history" }
   /** `autoStart` listens on arrival (a Shortcuts action, never a notification). */
   | { view: "dictation"; autoStart?: boolean }
@@ -44,7 +51,14 @@ export type MobileRoute =
   | { view: "assistant-create"; idea?: string }
   | { view: "assistant-references"; assistantId: string; assistantName?: string }
   /** Every conversation with an assistant. */
-  | { view: "assistant-history" };
+  | { view: "assistant-history" }
+  /** A note opened as a canvas (ADR-0087), with a proposed version to review. */
+  | { view: "canvas"; noteId: string; proposal?: string; seq?: number }
+  /** What the chats made and what was kept from them (ADR-0088). */
+  | { view: "library" }
+  /** The daily brief, results to review, assignments and scheduled tasks
+   * (ADR-0091). */
+  | { view: "today" };
 
 export type MobileNav = {
   tab: MobileTab;

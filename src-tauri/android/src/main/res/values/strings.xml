@@ -5,4 +5,13 @@
     <string name="subrosa_processing_channel">Transcription</string>
     <string name="subrosa_processing_title">Sub Rosa is transcribing</string>
     <string name="subrosa_processing_description">Your note will be ready soon.</string>
+    <string name="subrosa_share_failed">Sub Rosa could not take what you shared. Try again.</string>
+    <string name="subrosa_share_label">Sub Rosa</string>
+    <string name="subrosa_widget_label">Sub Rosa</string>
+    <string name="subrosa_widget_description">Ask, dictate or record in one tap.</string>
+    <string name="subrosa_widget_ask">Ask</string>
+    <string name="subrosa_widget_dictate">Dictate</string>
+    <string name="subrosa_widget_record">Record</string>
+    <string name="subrosa_health_rationale_title">Your health in Sub Rosa</string>
+    <string name="subrosa_health_rationale_body">Sub Rosa reads only the health measures you pick in the app (steps, sleep, heart rate, resting heart rate, workouts, weight). It keeps one summary a day on this phone to show you charts and to answer your questions about them. It never writes to Health Connect. Nothing leaves this phone unless you turn on sync for a measure in Sub Rosa, and you can delete what it kept at any time.</string>
 </resources>

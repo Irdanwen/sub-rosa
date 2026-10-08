@@ -44,8 +44,31 @@ pub enum Error {
     Unavailable,
     #[error("Sign in from the app on this device.")]
     DeviceRequired,
+    /// A browser asked to become a device without the out-of-band admission:
+    /// a pairing approved by another device, or the recovery key (ADR 0096).
+    #[error("Approve this browser from a device, or use your recovery key.")]
+    AdmissionRequired,
+    /// A browser device's proof was missing, malformed, replayed, or signed by
+    /// a key this account does not know as a live browser device.
+    #[error("This browser is no longer a device of the account.")]
+    DeviceProof,
+    /// A public address (a page slug or a profile handle) another account
+    /// already holds (ADR 0097).
+    #[error("This address is already taken.")]
+    SlugTaken,
+    /// Public content that one of the documented rules refuses (ADR 0097).
+    #[error("This content cannot be published.")]
+    ContentPolicy(publication::PolicyRule),
+    /// The operator took this down, or an exact copy of something taken down.
+    #[error("This content was taken down and cannot be published again.")]
+    TakenDown,
+    /// The account lost the right to publish after repeated takedowns.
+    #[error("Publishing is suspended for this account.")]
+    PublishingSuspended,
 }
 pub type Result<T> = std::result::Result<T, Error>;
+pub mod publication;
+pub mod space;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
     pub id: Uuid,
@@ -79,6 +102,24 @@ pub struct Device {
     /// it happening, which is why there is no secret rotation (ADR 0056).
     pub renewed_at: Option<DateTime<Utc>>,
     pub renew_count: i32,
+    /// `native` for an app, `browser` for a browser admitted as a device
+    /// (ADR 0096). Both are revoked the same way.
+    pub kind: DeviceKind,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceKind {
+    Native,
+    Browser,
+}
+impl DeviceKind {
+    pub fn parse(value: &str) -> Self {
+        if value == "browser" {
+            Self::Browser
+        } else {
+            Self::Native
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Operation {
@@ -313,6 +354,17 @@ pub struct IssuanceClaims {
     pub device_name: String,
     /// RFC 7638 thumbprint of the app's ephemeral P-256 key, base64url.
     pub jkt: String,
+    /// Present for a browser device only. Carpe Diem mints the key with this
+    /// bound and holds it in its TEE (ADR 0096); an app's key has none.
+    pub browser: Option<BrowserBound>,
+}
+/// What a browser device's key may do at Carpe Diem: spend at most
+/// `daily_cap_credits` (hundredths of a dollar) in any 24 hours, and live
+/// `valid_seconds` before the browser must ask again while it is still a device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct BrowserBound {
+    pub daily_cap_credits: u32,
+    pub valid_seconds: u32,
 }
 #[derive(Debug, Serialize)]
 pub struct IssuanceAssertion {
@@ -334,5 +386,151 @@ pub struct PendingRevocation {
 #[async_trait]
 pub trait CarpeDiemPartner: Send + Sync {
     fn issuance_assertion(&self, claims: &IssuanceClaims) -> Result<IssuanceAssertion>;
+    /// The bound this deployment asks Carpe Diem to put on a browser device's
+    /// key. An app's key carries none.
+    fn browser_bound(&self) -> BrowserBound;
     async fn revoke(&self, revocation: &PendingRevocation) -> Result<()>;
+}
+
+/// One line of the account's security history. The wire names are the
+/// contract (`docs/accounts-sync-contract.md`) and the SQL constraint of
+/// `security_events`, so they are spelled once, here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityEventKind {
+    /// A browser session, through the identity provider.
+    SignedIn,
+    /// A browser session, through a passkey of the account origin.
+    SignedInPasskey,
+    /// A session ended from where it was used.
+    SignedOut,
+    /// An app was admitted as a new device.
+    DeviceAdded,
+    /// An app signed in again on a device the account already knew.
+    DeviceSignedIn,
+    DeviceRenamed,
+    /// The owner revoked a device from another one, or from the website.
+    DeviceRevoked,
+    /// The device signed itself out.
+    DeviceSignedOut,
+    /// A spent refresh token came back, so its whole family was revoked.
+    RefreshReuseBlocked,
+    /// A device sent the vault key to another one through the pairing relay.
+    PairingApproved,
+    PasskeyAdded,
+    PasskeyRemoved,
+    VaultCreated,
+    /// The vault envelope was replaced, which is what a new recovery key does.
+    VaultUpdated,
+    /// The service vouched for a device so it could obtain a Carpe Diem key.
+    CarpeDiemKeyRequested,
+    /// Carpe Diem acknowledged the revocation of a device key.
+    CarpeDiemKeyRevoked,
+    /// A restored database signed every session out (`restore-sanitize`).
+    SessionsReset,
+}
+impl SecurityEventKind {
+    pub const ALL: &[Self] = &[
+        Self::SignedIn,
+        Self::SignedInPasskey,
+        Self::SignedOut,
+        Self::DeviceAdded,
+        Self::DeviceSignedIn,
+        Self::DeviceRenamed,
+        Self::DeviceRevoked,
+        Self::DeviceSignedOut,
+        Self::RefreshReuseBlocked,
+        Self::PairingApproved,
+        Self::PasskeyAdded,
+        Self::PasskeyRemoved,
+        Self::VaultCreated,
+        Self::VaultUpdated,
+        Self::CarpeDiemKeyRequested,
+        Self::CarpeDiemKeyRevoked,
+        Self::SessionsReset,
+    ];
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SignedIn => "signed_in",
+            Self::SignedInPasskey => "signed_in_passkey",
+            Self::SignedOut => "signed_out",
+            Self::DeviceAdded => "device_added",
+            Self::DeviceSignedIn => "device_signed_in",
+            Self::DeviceRenamed => "device_renamed",
+            Self::DeviceRevoked => "device_revoked",
+            Self::DeviceSignedOut => "device_signed_out",
+            Self::RefreshReuseBlocked => "refresh_reuse_blocked",
+            Self::PairingApproved => "pairing_approved",
+            Self::PasskeyAdded => "passkey_added",
+            Self::PasskeyRemoved => "passkey_removed",
+            Self::VaultCreated => "vault_created",
+            Self::VaultUpdated => "vault_updated",
+            Self::CarpeDiemKeyRequested => "carpe_diem_key_requested",
+            Self::CarpeDiemKeyRevoked => "carpe_diem_key_revoked",
+            Self::SessionsReset => "sessions_reset",
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|kind| kind.as_str() == value)
+    }
+}
+/// What the owner reads back: what happened, when, and on which device when
+/// one was involved. Never an address, a user agent or a place.
+#[derive(Clone, Debug, Serialize)]
+pub struct SecurityEvent {
+    pub id: Uuid,
+    pub kind: SecurityEventKind,
+    pub occurred_at: DateTime<Utc>,
+    pub device_name: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SecurityEventKind;
+
+    /// The Rust list, the serialized names, the SQL constraint and the
+    /// published schema are four spellings of one contract. A kind missing from the constraint would
+    /// make the action it describes fail inside its own transaction.
+    #[test]
+    fn every_security_event_kind_is_allowed_by_the_table_and_serializes_as_named() {
+        let migration = include_str!("../../../migrations/0010_security_events.sql");
+        let check = migration
+            .split("CHECK(kind IN (")
+            .nth(1)
+            .and_then(|rest| rest.split("))").next())
+            .unwrap_or_default();
+        let allowed: Vec<&str> = check
+            .split(',')
+            .map(|value| value.trim().trim_matches('\''))
+            .collect();
+        let named: Vec<&str> = SecurityEventKind::ALL
+            .iter()
+            .map(|kind| kind.as_str())
+            .collect();
+        assert_eq!(allowed, named);
+        for kind in SecurityEventKind::ALL {
+            assert_eq!(
+                serde_json::to_value(kind).ok(),
+                Some(serde_json::Value::from(kind.as_str()))
+            );
+            assert_eq!(SecurityEventKind::parse(kind.as_str()), Some(*kind));
+        }
+        assert_eq!(SecurityEventKind::parse("ip_address"), None);
+        let openapi: serde_json::Value =
+            serde_json::from_str(include_str!("../../../openapi.json")).unwrap_or_default();
+        let documented: Vec<&str> = openapi["components"]["schemas"]["SecurityEvent"]["properties"]
+            ["kind"]["enum"]
+            .as_array()
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(documented, named, "openapi.json lists the same kinds");
+    }
 }

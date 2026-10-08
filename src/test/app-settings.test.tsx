@@ -97,6 +97,11 @@ vi.mock("../lib/tauri", () => ({
   juneOpenVerifyPage: mocks.juneOpenVerifyPage,
 }));
 
+const locale = vi.hoisted(() => ({ chooseLocaleAndReload: vi.fn() }));
+vi.mock("../lib/i18n", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/i18n")>()),
+  chooseLocaleAndReload: locale.chooseLocaleAndReload,
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mocks.listen,
 }));
@@ -398,6 +403,30 @@ describe("AppSettings", () => {
 
   const defaultAccentLabel =
     BRAND_PRESETS.find((preset) => preset.id === DEFAULT_BRAND)?.label ?? "";
+
+  it("offers every language by its own name and switches to the one picked", async () => {
+    render(
+      <AppSettings
+        sourceMode="microphoneOnly"
+        checkingSourceReadiness={false}
+        onSourceModeChange={vi.fn()}
+        onEnableSystemAudio={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Language" }));
+    const options = screen.getAllByRole("option").map((option) => option.textContent);
+    expect(options).toEqual([
+      "System",
+      "English",
+      "Français",
+      "Deutsch",
+      "Italiano",
+      "Español",
+      "Português (Brasil)",
+    ]);
+    await userEvent.click(screen.getByRole("option", { name: "Italiano" }));
+    expect(locale.chooseLocaleAndReload).toHaveBeenCalledWith("it");
+  });
 
   it("shows an accent reset button after choosing a non-default accent", () => {
     vi.useFakeTimers();

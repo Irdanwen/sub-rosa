@@ -3,14 +3,20 @@
 // in both.
 
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { ReplyLibraryActions } from "../chat/LibraryActions";
+import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
+import { IconBranchSimple } from "central-icons/IconBranchSimple";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
+import { IconPencil } from "central-icons/IconPencil";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatBlocksToClipboardText } from "../../lib/chat-blocks";
 import { hapticImpact, hapticSelection } from "../../lib/haptics";
 import { t } from "../../lib/i18n";
 import { SimpleMarkdown } from "../../lib/simple-markdown";
 import type { AgentLiteAttachment, AgentLiteStatusDto } from "../../lib/tauri";
+import { RateReply } from "../chat/RateReply";
+import { ReadAloudButton } from "../chat/ReadAloudButton";
 import { Spinner } from "../ui/Spinner";
 
 /** Whether a stored message names attachments. Only the names are kept: the
@@ -90,6 +96,8 @@ export function stageText(stage: AgentLiteStatusDto["stage"]): string {
     "writing-note": t("Writing to your notes"),
     remembering: t("Remembering that"),
     "reading-page": t("Reading a page"),
+    "analysing-data": t("Analysing the data"),
+    "making-document": t("Making the document"),
   };
   return labels[stage] ?? t("Thinking");
 }
@@ -118,6 +126,101 @@ export function CopyReplyButton({ text }: { text: string }) {
       {copied ? <IconCheckmark1Small size={13} /> : <IconClipboard size={13} />}
       {copied ? t("Copied") : t("Copy")}
     </button>
+  );
+}
+
+/** What a finished reply offers: copy it, read it aloud, rate it (a stored
+ * reply in a saved chat), ask for it again (the last reply only) and branch
+ * the chat from it into a new one. */
+export function ReplyActions({
+  text,
+  conversationId,
+  messageId,
+  onRegenerate,
+  onBranch,
+}: {
+  text: string;
+  /** The chat and the reply, for reading aloud and rating. */
+  conversationId?: string;
+  messageId?: string;
+  onRegenerate?: () => void;
+  onBranch?: () => void;
+}) {
+  return (
+    <div className="mobile-chat-actions">
+      <CopyReplyButton text={text} />
+      <ReplyLibraryActions
+        text={text}
+        conversationId={conversationId}
+        messageId={messageId}
+        className="mobile-chat-copy"
+        onPress={hapticSelection}
+      />
+      {messageId ? (
+        <ReadAloudButton
+          speechKey={`${conversationId ?? "chat"}:${messageId}`}
+          text={text}
+          className="mobile-chat-copy"
+          onPress={hapticSelection}
+        />
+      ) : null}
+      {conversationId && messageId ? (
+        <RateReply
+          conversationId={conversationId}
+          messageId={messageId}
+          className="mobile-chat-copy"
+          onPress={hapticSelection}
+        />
+      ) : null}
+      {onRegenerate ? (
+        <button
+          type="button"
+          className="mobile-chat-copy"
+          aria-label={t("Regenerate reply")}
+          onClick={() => {
+            hapticSelection();
+            onRegenerate();
+          }}
+        >
+          <IconArrowRotateClockwise size={13} />
+          {t("Regenerate")}
+        </button>
+      ) : null}
+      {onBranch ? (
+        <button
+          type="button"
+          className="mobile-chat-copy"
+          aria-label={t("Branch from here")}
+          onClick={() => {
+            hapticSelection();
+            onBranch();
+          }}
+        >
+          <IconBranchSimple size={13} />
+          {t("Branch")}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Under a question the user sent: edit it. */
+export function QuestionActions({ onEdit }: { onEdit: () => void }) {
+  return (
+    <div className="mobile-chat-actions" data-role="user">
+      <button
+        type="button"
+        className="mobile-chat-copy"
+        aria-label={t("Edit message")}
+        onClick={() => {
+          hapticSelection();
+          onEdit();
+        }}
+      >
+        <IconPencil size={13} />
+        {t("Edit")}
+      </button>
+    </div>
   );
 }
 

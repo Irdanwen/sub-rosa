@@ -1,0 +1,110 @@
+/* Desktop chat controls (ADR-0080): the reasoning effort beside the model
+ * picker, and a sent message edited where it stands. */
+
+.agent-reasoning-effort .agent-composer-model-trigger {
+  max-width: none;
+}
+
+.agent-reasoning-effort-menu {
+  /* Same opt-in as the model popover: the docked composer form ignores the
+   * pointer outside its box. */
+  pointer-events: auto;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--sp-1));
+  z-index: 130;
+  display: flex;
+  flex-direction: column;
+  min-width: 156px;
+  padding: var(--sp-1);
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-md);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-lg);
+}
+
+.agent-reasoning-effort-title {
+  margin: 0;
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.agent-reasoning-effort-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: var(--control-md);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-reasoning-effort-menu button:hover,
+.agent-reasoning-effort-menu button:focus-visible {
+  background: var(--surface-subtle);
+}
+
+.agent-user-turn-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(100%, 640px);
+  margin-left: auto;
+}
+
+.agent-user-turn-editor textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-lg);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.agent-user-turn-editor textarea:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.agent-user-turn-editor-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.agent-user-turn-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.agent-user-turn-editor-actions .btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.agent-user-turn-editor-actions .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.agent-session-archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}

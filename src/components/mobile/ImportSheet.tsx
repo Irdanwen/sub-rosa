@@ -1,5 +1,6 @@
 import { t } from "../../lib/i18n";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
+import { IconScanTextSparkle } from "central-icons/IconScanTextSparkle";
 import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
@@ -8,19 +9,23 @@ import { ImportLinkBar } from "../notes-list/ImportLinkBar";
 import { sheetHost } from "./sheet-host";
 
 /**
- * Bringing something in: a file from the phone, or a link to fetch.
+ * Bringing something in: paper through the camera, a file from the phone,
+ * or a link to fetch.
  *
  * The link field used to sit on the notes list permanently, a row most people
  * never use, cut off at the right edge on a phone. Both ways in now live
  * behind the import button, and what is downloading stays on the list.
  */
 export function ImportSheet({
+  onScan,
   onChooseFile,
   onCompleted,
   onClose,
   initialUrl,
   onOpenAccount,
 }: {
+  /** Opens the document camera; absent where the device has none. */
+  onScan?: () => void;
   onChooseFile: () => void;
   /** A link handed over by the shell (shared from another app). */
   initialUrl?: string;
@@ -55,6 +60,12 @@ export function ImportSheet({
         <p className="mobile-sheet-title" data-initial-focus tabIndex={-1}>
           {t("Import")}
         </p>
+        {onScan ? (
+          <button type="button" className="mobile-sheet-new" onClick={onScan}>
+            <IconScanTextSparkle size={16} aria-hidden />
+            <span>{t("Scan a document")}</span>
+          </button>
+        ) : null}
         <button type="button" className="mobile-sheet-new" onClick={onChooseFile}>
           <IconArrowInbox size={16} aria-hidden />
           <span>{t("Choose an audio or video file")}</span>

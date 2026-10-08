@@ -1,0 +1,26 @@
+/* The voice conversation beside the composer (web client). Site tokens only. */
+.wc-voice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wc-voice-active,
+.wc-voice-price {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 12px 16px;
+}
+.wc-voice-phase {
+  font-weight: 600;
+  margin: 0;
+}
+.wc-voice-caption {
+  margin: 0;
+}
+.wc-voice-preview {
+  width: 100%;
+  max-width: 320px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+}

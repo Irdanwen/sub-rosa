@@ -1,6 +1,7 @@
 import { t } from "../../lib/i18n";
 import type { Editor } from "@tiptap/react";
 import { IconBold } from "central-icons/IconBold";
+import { IconBubbleSparkle } from "central-icons/IconBubbleSparkle";
 import { IconBulletList } from "central-icons/IconBulletList";
 import { IconChainLink1 } from "central-icons/IconChainLink1";
 import { IconChecklist } from "central-icons/IconChecklist";
@@ -17,6 +18,8 @@ import type { CentralIconBaseProps } from "central-icons/CentralIconBase";
 import { type ComponentType, type CSSProperties, useEffect, useRef, useState } from "react";
 import { type Anchor, useAnchoredPanel } from "./useAnchoredPanel";
 import type { RewriteKind } from "../../lib/tauri";
+import { askAboutSelection } from "../../lib/ask-selection";
+import { docToMarkdown } from "../../lib/note-markdown";
 
 /**
  * The toolbar that follows a selection.
@@ -36,7 +39,8 @@ import type { RewriteKind } from "../../lib/tauri";
  * The last control is the odd one out: it does not change the selection, it
  * asks a model what the selection could be. What comes back is a revision the
  * user accepts or discards (ADR-0038), which is why this toolbar only ever
- * *starts* a rewrite and never applies one.
+ * *starts* a rewrite and never applies one. "Ask Sub Rosa" beside it changes
+ * nothing either: it carries the selection to the chat as a quote.
  */
 
 /** The rewrites offered, in the order they are reached for. `translate` and
@@ -427,6 +431,21 @@ export function SelectionToolbar({
           aria-expanded={menuOpen}
         >
           <IconSparkle size={16} />
+        </button>
+        <button
+          type="button"
+          data-tool="ask"
+          style={toolIndex(TRAILING_INDEX + 4)}
+          onPointerDown={(event) => event.preventDefault()}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            const { from, to } = editor.state.selection;
+            if (from !== to) askAboutSelection(docToMarkdown(editor.state.doc.cut(from, to)));
+          }}
+          title={t("Ask Sub Rosa")}
+          aria-label={t("Ask Sub Rosa")}
+        >
+          <IconBubbleSparkle size={16} />
         </button>
       </div>
       {/* A sibling, not a child: the docked toolbar scrolls sideways, and a

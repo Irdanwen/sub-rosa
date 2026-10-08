@@ -34,6 +34,9 @@ targets:
       # Rust static libraries are linked below, never copied into the app.
       # Including this directory as sources makes XcodeGen copy both debug
       # and release libapp.a to the same resource path after a local build.
+      # Also carries <lang>.lproj/InfoPlist.strings: the usage descriptions
+      # below in every language of src/locales, which XcodeGen picks up as a
+      # variant group. The Mac app ships the same files (tauri.macos.conf.json).
       - path: os-june_iOS
       - path: assets
         buildPhase: resources
@@ -54,8 +57,11 @@ targets:
         # in App Store Connect; do not carry forward the former TLS-only waiver.
         # Recording a note or a dictation.
         NSMicrophoneUsageDescription:
-          Sub Rosa records microphone audio locally so it can transcribe and generate your notes.
+          Sub Rosa records microphone audio locally so it can transcribe and generate your notes, and hears you during a voice conversation.
         # The system-audio source of a note (microphone plus system audio).
+        # Health, read only (ADR-0099): the measures the person picked.
+        # Translated in os-june_iOS/<language>.lproj/InfoPlist.strings.
+        NSHealthShareUsageDescription: Sub Rosa reads the health measures you choose (steps, sleep, heart rate, workouts, weight) to show your daily summaries and answer your questions about them. It never writes to Health, and nothing leaves this iPhone unless you turn on sync for a measure.
         NSCalendarsUsageDescription: Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.
         NSCalendarsFullAccessUsageDescription: Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.
         NSRemindersUsageDescription: Sub Rosa adds a reminder to your list when you tap to accept one it suggested. It never reads or changes anything else.
@@ -65,7 +71,7 @@ targets:
         # Taking a photo to attach to a chat, and the Studio reference picker's
         # camera button (capture="environment").
         NSCameraUsageDescription:
-          Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation.
+          Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation, when you scan a document into a note, and when you show something during a voice conversation.
         # Saving a Studio generation to the photo library. Write only: the
         # picker reads through PHPicker, which needs no permission.
         NSPhotoLibraryAddUsageDescription:
@@ -73,10 +79,10 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: subrosa
             CFBundleURLSchemes: [subrosa]
-        # English and French, the two languages of the app's own catalog: the
+        # Every language of the app's own catalog (src/locales): the
         # Shortcuts actions (Sources/os-june/Intents) read their titles from
         # the matching .lproj.
-        CFBundleLocalizations: [en, fr]
+        CFBundleLocalizations: [en, fr, de, it, es, pt-BR]
         # Background execution (see src-tauri/src/ios_background.rs):
         # `audio` keeps a note recording alive with the screen locked,
         # `processing`/`fetch` let BGTaskScheduler wake the app up later to
@@ -104,8 +110,8 @@ targets:
         # ships - but they must not contradict the plist either, or a reader
         # (and a regeneration) inherits a version from another era. A test
         # pins the two files to each other; keep them equal.
-        CFBundleShortVersionString: 1.88.1
-        CFBundleVersion: "1.88.1"
+        CFBundleShortVersionString: 1.89.0
+        CFBundleVersion: "1.89.0"
     entitlements:
       path: os-june_iOS/os-june_iOS.entitlements
       properties:
@@ -113,6 +119,11 @@ targets:
           - webcredentials:subrosa.furetier.com
         com.apple.security.application-groups:
           - group.xyz.carpediem.subrosa
+        # Health, read only (ADR-0099). The App ID needs the HealthKit
+        # capability and the profile must carry it (HANDOFF.md); the release
+        # lane drops these two keys when the installed profile lacks them.
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
@@ -151,6 +162,12 @@ targets:
       - sdk: QuartzCore.framework
       - sdk: Security.framework
       - sdk: UIKit.framework
+      # The document scanner (crate::scan): VisionKit's camera and Vision's
+      # text recognition, from the Objective-C file in Rust's static library.
+      - sdk: Vision.framework
+      - sdk: VisionKit.framework
+      # crate::health reads HealthKit (native/health-kit/HealthBridge.m).
+      - sdk: HealthKit.framework
       - sdk: WebKit.framework
       # The Shortcuts actions (iOS 16+). Weak, because the app still runs on
       # iOS 15, where a strong link to a framework that does not exist stops
@@ -162,6 +179,21 @@ targets:
       - target: os-june_Share
         embed: true
         codeSign: true
+      # The Home Screen and Lock Screen widgets (ADR-0095): links into the
+      # app's addresses.
+      - target: os-june_Widgets
+        embed: true
+        codeSign: true
+      # The Apple Watch app (ADR-0095), in the iOS app's Watch folder the way
+      # Xcode embeds a single-target watch app. The phone's end of its channel
+      # is Sources/os-june/Watch/WatchBridge.swift.
+      - target: os-june_Watch
+        embed: true
+        codeSign: true
+        copy:
+          destination: productsDirectory
+          subpath: $(CONTENTS_FOLDER_PATH)/Watch
+      - sdk: WatchConnectivity.framework
     preBuildScripts:
       - script: pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
         name: Build Rust Code
@@ -178,8 +210,8 @@ targets:
       path: ShareExtension/Info.plist
       properties:
         CFBundleDisplayName: Sub Rosa
-        CFBundleShortVersionString: 1.88.1
-        CFBundleVersion: "1.88.1"
+        CFBundleShortVersionString: 1.89.0
+        CFBundleVersion: "1.89.0"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -206,3 +238,95 @@ targets:
         VALID_ARCHS: arm64
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: false
+  # The Home Screen and Lock Screen widgets (ADR-0095). Buttons, not views of
+  # data: each one opens a `subrosa://` address. They read nothing the app
+  # keeps, so they are not in its app group and need no entitlements: their
+  # App ID and profile are ones the release lane can make on its own.
+  os-june_Widgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: Sub Rosa
+        CFBundleShortVersionString: 1.89.0
+        CFBundleVersion: "1.89.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_NAME: SubRosaWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.carpediem.subrosa.widgets
+        DEVELOPMENT_TEAM: H6N5V777LL
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: 1,2
+        ARCHS: [arm64]
+        VALID_ARCHS: arm64
+        EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: false
+  # The Apple Watch app (ADR-0095): dictate a question, the iPhone answers.
+  # A single-target watch app (watchOS 10), embedded in the iOS app; its
+  # bundle id extends the app's, as watchOS requires of a companion.
+  os-june_Watch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: Watch
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: Sub Rosa
+        CFBundleShortVersionString: 1.89.0
+        CFBundleVersion: "1.89.0"
+        CFBundleLocalizations: [en, fr, de, it, es, pt-BR]
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: xyz.carpediem.subrosa
+        WKRunsIndependentlyOfCompanionApp: false
+    dependencies:
+      - target: os-june_WatchWidgets
+        embed: true
+        codeSign: true
+      - sdk: WatchConnectivity.framework
+      - sdk: AVFoundation.framework
+    settings:
+      base:
+        PRODUCT_NAME: SubRosaWatch
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.carpediem.subrosa.watchkitapp
+        DEVELOPMENT_TEAM: H6N5V777LL
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: 4
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Inside the iOS app, never a product of the archive on its own.
+        SKIP_INSTALL: true
+  # The watch face complication (ADR-0095): "Ask", opening the watch app.
+  os-june_WatchWidgets:
+    type: app-extension
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: WatchWidgets
+    info:
+      path: WatchWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Sub Rosa
+        CFBundleShortVersionString: 1.89.0
+        CFBundleVersion: "1.89.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_NAME: SubRosaWatchWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.carpediem.subrosa.watchkitapp.widgets
+        DEVELOPMENT_TEAM: H6N5V777LL
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: 4
+        SKIP_INSTALL: true

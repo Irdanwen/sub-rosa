@@ -18,27 +18,40 @@ import { notifyCreditsChanged } from "../../lib/credits-events";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../../lib/chat-blocks-nav";
+import { ASK_ABOUT_SELECTION_EVENT } from "../../lib/ask-selection";
+import { OPEN_CANVAS_EVENT, type OpenCanvasDetail } from "../../lib/canvas";
+import { CanvasPane } from "../../components/canvas/CanvasPane";
+import { LibraryView } from "../../components/library/LibraryView";
+import { TodayScreen } from "../../components/mobile/screens/TodayScreen";
 import { MeetingAmbiguityPrompt } from "../../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../../lib/calendar-link";
-import type { CalendarEventDto } from "../../lib/tauri";
+import type { AgentLiteAttachment, CalendarEventDto } from "../../lib/tauri";
 import { importMediaFile } from "../../lib/import-media";
 import { previewIngestLink, startLinkIngest } from "../../lib/tauri";
 import type { Destination } from "../../lib/destinations";
 import type { IntentRequest } from "../../lib/intents";
 import { importSharedItem } from "../../lib/share-inbox";
+import { composerAttachment } from "./sharedAttachment";
 import { useAmbientActivity } from "./useAmbientActivity";
+import { usePythonBridge } from "../../lib/python/usePythonBridge";
 import { observeStandaloneImageJobs } from "../../lib/studio/image-job-recovery";
 import { OPEN_COMPOSE_EVENT } from "../../lib/studio/compose/jobs";
 import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
 import { ComposeScreen } from "../../components/mobile/screens/studio/ComposeScreen";
 import { RetouchScreen } from "../../components/mobile/screens/studio/RetouchScreen";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
+import { PersonalDataScreen } from "../../components/mobile/screens/PersonalDataScreen";
+import { StackHeader } from "../../components/mobile/StackHeader";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
 import { FolderScreen } from "../../components/mobile/screens/FoldersScreen";
+import { ProjectSettingsScreen } from "../../components/mobile/screens/ProjectSettingsScreen";
 import { NoteDetailScreen } from "../../components/mobile/screens/NoteDetailScreen";
 import { NotesScreen } from "../../components/mobile/screens/NotesScreen";
 import { ConnectionScreen } from "../../components/mobile/screens/ConnectionScreen";
 import { MemoryScreen } from "../../components/mobile/screens/MemoryScreen";
+import { ConnectorsScreen } from "../../components/mobile/screens/ConnectorsScreen";
+import { SkillsScreen } from "../../components/mobile/screens/SkillsScreen";
+import { PersonalizationScreen } from "../../components/mobile/screens/PersonalizationScreen";
 import {
   AboutScreen,
   AccountScreen,
@@ -86,6 +99,10 @@ import { PROCESSING_DEMO_NOTE_ID, shouldPollProcessingStatus } from "../processi
 import { createInitialState, notesReducer } from "../state/app-state";
 import { useMobileNav } from "./nav";
 import { useDestinationQueue } from "./useDestinationQueue";
+import {
+  AssistantImportHost,
+  requestAssistantImport,
+} from "../../components/publishing/AssistantImportDialog";
 import { useMobileBootstrap } from "./useMobileBootstrap";
 import { Spinner } from "../../components/ui/Spinner";
 
@@ -93,6 +110,7 @@ import { Spinner } from "../../components/ui/Spinner";
  * before it is abandoned. Keep below SIDECAR_STATUS_TIMEOUT_MS in App.tsx. */
 const SHELL_LOADING_SLOW_MS = 6_000;
 import { useScrollRestoration } from "./useScrollRestoration";
+import { scanDocument, supportsDocumentScan } from "../../lib/scan";
 
 /**
  * Error banner with a real exit path: replacing the message re-runs the
@@ -143,6 +161,8 @@ export function MobileApp() {
   const [state, dispatch] = useReducer(notesReducer, undefined, createInitialState);
   const [error, setError] = useState<string | null>(null);
   const { chatBusy, studioBusy } = useAmbientActivity();
+  // The chat's run_python tool answers through here (ADR-0086).
+  usePythonBridge();
 
   // Errors slide in at the top and clear themselves; lingering red banners
   // read as a broken app and can sit over the header forever.
@@ -192,6 +212,10 @@ export function MobileApp() {
   /** Text waiting for the next fresh chat screen (`chat?q=`, a Shortcuts
    * action), and whether it may be sent without a tap. */
   const [pendingChat, setPendingChat] = useState<{ text: string; send: boolean } | null>(null);
+  /** Pictures and documents shared in (ADR-0095), waiting for the chat's
+   * composer. A batch accumulates here and lands in one fresh chat. */
+  const [pendingAttachments, setPendingAttachments] = useState<AgentLiteAttachment[]>([]);
+  const takeAttachments = useCallback(() => setPendingAttachments([]), []);
   /** A link to open the Import sheet on: a video page this phone cannot
    * read, which the sheet offers to send to a computer (ADR-0054). */
   const [importLink, setImportLink] = useState<string | null>(null);
@@ -497,6 +521,18 @@ export function MobileApp() {
     if (text) setPendingChat({ text, send });
   };
 
+  // Whether a fresh chat is on screen now, for a share that lands while an
+  // earlier one is still being read: the second joins the first.
+  const freshChatShown = useRef(false);
+  freshChatShown.current = nav.tab === "agent" && agentSessionId === undefined;
+  const attachInChat = (attachment: AgentLiteAttachment) => {
+    if (!freshChatShown.current) {
+      nav.switchTab("agent");
+      openChatSession(undefined);
+    }
+    setPendingAttachments((current) => [...current, attachment]);
+  };
+
   const handleDestination = (destination: Destination) => {
     switch (destination.kind) {
       case "note":
@@ -527,6 +563,9 @@ export function MobileApp() {
       case "assistants":
         nav.switchTab("assistants");
         break;
+      case "assistantImport":
+        requestAssistantImport(destination.listingId);
+        break;
       case "dictation":
         openDictation(Boolean(destination.start));
         break;
@@ -541,6 +580,11 @@ export function MobileApp() {
         break;
       case "record":
         recordFromOutside();
+        break;
+      // A daily brief or an assignment's result: Today, over the chat tab.
+      case "today":
+        if (nav.tab !== "agent") nav.switchTab("agent");
+        if (nav.top?.view !== "today") nav.push({ view: "today" });
         break;
       // Shared in from another app. The notes tab is where the download shows
       // itself, so land there rather than starting something invisible.
@@ -574,8 +618,9 @@ export function MobileApp() {
       case "share":
         nav.switchTab("notes");
         void importSharedItem(destination.itemId)
-          .then((made) => {
+          .then(async (made) => {
             if (made.kind === "platform" && made.url) setImportLink(made.url);
+            else if (made.attachment) attachInChat(await composerAttachment(made.attachment));
             else if (made.noteId) openNote(made.noteId);
           })
           .catch((err) => setError(messageFromError(err)));
@@ -604,6 +649,29 @@ export function MobileApp() {
     window.addEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
     return () => window.removeEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
   }, [openNote]);
+
+  // A canvas (ADR-0087) is a screen of its own on the phone, pushed over the
+  // tab it was opened from; "Ask Sub Rosa" brings the chat back to the front,
+  // where its composer takes the quote.
+  useEffect(() => {
+    let seq = 0;
+    function handleOpenCanvas(event: Event) {
+      const detail = (event as CustomEvent<OpenCanvasDetail>).detail;
+      if (!detail?.noteId) return;
+      seq += 1;
+      nav.push({ view: "canvas", noteId: detail.noteId, proposal: detail.proposal, seq });
+    }
+    window.addEventListener(OPEN_CANVAS_EVENT, handleOpenCanvas);
+    return () => window.removeEventListener(OPEN_CANVAS_EVENT, handleOpenCanvas);
+  }, [nav.push]);
+  useEffect(() => {
+    function handleAsk() {
+      if (nav.top?.view === "canvas") nav.pop();
+      if (nav.tab !== "agent") nav.switchTab("agent");
+    }
+    window.addEventListener(ASK_ABOUT_SELECTION_EVENT, handleAsk);
+    return () => window.removeEventListener(ASK_ABOUT_SELECTION_EVENT, handleAsk);
+  }, [nav]);
 
   const handleCreateNote = useCallback(
     async (options?: { folderId?: string; record?: boolean }) => {
@@ -980,6 +1048,7 @@ export function MobileApp() {
     screen = (
       <AgentSessionScreen
         sessionId={top.sessionId}
+        projectFolderId={top.projectFolderId}
         onBack={nav.pop}
         onOpenSession={(sessionId) => {
           // Forking swaps the tab's root conversation onto the fork and pops
@@ -999,6 +1068,8 @@ export function MobileApp() {
           openChatSession(sessionId);
           nav.pop();
         }}
+        onOpenLibrary={() => nav.push({ view: "library" })}
+        onOpenToday={() => nav.push({ view: "today" })}
         archiveFolderId={archiveFolderId}
         ensureArchiveFolder={async () => {
           if (archiveFolderId) return archiveFolderId;
@@ -1062,6 +1133,38 @@ export function MobileApp() {
         onOpenConversation={(taskId) => nav.push({ view: "assistant-chat", taskId })}
       />
     );
+  } else if (top?.view === "canvas") {
+    screen = (
+      <div className="mobile-screen-root">
+        <CanvasPane
+          key={top.noteId}
+          noteId={top.noteId}
+          proposal={top.proposal}
+          proposalSeq={top.seq}
+          layout="screen"
+          onClose={nav.pop}
+        />
+      </div>
+    );
+  } else if (top?.view === "today") {
+    screen = (
+      <TodayScreen
+        onBack={nav.pop}
+        onOpenChat={(taskId) => {
+          openChatSession(taskId);
+          nav.switchTab("agent");
+        }}
+      />
+    );
+  } else if (top?.view === "library") {
+    screen = (
+      <div className="mobile-screen-root">
+        <StackHeader title={t("Library")} large onBack={nav.pop} />
+        <div className="mobile-list-scroll">
+          <LibraryView />
+        </div>
+      </div>
+    );
   } else if (top?.view === "studio-retouch") {
     screen = <RetouchScreen artifactId={top.artifactId} rootId={top.rootId} onBack={nav.pop} />;
   } else if (top?.view === "studio-compose") {
@@ -1074,6 +1177,12 @@ export function MobileApp() {
         <AccountScreen onBack={nav.pop} />
       ) : top.section === "memory" ? (
         <MemoryScreen onBack={nav.pop} />
+      ) : top.section === "connectors" ? (
+        <ConnectorsScreen onBack={nav.pop} />
+      ) : top.section === "skills" ? (
+        <SkillsScreen onBack={nav.pop} />
+      ) : top.section === "personalization" ? (
+        <PersonalizationScreen onBack={nav.pop} />
       ) : top.section === "usage" ? (
         <UsageScreen onBack={nav.pop} />
       ) : top.section === "privacy" ? (
@@ -1084,6 +1193,8 @@ export function MobileApp() {
         <ModelsScreen onBack={nav.pop} />
       ) : top.section === "reports" ? (
         <ReportsScreen onBack={nav.pop} />
+      ) : top.section === "health" || top.section === "finances" ? (
+        <PersonalDataScreen kind={top.section} onBack={nav.pop} />
       ) : top.section === "about" ? (
         <AboutScreen onBack={nav.pop} />
       ) : (
@@ -1113,6 +1224,16 @@ export function MobileApp() {
           nav.pop();
           void handleDeleteFolder(top.folderId, deleteNotes);
         }}
+        onNewChat={() => nav.push({ view: "agent-session", projectFolderId: top.folderId })}
+        onOpenSettings={() => nav.push({ view: "project-settings", folderId: top.folderId })}
+        onOpenChat={(sessionId) => nav.push({ view: "agent-session", sessionId })}
+      />
+    );
+  } else if (top?.view === "project-settings") {
+    screen = (
+      <ProjectSettingsScreen
+        folder={state.folders.find((item) => item.id === top.folderId)}
+        onBack={nav.pop}
       />
     );
   } else {
@@ -1128,6 +1249,14 @@ export function MobileApp() {
             onRecord={() => void handleCreateNote({ record: true })}
             onCreateNote={() => void handleCreateNote()}
             onImportAudio={(file) => void handleImportAudio(file)}
+            onScanDocument={
+              supportsDocumentScan()
+                ? () =>
+                    void scanDocument()
+                      .then((scan) => scan && openNote(scan.noteId))
+                      .catch((err: unknown) => setError(messageFromError(err)))
+                : undefined
+            }
             onOpenFolder={(folderId) => nav.push({ view: "folder", folderId })}
             onOpenDictation={() => nav.push({ view: "dictation" })}
             onDeleteNote={(noteId) => void handleDeleteNote(noteId)}
@@ -1173,6 +1302,8 @@ export function MobileApp() {
             initialDraft={pendingChat?.text}
             autoSend={pendingChat?.send}
             onInitialDraftUsed={() => setPendingChat(null)}
+            initialAttachments={pendingAttachments.length ? pendingAttachments : undefined}
+            onInitialAttachmentsUsed={takeAttachments}
           />
         );
         break;
@@ -1199,6 +1330,12 @@ export function MobileApp() {
       <RailSwitchBanner compact />
       <ReflexNotice compact />
       <AddCreditsHost />
+      <AssistantImportHost
+        onImported={(definition) => {
+          nav.switchTab("assistants");
+          nav.push({ view: "assistant-editor", assistantId: definition.id });
+        }}
+      />
       {calendarAmbiguity ? (
         <MeetingAmbiguityPrompt
           noteId={calendarAmbiguity.noteId}

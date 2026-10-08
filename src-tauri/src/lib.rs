@@ -5,6 +5,8 @@
 pub mod account;
 pub mod actions;
 #[cfg(desktop)]
+pub mod agent_browser;
+#[cfg(desktop)]
 pub mod agent_hud;
 pub mod agent_lite;
 pub mod agent_notes;
@@ -17,33 +19,50 @@ pub mod app_paths;
 mod apple_passkey;
 pub mod archive;
 pub mod ask;
+pub mod assignments;
 pub mod assistants;
 pub mod audio;
 pub mod background;
+#[cfg(desktop)]
+pub mod browser_extension;
 pub mod calendar;
 pub mod carpe_diem;
+#[cfg(desktop)]
+pub mod chat_bar;
 pub mod chat_titles;
 pub mod child_env;
+#[cfg(desktop)]
+pub mod code_review;
 pub mod commands;
+pub mod connectors;
+pub mod conversation_export;
 #[cfg(desktop)]
 pub mod council;
+pub mod data_cards;
 pub mod db;
+pub mod deliverables;
 pub mod destinations;
 pub mod diagnostics;
 #[cfg(desktop)]
 pub mod dictation;
 #[cfg(mobile)]
 pub mod dictation_mobile;
+pub mod documents;
+pub mod docx;
 pub mod domain;
 pub mod egress;
 pub mod egress_ledger;
 mod errands;
+pub mod finance;
+pub mod health;
 #[cfg(desktop)]
 pub mod hermes_bridge;
 pub mod hermes_image_fit;
 #[cfg(desktop)]
 pub mod hermes_working_dir;
 pub mod http_client;
+pub mod i18n;
+pub mod image_refine;
 pub mod ingest;
 pub mod intent_inbox;
 pub mod ios_background;
@@ -68,29 +87,45 @@ pub mod note_processing;
 pub mod open_url;
 pub mod os_accounts;
 pub mod path_confinement;
+pub mod personal_data;
+pub mod personalization;
 #[cfg(target_os = "ios")]
 pub mod photos_ios;
 pub mod places;
+pub mod projects;
+pub mod protected_mode;
 pub mod providers;
 pub mod redacted;
 pub mod reflex;
+pub mod reply_ratings;
+pub mod research;
 pub mod rewrite_stream;
+pub mod saved_items;
+pub mod scan;
 pub mod share_inbox;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
+pub mod shareable;
+pub mod skill_packs;
 pub mod spotlight;
 pub mod sse_lines;
 pub mod storefront;
 #[cfg(desktop)]
 pub mod stream_relay;
+pub mod study;
+pub mod temporary_chat;
 #[cfg(desktop)]
 pub mod theme_icon;
 #[cfg(desktop)]
 pub mod updates;
+pub mod voice;
+pub mod watch_relay;
 // Writing a timeline bundle to disk: plain file work, so it builds everywhere
 // even though only the desktop offers a folder picker to reach it.
 pub mod bible;
 pub mod score;
+#[cfg(desktop)]
+pub mod screen_awareness;
 pub mod shotlist;
 pub mod studio_actions;
 pub mod studio_ai;
@@ -191,6 +226,8 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
     // The Studio gallery streams to media elements by byte range (both shells).
     builder = carpe_diem::media_protocol::register(builder);
+    // Connector views, served apart from the app's page (ADR-0092).
+    builder = connectors::apps::register(builder);
     #[cfg(target_os = "android")]
     {
         builder = builder
@@ -302,6 +339,12 @@ pub fn run() {
             commands::list_session_folders,
             commands::assign_session_to_folder,
             commands::remove_session_from_folder,
+            documents::document_extract,
+            projects::project_get,
+            projects::project_save,
+            projects::project_file_add,
+            projects::project_file_delete,
+            projects::project_context,
             commands::list_dictionary_entries,
             commands::create_dictionary_entry,
             commands::update_dictionary_entry,
@@ -324,6 +367,11 @@ pub fn run() {
             commands::cancel_agent_task,
             commands::retry_agent_task,
             commands::fork_agent_task,
+            agent_lite::cancel::agent_lite_cancel,
+            agent_lite::python::agent_lite_python_reply,
+            agent_lite::controls::agent_lite_regenerate,
+            agent_lite::controls::agent_lite_edit_last,
+            agent_lite::controls::agent_lite_edit_branch,
             commands::list_agent_tool_events,
             commands::delete_agent_task,
             hermes_bridge::hermes_bridge_status,
@@ -389,8 +437,24 @@ pub fn run() {
             calendar::calendar_event,
             calendar::calendar_link_note,
             calendar::calendar_attach_note,
+            assignments::assignment_delete,
+            assignments::assignment_inbox,
+            assignments::assignment_list,
+            assignments::assignment_review,
+            assignments::assignment_run_now,
+            assignments::assignment_runs,
+            assignments::assignment_save,
+            assignments::assignment_set_paused,
+            moments::daily::daily_brief_get_settings,
+            moments::daily::daily_brief_prepare,
+            moments::daily::daily_brief_set_settings,
+            moments::daily::daily_brief_today,
+            moments::daily::follow_add,
+            moments::daily::follow_list,
+            moments::daily::follow_remove,
             moments::moments_get_settings,
             moments::moments_set_settings,
+            i18n::i18n_set_locale,
             actions::action_execute,
             assistants::assistant_list,
             assistants::assistant_save,
@@ -415,6 +479,8 @@ pub fn run() {
             assistants::media::assistant_media_list,
             assistants::media::assistant_media_get,
             assistants::media::assistant_media_execute,
+            image_refine::image_refine_estimate,
+            image_refine::image_refine_pass,
             actions::action_states,
             spotlight::spotlight_get_settings,
             spotlight::spotlight_set_settings,
@@ -502,9 +568,25 @@ pub fn run() {
             agent_hud::agent_hud_hide,
             agent_hud::agent_hud_set_layout,
             agent_hud::agent_hud_open_agent,
+            agent_browser::agent_browser_status,
+            agent_browser::agent_browser_settings,
+            agent_browser::agent_browser_save_settings,
+            agent_browser::agent_browser_answer_consent,
+            agent_browser::agent_browser_stop,
+            chat_bar::chat_bar_settings,
+            chat_bar::chat_bar_save_settings,
+            chat_bar::chat_bar_show,
+            chat_bar::chat_bar_hide,
+            chat_bar::chat_bar_set_height,
+            chat_bar::chat_bar_open_in_app,
+            screen_awareness::screen_awareness_settings,
+            screen_awareness::screen_awareness_save_settings,
+            screen_awareness::screen_awareness_capture,
+            screen_awareness::screen_awareness_screen_permission,
             meeting_hud::meeting_hud_latest_status,
             meeting_hud::meeting_hud_reopen,
             providers::provider_model_settings,
+            providers::default_chat_model,
             providers::list_venice_models,
             providers::set_venice_model,
             providers::set_venice_api_key,
@@ -542,6 +624,111 @@ pub fn run() {
             memory::memory_delete,
             memory::memory_clear,
             memory::extract::memory_extract,
+            memory::sources::memory_sources_for_task,
+            memory::sources::memory_sources_for_session,
+            personalization::personalization_get_settings,
+            personalization::personalization_set_settings,
+            reply_ratings::reply_rating_set,
+            reply_ratings::reply_ratings_list,
+            saved_items::saved_items_list,
+            saved_items::saved_item_save,
+            saved_items::saved_item_remove,
+            health::health_status,
+            health::health_choose,
+            health::health_refresh,
+            health::health_set_sync,
+            health::health_forget,
+            health::health_days,
+            finance::finance_status,
+            finance::finance_set_sync,
+            finance::finance_preview,
+            finance::finance_import,
+            finance::finance_transactions,
+            finance::finance_set_category,
+            finance::finance_overview,
+            finance::finance_rules,
+            finance::finance_rule_add,
+            finance::finance_rule_remove,
+            finance::finance_suggest,
+            finance::finance_resolve_suggestions,
+            finance::finance_forget,
+            finance::finance_export,
+            finance::finance_import_rules,
+            research::research_start,
+            connectors::connector_catalog,
+            connectors::connector_list,
+            connectors::connector_add,
+            connectors::connector_remove,
+            connectors::connector_set_enabled,
+            connectors::connector_set_tool_policy,
+            connectors::connector_sign_in,
+            connectors::connector_sign_out,
+            connectors::connector_set_token,
+            connectors::connector_refresh_tools,
+            connectors::calls::connector_call_get,
+            connectors::calls::connector_call_decide,
+            connectors::relay::connector_relay_settings,
+            connectors::relay::connector_relay_set_enabled,
+            connectors::apps::connector_app_get,
+            connectors::apps::connector_app_call_tool,
+            connectors::triggers::connector_triggers,
+            connectors::triggers::connector_trigger_save,
+            connectors::triggers::connector_trigger_delete,
+            skill_packs::skill_pack_list,
+            skill_packs::skill_pack_import,
+            skill_packs::skill_pack_set_enabled,
+            skill_packs::skill_pack_delete,
+            research::research_plan,
+            research::research_approve,
+            research::research_stop,
+            research::research_resume,
+            research::research_get,
+            research::research_list,
+            research::research_delete,
+            research::export::note_export_document,
+            study::study_mode,
+            study::study_prompt,
+            study::study_cards_add,
+            study::study_cards_due,
+            study::study_card_review,
+            study::study_cards_stats,
+            study::study_card_delete,
+            deliverables::commands::deliverable_path,
+            deliverables::commands::deliverable_open,
+            deliverables::commands::deliverable_list,
+            code_review::code_review_start,
+            code_review::code_review_status,
+            code_review::code_review_changes,
+            code_review::code_review_keep,
+            code_review::code_review_revert,
+            code_review::code_review_stop,
+            browser_extension::browser_extension_status,
+            browser_extension::browser_extension_connect,
+            browser_extension::browser_extension_cancel_pairing,
+            browser_extension::browser_extension_forget,
+            browser_extension::browser_extension_disconnect,
+            conversation_export::export_conversation,
+            conversation_export::data::export_chat_data,
+            temporary_chat::temporary_chat_create,
+            temporary_chat::temporary_chat_register,
+            temporary_chat::temporary_chat_discard,
+            temporary_chat::temporary_chat_sweep,
+            temporary_chat::temporary_chat_sessions,
+            account::account_share_conversation,
+            protected_mode::protected_mode_status,
+            protected_mode::protected_mode_enable,
+            protected_mode::protected_mode_disable,
+            protected_mode::protected_mode_verify,
+            protected_mode::protected_mode_set_restrictions,
+            protected_mode::protected_mode_check_model,
+            voice::voice_availability,
+            voice::voice_start,
+            voice::voice_stop,
+            voice::voice_reply,
+            voice::voice_turn_failed,
+            voice::voice_set_muted,
+            voice::voice_interrupt,
+            voice::voice_screen_frame,
             account::account_status,
             account::conversations::account_conversations_list,
             account::conversations::account_conversation_get,
@@ -560,6 +747,7 @@ pub fn run() {
             account::login::account_login_cancel,
             account::login::account_login_pending,
             account::account_devices,
+            account::security_events::account_security_events,
             account::account_revoke_device,
             account::account_logout,
             account::account_delete,
@@ -582,6 +770,43 @@ pub fn run() {
             errands::errand_settings,
             account::account_share_note,
             account::account_shares,
+            account::publications::account_publications,
+            account::publications::account_note_publication,
+            account::publications::account_publish_note,
+            account::publications::account_unpublish_page,
+            account::publications::account_save_site,
+            account::publications::account_delete_site,
+            account::publications::account_save_public_profile,
+            account::publications::account_delete_public_profile,
+            account::publications::account_set_public_avatar,
+            account::publications::account_publish_assistant,
+            account::publications::account_unpublish_assistant,
+            account::spaces::commands::spaces_status,
+            account::spaces::commands::spaces_set_enabled,
+            account::spaces::commands::spaces_create,
+            account::spaces::commands::spaces_get,
+            account::spaces::commands::spaces_sync,
+            account::spaces::commands::spaces_mark_read,
+            account::spaces::commands::spaces_invite,
+            account::spaces::commands::spaces_invitations,
+            account::spaces::commands::spaces_admit,
+            account::spaces::commands::spaces_revoke_invitation,
+            account::spaces::commands::spaces_open_invitation,
+            account::spaces::commands::spaces_accept_invitation,
+            account::spaces::commands::spaces_remove_member,
+            account::spaces::commands::spaces_leave,
+            account::spaces::commands::spaces_delete,
+            account::spaces::commands::spaces_forget,
+            account::spaces::commands::spaces_set_verified,
+            account::spaces::commands::spaces_save_project,
+            account::spaces::commands::spaces_save_note,
+            account::spaces::commands::spaces_delete_object,
+            account::spaces::commands::spaces_messages,
+            account::spaces::commands::spaces_new_conversation,
+            account::spaces::commands::spaces_send_message,
+            account::spaces::commands::spaces_retry_turn,
+            account::publications::catalog_assistant_listing,
+            account::publications::catalog_assistant_import,
             account::account_vault_share_carpe_diem,
             account::account_vault_restore_carpe_diem,
             carpe_diem::settings::carpe_diem_get_settings,
@@ -614,6 +839,7 @@ pub fn run() {
             carpe_diem::voices::cloned_voice_delete,
             carpe_diem::media::carpe_diem_media_catalog,
             carpe_diem::media::carpe_diem_text_pricing,
+            carpe_diem::media::carpe_diem_web_pricing,
             carpe_diem::media::carpe_diem_media_save_artifact,
             carpe_diem::media::carpe_diem_media_fetch_artifact,
             carpe_diem::media::carpe_diem_media_export_artifact,
@@ -647,6 +873,7 @@ pub fn run() {
         commands::search_everything,
         ask::ask_notes,
         share_inbox::import_shared_item,
+        share_inbox::pending_shared_items,
         intent_inbox::take_intent,
         intent_inbox::take_pending_intents,
         open_url::open_shortcuts_app,
@@ -678,6 +905,12 @@ pub fn run() {
         commands::list_session_folders,
         commands::assign_session_to_folder,
         commands::remove_session_from_folder,
+        documents::document_extract,
+        projects::project_get,
+        projects::project_save,
+        projects::project_file_add,
+        projects::project_file_delete,
+        projects::project_context,
         commands::list_dictionary_entries,
         commands::create_dictionary_entry,
         commands::update_dictionary_entry,
@@ -714,8 +947,24 @@ pub fn run() {
         calendar::calendar_event,
         calendar::calendar_link_note,
         calendar::calendar_attach_note,
+        assignments::assignment_delete,
+        assignments::assignment_inbox,
+        assignments::assignment_list,
+        assignments::assignment_review,
+        assignments::assignment_run_now,
+        assignments::assignment_runs,
+        assignments::assignment_save,
+        assignments::assignment_set_paused,
+        moments::daily::daily_brief_get_settings,
+        moments::daily::daily_brief_prepare,
+        moments::daily::daily_brief_set_settings,
+        moments::daily::daily_brief_today,
+        moments::daily::follow_add,
+        moments::daily::follow_list,
+        moments::daily::follow_remove,
         moments::moments_get_settings,
         moments::moments_set_settings,
+        i18n::i18n_set_locale,
         actions::action_execute,
         assistants::assistant_list,
         assistants::assistant_save,
@@ -740,6 +989,8 @@ pub fn run() {
         assistants::media::assistant_media_list,
         assistants::media::assistant_media_get,
         assistants::media::assistant_media_execute,
+        image_refine::image_refine_estimate,
+        image_refine::image_refine_pass,
         actions::action_states,
         spotlight::spotlight_get_settings,
         spotlight::spotlight_set_settings,
@@ -791,6 +1042,11 @@ pub fn run() {
         dictation_mobile::mobile_list_dictation_history,
         dictation_mobile::mobile_delete_dictation_history_item,
         agent_lite::agent_lite_run,
+        agent_lite::cancel::agent_lite_cancel,
+        agent_lite::python::agent_lite_python_reply,
+        agent_lite::controls::agent_lite_regenerate,
+        agent_lite::controls::agent_lite_edit_last,
+        agent_lite::controls::agent_lite_edit_branch,
         #[cfg(target_os = "ios")]
         photos_ios::save_to_photos,
         #[cfg(target_os = "ios")]
@@ -803,9 +1059,13 @@ pub fn run() {
         android_exports::share_text,
         #[cfg(target_os = "android")]
         android_exports::share_file,
+        scan::commands::document_scan,
+        scan::commands::document_scan_pdf_exists,
+        scan::commands::document_scan_share,
         #[cfg(target_os = "ios")]
         audio::ios_session::set_playback_audio_session,
         providers::provider_model_settings,
+        providers::default_chat_model,
         providers::list_venice_models,
         providers::set_venice_model,
         providers::set_venice_api_key,
@@ -837,6 +1097,100 @@ pub fn run() {
         memory::memory_delete,
         memory::memory_clear,
         memory::extract::memory_extract,
+        memory::sources::memory_sources_for_task,
+        memory::sources::memory_sources_for_session,
+        personalization::personalization_get_settings,
+        personalization::personalization_set_settings,
+        reply_ratings::reply_rating_set,
+        reply_ratings::reply_ratings_list,
+        saved_items::saved_items_list,
+        saved_items::saved_item_save,
+        saved_items::saved_item_remove,
+        health::health_status,
+        health::health_choose,
+        health::health_refresh,
+        health::health_set_sync,
+        health::health_forget,
+        health::health_days,
+        finance::finance_status,
+        finance::finance_set_sync,
+        finance::finance_preview,
+        finance::finance_import,
+        finance::finance_transactions,
+        finance::finance_set_category,
+        finance::finance_overview,
+        finance::finance_rules,
+        finance::finance_rule_add,
+        finance::finance_rule_remove,
+        finance::finance_suggest,
+        finance::finance_resolve_suggestions,
+        finance::finance_forget,
+        finance::finance_export,
+        finance::finance_import_rules,
+        research::research_start,
+        connectors::connector_catalog,
+        connectors::connector_list,
+        connectors::connector_add,
+        connectors::connector_remove,
+        connectors::connector_set_enabled,
+        connectors::connector_set_tool_policy,
+        connectors::connector_sign_in,
+        connectors::connector_sign_out,
+        connectors::connector_set_token,
+        connectors::connector_refresh_tools,
+        connectors::calls::connector_call_get,
+        connectors::calls::connector_call_decide,
+        connectors::relay::connector_relay_settings,
+        connectors::relay::connector_relay_set_enabled,
+        connectors::apps::connector_app_get,
+        connectors::apps::connector_app_call_tool,
+        connectors::triggers::connector_triggers,
+        connectors::triggers::connector_trigger_save,
+        connectors::triggers::connector_trigger_delete,
+        skill_packs::skill_pack_list,
+        skill_packs::skill_pack_import,
+        skill_packs::skill_pack_set_enabled,
+        skill_packs::skill_pack_delete,
+        research::research_plan,
+        research::research_approve,
+        research::research_stop,
+        research::research_resume,
+        research::research_get,
+        research::research_list,
+        research::research_delete,
+        research::export::note_export_document,
+        study::study_mode,
+        study::study_prompt,
+        study::study_cards_add,
+        study::study_cards_due,
+        study::study_card_review,
+        study::study_cards_stats,
+        study::study_card_delete,
+        deliverables::commands::deliverable_path,
+        deliverables::commands::deliverable_open,
+        deliverables::commands::deliverable_list,
+        conversation_export::export_conversation,
+        conversation_export::data::export_chat_data,
+        temporary_chat::temporary_chat_create,
+        temporary_chat::temporary_chat_register,
+        temporary_chat::temporary_chat_discard,
+        temporary_chat::temporary_chat_sweep,
+        temporary_chat::temporary_chat_sessions,
+        account::account_share_conversation,
+        protected_mode::protected_mode_status,
+        protected_mode::protected_mode_enable,
+        protected_mode::protected_mode_disable,
+        protected_mode::protected_mode_verify,
+        protected_mode::protected_mode_set_restrictions,
+        protected_mode::protected_mode_check_model,
+        voice::voice_availability,
+        voice::voice_start,
+        voice::voice_stop,
+        voice::voice_reply,
+        voice::voice_turn_failed,
+        voice::voice_set_muted,
+        voice::voice_interrupt,
+        voice::voice_screen_frame,
         account::account_status,
         account::conversations::account_conversations_list,
         account::conversations::account_conversation_get,
@@ -855,6 +1209,7 @@ pub fn run() {
         account::login::account_login_cancel,
         account::login::account_login_pending,
         account::account_devices,
+        account::security_events::account_security_events,
         account::account_revoke_device,
         account::account_logout,
         account::account_delete,
@@ -877,6 +1232,43 @@ pub fn run() {
         errands::errand_settings,
         account::account_share_note,
         account::account_shares,
+        account::publications::account_publications,
+        account::publications::account_note_publication,
+        account::publications::account_publish_note,
+        account::publications::account_unpublish_page,
+        account::publications::account_save_site,
+        account::publications::account_delete_site,
+        account::publications::account_save_public_profile,
+        account::publications::account_delete_public_profile,
+        account::publications::account_set_public_avatar,
+        account::publications::account_publish_assistant,
+        account::publications::account_unpublish_assistant,
+        account::spaces::commands::spaces_status,
+        account::spaces::commands::spaces_set_enabled,
+        account::spaces::commands::spaces_create,
+        account::spaces::commands::spaces_get,
+        account::spaces::commands::spaces_sync,
+        account::spaces::commands::spaces_mark_read,
+        account::spaces::commands::spaces_invite,
+        account::spaces::commands::spaces_invitations,
+        account::spaces::commands::spaces_admit,
+        account::spaces::commands::spaces_revoke_invitation,
+        account::spaces::commands::spaces_open_invitation,
+        account::spaces::commands::spaces_accept_invitation,
+        account::spaces::commands::spaces_remove_member,
+        account::spaces::commands::spaces_leave,
+        account::spaces::commands::spaces_delete,
+        account::spaces::commands::spaces_forget,
+        account::spaces::commands::spaces_set_verified,
+        account::spaces::commands::spaces_save_project,
+        account::spaces::commands::spaces_save_note,
+        account::spaces::commands::spaces_delete_object,
+        account::spaces::commands::spaces_messages,
+        account::spaces::commands::spaces_new_conversation,
+        account::spaces::commands::spaces_send_message,
+        account::spaces::commands::spaces_retry_turn,
+        account::publications::catalog_assistant_listing,
+        account::publications::catalog_assistant_import,
         account::account_vault_share_carpe_diem,
         account::account_vault_restore_carpe_diem,
         carpe_diem::settings::carpe_diem_get_settings,
@@ -909,6 +1301,7 @@ pub fn run() {
         carpe_diem::voices::cloned_voice_delete,
         carpe_diem::media::carpe_diem_media_catalog,
         carpe_diem::media::carpe_diem_text_pricing,
+        carpe_diem::media::carpe_diem_web_pricing,
         carpe_diem::media::carpe_diem_media_save_artifact,
         carpe_diem::media::carpe_diem_media_fetch_artifact,
         carpe_diem::media::carpe_diem_media_export_artifact,
@@ -937,6 +1330,8 @@ pub fn run() {
                 menu_bar::setup(app)?;
             }
             providers::setup(app);
+            // Before anything can post a notification (ADR-0047 addendum).
+            i18n::setup(app);
             // Debug-only keychain self-test for mobile bring-up: the iOS
             // keychain needs the app's signing identity/entitlements, which a
             // bare test binary can't exercise. Logs a round-trip result to the
@@ -952,6 +1347,14 @@ pub fn run() {
                     });
                 eprintln!("[subrosa] keychain probe: {probe:?}");
             }
+            // Debug-only: `SUBROSA_PYTHON_SELFTEST=1` runs the phone's Python
+            // checks (ADR-0086) through the real bridge once it answers.
+            #[cfg(debug_assertions)]
+            agent_lite::python::selftest::spawn_if_requested(app.handle());
+            // Debug-only: `SUBROSA_VOICE_SELFTEST=1` runs the voice loop once
+            // against the real services, without a microphone (ADR-0093).
+            #[cfg(debug_assertions)]
+            voice::selftest::spawn_if_requested(app.handle());
             // Pause an active recording when a call or Siri interrupts the
             // audio session (the input goes silent anyway; a clean pause is
             // resumable from the UI).
@@ -965,6 +1368,10 @@ pub fn run() {
             // through the one kept here. See open_url.
             #[cfg(target_os = "ios")]
             open_url::remember_app(app.handle());
+            // Questions from the Apple Watch (ADR-0095): the session is
+            // activated now, so a launch in the background for a watch
+            // message receives it.
+            watch_relay::setup(app.handle());
             // Carpe Diem fork: load settings, then start the june-api sidecar
             // pointed at Carpe Diem (or mark "unconfigured" for onboarding).
             // On desktop the sidecar is a child process; on mobile it runs
@@ -974,6 +1381,8 @@ pub fn run() {
             carpe_diem::sidecar::setup(app);
             diagnostics::mark("sidecar setup");
             memory::setup(app);
+            personalization::setup(app);
+            protected_mode::setup(app);
             ask::semantic::setup(app);
             reflex::setup(app);
             egress_ledger::spawn_flusher(app.handle());
@@ -983,9 +1392,14 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 council::seat_models::setup(app);
+                browser_extension::setup(app);
                 updates::setup(app);
                 dictation::setup(app);
                 agent_hud::setup(app);
+                // After dictation: the chat bar's shortcut and screen
+                // awareness both speak through its helper (ADR-0094).
+                chat_bar::setup(app);
+                screen_awareness::setup(app);
                 meeting_detection::setup(app);
             }
             repair_agent_task_statuses_on_app_start(app);
@@ -997,6 +1411,11 @@ pub fn run() {
             // previous session. `Resumed` doesn't fire on a cold launch, so
             // the sweep has to run here too.
             background::sweep_detached(app.handle());
+            // Assignments, the daily brief and errands while the app is open,
+            // the menu bar included (ADR-0091).
+            assignments::start_clock(app.handle());
+            // Connector sign-ins coming back, and connector triggers (ADR-0092).
+            connectors::setup(app.handle());
             #[cfg(desktop)]
             {
                 hermes_bridge::start_on_app_start(app);

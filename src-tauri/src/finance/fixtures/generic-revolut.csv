@@ -1,0 +1,4 @@
+Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance
+CARD_PAYMENT,Current,2026-09-03 12:01:22,2026-09-04 09:10:00,Spotify,-10.95,0.00,CHF,COMPLETED,152.10
+TOPUP,Current,2026-09-01 08:00:00,2026-09-01 08:00:05,Top-up by *1234,200.00,0.00,CHF,COMPLETED,163.05
+CARD_PAYMENT,Current,2026-09-05 19:30:00,2026-09-06 10:00:00,"Restaurant Le Lyrique, Genève",-48.00,0.00,EUR,COMPLETED,104.10

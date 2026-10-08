@@ -39,6 +39,37 @@ pub struct Config {
     /// and the assertion route answers 404. See ADR 0069.
     #[serde(default)]
     pub carpe_diem: Option<CarpeDiem>,
+    /// Absent means nothing can be published: the owner routes, the catalog
+    /// and the public pages all answer 404. See ADR 0097.
+    #[serde(default)]
+    pub publication: Option<Publication>,
+}
+/// Public pages, profiles and the assistant catalog (ADR 0097).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Publication {
+    /// The origin public pages are served from, for example
+    /// `https://pages.example.org`. Outside development it must differ from
+    /// `public_url`: content written by anybody never shares an origin with
+    /// the account pages, their cookies and the browser vault.
+    pub url: String,
+    /// Terms the operator refuses in public content, matched as lowercase
+    /// substrings of every field. Empty by default; documented in
+    /// `docs/public-content-rules.md`.
+    #[serde(default)]
+    pub blocked_terms: Vec<String>,
+}
+impl Publication {
+    /// `host[:port]`, as a `Host` header names this origin.
+    pub fn authority(&self) -> String {
+        Url::parse(&self.url)
+            .ok()
+            .map(|url| match (url.host_str(), url.port()) {
+                (Some(host), Some(port)) => format!("{host}:{port}"),
+                (Some(host), None) => host.to_string(),
+                _ => String::new(),
+            })
+            .unwrap_or_default()
+    }
 }
 /// The header a PKCS#8 PEM starts with. Spelled in two halves because the
 /// repository hygiene check rejects the whole marker anywhere in the tree, as
@@ -60,6 +91,28 @@ pub struct CarpeDiem {
     pub kid: String,
     /// PKCS#8 PEM of a P-256 private key.
     pub signing_key: Secret,
+    /// The most a browser device's key may spend in any 24 hours, in Carpe
+    /// Diem credits (hundredths of a dollar). Carpe Diem enforces it and may
+    /// lower it, never raise it (ADR 0096).
+    #[serde(default = "browser_daily_cap_credits")]
+    pub browser_daily_cap_credits: u32,
+    /// How long a browser device's key lives before the browser asks again,
+    /// which it can only do while it is still a device.
+    #[serde(default = "browser_key_days")]
+    pub browser_key_days: u32,
+}
+/// Two dollars a day: a working day of chat, and what an attacker who ran
+/// script on the site could burn per day before anyone revoked the browser.
+pub const BROWSER_DAILY_CAP_CREDITS: u32 = 200;
+pub const BROWSER_KEY_DAYS: u32 = 7;
+/// The ceilings this service will ever ask for. Carpe Diem holds its own.
+pub const BROWSER_DAILY_CAP_CEILING: u32 = 5000;
+pub const BROWSER_KEY_DAYS_CEILING: u32 = 7;
+fn browser_daily_cap_credits() -> u32 {
+    BROWSER_DAILY_CAP_CREDITS
+}
+fn browser_key_days() -> u32 {
+    BROWSER_KEY_DAYS
 }
 impl CarpeDiem {
     pub fn operator_url(&self) -> &str {
@@ -181,6 +234,9 @@ impl Config {
         if let Some(carpe_diem) = &self.carpe_diem {
             self.validate_carpe_diem(carpe_diem)?;
         }
+        if let Some(publication) = &self.publication {
+            self.validate_publication(publication, &public)?;
+        }
         if self.storage.kind != "s3" && !(self.development && self.storage.kind == "local") {
             return Err("production requires S3 storage");
         }
@@ -234,6 +290,30 @@ impl Config {
         }
         Ok(())
     }
+    fn validate_publication(
+        &self,
+        publication: &Publication,
+        public: &Url,
+    ) -> Result<(), &'static str> {
+        let url = Url::parse(&publication.url).map_err(|_| "invalid publication URL")?;
+        let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+        if url.scheme() != "https" && !(self.development && loopback && url.scheme() == "http") {
+            return Err("the publication origin requires HTTPS except loopback development");
+        }
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || url.path() != "/"
+            || publication.url.ends_with('/')
+        {
+            return Err("publication url must be an origin without trailing slash");
+        }
+        if !self.development && url.host_str() == public.host_str() {
+            return Err("public pages must be served from an origin apart from the account");
+        }
+        Ok(())
+    }
     fn validate_carpe_diem(&self, carpe_diem: &CarpeDiem) -> Result<(), &'static str> {
         for value in [carpe_diem.audience.as_str(), carpe_diem.operator_url()] {
             let url = Url::parse(value).map_err(|_| "invalid Carpe Diem URL")?;
@@ -269,6 +349,11 @@ impl Config {
             .starts_with(PKCS8_HEADER)
         {
             return Err("Carpe Diem signing key must be a PKCS#8 PEM");
+        }
+        if !(1..=BROWSER_DAILY_CAP_CEILING).contains(&carpe_diem.browser_daily_cap_credits)
+            || !(1..=BROWSER_KEY_DAYS_CEILING).contains(&carpe_diem.browser_key_days)
+        {
+            return Err("browser key bound must be 1 to 5000 credits a day and 1 to 7 days");
         }
         Ok(())
     }
@@ -317,7 +402,48 @@ mod tests {
             trusted_proxies: Vec::new(),
             passkey_android_cert_fingerprints: android_certificates(),
             carpe_diem: None,
+            publication: None,
         }
+    }
+
+    #[test]
+    fn public_pages_never_share_the_account_origin_outside_development()
+    -> Result<(), url::ParseError> {
+        let mut config = development();
+        config.publication = Some(Publication {
+            url: "http://127.0.0.1:8789".into(),
+            blocked_terms: Vec::new(),
+        });
+        assert_eq!(config.validate(), Ok(()));
+        assert_eq!(
+            config.publication.as_ref().map(Publication::authority),
+            Some("127.0.0.1:8789".into())
+        );
+        config.development = false;
+        config.public_url = "https://account.example.invalid".into();
+        let public = Url::parse(&config.public_url)?;
+        let check = |url: &str| {
+            config.validate_publication(
+                &Publication {
+                    url: url.into(),
+                    blocked_terms: Vec::new(),
+                },
+                &public,
+            )
+        };
+        assert_eq!(
+            check("https://account.example.invalid"),
+            Err("public pages must be served from an origin apart from the account")
+        );
+        for bad in [
+            "http://pages.example.invalid",
+            "https://pages.example.invalid/",
+            "https://pages.example.invalid/p",
+        ] {
+            assert!(check(bad).is_err(), "{bad}");
+        }
+        assert_eq!(check("https://pages.example.invalid"), Ok(()));
+        Ok(())
     }
 
     fn partner(audience: &str) -> CarpeDiem {
@@ -326,6 +452,22 @@ mod tests {
             operator_url: None,
             kid: "sr-test".into(),
             signing_key: Secret(format!("{PKCS8_HEADER}\nAAAA\n")),
+            browser_daily_cap_credits: BROWSER_DAILY_CAP_CREDITS,
+            browser_key_days: BROWSER_KEY_DAYS,
+        }
+    }
+
+    #[test]
+    fn the_browser_bound_stays_within_its_ceilings() {
+        let mut config = development();
+        let mut carpe_diem = partner("http://127.0.0.1:3001");
+        config.carpe_diem = Some(carpe_diem.clone());
+        assert!(config.validate().is_ok());
+        for (cap, days) in [(0, 7), (5001, 7), (200, 0), (200, 8)] {
+            carpe_diem.browser_daily_cap_credits = cap;
+            carpe_diem.browser_key_days = days;
+            config.carpe_diem = Some(carpe_diem.clone());
+            assert!(config.validate().is_err(), "{cap} credits, {days} days");
         }
     }
 

@@ -39,13 +39,14 @@ import {
   StudioSetting,
   StudioToggle,
 } from "./StudioControls";
+import { TryOnPanel } from "../../../studio/TryOnPanel";
 import { RetouchLauncher } from "./RetouchLauncher";
 import { Dock, DockComposer } from "./StudioDock";
 import { ReferencePicker } from "./StudioLightbox";
 import { type StageResult, StudioStage } from "./StudioStage";
 
 /** Which of the four image sub-modes the form is in. */
-export type ImageMode = "generate" | "edit" | "compose" | "upscale" | "cutout";
+export type ImageMode = "generate" | "edit" | "compose" | "tryon" | "upscale" | "cutout";
 
 /**
  * Making a picture: generate, retouch, upscale, cut out.
@@ -362,8 +363,8 @@ export function ImagePanel({
   }, [upscaleRefs, busy, onGenerated, beginWait, landResult]);
 
   const modes: ImageMode[] = cutoutAvailable
-    ? ["generate", "edit", "compose", "upscale", "cutout"]
-    : ["generate", "edit", "compose", "upscale"];
+    ? ["generate", "edit", "compose", "tryon", "upscale", "cutout"]
+    : ["generate", "edit", "compose", "tryon", "upscale"];
 
   /** On the scene: the last render, or - while upscaling or cutting out - the
    * picked source, which the result then wipes over. Nothing made in this
@@ -404,7 +405,7 @@ export function ImagePanel({
 
   return (
     <div className="mobile-studio-form">
-      {mode === "edit" || mode === "compose" ? null : (
+      {mode === "edit" || mode === "compose" || mode === "tryon" ? null : (
         <StudioStage
           aspect={mode === "generate" ? effectiveAspect || "1:1" : "1:1"}
           result={sceneResult}
@@ -432,9 +433,11 @@ export function ImagePanel({
                 ? t("Touch up")
                 : entry === "compose"
                   ? t("Compose")
-                  : entry === "upscale"
-                    ? t("Upscale")
-                    : t("Cutout")}
+                  : entry === "tryon"
+                    ? t("Try it on")
+                    : entry === "upscale"
+                      ? t("Upscale")
+                      : t("Cutout")}
           </button>
         ))}
       </div>
@@ -498,6 +501,8 @@ export function ImagePanel({
         <RetouchLauncher galleryImages={galleryImages} />
       ) : mode === "compose" ? (
         <RetouchLauncher galleryImages={galleryImages} purpose="compose" />
+      ) : mode === "tryon" ? (
+        <TryOnPanel onDone={() => onGenerated()} />
       ) : (
         <>
           {mode === "generate" ? (

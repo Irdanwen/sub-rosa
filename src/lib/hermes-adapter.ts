@@ -5,7 +5,15 @@ import {
   type HermesSessionInfo,
   type HermesSessionMessage,
 } from "./tauri";
+import { stripReasoningEffortAlias } from "./reasoning-effort";
+import { ASSIGNMENT_RUN_SOURCE, hasAssignmentTag, withoutAssignmentTag } from "./assignment-runs";
 import { parseHermesProcessNotice } from "./hermes-process-notice";
+import {
+  loadTemporarySessions,
+  sweepTemporarySessions,
+  withoutLeftTemporaryChats,
+  withoutTemporaryChats,
+} from "./temporary-chat";
 
 export type HermesSessionListOptions = {
   limit?: number;
@@ -16,7 +24,12 @@ export type HermesSessionListOptions = {
   query?: string;
 };
 
+let temporarySessionsLoaded: Promise<void> | undefined;
+let temporarySessionsSwept = false;
+
 export async function listHermesSessions(options: HermesSessionListOptions = {}) {
+  temporarySessionsLoaded ??= loadTemporarySessions();
+  await temporarySessionsLoaded;
   const response = await hermesBridgeSessions({
     limit: 100,
     offset: 0,
@@ -32,7 +45,15 @@ export async function listHermesSessions(options: HermesSessionListOptions = {})
     order: "recent",
     ...options,
   });
-  return normalizeHermesSessionsResponse(response);
+  // The runtime answered, so it can delete what an earlier launch left.
+  if (!temporarySessionsSwept) {
+    temporarySessionsSwept = true;
+    sweepTemporarySessions();
+  }
+  const sessions = normalizeHermesSessionsResponse(response);
+  // A temporary chat is never a search result (ADR-0083). The one open right
+  // now stays in the plain list, which the workspace keeps its selection by.
+  return options.query ? withoutTemporaryChats(sessions) : withoutLeftTemporaryChats(sessions);
 }
 
 export async function listHermesSessionMessages(sessionId: string) {
@@ -50,7 +71,15 @@ export function normalizeHermesSessionsResponse(response: unknown) {
     .filter((session) => !isDelegatedSubagentSession(session))
     .map(withScheduledRunDisplay)
     .map(withProcessNoticeDisplay)
+    .map(withCatalogModelId)
     .sort((a, b) => sessionTimestamp(b).localeCompare(sessionTimestamp(a)));
+}
+
+/** Hermes stores the model string it was handed, which carries the reasoning
+ * effort alias on the desktop (ADR-0080). The app reads the catalog id. */
+function withCatalogModelId(session: HermesSessionInfo): HermesSessionInfo {
+  const model = stripReasoningEffortAlias(session.model);
+  return model === session.model ? session : { ...session, model };
 }
 
 function isDelegatedSubagentSession(session: HermesSessionInfo) {
@@ -203,11 +232,24 @@ export function isReplaceableScheduledRunTitle(title: unknown) {
 
 /** Gives a scheduled-run session a readable title and a clean preview when the
  * stored ones are empty or still the raw delivery preamble, so every list
- * surface stops showing "[IMPORTANT…". Non-cron sessions pass through. */
+ * surface stops showing "[IMPORTANT…". Non-cron sessions pass through.
+ *
+ * An assignment's run rides on a one-shot cron job whose name carries the
+ * assignment tag (ADR-0091): its session is not a routine run, so it leaves
+ * the routine history (source "assignment") and shows the assignment's own
+ * title, never the tag. */
 function withScheduledRunDisplay(session: HermesSessionInfo): HermesSessionInfo {
   if (!isScheduledRunSession(session)) return session;
   const cleanedPreview = stripScheduledRunPreamble(session.preview ?? "");
   const storedTitle = session.title?.trim() ?? "";
+  if (hasAssignmentTag(storedTitle)) {
+    return {
+      ...session,
+      source: ASSIGNMENT_RUN_SOURCE,
+      title: withoutAssignmentTag(storedTitle),
+      preview: cleanedPreview || session.preview,
+    };
+  }
   // Replace the stored title when it's empty or is the cron scaffolding — a
   // stored title is often truncated ("[IMPORTANT: You are running as"), so a
   // leading "[IMPORTANT" is enough to treat it as raw here, where we already

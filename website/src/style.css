@@ -679,29 +679,50 @@ th {
 .button:active {
   transform: scale(0.97);
 }
+/* The language switch shows the current language's code; the native select
+   laid over it lists the six languages by their own names. */
 .locale-switch {
+  position: relative;
   display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
   margin: 0;
-  padding: 3px;
-  gap: 2px;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
-}
-.locale-switch button {
-  min-width: 37px;
-  min-height: 34px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
+  color: var(--foreground);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
-.locale-switch button[aria-pressed="true"] {
-  background: var(--foreground);
-  color: var(--background);
+.locale-switch:hover {
+  border-color: var(--border-hover);
+}
+.locale-switch span::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 0 3px 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+}
+.locale-switch select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  /* 16px keeps a phone from zooming the page when the list opens. */
+  font-size: 16px;
+}
+.locale-switch:has(select:focus-visible) {
+  outline: 3px solid var(--brand);
+  outline-offset: 3px;
 }
 .hero {
   min-height: 680px;
@@ -1551,6 +1572,52 @@ th {
   border-top: 1px solid var(--border);
 }
 
+/* Pipe tables in a note or a reply (lib/markdown.tsx). The table keeps its
+   natural width and its box scrolls sideways, so a phone scrolls the table
+   rather than the page. Cells wrap at word boundaries only: `.reader`'s
+   `anywhere` would let a column collapse to a letter wide instead of
+   scrolling. Alignment comes from classes, never a `style` attribute (CSP). */
+.reader-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.reader-table {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: 0.9375rem;
+}
+.reader-table th,
+.reader-table td {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+  min-width: 6ch;
+  max-width: 40ch;
+  border-bottom: 1px solid var(--border);
+}
+.reader-table th + th,
+.reader-table td + td {
+  border-left: 1px solid var(--border);
+}
+.reader-table thead th {
+  font-weight: 600;
+  background: var(--surface);
+}
+.reader-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.reader-table .align-center {
+  text-align: center;
+}
+.reader-table .align-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* End of pipe tables. */
+
 .note-list {
   display: grid;
   gap: 8px;
@@ -1572,6 +1639,35 @@ th {
 }
 .note-row:hover {
   border-color: var(--brand);
+}
+
+/* Security history on the account page: one line per event, newest first. */
+.security-history {
+  scroll-margin-top: 24px;
+}
+.account-quick-grid + .security-history {
+  margin-top: 24px;
+}
+.security-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.security-history-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+  flex-wrap: wrap;
+  padding-block: 12px;
+  border-top: 1px solid var(--border);
+}
+.security-history-list li:first-child {
+  border-top: 0;
+}
+.security-history-list time {
+  color: var(--muted);
+  font-size: 14px;
 }
 
 /* Public documentation */
@@ -5376,4 +5472,63 @@ button.chart-hit {
 }
 .compare-cols-3 {
   --compare-columns: 3;
+}
+
+/* A shared conversation (ADR-0053, addendum): questions to one side, replies
+   to the other, chat blocks as plain lists inside the reply. */
+.share-conversation {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.share-turn {
+  max-width: min(100%, 720px);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  background: var(--surface);
+}
+.share-turn[data-role="user"] {
+  justify-self: end;
+  background: var(--accent-faint);
+  border-color: var(--accent-line);
+}
+.share-turn[data-role="assistant"] {
+  justify-self: start;
+}
+.share-turn-author {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.share-turn-body {
+  overflow-wrap: anywhere;
+}
+.share-turn-body > * + * {
+  margin-top: 12px;
+}
+.chat-block {
+  border-left: 2px solid var(--accent-line);
+  padding-left: 12px;
+}
+.chat-block h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+.chat-block ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.chat-block li + li {
+  margin-top: 6px;
+}
+.chat-block p {
+  margin: 2px 0 0;
+}
+.chat-block-meta,
+.chat-block-missing {
+  color: var(--muted);
 }

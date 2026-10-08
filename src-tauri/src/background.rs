@@ -35,14 +35,32 @@ pub async fn sweep(app: &AppHandle) {
     // and file them in the gallery.
     crate::carpe_diem::jobs::resume_all(app).await;
     crate::assistants::resume_unfinished(app).await;
+    // A project's files, read once like assistant references (ADR-0085).
+    crate::projects::files::resume_unfinished(app).await;
     crate::assistants::media::resume(app).await;
     // A dictation whose transcription never came back.
     #[cfg(mobile)]
     crate::dictation_mobile::resume_pending(app).await;
+    // Assignments and scheduled tasks (ADR-0091): close the runs that
+    // finished, run the slot that came due while the app was away, once and
+    // late. Before the chat resume, so a run's turn is resumed with its own
+    // tools rather than a chat's.
+    crate::assignments::tick(app).await;
+    crate::moments::daily::tick(app).await;
+    // Connector triggers get their first look at a launch or a resume
+    // (ADR-0092); the minute clock takes over while the app stays open.
+    crate::connectors::triggers::tick(app).await;
     // A chat turn cut off between the user's message and the reply.
     crate::agent_lite::resume_interrupted_turns(app).await;
+    // A question asked from the Apple Watch whose answer has not reached the
+    // wrist yet (ADR-0095). After the chat resume, which may have just
+    // written it.
+    #[cfg(target_os = "ios")]
+    crate::watch_relay::deliver_pending(app).await;
     // A chat whose first reply landed but whose title never came back.
     crate::chat_titles::resume_pending(app).await;
+    // A shared project's unsent writes and assistant replies (ADR-0098).
+    crate::account::spaces::resume(app).await;
     // A link the user pasted whose download never finished. Cross-platform:
     // the desktop gets killed mid-download too.
     crate::ingest::resume_unfinished(app).await;
@@ -50,11 +68,15 @@ pub async fn sweep(app: &AppHandle) {
     // sweep on purpose: an errand that started before the app died is
     // finished by that queue, and this pass only has to notice and close it.
     crate::errands::run_pending(app).await;
+    // A connector call a browser tab is waiting for (ADR-0107).
+    crate::connectors::relay::run_pending(app).await;
     // A long-form summary is a dozen model calls over several minutes, which
     // on iOS is several lifetimes of a foreground session. Cross-platform on
     // purpose: the desktop gets killed too.
     crate::longform::resume_unfinished(app).await;
     crate::shotlist::resume_unfinished(app).await;
+    // A deep research run is minutes of searches and reads: a row per step.
+    crate::research::resume_unfinished(app).await;
     // A sitting spans several model calls and a cycle spans an agent run that
     // can last an hour. Desktop-only, because a mandate has nothing to be
     // handed to on iOS (ADR-0034).
@@ -92,5 +114,9 @@ pub fn sweep_detached(app: &AppHandle) {
 /// waking the app up for a background window that finds nothing to do costs
 /// future scheduling priority.
 pub fn has_pending_work() -> bool {
-    crate::ios_background::work_in_flight() || crate::carpe_diem::jobs::has_active()
+    crate::ios_background::work_in_flight()
+        || crate::carpe_diem::jobs::has_active()
+        // A scheduled task or assignment this phone runs: iOS may wake the
+        // app now and then to look, opportunistically (ADR-0091).
+        || crate::assignments::has_scheduled_work()
 }

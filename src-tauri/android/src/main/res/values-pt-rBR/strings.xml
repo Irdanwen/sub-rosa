@@ -1,0 +1,17 @@
+<resources>
+    <string name="subrosa_recording_channel">Gravação do microfone</string>
+    <string name="subrosa_recording_title">O Sub Rosa está gravando</string>
+    <string name="subrosa_recording_description">Toque para voltar à sua gravação.</string>
+    <string name="subrosa_processing_channel">Transcrição</string>
+    <string name="subrosa_processing_title">O Sub Rosa está transcrevendo</string>
+    <string name="subrosa_processing_description">Sua nota vai ficar pronta em breve.</string>
+    <string name="subrosa_share_failed">O Sub Rosa não conseguiu receber o que você compartilhou. Tente novamente.</string>
+    <string name="subrosa_share_label">Sub Rosa</string>
+    <string name="subrosa_widget_label">Sub Rosa</string>
+    <string name="subrosa_widget_description">Pergunte, dite ou grave com um toque.</string>
+    <string name="subrosa_widget_ask">Perguntar</string>
+    <string name="subrosa_widget_dictate">Ditar</string>
+    <string name="subrosa_widget_record">Gravar</string>
+    <string name="subrosa_health_rationale_title">Sua saúde no Sub Rosa</string>
+    <string name="subrosa_health_rationale_body">O Sub Rosa lê somente as medidas de saúde que você escolhe no app (passos, sono, frequência cardíaca, frequência cardíaca em repouso, treinos, peso). Ele guarda um resumo por dia neste celular para mostrar gráficos e responder às suas perguntas. Ele nunca grava no Health Connect. Nada sai deste celular a menos que você ative a sincronização de uma medida no Sub Rosa, e você pode apagar o que ele guardou a qualquer momento.</string>
+</resources>

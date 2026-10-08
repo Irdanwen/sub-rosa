@@ -1,0 +1,163 @@
+/* Personalization and memory sources (ADR-0081). */
+
+.personalization-fields {
+  display: grid;
+  gap: var(--sp-5);
+  margin-top: var(--sp-4);
+}
+
+.personalization-field {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.personalization-counter {
+  justify-self: end;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.personalization-counter[data-over] {
+  color: var(--destructive);
+}
+
+.personalization-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+}
+
+/* The read-aloud voice, below the two answers. */
+.voice-settings {
+  margin-top: var(--sp-4);
+}
+
+.voice-settings-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
+/* Phone: the two answers are full-width fields inside a settings group. */
+.personalization-mobile-field {
+  display: grid;
+  gap: var(--sp-2);
+  width: 100%;
+}
+
+.personalization-mobile-field textarea {
+  width: 100%;
+  min-height: 112px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  /* The shell's floor: a smaller field zooms the page on focus. */
+  font-size: max(16px, var(--fs-md));
+  line-height: 1.45;
+  resize: none;
+}
+
+.personalization-mobile-save {
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.personalization-mobile-save:disabled {
+  opacity: 0.35;
+}
+
+/* "Used 3 memories" under a phone reply, and its sheet. */
+.memory-sources-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 28px;
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.memory-sources-list {
+  display: grid;
+  gap: var(--sp-2);
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-4);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.memory-sources-item {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.memory-sources-text {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.memory-sources-text[data-collapsed] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.memory-sources-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.memory-sources-actions button {
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.memory-sources-actions button[data-tone="destructive"] {
+  color: var(--destructive);
+}
+
+.memory-sources-empty {
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-4);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* Desktop: "Memory in this chat" at the head of a conversation. */
+.memory-in-chat {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--sp-2);
+}

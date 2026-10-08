@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { type Destination, subscribeToDestinations } from "../../lib/destinations";
 import { type IntentRequest, takeIntent, takePendingIntents } from "../../lib/intents";
+import { pendingSharedItems } from "../../lib/share-inbox";
 
 /**
  * Destinations wait for the shell.
@@ -12,7 +13,10 @@ import { type IntentRequest, takeIntent, takePendingIntents } from "../../lib/in
  * held, and replayed once the shell has something to put them in.
  *
  * Intent addresses are resolved here too, and the inbox is swept on the way
- * in, for the request whose URL was lost to a cold start.
+ * in, for the request whose URL was lost to a cold start. The share inbox is
+ * swept the same way (ADR-0095): Android hands a cold start only the last
+ * address of a batch. A share is acted on once per session whichever way it
+ * arrives, its address or the sweep.
  */
 export function useDestinationQueue({
   ready,
@@ -30,8 +34,13 @@ export function useDestinationQueue({
   const intentRef = useRef(onIntent);
   intentRef.current = onIntent;
   const pending = useRef<Destination[]>([]);
+  const sharesTaken = useRef(new Set<string>());
 
   const act = (destination: Destination) => {
+    if (destination.kind === "share") {
+      if (sharesTaken.current.has(destination.itemId)) return;
+      sharesTaken.current.add(destination.itemId);
+    }
     if (destination.kind === "intent") {
       void takeIntent(destination.intentId).then((request) => {
         if (request) intentRef.current(request);
@@ -58,6 +67,9 @@ export function useDestinationQueue({
     const sweep = () => {
       void takePendingIntents().then((requests) => {
         for (const request of requests) intentRef.current(request);
+      });
+      void pendingSharedItems().then((ids) => {
+        for (const itemId of ids) actRef.current({ kind: "share", itemId });
       });
     };
     for (const destination of pending.current.splice(0)) actRef.current(destination);

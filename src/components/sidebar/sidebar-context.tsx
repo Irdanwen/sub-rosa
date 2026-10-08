@@ -3,6 +3,7 @@ import type { NoteListItemDto } from "../../lib/tauri";
 import { IconUnpin } from "central-icons/IconUnpin";
 import { IconPin } from "central-icons/IconPin";
 import { IconTrashCan } from "central-icons/IconTrashCan";
+import { IconArchive } from "central-icons/IconArchive";
 import { IconMoveFolder } from "central-icons/IconMoveFolder";
 import { IconFolderAddRight } from "central-icons/IconFolderAddRight";
 import { IconFolderDelete } from "central-icons/IconFolderDelete";
@@ -13,6 +14,7 @@ export function AgentSessionContextMenu({
   right,
   top,
   onTogglePinned,
+  onArchive,
   onDelete,
   onClose,
 }: {
@@ -21,6 +23,8 @@ export function AgentSessionContextMenu({
   right: number;
   top: number;
   onTogglePinned: () => void;
+  /** Files the chat in the shared Archive folder (ADR-0080). */
+  onArchive?: () => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -42,6 +46,19 @@ export function AgentSessionContextMenu({
         {pinned ? <IconUnpin size={14} /> : <IconPin size={14} />}
         {pinned ? t("Unpin session") : t("Pin session")}
       </button>
+      {onArchive ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onArchive();
+            onClose();
+          }}
+        >
+          <IconArchive size={14} />
+          {t("Archive")}
+        </button>
+      ) : null}
       <div className="context-menu-separator" role="separator" />
       <button
         type="button"

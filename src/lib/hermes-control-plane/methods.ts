@@ -1,3 +1,4 @@
+import { guardSessionModel } from "../protected-model-guard";
 import type { HermesMode } from "./events";
 
 /**
@@ -47,13 +48,19 @@ export type DispatchGoalCommandParams = {
    * goal text itself — the gateway treats any non-verb text as a new goal. */
   arg: string;
 };
+export type DispatchUndoCommandParams = {
+  sessionId: string;
+  /** How many user turns to back up (the server's `/undo N`, default 1). */
+  turns?: number;
+};
 export type SwitchActiveSessionModelParams = {
   /** The running session's write-access mode. Carried so callers route the
    * dispatch through the gateway that owns this session's process; the seam
    * itself does not open gateways. */
   mode: HermesMode;
   sessionId: string;
-  /** The provider model id to switch to (e.g. a Venice model id). */
+  /** The model string to hand the runtime: a provider model id, or the
+   * desktop's reasoning-effort alias of one (ADR-0080). */
   model: string;
 };
 export type RespondToSudoParams = {
@@ -98,11 +105,19 @@ export type HermesMethods = {
    * and the caller must submit `message` as a normal user turn to kick the
    * loop off; control verbs return `{type: "exec", output}`. */
   dispatchGoalCommand(params: DispatchGoalCommandParams): Promise<unknown>;
-  /** Switches the model on a LIVE session by dispatching the `/model <model>`
-   * slash command (built on {@link dispatchCommand}). The gateway's result is
-   * the source of truth that the switch took — there is no separate confirming
-   * event June can rely on (raw `model.switch`/`model.changed` frames classify
-   * as `unsupported`). */
+  /** Rewinds a live session by N user turns (`/undo N`): the server
+   * soft-deletes those rows on disk, reloads its history and answers
+   * `{type: "prefill", message}` with the text of the earliest user message it
+   * removed. Same name/arg routing as {@link dispatchGoalCommand}. */
+  dispatchUndoCommand(params: DispatchUndoCommandParams): Promise<unknown>;
+  /** Switches the model on a LIVE session (keyed by its RUNTIME id) through
+   * `config.set` with `key: "model"`, the gateway's own per-session switch.
+   * `command.dispatch` cannot carry it: the pinned server reads only
+   * `name`/`arg` there and refuses `/model` as "not a quick/plugin/skill
+   * command" (verified against a live gateway, ADR-0080). `--session` keeps the
+   * switch off the profile's config.yaml whatever the runtime's persistence
+   * default. The gateway's result is the source of truth that the switch took
+   * — there is no separate confirming event June can rely on. */
   switchActiveSessionModel(params: SwitchActiveSessionModelParams): Promise<unknown>;
   respondToSudo(params: RespondToSudoParams): Promise<unknown>;
   respondToSecret(params: RespondToSecretParams): Promise<unknown>;
@@ -147,12 +162,24 @@ export function createHermesMethods(client: HermesRequestLike): HermesMethods {
         arg,
       });
     },
-    switchActiveSessionModel({ sessionId, model }) {
+    dispatchUndoCommand({ sessionId, turns }) {
+      return request("command.dispatch", {
+        session_id: sessionId,
+        name: "undo",
+        arg: turns && turns > 1 ? String(Math.floor(turns)) : "",
+      });
+    },
+    async switchActiveSessionModel({ sessionId, model }) {
       // The model is selected against the gateway that already owns this
       // session, so `mode` only steers gateway routing at the call site and is
-      // not part of the wire payload. Built on dispatchCommand so the
-      // command.dispatch shape stays defined in exactly one place.
-      return this.dispatchCommand({ sessionId, command: `/model ${model}` });
+      // not part of the wire payload. Protected mode is asked first: the
+      // switch never leaves for an adult model while it is on.
+      await guardSessionModel(model);
+      return request("config.set", {
+        session_id: sessionId,
+        key: "model",
+        value: `${model} --session`,
+      });
     },
     respondToSudo({ sessionId, requestId, approved, mode }) {
       return request("sudo.respond", {

@@ -1,0 +1,305 @@
+/* The voice conversation (ADR-0093): a screening-room surface over the
+ * whole window or phone, an orb that moves with whoever is talking, the
+ * captions under it and the controls at the bottom. */
+
+.voice-surface {
+  position: fixed;
+  inset: 0;
+  /* Above every sheet and popover: the conversation owns the screen. */
+  z-index: 115;
+  display: flex;
+  flex-direction: column;
+  /* The scrim laid on the screen colour: opaque, so the composer and its
+   * buttons never show through under the controls. */
+  background: linear-gradient(var(--screen-scrim), var(--screen-scrim)) var(--screen);
+  color: var(--screen-foreground);
+  padding: calc(var(--sp-4) + env(safe-area-inset-top))
+    calc(var(--sp-6) + env(safe-area-inset-right)) calc(var(--sp-6) + env(safe-area-inset-bottom))
+    calc(var(--sp-6) + env(safe-area-inset-left));
+}
+
+.voice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--control-lg);
+}
+
+.voice-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--screen-muted);
+}
+
+.voice-icon-button,
+.voice-control {
+  display: inline-grid;
+  place-items: center;
+  /* A finger's width: these are pressed without looking, mid-sentence. */
+  width: calc(var(--control-xl) + var(--sp-3));
+  height: calc(var(--control-xl) + var(--sp-3));
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklch, var(--screen-foreground) 10%, transparent);
+  color: var(--screen-foreground);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+
+.voice-icon-button {
+  width: var(--control-lg);
+  height: var(--control-lg);
+  background: transparent;
+}
+
+.voice-control[aria-pressed="true"] {
+  background: var(--screen-foreground);
+  color: var(--screen);
+}
+
+.voice-control:active,
+.voice-end:active {
+  transform: scale(0.96);
+}
+
+@media (hover: hover) {
+  .voice-icon-button:hover,
+  .voice-control:hover {
+    background: color-mix(in oklch, var(--screen-foreground) 18%, transparent);
+  }
+
+  .voice-control[aria-pressed="true"]:hover {
+    background: var(--screen-foreground);
+  }
+}
+
+.voice-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-5);
+  min-height: 0;
+  text-align: center;
+}
+
+.voice-camera {
+  width: min(100%, 420px);
+  max-height: 34vh;
+  border-radius: var(--r-xl);
+  object-fit: cover;
+  background: var(--screen);
+}
+
+.voice-camera[data-facing="user"] {
+  transform: scaleX(-1);
+}
+
+/* The orb grows with the voice it hears or speaks; --voice-level is 0 to 1. */
+.voice-orb {
+  --voice-level: 0;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 168px;
+  height: 168px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.voice-orb:not(:disabled) {
+  cursor: pointer;
+}
+
+.voice-orb-core {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    color-mix(in oklch, var(--brand) 55%, var(--screen-foreground)),
+    var(--brand) 55%,
+    color-mix(in oklch, var(--brand) 60%, var(--screen)) 100%
+  );
+  transform: scale(calc(0.82 + var(--voice-level) * 0.3));
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.voice-surface[data-phase="thinking"] .voice-orb-core {
+  animation: voice-breathe 1.6s var(--ease-in-out) infinite alternate;
+}
+
+.voice-surface[data-muted="true"] .voice-orb-core {
+  background: color-mix(in oklch, var(--screen-foreground) 18%, var(--screen));
+}
+
+@keyframes voice-breathe {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.voice-phase {
+  margin: 0;
+  font-size: var(--fs-lg);
+  color: var(--screen-foreground);
+}
+
+.voice-captions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(100%, 560px);
+}
+
+.voice-caption {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: 1.45;
+}
+
+.voice-caption[data-role="user"] {
+  color: var(--screen-muted);
+}
+
+.voice-held-frame {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--screen-muted);
+}
+
+.voice-held-frame img {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-md);
+  object-fit: cover;
+}
+
+.voice-notice,
+.voice-hint {
+  margin: 0;
+  max-width: 480px;
+  font-size: var(--fs-sm);
+  color: var(--screen-muted);
+}
+
+.voice-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding-top: var(--sp-4);
+}
+
+.voice-end,
+.voice-primary,
+.voice-secondary {
+  min-height: calc(var(--control-xl) + var(--sp-3));
+  padding: 0 var(--sp-6);
+  border: 0;
+  border-radius: var(--r-pill);
+  font: inherit;
+  font-weight: var(--fw-medium);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.voice-end {
+  background: var(--record);
+  color: var(--record-foreground);
+}
+
+.voice-primary {
+  background: var(--screen-foreground);
+  color: var(--screen);
+}
+
+.voice-secondary {
+  background: color-mix(in oklch, var(--screen-foreground) 12%, transparent);
+  color: var(--screen-foreground);
+}
+
+.voice-intro,
+.voice-blocked {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-4);
+  width: min(100%, 520px);
+  margin: 0 auto;
+}
+
+.voice-intro p,
+.voice-blocked p,
+.voice-sheet p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.voice-intro-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
+}
+
+.voice-intro-cost,
+.voice-intro-hint {
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+}
+
+.voice-intro-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  padding-top: var(--sp-2);
+}
+
+.voice-sheet {
+  position: absolute;
+  left: 50%;
+  /* Level with the controls' own bottom edge, so it covers them whole. */
+  bottom: calc(var(--sp-6) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: min(calc(100% - 2 * var(--sp-6)), 480px);
+  padding: var(--sp-6);
+  border-radius: var(--r-2xl);
+  background: var(--screen);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%);
+}
+
+/* The desktop composer's conversation button sits beside dictation. */
+.agent-composer-voice {
+  color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-orb-core {
+    transition: none;
+    transform: none;
+  }
+
+  .voice-surface[data-phase="thinking"] .voice-orb-core {
+    animation: none;
+  }
+}

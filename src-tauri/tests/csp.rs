@@ -134,6 +134,21 @@ fn network_reach_stays_local() {
 }
 
 #[test]
+fn workers_start_only_from_this_bundle_or_a_page_made_blob() {
+    // The phone's Python worker starts from a blob so that it inherits this
+    // policy (ADR-0086): a worker loaded from the app's scheme gets no CSP at
+    // all, because Tauri sends the header with HTML only. `blob:` is the one
+    // scheme that inherits; a remote worker would bring its own policy.
+    let policy = directives();
+    let worker_src = policy.get("worker-src").expect("worker-src");
+    assert_eq!(
+        worker_src,
+        &vec!["'self'".to_string(), "blob:".to_string()],
+        "worker-src must stay 'self' blob:"
+    );
+}
+
+#[test]
 fn the_ios_config_does_not_replace_the_policy() {
     // Tauri merges `tauri.ios.conf.json` over the base. A `csp` key here would
     // replace the whole policy on the phone, and no desktop test would notice.
@@ -165,6 +180,23 @@ fn the_asset_scope_names_only_what_the_app_writes() {
         assert!(
             !entry.contains(".."),
             "asset scope {entry} must not climb out of its root"
+        );
+    }
+}
+
+#[test]
+fn frames_load_only_connector_views_from_their_own_scheme() {
+    // A connector's interactive view (ADR-0092) is the only thing the page
+    // frames, and it comes from the app's own `subrosa-app:` scheme, which
+    // serves it under its own, stricter policy in a sandbox without
+    // `allow-same-origin`. A remote origin here would let a model-authored
+    // page frame anything.
+    let policy = directives();
+    let frame_src = policy.get("frame-src").expect("frame-src must be declared");
+    for source in frame_src {
+        assert!(
+            source == "subrosa-app:" || source == "http://subrosa-app.localhost",
+            "frame-src may name only the connector view scheme: {frame_src:?}"
         );
     }
 }

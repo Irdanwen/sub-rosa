@@ -7,7 +7,8 @@ android {
     namespace = "xyz.carpediem.subrosa.nativebridge"
     compileSdk = 36
     defaultConfig {
-        minSdk = 24
+        // Health Connect's client needs 26; the app itself starts at 29.
+        minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
     }
     compileOptions {
@@ -24,4 +25,11 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.15.3")
+    // The document scanner (crate::scan): Google's scanner activity and the
+    // text recognizer, both delivered through Play services rather than
+    // bundled, so the APK does not carry their models.
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+    // Health (ADR-0099): Health Connect, read only.
+    implementation("androidx.health.connect:connect-client:1.1.0")
 }

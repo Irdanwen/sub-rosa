@@ -14,8 +14,10 @@ import { date, number, t, websiteLocale } from "../lib/i18n";
 import { localizedSiteHref } from "../lib/paths";
 import { registerPasskey, signInWithPasskey } from "../lib/passkeys";
 import { decryptObject, prepareObject, prepareVault, sendObject, unlockVault } from "../lib/vault";
+import { BrowserDeviceCard, deviceKindLabel, useBrowserDevice } from "./browser-device";
 import { Library } from "./library";
 import { PairApproval, PairReceiver } from "./pairing";
+import { SecurityHistory } from "./security-history";
 
 type Key = Uint8Array<ArrayBuffer>;
 type PasskeySummary = { id: string; created_at: string; last_used_at: string | null };
@@ -277,7 +279,7 @@ export function AccountPage({ path }: { path: string }) {
             <VerifyDevice />
           ) : section === "/account/devices" ? (
             <>
-              <Devices />
+              <Devices accountId={account.id} />
               {vaultKey ? (
                 <PairApproval accountId={account.id} vaultKey={vaultKey} />
               ) : (
@@ -331,6 +333,18 @@ export function AccountPage({ path }: { path: string }) {
                   </p>
                   <div className="account-quick-grid">
                     <article className="card">
+                      <h2>{t("Your chats", "Vos discussions")}</h2>
+                      <p>
+                        {t(
+                          "Continue a conversation in this browser, once it is one of your devices.",
+                          "Poursuivez une discussion dans ce navigateur, une fois qu’il fait partie de vos appareils.",
+                        )}
+                      </p>
+                      <a className="text-link" href="/app">
+                        {t("Open your chats", "Ouvrir vos discussions")} →
+                      </a>
+                    </article>
+                    <article className="card">
                       <h2>{t("Your notes", "Vos notes")}</h2>
                       <p>
                         {t(
@@ -379,6 +393,7 @@ export function AccountPage({ path }: { path: string }) {
                       </a>
                     </article>
                   </div>
+                  <SecurityHistory />
                   <p className="quiet">
                     <a
                       className="text-link"
@@ -517,7 +532,7 @@ function CardTopUp() {
   );
 }
 
-function VaultGate({ account, onOpen }: { account: Account; onOpen: (key: Key) => void }) {
+export function VaultGate({ account, onOpen }: { account: Account; onOpen: (key: Key) => void }) {
   const lifetime = useLifetime();
   const [record, setRecord] = useState<VaultRecord | null | undefined>(undefined);
   const [prepared, setPrepared] = useState<Awaited<ReturnType<typeof prepareVault>> | null>(null);
@@ -560,7 +575,11 @@ function VaultGate({ account, onOpen }: { account: Account; onOpen: (key: Key) =
         try {
           await api("/api/v1/vault", {
             method: "PUT",
-            body: JSON.stringify({ expected_version: 0, envelope: prepared.envelope }),
+            body: JSON.stringify({
+              expected_version: 0,
+              envelope: prepared.envelope,
+              admission_verifier: prepared.admissionVerifier,
+            }),
             signal,
           });
         } catch (error) {
@@ -808,8 +827,10 @@ function VerifyDevice() {
   );
 }
 
-function Devices() {
+function Devices({ accountId }: { accountId: string }) {
   const [devices, setDevices] = useState<Device[]>([]);
+  const [listed, setListed] = useState<Device[] | null>(null);
+  const [browserDevice, setBrowserDevice] = useBrowserDevice(accountId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -820,7 +841,9 @@ function Devices() {
   const [draft, setDraft] = useState("");
   const refresh = useCallback(async () => {
     try {
-      setDevices(await api<Device[]>("/api/v1/devices"));
+      const list = await api<Device[]>("/api/v1/devices");
+      setDevices(list);
+      setListed(list);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -858,102 +881,116 @@ function Devices() {
     }
   };
   return (
-    <article className="card">
-      <h2>{t("Your devices", "Vos appareils")}</h2>
-      <p className="muted">
-        {t(
-          "Revoking an app stops its access to new data. It cannot erase data or a Carpe Diem key already downloaded.",
-          "Révoquer une app bloque son accès aux nouvelles données. Cela n’efface pas les données ni une clé Carpe Diem déjà téléchargées.",
-        )}
-      </p>
-      {error && (
-        <p className="error" role="alert">
-          {error}
+    <>
+      <BrowserDeviceCard
+        accountId={accountId}
+        devices={listed}
+        record={browserDevice}
+        setRecord={setBrowserDevice}
+        onDevicesChanged={() => void refresh()}
+      />
+      <article className="card">
+        <h2>{t("Your devices", "Vos appareils")}</h2>
+        <p className="muted">
+          {t(
+            "Revoking an app stops its access to new data. It cannot erase data or a Carpe Diem key already downloaded.",
+            "Révoquer une app bloque son accès aux nouvelles données. Cela n’efface pas les données ni une clé Carpe Diem déjà téléchargées.",
+          )}
         </p>
-      )}
-      {loading ? (
-        <p role="status">{t("Loading…", "Chargement…")}</p>
-      ) : devices.length === 0 ? (
-        <p>{t("No apps connected yet.", "Aucune app connectée pour le moment.")}</p>
-      ) : (
-        <div className="stack">
-          {devices.map((device) => (
-            <div className="row" key={device.id}>
-              <div>
-                {renaming === device.id ? (
-                  <form
-                    className="device-rename"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void rename(device.id);
-                    }}
-                  >
-                    <label>
-                      <span className="quiet">{t("Device name", "Nom de l’appareil")}</span>
-                      <input
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        maxLength={80}
-                        // biome-ignore lint/a11y/noAutofocus: the field replaces the name you clicked.
-                        autoFocus
-                        required
-                      />
-                    </label>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        {loading ? (
+          <p role="status">{t("Loading…", "Chargement…")}</p>
+        ) : devices.length === 0 ? (
+          <p>{t("No apps connected yet.", "Aucune app connectée pour le moment.")}</p>
+        ) : (
+          <div className="stack">
+            {devices.map((device) => (
+              <div className="row" key={device.id}>
+                <div>
+                  {renaming === device.id ? (
+                    <form
+                      className="device-rename"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void rename(device.id);
+                      }}
+                    >
+                      <label>
+                        <span className="quiet">{t("Device name", "Nom de l’appareil")}</span>
+                        <input
+                          value={draft}
+                          onChange={(event) => setDraft(event.target.value)}
+                          maxLength={80}
+                          // biome-ignore lint/a11y/noAutofocus: the field replaces the name you clicked.
+                          autoFocus
+                          required
+                        />
+                      </label>
+                      <div className="actions">
+                        <button className="button primary" disabled={busy} type="submit">
+                          {t("Save", "Enregistrer")}
+                        </button>
+                        <button className="button" onClick={() => setRenaming(null)} type="button">
+                          {t("Cancel", "Annuler")}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <strong>{device.name}</strong>
+                  )}
+                  <p className="quiet">
+                    {deviceKindLabel(device, browserDevice?.deviceId)} ·{" "}
+                    {device.last_seen_at ? date(device.last_seen_at) : date(device.created_at)}
+                    {device.revoked_at && ` · ${t("Revoked", "Révoqué")}`}
+                  </p>
+                </div>
+                {!device.revoked_at &&
+                  (confirm === device.id ? (
                     <div className="actions">
-                      <button className="button primary" disabled={busy} type="submit">
-                        {t("Save", "Enregistrer")}
+                      <button
+                        className="button danger"
+                        disabled={busy}
+                        onClick={() => void revoke(device.id)}
+                        type="button"
+                      >
+                        {t("Confirm revocation", "Confirmer la révocation")}
                       </button>
-                      <button className="button" onClick={() => setRenaming(null)} type="button">
+                      <button className="button" onClick={() => setConfirm(null)} type="button">
                         {t("Cancel", "Annuler")}
                       </button>
                     </div>
-                  </form>
-                ) : (
-                  <strong>{device.name}</strong>
-                )}
-                <p className="quiet">
-                  {device.last_seen_at ? date(device.last_seen_at) : date(device.created_at)}
-                  {device.revoked_at && ` · ${t("Revoked", "Révoqué")}`}
-                </p>
+                  ) : renaming === device.id ? null : (
+                    <div className="actions">
+                      <button
+                        className="button"
+                        onClick={() => {
+                          setDraft(device.name);
+                          setConfirm(null);
+                          setRenaming(device.id);
+                        }}
+                        type="button"
+                      >
+                        {t("Rename", "Renommer")}
+                      </button>
+                      <button
+                        className="button"
+                        onClick={() => setConfirm(device.id)}
+                        type="button"
+                      >
+                        {t("Revoke", "Révoquer")}
+                      </button>
+                    </div>
+                  ))}
               </div>
-              {!device.revoked_at &&
-                (confirm === device.id ? (
-                  <div className="actions">
-                    <button
-                      className="button danger"
-                      disabled={busy}
-                      onClick={() => void revoke(device.id)}
-                      type="button"
-                    >
-                      {t("Confirm revocation", "Confirmer la révocation")}
-                    </button>
-                    <button className="button" onClick={() => setConfirm(null)} type="button">
-                      {t("Cancel", "Annuler")}
-                    </button>
-                  </div>
-                ) : renaming === device.id ? null : (
-                  <div className="actions">
-                    <button
-                      className="button"
-                      onClick={() => {
-                        setDraft(device.name);
-                        setConfirm(null);
-                        setRenaming(device.id);
-                      }}
-                      type="button"
-                    >
-                      {t("Rename", "Renommer")}
-                    </button>
-                    <button className="button" onClick={() => setConfirm(device.id)} type="button">
-                      {t("Revoke", "Révoquer")}
-                    </button>
-                  </div>
-                ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </article>
+            ))}
+          </div>
+        )}
+      </article>
+    </>
   );
 }
 
@@ -1469,6 +1506,7 @@ function Security({
           {t("Add a passkey", "Ajouter une passkey")}
         </button>
       </article>
+      <SecurityHistory />
       <article className="card">
         <h2>{t("Your recovery kit", "Votre kit de récupération")}</h2>
         <p>

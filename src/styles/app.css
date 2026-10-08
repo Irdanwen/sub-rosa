@@ -8794,6 +8794,40 @@ input:focus-visible,
   border-top: 1px solid var(--border-subtle);
 }
 
+/* A pipe table (ADR-0037 vocabulary): one line of text per cell, the first
+ * row the header. Wide tables scroll inside the note rather than past it. */
+.note-preview table {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 var(--sp-4);
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.note-preview th,
+.note-preview td {
+  min-width: 64px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.note-preview th {
+  background: var(--surface-subtle);
+  font-weight: var(--fw-medium);
+}
+
+.note-preview th > p,
+.note-preview td > p {
+  margin: 0;
+}
+
+.note-preview .selectedCell {
+  background: var(--selection);
+}
+
 .note-preview a {
   color: var(--brand);
   text-decoration: underline;
@@ -11730,6 +11764,18 @@ input:focus-visible,
   color: var(--muted-foreground);
   font-size: var(--fs-md);
   line-height: 1.5;
+}
+
+/* Settings › Browser extension: the code a person types in another window,
+ * read across the screen, so larger than the row title and in fixed-width
+ * digits. */
+.browser-extension-pairing-code {
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xl);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  user-select: text;
 }
 
 /* Installed skills (Hermes admin surface). A native settings section: reuses
@@ -15489,6 +15535,24 @@ input:focus-visible,
 
 .btn-ghost:hover {
   background: var(--muted);
+}
+
+/* The filled variant. Until this rule existed `btn-primary` was styled only
+ * inside the studio and the turn editor, so the main answer elsewhere (a
+ * consent card's "Allow this time", a dialog's Continue) looked weaker than
+ * the secondary buttons beside it. */
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--primary) 88%, var(--background));
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Anchor for the self-contained Select control's popover (settings rows

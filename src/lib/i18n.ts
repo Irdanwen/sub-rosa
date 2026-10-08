@@ -16,18 +16,38 @@
  * localStorage and applied at the root: switching it re-renders the shell.
  */
 
+import de from "../locales/de.json";
+import es from "../locales/es.json";
 import fr from "../locales/fr.json";
+import it from "../locales/it.json";
+import ptBR from "../locales/pt-BR.json";
 
-export type Locale = "en" | "fr";
+export type Locale = "en" | "fr" | "de" | "it" | "es" | "pt-BR";
 export type LocaleChoice = "system" | Locale;
 
 export const LOCALE_STORAGE_KEY = "os-june:locale";
-export const SUPPORTED_LOCALES: Locale[] = ["en", "fr"];
+/** Every language the app speaks, in the order the pickers list them. */
+export const SUPPORTED_LOCALES: Locale[] = ["en", "fr", "de", "it", "es", "pt-BR"];
 
 const catalogs: Record<Locale, Record<string, string>> = {
   en: {},
   fr: fr as Record<string, string>,
+  de: de as Record<string, string>,
+  it: it as Record<string, string>,
+  es: es as Record<string, string>,
+  "pt-BR": ptBR as Record<string, string>,
 };
+
+/**
+ * A language tag reduced to a language the app has: the language subtag
+ * decides, so `de-CH` reads German and any Portuguese reads the Brazilian
+ * catalog, the only Portuguese the app has. English otherwise.
+ */
+export function localeFromTag(tag: string): Locale {
+  const language = tag.toLowerCase().split(/[-_.]/)[0];
+  if (language === "pt") return "pt-BR";
+  return SUPPORTED_LOCALES.includes(language as Locale) ? (language as Locale) : "en";
+}
 
 let current: Locale = "en";
 const listeners = new Set<() => void>();
@@ -38,8 +58,7 @@ export function systemLocale(): Locale {
     typeof navigator !== "undefined" && typeof navigator.language === "string"
       ? navigator.language
       : "en";
-  const language = tag.toLowerCase().split(/[-_]/)[0];
-  return SUPPORTED_LOCALES.includes(language as Locale) ? (language as Locale) : "en";
+  return localeFromTag(tag);
 }
 
 /** The stored choice, "system" when nothing was chosen. */
@@ -88,16 +107,23 @@ export function chooseLocaleAndReload(choice: LocaleChoice) {
   }
 }
 
+/** The page says its language, so hyphenation, spelling and voices follow. */
+function markDocument(locale: Locale) {
+  if (typeof document !== "undefined") document.documentElement.lang = locale;
+}
+
 /** Switch without storing (the root's boot, tests). */
 export function applyLocale(locale: Locale) {
   if (locale === current) return;
   current = locale;
+  markDocument(locale);
   for (const listener of listeners) listener();
 }
 
 /** Called once at boot, before the first render. */
 export function initLocale() {
   current = resolveLocale(localeChoice());
+  markDocument(current);
   return current;
 }
 
@@ -108,9 +134,18 @@ export function onLocaleChange(listener: () => void) {
   };
 }
 
+const INTL_TAGS: Record<Locale, string> = {
+  en: "en-US",
+  fr: "fr-FR",
+  de: "de-DE",
+  it: "it-IT",
+  es: "es-ES",
+  "pt-BR": "pt-BR",
+};
+
 /** A BCP 47 tag for `Intl` (dates, numbers, lists). */
 export function intlLocale(): string {
-  return current === "fr" ? "fr-FR" : "en-US";
+  return INTL_TAGS[current];
 }
 
 type Vars = Record<string, string | number>;

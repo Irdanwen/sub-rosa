@@ -4,10 +4,12 @@ import { intlLocale, t } from "../../i18n";
 import type { StudioArtifact } from "../types";
 import { versionNumber } from "./lineage";
 
-/** "Original", or "Retouch 3". */
+/** "Original", "Retouch 3", or "Refinement 1". */
 export function versionTitle(version: StudioArtifact): string {
   const n = versionNumber(version);
-  return n === 0 ? t("Original") : t("Retouch {n}", { n });
+  if (n === 0) return t("Original");
+  // A chat picture checked and fixed by the refine loop (`image-refine.ts`).
+  return version.edit?.op === "refine" ? t("Refinement {n}", { n }) : t("Retouch {n}", { n });
 }
 
 /** What was asked for, in a few words. */

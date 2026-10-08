@@ -1,0 +1,183 @@
+/* Code mode (ADR-0090): the session bar buttons and the review panel. */
+.code-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--control-md);
+  border: 0;
+  border-radius: var(--r-md);
+  padding: 0 var(--sp-3);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.code-mode-toggle[aria-pressed="true"] {
+  background: var(--muted);
+  color: var(--foreground);
+  cursor: default;
+}
+
+.code-mode-toggle[data-error] {
+  color: var(--destructive);
+}
+
+.code-mode-toggle:hover:not(:disabled) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.code-review-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-height: min(64vh, 720px);
+  overflow: auto;
+}
+
+.code-review-note {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.code-review-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+}
+
+.code-review-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.code-review-file {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.code-review-file-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--surface-subtle);
+}
+
+.code-review-file-name {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: var(--sp-2);
+  border: 0;
+  padding: var(--sp-1);
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.code-review-status {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+.code-review-file[data-status="added"] .code-review-status {
+  color: var(--success);
+}
+
+.code-review-file[data-status="deleted"] .code-review-status {
+  color: var(--destructive);
+}
+
+.code-review-path {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-review-counts {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.code-review-counts [data-kind="add"],
+.code-review-diff [data-kind="add"] {
+  color: var(--success);
+}
+
+.code-review-counts [data-kind="remove"],
+.code-review-diff [data-kind="remove"] {
+  color: var(--destructive);
+}
+
+.code-review-revert[data-confirming] {
+  color: var(--destructive);
+}
+
+.code-review-diff {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.code-review-diff > span {
+  display: block;
+  min-width: max-content;
+}
+
+.code-review-diff [data-kind="add"] {
+  background: color-mix(in oklch, var(--success) 10%, transparent);
+}
+
+.code-review-diff [data-kind="remove"] {
+  background: var(--destructive-soft);
+}
+
+.code-review-diff [data-kind="hunk"],
+.code-review-diff [data-kind="header"] {
+  color: var(--muted-foreground);
+}
+
+.code-review-off {
+  margin-inline-end: auto;
+}
+
+/* The new-chat composer's Code toggle sits in the sandbox toolbar and takes
+ * its trigger look; on, it reads like a chosen working folder. */
+.code-mode-draft-toggle[aria-pressed="true"] {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+/* A file with no preview says so inside its card, on the diff's inset. */
+.code-review-file > .code-review-note {
+  padding: var(--sp-2) var(--sp-3);
+}
+
+/* "Revert" on a file of which no copy was kept is refused (its tooltip says
+ * why): it has to look refused too, not like the live button beside it. */
+.code-review-file-head .btn:disabled {
+  color: var(--muted-foreground);
+  cursor: default;
+  opacity: 0.6;
+}

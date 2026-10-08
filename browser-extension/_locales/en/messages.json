@@ -1,0 +1,190 @@
+{
+  "extName": {
+    "message": "Sub Rosa",
+    "description": "The extension's name"
+  },
+  "extDescription": {
+    "message": "Ask Sub Rosa about the page you are reading. Works with the Sub Rosa app on your computer.",
+    "description": "Store and extensions page description"
+  },
+  "actionTitle": {
+    "message": "Ask Sub Rosa",
+    "description": "Toolbar button tooltip"
+  },
+  "menuAskSelection": {
+    "message": "Ask Sub Rosa",
+    "description": "Context menu item on selected text"
+  },
+  "pairTitle": {
+    "message": "Connect this browser",
+    "description": "Heading of the pairing screen"
+  },
+  "pairBody": {
+    "message": "In Sub Rosa on this computer, open Settings, then Browser extension, and choose Connect a browser. Type the code it shows.",
+    "description": "Pairing instructions"
+  },
+  "pairCodeLabel": {
+    "message": "Code",
+    "description": "Label of the pairing code field"
+  },
+  "pairButton": {
+    "message": "Connect",
+    "description": "Pairing button"
+  },
+  "paired": {
+    "message": "This browser is connected to Sub Rosa.",
+    "description": "Shown after pairing"
+  },
+  "summarize": {
+    "message": "Summarize",
+    "description": "Button"
+  },
+  "summarizePrompt": {
+    "message": "Summarize this page.",
+    "description": "The question sent when Summarize is pressed"
+  },
+  "addToNote": {
+    "message": "Add to a note",
+    "description": "Button"
+  },
+  "saveLink": {
+    "message": "Save link to library",
+    "description": "Button"
+  },
+  "openSidePanel": {
+    "message": "Open in side panel",
+    "description": "Popup button"
+  },
+  "askPlaceholder": {
+    "message": "Ask about this page",
+    "description": "Composer placeholder"
+  },
+  "includePage": {
+    "message": "Include this page",
+    "description": "Checkbox: send the page text with the question"
+  },
+  "send": {
+    "message": "Send",
+    "description": "Button"
+  },
+  "stop": {
+    "message": "Stop",
+    "description": "Button that stops an answer"
+  },
+  "newChat": {
+    "message": "New chat",
+    "description": "Button"
+  },
+  "forget": {
+    "message": "Disconnect this browser",
+    "description": "Button that removes the pairing"
+  },
+  "you": {
+    "message": "You",
+    "description": "Label of the person's messages"
+  },
+  "assistant": {
+    "message": "Sub Rosa",
+    "description": "Label of the answers"
+  },
+  "selectionLabel": {
+    "message": "Selected text",
+    "description": "Label above the quoted selection"
+  },
+  "noteSaved": {
+    "message": "Added to a new note: $TITLE$",
+    "description": "Confirmation",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "linkSaved": {
+    "message": "Saved to your library: $TITLE$",
+    "description": "Confirmation",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "continuesInApp": {
+    "message": "This chat is also in Sub Rosa, in your chats.",
+    "description": "Shown under the first answer"
+  },
+  "stageThinking": {
+    "message": "Thinking",
+    "description": "Progress"
+  },
+  "stageSearchingWeb": {
+    "message": "Searching the web",
+    "description": "Progress"
+  },
+  "stageReadingPage": {
+    "message": "Reading a page",
+    "description": "Progress"
+  },
+  "stageSearchingNotes": {
+    "message": "Looking in your notes",
+    "description": "Progress"
+  },
+  "stageSearchingMemory": {
+    "message": "Checking what Sub Rosa remembers",
+    "description": "Progress"
+  },
+  "errorAppNotRunning": {
+    "message": "Sub Rosa is not open on this computer. Open it, then try again.",
+    "description": "Error"
+  },
+  "errorHostNotFound": {
+    "message": "This browser is not set up for Sub Rosa yet. In Sub Rosa, open Settings, then Browser extension, and choose Connect a browser.",
+    "description": "Error"
+  },
+  "errorNotPaired": {
+    "message": "This browser is not connected to Sub Rosa any more. Type a new code to connect it again.",
+    "description": "Error"
+  },
+  "errorPairingNotStarted": {
+    "message": "Sub Rosa is not showing a code. In Settings, Browser extension, choose Connect a browser first.",
+    "description": "Error"
+  },
+  "errorPairingWrong": {
+    "message": "That code is not the one Sub Rosa shows. Check it and try again.",
+    "description": "Error"
+  },
+  "errorPairingExpired": {
+    "message": "That code expired. Show a new one in Sub Rosa.",
+    "description": "Error"
+  },
+  "errorPairingExhausted": {
+    "message": "Too many wrong codes. Show a new one in Sub Rosa.",
+    "description": "Error"
+  },
+  "errorNotAPage": {
+    "message": "Sub Rosa can only read web pages.",
+    "description": "Error"
+  },
+  "errorNoAccess": {
+    "message": "Click the Sub Rosa button in the toolbar to let it read this page.",
+    "description": "Error"
+  },
+  "errorUpdateApp": {
+    "message": "Update Sub Rosa to use this version of the extension.",
+    "description": "Error"
+  },
+  "errorBusy": {
+    "message": "This chat is still answering. Wait for it, then ask again.",
+    "description": "Error"
+  },
+  "errorEmptyQuestion": {
+    "message": "Type a question first.",
+    "description": "Error"
+  },
+  "errorGeneric": {
+    "message": "Something went wrong. Try again.",
+    "description": "Error"
+  }
+}

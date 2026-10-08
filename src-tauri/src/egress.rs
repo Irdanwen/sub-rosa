@@ -74,7 +74,7 @@ pub const DECLARED_EGRESS: &[EgressHost] = &[
     host(
         "github.com",
         Reach::Always,
-        "The agent runtime, downloaded once and checked against a known fingerprint.",
+        "The agent runtime, downloaded once and checked against a known fingerprint, and GitHub's sign-in when you connect GitHub.",
     ),
     host(
         "objects.githubusercontent.com",
@@ -110,6 +110,116 @@ pub const DECLARED_EGRESS: &[EgressHost] = &[
         "t.me",
         Reach::WhenAsked,
         "The community link, opened in your browser when you click it.",
+    ),
+    // The agent browser (ADR-0094) has no fixed destination: it goes where
+    // the person's task needs, and the bound is the allow list they keep in
+    // Settings › Agent. Each page it opens is a row in the egress ledger.
+    host(
+        "sites you allow",
+        Reach::WhenAsked,
+        "The agent browser, only on the sites you allow when it asks or in Settings, in a profile of its own in your Chromium browser.",
+    ),
+    // Connectors (ADR-0092): contacted only once you add one and sign in.
+    // The catalog's servers, each read on its vendor's documentation.
+    host(
+        "mcp.notion.com",
+        Reach::WhenAsked,
+        "Notion, when you connect it: the assistant searches and edits the pages you allow.",
+    ),
+    host(
+        "mcp.linear.app",
+        Reach::WhenAsked,
+        "Linear, when you connect it: the assistant reads and updates your issues.",
+    ),
+    host(
+        "mcp.sentry.dev",
+        Reach::WhenAsked,
+        "Sentry, when you connect it: the assistant looks into your errors and releases.",
+    ),
+    host(
+        "mcp.stripe.com",
+        Reach::WhenAsked,
+        "Stripe, when you connect it: the assistant looks up customers, payments and invoices.",
+    ),
+    host(
+        "mcp.zapier.com",
+        Reach::WhenAsked,
+        "Zapier, when you connect it: the assistant runs the actions you set up there.",
+    ),
+    host(
+        "mcp.squareup.com",
+        Reach::WhenAsked,
+        "Square, when you connect it: the assistant looks up orders and payments.",
+    ),
+    host(
+        "mcp.intercom.com",
+        Reach::WhenAsked,
+        "Intercom, when you connect it: the assistant searches conversations and contacts.",
+    ),
+    host(
+        "mcp.monday.com",
+        Reach::WhenAsked,
+        "monday.com, when you connect it: the assistant reads and updates your boards.",
+    ),
+    host(
+        "mcp.webflow.com",
+        Reach::WhenAsked,
+        "Webflow, when you connect it: the assistant reads and edits your sites.",
+    ),
+    host(
+        "huggingface.co",
+        Reach::WhenAsked,
+        "Hugging Face, when you connect it: the assistant searches models, datasets and papers.",
+    ),
+    host(
+        "docs.mcp.cloudflare.com",
+        Reach::WhenAsked,
+        "Cloudflare's documentation, when you connect it. No account is used.",
+    ),
+    host(
+        "api.githubcopilot.com",
+        Reach::WhenAsked,
+        "GitHub's own MCP server, when you connect GitHub: the assistant reads and updates the repositories you allow.",
+    ),
+    host(
+        "accounts.google.com",
+        Reach::WhenAsked,
+        "Google's sign-in page, opened in your browser when you connect Google.",
+    ),
+    host(
+        "oauth2.googleapis.com",
+        Reach::WhenAsked,
+        "Google's token service, when you connect Google or the app renews that access.",
+    ),
+    host(
+        "www.googleapis.com",
+        Reach::WhenAsked,
+        "Google Calendar and Drive, when you connect Google and ask about them.",
+    ),
+    host(
+        "people.googleapis.com",
+        Reach::WhenAsked,
+        "Google Contacts, when you connect Google and ask about a contact.",
+    ),
+    host(
+        "gmail.googleapis.com",
+        Reach::WhenAsked,
+        "Gmail, only once Google's security review is passed and you connect it.",
+    ),
+    host(
+        "login.microsoftonline.com",
+        Reach::WhenAsked,
+        "Microsoft's sign-in and token service, when you connect Microsoft.",
+    ),
+    host(
+        "graph.microsoft.com",
+        Reach::WhenAsked,
+        "Outlook calendar and mail and OneDrive, when you connect Microsoft and ask about them.",
+    ),
+    host(
+        "sharepoint.com",
+        Reach::WhenAsked,
+        "OneDrive file downloads, from the address Microsoft gives for a file you asked to read (its subdomains).",
     ),
 ];
 

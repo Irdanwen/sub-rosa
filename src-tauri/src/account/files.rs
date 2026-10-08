@@ -206,8 +206,14 @@ async fn remove_queued_files(
                 if name.components().count() != 1 {
                     Ok(())
                 } else {
-                    let target = gallery.join(name);
-                    ensure_contained(gallery, &target)
+                    let home = super::studio::folder(
+                        gallery,
+                        name.extension()
+                            .and_then(|v| v.to_str())
+                            .unwrap_or_default(),
+                    );
+                    let target = home.join(name);
+                    ensure_contained(&home, &target)
                         .map_err(|_| std::io::Error::other("outside gallery"))
                         .and_then(|_| {
                             // Its poster goes with it (a missing one is the
@@ -270,7 +276,7 @@ async fn stage_assistant_files(
     let mut scanned = 0;
     let mut staged = 0;
     while scanned < ASSISTANT_SCAN_LIMIT && staged < ASSISTANT_STAGE_LIMIT {
-        let candidates=query("WITH refs AS (SELECT id,file_name,format FROM assistant_references UNION SELECT json_extract(j.value,'$.id'),json_extract(j.value,'$.file_name'),json_extract(j.value,'$.format') FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j) SELECT id,file_name,format FROM refs r WHERE id>? AND file_name IS NOT NULL AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=r.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=r.id) ORDER BY id LIMIT 32")
+        let candidates=query("WITH refs AS (SELECT id,file_name,format FROM assistant_references UNION SELECT id,file_name,format FROM project_files UNION SELECT json_extract(j.value,'$.id'),json_extract(j.value,'$.file_name'),json_extract(j.value,'$.format') FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j) SELECT id,file_name,format FROM refs r WHERE id>? AND file_name IS NOT NULL AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=r.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=r.id) ORDER BY id LIMIT 32")
             .bind(cursor.as_str()).fetch_all(pool).await?;
         if candidates.is_empty() {
             save_assistant_scan_cursor(pool, "").await?;
@@ -312,7 +318,8 @@ async fn save_assistant_scan_cursor(pool: &SqlitePool, cursor: &str) -> Result<(
 
 // Metadata can outlive the owning assistant. Skip such work without deleting
 // its transfer state: a later synced snapshot can make it relevant again.
-const ASSISTANT_OWNERS: &str = "WITH assistant_owners AS (SELECT id FROM assistant_references UNION SELECT json_extract(j.value,'$.id') AS id FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j)";
+// A project's files ride this lane too (ADR-0085): same directory, same kind.
+const ASSISTANT_OWNERS: &str = "WITH assistant_owners AS (SELECT id FROM assistant_references UNION SELECT id FROM project_files UNION SELECT json_extract(j.value,'$.id') AS id FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j)";
 const ASSISTANT_UPLOAD_ELIGIBLE: &str =
     "(u.source_kind<>'assistant' OR u.artifact_id IN (SELECT id FROM assistant_owners))";
 const ASSISTANT_DOWNLOAD_ELIGIBLE: &str = "(m.source_kind<>'assistant' OR (m.artifact_id IN (SELECT id FROM assistant_owners) AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id)))";
@@ -355,7 +362,7 @@ pub(super) async fn upload_one(
         if file.components().count() != 1 {
             return Err(file_error());
         }
-        let path = gallery
+        let path = super::studio::folder(gallery, &row.get::<String, _>("format"))
             .join(file)
             .canonicalize()
             .map_err(|_| file_error())?;
@@ -485,7 +492,8 @@ pub(super) async fn download_one(
     let dir = if assistant {
         root.join("assistant-references")
     } else if studio {
-        gallery.to_path_buf()
+        // An Office file goes back in the documents folder (ADR-0090).
+        super::studio::folder(gallery, &row.get::<String, _>("format"))
     } else {
         root.join("recordings").join("synced")
     };
@@ -504,7 +512,8 @@ pub(super) async fn download_one(
         "audio".into()
     };
     let target = if assistant {
-        let reference = query("SELECT file_name FROM assistant_references WHERE id=? UNION SELECT json_extract(j.value,'$.file_name') FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j WHERE json_extract(j.value,'$.id')=? LIMIT 1")
+        let reference = query("SELECT file_name FROM assistant_references WHERE id=? UNION SELECT json_extract(j.value,'$.file_name') FROM assistant_conversations c,json_each(c.snapshot_json,'$.references') j WHERE json_extract(j.value,'$.id')=? UNION SELECT file_name FROM project_files WHERE id=? LIMIT 1")
+            .bind(&artifact)
             .bind(&artifact)
             .bind(&artifact)
             .fetch_optional(pool)

@@ -1,0 +1,532 @@
+/* The canvas (ADR-0087) and the Library (ADR-0088): the desktop split view,
+ * the canvas pane on both shells, the canvas chat card, the "Save" toggles and
+ * the Library view. Tokens only. */
+
+/* -- Split view ------------------------------------------------------------
+ * Closed, both wrappers vanish from layout (`display: contents`) so the agent
+ * workspace is laid out exactly as it was. Open, the chat keeps the larger
+ * column and the canvas takes the rest. */
+.canvas-split,
+.canvas-split-chat {
+  display: contents;
+}
+
+.canvas-split[data-open] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 46%);
+  gap: var(--sp-3);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas-split[data-open] > .canvas-split-chat {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* -- The pane ------------------------------------------------------------- */
+.canvas-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--card);
+  color: var(--card-foreground);
+}
+
+.canvas-pane[data-layout="split"] {
+  height: 100%;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.canvas-pane[data-layout="screen"] {
+  flex: 1;
+  height: 100%;
+}
+
+.canvas-pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.canvas-pane-kind {
+  display: inline-flex;
+  color: var(--muted-foreground);
+}
+
+.canvas-pane-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-pane-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-pane-meta {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.canvas-pane-action,
+.canvas-pane-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.canvas-pane-action:hover:not(:disabled) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.canvas-pane-action:disabled,
+.canvas-pane-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.canvas-pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4) var(--sp-5);
+}
+
+.canvas-pane-loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-8) 0;
+}
+
+.canvas-pane-ask {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) var(--sp-4) var(--sp-4);
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--background);
+}
+
+.canvas-pane[data-layout="screen"] .canvas-pane-ask {
+  margin-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom));
+}
+
+.canvas-pane-ask input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-md);
+  outline: none;
+}
+
+.canvas-pane[data-layout="screen"] .canvas-pane-ask input {
+  /* 16px or more keeps iOS from zooming the page on focus. */
+  font-size: max(16px, var(--fs-md));
+}
+
+.canvas-pane-send:not(:disabled) {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: var(--r-pill);
+}
+
+/* -- A proposed version --------------------------------------------------- */
+.canvas-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.canvas-review-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.canvas-review-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--brand-ink);
+}
+
+.canvas-review-text {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--surface-subtle);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.canvas-review-waiting {
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.canvas-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.canvas-review-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.canvas-review-actions .canvas-review-primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* -- The chat card -------------------------------------------------------- */
+.canvas-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5) var(--sp-2);
+}
+
+.canvas-card-preview {
+  position: relative;
+  margin: 0 var(--sp-5);
+  max-height: 9.5em;
+  overflow: hidden;
+  color: var(--body-copy);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.canvas-card-preview[data-code] {
+  font-family: var(--font-mono);
+}
+
+.canvas-card-preview:not([data-code]) {
+  white-space: normal;
+}
+
+/* The preview clips, so a list's markers have to sit inside it; the reply's
+ * own list rule around the card would hang them in the clipped margin. */
+.canvas-card-preview :is(ul, ol) {
+  margin: 0 0 var(--sp-2);
+  padding-inline-start: 1.4em;
+}
+
+.canvas-card-preview[data-more]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2.5em;
+  background: linear-gradient(to bottom, transparent, var(--surface-subtle));
+}
+
+.canvas-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+}
+
+.canvas-card-error {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--destructive);
+}
+
+.canvas-card-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+.canvas-card-open:hover:not(:disabled) {
+  background: var(--muted);
+}
+
+/* -- Save toggles --------------------------------------------------------- */
+.chat-block-row-with-action {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+
+.chat-block-row-with-action > .chat-block-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-block-save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  margin-top: var(--sp-2);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.chat-block-save:hover {
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+  color: var(--foreground);
+}
+
+[data-saved].chat-block-save,
+[data-saved].chat-block-place-site,
+[data-saved].agent-turn-action,
+[data-saved].mobile-chat-copy {
+  color: var(--brand);
+}
+
+[data-failed].agent-turn-action,
+[data-failed].mobile-chat-copy,
+[data-failed].chat-block-save {
+  color: var(--destructive);
+}
+
+/* -- The Library ---------------------------------------------------------- */
+.library-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  min-height: 0;
+}
+
+.library-view-title {
+  margin: var(--sp-6) var(--sp-4) 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: 400;
+  line-height: var(--leading-2xl);
+  letter-spacing: var(--tracking-2xl);
+}
+
+.library-view-switch {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0 var(--sp-4);
+}
+
+.library-view-body {
+  padding: 0 var(--sp-4) var(--sp-8);
+}
+
+.library-view-quiet {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.library-view-error {
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+}
+
+.library-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.library-saved-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.library-saved-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-lg);
+}
+
+.library-saved-row:hover {
+  background: var(--surface-subtle);
+}
+
+.library-saved-icon {
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+}
+
+.library-saved-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.library-saved-title {
+  overflow: hidden;
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-saved-meta {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.library-saved-actions {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.library-saved-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.library-saved-actions button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.library-image-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--sp-2);
+}
+
+.library-image-tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--muted);
+  cursor: pointer;
+}
+
+.library-image-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.library-image-badge {
+  position: absolute;
+  left: var(--sp-2);
+  bottom: var(--sp-2);
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--scrim);
+  color: var(--screen-foreground);
+  font-size: var(--fs-xs);
+}
+
+.library-image-blank {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  background: var(--muted);
+}
+
+.library-image-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.library-image-detail img {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: var(--r-lg);
+}
+
+.library-image-prompt {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 640px) {
+  .library-image-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+}

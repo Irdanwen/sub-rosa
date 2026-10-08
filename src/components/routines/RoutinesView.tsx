@@ -21,7 +21,9 @@ import {
   scheduledRunJobId,
 } from "../../lib/hermes-adapter";
 import {
+  assignmentJobIds,
   createRoutine,
+  listAssignmentJobIds,
   listRoutines,
   pauseRoutine,
   removeRoutine,
@@ -32,8 +34,10 @@ import {
   routineUnrestricted,
   triggerRoutine,
   updateRoutine,
+  routinesOnly,
   type RoutineJob,
   type RoutineUpdates,
+  withoutAssignmentRuns,
 } from "../../lib/hermes-routines";
 import { errorCode, friendlyErrorMessage } from "../../lib/errors";
 import { compactScheduleLabel, humanizeSchedule } from "../../lib/routine-schedule";
@@ -92,6 +96,9 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
   const [allRuns, setRuns] = useState<HermesSessionInfo[]>([]);
   const [runsUnavailableState, setRunsUnavailable] = useState(false);
   const runLoadSequenceRef = useRef(0);
+  // The one-shot jobs assignments run on (ADR-0091): not routines, and
+  // their runs are not routine runs.
+  const assignmentJobsRef = useRef<Set<string>>(new Set());
 
   // __emptyStates() preview (dev console): render the page as a fresh
   // install would see it, real data untouched underneath.
@@ -108,7 +115,8 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
     setRefreshing(true);
     try {
       const jobs = await listRoutines();
-      setRoutines(sortRoutines(jobs));
+      assignmentJobsRef.current = assignmentJobIds(jobs);
+      setRoutines(sortRoutines(routinesOnly(jobs)));
       setError(null);
       setStoreCorrupted(false);
       return null;
@@ -134,9 +142,13 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
     const sequence = runLoadSequenceRef.current + 1;
     runLoadSequenceRef.current = sequence;
     try {
-      const nextRuns = await listScheduledRunSessions({ includeActive: true });
+      const [nextRuns, assignmentJobs] = await Promise.all([
+        listScheduledRunSessions({ includeActive: true }),
+        listAssignmentJobIds().catch(() => null),
+      ]);
       if (runLoadSequenceRef.current !== sequence) return;
-      setRuns(nextRuns);
+      if (assignmentJobs) assignmentJobsRef.current = assignmentJobs;
+      setRuns(withoutAssignmentRuns(nextRuns, assignmentJobsRef.current));
       setRunsUnavailable(false);
     } catch {
       if (runLoadSequenceRef.current !== sequence) return;

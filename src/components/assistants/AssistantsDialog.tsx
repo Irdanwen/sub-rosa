@@ -38,11 +38,13 @@ import {
   type AgentTaskDto,
   type VeniceModelDto,
 } from "../../lib/tauri";
+import { AssistantConnectors } from "../connectors/AssistantConnectors";
 import { BrandGradientMark } from "../brand/Marks";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { AssistantChat } from "./AssistantChat";
 import { assistantQuestions, assistantTemplates } from "./templates";
 import "./assistants.css";
+import { PublishAssistantAction } from "../publishing/PublishAssistantDialog";
 
 export function AssistantsDialog({
   open,
@@ -426,6 +428,19 @@ function AssistantsSurface({
                         >
                           {t("Duplicate")}
                         </button>
+                        <PublishAssistantAction
+                          assistant={item}
+                          trigger={(open) => (
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={busy}
+                              onClick={open}
+                            >
+                              {t("Publish to the catalog")}
+                            </button>
+                          )}
+                        />
                         <button
                           type="button"
                           className="btn btn-secondary"
@@ -747,6 +762,10 @@ function AssistantsSurface({
                         </span>
                       </label>
                     ))}
+                    <AssistantConnectors
+                      tools={draft.tools}
+                      onChange={(tools) => patch({ tools })}
+                    />
                     <hr />
                     <label className="assistant-option">
                       <input
@@ -848,6 +867,11 @@ function toolOptions(): { id: AssistantTool; label: string; description: string 
     { id: "video", label: t("Video"), description: t("Propose video clips from your ideas.") },
     { id: "music", label: t("Music"), description: t("Propose songs and instrumental tracks.") },
     { id: "speech", label: t("Speech"), description: t("Propose spoken audio from your text.") },
+    {
+      id: "documents",
+      label: t("Office files"),
+      description: t("Make Word, Excel and PowerPoint files you can open and share."),
+    },
   ];
 }
 

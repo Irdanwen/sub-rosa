@@ -1,0 +1,11 @@
+{
+  "name": "@subrosa/browser-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sub Rosa for Chrome, Edge, Brave and Firefox: asks the desktop app about the page you are reading.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "pnpm --dir .. exec vitest run src/test/browser-extension"
+  }
+}

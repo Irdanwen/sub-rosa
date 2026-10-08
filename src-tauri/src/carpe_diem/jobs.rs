@@ -612,8 +612,16 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
                 {
                     // What was asked for is filed with the file now, not when
                     // a panel happens to be open to hear the job finish.
-                    let generation =
+                    let mut generation =
                         landed_generation(&updated, chrono::Utc::now().timestamp_millis());
+                    // A chat's render is a chat picture; a refine edit brings
+                    // its version lineage back (`crate::image_refine`).
+                    let context = client_context(&repos.pool, &job.id).await.ok().flatten();
+                    crate::image_refine::apply_landed_context(
+                        &mut generation,
+                        updated.source.as_deref(),
+                        context.as_ref(),
+                    );
                     if let Some(id) = updated.artifact_file_name.as_deref() {
                         if let Err(error) =
                             crate::studio_project::record_landed_artifact(app, id, &generation)
@@ -830,25 +838,25 @@ fn is_composition(source: Option<&str>) -> bool {
 
 /// What a finished job's notification says. A composition's prompts are the
 /// app's own instructions to the model, never worth showing.
-fn notification_text(job: &MediaJobDto, success: bool) -> (&'static str, String) {
+fn notification_text(job: &MediaJobDto, success: bool) -> (String, String) {
     // The last image of a composition says nothing about the others (some may
     // have failed, some may have landed): one neutral word for the whole.
     if is_composition(job.source.as_deref()) {
         return (
-            "Your composition is finished",
-            "Open Sub Rosa to see the images.".to_string(),
+            crate::tr!("Your composition is finished"),
+            crate::tr!("Open Sub Rosa to see the images."),
         );
     }
     let title = if success {
         match job.kind.as_str() {
-            "video" => "Your video is ready",
-            "music" => "Your track is ready",
-            "sfx" => "Your sound effect is ready",
-            "speech" => "Your voice-over is ready",
-            _ => "Your image is ready",
+            "video" => crate::tr!("Your video is ready"),
+            "music" => crate::tr!("Your track is ready"),
+            "sfx" => crate::tr!("Your sound effect is ready"),
+            "speech" => crate::tr!("Your voice-over is ready"),
+            _ => crate::tr!("Your image is ready"),
         }
     } else {
-        "Your generation failed"
+        crate::tr!("Your generation failed")
     };
     let body = job
         .prompt
@@ -859,7 +867,7 @@ fn notification_text(job: &MediaJobDto, success: bool) -> (&'static str, String)
         .trim()
         .to_string();
     let body = if body.is_empty() {
-        "Open Sub Rosa to see it.".to_string()
+        crate::tr!("Open Sub Rosa to see it.")
     } else {
         body
     };
@@ -987,7 +995,7 @@ mod tests {
         assert_eq!(
             notification_text(&job, true),
             (
-                "Your composition is finished",
+                "Your composition is finished".to_string(),
                 "Open Sub Rosa to see the images.".to_string()
             )
         );
@@ -998,8 +1006,25 @@ mod tests {
         let studio = finished(Some("studio"), "A lighthouse at dusk");
         assert_eq!(
             notification_text(&studio, true),
-            ("Your image is ready", "A lighthouse at dusk".to_string())
+            (
+                "Your image is ready".to_string(),
+                "A lighthouse at dusk".to_string()
+            )
         );
+    }
+
+    #[test]
+    fn a_job_notification_speaks_the_apps_language() {
+        use crate::i18n::{with_locale, Locale};
+        let video = MediaJobDto {
+            kind: "video".into(),
+            ..finished(Some("studio"), "")
+        };
+        let (title, body) = with_locale(Locale::Fr, || notification_text(&video, true));
+        assert_eq!(title, "Votre vidéo est prête");
+        assert_eq!(body, "Ouvrez Sub Rosa pour voir le résultat.");
+        let (failed, _) = with_locale(Locale::Fr, || notification_text(&video, false));
+        assert_eq!(failed, "Votre génération a échoué");
     }
 
     #[test]

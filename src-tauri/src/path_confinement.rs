@@ -171,10 +171,52 @@ pub fn confine_new(
     Ok(resolved)
 }
 
+/// `path` as given when it is absolute, else read from `base`. A relative
+/// path is how a chat prompt names a file inside the Hermes workspace
+/// (`attachmentPromptPath`), and it means nothing against the process's own
+/// working directory. Joining is not confining: the result still goes through
+/// [`confine_existing`], which refuses a `..` that climbs out.
+pub fn resolve_relative_to(base: &Path, path: &str) -> PathBuf {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn a_relative_path_is_read_from_its_base_and_still_confined() {
+        let root = temp_root("relative");
+        let workspace = root.join("workspace");
+        fs::create_dir_all(workspace.join("uploads")).unwrap();
+        fs::write(workspace.join("uploads/cat.png"), b"png").unwrap();
+        fs::write(root.join("secret.txt"), b"no").unwrap();
+
+        let inside = resolve_relative_to(&workspace, "uploads/cat.png");
+        assert_eq!(
+            confine_existing(
+                std::slice::from_ref(&workspace),
+                &inside,
+                "denied",
+                "denied"
+            )
+            .unwrap(),
+            workspace.join("uploads/cat.png")
+        );
+        let absolute = workspace.join("uploads/cat.png");
+        assert_eq!(
+            resolve_relative_to(Path::new("/elsewhere"), absolute.to_str().unwrap()),
+            absolute
+        );
+        let climbing = resolve_relative_to(&workspace, "../secret.txt");
+        assert!(confine_existing(&[workspace], &climbing, "denied", "denied").is_err());
+    }
 
     fn temp_root(name: &str) -> PathBuf {
         let dir =

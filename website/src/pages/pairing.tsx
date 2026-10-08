@@ -39,6 +39,11 @@ export function parsePairCode(code: string, accountId: string) {
   if (secret.length !== 32) throw new Error("Invalid pairing secret");
   return { ...value, secret };
 }
+/** The transfer code an unlocked device approves. It travels between the
+ * person's own devices and never through the relay. */
+export function makePairCode(requestId: string, accountId: string, secret: Uint8Array): string {
+  return `srpair1.${encode(new TextEncoder().encode(JSON.stringify({ request_id: requestId, account_id: accountId, secret: encode(secret) })))}`;
+}
 export function PairApproval({ accountId, vaultKey }: { accountId: string; vaultKey: Key }) {
   const scope = usePairingScope(accountId, vaultKey);
   const [code, setCode] = useState(initialFragment);
@@ -171,9 +176,7 @@ export function PairReceiver({
       }
       secretRef.current?.fill(0);
       secretRef.current = secret;
-      setCode(
-        `srpair1.${encode(new TextEncoder().encode(JSON.stringify({ request_id: id, account_id: accountId, secret: encode(secret) })))}`,
-      );
+      setCode(makePairCode(id, accountId, secret));
       setRequestId(id);
     } catch {
       secret.fill(0);

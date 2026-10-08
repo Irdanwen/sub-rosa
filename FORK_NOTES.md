@@ -172,8 +172,10 @@ Clé `cdm_` de test fournie par l'utilisateur (jamais commitée ; utilisée en e
 | `.github/workflows/{build-june-api.yml, june-api-watchdog.yml}` (**infra Phala d'upstream mise en manuel**, 2026-07-25 ; **les trois fichiers, `promote-june-api.yml` compris, sont supprimés le 2026-09-02** : un serveur que le fork n'a pas n'a pas besoin de workflows inertes, et `docs/index.md` le dit) | **Ces deux workflows pilotent le june-api *hébergé* d'upstream, que le fork n'a pas** (non-objectif assumé : le desktop lance `june-api` en sidecar local sur loopback, iOS l'embarque via `june-embed`). Leurs déclencheurs automatiques sont retirés, `workflow_dispatch` conservé — le fichier reste intact pour les re-merges et lançable à la main si le fork héberge un jour june-api. (1) `build-june-api` : construisait une image Docker de june-api, la poussait sur GHCR et la déployait sur une CVM Phala, à chaque push touchant `june-api/**`. **Rouge depuis la création du fork** : l'image s'appelle `ghcr.io/<owner>/june-api` et l'owner est `Irdanwen` — GHCR refuse les majuscules. Personne ne tire cette image, aucune CVM n'existe. Si un jour on le réactive : passer l'owner en minuscules d'abord. (2) `june-api-watchdog` : `cron: */30` sondant `https://june-api.opensoftware.co/healthz`, c'est-à-dire **la prod de June, pas la nôtre** — 48 réveils par jour pour surveiller l'infra de quelqu'un d'autre, et surtout il **ouvre une issue sur CE dépôt** quand la sonde échoue (des rapports de panne qu'on ne peut pas traiter). Pour le réactiver : pointer `PROD_BASE_URL` sur notre instance et remettre le cron. `promote-june-api` était déjà `workflow_dispatch` seul, donc inerte : laissé tel quel. | Ne pas réintroduire les blocs `on: push` / `on: schedule` lors d'une synchro upstream : upstream les a légitimement, nous non |
 | `src/app/App.tsx`, `src/components/sidebar/Sidebar.tsx`, `src/main.tsx` (Studio, 2026-07-04) | Vue « Studio » : cas `"studio"` dans `SidebarView`/`tabMeta`/le switch de rendu, bouton nav + quick command sidebar, import `styles/studio.css` | Réappliquer les 3 hooks (additifs) |
 | `src-tauri/tauri.conf.json` (Studio) | Scope assetProtocol `$APPDATA/studio-media/*` (affichage des fichiers de la galerie via `convertFileSrc`) | 1 entrée de scope |
+| `src-tauri/tauri.conf.json` (CSP, Python du téléphone, ADR-0086, 2026-10-08) | `script-src` garde `'wasm-unsafe-eval'` (Pyodide) et la CSP gagne `worker-src 'self' blob:` : le worker Python démarre d'un blob (`src/lib/python/worker-url.ts`) pour hériter de la politique de la page, car Tauri n'envoie l'en-tête CSP qu'avec le HTML et un worker chargé depuis son URL tournait sans aucune politique. Épinglé par `src-tauri/tests/csp.rs` et `src/test/tauri-csp.test.ts`. | Garder les deux sources ; ne jamais élargir `worker-src` |
 | `package.json` (Studio) | Dépendance `@xyflow/react` (canvas de workflows) | Additif |
 | `src-tauri/src/{lib,domain/types}.rs`, `src-tauri/src/db/{migrations,repositories}.rs`, `src-tauri/src/agent_lite/mod.rs`, `src-tauri/src/hermes_bridge.rs`, `src-tauri/src/hermes/june_context_mcp.py`, `src/components/agent/AgentWorkspace.tsx`, `src/components/mobile/screens/{AgentScreen,SettingsScreen}.tsx`, `src/components/settings/AppSettings.tsx`, `src/components/sidebar/Sidebar.tsx`, `src/lib/tauri.ts`, `src/styles/mobile.css` (**Mémoire inter-conversations**, 2026-07-10) | Système de mémoire façon Venice Memoria (voir `docs/adr/0009-local-cross-conversation-memory.md`) : table `memories` (migration 010) + méthodes repository, module `src-tauri/src/memory/` (réglages `memory.json`, commandes CRUD + `memory_extract`, extraction tous les 3 tours assistant, injection `prompt_block`, recall hybride LIKE+cosinus/RRF avec embeddings BGE-M3 appelés en direct sur Carpe Diem). Injection : bloc « User memory » dans `sync_june_soul` (desktop, + section `JUNE_SOUL_CONTEXT_MD` étendue) et dans le system prompt d'agent-lite (mobile, chaque tour). Outils de rappel : `search_user_memories` dans `june_context_mcp.py` (gaté par argv `--memory=off`) et `search_memories` dans agent-lite. Déclencheur desktop : `noteAssistantTurnCompleted` (`src/lib/memory.ts`) branché sur l'événement terminal d'`AgentWorkspace`. UI : onglet Settings « Memory » (desktop) + section Memory mobile. | Réappliquer : migration+repo, `pub mod memory` + 8 commandes dans **les deux** `generate_handler!`, hook agent_lite, param `user_memory` de `sync_june_soul`, arg mémoire du MCP context, trigger AgentWorkspace, entrées UI |
+| `src-tauri/src/hermes_bridge.rs`, `src-tauri/src/agent_lite/mod.rs`, `src-tauri/src/hermes/june_context_mcp.py`, `src-tauri/src/lib.rs`, `src/components/agent/AgentWorkspace.tsx`, `src/components/mobile/screens/AgentScreen.tsx` (**Personnalisation, discussions passées, sources de mémoire**, 2026-10-07) | ADR-0081. Bloc de personnalisation (`src-tauri/src/personalization/`) et extraits des autres discussions (`memory/past_chats.rs`) injectés aux deux coutures mémoire : la section personnelle du SOUL (marquée, réécrite en place à l'enregistrement) et le prompt d'agent-lite (chat par défaut seulement). Outil `search_past_chats` (agent-lite + MCP, gaté par `--memory=off` / `--past-chats=off`). Sources de mémoire par tour/session (migration 044, `memory/sources.rs`), puce mobile et indicateur desktop. | Réappliquer : `soul_section_for_app` à la place de `prompt_block_for_app` dans le spawn, `context_mcp_args` dans `render_context_mcp_entry`, `sources::block_for_turn` + `default_chat_context` + l'outil dans agent-lite, 4 commandes dans **les deux** `generate_handler!`, une ligne de montage dans AgentWorkspace et AgentScreen |
 | ~~`src-tauri/src/videomaker/**`, `src/lib/films/**`, `FilmStudio`/`FilmDirectorPanel`/`FilmProduceControl`/`VideomakerSettings`, deps `hex`/`k256`/`sha3`, 33 commandes desktop~~ (**retiré le 2026-08-24**) | La production de films via un studio distant a été supprimée (ADR-0029). Ce qui a été rendu au passage : trois dépendances cryptographiques, 33 entrées de la liste desktop de `generate_handler!`, et la CSP resserrée — `img-src`/`media-src` ne portent plus `https:`, qui n'existait que pour les URLs signées du studio. Rien à re-mergier. | Si un sync amont ramène quoi que ce soit de tout cela, `repository-hygiene.yml` échoue |
 | ~~`src-tauri/src/hermes/june_films_mcp.py`~~ (**retiré le 2026-08-24**) | Le MCP `june_films` a été supprimé avec le studio distant (ADR-0029). Remplacé par `june_studio_mcp.py` (ligne dédiée plus bas). Rien à re-mergier : si un sync amont le ramène, `repository-hygiene.yml` échoue. |
 | ~50 fichiers `src/**` (composants + `lib/`) | Rebrand des **chaînes visibles** « June »→« Sub Rosa » (identifiants techniques laissés : `june://`, `JUNE_*`, clés `os-june:*`, noms de symboles) | Conflits attendus ; garder « Sub Rosa » dans le texte visible |
@@ -2064,3 +2066,320 @@ Le plafond B2 est une action de l'opérateur (Caps & Alerts), pas du code.
 |---|---|---|
 | `src/app/mobile/MobileApp.tsx`, `src/app/mobile/nav.ts` | Route `studio-compose`, écoute `OPEN_COMPOSE_EVENT` | Réappliquer |
 
+
+## Le chat desktop : effort de réflexion, Régénérer, Modifier, Archiver (2026-10-07, ADR-0080)
+
+Lot P1-WP2 de la parité (ADR-0078). Tout passe par les primitives réelles du
+runtime Hermes épinglé, vérifiées sur une passerelle vivante :
+
+- **Effort de réflexion = alias de modèle** `<id>@reasoning-effort=<niveau>`,
+  donné à `session.create` et à `config.set`. Le proxy fournisseur
+  (`hermes_bridge/provider_proxy.rs`) retire le suffixe et pose
+  `reasoning_effort` avant le sidecar. Proposé seulement si le catalogue porte
+  `supportsReasoningEffort`, choix gardé par modèle sur l'appareil
+  (`src/lib/reasoning-effort.ts`).
+- **Changement de modèle en direct = `config.set … --session`** sur l'id
+  runtime (le `command.dispatch` `/model` était refusé en 4018).
+- **Régénérer / Modifier = `/undo` puis un nouveau tour**
+  (`src/lib/hermes-turn-rewrite*.ts`) ; un message plus ancien se modifie dans
+  une branche. « Brancher ici » passe par la même séquence (l'id runtime, puis
+  `/undo` sur la branche).
+- **Archiver = l'appartenance au dossier « Archive »**, désormais synchronisée
+  (`account_session_folders`, migration 043, `account/session_folders.rs`) et
+  lue sous les deux ids d'une discussion (`db/repositories/session_folders.rs`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/components/agent/AgentWorkspace.tsx` | Alias à `session.create`, `withLiveSession`, `switchRuntimeModel`, deps des réécritures, Régénérer et édition en ligne dans `AgentChatTurnRow`, contrôle d'effort ; aides presse-papiers déplacées dans `src/lib/clipboard-images.ts` | Réappliquer |
+| `src/lib/hermes-control-plane/methods.ts` | `switchActiveSessionModel` par `config.set`, `dispatchUndoCommand` | Réappliquer |
+| `src/lib/hermes-control-plane/compatibility/matrix.ts` | `config.set`, `command.dispatch`, `session.branch`, `reasoningEffortControls` | Réappliquer |
+| `src/lib/hermes-adapter.ts`, `hermes-session-usage.ts`, `carpe-diem-text-pricing.ts`, `model-names.ts` | Retirer l'alias de ce qui s'affiche ou se paie | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | Appel de `apply_reasoning_effort_alias`, `provider_models_body` déplacé dans `provider_proxy.rs` | Réappliquer |
+| `src/components/agent/AgentSessionsList.tsx`, `src/components/sidebar/Sidebar.tsx`, `sidebar-context.tsx`, `src/app/App.tsx` | Vue « Discussions archivées », Archiver / Restaurer | Réappliquer |
+| `src-tauri/src/db/repositories.rs` | Requêtes des dossiers de discussion déplacées dans `repositories/session_folders.rs` | Réappliquer |
+
+### Pièges
+
+- Rien ne doit lire un modèle venu de Hermes sans `stripReasoningEffortAlias`.
+- Le suffixe est long exprès : Hermes « corrige » une valeur `/model` à 90 %
+  semblable à un id listé.
+- `session.branch` ignore `from_message_id` et démarre la branche sur le modèle
+  par défaut du profil ; son id stocké se retrouve parmi les enfants de la
+  source.
+
+## Lire, noter et exporter une réponse ; jauge desktop (2026-10-07, ADR-0082)
+
+Lot P1-WP4 de la parité (ADR-0078), desktop et téléphones :
+
+- **Lire à voix haute** (`src/components/chat/ReadAloudButton.tsx`,
+  `src/lib/reply-speech.ts`) : le rail `/audio/speech` du récap parlé, découpé
+  en morceaux (`src/lib/speakable-text.ts`, partagé avec `note-speech.ts`), une
+  seule réponse à la fois, un `<audio>` réel pour les contrôles système.
+- **Noter une réponse** (`src/components/chat/RateReply.tsx`,
+  `src/lib/reply-ratings.ts`, `src-tauri/src/reply_ratings.rs`, migration 045) :
+  gardée sur l'appareil, aucune synchro, seulement dans l'archive.
+- **Exporter une conversation** (`src/lib/conversation-export.ts`,
+  `src-tauri/src/conversation_export/`) : Markdown écrit par la webview, PDF
+  dessiné en Rust avec les polices de base ; enregistrer (desktop) ou partager
+  (téléphone).
+- **Jauge de contexte desktop** (`ChatReplyExtras.tsx`) et **un seul module
+  d'effort** (`src/lib/reasoning-effort.ts`, l'alias desktop compris).
+- Régénérer/Modifier : un envoi qui échoue après `/undo` remet le texte dans la
+  zone de saisie ; Régénérer est désactivé sur une question avec images ; une
+  branche qui ne change pas de modèle le dit.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/components/agent/AgentWorkspace.tsx` | `ReplyExtras` dans la rangée d'actions, `ExportChatItems` dans le menu de session, `DesktopContextGauge` au composer, `rewriteTargetsFor`, deps `restoreDraft`/`notice` | Réappliquer |
+| `src/components/settings/PrivacySettingsSection.tsx` | Une phrase : les notes de réponse ne quittent pas l'appareil | Réappliquer |
+| `src-tauri/src/note_export.rs`, `src-tauri/src/share_ios.rs` | `safe_file_stem` et `present_file` extraits pour l'export de conversation | Réappliquer |
+| `src-tauri/src/archive.rs` | `reply_ratings` dans `ARCHIVED_TABLES` | Réappliquer |
+
+### Pièges
+
+- Le PDF ne couvre que WinAnsi : les emoji disparaissent, une autre écriture
+  devient `?`. L'export Markdown garde tout.
+- `AndroidExports.shareFile` donnait `image/*` à toute extension inconnue : un
+  `.md` est maintenant `text/markdown`.
+
+## Canevas, bibliothèque, numérisation, essayage, image affinée (2026-10-08, ADR-0087, ADR-0088)
+
+Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
+
+- **Canevas** (`src/components/canvas/`, `src/lib/canvas.ts`,
+  `src/lib/canvas-block.ts`) : une note ouverte à côté du chat (vue scindée
+  desktop `CanvasHost`, écran pushé sur le téléphone). Le bloc
+  `subrosa:canvas` ouvre un brouillon ou propose une version d'un canevas
+  existant ; une consigne sous le canevas lance une réécriture `canvas` de
+  tout le document (`note_ai`, `note-rewrite-v2`). Rien n'est écrit sans
+  « Accepter ». « Demander à Sub Rosa » cite la sélection dans le chat
+  (`src/lib/ask-selection.ts`).
+- **Tableaux dans les notes** : `@tiptap/extension-table`, cellule limitée à
+  un paragraphe, tableaux GFM alignés, convertisseur et corpus d'abord
+  (`note-markdown.ts`, `note-markdown.test.ts`), puis « Tableau » dans la
+  palette `/`.
+- **Bibliothèque** (`src/components/library/LibraryView.tsx`,
+  `src/lib/chat-library.ts`, `src-tauri/src/saved_items.rs`, migration 054) :
+  réponses, liens et lieux enregistrés (local, archive seulement) et images
+  des conversations (galerie, `origin: chat`).
+- **Image affinée** (`src-tauri/src/image_refine.rs`, `RefinePanel.tsx`,
+  `estimate_image_refine` et `refine_passes` dans `june_media_mcp.py`) et
+  **essayage** (`src/lib/studio/try-on.ts`, `TryOnPanel.tsx`, `TryOnCard.tsx`).
+- **Numérisation** (`src-tauri/src/scan/`, `native/document-scanner/`,
+  `DocumentScanner.kt`) : VisionKit et Vision sur iPhone, ML Kit sur Android ;
+  une note par numérisation, le PDF à `scans/<id de note>.pdf`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/app/App.tsx` | `CanvasHost` autour d'`AgentWorkspace`, vue `library`, écoute de « Demander à Sub Rosa » | Réappliquer |
+| `src/components/sidebar/Sidebar.tsx`, `src/app/tab-meta.tsx` | Entrée « Bibliothèque » | Réappliquer |
+| `src/components/agent/composer/ComposerEditor.tsx` | Prend la citation en attente | Réappliquer |
+| `src/components/note-editor/SelectionToolbar.tsx` | Bouton « Demander à Sub Rosa » | Réappliquer |
+| `src/lib/tauri.ts` | `RewriteKind` gagne `canvas` | Réappliquer |
+| `src-tauri/src/lib.rs` | Modules et commandes (les deux listes ; `scan::` mobile seulement) | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | Paragraphes canevas et essayage du SOUL, route `/v1/media/refine`, `generation` sur `/v1/media/save` | Réappliquer |
+| `src-tauri/src/hermes/june_media_mcp.py` | `refine_passes`, `estimate_image_refine` | Réappliquer |
+| `src-tauri/build.rs`, `gen/apple/project.yml`, `project.pbxproj` | Pont Objective-C du scanner, VisionKit et Vision liés | Réappliquer |
+
+### Pièges
+
+- Le canevas n'est pas une note à part : ne jamais l'écrire depuis l'agent,
+  toujours passer par une version proposée.
+- `display: contents` sur `.canvas-split` fermé : changer l'arbre autour
+  d'`AgentWorkspace` le remonterait et perdrait la conversation en cours.
+- Le `shareFile` Android existant n'accepte que `filesDir`, alors que les
+  données de l'app sont sous `dataDir` : partager une image Studio sur Android
+  peut être refusé (non corrigé ici ; le PDF numérisé a son propre partage).
+
+## Correctifs du lot P4 (2026-10-08, addendum ADR-0088)
+
+- **Partage Android** : `AndroidExports.kt` vérifiait les chemins sous
+  `filesDir`, alors que le dossier de données de Tauri sur Android est
+  `dataDir` ; toute image Studio et tout export étaient refusés. Les deux côtés
+  nomment maintenant les mêmes dossiers sous `dataDir` (`src-tauri/src/shareable.rs`,
+  dont un test lit le source Kotlin).
+- **Bibliothèque synchronisée** : `saved_items` rejoint le registre de synchro
+  (`account/sync_tables.rs`, extrait de `sync.rs` pour le plafond de taille ;
+  `account/saved_items.rs`), id dérivé de la clé, conversations temporaires
+  exclues. Le PDF d'une numérisation reste local (addendum ADR-0088).
+- **Coloration syntaxique** : `lowlight` + `highlight.js` (22 langages, chunk
+  chargé à la demande, `src/lib/code-highlight.ts`), décorations dans
+  l'éditeur de note (`note-editor/codeHighlight.ts`), blocs de code du chat
+  sur les deux shells et aperçu du canevas de code.
+
+| Fichier upstream | Changement | Re-merge |
+|---|---|---|
+| `src/components/agent/AgentWorkspace.tsx` | `highlightText` déplacé dans `src/lib/highlight-text.tsx` ; bloc de code via `HighlightedCode` | Réappliquer |
+| `src/components/note-editor/extensions.ts` | `codeBlock: false` dans StarterKit, `NoteCodeBlock` à la place | Réappliquer |
+| `src/lib/simple-markdown.tsx` | Bloc de code via `HighlightedCode`, l'ancien colorieur en repli | Réappliquer |
+
+## Widgets, Apple Watch et partage Android (2026-10-08, ADR-0095)
+
+- `src-tauri/gen/apple/Widgets/` (cible `os-june_Widgets`, App Group),
+  `Watch/` (cible `os-june_Watch`, app watchOS 10 à cible unique, embarquée
+  dans `$(CONTENTS_FOLDER_PATH)/Watch`) et `WatchWidgets/` (complication,
+  embarquée dans l'app Watch) ; `Sources/os-june/Watch/WatchBridge.swift`
+  (session WatchConnectivity côté iPhone, classe `SubRosaWatchBridge` appelée
+  par Rust). Projet régénéré avec `xcodegen` puis `git checkout
+  os-june_iOS/Info.plist` (le plist committé porte
+  `ITSAppUsesNonExemptEncryption`, absent de `project.yml`). Compilation
+  seule : `xcodebuild -target os-june_Widgets -sdk iphonesimulator
+  CODE_SIGNING_ALLOWED=NO` et `-target os-june_Watch -sdk watchsimulator`
+  (sans runtime watchOS installé, ajouter `EXCLUDED_SOURCE_FILE_NAMES=Assets.xcassets
+  ASSETCATALOG_COMPILER_APPICON_NAME=` : l'actool de Xcode 26 l'exige).
+- `src-tauri/src/watch_relay.rs` (question de la montre → conversation
+  agent-lite + `watch-requests/<id>.json`, relivré par `background::sweep`),
+  `share_inbox.rs` (boîte Android sous `dataDir`, pièces jointes image et
+  document, `pending_shared_items` mobile seulement).
+- `src-tauri/android/` : `ShareReceiverActivity.kt` (SEND/SEND_MULTIPLE),
+  `AskWidgetProvider.kt` + `res/layout/subrosa_widget.xml`,
+  `res/xml/subrosa_widget_info.xml`, déclarés dans le manifeste de la
+  bibliothèque.
+- `ios-release.yml` : trois profils de plus (`IOS_WIDGETS_PROVISION_PROFILE`,
+  `IOS_WATCH_PROVISION_PROFILE`, `IOS_WATCH_WIDGETS_PROVISION_PROFILE`),
+  cinq bundles tamponnés, plateforme watchOS installée si absente ;
+  `scripts/sync-ios-version.mjs` couvre les trois nouveaux plists.
+  Depuis le 2026-10-08, ces profils ne sont plus des secrets obligatoires :
+  `scripts/ios-provision.mjs` (logique pure et testée dans
+  `scripts/ios-signing.mjs`, `src/test/ios-signing.test.mjs`) enregistre les
+  bundle ids, active HealthKit et fait ou refait chaque profil App Store par
+  l'API ; un bundle sans profil est retiré de l'archive. Les widgets ne sont
+  plus dans l'App Group (`Widgets.entitlements` supprimé).
+
+## La conversation vocale (2026-10-08, ADR-0093)
+
+Lot P7 de la parité (ADR-0078), desktop et téléphones : parler à l'assistant
+et l'entendre répondre, mains libres.
+
+- **La boucle en Rust** (`src-tauri/src/voice/`) : détecteur d'énergie local
+  (`vad.rs`), découpe en phrases du flux de la réponse (`sentences.rs`),
+  machine d'états pure (`machine.rs`, `engine.rs`), une session par thread
+  qui possède micro et haut-parleur (`session.rs`, `io.rs`). Transcription
+  par le rail de la dictée (`/v1/dictate`), voix par `/audio/speech` (proxy
+  média, donc mode protégé et heures calmes compris), une phrase rendue
+  d'avance, pas plus.
+- **Le tour est celui du shell** : la webview l'envoie par le `send` du
+  composer (desktop : `submitHermesSession` ; téléphone : `send` de
+  `AgentScreen`) et renvoie la réponse au fil du flux
+  (`src/lib/voice/voice-controller.ts`, `reply-snapshot.ts`).
+- **Écho** : Voice-Processing I/O sur iOS et macOS (`io_apple.rs`, session
+  `.voiceChat` sur iOS ; `coreaudio-rs` est désormais une dépendance macOS
+  aussi, déjà tirée par cpal), préréglage `VoiceCommunication` d'Oboe sur
+  Android (`io_android.rs`), seuil d'interruption relevé sur Windows et
+  partout où l'unité ne démarre pas (`prefer_echo_cancelling` dans `io.rs`).
+- **Caméra / écran** : aperçu caméra dans la webview (téléphones), image
+  d'écran par le helper audio système sur Mac (`--screenshot`,
+  ScreenCaptureKit), par un `BitBlt` GDI de l'écran principal sur Windows
+  (`screen_windows.rs`, fenêtres de l'app exclues par
+  `WDA_EXCLUDEFROMCAPTURE` le temps de la copie ; feature
+  `Win32_Graphics_Gdi` ajoutée à `windows`).
+- **Auto-test réel** (debug) : `SUBROSA_VOICE_SELFTEST=1` ou le test ignoré
+  `voice::selftest` fait passer une question parlée (rendue par la vraie
+  voix) par détecteur, dictée, chat, découpe et voix, et chronomètre chaque
+  étape (`voice/selftest.rs`, commande dans son en-tête).
+- **Mode protégé** : « Voix » coupée appliquée en Rust
+  (`protected_mode::check_voice`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/components/agent/AgentWorkspace.tsx` | Le bouton micro du composer devient `DesktopComposerVoice` (dictée + conversation vocale) | Réappliquer |
+| `src-tauri/native/mac-system-audio-recorder/main.swift` | Mode `--screenshot` (ScreenCaptureKit, sans les fenêtres de l'app) | Réappliquer |
+| `src-tauri/build.rs` | Frameworks `ScreenCaptureKit`, `ImageIO`, `UniformTypeIdentifiers` pour ce helper | Réappliquer |
+| `src-tauri/Info.plist` | Texte du micro : la conversation vocale | Réappliquer |
+
+### Pièges
+
+- `cpal` n'ouvre que Remote I/O sur iOS et le préréglage `VoiceRecognition`
+  sur Android : sans les deux modules natifs, pas d'annulation d'écho.
+  Non vérifié sur appareil au moment de l'écriture ; une entrée qui reste
+  muette 3 s est rouverte sur les flux simples.
+- `useCallback` ne garde la forme compacte de Biome que pour une flèche sans
+  paramètre : le tour parlé passe à `send` par une ref (`spokenRef`).
+
+## L'extension de navigateur (2026-10-08, ADR-0100)
+
+- `browser-extension/` : paquet du workspace pnpm sans dépendance (Manifest
+  V3, panneau latéral et popup sur une seule page, menu de sélection,
+  `_locales` en et fr). `pnpm --filter @subrosa/browser-extension build`
+  produit `dist/chrome`, `dist/firefox` et les zips des boutiques. Doc :
+  `docs/browser-extension.md`.
+- `src-tauri/src/browser_extension/` : enregistrement de l'hôte de messagerie
+  native par navigateur (`host_manifest.rs`), le binaire en relais
+  (`relay.rs`, détecté dans `main.rs` avant Tauri), socket ou tube nommé
+  (`endpoint.rs`), appairage par code (`pairing.rs`), décision pure par trame
+  (`session.rs`), écoute et tour agent-lite (`server.rs`). Desktop seulement.
+- Réglages › Extension de navigateur : `BrowserExtensionSection.tsx`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/main.rs` | Le binaire lancé par un navigateur devient le relais et sort avant Tauri | Réappliquer |
+| `src-tauri/src/lib.rs` | Module `browser_extension` (desktop), `setup`, cinq commandes dans la liste desktop | Réappliquer |
+| `src-tauri/Cargo.toml` | Fonction `io-std` de tokio (desktop) pour le relais | Réappliquer |
+| `src/components/settings/AppSettings.tsx`, `src/components/sidebar/Sidebar.tsx` | Onglet « Browser extension » | Réappliquer |
+
+### Pièges
+
+- L'id Chromium d'une installation décompressée vient de la `key` du
+  manifeste ; un test vérifie qu'il est celui de `CHROMIUM_EXTENSION_IDS`.
+  La clé privée n'est pas gardée : elle ne sert à rien pour une installation
+  décompressée, et les boutiques attribuent leur propre id, à ajouter à la
+  liste avant la sortie de l'app qui doit l'accepter.
+- Un build debug et un build release enregistrent le même nom d'hôte ; le
+  dernier lancé gagne (la release réécrit ses manifestes au démarrage).
+- macOS limite le chemin d'un socket à 104 octets : le fichier s'appelle
+  `bx.sock`, et un chemin trop long désactive l'extension plutôt que de
+  tronquer.
+
+## Santé et finances (2026-10-08, ADR-0099)
+
+- `src-tauri/src/health/` : mesures choisies, lecture seule (`native.rs` :
+  HealthKit par `native/health-kit/HealthBridge.m` compilé dans `build.rs`,
+  Health Connect par `HealthConnect.kt`), un résumé par mesure et par jour
+  (`health_days`, migration 068), choix de l'appareil dans `health_metrics`,
+  résumé pur (`summary.rs`) et outil `health_summary` (`tool.rs`).
+- `src-tauri/src/finance/` : relevés CSV (`csv.rs`, préréglages par en-têtes),
+  OFX/QFX (`ofx.rs`), camt.053 (`camt.rs`), table `transactions` et règles
+  (`store.rs`, `rules.rs`, migration 069), suggestions du modèle confirmées
+  (`suggest.rs`), synthèses pures (`summary.rs`), outils `spending_summary` et
+  `transactions_search` (`tool.rs`), pont manuel vers le moteur de budget
+  (`bridge.rs`). Jeux d'essai réalistes dans `finance/fixtures/`.
+- `src-tauri/src/personal_data.rs` : les trois outils pour agent-lite
+  (`agent_lite/extensions.rs`) et la dernière route du proxy local pour le MCP
+  de contexte du desktop (`hermes/june_context_mcp.py`).
+- Synchronisation : `health_days`, `transactions`, `finance_rules` dans
+  `account/sync_tables.rs`, filtrés par `stays_local` ; `enqueue_existing`
+  envoie l'existant quand la personne active la synchronisation.
+- Front : `src/lib/health.ts`, `src/lib/finance.ts`,
+  `src/components/personal-data/` (vues partagées, feuille d'import avec
+  correspondance des colonnes), entrées du menu latéral desktop
+  (`PersonalDataNav.tsx`) et Réglages du téléphone (`PersonalDataScreen.tsx`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/hermes_bridge.rs` | La route `_` du proxy délègue à `personal_data::proxy_route` (qui répond 404 au reste) | Réappliquer |
+| `src-tauri/src/hermes/june_context_mcp.py` | Trois outils santé et finances, annoncés avec les coordonnées du proxy | Réappliquer |
+| `src-tauri/src/lib.rs` | Modules `finance`, `health`, `personal_data` ; 21 commandes dans les deux listes | Réappliquer |
+| `src-tauri/build.rs`, `src-tauri/Cargo.toml` | HealthKit lié et compilé pour iOS ; `regex` et `encoding_rs` (déjà dans le lockfile) | Réappliquer |
+| `src/app/App.tsx`, `src/components/sidebar/Sidebar.tsx`, `src/app/tab-meta.tsx` | Vues Santé et Finances | Réappliquer |
+
+### Pièges
+
+- `Steps` et `Period` existent déjà dans les catalogues au sens « étapes » et
+  « époque » : les libellés de santé disent `Step count`, `{count} steps walked`
+  et `Time range`.
+- L'entitlement HealthKit casse l'export si le profil ne le porte pas : la
+  lane iOS le retire alors (avertissement) au lieu d'échouer.
+- La bibliothèque Health Connect exige minSdk 26 : le module du plugin passe
+  de 24 à 26 (l'app est à 29).

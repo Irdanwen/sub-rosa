@@ -48,6 +48,11 @@ pub const ARCHIVED_TABLES: &[&str] = &[
     "notes",
     "note_folders",
     "session_folders",
+    // A project's settings and files sit beside its folder (ADR-0085). A
+    // file row carries its extracted text; its bytes go with the reference
+    // files below.
+    "project_settings",
+    "project_files",
     "recording_sessions",
     "audio_artifacts",
     "transcripts",
@@ -66,6 +71,9 @@ pub const ARCHIVED_TABLES: &[&str] = &[
     "bible_entries",
     "bible_refs",
     "shot_lists",
+    "reply_ratings",
+    "saved_items",
+    "study_cards",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,9 +105,12 @@ pub async fn dump_table(
     table: &str,
 ) -> Result<Vec<ArchiveRow>, sqlx::error::Error> {
     let names = columns(pool, table).await?;
-    let rows = query(&format!("SELECT * FROM {table}"))
-        .fetch_all(pool)
-        .await?;
+    let rows = query(&format!(
+        "SELECT * FROM {table}{}",
+        crate::temporary_chat::archive_filter(table)
+    ))
+    .fetch_all(pool)
+    .await?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         let mut map = ArchiveRow::new();
@@ -289,7 +300,8 @@ pub async fn write_tar<W: Write>(
         let dir = root.join("assistant-references");
         if dir.is_dir() {
             // Interrupted cleanup must never make removed private bytes part
-            // of an export. Only current references and saved chats own files.
+            // of an export. Only current references, project files and saved
+            // chats own files.
             for name in crate::assistants::retained_reference_files(pool).await? {
                 let path = crate::assistants::reference_file(&dir, &name)?;
                 if path.is_file() {

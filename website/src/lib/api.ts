@@ -22,6 +22,16 @@ export interface Device {
   created_at: string;
   last_seen_at: string | null;
   revoked_at: string | null;
+  /** Absent from services older than ADR 0096, which only had apps. */
+  kind?: "native" | "browser";
+}
+/** One line of the account's security history. The service records no
+ * address, user agent or place, so there is nothing more to show. */
+export interface SecurityEvent {
+  id: string;
+  kind: string;
+  occurred_at: string;
+  device_name: string | null;
 }
 export interface Change {
   sequence: number;
@@ -44,6 +54,14 @@ export interface VaultRecord {
   version: number;
   envelope: string;
 }
+/** How a request reaches the service. The page's own `fetch`, unless an
+ * Office task pane whose frame carries no session hands its calls to a
+ * signed-in window (ADR-0102), which adds the cookie and the CSRF token. */
+export type ApiTransport = (path: string, init: RequestInit) => Promise<Response>;
+let transport: ApiTransport | null = null;
+export function setApiTransport(next: ApiTransport | null) {
+  transport = next;
+}
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!path.startsWith("/api/v1/") && path !== "/auth/logout") throw new Error("Invalid API path");
   if (
@@ -63,7 +81,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     .find((x) => x.startsWith("subrosa_csrf="))
     ?.slice("subrosa_csrf=".length);
   if (csrf) headers.set("x-csrf-token", decodeURIComponent(csrf));
-  const response = await fetch(path, {
+  const response = await (transport ?? fetch)(path, {
     ...init,
     headers,
     credentials: "same-origin",
@@ -128,11 +146,35 @@ export function revisionHeads(changes: Change[]): Change[] {
 }
 
 /** The kinds a browser reads. Bounded on purpose: the page holds a decryption
- * key, so what it is allowed to pull is a decision, not a parameter. */
-export type ReadableKind = "settings" | "usage" | "note";
+ * key, so what it is allowed to pull is a decision, not a parameter. The
+ * library and usage pages read notes, settings and usage; a browser device's
+ * web client also reads and writes conversations, memories and folders
+ * (ADR-0096), and the rows of the artifact and settings tables the web
+ * client reads: the projects, saved items, assistants and gallery files
+ * (WP20a), and the tables its features registered (assignment runs,
+ * documents, transactions), skipping every other one. */
+export type ReadableKind =
+  | "settings"
+  | "usage"
+  | "note"
+  | "conversation"
+  | "memory"
+  | "folder"
+  | "artifact"
+  | "errand";
 
 export async function readChanges(signal?: AbortSignal, kind?: ReadableKind): Promise<Change[]> {
-  let cursor = 0;
+  return (await readChangesFrom(0, signal, kind)).changes;
+}
+
+/** Every change after `after`, and the cursor to resume from. A cursor is
+ * kept per filter: a notes cursor is never reused for settings. */
+export async function readChangesFrom(
+  after: number,
+  signal?: AbortSignal,
+  kind?: ReadableKind,
+): Promise<{ changes: Change[]; cursor: number }> {
+  let cursor = after;
   let bytes = 0;
   const changes: Change[] = [];
   // Bounded to avoid a hostile service exhausting browser memory.
@@ -167,7 +209,7 @@ export async function readChanges(signal?: AbortSignal, kind?: ReadableKind): Pr
         throw new ApiError("history_too_large", "Open the app to view this history.", 413);
       changes.push(change);
     }
-    if (!result.has_more) return changes;
+    if (!result.has_more) return { changes, cursor: result.cursor };
     if (result.cursor === cursor) throw new Error("Sync cursor did not advance");
     cursor = result.cursor;
   }

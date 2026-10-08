@@ -2566,6 +2566,7 @@ dependencies = [
  "rand_core 0.6.4",
  "sha2 0.10.9",
  "subtle",
+ "x25519-dalek",
  "zeroize",
 ]
 
@@ -4285,7 +4286,7 @@ dependencies = [
 
 [[package]]
 name = "os-june"
-version = "1.88.1"
+version = "1.89.0"
 dependencies = [
  "aes-gcm",
  "age",
@@ -4294,10 +4295,14 @@ dependencies = [
  "block2",
  "cc",
  "chrono",
+ "coreaudio-rs",
  "cpal",
  "diffy",
  "dotenvy",
+ "ed25519-dalek",
+ "encoding_rs",
  "hound",
+ "hpke",
  "image",
  "jni 0.21.1",
  "june-embed",
@@ -4308,12 +4313,15 @@ dependencies = [
  "objc2-core-spotlight",
  "objc2-event-kit",
  "objc2-foundation",
+ "oboe",
  "p256",
  "pdf-extract",
  "quick-xml",
  "rand 0.9.5",
+ "regex",
  "reqwest 0.12.28",
  "rustfft",
+ "scrypt",
  "semver",
  "serde",
  "serde_json",
@@ -4321,6 +4329,7 @@ dependencies = [
  "sha2 0.11.0",
  "sqlx-core",
  "sqlx-sqlite",
+ "subtle",
  "symphonia",
  "tar",
  "tauri",
@@ -4345,6 +4354,7 @@ dependencies = [
  "uuid",
  "window-vibrancy 0.8.0",
  "windows 0.61.3",
+ "x25519-dalek",
  "zeroize",
  "zip",
 ]

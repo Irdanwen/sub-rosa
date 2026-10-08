@@ -71,3 +71,152 @@ is a visible English sentence, never a broken key.
   switch in Settings reloads the page (`chooseLocaleAndReload`) rather
   than only re-mounting the shell, so module-scope copy follows too.
 - Adding a language is a JSON file and one entry in `SUPPORTED_LOCALES`.
+
+## Addendum (2026-10-08): Rust renders its own sentences from the same catalog
+
+Notifications are posted from Rust, often while the webview is frozen or
+not loaded at all, so `messageFromError` never sees them and they were
+always English. Rust now renders them itself:
+
+- **One catalog.** `src-tauri/src/i18n.rs` compiles `src/locales/fr.json`
+  in (`include_str!`) and renders `crate::tr!("…")` exactly as `t()` does:
+  the English sentence is the key and the fallback (an empty translation
+  counts as missing), `{name}` placeholders are named arguments, plurals
+  are two sentences chosen in code.
+- **The macro takes a literal**, so the extractor sees every sentence:
+  `scripts/i18n/rust-sentences.mjs` collects `tr!` literals beside the
+  `AppError::new` ones (comments skipped), `pnpm i18n:extract` writes
+  `backend-messages.json` itself, and `pnpm i18n:check` now fails when that
+  file is behind the Rust source. It was: six Code mode errors had never
+  reached the catalog.
+- **The language is the webview's.** The webview resolves the choice
+  (`system` included) and tells Rust at every boot (`i18n_set_locale`,
+  `src/lib/i18n-native.ts`); Rust keeps it in `locale.json` so a
+  background launch that posts before the webview loads speaks it too.
+  With nothing stored, the system's language decides. A switch reloads the
+  page, so the boot covers it.
+- **What stays as it came.** Text a person or a model wrote (a note title,
+  a result summary, a provider's error) is never translated. A stored run
+  failure keeps its English in the row, because the webview and every
+  device translate that sentence themselves, and `translate_known` renders
+  it for the notification. The meeting brief asks the model to write in the
+  app's language.
+
+## Addendum (2026-10-08): German, Italian, Spanish and Brazilian Portuguese
+
+The app now speaks six languages: English, French, German (`de`), Italian
+(`it`), Spanish (`es`) and Brazilian Portuguese (`pt-BR`). Nothing about the
+key changed; what changed is how many catalogs the gate holds and how the
+person reaches them.
+
+- **Every catalog is a gate.** `extract.mjs` keeps `fr`, `de`, `it`, `es`
+  and `pt-BR` in step with the code, and `pnpm i18n:check` fails when any
+  of them has an empty sentence. `scripts/i18n/verify-catalogs.mjs` is the
+  quality gate the catalog test and the check both run: same placeholder
+  set, no en or em dash, no product name lost, and no sentence of more than
+  three words left identical to its English (the rare legitimate one, a
+  command or a sample, is listed in `untranslated-ok.json`).
+- **A glossary per language** (`scripts/i18n/glossary.<lang>.json`) records
+  the register (du in German, tu in Italian, tú in neutral Spanish, você in
+  Brazilian Portuguese, the address of the reader modern apps use there),
+  the product names that never change, and the agreed word for each
+  recurring noun. Its term check prints warnings, never fails: inflection,
+  compounds and a natural rephrasing make it a reading aid, not a gate.
+- **Hermes is never shown** in the new languages, including where the
+  French still carries the name in a diagnostic sentence.
+- **The system decides by its language subtag.** `de-CH` reads German, and
+  any Portuguese (`pt-PT` too) reads the Brazilian catalog, the only
+  Portuguese the app has. `localeFromTag` (TypeScript) and
+  `Locale::from_tag` (Rust) agree on it, and `locale.json` stores the
+  webview's code (`"pt-BR"`).
+- **All six catalogs ship in the bundle,** statically imported, about 2.4 MB
+  of JSON before compression. Loading a catalog on demand would make the
+  boot asynchronous, and module-scope copy (the reason `i18n-boot.ts` is the
+  first import) needs the language decided synchronously. Rust compiles in
+  the same files and parses only the one it speaks, on first use.
+- **The picker names each language in itself** ("Deutsch", "Português
+  (Brasil)") so a person who landed in a language they cannot read still
+  finds theirs, and became a list (a select on the desktop, an option sheet
+  on the phone): six names do not fit a segmented control.
+- **Intl follows:** `intlLocale()` maps each language to its tag (`de-DE`,
+  `it-IT`, `es-ES`, `pt-BR`), and the page's `lang` attribute is set too.
+- **The native strings follow the same list:** the iOS widgets, the watch
+  app, its complication and the Shortcuts actions have a `.lproj` per
+  language (declared in `CFBundleLocalizations` and the project's known
+  regions), the Android widget and notifications have `values-de`,
+  `values-it`, `values-es` and `values-pt-rBR`, and the browser extension
+  has `_locales/{de,it,es,pt_BR}`. Tests hold each of them to the full list.
+
+Adding a seventh language is now: the catalog, its glossary, one entry in
+`SUPPORTED_LOCALES` and `TRANSLATED_LOCALES`, one arm in `Locale`, and the
+native tables.
+
+## Addendum (2026-10-08): one sentence per sense, and the permission prompts
+
+- **A word with two senses gets two sentences.** The key is the English, so
+  an English word that is both a verb and a noun shares one translation and
+  reads wrong in one place. "Archive" stays the action (Archiver,
+  Archivieren); the settings section that writes the archive of ADR-0042 is
+  "Archive file". "Shortcuts" stays the desktop's keyboard shortcuts; the
+  phone's group is "Shortcuts app" on the iPhone (Apple's app, whose name
+  differs per language: Kurzbefehle, Comandi Rapidi) and "Automation
+  shortcuts" on Android. The shared Archive folder is data, found by its
+  stored name, and is not copy. `src/test/i18n-ambiguous-words.test.ts`
+  pins the split. When a word reads differently in two places, split the
+  English rather than pick the less wrong translation.
+- **The permission prompts are translated too.** The usage descriptions
+  live in `os-june_iOS/<lang>.lproj/InfoPlist.strings`, a variant group of
+  the app target (XcodeGen finds it under the `os-june_iOS` source path),
+  and the Mac app ships the same files through `bundle.macOS.files` into
+  `Contents/Resources/<lang>.lproj`. The plists keep the English as the
+  fallback; `src/test/ios-privacy-usage.test.ts` holds every language to
+  every key either plist declares.
+
+## Addendum (2026-10-08): the website speaks the same six languages
+
+The website (`website/`: public pages, guides, model catalog, account, shares,
+assistant catalog, the web client at `/app`) wrote its copy as pairs,
+`t("English", "Français")` and `Copy` data `[en, fr]`, roughly 4,300
+sentences in two hundred files that other work keeps editing. It now speaks
+German, Italian, Spanish and Brazilian Portuguese too, without touching a
+call site:
+
+- **The pairs stay; the other four languages are catalogs keyed by the
+  English**, as in the app. `t(en, fr)` returns `en` or `fr` for those two
+  languages and otherwise looks the English up in
+  `website/src/locales/**/<lang>.json`. A sentence a catalog lacks reads in
+  English. Rewriting 1,600 call sites to `t("…")` plus a French catalog was
+  the alternative; it would have conflicted with every branch in flight and
+  moved French out of the code its authors read.
+- **Templates are matched back, not rewritten.** A call such as
+  ``t(`${n} tools`, `${n} outils`)`` reaches `t` already filled in. The
+  extractor keys it as `{count} tools` (placeholder names from the
+  expressions); at run time a sentence with no exact entry is matched against
+  the templated keys, most specific first, and the translation is filled with
+  the captured values. Keys with fewer than three letters of their own are
+  never matched, so `{high} s` cannot swallow other sentences.
+- **An English word French reads two ways gets a key per reading**
+  (`Back [fr: Verso]`, `Back [fr: Retour]`), which `t` tries before the bare
+  English: the French already tells the senses apart, so the other languages
+  can too.
+- **Catalogs load with the code that shows them**: `site` before the first
+  render (`main.tsx` waits for it, as it waits for the catalog chunk),
+  `app` with the web client's chunk, `models` with the model catalog and
+  `models:<kind>` with each kind's detail chunk, so a catalog page still loads
+  only the depth it shows.
+- **The gate is the app's.** `scripts/i18n/website.mjs` finds every English
+  sentence (literal, conditional and template `t` arguments, constants typed
+  as literals, `Copy`-typed arrays, the `Copy` fields of the catalog JSON,
+  and a short list of variables it resolves); a `t` it cannot read is an
+  error. `src/test/website-i18n-catalog.test.tsx` runs it and holds each
+  catalog to every sentence through `verify-catalogs.mjs` (placeholders, no
+  typographic dash, product names kept, nothing left in English unless the
+  French also kept it), with the app's glossaries.
+- **Routes follow French's scheme:** each public page is prerendered under
+  `/de/`, `/it/`, `/es/` and `/pt-br/` as well, every page naming all six as
+  `hreflang` alternates plus `x-default`. Account, share, `/app` and
+  assistant URLs stay unprefixed and take `?lang=`. A first visit to the home
+  page follows the first of the browser's languages the site speaks. The
+  EN/FR buttons became a select naming each language in itself.
+- The four languages use the app's informal register (du, tu, tú, você);
+  the website's French keeps its "vous".

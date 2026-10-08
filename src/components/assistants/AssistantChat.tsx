@@ -9,6 +9,7 @@ import {
   retryAssistantChat,
   applyAssistantRevision,
   assistantMediaIds,
+  connectorIdOf,
   listAssistantChats,
   sendAssistantChat,
   startAssistantChat,
@@ -492,5 +493,9 @@ function toolLabel(tool: AssistantDefinition["tools"][number]) {
       return t("Music");
     case "speech":
       return t("Speech");
+    case "documents":
+      return t("Office files");
+    default:
+      return t("Connector: {name}", { name: connectorIdOf(tool) ?? tool });
   }
 }

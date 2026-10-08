@@ -1,5 +1,7 @@
 import { intlLocale, t } from "../../lib/i18n";
 import { IconCheckmark2Medium } from "central-icons-filled/IconCheckmark2Medium";
+import { IconArchive } from "central-icons/IconArchive";
+import { IconArrowRotateCounterClockwise } from "central-icons/IconArrowRotateCounterClockwise";
 import { IconArrowsRepeat } from "central-icons/IconArrowsRepeat";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconCrossMedium } from "central-icons/IconCrossMedium";
@@ -44,6 +46,10 @@ type AgentSessionsListProps = {
   onOpenMoveDialog: (sessionId: string) => void;
   onOpenMoveSessions: (sessionIds: string[]) => void;
   onRemoveFromProject: (sessionId: string, folderId: string) => void;
+  /** Chats filed in the shared Archive folder (ADR-0080), shown on demand. */
+  archivedSessions?: HermesSessionInfo[];
+  onArchiveSession?: (sessionId: string) => void;
+  onRestoreSession?: (sessionId: string) => void;
 };
 
 export type AgentSessionsListHandle = {
@@ -66,12 +72,21 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
       onOpenMoveDialog,
       onOpenMoveSessions,
       onRemoveFromProject,
+      archivedSessions = NO_SESSIONS,
+      onArchiveSession,
+      onRestoreSession,
     },
     ref,
   ) {
+    const [showArchived, setShowArchived] = useState(false);
+    const viewingArchive = showArchived && archivedSessions.length > 0;
     // __emptyStates() preview (dev console): render the page as a fresh
     // install would see it, real data untouched underneath.
-    const sessions = useForcedEmptyStates() ? NO_SESSIONS : allSessions;
+    const sessions = useForcedEmptyStates()
+      ? NO_SESSIONS
+      : viewingArchive
+        ? archivedSessions
+        : allSessions;
     const [query, setQuery] = useState("");
     const newSessionShortcut = primaryShortcutLabel("N");
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -220,7 +235,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
         <header className="folders-header">
           <div className="folders-heading">
             <h1>
-              {t("Sessions")}
+              {viewingArchive ? t("Archived chats") : t("Sessions")}
               {sessions.length > 0 ? (
                 <span className="folders-count">{sessions.length}</span>
               ) : null}
@@ -239,7 +254,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
           </button>
         </header>
 
-        {sessions.length > 0 ? (
+        {sessions.length > 0 || archivedSessions.length > 0 ? (
           <div className="folders-controls">
             <label className="folders-search">
               <IconMagnifyingGlass size={14} />
@@ -250,6 +265,19 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
                 onChange={(event) => setQuery(event.currentTarget.value)}
               />
             </label>
+            {archivedSessions.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost agent-session-archived-toggle"
+                aria-pressed={viewingArchive}
+                onClick={() => setShowArchived((value) => !value)}
+              >
+                <IconArchive size={14} aria-hidden />
+                {viewingArchive
+                  ? t("Back to sessions")
+                  : t("Archived chats ({count})", { count: archivedSessions.length })}
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -290,6 +318,16 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
                 onSelect={() => onSelectSession(session)}
                 onOpenMove={() => onOpenMoveDialog(session.id)}
                 onRemoveFromProject={(folderId) => onRemoveFromProject(session.id, folderId)}
+                onArchive={
+                  !viewingArchive && onArchiveSession
+                    ? () => onArchiveSession(session.id)
+                    : undefined
+                }
+                onRestore={
+                  viewingArchive && onRestoreSession
+                    ? () => onRestoreSession(session.id)
+                    : undefined
+                }
               />
             ))}
           </ul>
@@ -429,6 +467,8 @@ function AgentSessionListRow({
   onSelect,
   onOpenMove,
   onRemoveFromProject,
+  onArchive,
+  onRestore,
 }: {
   session: HermesSessionInfo;
   projectName?: string;
@@ -439,6 +479,8 @@ function AgentSessionListRow({
   onSelect: () => void;
   onOpenMove: () => void;
   onRemoveFromProject: (folderId: string) => void;
+  onArchive?: () => void;
+  onRestore?: () => void;
 }) {
   const title = session.title?.trim() || session.preview?.trim() || t("Untitled session");
   const preview = session.preview?.trim() || t("No messages yet");
@@ -586,6 +628,23 @@ function AgentSessionListRow({
               >
                 <IconFolderDelete size={14} />
                 {t("Remove from project")}
+              </button>
+            ) : null}
+            {onArchive || onRestore ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  (onRestore ?? onArchive)?.();
+                }}
+              >
+                {onRestore ? (
+                  <IconArrowRotateCounterClockwise size={14} />
+                ) : (
+                  <IconArchive size={14} />
+                )}
+                {onRestore ? t("Restore") : t("Archive")}
               </button>
             ) : null}
             <div className="context-menu-separator" role="separator" />

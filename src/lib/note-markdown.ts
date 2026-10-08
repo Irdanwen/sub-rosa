@@ -27,19 +27,29 @@
  * ## The vocabulary, and why it stops where it does
  *
  * Headings 1 to 3, paragraphs, nested bullet, ordered and **task** lists,
- * blockquotes, fenced code, horizontal rules, hard breaks; `bold`, `italic`,
- * `strike`, `code`, `link` and `highlight`. A task list is written the way
- * every other tool writes it (`- [ ]` / `- [x]`) and a highlight as `==text==`
- * — neither is CommonMark, both are what a person pasting a note elsewhere
- * expects. **`underline` is deliberately absent** — markdown has no underline,
+ * blockquotes, fenced code, horizontal rules, hard breaks, **tables**; `bold`,
+ * `italic`, `strike`, `code`, `link` and `highlight`. A task list is written
+ * the way every other tool writes it (`- [ ]` / `- [x]`), a highlight as
+ * `==text==` and a table as a GFM pipe table — none is CommonMark, all are
+ * what a person pasting a note elsewhere expects. **`underline` is deliberately absent** — markdown has no underline,
  * so a mark the editor accepts and the file cannot hold is the exact bug this
  * module exists to remove. `NotePreview` disables it in StarterKit for the
  * same reason; highlight (which does have a representation) takes its place.
  *
- * Anything else in the markdown — a table, an HTML block, a footnote — is kept
- * as literal paragraph text rather than parsed or dropped. It is not rendered
- * as a table, but the user's characters survive, which is the property that
- * matters.
+ * Anything else in the markdown — an HTML block, a footnote — is kept as
+ * literal paragraph text rather than parsed or dropped. It is not rendered,
+ * but the user's characters survive, which is the property that matters.
+ *
+ * ## Tables
+ *
+ * A table is written as a pipe table, every column padded to its widest cell
+ * so the file reads as a grid in a plain editor too. It opens on a line that
+ * starts with `|` followed by a delimiter row with as many cells, and runs
+ * until the first line that does not start with `|`. A paragraph line that
+ * starts with a pipe is escaped (`\|`) for the same reason `- not a list` is.
+ * Inside a cell a pipe is escaped, and a code span is read whole, so a pipe in
+ * code needs no escape. A body row longer than the header widens the table
+ * rather than losing its last cells.
  *
  * ## Line breaks
  *
@@ -70,6 +80,13 @@
  * - **Two adjacent lists of the same kind** read back as one. Nothing between
  *   them survives to say otherwise, in this format or in CommonMark, and a
  *   renumbered `1.` after a `3.` does not split a list.
+ * - **A table cell is one line**: a hard break in it becomes a space, as in a
+ *   heading, and whitespace at either end of the cell is trimmed. The cell
+ *   schema already holds one paragraph only, so nothing else can be lost.
+ * - **A table's first row is its header** and every other row is its body:
+ *   markdown has no header column and no headerless table. A column's
+ *   alignment is its header cell's, and a `|` in a cell's link target is
+ *   written `%7C`, the same address.
  *
  * `src/test/note-markdown.test.ts` reimplements these four rules independently
  * and asserts that they are the *only* difference a round trip can make.
@@ -117,10 +134,19 @@ const BACKTICK_RUN = /`+/g;
  * - **In the first column**: the block markers, which is why a paragraph
  *   reading `- not a list` comes back as a paragraph.
  */
-function escapeMarkdownText(text: string, atLineStart: boolean, insideLink: boolean): string {
+function escapeMarkdownText(
+  text: string,
+  atLineStart: boolean,
+  insideLink: boolean,
+  inCell = false,
+): string {
   let escaped = "";
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
+    if (char === "|" && inCell) {
+      escaped += "\\|";
+      continue;
+    }
     if (INLINE_SPECIALS.test(char)) {
       const intraWord =
         char === "_" &&
@@ -142,7 +168,7 @@ function escapeMarkdownText(text: string, atLineStart: boolean, insideLink: bool
     escaped += char;
   }
   if (atLineStart) {
-    escaped = escaped.replace(/^([#>+-])/, "\\$1").replace(/^(\d+)([.)])/, "$1\\$2");
+    escaped = escaped.replace(/^([#>+|-])/, "\\$1").replace(/^(\d+)([.)])/, "$1\\$2");
   }
   return escaped;
 }
@@ -213,10 +239,11 @@ function openMark(mark: ActiveMark) {
   return mark.char.repeat(delimiterWidth(mark.type));
 }
 
-function closeMark(mark: ActiveMark) {
+function closeMark(mark: ActiveMark, inCell = false) {
   if (mark.type !== "link") return mark.char.repeat(delimiterWidth(mark.type));
   const href = typeof mark.attrs?.href === "string" ? mark.attrs.href : "";
-  return `](${encodeLinkTarget(href)})`;
+  // A pipe would end the cell, wherever it sits; `%7C` is the same address.
+  return `](${encodeLinkTarget(inCell ? href.replace(/\|/g, "%7C") : href)})`;
 }
 
 /** Wrap a URL that would otherwise end the link destination early. */
@@ -238,18 +265,20 @@ function renderCodeSpan(text: string) {
 /**
  * Serialize a block node's inline content.
  *
- * `allowBreaks` is false for a block markdown writes on one line — a heading.
- * A hard break there becomes a space: the characters survive, which is the
- * promise, and a heading spanning two lines is not something the file can say.
+ * `allowBreaks` is false for a block markdown writes on one line — a heading,
+ * a table cell. A hard break there becomes a space: the characters survive,
+ * which is the promise, and a heading spanning two lines is not something the
+ * file can say. `inCell` additionally escapes pipes, and skips the first-column
+ * escapes: a cell is read as inline text, never as a block.
  */
-function renderInline(parent: ProseMirrorNode, allowBreaks = true): string {
+function renderInline(parent: ProseMirrorNode, allowBreaks = true, inCell = false): string {
   let out = "";
   let lineHasContent = false;
   const active: ActiveMark[] = [];
 
   function closeDownTo(depth: number) {
     for (let index = active.length - 1; index >= depth; index -= 1) {
-      out += closeMark(active[index]);
+      out += closeMark(active[index], inCell);
     }
     active.length = depth;
   }
@@ -318,8 +347,9 @@ function renderInline(parent: ProseMirrorNode, allowBreaks = true): string {
     } else {
       out += escapeMarkdownText(
         text,
-        !lineHasContent,
+        !lineHasContent && !inCell,
         active.some((mark) => mark.type === "link"),
+        inCell,
       );
     }
     lineHasContent = true;
@@ -425,11 +455,67 @@ function renderBlock(node: ProseMirrorNode): string {
       return items.join("\n");
     }
 
+    case "table":
+      return renderTable(node);
+
     default:
       // A node this module does not know how to write is still the user's
       // text: keep the characters rather than dropping the block.
       return node.isTextblock ? renderInline(node) : node.textContent;
   }
+}
+
+type CellAlign = "left" | "center" | "right" | null;
+
+function cellAlign(cell: ProseMirrorNode | undefined): CellAlign {
+  const align = cell?.attrs.align;
+  return align === "left" || align === "center" || align === "right" ? align : null;
+}
+
+/** One cell's text: its blocks on one line. The schema holds one paragraph per
+ * cell, so the join only matters to a document built against another one. */
+function renderCell(cell: ProseMirrorNode) {
+  const parts: string[] = [];
+  cell.forEach((child) => {
+    parts.push(child.isTextblock ? renderInline(child, false, true) : child.textContent);
+  });
+  return parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function delimiterCell(width: number, align: CellAlign) {
+  if (align === "left") return `:${"-".repeat(width - 1)}`;
+  if (align === "right") return `${"-".repeat(width - 1)}:`;
+  if (align === "center") return `:${"-".repeat(width - 2)}:`;
+  return "-".repeat(width);
+}
+
+/** A pipe table, padded so its columns line up in a plain editor too. */
+function renderTable(table: ProseMirrorNode): string {
+  const rows: string[][] = [];
+  const aligns: CellAlign[] = [];
+  table.forEach((row, _offset, rowIndex) => {
+    const cells: string[] = [];
+    row.forEach((cell) => {
+      if (rowIndex === 0) aligns.push(cellAlign(cell));
+      cells.push(renderCell(cell));
+    });
+    rows.push(cells);
+  });
+  const columns = Math.max(1, ...rows.map((cells) => cells.length));
+  const widths = Array.from({ length: columns }, (_unused, column) =>
+    Math.max(3, ...rows.map((cells) => (cells[column] ?? "").length)),
+  );
+  const line = (cells: string[]) =>
+    `| ${widths.map((width, column) => (cells[column] ?? "").padEnd(width)).join(" | ")} |`;
+  const [header = [], ...body] = rows;
+  return [
+    line(header),
+    `| ${widths.map((width, column) => delimiterCell(width, aligns[column] ?? null)).join(" | ")} |`,
+    ...body.map(line),
+  ].join("\n");
 }
 
 /** The note body as markdown. The only writer of a note's stored content. */
@@ -446,6 +532,8 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^`]*)$/;
 const RULE = /^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const LIST_ITEM = /^(\s*)(?:([-*+])|(\d{1,9})([.)]))(\s+)(.*)$/;
+const TABLE_ROW = /^ {0,3}\|/;
+const TABLE_DELIMITER_CELL = /^:?-+:?$/;
 
 type ListMarker = {
   indent: number;
@@ -510,6 +598,104 @@ function startsBlock(line: string) {
     QUOTE.test(line) ||
     matchListMarker(line) !== null
   );
+}
+
+/**
+ * A table row's cells, trimmed. A backslash escape and a code span are read
+ * whole, so neither an escaped pipe nor a pipe in code ends a cell; the escape
+ * itself is left for the inline parser, which reads the cell next.
+ */
+function splitTableRow(line: string): string[] {
+  const source = line.trim();
+  const cells: string[] = [];
+  let cell = "";
+  let index = source.startsWith("|") ? 1 : 0;
+  // Whether the last thing read was a pipe: a row's closing pipe opens no cell.
+  let closed = index === 1;
+  while (index < source.length) {
+    const char = source[index];
+    if (char === "|") {
+      cells.push(cell.trim());
+      cell = "";
+      index += 1;
+      closed = true;
+      continue;
+    }
+    closed = false;
+    if (char === "\\" && index + 1 < source.length) {
+      cell += source.slice(index, index + 2);
+      index += 2;
+      continue;
+    }
+    if (char === "`") {
+      const run = /^`+/.exec(source.slice(index))?.[0] ?? "`";
+      const closing = source.indexOf(run, index + run.length);
+      const end = closing === -1 ? index + run.length : closing + run.length;
+      cell += source.slice(index, end);
+      index = end;
+      continue;
+    }
+    cell += char;
+    index += 1;
+  }
+  if (!closed) cells.push(cell.trim());
+  return cells;
+}
+
+/** The column alignments a delimiter row declares, or null when the line is
+ * not one for a header of `columns` cells. */
+function tableDelimiter(line: string | undefined, columns: number): CellAlign[] | null {
+  if (line === undefined || !TABLE_ROW.test(line)) return null;
+  const cells = splitTableRow(line);
+  if (cells.length !== columns || !cells.every((cell) => TABLE_DELIMITER_CELL.test(cell))) {
+    return null;
+  }
+  return cells.map((cell) => {
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    if (left && right) return "center";
+    if (left) return "left";
+    return right ? "right" : null;
+  });
+}
+
+/** True when a table opens here: a pipe row, then a delimiter row as wide. */
+function isTableStart(lines: string[], index: number) {
+  const line = lines[index];
+  if (!TABLE_ROW.test(line)) return false;
+  const header = splitTableRow(line);
+  return header.length > 0 && tableDelimiter(lines[index + 1], header.length) !== null;
+}
+
+function parseTable(lines: string[], from: number): { node: JSONContent; next: number } {
+  const header = splitTableRow(lines[from]);
+  const aligns = tableDelimiter(lines[from + 1], header.length) ?? [];
+  const body: string[][] = [];
+  let index = from + 2;
+  while (index < lines.length && TABLE_ROW.test(lines[index])) {
+    body.push(splitTableRow(lines[index]));
+    index += 1;
+  }
+  const columns = Math.max(header.length, ...body.map((cells) => cells.length));
+  const row = (cells: string[], type: "tableHeader" | "tableCell"): JSONContent => ({
+    type: "tableRow",
+    content: Array.from({ length: columns }, (_unused, column) => {
+      const text = cells[column] ?? "";
+      const align = aligns[column] ?? null;
+      return {
+        type,
+        ...(align ? { attrs: { align } } : {}),
+        content: [text ? { type: "paragraph", content: parseInline(text) } : { type: "paragraph" }],
+      };
+    }),
+  });
+  return {
+    node: {
+      type: "table",
+      content: [row(header, "tableHeader"), ...body.map((cells) => row(cells, "tableCell"))],
+    },
+    next: index,
+  };
 }
 
 function parseList(lines: string[], from: number): { node: JSONContent; next: number } {
@@ -657,10 +843,17 @@ function parseBlocks(lines: string[]): JSONContent[] {
       continue;
     }
 
+    if (isTableStart(lines, index)) {
+      const { node, next } = parseTable(lines, index);
+      blocks.push(node);
+      index = next;
+      continue;
+    }
+
     // Paragraph: every following line until one that opens a block.
     const paragraph: string[] = [line];
     index += 1;
-    while (index < lines.length && !startsBlock(lines[index])) {
+    while (index < lines.length && !startsBlock(lines[index]) && !isTableStart(lines, index)) {
       paragraph.push(lines[index]);
       index += 1;
     }
@@ -683,7 +876,7 @@ export function markdownToDoc(markdown: string): JSONContent {
 
 /** What a backslash may legally hide. Mirrors what {@link escapeMarkdownText}
  * writes, plus the block markers it escapes in the first column. */
-const ESCAPABLE = /[\\`*~=[\]_#>+\-.)]/;
+const ESCAPABLE = /[\\`*~=[\]_#>+\-.)|]/;
 
 type InlineMarkJson = { type: string; attrs?: Record<string, unknown> };
 

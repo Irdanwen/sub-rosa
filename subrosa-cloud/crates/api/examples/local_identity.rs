@@ -228,9 +228,12 @@ async fn main() -> Result<()> {
                 operator_url: settings.carpe_diem_operator_url.clone(),
                 kid: settings.carpe_diem_kid,
                 signing_key: Secret(std::fs::read_to_string(file)?),
+                browser_daily_cap_credits: subrosa_config::BROWSER_DAILY_CAP_CREDITS,
+                browser_key_days: subrosa_config::BROWSER_KEY_DAYS,
             }),
             _ => None,
         },
+        publication: None,
     };
     config.validate().map_err(anyhow::Error::msg)?;
     let storage = Arc::new(StorageProvider::new(&config)?);

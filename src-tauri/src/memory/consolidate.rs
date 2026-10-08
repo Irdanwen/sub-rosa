@@ -257,6 +257,7 @@ mod tests {
             has_embedding: true,
             created_at: String::new(),
             updated_at: String::new(),
+            scope: None,
         }
     }
 

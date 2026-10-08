@@ -50,6 +50,12 @@ pub fn note_markdown(note: &NoteDto) -> String {
 
 /// A file name the title can become on every desktop file system.
 pub fn suggested_file_name(title: &str) -> String {
+    format!("{}.md", safe_file_stem(title, "Note"))
+}
+
+/// The title as a file name stem, without the characters a file system
+/// refuses; `fallback` when nothing is left.
+pub fn safe_file_stem(title: &str, fallback: &str) -> String {
     let cleaned: String = title
         .trim()
         .chars()
@@ -60,12 +66,11 @@ pub fn suggested_file_name(title: &str) -> String {
         })
         .collect();
     let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
-    let stem = if cleaned.is_empty() {
-        "Note".to_string()
+    if cleaned.is_empty() {
+        fallback.to_string()
     } else {
         cleaned.chars().take(80).collect::<String>()
-    };
-    format!("{stem}.md")
+    }
 }
 
 #[cfg(desktop)]

@@ -107,6 +107,15 @@ export const accountLoginExchange = (requestId: string) =>
   statusCommand("account_login_exchange", { requestId });
 export const accountLogout = () => statusCommand("account_logout");
 export const accountDevices = () => invoke<AccountDevice[]>("account_devices");
+/** One line of the account's security history, newest first (ADR-0049
+ * addendum). `kind` is the service's own name; an unknown one still renders. */
+export type SecurityEvent = {
+  id: string;
+  kind: string;
+  occurredAt: string;
+  deviceName?: string;
+};
+export const accountSecurityEvents = () => invoke<SecurityEvent[]>("account_security_events");
 export const accountRevokeDevice = (deviceId: string) =>
   invoke<void>("account_revoke_device", { deviceId });
 export const accountDelete = () => invoke<void>("account_delete");
@@ -196,6 +205,15 @@ export type ShareSummary = {
  * app hands to the interface on purpose, because copying it is the feature. */
 export const accountShareNote = (noteId: string, windowHours: ShareWindow) =>
   invoke<ShareLink>("account_share_note", { noteId, windowHours });
+/** A conversation as a link: the phone names its chat by task, the desktop
+ * by its Hermes session and the title it shows. A temporary chat is refused. */
+export type ShareConversationTarget =
+  | { taskId: string; sessionId?: undefined; title?: undefined }
+  | { taskId?: undefined; sessionId: string; title?: string };
+export const accountShareConversation = (
+  target: ShareConversationTarget,
+  windowHours: ShareWindow,
+) => invoke<ShareLink>("account_share_conversation", { request: { ...target, windowHours } });
 export const accountShares = () => invoke<ShareSummary[]>("account_shares");
 export const accountRevokeShare = (shareId: string) =>
   invoke<void>("account_revoke_share", { shareId });

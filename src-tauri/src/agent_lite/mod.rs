@@ -11,6 +11,7 @@
 //! - `read_note`         — one note in full, note body plus transcript;
 //! - `list_recent_notes` — the newest notes, for questions about a period;
 //! - `search_memories`   — hybrid recall over remembered facts (memory on only);
+//! - `search_past_chats` — the user's other chats, by word (past chats on only);
 //! - `web_search`        — the June API `/v1/web/search` passthrough;
 //! - `summarize_note`    — starts a long-form reading of a recording (ADR-0027);
 //! - `import_link`       — starts fetching a link into a note (ADR-0028);
@@ -43,9 +44,16 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
 mod budget;
+pub mod cancel;
+pub mod controls;
+mod extensions;
+mod project;
+pub mod python;
+mod tool_defs;
 use budget::{shorten_read_pages, Completion, ToolBudget, MAX_COMPLETIONS};
 #[cfg(test)]
 use budget::{MAX_TOOL_ROUNDS, READ_PAGE_CHARS};
+use tool_defs::tool_definitions;
 
 pub const AGENT_LITE_STATUS_EVENT: &str = "agent-lite://status";
 pub const AGENT_LITE_DONE_EVENT: &str = "agent-lite://done";
@@ -69,7 +77,9 @@ Place cards: when you answer with places_search results, embed them as one fence
 
 Note cards: when your answer rests on the user's own notes, you may end it with one fenced block whose info string is subrosa:notes and whose body is {\"v\":1,\"title\":\"From your notes\",\"notes\":[{\"id\":\"…\",\"title\":\"…\",\"snippet\":\"…\"}]}. The app opens the note when the user taps the card. Use the ids and titles exactly as search_notes, read_note or list_recent_notes returned them — never invent a note id — and list only the notes your answer actually used.
 
-Follow-up cards: after a meeting note, or when the user agrees to something, you may end your reply with one fenced block whose info string is subrosa:proposal and whose body is {\"v\":1,\"proposalId\":\"<a new short id>\",\"title\":\"Follow-ups\",\"actions\":[{\"kind\":\"reminder\",\"id\":\"a1\",\"label\":\"…\",\"due\":\"<RFC3339>\"},{\"kind\":\"event\",\"id\":\"a2\",\"label\":\"…\",\"start\":\"<RFC3339>\"},{\"kind\":\"note\",\"id\":\"a3\",\"label\":\"…\",\"noteId\":\"<a real note id>\",\"text\":\"…\"}]}. Nothing happens until the user taps a card, so propose rather than announce: never write as if the reminder already exists. Five actions at most, only ones the conversation actually calls for, and never invent a note id.
+Follow-up cards: after a meeting note, or when the user agrees to something, you may end your reply with one fenced block whose info string is subrosa:proposal and whose body is {\"v\":1,\"proposalId\":\"<a new short id>\",\"title\":\"Follow-ups\",\"actions\":[{\"kind\":\"reminder\",\"id\":\"a1\",\"label\":\"…\",\"due\":\"<RFC3339>\"},{\"kind\":\"event\",\"id\":\"a2\",\"label\":\"…\",\"start\":\"<RFC3339>\"},{\"kind\":\"note\",\"id\":\"a3\",\"label\":\"…\",\"noteId\":\"<a real note id>\",\"text\":\"…\"}]}. Nothing happens until the user taps a card, so propose rather than announce: never write as if the reminder already exists. Five actions at most, only ones the conversation actually calls for, and never invent a note id.\n\nTry-on cards: when the user wants to see how a garment would look on them, embed one fenced block whose info string is subrosa:tryon and whose body is {\"v\":1,\"title\":\"Try it on\",\"garment\":\"<a few words describing the garment, optional>\"}. The app renders a card where the user picks a photo of themselves and a photo of the garment, sees the price and starts the try-on themselves. Never claim the picture exists until they have run it.
+
+Canvas: when the user asks you to write or draft something they will keep working on (a document, a letter, a plan, code longer than a few lines), put the draft in one fenced block whose info string is subrosa:canvas and whose body is {\"v\":1,\"title\":\"…\",\"kind\":\"document\" or \"code\",\"language\":\"<code only>\",\"content\":\"<the whole draft, markdown for a document>\"}, with a sentence of your own around it. The app shows a card that opens the draft as a canvas, a note the user edits beside the chat. To propose a new version of a canvas they already have, send the same block with its \"noteId\" and the whole new content: the app shows it for review and nothing changes until the user accepts it, so never write as if a change was applied. Keep the content under 24000 characters.
 
 Answer in the user's language, concisely, in plain prose or simple markdown. If a search comes back empty, say what you looked for.";
 
@@ -95,6 +105,11 @@ pub struct AgentLiteRunRequest {
     /// Attachments for the current turn only. Persisted messages keep a text
     /// marker; re-sending images on every later turn would multiply cost.
     pub attachments: Option<Vec<AgentLiteAttachment>>,
+    /// `low` | `medium` | `high`, sent as `reasoning_effort` when the turn runs
+    /// on the model it was chosen for. The screen offers it only for models
+    /// whose catalog entry says they honour it.
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,6 +176,7 @@ pub(crate) async fn run_claimed(
     let task_id = request.task_id;
     let model = request.model.filter(|value| !value.trim().is_empty());
     let attachments = request.attachments.unwrap_or_default();
+    let effort = controls::accepted_effort(request.reasoning_effort);
     // Locking the screen mid-turn suspends the process and used to kill the
     // reply; hold a background task for the whole turn (every tool-loop
     // request included) so it survives the lock. If the lock outlasts the
@@ -187,7 +203,14 @@ pub(crate) async fn run_claimed(
         .await
         .map(|snapshot| snapshot.map_or(true, |snapshot| snapshot.definition.allow_memory))
         .unwrap_or(false);
-    let result = run_turn(&app, &repos, &task_id, model.as_deref(), &attachments).await;
+    let result = run_turn(
+        &app,
+        &repos,
+        &task_id,
+        (model.as_deref(), effort.as_deref()),
+        &attachments,
+    )
+    .await;
     match result {
         Ok(answer) => {
             persist_answer(&repos, &task_id, &answer).await?;
@@ -201,6 +224,9 @@ pub(crate) async fn run_claimed(
                 crate::memory::extract::maybe_extract_after_agent_lite_turn(&app, task_id.clone());
             }
             Ok(task)
+        }
+        Err(error) if error.code == cancel::STOPPED => {
+            cancel::finish_stopped(&app, &repos, &task_id).await
         }
         Err(error) => {
             repos
@@ -227,9 +253,11 @@ async fn persist_answer(
     answer: &str,
 ) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
+    // The cards of what connectors did this turn go under it (ADR-0092).
+    let answer = crate::connectors::agent::seal_answer(task_id, answer);
     let mut tx = repos.pool.begin().await?;
     sqlx::query::query("INSERT INTO agent_messages(id,task_id,role,content,created_at) VALUES(?,?,'assistant',?,?)")
-        .bind(uuid::Uuid::new_v4().to_string()).bind(task_id).bind(answer).bind(&now).execute(&mut *tx).await?;
+        .bind(uuid::Uuid::new_v4().to_string()).bind(task_id).bind(&answer).bind(&now).execute(&mut *tx).await?;
     sqlx::query::query("UPDATE agent_tasks SET status='completed',progress_summary='Completed.',last_error=NULL,updated_at=?,completed_at=? WHERE id=?")
         .bind(&now).bind(&now).bind(task_id).execute(&mut *tx).await?;
     // The title marker commits with the first reply, so a chat suspended
@@ -250,16 +278,22 @@ pub(crate) struct TurnClaim(String);
 impl TurnClaim {
     pub(crate) fn try_hold(task_id: &str) -> Option<Self> {
         // Inserting and checking must be one atomic operation. A second guard
-        // used to succeed and later remove the first runner's ownership.
-        claims()
-            .insert(task_id.to_string())
-            .then(|| Self(task_id.to_string()))
+        // used to succeed and later remove the first runner's ownership. The
+        // stop signal is registered under the same lock, so a held claim
+        // always has one (cancel::agent_lite_cancel relies on it).
+        let mut held = claims();
+        held.insert(task_id.to_string()).then(|| {
+            cancel::register(task_id);
+            Self(task_id.to_string())
+        })
     }
 }
 
 impl Drop for TurnClaim {
     fn drop(&mut self) {
-        claims().remove(&self.0);
+        let mut held = claims();
+        held.remove(&self.0);
+        cancel::release(&self.0);
     }
 }
 
@@ -328,7 +362,7 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
             .unwrap_or(false);
         // Attachment payloads are not persisted. run_turn rejects their
         // surviving markers before inference, asking the user to attach again.
-        match run_turn(app, &repos, &task_id, model.as_deref(), &[]).await {
+        match run_turn(app, &repos, &task_id, (model.as_deref(), None), &[]).await {
             Ok(answer) => {
                 if let Err(error) = persist_answer(&repos, &task_id, &answer).await {
                     tracing::warn!("Could not persist resumed reply: {}", error.code);
@@ -351,6 +385,9 @@ pub async fn resume_interrupted_turns(app: &AppHandle) {
                     .body(answer.chars().take(120).collect::<String>())
                     .extra(crate::destinations::EXTRA_KEY, destination)
                     .show();
+            }
+            Err(error) if error.code == cancel::STOPPED => {
+                let _ = cancel::finish_stopped(app, &repos, &task_id).await;
             }
             // Still failing: leave the task running so a later sweep retries
             // rather than showing the user an error they cannot act on.
@@ -380,9 +417,12 @@ async fn run_turn(
     app: &AppHandle,
     repos: &crate::db::repositories::Repositories,
     task_id: &str,
-    model: Option<&str>,
+    (model, effort): (Option<&str>, Option<&str>),
     attachments: &[AgentLiteAttachment],
 ) -> Result<String, AppError> {
+    // What the reply has shown so far, kept if the user stops it.
+    let stop = cancel::signal(task_id);
+    let mut shown = String::new();
     let task = repos.get_agent_task(task_id).await?;
     validate_turn_attachments(
         task.messages
@@ -395,12 +435,17 @@ async fn run_turn(
     // turn so facts extracted a moment ago apply immediately. System messages
     // are never persisted to agent_messages, so this cannot leak into history.
     let snapshot = crate::assistants::runtime::snapshot_for_task(&repos.pool, task_id).await?;
+    // A general chat filed in a project reads its instructions, files and,
+    // in "Project only", its memory (ADR-0085). Every memory read and write
+    // below goes through the scoped store.
+    let project = project::of_turn(repos, task_id, snapshot.is_some()).await;
+    let scoped = repos.with_memory_scope(project.as_ref().and_then(|p| p.memory_scope()));
+    let repos = &scoped;
     let memory_allowed = snapshot
         .as_ref()
         .map_or(true, |snapshot| snapshot.definition.allow_memory);
     let memory_block = if memory_allowed {
-        let latest = task.messages.last().map_or("", |m| m.content.as_str());
-        crate::memory::prompt_block_for_turn(repos, latest).await
+        crate::memory::sources::block_for_turn(repos, &task).await
     } else {
         None
     };
@@ -427,14 +472,28 @@ async fn run_turn(
         } else {
             None
         };
+    let requested = model;
     let model = Some(vision_route.as_deref().unwrap_or(resolved));
+    // An effort chosen for one model means nothing to the one an assistant or
+    // a photo routed the turn to, and may be refused by it.
+    let effort = effort.filter(|_| model == requested);
     let system_prompt = match &snapshot {
         Some(snapshot) => {
             crate::assistants::runtime::system_prompt(snapshot, memory_block.as_deref())
         }
-        None => build_system_prompt(memory_block.as_deref()),
+        // Personalization and past chats reach the default chat only (ADR-0081).
+        None => project::with_section(
+            build_system_prompt(
+                crate::personalization::default_chat_context(repos, &task, memory_block.as_deref())
+                    .await
+                    .as_deref(),
+            ),
+            project.as_ref(),
+        ),
     };
+    let system_prompt = crate::study::prompted(&repos.pool, task_id, system_prompt).await;
     let mut offered_tools = tool_definitions(crate::memory::settings().enabled);
+    let mut extended = None;
     if let Some(tools) = offered_tools.as_array_mut() {
         tools.retain(|tool| {
             crate::assistants::runtime::allows_tool(
@@ -445,11 +504,10 @@ async fn run_turn(
                 crate::memory::settings().enabled,
             )
         });
+        project::offer_tool(tools, project.as_ref());
+        python::offer_tool(tools);
         if snapshot.is_some() {
-            tools.push(serde_json::json!({"type":"function","function":{
-                "name":"search_references","description":"Search the reference documents explicitly attached to this assistant. Cite the returned reference name and passage.",
-                "parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}
-            }}));
+            tools.push(crate::assistants::runtime::search_references_definition());
             tools.push(serde_json::json!({"type":"function","function":{
                 "name":"read_reference_image","description":"Read one image reference with the selected vision-capable model. Obtain the id from search_references.",
                 "parameters":{"type":"object","properties":{"reference_id":{"type":"string"}},"required":["reference_id"]}
@@ -468,7 +526,25 @@ async fn run_turn(
                 }}));
             }
         }
+        // Connectors and skill packs (ADR-0092), after the assistant's own.
+        let last = task.messages.last().map(|message| message.content.as_str());
+        extended = Some(
+            extensions::prepare(
+                repos,
+                task_id,
+                last.unwrap_or_default(),
+                &crate::connectors::agent::Grant::of(snapshot.as_ref()),
+                tools,
+            )
+            .await,
+        );
     }
+    let system_prompt = match &extended {
+        Some(extended) => extended.system_prompt(system_prompt),
+        None => system_prompt,
+    };
+    // After the choice, so a custom assistant carries it too (ADR-0084).
+    let system_prompt = crate::protected_mode::guard_system_prompt(system_prompt);
     let mut messages = vec![serde_json::json!({
         "role": "system",
         "content": system_prompt,
@@ -525,6 +601,9 @@ async fn run_turn(
             }
             Completion::GiveUp => break,
         };
+        if stop.is_stopped() {
+            return Err(stop.halt(&shown));
+        }
         emit_status(app, task_id, "thinking", None);
         let tool_choice = if final_pass { "none" } else { "auto" };
         let mut body = if tools_withheld {
@@ -545,12 +624,17 @@ async fn run_turn(
         if let (Some(model), Some(object)) = (model, body.as_object_mut()) {
             object.insert("model".to_string(), serde_json::json!(model));
         }
+        if let (Some(effort), Some(object)) = (effort, body.as_object_mut()) {
+            object.insert("reasoning_effort".to_string(), serde_json::json!(effort));
+        }
         if !stream_withheld {
             if let Some(object) = body.as_object_mut() {
                 object.insert("stream".to_string(), serde_json::json!(true));
             }
         }
-        let response = june_api::proxy_agent_chat_completions(body).await?;
+        let response = cancel::unless_stopped(&stop, june_api::proxy_agent_chat_completions(body))
+            .await
+            .ok_or_else(|| stop.halt(&shown))??;
         if !(200..300).contains(&response.status) {
             let status = response.status;
             let body = response.collect_body().await.unwrap_or_default();
@@ -628,10 +712,17 @@ async fn run_turn(
         let message = if streamed {
             let mut response = response;
             let mut reply = StreamedReply::default();
-            let read = collect_stream(&mut response, &mut reply, |text| {
-                emit_delta(app, task_id, text);
-            })
+            let read = cancel::unless_stopped(
+                &stop,
+                collect_stream(&mut response, &mut reply, |text| {
+                    shown.push_str(text);
+                    emit_delta(app, task_id, text);
+                }),
+            )
             .await;
+            let Some(read) = read else {
+                return Err(stop.halt(&shown));
+            };
             if let Err(error) = read {
                 if stream_replayed || !replays_after(&error) {
                     return Err(error);
@@ -642,6 +733,7 @@ async fn run_turn(
                 );
                 stream_replayed = true;
                 budget.replay();
+                shown.truncate(shown.len().saturating_sub(reply.content.len()));
                 if let Some(event) = retraction(task_id, &reply.content) {
                     let _ = app.emit(AGENT_LITE_DELTA_EVENT, event);
                 }
@@ -658,7 +750,9 @@ async fn run_turn(
             }
             reply.into_message()
         } else {
-            let body = response.collect_body().await?;
+            let body = cancel::unless_stopped(&stop, response.collect_body())
+                .await
+                .ok_or_else(|| stop.halt(&shown))??;
             let value: serde_json::Value = serde_json::from_slice(&body)
                 .map_err(|error| AppError::new("agent_lite_invalid", error.to_string()))?;
             let mut message = value
@@ -715,6 +809,9 @@ async fn run_turn(
         let tool_rounds = budget.ran_tools();
         let mut reference_images = Vec::new();
         for tool_call in &tool_calls {
+            if stop.is_stopped() {
+                return Err(stop.halt(&shown));
+            }
             let id = tool_call
                 .get("id")
                 .and_then(serde_json::Value::as_str)
@@ -743,6 +840,11 @@ async fn run_turn(
                 crate::memory::settings().enabled,
             ) {
                 "This tool is not enabled for this assistant.".to_string()
+            } else if let Some(project) = project.as_ref().filter(|_| name == project::TOOL) {
+                emit_status(app, task_id, "searching-references", None);
+                project::run_tool(repos, project, &args).await
+            } else if name == python::TOOL {
+                python::run_tool(app, task_id, &args, attachments).await
             } else if name == "search_references" {
                 emit_status(app, task_id, "searching-references", None);
                 snapshot
@@ -800,6 +902,10 @@ async fn run_turn(
                     Ok(proposal) => proposal.to_string(),
                     Err(error) => error.message,
                 }
+            } else if let Some(content) =
+                extensions::dispatch(app, repos, task_id, &name, &args).await
+            {
+                content
             } else {
                 execute_tool(app, repos, task_id, &name, &args).await
             };
@@ -1226,6 +1332,10 @@ async fn execute_tool(
                 Err(error) => format!("Memory search failed: {}", error.message),
             }
         }
+        "search_past_chats" => {
+            emit_status(app, task_id, "searching-memory", Some(query.clone()));
+            crate::memory::past_chats::run_tool(repos, task_id, &query).await
+        }
         "web_search" => {
             emit_status(app, task_id, "searching-web", Some(query.clone()));
             // The June API web handler requires a non-empty `requestId` (it
@@ -1516,286 +1626,20 @@ async fn execute_tool(
                 Err(error) => error.message,
             }
         }
+        crate::deliverables::TOOL => {
+            emit_status(app, task_id, "making-document", None);
+            crate::deliverables::agent_tool(app, args).await
+        }
         other => format!("Unknown tool: {other}."),
     }
-}
-
-fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
-    let mut tools = vec![
-        serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": "search_notes",
-                "description": "Search the user's local meeting notes and transcripts. Returns matching snippets with note titles and dates.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Short keyword query (2 to 6 words), in the language of the notes."
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        }),
-        serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": "web_search",
-                "description": "Search the public web for current information.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": { "type": "string", "description": "Web search query." }
-                    },
-                    "required": ["query"]
-                }
-            }
-        }),
-    ];
-    // The production surface, kept to the same two tools the desktop MCP has.
-    // Deliberately no render tool: the phone's agent can describe and prepare a
-    // film, and the spending happens where the user sees the figure.
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "bible",
-            "description": "The persistent identities of a production: characters, locations, props, the look. A character named here keeps their face and their described traits across every shot, which is what makes separately generated clips look like one film. Actions: list, save (name, kind, traits, id to update), delete (id).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": { "type": "string", "enum": ["list", "save", "delete"] },
-                    "id": { "type": "string" },
-                    "kind": { "type": "string", "enum": ["character", "location", "prop", "look"] },
-                    "name": { "type": "string" },
-                    "traits": { "type": "string", "description": "What must not drift between shots." }
-                },
-                "required": ["action"]
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "shots",
-            "description": "Read one of the user's notes as the shots a film is made of. Actions: plan (what it would take, and whether it can be read at all), build (start reading - it runs in the background and survives the app closing), read (the current state and the shots). Always plan first and tell the user what it will take. Compiling the shots into a film and paying for it happens in the Studio, not here.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": { "type": "string", "enum": ["plan", "build", "read"] },
-                    "noteId": { "type": "string" }
-                },
-                "required": ["action", "noteId"]
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "search_calendar",
-            "description": "Look at the user's calendar for a day: what meetings there are, when, and who is invited. Use it when the question is about their schedule, or to find which meeting a note belongs to. It reads the device's calendar and returns only the window you ask for.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Optional words to filter on (a title or an attendee). Leave empty for the whole window."
-                    },
-                    "days": {
-                        "type": "integer",
-                        "description": "Days ahead (positive) or back (negative), at most 7. 0 or 1 means today."
-                    }
-                },
-                "required": []
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "places_search",
-            "description": "Find real-world places (businesses, offices, restaurants, landmarks) by name or kind, optionally near a point. Returns names, coordinates, addresses and categories. When you answer with these results, embed them as a subrosa:places chat block, copying the JSON fields verbatim.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "What to look for, including the area when known (e.g. 'expert comptable Annemasse')."
-                    },
-                    "near": {
-                        "type": "object",
-                        "properties": {
-                            "lat": { "type": "number" },
-                            "lng": { "type": "number" }
-                        },
-                        "required": ["lat", "lng"],
-                        "description": "Bias results toward this point."
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "fetch_page",
-            "description": "Open a web page and read its text. Use it after web_search when the snippets do not actually answer the question: the snippet is a couple of sentences, the page is the source. Also use it when the user gives you a URL.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "Full URL, normally taken from a web_search result."
-                    }
-                },
-                "required": ["url"]
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "summarize_note",
-            "description": "Read a long recording end to end and write a faithful account of it, with timestamped chapters. Use this for a talk, a lecture, an interview or a podcast, where the value is the argument rather than the decisions. It costs several model calls and takes minutes, so ask the user before starting one, and never start one just to answer a question read_note could answer.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "note_id": {
-                        "type": "string",
-                        "description": "The noteId from a previous search_notes, list_recent_notes or import result."
-                    }
-                },
-                "required": ["note_id"]
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "import_link",
-            "description": "Turn a link into a note: fetch a podcast feed, a podcast episode or a direct audio or video URL, transcribe it, and write a note. Streaming platform pages (YouTube, Spotify, Vimeo and the like) do not work and will say so. The download happens on the user's machine, so say that it is starting rather than promising the result immediately.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "A podcast feed URL, a podcast episode URL, or a direct link to an audio or video file."
-                    }
-                },
-                "required": ["url"]
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "read_note",
-            "description": "Read one note in full: its written note and its transcript. Use this after search_notes or list_recent_notes whenever the question is about what a note actually says (summarising it, listing its decisions, quoting it). Search only returns a short window around a keyword.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "note_id": {
-                        "type": "string",
-                        "description": "The noteId from a previous search_notes or list_recent_notes result."
-                    }
-                },
-                "required": ["note_id"]
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "list_recent_notes",
-            "description": "List the user's most recent notes, newest first, with their ids, titles and previews. Use this for questions about a period rather than a keyword (\"what did I do this week\"), or to find a note when you do not know what to search for.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {
-                        "type": "integer",
-                        "description": "How many notes to list, 1 to 30. Defaults to 10."
-                    }
-                }
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "create_note",
-            "description": "Create a new note in the user's notes. Use it when the user asks you to write something down, draft something, or save a summary. Do not use it to answer a question: answer in the conversation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": { "type": "string", "description": "Short title, in the user's language." },
-                    "content": { "type": "string", "description": "The note body, in markdown." }
-                },
-                "required": ["content"]
-            }
-        }
-    }));
-    tools.push(serde_json::json!({
-        "type": "function",
-        "function": {
-            "name": "append_to_note",
-            "description": "Add text to the end of an existing note. Use it when the user asks to add something to a note that already exists.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "note_id": { "type": "string", "description": "The noteId to append to." },
-                    "content": { "type": "string", "description": "The text to add, in markdown." }
-                },
-                "required": ["note_id", "content"]
-            }
-        }
-    }));
-    if memory_enabled {
-        tools.push(serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": "remember",
-                "description": "Store a durable fact about the user so it is available in every future conversation. Use it when the user explicitly asks you to remember something, or states a lasting preference or constraint. Do not use it for one-off details of the current conversation.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "text": {
-                            "type": "string",
-                            "description": "The fact, as one self-contained sentence in the user's language."
-                        }
-                    },
-                    "required": ["text"]
-                }
-            }
-        }));
-        tools.push(serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": "search_memories",
-                "description": "Search durable facts remembered about the user from past conversations (preferences, projects, constraints). The most important facts are already in your context; use this to look up more when the user references something from an earlier conversation.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Short keyword query, in the user's language."
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        }));
-    }
-    serde_json::Value::Array(tools)
 }
 
 /// The per-turn system prompt: the static instructions plus, when memory is
 /// enabled and non-empty, the user's remembered facts.
 fn build_system_prompt(memory_block: Option<&str>) -> String {
     match memory_block {
-        Some(block) => format!("{SYSTEM_PROMPT}\n\n{block}"),
-        None => SYSTEM_PROMPT.to_string(),
+        Some(block) => format!("{SYSTEM_PROMPT}{}\n\n{block}", python::prompt_section()),
+        None => format!("{SYSTEM_PROMPT}{}", python::prompt_section()),
     }
 }
 
@@ -1909,3 +1753,7 @@ fn is_provider_failure_detail(detail: &str) -> bool {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod web_client_export;
+#[cfg(test)]
+mod web_features;

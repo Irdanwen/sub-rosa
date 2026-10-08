@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { requireWebsiteMessages } from "../lib/i18n";
 import { type Category, type FamilyDetail, familyBySlug } from "./catalog";
 
 /** A family's depth (versions, specs, use cases, rivals) is the heaviest part of
@@ -17,7 +18,10 @@ export function loadDetails(category: Category) {
   const known = pending.get(category);
   if (known) return known;
   const load = chunks[`./details/${category}.json`];
-  const next = (load ? load() : Promise.resolve({ default: { families: [] } })).then((module) => {
+  const next = Promise.all([
+    load ? load() : Promise.resolve({ default: { families: [] } }),
+    requireWebsiteMessages(`models:${category}`),
+  ]).then(([module]) => {
     loaded.set(category, new Map(module.default.families.map((detail) => [detail.slug, detail])));
   });
   pending.set(category, next);

@@ -1,0 +1,12 @@
+/* Info.plist usage descriptions (de). Keys are the Info.plist keys. */
+"NSMicrophoneUsageDescription" = "Sub Rosa nimmt das Mikrofon lokal auf, um deine Notizen zu transkribieren und zu erstellen, und hört dich während eines Sprachgesprächs.";
+"NSAudioCaptureUsageDescription" = "Sub Rosa nimmt das Systemaudio lokal auf, wenn du für eine Notiz Mikrofon plus Systemaudio wählst.";
+"NSCameraUsageDescription" = "Sub Rosa öffnet die Kamera, wenn du ein Foto für einen Chat oder eine Studio-Generierung aufnimmst, ein Dokument in eine Notiz scannst oder während eines Sprachgesprächs etwas zeigst.";
+"NSPhotoLibraryAddUsageDescription" = "Sub Rosa sichert Bilder und Videos, die du im Studio erzeugst, in deiner Fotomediathek.";
+"NSCalendarsUsageDescription" = "Sub Rosa liest deinen Kalender auf diesem Gerät, damit eine Aufnahme weiß, zu welchem Meeting sie gehört. Nichts wird irgendwohin gesendet.";
+"NSCalendarsFullAccessUsageDescription" = "Sub Rosa liest deinen Kalender auf diesem Gerät, damit eine Aufnahme weiß, zu welchem Meeting sie gehört. Nichts wird irgendwohin gesendet.";
+"NSRemindersUsageDescription" = "Sub Rosa fügt deiner Liste eine Erinnerung hinzu, wenn du tippst, um einen Vorschlag anzunehmen. Es liest oder ändert nichts anderes.";
+"NSRemindersFullAccessUsageDescription" = "Sub Rosa fügt deiner Liste eine Erinnerung hinzu, wenn du tippst, um einen Vorschlag anzunehmen. Es liest oder ändert nichts anderes.";
+
+/* Health, read only (ADR-0099). Shown by iOS when Sub Rosa asks to read the measures the person picked. */
+"NSHealthShareUsageDescription" = "Sub Rosa liest die Gesundheitswerte, die du auswählst (Schritte, Schlaf, Herzfrequenz, Trainings, Gewicht), um deine Tageszusammenfassungen zu zeigen und deine Fragen dazu zu beantworten. Es schreibt nie in Health, und nichts verlässt dieses iPhone, solange du die Synchronisierung für einen Wert nicht einschaltest.";

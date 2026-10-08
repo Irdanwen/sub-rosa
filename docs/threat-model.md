@@ -26,6 +26,8 @@ limits below apply to both modes.
 | Account sessions and vault key | Native keyring; an unlocked browser tab holds its key only in memory | Account access or decryption of synced content |
 | Recovery kit | The user's chosen secure storage; only its encrypted envelope is on the service | Loss can prevent recovery; theft enables decryption after account access |
 | Synced content | Encrypted revisions in PostgreSQL and encrypted file chunks in object storage | Metadata exposure; content stays encrypted without the client key |
+| A browser device's keys (ADR-0096) | IndexedDB of that browser profile: a non-extractable P-256 device key, a non-extractable AES-GCM key, and the minted `cdm_` key sealed under it | Script running on the account site can spend up to the key's daily cap until the browser is revoked or the key expires (seven days at most) |
+| Shared projects (ADR-0098) | Each account's identity keys: sealed under the vault key on the service, copied to each device's keyring; space keys: sealed to each member, unwrapped in memory; decrypted content: SQLite on each member's devices | A member reads and writes the project; a removed member keeps what they received and the keys of the epochs they were in |
 | The account service's Carpe Diem partner key | The service's private configuration, never in the repo; Carpe Diem pins its public half | Someone mints device keys for accounts created by or linked to Sub Rosa, and burns their credits (bounded in ADR-0069) |
 
 ## Boundaries
@@ -109,6 +111,15 @@ Named, because a threat model that claims everything protects nothing.
   Sub Rosa, exceed Carpe Diem's issuance limits unnoticed, or do it silently:
   Carpe Diem announces every new key by email. See
   [ADR-0069](adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md).
+- **Script injected into the account site while a browser device is
+  open.** It can use the browser's non-extractable keys (it cannot copy them)
+  and open its Carpe Diem key, so it can spend and exfiltrate that key. Carpe
+  Diem bounds the key in its TEE: a daily cap, a life of at most seven days,
+  no router or x402, inference routes only; the CSP lets the page reach only
+  its own origin and the Carpe Diem operator, Trusted Types refuse string
+  script sinks, and Subresource Integrity pins the entry files. Revoking the
+  browser from any device stops its key and its renewals. See
+  [ADR-0096](adr/0096-a-browser-is-a-device.md).
 - **Cryptographic isolation after device revocation.** Revocation blocks the
   device's sessions immediately at the service. It does not rotate the vault
   root or erase past copies. A revoked device obtaining ciphertext through
@@ -127,6 +138,17 @@ Named, because a threat model that claims everything protects nothing.
   answering and reaches no copy already downloaded, which is why a deadline is
   mandatory and why the surface offers no link that never expires. See
   [ADR-0053](adr/0053-a-share-is-a-dated-envelope-the-server-cannot-open.md).
+
+- **A dishonest service in a shared project** (ADR-0098, preview). Heads are
+  signed and chained, keys carry a commitment, objects are signed by their
+  author, and a device refuses a head older than one it already verified. The
+  service can still withhold objects, show different members different
+  subsets, and show a device that has never seen a project an older chain
+  from its anchor. A member removed from a project keeps what they received
+  and the keys of the epochs they were in. There is no forward secrecy within
+  an epoch. The protocol has not been independently reviewed; that review is a
+  gate before it is on by default. See
+  [security/spaces-protocol.md](security/spaces-protocol.md).
 
 - **An attacker who already runs code as you.** They can read the app's files,
   attach a debugger, and ask the keychain for the key with the app's own

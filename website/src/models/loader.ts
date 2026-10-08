@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { requireWebsiteMessages } from "../lib/i18n";
 
 /** The catalog weighs more than the rest of the site, so it is its own chunk,
  * fetched only by the pages that show it. `main.tsx` and the prerender wait
@@ -11,10 +12,12 @@ let loaded: CatalogModule | null = null;
 let pending: Promise<CatalogModule> | null = null;
 
 export function loadModelCatalog() {
-  pending ??= import("../pages/models").then((module) => {
-    loaded = module;
-    return module;
-  });
+  pending ??= Promise.all([import("../pages/models"), requireWebsiteMessages("models")]).then(
+    ([module]) => {
+      loaded = module;
+      return module;
+    },
+  );
   return pending;
 }
 

@@ -51,6 +51,17 @@ REQUEST_TIMEOUT_SECONDS = 60
 IMAGE_QUEUE_POLL_SECONDS = 3
 IMAGE_QUEUE_MAX_ATTEMPTS = 60
 
+# A refine pass is a vision critique plus, when something is wrong, one edit
+# the app queues and waits for (12 to 45 s measured, up to six minutes before
+# it answers "pending"). At most two passes.
+REFINE_TIMEOUT_SECONDS = 420
+MAX_REFINE_PASSES = 2
+# The whole tool call must answer inside the MCP entry's timeout (300 s in the
+# Hermes config): refining stops waiting in time, and a version still
+# rendering lands in the gallery on its own.
+TOOL_DEADLINE_SECONDS = 270
+MIN_PASS_SECONDS = 45
+
 # Models the backend refuses (409 MODEL_REQUIRES_ASYNC) or drops (edge-cap
 # 502) on the sync path: queue from the start (mirrors the Studio's list).
 # Best-effort — a model missing here still lands on the queue via the
@@ -141,7 +152,11 @@ TOOLS: list[dict[str, Any]] = [
             "traits, tier, and price - e.g. a cheap default/fastest model for "
             "quick or iterative asks, highest_quality or a premium/frontier "
             "model when the user wants photorealism, fine detail, or "
-            "legible text in the image. Omit model only for generic requests."
+            "legible text in the image. Omit model only for generic requests. "
+            "With refine_passes (1 or 2) the picture is then checked against "
+            "the prompt and fixed with one edit per pass; each pass may cost "
+            "one edit, so call estimate_image_refine first, tell the user the "
+            "price and only refine once they agree."
         ),
         "inputSchema": {
             "type": "object",
@@ -166,6 +181,16 @@ TOOLS: list[dict[str, Any]] = [
                 "style_preset": {
                     "type": "string",
                     "description": "Optional style preset name (model dependent).",
+                },
+                "refine_passes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": MAX_REFINE_PASSES,
+                    "description": (
+                        "0 (default), 1 or 2 critique-and-edit passes after "
+                        "generation. Only after the user agreed to the price "
+                        "estimate_image_refine returned."
+                    ),
                 },
             },
             "required": ["prompt"],
@@ -321,6 +346,22 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "estimate_image_refine",
+        "description": (
+            "Price of refining a generated image: the edit model a refine "
+            "uses and the most it can cost in credits for the given number of "
+            "passes (one edit per pass, nothing for a pass that finds nothing "
+            "to fix). Spends nothing. Quote it to the user before setting "
+            "refine_passes on generate_image."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "passes": {"type": "integer", "minimum": 1, "maximum": MAX_REFINE_PASSES},
+            },
+        },
+    },
+    {
         "name": "list_media_models",
         "description": (
             "List the media models available to the user: id, type, tier "
@@ -339,6 +380,29 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "Only return models of this type.",
                 },
             },
+        },
+    },
+    {
+        # Word, Excel and PowerPoint files (ADR-0090). The app's own writers
+        # make them, the same ones the phone's assistant uses, so a request
+        # makes the same file on both. Both descriptions are the Rust ones,
+        # verbatim (a Rust test reads this file to keep them so).
+        "name": "make_document",
+        "description": "Make a Word document (docx), an Excel workbook (xlsx) or a PowerPoint deck (pptx) the user can open, share and save. Use it when the user asks for a file, a spreadsheet, slides or a document to send, not for an answer that belongs in the chat. The file is saved in the user's gallery; copy the subrosa:file block the tool returns into your reply.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["docx", "xlsx", "pptx"]},
+                "title": {
+                    "type": "string",
+                    "description": "The file's title, in the user's language.",
+                },
+                "content": {
+                    "type": "object",
+                    "description": "docx: {markdown} (headings, lists, tables, bold, links) or {sections: [{heading, level, paragraphs, bullets, numbered, table: {header, rows}, quote}]}. xlsx: {sheets: [{name, columns: [{width, format}], rows: [[cell]], header, freezeHeader}]}; a cell is a number, text, true/false, null, an ISO date, a formula starting with = (like =SUM(B2:B9)), or {value or formula, format, bold}; formats like #,##0.00, 0.0%, yyyy-mm-dd. pptx: {slides: [{layout: title|bullets|two_column|image, title, subtitle, bullets: [text or {text, level}], left: {heading, bullets}, right: {heading, bullets}, image: a gallery picture's file name, caption, notes}]}; notes are the speaker notes.",
+                },
+            },
+            "required": ["kind", "title", "content"],
         },
     },
 ]
@@ -454,7 +518,9 @@ def call_tool(target: str, request_id: Any, params: dict[str, Any]) -> dict[str,
         "generate_video": generate_video,
         "generate_music": generate_music,
         "check_media": check_media,
+        "estimate_image_refine": estimate_image_refine,
         "list_media_models": list_media_models,
+        "make_document": make_document,
     }
     try:
         handler = handlers.get(str(name))
@@ -480,13 +546,18 @@ def call_tool(target: str, request_id: Any, params: dict[str, Any]) -> dict[str,
             },
         )
 
+    # A tool whose answer is prose for the agent to act on (a block to copy
+    # verbatim) says so with `_text`; JSON would escape its newlines.
+    text = result.pop("_text", None)
     return response(
         request_id,
         {
             "content": [
                 {
                     "type": "text",
-                    "text": json.dumps(result, ensure_ascii=False, indent=2),
+                    "text": text
+                    if isinstance(text, str)
+                    else json.dumps(result, ensure_ascii=False, indent=2),
                 }
             ],
             "structuredContent": result,
@@ -498,6 +569,7 @@ def call_tool(target: str, request_id: Any, params: dict[str, Any]) -> dict[str,
 
 
 def generate_image(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    started = time.monotonic()
     prompt = str(arguments.get("prompt") or "").strip()
     if not prompt:
         raise ValueError("prompt is required")
@@ -536,8 +608,16 @@ def generate_image(base_url: str, token: str, arguments: dict[str, Any]) -> dict
         else:
             raise RuntimeError(upstream_error(dto, "Image generation failed."))
 
-    artifact = save_artifact(base_url, token, {"base64": b64, "extension": extension})
-    return {
+    artifact = save_artifact(
+        base_url,
+        token,
+        {
+            "base64": b64,
+            "extension": extension,
+            "generation": {"kind": "image", "model": model, "prompt": prompt},
+        },
+    )
+    result: dict[str, Any] = {
         "status": "completed",
         "kind": "image",
         "model": model,
@@ -545,6 +625,83 @@ def generate_image(base_url: str, token: str, arguments: dict[str, Any]) -> dict
         "file_name": artifact.get("fileName"),
         "note": "Saved into the user's Studio gallery.",
     }
+    passes = refine_passes_of(arguments)
+    if passes:
+        deadline = started + TOOL_DEADLINE_SECONDS
+        result.update(refine_image(base_url, token, artifact, prompt, passes, deadline))
+    return result
+
+
+def refine_passes_of(arguments: dict[str, Any]) -> int:
+    value = arguments.get("refine_passes")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, min(MAX_REFINE_PASSES, value))
+
+
+def refine_image(
+    base_url: str,
+    token: str,
+    artifact: dict[str, Any],
+    prompt: str,
+    passes: int,
+    deadline: float,
+) -> dict[str, Any]:
+    """Run up to `passes` critique-and-edit rounds through the app. Each new
+    version is saved in the gallery as a version of the first image, so the
+    Studio shows them as one lineage. Stops early once the picture passes."""
+    root = str(artifact.get("fileName") or "")
+    current = root
+    current_path = artifact.get("path")
+    versions: list[dict[str, Any]] = []
+    critiques: list[dict[str, Any]] = []
+    for n in range(1, passes + 1):
+        remaining = int(deadline - time.monotonic())
+        if remaining < MIN_PASS_SECONDS:
+            break
+        outcome = call_proxy(
+            base_url,
+            token,
+            "/media/refine",
+            {
+                "fileName": current,
+                "prompt": prompt,
+                "root": root,
+                "n": n,
+                # The critique comes first; leave it a margin.
+                "waitSeconds": max(5, remaining - 30),
+            },
+            REFINE_TIMEOUT_SECONDS,
+        )
+        critiques.append(outcome.get("critique") or {})
+        if outcome.get("pending"):
+            versions.append({"n": n, "status": "pending"})
+            break
+        if not outcome.get("fileName"):
+            break
+        current = str(outcome["fileName"])
+        current_path = outcome.get("path")
+        versions.append({"n": n, "file_name": current, "file_path": current_path})
+    return {
+        "file_path": current_path,
+        "file_name": current,
+        "refine": {"versions": versions, "critiques": critiques},
+        "note": (
+            "Saved into the user's Studio gallery. Refined versions are kept "
+            "next to the first image as versions of it."
+            if versions
+            else "Saved into the user's Studio gallery. The check found nothing to fix."
+        ),
+    }
+
+
+def estimate_image_refine(
+    base_url: str, token: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    passes = refine_passes_of({"refine_passes": arguments.get("passes")}) or MAX_REFINE_PASSES
+    return call_proxy(
+        base_url, token, "/media/refine", {"estimateOnly": True, "passes": passes}, REQUEST_TIMEOUT_SECONDS
+    )
 
 
 def generate_image_via_queue(
@@ -688,7 +845,11 @@ def check_media(base_url: str, token: str, arguments: dict[str, Any]) -> dict[st
         )
         if not url:
             raise RuntimeError("The job completed but returned no file URL.")
-        artifact = save_artifact(base_url, token, {"url": url, "extension": extension})
+        artifact = save_artifact(
+            base_url,
+            token,
+            {"url": url, "extension": extension, "generation": {"model": model}},
+        )
         return {
             "status": "completed",
             "kind": kind,
@@ -860,6 +1021,17 @@ def call_proxy(
         return json.loads(body) if body else {}
     except json.JSONDecodeError:
         raise RuntimeError("The June media proxy returned an unreadable response.")
+
+
+def make_document(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Asks the app to write the file into the gallery; the app answers with
+    the file's path and the text to give the agent, block included."""
+    result = call_proxy(base_url, token, "/media/document", arguments, REQUEST_TIMEOUT_SECONDS)
+    reply = result.pop("reply", None)
+    if isinstance(reply, str) and reply:
+        path = result.get("path")
+        result["_text"] = f"{reply}\n\nThe file is at {path}." if path else reply
+    return result
 
 
 # --- helpers ------------------------------------------------------------------

@@ -3,12 +3,26 @@ use chrono::{DateTime, Utc};
 use futures_util::TryStreamExt;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use subrosa_domain::{
-    Account, Change, Device, DeviceRequest, Error, Identity, JournalPage, LoginAttempt, Operation,
-    OperationResult, PendingRevocation, Result, RevocationReason, Secret, Session, Share,
-    SharePreview, Vault,
+    Account, Change, Device, DeviceKind, DeviceRequest, Error, Identity, JournalPage, LoginAttempt,
+    Operation, OperationResult, PendingRevocation, Result, RevocationReason, Secret,
+    SecurityEventKind, Session, Share, SharePreview, Vault,
 };
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
+
+mod browser_devices;
+mod publications;
+mod security_events;
+mod spaces;
+pub use browser_devices::{Admission, MAX_BROWSER_DEVICES, NewBrowserDevice};
+pub use publications::{
+    ListingWrite, PageWrite, ProfileWrite, ReportSubject, SiteWrite, TakedownTarget,
+};
+use security_events::record_event;
+pub use security_events::{
+    PAGE as SECURITY_EVENTS_PAGE, RETENTION_DAYS as SECURITY_EVENTS_RETENTION_DAYS,
+};
+pub use spaces::{EpochWrite, InvitationWrite};
 
 #[derive(Clone)]
 pub struct Repository {
@@ -18,6 +32,18 @@ fn db(error: sqlx::Error) -> Error {
     tracing::error!(kind = ?error.as_database_error().map(sqlx::error::DatabaseError::code), "database operation failed");
     drop(error);
     Error::Unavailable
+}
+fn device_row(r: &sqlx::postgres::PgRow) -> Device {
+    Device {
+        id: r.get("id"),
+        name: r.get("name"),
+        created_at: r.get("created_at"),
+        last_seen_at: r.get("last_seen_at"),
+        revoked_at: r.get("revoked_at"),
+        renewed_at: r.get("renewed_at"),
+        renew_count: r.get("renew_count"),
+        kind: DeviceKind::parse(r.get("kind")),
+    }
 }
 fn account(row: &sqlx::postgres::PgRow) -> Account {
     Account {
@@ -77,33 +103,35 @@ impl Repository {
         credential_id: &[u8],
         credential: &serde_json::Value,
     ) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
         let inserted = sqlx::query("INSERT INTO passkeys(credential_id,account_id,credential) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
             .bind(credential_id)
             .bind(owner)
             .bind(credential)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(db)?
             .rows_affected();
-        if inserted == 1 {
-            Ok(())
-        } else {
-            Err(Error::Conflict)
+        if inserted != 1 {
+            return Err(Error::Conflict);
         }
+        record_event(&mut tx, owner, SecurityEventKind::PasskeyAdded, None).await?;
+        tx.commit().await.map_err(db)
     }
     pub async fn delete_passkey(&self, owner: Uuid, credential_id: &[u8]) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
         let removed = sqlx::query("DELETE FROM passkeys WHERE account_id=$1 AND credential_id=$2")
             .bind(owner)
             .bind(credential_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(db)?
             .rows_affected();
-        if removed == 1 {
-            Ok(())
-        } else {
-            Err(Error::NotFound)
+        if removed != 1 {
+            return Err(Error::NotFound);
         }
+        record_event(&mut tx, owner, SecurityEventKind::PasskeyRemoved, None).await?;
+        tx.commit().await.map_err(db)
     }
     pub async fn update_passkey(
         &self,
@@ -178,13 +206,15 @@ impl Repository {
         ))
     }
     pub async fn browser_session_for_account(&self, owner: Uuid, token_hash: &[u8]) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
         sqlx::query("INSERT INTO sessions(token_hash,account_id,browser,authenticated_at,expires_at) VALUES($1,$2,true,now(),now()+interval '12 hours')")
             .bind(token_hash)
             .bind(owner)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(db)?;
-        Ok(())
+        record_event(&mut tx, owner, SecurityEventKind::SignedInPasskey, None).await?;
+        tx.commit().await.map_err(db)
     }
     pub async fn native_request_for_passkey(
         &self,
@@ -280,6 +310,7 @@ impl Repository {
         let row=sqlx::query("INSERT INTO accounts(id,issuer,subject,email) VALUES($1,$2,$3,$4) ON CONFLICT(issuer,subject) DO UPDATE SET email=EXCLUDED.email RETURNING id,email,created_at").bind(Uuid::now_v7()).bind(&identity.issuer).bind(&identity.subject).bind(&identity.email).fetch_one(&mut *tx).await.map_err(db)?;
         let a = account(&row);
         sqlx::query("INSERT INTO sessions(token_hash,account_id,browser,authenticated_at,expires_at) VALUES($1,$2,true,$3,now()+interval '12 hours')").bind(token_hash).bind(a.id).bind(identity.authenticated_at).execute(&mut *tx).await.map_err(db)?;
+        record_event(&mut tx, a.id, SecurityEventKind::SignedIn, None).await?;
         tx.commit().await.map_err(db)?;
         Ok(a)
     }
@@ -299,6 +330,15 @@ impl Repository {
     }
     pub async fn logout(&self, hash: &[u8]) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
+        // Read before the row goes: the session names the account, and a
+        // native one the device it was signed in on.
+        sqlx::query("INSERT INTO security_events(id,account_id,kind,device_name) SELECT $2,s.account_id,$3,d.name FROM sessions s LEFT JOIN devices d ON d.id=s.device_id WHERE s.token_hash=$1")
+            .bind(hash)
+            .bind(Uuid::now_v7())
+            .bind(SecurityEventKind::SignedOut.as_str())
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
         sqlx::query("UPDATE session_families SET revoked_at=now() WHERE id=(SELECT family_id FROM sessions WHERE token_hash=$1)").bind(hash).execute(&mut *tx).await.map_err(db)?;
         sqlx::query("DELETE FROM sessions WHERE token_hash=$1 OR family_id IN (SELECT id FROM session_families WHERE revoked_at IS NOT NULL)").bind(hash).execute(&mut *tx).await.map_err(db)?;
         tx.commit().await.map_err(db)
@@ -310,37 +350,27 @@ impl Repository {
                 .fetch_all(&self.pool)
                 .await
                 .map_err(db)?;
-        Ok(rows
-            .iter()
-            .map(|r| Device {
-                id: r.get("id"),
-                name: r.get("name"),
-                created_at: r.get("created_at"),
-                last_seen_at: r.get("last_seen_at"),
-                revoked_at: r.get("revoked_at"),
-                renewed_at: r.get("renewed_at"),
-                renew_count: r.get("renew_count"),
-            })
-            .collect())
+        Ok(rows.iter().map(device_row).collect())
     }
     /// A label, not a credential: renaming never touches what the device may do.
     /// A revoked device keeps the name it had, so the list stays readable.
     pub async fn rename_device(&self, owner: Uuid, id: Uuid, name: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
         let count = sqlx::query(
             "UPDATE devices SET name=$1 WHERE account_id=$2 AND id=$3 AND revoked_at IS NULL",
         )
         .bind(name)
         .bind(owner)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(db)?
         .rows_affected();
         if count == 0 {
-            Err(Error::NotFound)
-        } else {
-            Ok(())
+            return Err(Error::NotFound);
         }
+        record_event(&mut tx, owner, SecurityEventKind::DeviceRenamed, Some(id)).await?;
+        tx.commit().await.map_err(db)
     }
     pub async fn revoke_device(
         &self,
@@ -361,6 +391,12 @@ impl Repository {
         // database marks devices revoked without anyone asking Carpe Diem, and
         // Carpe Diem treats a repeated revocation as a no-op.
         enqueue_revocation(&mut tx, owner, Some(id), reason).await?;
+        let kind = if reason == RevocationReason::SignedOut {
+            SecurityEventKind::DeviceSignedOut
+        } else {
+            SecurityEventKind::DeviceRevoked
+        };
+        record_event(&mut tx, owner, kind, Some(id)).await?;
         sqlx::query("DELETE FROM sessions WHERE account_id=$1 AND device_id=$2")
             .bind(owner)
             .bind(id)
@@ -441,6 +477,7 @@ impl Repository {
             None => None,
         };
         let device_id = if let Some(id) = reused {
+            record_event(&mut tx, owner, SecurityEventKind::DeviceSignedIn, Some(id)).await?;
             id
         } else {
             let id = Uuid::now_v7();
@@ -453,6 +490,7 @@ impl Repository {
                 .execute(&mut *tx)
                 .await
                 .map_err(db)?;
+            record_event(&mut tx, owner, SecurityEventKind::DeviceAdded, Some(id)).await?;
             id
         };
         // A reused row may still carry families from the session it is
@@ -515,6 +553,13 @@ impl Repository {
                 .execute(&mut *tx)
                 .await
                 .map_err(db)?;
+            record_event(
+                &mut tx,
+                r.get("account_id"),
+                SecurityEventKind::RefreshReuseBlocked,
+                Some(r.get("device_id")),
+            )
+            .await?;
             tx.commit().await.map_err(db)?;
             return Err(Error::Unauthorized);
         }
@@ -829,7 +874,15 @@ impl Repository {
         {
             return Err(Error::Quota);
         }
-        sqlx::query("INSERT INTO vaults(account_id,version,envelope) VALUES($1,$2,$3) ON CONFLICT(account_id) DO UPDATE SET version=EXCLUDED.version,envelope=EXCLUDED.envelope").bind(p.owner).bind(version+1).bind(p.envelope).execute(&mut *tx).await.map_err(db)?;
+        // The verifier belongs to the recovery key that sealed this envelope, so
+        // a new envelope without one clears it rather than keep a stale one.
+        sqlx::query("INSERT INTO vaults(account_id,version,envelope,admission_verifier) VALUES($1,$2,$3,$4) ON CONFLICT(account_id) DO UPDATE SET version=EXCLUDED.version,envelope=EXCLUDED.envelope,admission_verifier=EXCLUDED.admission_verifier").bind(p.owner).bind(version+1).bind(p.envelope).bind(p.admission_verifier).execute(&mut *tx).await.map_err(db)?;
+        let kind = if version == 0 {
+            SecurityEventKind::VaultCreated
+        } else {
+            SecurityEventKind::VaultUpdated
+        };
+        record_event(&mut tx, p.owner, kind, None).await?;
         tx.commit().await.map_err(db)?;
         Ok(version + 1)
     }
@@ -922,6 +975,8 @@ impl Repository {
             "DELETE FROM device_requests",
             "DELETE FROM login_attempts",
             "UPDATE devices SET revoked_at=COALESCE(revoked_at,now()),secret_hash=NULL",
+            // Every owner learns why every app asked them to sign in again.
+            "INSERT INTO security_events(id,account_id,kind) SELECT gen_random_uuid(),id,'sessions_reset' FROM accounts",
         ] {
             sqlx::query(query).execute(&mut *tx).await.map_err(db)?;
         }
@@ -979,8 +1034,21 @@ impl Repository {
         )
     }
     pub async fn approve_pairing(&self, session: &Session, id: Uuid, envelope: &str) -> Result<()> {
-        let n=sqlx::query("UPDATE pairing_requests SET envelope=$4 WHERE id=$1 AND account_id=$2 AND NOT ((requester_device_id IS NOT NULL AND requester_device_id IS NOT DISTINCT FROM $5::uuid) OR (requester_device_id IS NULL AND requester_hash=$3)) AND expires_at>now() AND envelope IS NULL").bind(id).bind(session.account.id).bind(&session.token_hash).bind(envelope).bind(session.device_id).execute(&self.pool).await.map_err(db)?.rows_affected();
-        if n == 0 { Err(Error::Conflict) } else { Ok(()) }
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let n=sqlx::query("UPDATE pairing_requests SET envelope=$4,approved_by_device=$5,approved_at=now() WHERE id=$1 AND account_id=$2 AND NOT ((requester_device_id IS NOT NULL AND requester_device_id IS NOT DISTINCT FROM $5::uuid) OR (requester_device_id IS NULL AND requester_hash=$3)) AND expires_at>now() AND envelope IS NULL").bind(id).bind(session.account.id).bind(&session.token_hash).bind(envelope).bind(session.device_id).execute(&mut *tx).await.map_err(db)?.rows_affected();
+        if n == 0 {
+            return Err(Error::Conflict);
+        }
+        // The approver is the device that handed the key over. A browser has
+        // no device, so its line carries no name.
+        record_event(
+            &mut tx,
+            session.account.id,
+            SecurityEventKind::PairingApproved,
+            session.device_id,
+        )
+        .await?;
+        tx.commit().await.map_err(db)
     }
     pub async fn delete_pairing(&self, session: &Session, id: Uuid) -> Result<()> {
         let n = sqlx::query(
@@ -1198,12 +1266,22 @@ impl Repository {
             .collect()
     }
     pub async fn revocation_delivered(&self, id: Uuid) -> Result<()> {
-        sqlx::query("UPDATE partner_revocations SET done_at=now(),last_error=NULL WHERE id=$1")
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        // Only the first acknowledgement is history, and only for an account
+        // that still exists: a deleted account has nobody left to read it.
+        sqlx::query("INSERT INTO security_events(id,account_id,kind,device_name) SELECT $2,a.id,$3,d.name FROM partner_revocations p JOIN accounts a ON a.id=p.subject LEFT JOIN devices d ON d.id=p.device_id AND d.account_id=a.id WHERE p.id=$1 AND p.done_at IS NULL")
             .bind(id)
-            .execute(&self.pool)
+            .bind(Uuid::now_v7())
+            .bind(SecurityEventKind::CarpeDiemKeyRevoked.as_str())
+            .execute(&mut *tx)
             .await
             .map_err(db)?;
-        Ok(())
+        sqlx::query("UPDATE partner_revocations SET done_at=now(),last_error=NULL WHERE id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        tx.commit().await.map_err(db)
     }
     /// Backs off exponentially from one minute to six hours and never gives
     /// up: a key that should be dead is worth asking about forever.
@@ -1225,9 +1303,17 @@ impl Repository {
             "DELETE FROM device_requests WHERE expires_at<now()",
             "DELETE FROM sessions WHERE expires_at<now()",
             "DELETE FROM rate_limits WHERE window_start<now()-interval '2 minutes'",
+            "DELETE FROM device_proofs WHERE expires_at<now()",
         ] {
             sqlx::query(q).execute(&self.pool).await.map_err(db)?;
         }
+        sqlx::query(
+            "DELETE FROM security_events WHERE occurred_at<now()-make_interval(days => $1)",
+        )
+        .bind(SECURITY_EVENTS_RETENTION_DAYS)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
         Ok(())
     }
 }
@@ -1266,6 +1352,9 @@ pub struct VaultParams<'a> {
     pub expected: i64,
     pub envelope: &'a serde_json::Value,
     pub quota: i64,
+    /// SHA-256 of the value derived from this envelope's recovery key, which
+    /// admits a browser as a device (ADR 0096). `None` clears it.
+    pub admission_verifier: Option<&'a [u8]>,
 }
 pub struct ShareParams<'a> {
     pub owner: Uuid,

@@ -1,0 +1,42 @@
+{
+  "generatedBy": "src-tauri/src/agent_lite/web_features/analysis.rs",
+  "limits": {
+    "firstAnswerMs": 5000,
+    "maxBlockChars": 60000,
+    "maxBlocks": 4,
+    "maxCodeChars": 20000,
+    "maxStdoutChars": 8000,
+    "runLimitMs": 120000
+  },
+  "messages": {
+    "cards": "Cards (copy each block verbatim into your answer where it belongs):",
+    "needsPageOpen": "Analysis needs the page open: Python runs in this browser only while the Sub Rosa tab is in front, and it is not right now. Do not retry in this turn. Answer from what you have, and tell the user to keep the tab open and ask again for the computed result.",
+    "noCode": "run_python needs Python code in `code`.",
+    "noNetwork": "No network: Python in this browser reaches nothing outside the code it is given.",
+    "printedNothing": "The code ran and printed nothing. End it with an expression, or print() what you need.",
+    "stopped": "The user stopped the reply.",
+    "timedOut": "The analysis was stopped after 120 seconds. Try a smaller computation, or work on part of the data.",
+    "tooLong": "The code is too long to run (20000 characters at most). Split it into smaller runs; variables persist between them.",
+    "unavailable": "Python is not available in this browser right now{detail}. Answer without running code, and say the figures were not computed."
+  },
+  "prompt": "Chart and table cards: when an answer rests on numbers worth seeing (a comparison, a trend, a breakdown, a distribution), you may embed one fenced code block whose info string is subrosa:chart, and for rows worth reading or sorting one whose info string is subrosa:table. The app draws them with tooltips, a data view and downloads, in both themes.\nA subrosa:chart body is one JSON object: {\"v\":1,\"type\":\"bar\",\"title\":\"…\",\"x\":{\"title\":\"…\"},\"y\":{\"title\":\"…\",\"unit\":\"€\"},\"categories\":[\"Q1\",\"Q2\",\"Q3\"],\"series\":[{\"name\":\"2025\",\"values\":[120,135,null]}],\"stacked\":false,\"source\":\"…\"}. type is bar (compare categories; \"stacked\":true for the parts of a whole), line or area (change over ordered categories such as dates), pie or donut (the parts of one total: one series, eight slices at most), or scatter (two measures against each other, where each series is {\"name\":\"…\",\"points\":[[x,y],…]} and \"x\" takes its own \"unit\"). One value per category, null for a gap, numbers as JSON numbers. At most eight series (three for scatter), one y axis: two measures of different scale are two charts. Units go in \"unit\", never inside the numbers.\nA subrosa:table body: {\"v\":1,\"title\":\"…\",\"columns\":[\"Region\",{\"label\":\"Revenue\",\"unit\":\"€\"}],\"rows\":[[\"North\",1200],[\"South\",900]],\"source\":\"…\"}. Numbers as JSON numbers so they sort and align, 500 rows at most.\nChart only numbers you actually have, from the user's files or notes, a tool result or a computation; never invented or estimated figures. Say in your prose what the chart shows, and do not add a table of the same numbers under a chart: the chart has its own data view.\n\nData analysis: run_python runs Python in this browser with numpy and pandas (no other packages, no network, no files). Use it whenever the answer needs a computation over data, such as totals, averages, grouping or statistics, rather than doing arithmetic in your head; write the data into the code. In the code, subrosa_chart(\"bar\", data=df, x=\"column\", y=[\"column\"], title=\"…\", unit=\"…\") and subrosa_table(df, title=\"…\") make cards: the tool result returns each card's fenced block, which you copy verbatim into your answer. If the tool says the analysis needs the page open, tell the user to keep this tab in front and ask again.",
+  "tool": {
+    "function": {
+      "description": "Run Python 3 in the user's web browser, with numpy and pandas and the standard library (no other packages, no network, no files). Use it for any computation over data the conversation holds: totals, averages, grouping, pivots, statistics; put the data in the code itself. Returns print() output and the value of the last line. subrosa_chart(type, data=df, x=\"col\", y=[\"col\"], title=..., unit=...) and subrosa_table(df, title=...) turn a result into a card whose fenced block the result returns. Variables persist between runs in this conversation while the page stays open; if a name is gone, rebuild it.",
+      "name": "run_python",
+      "parameters": {
+        "properties": {
+          "code": {
+            "description": "The Python code to run.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  }
+}

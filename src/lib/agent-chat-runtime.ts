@@ -56,6 +56,13 @@ export type AgentChatToolPart = {
 
 export type AgentApprovalChoice = "once" | "session" | "always" | "deny";
 
+/** A connector tool stopped for the person by the guard plugin (ADR-0092
+ * addendum). "Always" is not offered for it: the connector's own rule, in
+ * Settings, is where a tool is allowed for good, so the two never disagree. */
+export function isConnectorApproval(command: unknown): boolean {
+  return typeof command === "string" && command.startsWith("<mcp__subrosa_connectors__");
+}
+
 export type AgentChatApprovalPart = {
   type: "approval";
   id: string;
@@ -871,7 +878,8 @@ function appendLiveHermesEvents(
         description:
           stringValue(payload?.description, true) ?? "Hermes needs approval before continuing.",
         sessionId: event.session_id,
-        allowPermanent: payload?.allow_permanent !== false,
+        allowPermanent:
+          payload?.allow_permanent !== false && !isConnectorApproval(payload?.command),
         status: "pending",
       });
       continue;

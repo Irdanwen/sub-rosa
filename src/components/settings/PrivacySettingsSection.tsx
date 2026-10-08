@@ -5,8 +5,10 @@ import { IconLock } from "central-icons/IconLock";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
 import { useEffect, useState } from "react";
 import { EgressLedgerCard } from "./EgressLedgerCard";
+import { ProtectedModeSection } from "./ProtectedModeSection";
 import { ReflexCard } from "./ReflexCard";
 import { SemanticAskCard } from "./SemanticAskCard";
+import { ScreenAwarenessCard } from "./ScreenAwarenessCard";
 import {
   type EgressHost,
   carpeDiemGetSettings,
@@ -73,9 +75,13 @@ export function PrivacySettingsSection() {
         </div>
       ) : null}
 
+      <ProtectedModeSection />
+
       <EgressLedgerCard />
 
       <SemanticAskCard />
+
+      <ScreenAwarenessCard />
 
       <ReflexCard />
 
@@ -88,6 +94,11 @@ export function PrivacySettingsSection() {
           <p className="settings-row-description">
             {t(
               "Your library is stored on this device. AI requests send the content needed for the task to your configured provider. If you enable account sync, supported data is encrypted before upload. Your Carpe Diem key is kept in the system keychain and shared only when you choose to use your encrypted vault.",
+            )}
+          </p>
+          <p className="settings-row-description">
+            {t(
+              "Your thumbs up and down on replies never leave this device: they are not synced or sent, and only travel in an archive you export yourself.",
             )}
           </p>
         </div>

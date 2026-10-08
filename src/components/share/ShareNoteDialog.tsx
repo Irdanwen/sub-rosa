@@ -1,13 +1,16 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconChainLink1 } from "central-icons/IconChainLink1";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
+  accountShareConversation,
   accountShareNote,
   SHARE_WINDOWS,
+  type ShareConversationTarget,
   type ShareLink,
   type ShareWindow,
 } from "../../lib/account";
 import { t } from "../../lib/i18n";
+import { PublishNoteDialog } from "../publishing/PublishNoteDialog";
 import { accountError } from "../settings/AccountSettingsSection";
 import { Dialog } from "../ui/Dialog";
 
@@ -36,13 +39,84 @@ export function ShareNoteDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  // Publishing (ADR-0097) is the other way to show a note: public, in the
+  // clear and with no end date. It is offered here, never chosen for you.
+  const [publishing, setPublishing] = useState(false);
+  useEffect(() => {
+    if (!open) setPublishing(false);
+  }, [open]);
+  if (publishing) return <PublishNoteDialog noteId={noteId} open={open} onClose={onClose} />;
+  return (
+    <ShareLinkDialog
+      open={open}
+      onClose={onClose}
+      create={(window) => accountShareNote(noteId, window)}
+      title={t("Share this note")}
+      description={t(
+        "Anyone with the link can read this note in a browser. Sub Rosa stores it encrypted and never receives the key that opens it.",
+      )}
+      linkLabel={t("Link to this note")}
+      alternative={
+        <button type="button" className="publish-switch" onClick={() => setPublishing(true)}>
+          {t("Publish it as a public page instead")}
+        </button>
+      }
+    />
+  );
+}
+
+/**
+ * Making a link to a conversation (ADR-0053, addendum). Only what was said
+ * goes in: the user's and the assistant's text, chat blocks as the reader can
+ * show them, never the context the app attached or a tool's output.
+ */
+export function ShareConversationDialog({
+  target,
+  open,
+  onClose,
+}: {
+  target: ShareConversationTarget;
+  open: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <ShareLinkDialog
+      open={open}
+      onClose={onClose}
+      create={(window) => accountShareConversation(target, window)}
+      title={t("Share this conversation")}
+      description={t(
+        "Anyone with the link can read this conversation in a browser: your messages and the replies, nothing else. Sub Rosa stores it encrypted and never receives the key that opens it.",
+      )}
+      linkLabel={t("Link to this conversation")}
+    />
+  );
+}
+
+function ShareLinkDialog({
+  open,
+  onClose,
+  create: createLink,
+  title,
+  description,
+  linkLabel,
+  alternative,
+}: {
+  open: boolean;
+  onClose: () => void;
+  create: (window: ShareWindow) => Promise<ShareLink>;
+  title: string;
+  description: string;
+  linkLabel: string;
+  alternative?: ReactNode;
+}) {
   const [window, setWindow] = useState<ShareWindow>(SHARE_WINDOWS[0]);
   const [link, setLink] = useState<ShareLink | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // A dialog reopened on another note must never show the previous link.
+  // A dialog reopened on another note or chat must never show the previous link.
   useEffect(() => {
     if (!open) return;
     setLink(null);
@@ -56,7 +130,7 @@ export function ShareNoteDialog({
     setBusy(true);
     setError(null);
     try {
-      setLink(await accountShareNote(noteId, window));
+      setLink(await createLink(window));
     } catch (cause) {
       setError(accountError(cause));
     } finally {
@@ -68,11 +142,9 @@ export function ShareNoteDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={t("Share this note")}
+      title={title}
       leading={<IconChainLink1 size={16} aria-hidden="true" />}
-      description={t(
-        "Anyone with the link can read this note in a browser. Sub Rosa stores it encrypted and never receives the key that opens it.",
-      )}
+      description={description}
       footer={
         link ? (
           <button type="button" className="primary-action primary-solid" onClick={onClose}>
@@ -107,7 +179,7 @@ export function ShareNoteDialog({
             readOnly
             value={link.url}
             onFocus={(event) => event.currentTarget.select()}
-            aria-label={t("Link to this note")}
+            aria-label={linkLabel}
           />
           <button
             type="button"
@@ -141,6 +213,7 @@ export function ShareNoteDialog({
           "Revoking stops the link working. It cannot erase a copy someone has already downloaded.",
         )}
       </p>
+      {link ? null : alternative}
     </Dialog>
   );
 }

@@ -1,13 +1,17 @@
 import { AgentSessionContextMenu, formatSessionTime, NoteContextMenu } from "./sidebar-context";
 import { t } from "../../lib/i18n";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
+import { IconLibrary } from "central-icons/IconLibrary";
+import { IconSunrise } from "central-icons/IconSunrise";
 import { IconZap } from "central-icons/IconZap";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconRobot2 } from "central-icons/IconRobot2";
 import { IconChevronLeftSmall } from "central-icons/IconChevronLeftSmall";
 import { IconAudio } from "central-icons/IconAudio";
 import { IconBox2 } from "central-icons/IconBox2";
+import { IconPuzzle } from "central-icons/IconPuzzle";
 import { IconBookmark } from "central-icons/IconBookmark";
+import { IconPeopleSparkles } from "central-icons/IconPeopleSparkles";
 import { IconCirclesThree } from "central-icons/IconCirclesThree";
 import { IconBrain2 } from "central-icons/IconBrain2";
 import { IconBug } from "central-icons/IconBug";
@@ -25,6 +29,7 @@ import { IconToolbox } from "central-icons/IconToolbox";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconHeartBeat } from "central-icons/IconHeartBeat";
+import { IconConnectors1 } from "central-icons/IconConnectors1";
 import { IconServer1 } from "central-icons/IconServer1";
 import { IconShield } from "central-icons/IconShield";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
@@ -78,6 +83,7 @@ import type { SettingsTab } from "../settings/AppSettings";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DotSpinner } from "../DotSpinner";
 import { combineSourceAudioLevels, Waveform } from "../recorder/Waveform";
+import { PersonalDataNav } from "../personal-data/PersonalDataNav";
 
 const NO_AGENT_SESSIONS: HermesSessionInfo[] = [];
 
@@ -89,7 +95,11 @@ export type SidebarView =
   | "folders"
   | "dictation"
   | "studio"
+  | "library"
   | "routines"
+  | "today"
+  | "health"
+  | "finances"
   | "agent"
   | "agent-sessions";
 
@@ -116,6 +126,9 @@ type SidebarProps = {
    * no picker, in which case the command is simply not offered. */
   onImportMedia?: () => void;
   onSelectAgentSession: (session: HermesSessionInfo) => void;
+  /** Chats filed in the shared Archive folder: left out of the list. */
+  archivedAgentSessionIds?: ReadonlySet<string>;
+  onArchiveAgentSession?: (sessionId: string) => void;
   /** Projects, so the palette can reach one by name. Optional because several
    * tests mount the sidebar without the folders plumbing. */
   folders?: { id: string; name: string }[];
@@ -240,6 +253,11 @@ export const SETTINGS_SIDEBAR_GROUPS: {
     items: [
       { id: "models", label: t("Models"), icon: <IconBrain2 size={16} /> },
       { id: "agent", label: t("Agent"), icon: <IconRobot2 size={16} /> },
+      {
+        id: "personalization",
+        label: t("Personalization"),
+        icon: <IconPeopleSparkles size={16} />,
+      },
       { id: "memory", label: t("Memory"), icon: <IconBookmark size={16} /> },
       { id: "council", label: t("Council"), icon: <IconCirclesThree size={16} /> },
       {
@@ -256,6 +274,16 @@ export const SETTINGS_SIDEBAR_GROUPS: {
         id: "mcp",
         label: t("MCP servers"),
         icon: <IconServer1 size={16} />,
+      },
+      {
+        id: "connectors",
+        label: t("Connectors"),
+        icon: <IconConnectors1 size={16} />,
+      },
+      {
+        id: "browser-extension",
+        label: t("Browser extension"),
+        icon: <IconPuzzle size={16} />,
       },
       {
         id: "mcp-diagnostics",
@@ -300,6 +328,8 @@ export const SETTINGS_SIDEBAR_GROUPS: {
  * the index harder to read.
  */
 const SETTINGS_SEARCH_ALIASES: Partial<Record<SettingsTab, string>> = {
+  connectors: "connector integration google microsoft notion linear oauth skill pack",
+  "browser-extension": "chrome edge brave firefox add-on plugin web page sidebar",
   general: "appearance theme accent language startup",
   "carpe-diem": "api key credits balance top up account billing endpoint",
   shortcuts: "hotkey keyboard keybinding shortcut keys",
@@ -307,7 +337,8 @@ const SETTINGS_SEARCH_ALIASES: Partial<Record<SettingsTab, string>> = {
   audio: "microphone input device system sound recording",
   models: "model picker chat image video default",
   agent: "hermes tools autonomy sandbox permissions",
-  memory: "remember facts recall forget",
+  personalization: "custom instructions personality tone about me style",
+  memory: "remember facts recall forget past chats history",
   privacy: "data network what leaves security offline local sends",
   council: "sitting judge review verdict",
   skills: "plugins capabilities installed",
@@ -338,6 +369,8 @@ export function Sidebar({
   onNewAgentSession,
   onImportMedia,
   onSelectAgentSession,
+  archivedAgentSessionIds,
+  onArchiveAgentSession,
   folders,
   onSelectFolder,
   recoverableNoteIds,
@@ -391,7 +424,14 @@ export function Sidebar({
   const [allAgentSessions, setAgentSessions] = useState<HermesSessionInfo[]>([]);
   // __emptyStates() preview (dev console): the agent section renders its
   // "No sessions yet" line as a fresh install would, real data untouched.
-  const agentSessions = useForcedEmptyStates() ? NO_AGENT_SESSIONS : allAgentSessions;
+  const forcedEmpty = useForcedEmptyStates();
+  const agentSessions = useMemo(
+    () =>
+      forcedEmpty
+        ? NO_AGENT_SESSIONS
+        : allAgentSessions.filter((session) => !archivedAgentSessionIds?.has(session.id)),
+    [allAgentSessions, archivedAgentSessionIds, forcedEmpty],
+  );
   const [pinnedAgentSessionIds, setPinnedAgentSessionIds] = useState<Set<string>>(() =>
     readPinnedAgentSessionIds(),
   );
@@ -1136,6 +1176,18 @@ export function Sidebar({
             <button
               type="button"
               className="sidebar-nav-item"
+              data-active={activeView === "library"}
+              aria-current={activeView === "library" ? "page" : undefined}
+              onClick={() => onChangeView("library")}
+            >
+              <span className="sidebar-nav-icon">
+                <IconLibrary size={16} />
+              </span>
+              <span className="sidebar-nav-label">{t("Library")}</span>
+            </button>
+            <button
+              type="button"
+              className="sidebar-nav-item"
               data-active={activeView === "routines"}
               aria-current={activeView === "routines" ? "page" : undefined}
               onClick={() => onChangeView("routines")}
@@ -1145,6 +1197,19 @@ export function Sidebar({
               </span>
               <span className="sidebar-nav-label">{t("Routines")}</span>
             </button>
+            <button
+              type="button"
+              className="sidebar-nav-item"
+              data-active={activeView === "today"}
+              aria-current={activeView === "today" ? "page" : undefined}
+              onClick={() => onChangeView("today")}
+            >
+              <span className="sidebar-nav-icon">
+                <IconSunrise size={16} />
+              </span>
+              <span className="sidebar-nav-label">{t("Today")}</span>
+            </button>
+            <PersonalDataNav activeView={activeView} onChangeView={onChangeView} />
           </nav>
 
           {pinnedAgentSessions.length > 0 ? (
@@ -1285,6 +1350,9 @@ export function Sidebar({
           right={menu.right}
           top={menu.top}
           onTogglePinned={() => togglePinnedAgentSession(menuAgentSession.id)}
+          onArchive={
+            onArchiveAgentSession ? () => onArchiveAgentSession(menuAgentSession.id) : undefined
+          }
           onDelete={() => {
             setAgentSessionDeleteError(null);
             setAgentSessionToDelete(menuAgentSession);

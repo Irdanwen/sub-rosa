@@ -1,0 +1,271 @@
+// @ts-expect-error node:fs is available in the Vitest runtime.
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { CARPE_DIEM_OPERATOR } from "../../website/src/lib/browser-device";
+// @ts-expect-error node:crypto is available in the Vitest runtime.
+import { createHash } from "node:crypto";
+import { addIntegrity } from "../../website/sri";
+import { webConnectOrigins } from "../../website/src/client/connectors/words";
+
+/** Every place the site's Content-Security-Policy is written. They must agree:
+ * the static host, the account vhost, the marketing vhost and the Caddy
+ * example each serve the same pages. */
+const SOURCES = [
+  "website/public/_headers",
+  "subrosa-cloud/deploy/nginx-account.conf.example",
+  "subrosa-cloud/deploy/nginx-marketing.conf",
+  "subrosa-cloud/deploy/Caddyfile.example",
+];
+
+function policy(file: string): Map<string, string> {
+  const text = readFileSync(file, "utf8") as string;
+  const line = /Content-Security-Policy:?\s+"?([^"\n]+)"?/.exec(text)?.[1] ?? "";
+  return new Map(
+    line
+      .split(";")
+      .map((directive) => directive.trim())
+      .filter(Boolean)
+      .map((directive) => {
+        const [name, ...values] = directive.split(/\s+/);
+        return [name, values.join(" ")] as const;
+      }),
+  );
+}
+
+describe("the website content security policy", () => {
+  it("lets the page reach its own origin and the Carpe Diem operator, nothing else", () => {
+    const operator = new URL(CARPE_DIEM_OPERATOR).origin;
+    for (const file of SOURCES) {
+      const csp = policy(file);
+      expect(csp.get("connect-src"), file).toBe(`'self' ${operator}`);
+      expect(csp.get("script-src"), file).toBe("'self'");
+      expect(csp.get("default-src"), file).toBe("'self'");
+    }
+  });
+
+  it("refuses string script sinks everywhere, so injected markup cannot run", () => {
+    for (const file of SOURCES) {
+      const csp = policy(file);
+      expect(csp.get("require-trusted-types-for"), file).toBe("'script'");
+      expect(csp.get("trusted-types"), file).toBe("subrosa");
+      expect(csp.get("object-src"), file).toBe("'none'");
+      expect(csp.get("base-uri"), file).toBe("'none'");
+      expect(csp.get("frame-ancestors"), file).toBe("'none'");
+    }
+  });
+
+  it("is the same policy in every place that serves the site", () => {
+    const [first, ...rest] = SOURCES.map((file) => {
+      const csp = policy(file);
+      // The Caddy example leaves fonts to default-src, which says the same.
+      csp.delete("font-src");
+      return [...csp.entries()].sort();
+    });
+    for (const other of rest) expect(other).toEqual(first);
+  });
+});
+
+/** The places that serve `/app` (the marketing vhost serves no web client),
+ * each with the policy of its `/app` block. */
+const APP_SOURCES: [string, RegExp][] = [
+  ["website/public/_headers", /^\/app\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m],
+  [
+    "subrosa-cloud/deploy/nginx-account.conf.example",
+    /location = \/app \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+  [
+    "subrosa-cloud/deploy/Caddyfile.example",
+    /header @app \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+];
+
+function directives(line: string): Map<string, string> {
+  return new Map(
+    line
+      .split(";")
+      .map((directive) => directive.trim())
+      .filter(Boolean)
+      .map((directive) => {
+        const [name, ...values] = directive.split(/\s+/);
+        return [name, values.join(" ")] as const;
+      }),
+  );
+}
+
+describe("the web client's own policy on /app", () => {
+  const operator = new URL(CARPE_DIEM_OPERATOR).origin;
+  const app = APP_SOURCES.map(([file, pattern]) => {
+    const line = pattern.exec(readFileSync(file, "utf8") as string)?.[1] ?? "";
+    return [file, directives(line)] as const;
+  });
+
+  it("adds only WebAssembly, a blob worker, the view frame and the catalog's connectors", () => {
+    const connectors = webConnectOrigins().join(" ");
+    for (const [file, csp] of app) {
+      expect(csp.get("script-src"), file).toBe("'self' 'wasm-unsafe-eval'");
+      expect(csp.get("worker-src"), file).toBe("'self' blob:");
+      expect(csp.get("frame-src"), file).toBe("'self'");
+      // Named origins, never a scheme: what the page may post to is a list.
+      expect(csp.get("connect-src"), file).toBe(`'self' ${operator} ${connectors}`);
+      expect(csp.get("connect-src"), file).not.toMatch(/(^|\s)https:(\s|$)/);
+      expect(csp.get("require-trusted-types-for"), file).toBe("'script'");
+      expect(csp.get("trusted-types"), file).toBe("subrosa");
+      expect(csp.get("frame-ancestors"), file).toBe("'none'");
+      expect(csp.has("unsafe-eval"), file).toBe(false);
+      expect([...csp.values()].join(" "), file).not.toContain("'unsafe-eval'");
+      expect([...csp.values()].join(" "), file).not.toContain("'unsafe-inline'");
+    }
+  });
+
+  it("is otherwise the site's policy, in every place that serves it", () => {
+    const site = policy("website/public/_headers");
+    for (const [file, csp] of app)
+      for (const [name, value] of site) {
+        if (["script-src", "connect-src"].includes(name)) continue;
+        if (name === "font-src" && !csp.has("font-src")) continue;
+        expect(csp.get(name), `${file} ${name}`).toBe(value);
+      }
+  });
+
+  it("lets /app use the microphone, the camera and the screen, and nothing else does", () => {
+    for (const file of APP_SOURCES.map(([name]) => name)) {
+      const text = readFileSync(file, "utf8") as string;
+      expect(text, file).toContain("camera=(self), microphone=(self), display-capture=(self)");
+      expect(text.match(/microphone=\(self\)/g)?.length, file).toBeLessThanOrEqual(2);
+    }
+    for (const file of SOURCES) expect(policy(file).get("script-src"), file).toBe("'self'");
+  });
+
+  it("serves the connector view host its own policy and lets only the site frame it", () => {
+    const markers: Record<string, string> = {
+      "website/public/_headers": "\n/connector-view.html\n",
+      "subrosa-cloud/deploy/nginx-account.conf.example": "location = /connector-view.html",
+      "subrosa-cloud/deploy/Caddyfile.example": "header @view",
+    };
+    for (const [file, marker] of Object.entries(markers)) {
+      const text = readFileSync(file, "utf8") as string;
+      const from = text.indexOf(marker);
+      expect(from, file).toBeGreaterThan(0);
+      const block = text.slice(from, text.indexOf("\n\n", from + 1) >>> 0);
+      expect(block, file).toMatch(/default-src 'none'/);
+      expect(block, file).toMatch(/frame-ancestors 'self'/);
+      expect(block, file).toMatch(/SAMEORIGIN/);
+      expect(block, file).not.toMatch(/unsafe-eval/);
+    }
+  });
+});
+
+/** The places that serve the Office task panes (ADR-0102), each with the
+ * policy of its `/office/` block. */
+const OFFICE_SOURCES: [string, RegExp][] = [
+  ["website/public/_headers", /^\/office\/\*\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m],
+  [
+    "subrosa-cloud/deploy/nginx-account.conf.example",
+    /location \^~ \/office\/ \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+  [
+    "subrosa-cloud/deploy/Caddyfile.example",
+    /header @office \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+];
+
+describe("the Office task panes' own policy on /office/", () => {
+  const operator = new URL(CARPE_DIEM_OPERATOR).origin;
+  const office = OFFICE_SOURCES.map(([file, pattern]) => {
+    const line = pattern.exec(readFileSync(file, "utf8") as string)?.[1] ?? "";
+    return [file, directives(line)] as const;
+  });
+
+  it("adds Office.js from Microsoft's CDN and nothing else foreign to run", () => {
+    for (const [file, csp] of office) {
+      expect(csp.get("script-src"), file).toBe(
+        "'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com",
+      );
+      // What the pane may post to is still the site and the operator.
+      expect(csp.get("connect-src"), file).toBe(`'self' ${operator}`);
+      expect(csp.get("trusted-types"), file).toBe("subrosa officejs");
+      expect(csp.get("require-trusted-types-for"), file).toBe("'script'");
+      expect(csp.get("worker-src"), file).toBe("'self' blob:");
+      expect(csp.get("frame-src"), file).toBe("https://appsforoffice.microsoft.com");
+      expect([...csp.values()].join(" "), file).not.toContain("'unsafe-eval'");
+      expect([...csp.values()].join(" "), file).not.toContain("'unsafe-inline'");
+    }
+  });
+
+  it("lets only Office's own hosts frame the panes", () => {
+    for (const [file, csp] of office) {
+      const ancestors = (csp.get("frame-ancestors") ?? "").split(" ");
+      expect(ancestors.length, file).toBeGreaterThan(0);
+      for (const ancestor of ancestors)
+        expect(ancestor, file).toMatch(
+          /^https:\/\/(\*\.)?(officeapps\.live\.com|onedrive\.live\.com|office\.com|office365\.com|cloud\.microsoft|sharepoint\.com)$/,
+        );
+    }
+  });
+
+  it("is otherwise the site's policy, and the same in every place that serves it", () => {
+    const site = policy("website/public/_headers");
+    const [first, ...rest] = office.map(([, csp]) => [...csp.entries()].sort());
+    for (const other of rest) expect(other).toEqual(first);
+    for (const [file, csp] of office)
+      for (const [name, value] of site) {
+        if (["script-src", "frame-ancestors", "trusted-types"].includes(name)) continue;
+        expect(csp.get(name), `${file} ${name}`).toBe(value);
+      }
+  });
+
+  it("sends no X-Frame-Options on /office/, which would keep Office on the web out", () => {
+    const nginx = readFileSync("subrosa-cloud/deploy/nginx-account.conf.example", "utf8") as string;
+    const from = nginx.indexOf("location ^~ /office/");
+    const block = nginx.slice(from, nginx.indexOf("}", from));
+    expect(block).not.toContain("X-Frame-Options");
+    const headers = readFileSync("website/public/_headers", "utf8") as string;
+    expect(headers).toMatch(/\/office\/\*\n(?:\s+!.*\n)*\s+! X-Frame-Options/);
+    const caddy = readFileSync("subrosa-cloud/deploy/Caddyfile.example", "utf8") as string;
+    expect(caddy).toContain("@site not path /app /app/* /connector-view.html /office/*");
+  });
+});
+
+describe("subresource integrity on the built page", () => {
+  const files: Record<string, string> = {
+    "assets/index-abc.js": "console.log(1)",
+    "assets/index-abc.css": "body{}",
+  };
+  // What the build plugin computes, from the bytes.
+  const read = (name: string) =>
+    files[name] === undefined
+      ? undefined
+      : `sha384-${createHash("sha384").update(files[name]).digest("base64")}`;
+
+  it("pins the entry script and the stylesheet to their bytes", () => {
+    const html = addIntegrity(
+      `<script type="module" crossorigin src="/assets/index-abc.js"></script>
+<link rel="stylesheet" crossorigin href="/assets/index-abc.css">
+<link rel="icon" href="/rose.png">`,
+      "/",
+      read,
+    );
+    // sha384 of "console.log(1)", computed with openssl.
+    expect(html).toContain(
+      'src="/assets/index-abc.js" integrity="sha384-vuz+yO71bcb30P4dMUNzy6/D2y+6d/n0KcOnt5clJtTBxEDoKAqGay0stFlC8Dpr"',
+    );
+    expect(html).toMatch(/href="\/assets\/index-abc.css" integrity="sha384-[A-Za-z0-9+/=]{64}"/);
+    expect(html).toContain('<link rel="icon" href="/rose.png">');
+  });
+
+  it("leaves foreign and unknown files alone, and honours a base path", () => {
+    expect(
+      addIntegrity('<script src="https://cdn.example/x.js"></script>', "/", read),
+    ).not.toContain("integrity");
+    expect(addIntegrity('<script src="/assets/missing.js"></script>', "/", read)).not.toContain(
+      "integrity",
+    );
+    expect(
+      addIntegrity(
+        '<script type="module" src="/subrosa/assets/index-abc.js"></script>',
+        "/subrosa/",
+        read,
+      ),
+    ).toContain("integrity=");
+  });
+});

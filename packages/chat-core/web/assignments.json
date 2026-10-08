@@ -1,0 +1,452 @@
+{
+  "clock": {
+    "carryOutDays": 7,
+    "fallbackGraceMinutes": 30,
+    "lateAfterMinutes": 10,
+    "runTimeoutHours": 6,
+    "startTimeoutMinutes": 10
+  },
+  "dailyBrief": {
+    "defaultAtMinute": 450,
+    "followUpHeadings": [
+      "follow",
+      "next step",
+      "action",
+      "to do",
+      "todo",
+      "à faire",
+      "suite",
+      "prochaine",
+      "actions"
+    ],
+    "keepDays": 14,
+    "linksPerTopic": 2,
+    "maxFollowUps": 3,
+    "maxItems": 5,
+    "maxNotes": 5,
+    "maxTopicChars": 80,
+    "maxTopics": 5,
+    "notifyWindowMinutes": 240
+  },
+  "feedbackInPrompt": 5,
+  "generatedBy": "src-tauri/src/agent_lite/web_features/assignments.rs",
+  "jobTag": "[assignment] ",
+  "limits": {
+    "goalChars": 4000,
+    "titleChars": 120
+  },
+  "maxResultInPrompt": 600,
+  "promptVersion": 1,
+  "tables": {
+    "assignment_runs": {
+      "columns": [
+        "id",
+        "assignment_id",
+        "slot",
+        "late",
+        "device_id",
+        "device_name",
+        "handle",
+        "state",
+        "result",
+        "error",
+        "feedback",
+        "reviewed_at",
+        "started_at",
+        "finished_at",
+        "updated_at"
+      ],
+      "kind": "artifact"
+    },
+    "assignments": {
+      "columns": [
+        "id",
+        "kind",
+        "title",
+        "goal",
+        "cadence",
+        "at_minute",
+        "weekday",
+        "every_hours",
+        "autonomy",
+        "tools",
+        "device_id",
+        "device_name",
+        "origin_device_id",
+        "paused",
+        "active_since",
+        "created_at",
+        "updated_at"
+      ],
+      "kind": "settings"
+    },
+    "daily_brief_cards": {
+      "columns": [
+        "id",
+        "day",
+        "device_id",
+        "device_name",
+        "card",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "kind": "artifact"
+    }
+  },
+  "toolGroups": [
+    {
+      "acts": false,
+      "id": "web",
+      "lite": [
+        "web_search",
+        "fetch_page",
+        "places_search"
+      ]
+    },
+    {
+      "acts": false,
+      "id": "notes",
+      "lite": [
+        "search_notes",
+        "read_note",
+        "list_recent_notes",
+        "search_calendar",
+        "search_past_chats",
+        "create_note",
+        "append_to_note"
+      ]
+    },
+    {
+      "acts": false,
+      "id": "personal",
+      "lite": [
+        "health_summary",
+        "spending_summary",
+        "transactions_search"
+      ]
+    },
+    {
+      "acts": false,
+      "id": "memory",
+      "lite": [
+        "search_memories",
+        "remember"
+      ]
+    },
+    {
+      "acts": false,
+      "id": "connectors",
+      "lite": [
+        "connectors"
+      ]
+    },
+    {
+      "acts": true,
+      "id": "files",
+      "lite": []
+    },
+    {
+      "acts": true,
+      "id": "terminal",
+      "lite": []
+    },
+    {
+      "acts": true,
+      "id": "browser",
+      "lite": []
+    }
+  ],
+  "vectors": {
+    "agendas": [
+      {
+        "agenda": {
+          "count": 3,
+          "firstAt": "09:00",
+          "firstTitle": "Stand-up"
+        },
+        "events": [
+          {
+            "allDay": false,
+            "at": "09:00",
+            "start": 1000,
+            "title": "Stand-up"
+          },
+          {
+            "allDay": true,
+            "at": "",
+            "start": 500,
+            "title": "Holiday"
+          },
+          {
+            "allDay": false,
+            "at": "14:00",
+            "start": 5000,
+            "title": "Review"
+          },
+          {
+            "allDay": false,
+            "at": "12:00",
+            "start": 3000,
+            "title": "Lunch"
+          }
+        ],
+        "now": 0
+      },
+      {
+        "agenda": {
+          "count": 3,
+          "firstAt": "12:00",
+          "firstTitle": "Lunch"
+        },
+        "events": [
+          {
+            "allDay": false,
+            "at": "09:00",
+            "start": 1000,
+            "title": "Stand-up"
+          },
+          {
+            "allDay": true,
+            "at": "",
+            "start": 500,
+            "title": "Holiday"
+          },
+          {
+            "allDay": false,
+            "at": "14:00",
+            "start": 5000,
+            "title": "Review"
+          },
+          {
+            "allDay": false,
+            "at": "12:00",
+            "start": 3000,
+            "title": "Lunch"
+          }
+        ],
+        "now": 2000
+      },
+      {
+        "agenda": {
+          "count": 3,
+          "firstAt": "09:00",
+          "firstTitle": "Stand-up"
+        },
+        "events": [
+          {
+            "allDay": false,
+            "at": "09:00",
+            "start": 1000,
+            "title": "Stand-up"
+          },
+          {
+            "allDay": true,
+            "at": "",
+            "start": 500,
+            "title": "Holiday"
+          },
+          {
+            "allDay": false,
+            "at": "14:00",
+            "start": 5000,
+            "title": "Review"
+          },
+          {
+            "allDay": false,
+            "at": "12:00",
+            "start": 3000,
+            "title": "Lunch"
+          }
+        ],
+        "now": 9000
+      },
+      {
+        "agenda": null,
+        "events": [
+          {
+            "allDay": true,
+            "at": "",
+            "start": 500,
+            "title": "Holiday"
+          }
+        ],
+        "now": 0
+      },
+      {
+        "agenda": null,
+        "events": [],
+        "now": 0
+      }
+    ],
+    "cardIds": [
+      {
+        "day": "2026-10-08",
+        "device": "mac",
+        "id": "8c125a83-43f5-5abd-8742-f0f9c282f271"
+      },
+      {
+        "day": "2026-12-31",
+        "device": "0191d1a4-0000-7000-8000-00000000b10b",
+        "id": "3dcb6b99-c655-5ccd-983b-e25f11d862b8"
+      }
+    ],
+    "followUps": [
+      {
+        "content": "# Notes\nWe met.\n## Next steps\n- [ ] Call Anna\n- **Send** the deck\n* Book the room\n- Too many",
+        "followUps": [
+          "Call Anna",
+          "Send the deck",
+          "Book the room"
+        ]
+      },
+      {
+        "content": "**À faire**\n• Relancer le client\n# Autre\n- not this",
+        "followUps": [
+          "Relancer le client"
+        ]
+      },
+      {
+        "content": "Nothing here.",
+        "followUps": []
+      }
+    ],
+    "prompts": [
+      {
+        "input": {
+          "approvedProposal": null,
+          "autonomy": "ask",
+          "goal": "Watch the French energy market\nand say what changed.",
+          "kind": "assignment",
+          "lateFor": "2026-10-08 09:00",
+          "reviewed": [
+            {
+              "approved": false,
+              "feedback": "Shorter, and only French sources",
+              "result": "A long digest",
+              "when": "2026-10-08"
+            },
+            {
+              "approved": true,
+              "feedback": null,
+              "result": null,
+              "when": "2026-10-07"
+            }
+          ],
+          "title": "Veille énergie"
+        },
+        "prompt": "You are working on a standing assignment I gave you, \"Veille énergie\". This is one of its regular runs.\n\nThe goal:\nWatch the French energy market\nand say what changed.\n\nAsk before anything leaves this device: do not send, post, buy, book, delete or change anything outside this conversation. Read, research and prepare, then end with a short proposal of what you would do next. I approve or reject it before anything happens.\n\nWhat I said about your recent results, newest first. Take it into account:\n- 2026-10-08: I rejected your result (\"A long digest\"). My feedback: Shorter, and only French sources\n- 2026-10-07: I approved your result\n\nThis run is late: it was due at 2026-10-08 09:00. Check whether anything has gone out of date since.\n\nFinish with a short summary of the result, at most three sentences, under the heading \"Result\"."
+      },
+      {
+        "input": {
+          "approvedProposal": null,
+          "autonomy": "act",
+          "goal": "Watch the French energy market\nand say what changed.",
+          "kind": "task",
+          "lateFor": null,
+          "reviewed": [],
+          "title": "Morning digest"
+        },
+        "prompt": "This is a scheduled task I set up, \"Morning digest\". Do it now:\nWatch the French energy market\nand say what changed.\n\nYou may act within the tools you have, and only toward this goal. End with what you did.\n\nFinish with a short summary of the result, at most three sentences, under the heading \"Result\"."
+      },
+      {
+        "input": {
+          "approvedProposal": "Send the three drafts",
+          "autonomy": "ask",
+          "goal": "Watch the French energy market\nand say what changed.",
+          "kind": "assignment",
+          "lateFor": null,
+          "reviewed": [],
+          "title": "Inbox"
+        },
+        "prompt": "You are working on my assignment \"Inbox\". You proposed the following and I approved it. Carry it out now, within the tools you have, then tell me plainly what you did and anything you could not do.\n\nYour proposal:\nSend the three drafts"
+      },
+      {
+        "input": {
+          "approvedProposal": null,
+          "autonomy": "act",
+          "goal": "Watch the French energy market\nand say what changed.",
+          "kind": "assignment",
+          "lateFor": null,
+          "reviewed": [
+            {
+              "approved": false,
+              "feedback": "Shorter, and only French sources",
+              "result": "A long digest",
+              "when": "2026-10-08"
+            },
+            {
+              "approved": true,
+              "feedback": null,
+              "result": null,
+              "when": "2026-10-07"
+            }
+          ],
+          "title": " Spaced "
+        },
+        "prompt": "You are working on a standing assignment I gave you, \"Spaced\". This is one of its regular runs.\n\nThe goal:\nWatch the French energy market\nand say what changed.\n\nYou may act within the tools you have, and only toward this goal. End with what you did.\n\nWhat I said about your recent results, newest first. Take it into account:\n- 2026-10-08: I rejected your result (\"A long digest\"). My feedback: Shorter, and only French sources\n- 2026-10-07: I approved your result\n\nFinish with a short summary of the result, at most three sentences, under the heading \"Result\"."
+      }
+    ],
+    "runIds": [
+      {
+        "assignmentId": "0192f000-0000-7000-8000-000000000001",
+        "runId": "04c3901e-c889-5c1a-9bf6-316d6d30dd8d",
+        "slot": "2026-10-07T07:00:00Z"
+      },
+      {
+        "assignmentId": "0192f000-0000-7000-8000-000000000001",
+        "runId": "727e9342-7e6a-580f-a38b-e1905c1299b4",
+        "slot": "approved:run-1"
+      },
+      {
+        "assignmentId": "abc",
+        "runId": "5d7deb96-a70e-51ec-a073-9272a8953cc4",
+        "slot": "event:trigger:item"
+      }
+    ],
+    "summaries": [
+      {
+        "answer": "Some work.\n\n## Result\n\n- Two new tenders, one due Friday.",
+        "summary": "Two new tenders, one due Friday."
+      },
+      {
+        "answer": "# Digest\nNothing new today.",
+        "summary": "Nothing new today."
+      },
+      {
+        "answer": "",
+        "summary": ""
+      },
+      {
+        "answer": "**Result:**\n* **Three** items moved.",
+        "summary": "Three items moved."
+      },
+      {
+        "answer": "---\n\nA very long line that goes on and on about what was found, repeated until it passes the limit of the summary the inbox shows for one result, which is two hundred and forty characters, so that the clipping is part of what the vectors pin down for the web.",
+        "summary": "A very long line that goes on and on about what was found, repeated until it passes the limit of the summary the inbox shows for one result, which is two hundred and forty characters, so that the clipping is part of what the vectors pin dow…"
+      }
+    ]
+  },
+  "words": {
+    "actRule": "You may act within the tools you have, and only toward this goal. End with what you did.",
+    "approved": "I approved",
+    "approvedAfterTitle": "\". You proposed the following and I approved it. Carry it out now, within the tools you have, then tell me plainly what you did and anything you could not do.\n\nYour proposal:\n",
+    "approvedBeforeTitle": "You are working on my assignment \"",
+    "askRule": "Ask before anything leaves this device: do not send, post, buy, book, delete or change anything outside this conversation. Read, research and prepare, then end with a short proposal of what you would do next. I approve or reject it before anything happens.",
+    "assignmentAfterTitle": "\". This is one of its regular runs.\n\nThe goal:\n",
+    "assignmentBeforeTitle": "You are working on a standing assignment I gave you, \"",
+    "eventCause": "\n\nWhat started this run: ",
+    "feedbackHeader": "What I said about your recent results, newest first. Take it into account:\n",
+    "lateAfterSlot": ". Check whether anything has gone out of date since.",
+    "lateBeforeSlot": "This run is late: it was due at ",
+    "maxProposalChars": 2000,
+    "myFeedback": ". My feedback: ",
+    "rejected": "I rejected",
+    "resultClose": "\")",
+    "resultOpen": " (\"",
+    "summaryRule": "Finish with a short summary of the result, at most three sentences, under the heading \"Result\".",
+    "taskAfterTitle": "\". Do it now:\n",
+    "taskBeforeTitle": "This is a scheduled task I set up, \"",
+    "yourResult": " your result"
+  }
+}

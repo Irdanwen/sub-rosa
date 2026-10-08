@@ -2,7 +2,29 @@ import { parseChatBlock } from "./chat-blocks";
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentTaskDto } from "./tauri";
 
-export type AssistantTool = "web" | "image" | "video" | "music" | "speech";
+/** The permission to use one connector, by its id (ADR-0092). */
+export type ConnectorPermission = `connector:${string}`;
+/** An assistant's permissions (ADR-0058); `documents` is Office files (ADR-0090),
+ * and each `connector:<id>` one connector it may use. */
+export type AssistantTool =
+  | "web"
+  | "image"
+  | "video"
+  | "music"
+  | "speech"
+  | "documents"
+  | ConnectorPermission;
+
+const CONNECTOR_PERMISSION = "connector:";
+
+export function connectorPermission(connectorId: string): ConnectorPermission {
+  return `${CONNECTOR_PERMISSION}${connectorId}`;
+}
+
+/** The connector id a permission names, or null for any other tool. */
+export function connectorIdOf(tool: string): string | null {
+  return tool.startsWith(CONNECTOR_PERMISSION) ? tool.slice(CONNECTOR_PERMISSION.length) : null;
+}
 export type AssistantDefinition = {
   id: string;
   name: string;

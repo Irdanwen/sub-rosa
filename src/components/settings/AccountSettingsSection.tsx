@@ -1,5 +1,8 @@
 import { AccountConflictList } from "./AccountConflictList";
 import { AccountPairingSection } from "./AccountPairingSection";
+import { PublishingCard } from "../publishing/PublishingCard";
+import { SharedProjectsCard } from "../spaces/SharedProjectsCard";
+import { AccountSecurityHistory } from "./AccountSecurityHistory";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { accountNextStep } from "../../lib/account-next-step";
@@ -1170,6 +1173,9 @@ export function AccountSettingsSection({
               {t("Refresh devices")}
             </button>
           </AccountCard>
+          <AccountSecurityHistory serverUrl={status.server_url} />
+          <PublishingCard />
+          <SharedProjectsCard />
           <AccountCard title={t("Delete your account")}>
             <p className="settings-row-description">
               {t(
@@ -1277,7 +1283,10 @@ function formatAccountDate(value: string) {
       );
 }
 
+export { securityHistoryUrl } from "./AccountSecurityHistory";
+
 /** Never render provider response text, URLs containing tokens, or credentials. */
+
 export function accountError(cause: unknown): string {
   switch (errorCode(cause)) {
     case "recent_auth_required":
@@ -1328,7 +1337,11 @@ export function accountError(cause: unknown): string {
     case "share_window_invalid":
       return t("Choose how long the link should work.");
     case "share_too_large":
-      return t("This note is too large to share as a link.");
+      return t("This is too large to share as a link.");
+    case "share_temporary":
+      return t("A temporary chat cannot be shared.");
+    case "share_empty":
+      return t("This conversation has nothing to share yet.");
     case "share_failed":
       return t("The link could not be created. Try again.");
     default:

@@ -14,23 +14,27 @@
 	<array>
 		<string>en</string>
 		<string>fr</string>
+		<string>de</string>
+		<string>it</string>
+		<string>es</string>
+		<string>pt-BR</string>
 	</array>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-<string>1.88.1</string>
+<string>1.89.0</string>
 	<key>CFBundleVersion</key>
-<string>1.88.1</string>
+<string>1.89.0</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Sub Rosa records microphone audio locally so it can transcribe and generate your notes.</string>
+	<string>Sub Rosa records microphone audio locally so it can transcribe and generate your notes, and hears you during a voice conversation.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation.</string>
+	<string>Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation, when you scan a document into a note, and when you show something during a voice conversation.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
@@ -65,6 +69,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Sub Rosa reads the health measures you choose (steps, sleep, heart rate, workouts, weight) to show your daily summaries and answer your questions about them. It never writes to Health, and nothing leaves this iPhone unless you turn on sync for a measure.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

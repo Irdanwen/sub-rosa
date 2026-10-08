@@ -5,6 +5,7 @@ import {
   intlLocale,
   LOCALE_STORAGE_KEY,
   localeChoice,
+  localeFromTag,
   placeholders,
   resolveLocale,
   setLocaleChoice,
@@ -50,5 +51,38 @@ describe("t", () => {
   it("lists the placeholders of a sentence, sorted", () => {
     expect(placeholders("{total} of {count}")).toEqual(["count", "total"]);
     expect(placeholders("none")).toEqual([]);
+  });
+});
+
+describe("the languages beyond English and French", () => {
+  afterEach(() => {
+    localStorage.removeItem(LOCALE_STORAGE_KEY);
+    applyLocale("en");
+  });
+
+  it("reduces a system tag to a language the app has", () => {
+    expect(localeFromTag("de-CH")).toBe("de");
+    expect(localeFromTag("it_IT")).toBe("it");
+    expect(localeFromTag("es-419")).toBe("es");
+    expect(localeFromTag("pt-BR")).toBe("pt-BR");
+    expect(localeFromTag("pt-PT")).toBe("pt-BR");
+    expect(localeFromTag("fr-CA")).toBe("fr");
+    expect(localeFromTag("ja-JP")).toBe("en");
+  });
+
+  it("translates, dates and numbers in each language, and says it on the page", () => {
+    for (const [locale, tag] of [
+      ["de", "de-DE"],
+      ["it", "it-IT"],
+      ["es", "es-ES"],
+      ["pt-BR", "pt-BR"],
+    ] as const) {
+      setLocaleChoice(locale);
+      expect(localeChoice()).toBe(locale);
+      expect(intlLocale()).toBe(tag);
+      expect(document.documentElement.lang).toBe(locale);
+      expect(t("Export as PDF")).not.toBe("Export as PDF");
+      expect(t("{count} steps", { count: 3 })).toContain("3");
+    }
   });
 });

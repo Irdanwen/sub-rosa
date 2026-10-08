@@ -153,7 +153,23 @@ pub async fn reference_image(
 }
 
 pub fn allows_tool(snapshot: Option<&AssistantSnapshot>, name: &str, memory_enabled: bool) -> bool {
+    // Connector tools reach a general conversation, an assistant granted
+    // them, and a scheduled run whose assignment ticks the connectors; skill
+    // packs a general conversation only (ADR-0092).
+    if crate::connectors::agent::is_connector_tool(name) {
+        return crate::connectors::agent::allowed_here(&crate::connectors::agent::Grant::of(
+            snapshot,
+        ));
+    }
+    if name == crate::skill_packs::agent::TOOL {
+        return snapshot.is_none();
+    }
     if matches!(name, "remember" | "search_memories") && !memory_enabled {
+        return false;
+    }
+    // A scheduled run offers what its assignment allows, nothing more
+    // (ADR-0091). Outside one, this says nothing.
+    if crate::assignments::lite::scoped_allows(name) == Some(false) {
         return false;
     }
     let Some(snapshot) = snapshot else {
@@ -171,10 +187,22 @@ pub fn allows_tool(snapshot: Option<&AssistantSnapshot>, name: &str, memory_enab
             .tools
             .iter()
             .any(|tool| matches!(tool.as_str(), "image" | "video" | "music" | "speech")),
+        // Office files (ADR-0090) are their own permission, off until the
+        // person turns it on: a file in the gallery is not implied by web
+        // search or a media proposal.
+        crate::deliverables::TOOL => definition.tools.iter().any(|tool| tool == "documents"),
         // Calendar, production files and paid note processing are not implied
         // by permission to read notes or generate a media proposal.
         _ => false,
     }
+}
+
+/// The tool every custom assistant's conversation is offered.
+pub fn search_references_definition() -> serde_json::Value {
+    serde_json::json!({"type":"function","function":{
+        "name":"search_references","description":"Search the reference documents explicitly attached to this assistant. Cite the returned reference name and passage.",
+        "parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}
+    }})
 }
 
 pub fn reference_context(snapshot: &AssistantSnapshot, query: &str) -> String {
@@ -394,6 +422,7 @@ fn schedule(
                 task_id,
                 model: None,
                 attachments,
+                reasoning_effort: None,
             },
             claim,
         )
@@ -666,6 +695,8 @@ mod tests {
             model_sets: vec![],
             traits: vec![],
             supports_vision: vision,
+            supports_reasoning_effort: false,
+            context_tokens: None,
             pricing: None,
             cost_credits: None,
         }
@@ -759,6 +790,41 @@ mod tests {
         assert!(allows_tool(Some(&snapshot), "propose_media", true));
         assert!(allows_tool(Some(&snapshot), "web_search", true));
         assert!(!allows_tool(Some(&snapshot), "search_calendar", true));
+        assert!(!allows_tool(Some(&snapshot), "make_document", true));
+    }
+
+    /// `make_document` is a permission of its own (ADR-0090): an assistant
+    /// saved before it existed, or with every other tool on, does not get it.
+    #[test]
+    fn office_files_are_a_permission_off_by_default() {
+        let mut snapshot = private_snapshot();
+        assert!(!allows_tool(Some(&snapshot), "make_document", true));
+        snapshot.definition.tools = vec![
+            "image".into(),
+            "music".into(),
+            "speech".into(),
+            "video".into(),
+            "web".into(),
+        ];
+        assert!(!allows_tool(Some(&snapshot), "make_document", true));
+        snapshot.definition.tools.push("documents".into());
+        assert!(allows_tool(Some(&snapshot), "make_document", true));
+        // The default chat keeps it.
+        assert!(allows_tool(None, "make_document", true));
+    }
+
+    /// Personalization and past chats belong to the default chat (ADR-0081):
+    /// an assistant with memory still gets neither.
+    #[test]
+    fn an_assistant_gets_neither_personalization_nor_past_chats() {
+        let mut snapshot = private_snapshot();
+        snapshot.definition.allow_memory = true;
+        snapshot.definition.allow_notes = true;
+        assert!(!allows_tool(Some(&snapshot), "search_past_chats", true));
+        let prompt = system_prompt(&snapshot, Some("User memory: likes tea"));
+        assert!(prompt.contains("likes tea"));
+        assert!(!prompt.contains("Personalization:"));
+        assert!(!prompt.contains("Earlier conversations:"));
     }
 
     #[test]

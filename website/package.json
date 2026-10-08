@@ -7,11 +7,15 @@
     "dev": "vite --host localhost --port 1430 --strictPort",
     "build": "tsc --noEmit && vite build && node scripts/prerender.mjs",
     "build:preview": "VITE_PREVIEW_ONLY=1 pnpm build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "i18n:extract": "node ../scripts/i18n/website.mjs",
+    "i18n:check": "node ../scripts/i18n/website.mjs --check"
   },
   "dependencies": {
     "@simplewebauthn/browser": "13.3.0",
+    "@subrosa/chat-core": "workspace:*",
     "@subrosa/design": "workspace:*",
+    "pdfjs-dist": "5.7.284",
     "qrcode.react": "4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

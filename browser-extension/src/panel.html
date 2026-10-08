@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sub Rosa</title>
+    <link rel="stylesheet" href="primitives.css" />
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body data-surface="panel">
+    <main class="shell">
+      <header class="bar">
+        <span class="brand">Sub Rosa</span>
+      </header>
+      <p id="notice" class="notice" role="status" hidden></p>
+
+      <section id="pair" class="pair" hidden>
+        <h1 class="pair-title" data-i18n="pairTitle">Connect this browser</h1>
+        <p class="muted" data-i18n="pairBody">In Sub Rosa on this computer, open Settings, then Browser extension, and choose Connect a browser. Type the code it shows.</p>
+        <form id="pair-form" class="pair-form">
+          <label for="code" data-i18n="pairCodeLabel">Code</label>
+          <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="9" />
+          <button type="submit" class="primary" data-i18n="pairButton">Connect</button>
+        </form>
+      </section>
+
+      <section id="main" class="main" hidden>
+        <div class="actions">
+          <button type="button" id="summarize" data-i18n="summarize">Summarize</button>
+          <button type="button" id="add-note" data-i18n="addToNote">Add to a note</button>
+          <button type="button" id="save-link" data-i18n="saveLink">Save link to library</button>
+          <button type="button" id="open-panel" data-i18n="openSidePanel" hidden>Open in side panel</button>
+        </div>
+        <ol id="thread" class="thread" aria-live="polite"></ol>
+        <p id="stage" class="stage" role="status" hidden></p>
+        <figure id="selection" class="selection" hidden>
+          <figcaption data-i18n="selectionLabel">Selected text</figcaption>
+          <blockquote id="selection-text"></blockquote>
+        </figure>
+        <form id="ask-form" class="composer">
+          <textarea id="question" rows="2" data-i18n-placeholder="askPlaceholder" placeholder="Ask about this page"></textarea>
+          <div class="composer-row">
+            <label class="include">
+              <input type="checkbox" id="include-page" checked />
+              <span data-i18n="includePage">Include this page</span>
+            </label>
+            <button type="button" id="stop" data-i18n="stop" hidden>Stop</button>
+            <button type="submit" id="send" class="primary" data-i18n="send">Send</button>
+          </div>
+        </form>
+        <footer class="foot">
+          <button type="button" id="new-chat" class="link" data-i18n="newChat">New chat</button>
+          <button type="button" id="forget" class="link" data-i18n="forget">Disconnect this browser</button>
+        </footer>
+      </section>
+    </main>
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

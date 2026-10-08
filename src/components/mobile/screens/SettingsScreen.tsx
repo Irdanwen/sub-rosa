@@ -26,6 +26,8 @@ import { useCarpeDiem } from "../../settings/CarpeDiemSettings";
 import { accountStatus } from "../../../lib/account";
 import { SettingsGroup, SettingsLinkRow, SettingsRow, SettingsToggleRow } from "../SettingsList";
 import { ActionSheet } from "../ActionSheet";
+import { OptionSheet } from "../OptionSheet";
+import { UI_LANGUAGE_OPTIONS } from "../../settings/appearance-options";
 import { StackHeader } from "../StackHeader";
 import type { SettingsSection } from "../../../app/mobile/nav";
 
@@ -52,17 +54,13 @@ const STATUS_SUMMARY: Record<string, string> = {
  * connection controls two and a half screens down, below however many memories
  * the user had accumulated.
  */
-const LANGUAGE_OPTIONS: Array<{ id: LocaleChoice; label: string }> = [
-  { id: "system", label: t("System") },
-  { id: "en", label: t("English") },
-  { id: "fr", label: t("Français") },
-];
 
 export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) => void }) {
   const credits = useCarpeDiemCredits();
   const { status } = useCarpeDiem();
   const [theme, setTheme] = useState<ThemePreference>(getStoredTheme);
   const [language, setLanguage] = useState<LocaleChoice>(() => localeChoice());
+  const [languagePicker, setLanguagePicker] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
   const [memorySummary, setMemorySummary] = useState<string | null>(null);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
@@ -227,25 +225,11 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
               ))}
             </div>
           </SettingsRow>
-          <SettingsRow label={t("Language")} align="stack">
-            <div className="mobile-segmented mobile-segmented-flush">
-              {LANGUAGE_OPTIONS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className="mobile-segmented-item"
-                  aria-pressed={language === option.id}
-                  data-active={language === option.id ? "true" : undefined}
-                  onClick={() => {
-                    setLanguage(option.id);
-                    chooseLocaleAndReload(option.id);
-                  }}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </SettingsRow>
+          <SettingsLinkRow
+            label={t("Language")}
+            value={UI_LANGUAGE_OPTIONS.find((option) => option.value === language)?.label}
+            onClick={() => setLanguagePicker(true)}
+          />
         </SettingsGroup>
 
         <SettingsGroup
@@ -307,7 +291,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         </SettingsGroup>
 
         <SettingsGroup
-          title={t("Shortcuts")}
+          title={ios ? t("Shortcuts app") : t("Automation shortcuts")}
           footer={
             ios
               ? t(
@@ -329,6 +313,18 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
             </p>
           ) : null}
         </SettingsGroup>
+        {languagePicker ? (
+          <OptionSheet
+            title={t("Language")}
+            options={[...UI_LANGUAGE_OPTIONS]}
+            selected={language}
+            onSelect={(next) => {
+              setLanguage(next as LocaleChoice);
+              chooseLocaleAndReload(next as LocaleChoice);
+            }}
+            onClose={() => setLanguagePicker(false)}
+          />
+        ) : null}
         {automation ? (
           <ActionSheet
             title={automation.label}
@@ -353,11 +349,14 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         ) : null}
 
         <SettingsGroup>
+          <SettingsLinkRow label={t("Personalization")} onClick={() => onOpen("personalization")} />
           <SettingsLinkRow
             label={t("Memory")}
             value={memorySummary ?? undefined}
             onClick={() => onOpen("memory")}
           />
+          <SettingsLinkRow label={t("Connectors")} onClick={() => onOpen("connectors")} />
+          <SettingsLinkRow label={t("Skills")} onClick={() => onOpen("skills")} />
           <SettingsLinkRow label={t("Usage")} onClick={() => onOpen("usage")} />
           <SettingsLinkRow
             label={t("Connection")}
@@ -367,10 +366,15 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         </SettingsGroup>
 
         <SettingsGroup>
+          <SettingsLinkRow label={t("Health")} onClick={() => onOpen("health")} />
+          <SettingsLinkRow label={t("Finances")} onClick={() => onOpen("finances")} />
+        </SettingsGroup>
+
+        <SettingsGroup>
           <SettingsLinkRow label={t("Privacy")} onClick={() => onOpen("privacy")} />
           <SettingsLinkRow label={t("Models")} onClick={() => onOpen("models")} />
           <SettingsLinkRow label={t("Reports")} onClick={() => onOpen("reports")} />
-          <SettingsLinkRow label={t("Archive")} onClick={() => onOpen("archive")} />
+          <SettingsLinkRow label={t("Archive file")} onClick={() => onOpen("archive")} />
           <SettingsLinkRow label={t("About")} onClick={() => onOpen("about")} />
         </SettingsGroup>
 
