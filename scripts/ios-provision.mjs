@@ -27,6 +27,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  apiPaths,
   apiToken,
   bundleIdPayload,
   candidateProfiles,
@@ -105,9 +106,7 @@ function apiClient() {
 }
 
 async function ensureBundleId(call, target) {
-  const listed = await call(
-    `bundleIds?filter[identifier]=${encodeURIComponent(target.bundleId)}&limit=200`,
-  );
+  const listed = await call(apiPaths.bundleIds(target.bundleId));
   const existing = exactBundleId(listed.data ?? [], target.bundleId);
   if (existing) return existing;
   const created = await call("bundleIds", { method: "POST", body: bundleIdPayload(target) });
@@ -117,7 +116,7 @@ async function ensureBundleId(call, target) {
 
 /** Returns the capability types the bundle has once the lane is done. */
 async function ensureCapabilities(call, target, bundle) {
-  const listed = await call(`bundleIds/${bundle.id}/bundleIdCapabilities?limit=200`);
+  const listed = await call(apiPaths.bundleIdCapabilities(bundle.id));
   const enabled = (listed.data ?? []).map((capability) => capability.attributes?.capabilityType);
   for (const type of missingCapabilities(target.capabilities, enabled)) {
     try {
@@ -181,7 +180,7 @@ async function profileFromApi(context, target) {
   const taken = [];
   for (const candidate of stale) {
     try {
-      await call(`profiles/${candidate.id}`, { method: "DELETE" });
+      await call(apiPaths.profile(candidate.id), { method: "DELETE" });
       console.log(`  deleted ${candidate.attributes?.name}`);
     } catch (error) {
       warn(`Could not delete ${candidate.attributes?.name} (${error.message}).`);
@@ -240,18 +239,14 @@ async function provision() {
   let context = null;
   try {
     const call = apiClient();
-    const certificates = await call(
-      "certificates?filter[certificateType]=DISTRIBUTION,IOS_DISTRIBUTION&limit=200",
-    );
+    const certificates = await call(apiPaths.distributionCertificates());
     const certificate = pickCertificate(certificates.data ?? [], {
       id: process.env.IOS_DIST_CERT_ID || DEFAULT_CERTIFICATE_ID,
       serial: process.env.IOS_DIST_CERT_SERIAL,
     });
     if (!certificate) throw new Error("the imported distribution certificate is not on the team");
     console.log(`Distribution certificate: ${certificate.id}`);
-    const profiles = await call(
-      "profiles?filter[profileType]=IOS_APP_STORE&include=bundleId,certificates&limit=200",
-    );
+    const profiles = await call(apiPaths.appStoreProfiles());
     context = { call, certificate, profiles: profiles.data ?? [] };
   } catch (error) {
     warn(`App Store Connect is unavailable (${error.message}); using the profile secrets.`);

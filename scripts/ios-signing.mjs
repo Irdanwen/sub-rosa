@@ -115,6 +115,25 @@ export function apiToken({ keyId, issuer, privateKeyPem, now = Date.now() }) {
   return `${header}.${payload}.${base64url(signature)}`;
 }
 
+/**
+ * The App Store Connect paths the lane reads, relative to /v1/. Each takes
+ * only the query parameters Apple documents for it: the top-level lists page
+ * with `limit` (200 at most), but a to-many relationship such as a bundle id's
+ * capabilities refuses it with a 400 ("This relationship does not support this
+ * parameter"), which once cost every bundle its profile.
+ */
+export const apiPaths = {
+  bundleIds: (identifier) =>
+    `bundleIds?filter[identifier]=${encodeURIComponent(identifier)}&limit=200`,
+  bundleIdCapabilities: (bundleIdResourceId) =>
+    `bundleIds/${encodeURIComponent(bundleIdResourceId)}/bundleIdCapabilities`,
+  distributionCertificates: () =>
+    "certificates?filter[certificateType]=DISTRIBUTION,IOS_DISTRIBUTION&limit=200",
+  appStoreProfiles: () =>
+    "profiles?filter[profileType]=IOS_APP_STORE&include=bundleId,certificates&limit=200",
+  profile: (profileResourceId) => `profiles/${encodeURIComponent(profileResourceId)}`,
+};
+
 export function bundleIdPayload(target) {
   return {
     data: {

@@ -20,7 +20,9 @@ import widgetsEn from "../../src-tauri/gen/apple/Widgets/en.lproj/Localizable.st
 import widgetsFr from "../../src-tauri/gen/apple/Widgets/fr.lproj/Localizable.strings?raw";
 import widgets from "../../src-tauri/gen/apple/Widgets/SubRosaWidgets.swift?raw";
 import xcodeProject from "../../src-tauri/gen/apple/os-june.xcodeproj/project.pbxproj?raw";
+import watchScheme from "../../src-tauri/gen/apple/os-june.xcodeproj/xcshareddata/xcschemes/os-june_Watch.xcscheme?raw";
 import projectSpec from "../../src-tauri/gen/apple/project.yml?raw";
+import releaseLane from "../../.github/workflows/ios-release.yml?raw";
 import versionScript from "../../scripts/sync-ios-version.mjs?raw";
 import { parseDestination } from "../lib/destinations";
 
@@ -82,11 +84,34 @@ describe("the iOS widgets and the Apple Watch app", () => {
         new RegExp(`/\\* ${target} \\*/ = \\{\\s*isa = PBXNativeTarget`),
       );
     }
-    // A single-target watch app lives in the iPhone app's Watch folder.
-    expect(xcodeProject).toContain('dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";');
-    expect(xcodeProject).toContain("os-june_Watch.app in Embed Dependencies");
     expect(xcodeProject).toContain("os-june_Widgets.appex in Embed Foundation Extensions");
     expect(xcodeProject).toContain("os-june_WatchWidgets.appex in Embed Foundation Extensions");
+  });
+
+  // Tauri builds the app with `-sdk iphoneos` (`iphonesimulator` in dev),
+  // which drags every dependency onto the iPhone SDK, where watchOS code does
+  // not compile: the 1.89.0 archive failed on the complication. The watch app
+  // is built for watchOS by the release lane and put where Xcode would embed
+  // a single-target watch app, the iPhone app's Watch folder.
+  it("keep the watch app out of Tauri's build, and the lane puts it in the archive", () => {
+    expect(targetSection("os-june_iOS")).not.toContain("target: os-june_Watch");
+    expect(xcodeProject).not.toContain('dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";');
+    expect(xcodeProject).not.toContain("os-june_Watch.app in Embed Dependencies");
+    expect(xcodeProject).not.toMatch(/target = 43B02D75B7A298F894A9A778 \/\* os-june_Watch \*\/;/);
+    expect(watchScheme).toContain('BlueprintName = "os-june_Watch"');
+    expect(targetSection("os-june_Watch")).toContain("SKIP_INSTALL: false");
+    expect(targetSection("os-june_WatchWidgets")).toContain("SKIP_INSTALL: true");
+    expect(releaseLane).toMatch(
+      /-target os-june_Watch -sdk watchos -configuration release install/,
+    );
+    expect(releaseLane).toContain('"$APP/Watch/SubRosaWatch.app"');
+    // Before the bundles without a profile leave, and before the stamp counts them.
+    const embed = releaseLane.indexOf("name: Put the watch app in the archive");
+    expect(embed).toBeGreaterThan(releaseLane.indexOf("name: Archive via Tauri"));
+    expect(embed).toBeLessThan(releaseLane.indexOf("name: Leave out the bundles"));
+    expect(embed).toBeLessThan(
+      releaseLane.indexOf("name: Stamp the build number into the archive"),
+    );
   });
 
   it("carry bundle ids that extend the app's, as the system requires", () => {

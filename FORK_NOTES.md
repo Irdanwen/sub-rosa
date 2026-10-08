@@ -2222,9 +2222,17 @@ Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
 ## Widgets, Apple Watch et partage Android (2026-10-08, ADR-0095)
 
 - `src-tauri/gen/apple/Widgets/` (cible `os-june_Widgets`, App Group),
-  `Watch/` (cible `os-june_Watch`, app watchOS 10 à cible unique, embarquée
-  dans `$(CONTENTS_FOLDER_PATH)/Watch`) et `WatchWidgets/` (complication,
-  embarquée dans l'app Watch) ; `Sources/os-june/Watch/WatchBridge.swift`
+  `Watch/` (cible `os-june_Watch`, app watchOS 10 à cible unique) et
+  `WatchWidgets/` (complication, embarquée dans l'app Watch) ; **l'app Watch
+  n'est pas une dépendance de `os-june_iOS`** (2026-10-09) : Tauri construit
+  avec `-sdk iphoneos` (`iphonesimulator` en dev), ce qui force toutes les
+  dépendances sur le SDK iPhone, où le code watchOS ne compile pas (archive
+  1.89.0 tombée sur la complication). `ios-release.yml` la construit à part
+  (`xcodebuild -target os-june_Watch -sdk watchos -configuration release
+  install`, arm64_32 + arm64, non signée) et la pose dans `Sub
+  Rosa.app/Watch/` de l'archive avant l'export, qui la signe ; schéma
+  partagé `os-june_Watch` pour la lancer depuis Xcode. Ne pas remettre la
+  dépendance lors d'une régénération ; `Sources/os-june/Watch/WatchBridge.swift`
   (session WatchConnectivity côté iPhone, classe `SubRosaWatchBridge` appelée
   par Rust). Projet régénéré avec `xcodegen` puis `git checkout
   os-june_iOS/Info.plist` (le plist committé porte
