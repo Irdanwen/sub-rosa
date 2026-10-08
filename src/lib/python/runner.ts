@@ -47,6 +47,30 @@ export function packagesFor(code: string): string[] {
   return [...wanted];
 }
 
+/** Said to the model's code when it reaches for the network. */
+export const NO_NETWORK =
+  "No network: Python on this phone reads only the files attached to the message, in /data.";
+
+/** Lets the worker fetch Pyodide's own files and nothing else. The page's
+ * policy, which the worker inherits, already refuses every other host, but
+ * WebKit leaves a refused fetch pending instead of failing it (seen in the
+ * iOS simulator), which would hold the run until its limit. This fails it at
+ * once, with a reason the model can read. */
+export function guardFetch(scope: { fetch: typeof fetch }, allowedPrefix: string) {
+  const original = scope.fetch.bind(scope);
+  scope.fetch = (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    let resolved: string;
+    try {
+      resolved = new URL(url, allowedPrefix).href;
+    } catch {
+      return Promise.reject(new TypeError(NO_NETWORK));
+    }
+    if (!resolved.startsWith(allowedPrefix)) return Promise.reject(new TypeError(NO_NETWORK));
+    return original(input, init);
+  };
+}
+
 export type Runner = { run(request: WorkerRun): Promise<WorkerDone> };
 
 /** One Pyodide, prepared once, running requests one after another. */
@@ -83,7 +107,7 @@ export function createRunner(load: () => Promise<PyodideLike>): Runner {
     } catch (error) {
       // Not the code's fault: start over on the next run.
       ready = null;
-      return failed(`Python could not start: ${messageOf(error)}`);
+      return { ...failed(`Python could not start: ${messageOf(error)}`), unavailable: true };
     }
     try {
       pyodide.FS.mkdirTree("/data");

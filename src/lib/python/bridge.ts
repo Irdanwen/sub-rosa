@@ -3,8 +3,9 @@
 // `agent_lite_python_reply`. Python only runs while the app is on screen: a
 // hidden page refuses at once, and a page that goes hidden mid-run stops the
 // worker and says so, so the turn moves on instead of waiting on a frozen
-// webview. The run belongs to the turn, which is already the durable row
-// (ADR-0018): a turn interrupted here is re-asked when it resumes.
+// webview; an idle worker is let go too, and its memory with it. The run
+// belongs to the turn, which is already the durable row (ADR-0018): a turn
+// interrupted here is re-asked when it resumes.
 
 import { mountedFiles } from "./files";
 import {
@@ -54,7 +55,15 @@ export function startPythonBridge(deps: PythonBridgeDeps): () => void {
     created.onmessage = (event) => {
       const done = event.data;
       if (done?.type !== "done" || !pending.delete(done.id)) return;
-      const { type: _type, id: _id, ...outcome } = done;
+      const { type: _type, id: _id, unavailable, ...outcome } = done;
+      if (unavailable) {
+        send(done.id, {
+          kind: "refused",
+          reason: "unavailable",
+          detail: outcome.error ?? undefined,
+        });
+        return;
+      }
       send(done.id, { kind: "done", ...outcome });
     };
     created.onerror = (event) => {
@@ -100,9 +109,15 @@ export function startPythonBridge(deps: PythonBridgeDeps): () => void {
         abandon({ kind: "refused", reason: "unavailable", detail: "timeout" });
     })
     .then((stop) => (stopped ? stop() : stops.push(stop)));
+  // Leaving the screen also frees an idle worker. Pyodide with pandas holds
+  // about 400 MB of the webview's memory (measured in the simulator, ADR-0086),
+  // and a backgrounded app that keeps it is the first one iOS reclaims, which
+  // reloads the whole chat. The conversation's variables go with it; the next
+  // run reloads in a couple of seconds, and a missing name is a NameError the
+  // model reads and recovers from.
   stops.push(
     deps.onVisibilityChange(() => {
-      if (!deps.visible() && pending.size > 0) abandon({ kind: "refused", reason: "background" });
+      if (!deps.visible()) abandon({ kind: "refused", reason: "background" });
     }),
   );
   return () => {

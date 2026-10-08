@@ -43,8 +43,10 @@ export type WorkerRun = {
   files: { path: string; text: string }[];
 };
 
-/** Worker → app. */
-export type WorkerDone = { type: "done"; id: string } & PythonOutcome;
+/** Worker → app. `unavailable` when Pyodide itself could not start (a
+ * WebKit older than it supports, say): not the code's fault, so the bridge
+ * tells Rust Python is unavailable rather than handing the model an error. */
+export type WorkerDone = { type: "done"; id: string; unavailable?: boolean } & PythonOutcome;
 
 /** Also for a rejection that is not an Error (a plain object from wasm glue),
  * which `String()` would turn into "[object Object]". */

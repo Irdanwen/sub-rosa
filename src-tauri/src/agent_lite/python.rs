@@ -144,7 +144,7 @@ pub(super) fn definition() -> serde_json::Value {
         "type": "function",
         "function": {
             "name": TOOL,
-            "description": "Run Python 3 on the user's phone, with numpy and pandas and the standard library (no other packages, no network). Use it for any computation over data: totals, averages, grouping, pivots, statistics, or reading the CSV and spreadsheet files attached to this message, which are mounted in /data (a spreadsheet as one CSV per sheet, name.sheet1.csv). Returns print() output and the value of the last line. subrosa_chart(type, data=df, x=\"col\", y=[\"col\"], title=..., unit=...) and subrosa_table(df, title=...) turn a result into a card whose fenced block the result returns. Variables persist between runs in this conversation.",
+            "description": "Run Python 3 on the user's phone, with numpy and pandas and the standard library (no other packages, no network). Use it for any computation over data: totals, averages, grouping, pivots, statistics, or reading the CSV and spreadsheet files attached to this message, which are mounted in /data (a spreadsheet as one CSV per sheet, name.sheet1.csv). Returns print() output and the value of the last line. subrosa_chart(type, data=df, x=\"col\", y=[\"col\"], title=..., unit=...) and subrosa_table(df, title=...) turn a result into a card whose fenced block the result returns. Variables persist between runs in this conversation while the app stays on screen; if a name is gone, rebuild it.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -372,6 +372,10 @@ pub(super) fn prompt_section() -> String {
         format!("\n\n{cards}")
     }
 }
+
+#[cfg(debug_assertions)]
+#[path = "python_selftest.rs"]
+pub mod selftest;
 
 #[cfg(test)]
 #[path = "python_tests.rs"]

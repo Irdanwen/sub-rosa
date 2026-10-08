@@ -117,3 +117,74 @@ WebKit has supported since Safari 15.2 and Chromium since 95.
   write pandas far more reliably than ad hoc SQL over a sheet listing.
 - Upgrading Pyodide is a pin change in `scripts/pyodide-assets.mjs` (version,
   each file's hash and size) followed by the device checks above.
+
+## Addendum 2026-10-08: run in the iOS simulator, and the worker's policy
+
+The open checks above were run for real, in the app itself: a debug
+simulator build (`pnpm tauri ios build --debug --target aarch64-sim`) served
+from `tauri://localhost` under the shipped CSP, iPhone 17 Pro, iOS 26.3,
+on an Apple M2. The run goes through the whole tool path (Rust event, phone
+shell bridge, module worker, Pyodide, the reply command) with no model and no
+key: a debug-only self-test, `agent_lite/python_selftest.rs`, started with
+`SIMCTL_CHILD_SUBROSA_PYTHON_SELFTEST=1 xcrun simctl launch booted
+xyz.carpediem.subrosa`, which writes `python-selftest.json` to the app's data
+folder (`Library/Application Support/xyz.carpediem.subrosa/`) and logs each
+case. It is the check to re-run after a Pyodide upgrade.
+
+Measured on the Rust clock, from the event to the answer:
+
+| Case | Time |
+| --- | --- |
+| Cold start (Pyodide boots, `sys.version`) | 1.2 to 1.6 s |
+| numpy loaded, `arange(1, 1001)` summed | 0.43 to 0.59 s |
+| pandas loaded, CSV read from `/data`, `groupby`, `subrosa_chart` bar | 1.4 to 1.8 s |
+| The same pandas run, warm | 7 to 10 ms |
+| Variables kept between runs, the spreadsheet listing mounted as `budget.sheet1.csv` and read, a traceback returned | under 10 ms each |
+
+Memory: the webview's content process held 280 MB with the chat idle and
+about 670 to 720 MB after the runs, so Pyodide with numpy and pandas costs
+about 400 MB. Times are a simulator on a desktop chip; an older iPhone will be
+several times slower on the cold start, and its content process has less room.
+
+**What worked as written.** The module worker starts under the custom scheme;
+the files are served with usable types (Tauri infers `.mjs` as
+`text/javascript` and sniffs `application/wasm` and `application/zip` from the
+bytes); Pyodide needs no `unsafe-eval`; the bundled wheels load.
+
+**What did not: the worker ran under no policy at all.** Tauri attaches the
+`Content-Security-Policy` header to HTML responses only, and a worker loaded
+from a script URL takes its policy from its own response, so `js.eval(...)`
+succeeded in the worker and `connect-src` did not apply to it: the model's
+code could have sent an attached file anywhere. Fixed by starting the worker
+from a one-line blob that imports the bundled script
+(`src/lib/python/worker-url.ts`): a blob worker inherits the page's policy.
+The CSP gains `worker-src 'self' blob:` for it, and both CSP tests pin that
+directive. Measured after the fix: `eval` is refused in the worker and
+Pyodide still runs. WebKit leaves a fetch the policy refuses pending rather
+than failing it, which would hold a run until its 120 s limit, so the worker
+also wraps `fetch` (`guardFetch`) to refuse anything outside `/pyodide/` at
+once, with a sentence the model reads.
+
+**The worker no longer outlives the screen.** When the page is hidden, an
+idle worker is now terminated as well as a running one: 400 MB held by a
+backgrounded app makes it the first one iOS reclaims, which reloads the whole
+chat. The simulator showed the memory returned when the app came back (390 MB
+against 670 MB); whether it is returned before iOS suspends the process is a
+device question. The conversation's variables go with the worker, and the
+tool's description says so.
+
+**Deployment target.** The iOS project's minimum is 15.0 (`project.yml`,
+`IPHONEOS_DEPLOYMENT_TARGET`). `'wasm-unsafe-eval'` is honoured from Safari
+16.0 (MDN browser-compat-data), and Pyodide 0.29 is tested from Safari 16.4.
+Now that the worker inherits the page's policy, on iOS 15 Pyodide's wasm
+compile is refused there as in the page; on 16.0 to 16.3 it may run but is
+untested upstream. Either way a Pyodide that cannot start now answers
+"unavailable" to Rust (`WorkerDone.unavailable`), so the tool tells the model
+Python is not available on this phone instead of handing it an error to retry.
+Raising the deployment target to 16.4 would drop the phones that stop at iOS
+15 (iPhone 6s, 7, first SE) for every feature, which this fix does not need.
+
+**Still open, on hardware**: the cold start and memory on a low-end iPhone,
+and the Android WebView, whose CSP handling for blob workers is the standard
+one but was not run here. The `query_data` fallback stays unbuilt: nothing
+here called for it.

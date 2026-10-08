@@ -134,6 +134,21 @@ fn network_reach_stays_local() {
 }
 
 #[test]
+fn workers_start_only_from_this_bundle_or_a_page_made_blob() {
+    // The phone's Python worker starts from a blob so that it inherits this
+    // policy (ADR-0086): a worker loaded from the app's scheme gets no CSP at
+    // all, because Tauri sends the header with HTML only. `blob:` is the one
+    // scheme that inherits; a remote worker would bring its own policy.
+    let policy = directives();
+    let worker_src = policy.get("worker-src").expect("worker-src");
+    assert_eq!(
+        worker_src,
+        &vec!["'self'".to_string(), "blob:".to_string()],
+        "worker-src must stay 'self' blob:"
+    );
+}
+
+#[test]
 fn the_ios_config_does_not_replace_the_policy() {
     // Tauri merges `tauri.ios.conf.json` over the base. A `csp` key here would
     // replace the whole policy on the phone, and no desktop test would notice.
