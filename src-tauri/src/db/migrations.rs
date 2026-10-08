@@ -122,7 +122,15 @@ pub async fn applied_migrations(
         .collect())
 }
 
+/// Migrations run one at a time per process. Two pools opening the same file
+/// at once (a resume sweep and the first command, or the test that starts
+/// eight) used to race on `CREATE VIRTUAL TABLE notes_fts`, and the loser
+/// failed with SQLITE_SCHEMA ("vtable constructor failed"). Every statement
+/// is idempotent, so the second runner finds the work done.
+static MIGRATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
+    let _serialised = MIGRATION_LOCK.lock().await;
     crate::diagnostics::mark("database open");
     query(SCHEMA_LEDGER).execute(_pool).await?;
     replay(

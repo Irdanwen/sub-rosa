@@ -109,8 +109,8 @@ pub mod temporary_chat;
 pub mod theme_icon;
 #[cfg(desktop)]
 pub mod updates;
-pub mod watch_relay;
 pub mod voice;
+pub mod watch_relay;
 // Writing a timeline bundle to disk: plain file work, so it builds everywhere
 // even though only the desktop offers a folder picker to reach it.
 pub mod bible;
