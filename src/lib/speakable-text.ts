@@ -32,6 +32,10 @@ export function fenceLabel(info: string): string {
       return t("There are places here.");
     case "notes":
       return t("There are notes here.");
+    case "chart":
+      return t("There is a chart here.");
+    case "table":
+      return t("There is a table here.");
     case null:
       return t("There is some code here.");
     default:

@@ -147,7 +147,10 @@ fn provider_failure_detail_matches_sidecar_and_gateway_wording() {
 #[test]
 fn system_prompt_appends_memory_block_when_present() {
     let plain = build_system_prompt(None);
-    assert_eq!(plain, SYSTEM_PROMPT);
+    assert_eq!(
+        plain,
+        format!("{SYSTEM_PROMPT}{}", python::prompt_section())
+    );
 
     let block = "User memory: facts.\n- Répond toujours en français.\n";
     let with_memory = build_system_prompt(Some(block));
@@ -457,6 +460,10 @@ fn the_system_prompt_teaches_both_chat_block_kinds() {
     assert!(prompt.contains("subrosa:links"));
     assert!(prompt.contains("subrosa:places"));
     assert!(prompt.contains("Never invent a place or a coordinate."));
+    // Charts and tables (ADR-0086), with the parser's exact shapes.
+    assert!(prompt.contains("subrosa:chart"));
+    assert!(prompt.contains("subrosa:table"));
+    assert_eq!(prompt.contains("run_python"), cfg!(mobile));
 }
 
 #[test]

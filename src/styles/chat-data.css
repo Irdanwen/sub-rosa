@@ -1,0 +1,361 @@
+/*
+ * Chart and table cards in a reply (subrosa:chart, subrosa:table, ADR-0086).
+ *
+ * The marks follow the dataviz rules: 2px lines, 4px rounded bar ends, 8px
+ * dots ringed in the surface colour, a 2px surface gap between touching
+ * fills, hairline grid, and text that never wears a series colour. The card
+ * is a solid --card so the ring and the gap are drawn in the colour actually
+ * behind them.
+ */
+
+.chat-data {
+  background: var(--card);
+}
+
+.chat-chart-plot {
+  position: relative;
+  margin: var(--sp-3) var(--sp-5) 0;
+  color: var(--foreground);
+  touch-action: pan-y;
+  border-radius: var(--r-md);
+  outline: none;
+}
+
+.chat-chart-plot:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.chat-chart {
+  display: block;
+  overflow: visible;
+  font-family: var(--font-sans);
+}
+
+.chat-chart text {
+  font-size: 11px;
+  fill: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-chart .chat-chart-legend text,
+.chat-chart .chat-chart-end-label {
+  font-size: 12px;
+  fill: var(--body-copy);
+}
+
+.chat-chart .chat-chart-axis-title {
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  fill: var(--muted-foreground);
+}
+
+.chat-chart .chat-chart-total {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+  fill: var(--foreground);
+}
+
+.chat-chart-grid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+.chat-chart-baseline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chat-chart-band {
+  fill: var(--foreground);
+  fill-opacity: 0.05;
+}
+
+.chat-chart-crosshair {
+  stroke: var(--muted-foreground);
+  stroke-width: 1;
+}
+
+.chat-chart-s1 {
+  --series: var(--chart-1);
+}
+.chat-chart-s2 {
+  --series: var(--chart-2);
+}
+.chat-chart-s3 {
+  --series: var(--chart-3);
+}
+.chat-chart-s4 {
+  --series: var(--chart-4);
+}
+.chat-chart-s5 {
+  --series: var(--chart-5);
+}
+.chat-chart-s6 {
+  --series: var(--chart-6);
+}
+.chat-chart-s7 {
+  --series: var(--chart-7);
+}
+.chat-chart-s8 {
+  --series: var(--chart-8);
+}
+
+.chat-chart path[class^="chat-chart-s"],
+.chat-chart rect[class^="chat-chart-s"] {
+  fill: var(--series);
+}
+
+.chat-chart-slice {
+  stroke: var(--card);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.chat-chart-line {
+  fill: none;
+  stroke: var(--series);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-chart-area {
+  fill: var(--series);
+  fill-opacity: 0.1;
+  stroke: none;
+}
+
+.chat-chart-dot {
+  fill: var(--series);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+
+.chat-chart-tooltip {
+  position: absolute;
+  top: var(--sp-2);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  max-width: 220px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-md);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-md);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+  transform: translateX(12px);
+}
+
+.chat-chart-tooltip[data-side="left"] {
+  transform: translateX(calc(-100% - 12px));
+}
+
+.chat-chart-tooltip strong {
+  font-weight: var(--fw-medium);
+  overflow-wrap: anywhere;
+}
+
+.chat-chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--muted-foreground);
+}
+
+.chat-chart-tooltip-row b {
+  margin-left: auto;
+  padding-left: var(--sp-3);
+  font-weight: var(--fw-medium);
+  color: var(--popover-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chat-chart-key {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--series);
+}
+
+.chat-data-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.chat-data-notice,
+.chat-data-source {
+  margin: var(--sp-2) var(--sp-5) 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.chat-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+
+.chat-data-action,
+.chat-data-more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 28px;
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.chat-data-more {
+  margin: var(--sp-2) var(--sp-4) 0;
+}
+
+@media (hover: hover) {
+  .chat-data-action:hover,
+  .chat-data-more:hover {
+    background: color-mix(in oklch, var(--muted) 60%, transparent);
+    color: var(--foreground);
+  }
+}
+
+.chat-data-action:active,
+.chat-data-more:active {
+  background: color-mix(in oklch, var(--muted) 85%, transparent);
+}
+
+.chat-data-error {
+  font-size: var(--fs-sm);
+  color: var(--destructive);
+}
+
+/* The table scrolls on its own, both ways: the header sticks while the rows
+ * scroll, and a wide table pans sideways instead of widening the reply. */
+.chat-table-scroll {
+  margin: var(--sp-3) var(--sp-4) 0;
+  max-height: 420px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--r-md);
+  outline: none;
+}
+
+.chat-table-scroll:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.chat-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-sm);
+  color: var(--body-copy);
+}
+
+.chat-table th,
+.chat-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+
+.chat-table td {
+  min-width: 64px;
+}
+
+.chat-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  background: var(--card);
+  border-bottom-color: var(--border);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+.chat-table [data-numeric] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chat-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+th[data-numeric] .chat-table-sort {
+  flex-direction: row-reverse;
+}
+
+.chat-table-unit {
+  font-weight: var(--fw-regular, 400);
+  color: var(--muted-foreground);
+}
+
+.chat-table-sort-icon {
+  display: inline-flex;
+  color: var(--muted-foreground);
+  opacity: 0;
+}
+
+th[aria-sort="ascending"] .chat-table-sort-icon,
+th[aria-sort="descending"] .chat-table-sort-icon {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .chat-table-sort:hover .chat-table-sort-icon {
+    opacity: 0.6;
+  }
+}
+
+/* No colour to tell series apart: give marks a system colour each so the
+ * legend and the "Show data" table still carry identity. */
+@media (forced-colors: active) {
+  .chat-chart path[class^="chat-chart-s"],
+  .chat-chart rect[class^="chat-chart-s"],
+  .chat-chart-dot {
+    fill: CanvasText;
+  }
+
+  .chat-chart-line {
+    stroke: CanvasText;
+  }
+}

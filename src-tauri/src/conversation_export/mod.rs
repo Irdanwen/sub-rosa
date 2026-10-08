@@ -10,6 +10,7 @@
 //! it is written to the app's own export folder and handed to the share
 //! sheet, which is where Files, Mail and AirDrop live.
 
+pub mod data;
 pub mod pdf;
 
 use serde::{Deserialize, Serialize};
@@ -92,27 +93,27 @@ pub async fn export_conversation(
 ) -> Result<ExportConversationResult, AppError> {
     let bytes = render(&request)?;
     let name = file_name(&request.title, request.format);
-    deliver(&app, &name, request.format, bytes).await
+    let filter = match request.format {
+        ExportFormat::Markdown => "Markdown",
+        ExportFormat::Pdf => "PDF",
+    };
+    deliver(&app, &name, (filter, request.format.extension()), bytes).await
 }
 
 #[cfg(desktop)]
-async fn deliver(
+pub(crate) async fn deliver(
     app: &tauri::AppHandle,
     name: &str,
-    format: ExportFormat,
+    (filter, extension): (&str, &str),
     bytes: Vec<u8>,
 ) -> Result<ExportConversationResult, AppError> {
     use tauri_plugin_dialog::DialogExt;
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let filter = match format {
-        ExportFormat::Markdown => "Markdown",
-        ExportFormat::Pdf => "PDF",
-    };
     app.dialog()
         .file()
         .set_file_name(name)
-        .add_filter(filter, &[format.extension()])
+        .add_filter(filter, &[extension])
         .save_file(move |path| {
             let _ = tx.send(path);
         });
@@ -135,10 +136,10 @@ async fn deliver(
 /// The phone writes the file into its own export folder, emptied first so
 /// only the latest export ever sits there, and hands it to the share sheet.
 #[cfg(mobile)]
-async fn deliver(
+pub(crate) async fn deliver(
     app: &tauri::AppHandle,
     name: &str,
-    _format: ExportFormat,
+    _filter: (&str, &str),
     bytes: Vec<u8>,
 ) -> Result<ExportConversationResult, AppError> {
     use tauri::Manager;

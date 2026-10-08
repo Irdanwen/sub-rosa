@@ -47,6 +47,7 @@ mod budget;
 pub mod cancel;
 pub mod controls;
 mod project;
+pub mod python;
 use budget::{shorten_read_pages, Completion, ToolBudget, MAX_COMPLETIONS};
 #[cfg(test)]
 use budget::{MAX_TOOL_ROUNDS, READ_PAGE_CHARS};
@@ -497,6 +498,7 @@ async fn run_turn(
             )
         });
         project::offer_tool(tools, project.as_ref());
+        python::offer_tool(tools);
         if snapshot.is_some() {
             tools.push(serde_json::json!({"type":"function","function":{
                 "name":"search_references","description":"Search the reference documents explicitly attached to this assistant. Cite the returned reference name and passage.",
@@ -819,6 +821,8 @@ async fn run_turn(
             } else if let Some(project) = project.as_ref().filter(|_| name == project::TOOL) {
                 emit_status(app, task_id, "searching-references", None);
                 project::run_tool(repos, project, &args).await
+            } else if name == python::TOOL {
+                python::run_tool(app, task_id, &args, attachments).await
             } else if name == "search_references" {
                 emit_status(app, task_id, "searching-references", None);
                 snapshot
@@ -1875,8 +1879,8 @@ fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
 /// enabled and non-empty, the user's remembered facts.
 fn build_system_prompt(memory_block: Option<&str>) -> String {
     match memory_block {
-        Some(block) => format!("{SYSTEM_PROMPT}\n\n{block}"),
-        None => SYSTEM_PROMPT.to_string(),
+        Some(block) => format!("{SYSTEM_PROMPT}{}\n\n{block}", python::prompt_section()),
+        None => format!("{SYSTEM_PROMPT}{}", python::prompt_section()),
     }
 }
 

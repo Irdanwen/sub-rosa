@@ -8,6 +8,8 @@ import { openExternalUrl } from "../../lib/tauri";
 import { PlacesCard } from "./PlacesCard";
 import { ProposalCard } from "./ProposalCard";
 import { AssistantMediaCard } from "./AssistantMediaCard";
+import { ChartCard } from "./ChartCard";
+import { TableCard } from "./TableCard";
 
 /**
  * Renders one parsed chat block (see src/lib/chat-blocks.ts). Shared by the
@@ -26,6 +28,10 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
       return <NotesCard block={block} />;
     case "proposal":
       return <ProposalCard block={block} />;
+    case "chart":
+      return <ChartCard block={block} />;
+    case "table":
+      return <TableCard block={block} />;
     default:
       return null;
   }

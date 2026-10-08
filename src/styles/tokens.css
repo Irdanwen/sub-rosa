@@ -237,6 +237,21 @@
   --code-keyword: var(--sr-code-keyword);
   --code-string: var(--sr-code-string);
   --code-number: var(--sr-code-number);
+
+  /* Chart series (subrosa:chart, ADR-0086). Eight categorical slots in a
+   * fixed order that clears the colour-blind and normal-vision separation
+   * gates of the dataviz checker on the card surface, in both themes. They
+   * colour marks only, never text: labels stay in the ink tokens, and the
+   * light theme's yellow, aqua and magenta (under 3:1) are always paired
+   * with a legend, a tooltip and the "Show data" table. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+  --chart-6: #008300;
+  --chart-7: #4a3aa7;
+  --chart-8: #e34948;
   --border: color-mix(in oklch, oklch(88.78% 0.0167 79.35), var(--brand) 5%);
   --input: color-mix(in oklch, oklch(88.78% 0.0167 79.35), var(--brand) 5%);
   --ring: oklch(79.43% 0.018 67.57);
@@ -447,6 +462,15 @@
   --code-keyword: var(--sr-code-keyword-on-ink);
   --code-string: var(--sr-code-string-on-ink);
   --code-number: var(--sr-code-number-on-ink);
+  /* The same eight hues stepped for the dark surface, checked against it. */
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-6: #008300;
+  --chart-7: #9085e9;
+  --chart-8: #e66767;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(1 0 0 / 18%);

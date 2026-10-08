@@ -15,7 +15,16 @@
  * call site (return null — never a half-valid card).
  */
 
+import {
+  type ChartChatBlock,
+  dataBlockPlainText,
+  parseChartBlock,
+  parseTableBlock,
+  type TableChatBlock,
+} from "./chat-blocks-data";
 import { safeExternalUrl } from "./external-link";
+
+export type { ChartChatBlock, TableChatBlock } from "./chat-blocks-data";
 
 export const CHAT_BLOCK_FENCE_PREFIX = "subrosa:";
 
@@ -96,7 +105,9 @@ export type ChatBlock =
   | PlacesChatBlock
   | NotesChatBlock
   | ProposalChatBlock
-  | MediaChatBlock;
+  | MediaChatBlock
+  | ChartChatBlock
+  | TableChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -380,6 +391,9 @@ function chatBlockPlainText(block: ChatBlock): string[] {
         block.title || "Suggested follow-ups",
         ...block.actions.map((action) => `- ${action.label}`),
       ];
+    case "chart":
+    case "table":
+      return dataBlockPlainText(block);
     default:
       return [];
   }
@@ -414,6 +428,10 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parseNotes(payload);
     case "proposal":
       return parseProposal(payload);
+    case "chart":
+      return parseChartBlock(payload);
+    case "table":
+      return parseTableBlock(payload);
     default:
       return null;
   }
