@@ -40,7 +40,15 @@ fn rust_sources(dir: &Path, out: &mut Vec<(String, String)>) {
         let path = entry.path();
         if path.is_dir() {
             rust_sources(&path, out);
-        } else if path.extension().is_some_and(|ext| ext == "rs") {
+        } else if path.extension().is_some_and(|ext| ext == "rs")
+            // A module's test file (`tests.rs`, `sync_tests.rs`) is compiled
+            // only under `#[cfg(test)]` where its parent declares it, so it is
+            // fixtures, like the inline test modules `shipping_code` drops.
+            && !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with("tests.rs"))
+        {
             if let Ok(source) = std::fs::read_to_string(&path) {
                 out.push((path.display().to_string().replace('\\', "/"), source));
             }
@@ -131,6 +139,9 @@ fn not_a_destination(host: &str) -> bool {
         "opensource.org",
         "spdx.org",
         "purl.org",
+        // The Office Open XML namespaces written into every DOCX, XLSX and
+        // PPTX the app produces (ADR-0089, ADR-0090).
+        "schemas.openxmlformats.org",
         "ns.adobe.com",
         "www.apple.com",
         "itunes.apple.com",
