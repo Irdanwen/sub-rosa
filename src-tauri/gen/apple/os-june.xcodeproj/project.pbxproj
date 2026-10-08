@@ -235,7 +235,6 @@
 		4DC902CD2FF949504F1B78EE /* store.rs */ = {isa = PBXFileReference; path = store.rs; sourceTree = "<group>"; };
 		4DD5D20D15721D9E7F2D1C79 /* engine.rs */ = {isa = PBXFileReference; path = engine.rs; sourceTree = "<group>"; };
 		4E34C4F9A0B545CA17ECA8FD /* client.rs */ = {isa = PBXFileReference; path = client.rs; sourceTree = "<group>"; };
-		4F0DB22578389E5533BF4ED8 /* Widgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Widgets.entitlements; sourceTree = "<group>"; };
 		502C492DBF7907A25732E630 /* ios_continued.rs */ = {isa = PBXFileReference; path = ios_continued.rs; sourceTree = "<group>"; };
 		50B4C861AED330945E0DCAEF /* policy.rs */ = {isa = PBXFileReference; path = policy.rs; sourceTree = "<group>"; };
 		5167BB4E2C3C6A12ED928AD5 /* android.rs */ = {isa = PBXFileReference; path = android.rs; sourceTree = "<group>"; };
@@ -920,7 +919,6 @@
 			children = (
 				22E189654691AC6C8F2EFD13 /* Info.plist */,
 				1DB15AEC3A778B0B60C6D3F4 /* SubRosaWidgets.swift */,
-				4F0DB22578389E5533BF4ED8 /* Widgets.entitlements */,
 				62B3DD19D40FE0568D025890 /* Localizable.strings */,
 			);
 			path = Widgets;
@@ -1666,7 +1664,6 @@
 				ARCHS = (
 					arm64,
 				);
-				CODE_SIGN_ENTITLEMENTS = Widgets/Widgets.entitlements;
 				DEVELOPMENT_TEAM = H6N5V777LL;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -1691,7 +1688,6 @@
 				ARCHS = (
 					arm64,
 				);
-				CODE_SIGN_ENTITLEMENTS = Widgets/Widgets.entitlements;
 				DEVELOPMENT_TEAM = H6N5V777LL;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				INFOPLIST_FILE = Widgets/Info.plist;

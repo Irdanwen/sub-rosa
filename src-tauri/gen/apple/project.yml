@@ -180,7 +180,7 @@ targets:
         embed: true
         codeSign: true
       # The Home Screen and Lock Screen widgets (ADR-0095): links into the
-      # app's addresses, in the same app group.
+      # app's addresses.
       - target: os-june_Widgets
         embed: true
         codeSign: true
@@ -239,8 +239,9 @@ targets:
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: false
   # The Home Screen and Lock Screen widgets (ADR-0095). Buttons, not views of
-  # data: each one opens a `subrosa://` address. In the app group with the
-  # app, the share extension and the Shortcuts actions.
+  # data: each one opens a `subrosa://` address. They read nothing the app
+  # keeps, so they are not in its app group and need no entitlements: their
+  # App ID and profile are ones the release lane can make on its own.
   os-june_Widgets:
     type: app-extension
     platform: iOS
@@ -254,11 +255,6 @@ targets:
         CFBundleVersion: "1.88.1"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
-    entitlements:
-      path: Widgets/Widgets.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.xyz.carpediem.subrosa
     dependencies:
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework

@@ -87,7 +87,9 @@ ce qu'a fait 1.74.0). Trois règles :
   signe tout `externalBin` avec les entitlements de l'app ; les helpers Swift sont
   signés par `build.rs` avec `HelperEntitlements.plist`.
 - **Modifier une capability de l'App ID invalide ses profils**, iOS compris :
-  régénérer « Sub Rosa App Store » et mettre à jour `IOS_PROVISION_PROFILE`.
+  côté iOS, la lane `ios-release.yml` refait « Sub Rosa App Store » d'elle-même
+  au run suivant (§9) ; seul le profil Developer ID ci-dessus reste à refaire
+  à la main.
 `src/test/macos-entitlements.test.ts` garde ces règles, et `release.yml` lance
 l'app signée avant de publier.
 
@@ -143,16 +145,42 @@ dans l'Info.plist. Pour uploader un nouveau build local :
    (le plist = method app-store-connect + destination upload + teamID ; la session Xcode
    authentifie). Le build apparaît ensuite dans TestFlight après le traitement Apple.
 
-**Pour la CI** (`ios-release.yml`) : l'export utilise les assets importés, avec
-le certificat Apple Distribution importé (`IOS_DIST_CERT_P12`, base64, et
-`IOS_DIST_CERT_PASSWORD`), `APPLE_TEAM_ID` et les deux profils App Store importés
-(`IOS_PROVISION_PROFILE` et `IOS_SHARE_PROVISION_PROFILE`, base64). Pour des profils
-créés manuellement, la lane mappe leurs UUID. Les profils marqués `IsXcodeManaged`
-imposent `signingStyle=automatic` : Xcode refuse leur usage en mode manuel, même
-avec le bon UUID et certificat. La lane sélectionne donc le mode selon ce champ.
-Elle ne crée pas ces
-assets par signature cloud. Les secrets `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` et
-`APPLE_API_KEY_P8` (`.p8` en base64) authentifient l'accès App Store Connect et l'upload.
+**Pour la CI** (`ios-release.yml`, mise à jour du 8 octobre 2026) : la lane importe
+le certificat Apple Distribution (`IOS_DIST_CERT_P12`, base64, et
+`IOS_DIST_CERT_PASSWORD`), puis **obtient elle-même ses profils** par l'API REST
+App Store Connect (`scripts/ios-provision.mjs`, logique testée dans
+`scripts/ios-signing.mjs`), avec la clé `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` /
+`APPLE_API_KEY_P8` (rôle App Manager : il peut créer bundle ids, capacités et
+profils par l'API REST, pas signer « dans le nuage » via xcodebuild). À chaque run,
+pour chacun des cinq bundles :
+
+1. elle enregistre le bundle id s'il manque (plateforme IOS, montre comprise) ;
+2. elle active les capacités qu'elle gère (*HealthKit* sur l'app) ;
+3. elle cherche le profil App Store à son nom (« Sub Rosa App Store », « Sub Rosa
+   Share App Store », « Sub Rosa Widgets App Store », « Sub Rosa Watch App Store »,
+   « Sub Rosa Watch Widgets App Store ») et le garde s'il est actif, non expiré,
+   signé par le certificat importé (retrouvé par son numéro de série, sinon par
+   l'id `Q3722FZBS4`) et porteur des entitlements des capacités du bundle ; sinon
+   elle le supprime et en refait un du même nom ;
+4. elle installe les profils et écrit l'ExportOptions (signature manuelle, un nom
+   de profil par bundle).
+
+Rien n'est à créer à la main. Les secrets `IOS_PROVISION_PROFILE`,
+`IOS_SHARE_PROVISION_PROFILE`, `IOS_WIDGETS_PROVISION_PROFILE`,
+`IOS_WATCH_PROVISION_PROFILE` et `IOS_WATCH_WIDGETS_PROVISION_PROFILE` ne servent
+plus que de **secours** quand l'API ne répond pas ; ils peuvent rester périmés ou
+absents. Un bundle sans profil (ni API ni secret) est **retiré de l'archive** avec un
+avertissement dans le journal, et l'app part quand même sur TestFlight ; sans
+profil pour l'app elle-même, la lane s'arrête. Un profil de secret géré par Xcode
+(`IsXcodeManaged`) fait passer l'export en `signingStyle=automatic` (Xcode refuse un
+profil géré en mode manuel) ; mélanger profils gérés et profils API ne peut signer
+dans aucun des deux modes, la lane l'annonce.
+
+**La seule étape de portail restante** : l'association de l'App Group
+`group.xyz.carpediem.subrosa` à un bundle (l'API sait activer la capacité *App
+Groups*, pas cocher un groupe). Elle est faite pour l'app et l'extension de partage
+depuis le 2026-09-05 ; si un profil refait n'a pas le groupe, la lane retire
+l'extension (ou s'arrête pour l'app) en nommant cette étape.
 
 Les icônes iOS définitives sont déjà intégrées et sans canal alpha (voir §7).
 
@@ -163,6 +191,10 @@ bundle, signé à part, qui partage un App Group avec l'app. La lane
 `ios-release.yml` l'exporte dès que ces quatre choses existent ; tant qu'elles
 manquent, elle s'arrête à l'export avec un message clair plutôt que de
 livrer une entrée du partage qui ne marche pas.
+
+*Historique : depuis le 8 octobre 2026 la lane crée elle-même bundle id et profil
+(§9) ; seules les étapes 1 et 2 (le groupe et son association) restent manuelles,
+et elles sont faites.*
 
 1. **App Group** : dans Certificates, Identifiers & Profiles › Identifiers ›
    App Groups, créer `group.xyz.carpediem.subrosa`.
@@ -214,24 +246,25 @@ ressource à copier. Deux archives debug/release copiées sous le même nom font
 ## Widgets iOS et Apple Watch (ADR-0095) : trois bundles de plus
 
 L'app embarque désormais trois bundles supplémentaires, chacun avec son App ID
-et son profil App Store. Tant que les trois secrets manquent, la lane
-`ios-release.yml` s'arrête à l'import des profils avec un message qui les
-nomme (même parti pris que pour l'extension de partage).
+et son profil App Store. **Rien à faire à la main** : au premier run, la lane
+`ios-release.yml` les crée par l'API (§9) et les réutilise ensuite.
 
-1. **App ID des widgets** : `xyz.carpediem.subrosa.widgets`, capacité
-   *App Groups* cochée sur `group.xyz.carpediem.subrosa`. Profil App Store
-   (« Sub Rosa Widgets App Store ») → secret `IOS_WIDGETS_PROVISION_PROFILE`
-   (base64 du `.mobileprovision`).
-2. **App ID de l'app Watch** : `xyz.carpediem.subrosa.watchkitapp` (plateforme
-   watchOS, aucune capacité). Profil App Store → secret
-   `IOS_WATCH_PROVISION_PROFILE`.
+1. **App ID des widgets** : `xyz.carpediem.subrosa.widgets`, sans capacité. Les
+   widgets ne sont que des liens `subrosa://` et ne lisent aucune donnée de
+   l'app : ils ne sont **pas** dans l'App Group, ce qui évite l'étape de portail.
+   Profil « Sub Rosa Widgets App Store ».
+2. **App ID de l'app Watch** : `xyz.carpediem.subrosa.watchkitapp` (bundle id de
+   plateforme IOS dans l'API, aucune capacité). Profil « Sub Rosa Watch App
+   Store ».
 3. **App ID de la complication** : `xyz.carpediem.subrosa.watchkitapp.widgets`
-   (watchOS, aucune capacité). Profil App Store → secret
-   `IOS_WATCH_WIDGETS_PROVISION_PROFILE`.
+   (idem). Profil « Sub Rosa Watch Widgets App Store ».
 
 Les trois profils utilisent le même certificat Apple Distribution que l'app.
-L'export manuel mappe chaque bundle sur l'UUID de son profil ; l'export
-automatique les sélectionne s'ils sont gérés par Xcode. Le build number des
+Les secrets `IOS_WIDGETS_PROVISION_PROFILE`, `IOS_WATCH_PROVISION_PROFILE` et
+`IOS_WATCH_WIDGETS_PROVISION_PROFILE` sont facultatifs (secours si l'API ne
+répond pas). Si l'un des profils manque malgré tout, le bundle est retiré de
+l'archive (la complication part avec l'app Watch) et le build de l'app sort
+quand même, avec un avertissement dans le journal. Le build number des
 cinq bundles est tamponné à l'identique (une app Watch doit porter exactement
 la version de son app iPhone). Côté App Store Connect, la fiche de l'app gagne
 une section Apple Watch : y déposer au moins une capture d'écran de la montre
@@ -245,12 +278,13 @@ une Apple Watch prouve le trajet complet.
 
 ## Santé (ADR-0099) : ce que le titulaire doit activer
 
-1. **iPhone, HealthKit** : dans le portail Apple Developer, cocher la capacité
-   *HealthKit* sur l'App ID `xyz.carpediem.subrosa`, régénérer le profil App
-   Store de l'app et mettre à jour le secret `IOS_PROVISION_PROFILE`. Tant que
-   le profil ne porte pas `com.apple.developer.healthkit`, la lane
-   `ios-release.yml` retire l'entitlement avant l'archive (avertissement dans
-   le journal) et l'app dit que Santé est indisponible. Dans App Store
+1. **iPhone, HealthKit** : rien à faire dans le portail. La lane
+   `ios-release.yml` active la capacité *HealthKit* sur l'App ID
+   `xyz.carpediem.subrosa` par l'API et refait le profil « Sub Rosa App Store »
+   qui la porte (le premier run après ce changement le remplace). Si l'API
+   refuse, le profil ne porte pas `com.apple.developer.healthkit` : la lane
+   retire l'entitlement avant l'archive (avertissement dans le journal) et
+   l'app dit que Santé est indisponible. Dans App Store
    Connect, la fiche de confidentialité doit déclarer les données de santé
    (lues, non liées à des tiers, non utilisées pour le suivi) ; la revue
    demande souvent une phrase sur l'usage dans les notes de revue.

@@ -19,7 +19,6 @@ import complicationFr from "../../src-tauri/gen/apple/WatchWidgets/fr.lproj/Loca
 import widgetsEn from "../../src-tauri/gen/apple/Widgets/en.lproj/Localizable.strings?raw";
 import widgetsFr from "../../src-tauri/gen/apple/Widgets/fr.lproj/Localizable.strings?raw";
 import widgets from "../../src-tauri/gen/apple/Widgets/SubRosaWidgets.swift?raw";
-import widgetsEntitlements from "../../src-tauri/gen/apple/Widgets/Widgets.entitlements?raw";
 import xcodeProject from "../../src-tauri/gen/apple/os-june.xcodeproj/project.pbxproj?raw";
 import projectSpec from "../../src-tauri/gen/apple/project.yml?raw";
 import versionScript from "../../scripts/sync-ios-version.mjs?raw";
@@ -106,11 +105,14 @@ describe("the iOS widgets and the Apple Watch app", () => {
     expect(watchInfo).toMatch(/<key>WKApplication<\/key>\s*<true\/>/);
   });
 
-  it("share the app group with the app, the share extension and the actions", () => {
-    expect(widgetsEntitlements).toContain(`<string>${GROUP}</string>`);
-    expect(targetSection("os-june_Widgets")).toContain(
-      `        com.apple.security.application-groups:\n          - ${GROUP}`,
-    );
+  // Buttons that open addresses read nothing the app keeps. Without the app
+  // group, the release lane can register their App ID and make their profile
+  // through the API alone (scripts/ios-signing.mjs): no portal step.
+  it("stay out of the app group, which they do not read", () => {
+    expect(targetSection("os-june_Widgets")).not.toContain("entitlements:");
+    expect(xcodeProject).not.toContain("Widgets/Widgets.entitlements");
+    expect(widgets).not.toMatch(/suiteName|containerURL|securityApplicationGroupIdentifier/);
+    expect(widgets).not.toContain(GROUP);
   });
 
   it("open addresses the app answers, at the place they name", () => {
