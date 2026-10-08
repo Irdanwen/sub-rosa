@@ -17,6 +17,7 @@ mod assignments;
 mod connectors;
 mod documents;
 mod finance;
+mod office;
 mod protected;
 mod research;
 mod study;

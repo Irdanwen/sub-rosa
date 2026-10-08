@@ -65,8 +65,14 @@ export function describe(outcome: Outcome): string {
 }
 
 export interface PythonEngine {
-  /** Runs `code` in the conversation `session`; the answer is for the model. */
-  run(code: string, session: string, signal?: AbortSignal): Promise<string>;
+  /** Runs `code` in the conversation `session`; the answer is for the model.
+   * `files` are mounted under /data first (an Office range, ADR-0102). */
+  run(
+    code: string,
+    session: string,
+    signal?: AbortSignal,
+    files?: PythonRunEvent["files"],
+  ): Promise<string>;
   dispose(): void;
 }
 
@@ -152,10 +158,10 @@ export function createPythonEngine(
   };
 
   return {
-    async run(code, session, signal) {
+    async run(code, session, signal, files = []) {
       if (!code.trim()) return ANALYSIS.messages.noCode;
       if (Array.from(code).length > ANALYSIS.limits.maxCodeChars) return ANALYSIS.messages.tooLong;
-      const event: PythonRunEvent = { requestId: crypto.randomUUID(), session, code, files: [] };
+      const event: PythonRunEvent = { requestId: crypto.randomUUID(), session, code, files };
       return describe(await once(event, signal));
     },
     dispose: stop,

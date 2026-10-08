@@ -1,0 +1,26 @@
+{
+  "name": "@subrosa/office-addins",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sub Rosa in Word, Excel and PowerPoint: task panes served by the account site, each a browser device of its account (ADR-0102).",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "manifests": "node scripts/manifests.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@subrosa/chat-core": "workspace:*",
+    "@subrosa/design": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3"
+  }
+}

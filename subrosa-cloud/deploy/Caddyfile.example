@@ -9,7 +9,7 @@ account.example.invalid {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
     }
-    @site not path /app /app/* /connector-view.html
+    @site not path /app /app/* /connector-view.html /office/*
     header @site {
         X-Frame-Options "DENY"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"
@@ -21,6 +21,12 @@ account.example.invalid {
         X-Frame-Options "DENY"
         Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()"
         Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa"
+    }
+    # The Office task panes (ADR-0102): see nginx-account.conf.example.
+    @office path /office/*
+    header @office {
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs"
     }
     @view path /connector-view.html
     header @view {

@@ -33,7 +33,7 @@ interface Column {
   heading: string | null;
   bullets: Bullet[];
 }
-interface Slide {
+export interface Slide {
   layout: Layout;
   title: string;
   subtitle: string | null;
@@ -125,7 +125,7 @@ function parseSlide(index: number, value: Json): Slide | null {
   return { layout, title, subtitle, bullets, left, right, image, caption: text("caption"), notes };
 }
 
-function parseSlides(content: Json): Slide[] {
+export function parseSlides(content: Json): Slide[] {
   const raw = Array.isArray(content)
     ? content
     : isObject(content) && Array.isArray(content.slides)

@@ -54,6 +54,14 @@ export interface VaultRecord {
   version: number;
   envelope: string;
 }
+/** How a request reaches the service. The page's own `fetch`, unless an
+ * Office task pane whose frame carries no session hands its calls to a
+ * signed-in window (ADR-0102), which adds the cookie and the CSRF token. */
+export type ApiTransport = (path: string, init: RequestInit) => Promise<Response>;
+let transport: ApiTransport | null = null;
+export function setApiTransport(next: ApiTransport | null) {
+  transport = next;
+}
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!path.startsWith("/api/v1/") && path !== "/auth/logout") throw new Error("Invalid API path");
   if (
@@ -73,7 +81,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     .find((x) => x.startsWith("subrosa_csrf="))
     ?.slice("subrosa_csrf=".length);
   if (csrf) headers.set("x-csrf-token", decodeURIComponent(csrf));
-  const response = await fetch(path, {
+  const response = await (transport ?? fetch)(path, {
     ...init,
     headers,
     credentials: "same-origin",

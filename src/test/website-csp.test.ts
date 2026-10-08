@@ -155,6 +155,77 @@ describe("the web client's own policy on /app", () => {
   });
 });
 
+/** The places that serve the Office task panes (ADR-0102), each with the
+ * policy of its `/office/` block. */
+const OFFICE_SOURCES: [string, RegExp][] = [
+  ["website/public/_headers", /^\/office\/\*\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m],
+  [
+    "subrosa-cloud/deploy/nginx-account.conf.example",
+    /location \^~ \/office\/ \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+  [
+    "subrosa-cloud/deploy/Caddyfile.example",
+    /header @office \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+];
+
+describe("the Office task panes' own policy on /office/", () => {
+  const operator = new URL(CARPE_DIEM_OPERATOR).origin;
+  const office = OFFICE_SOURCES.map(([file, pattern]) => {
+    const line = pattern.exec(readFileSync(file, "utf8") as string)?.[1] ?? "";
+    return [file, directives(line)] as const;
+  });
+
+  it("adds Office.js from Microsoft's CDN and nothing else foreign to run", () => {
+    for (const [file, csp] of office) {
+      expect(csp.get("script-src"), file).toBe(
+        "'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com",
+      );
+      // What the pane may post to is still the site and the operator.
+      expect(csp.get("connect-src"), file).toBe(`'self' ${operator}`);
+      expect(csp.get("trusted-types"), file).toBe("subrosa officejs");
+      expect(csp.get("require-trusted-types-for"), file).toBe("'script'");
+      expect(csp.get("worker-src"), file).toBe("'self' blob:");
+      expect(csp.get("frame-src"), file).toBe("https://appsforoffice.microsoft.com");
+      expect([...csp.values()].join(" "), file).not.toContain("'unsafe-eval'");
+      expect([...csp.values()].join(" "), file).not.toContain("'unsafe-inline'");
+    }
+  });
+
+  it("lets only Office's own hosts frame the panes", () => {
+    for (const [file, csp] of office) {
+      const ancestors = (csp.get("frame-ancestors") ?? "").split(" ");
+      expect(ancestors.length, file).toBeGreaterThan(0);
+      for (const ancestor of ancestors)
+        expect(ancestor, file).toMatch(
+          /^https:\/\/(\*\.)?(officeapps\.live\.com|onedrive\.live\.com|office\.com|office365\.com|cloud\.microsoft|sharepoint\.com)$/,
+        );
+    }
+  });
+
+  it("is otherwise the site's policy, and the same in every place that serves it", () => {
+    const site = policy("website/public/_headers");
+    const [first, ...rest] = office.map(([, csp]) => [...csp.entries()].sort());
+    for (const other of rest) expect(other).toEqual(first);
+    for (const [file, csp] of office)
+      for (const [name, value] of site) {
+        if (["script-src", "frame-ancestors", "trusted-types"].includes(name)) continue;
+        expect(csp.get(name), `${file} ${name}`).toBe(value);
+      }
+  });
+
+  it("sends no X-Frame-Options on /office/, which would keep Office on the web out", () => {
+    const nginx = readFileSync("subrosa-cloud/deploy/nginx-account.conf.example", "utf8") as string;
+    const from = nginx.indexOf("location ^~ /office/");
+    const block = nginx.slice(from, nginx.indexOf("}", from));
+    expect(block).not.toContain("X-Frame-Options");
+    const headers = readFileSync("website/public/_headers", "utf8") as string;
+    expect(headers).toMatch(/\/office\/\*\n(?:\s+!.*\n)*\s+! X-Frame-Options/);
+    const caddy = readFileSync("subrosa-cloud/deploy/Caddyfile.example", "utf8") as string;
+    expect(caddy).toContain("@site not path /app /app/* /connector-view.html /office/*");
+  });
+});
+
 describe("subresource integrity on the built page", () => {
   const files: Record<string, string> = {
     "assets/index-abc.js": "console.log(1)",
