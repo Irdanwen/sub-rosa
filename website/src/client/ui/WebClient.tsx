@@ -532,7 +532,7 @@ export function WebClient({
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
-        <div className="wc-tabs" role="group" aria-label={t("Which chats", "Quelles discussions")}>
+        <div className="wc-tabs">
           <button type="button" aria-pressed={!showArchived} onClick={() => setShowArchived(false)}>
             {t("Chats", "Discussions")}
           </button>

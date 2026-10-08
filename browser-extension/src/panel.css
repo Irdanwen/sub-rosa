@@ -37,6 +37,7 @@
 /* Several blocks set their own `display`, which beats the user agent's
    `[hidden]` rule: without this the main view showed under the pairing form. */
 [hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: `hidden` must win over every block's own `display`, whatever its specificity. */
   display: none !important;
 }
 
