@@ -184,10 +184,46 @@ pub async fn get(pool: &SqlitePool, id: &str) -> Result<Connector, AppError> {
         .ok_or_else(|| error("connector_not_found"))
 }
 
+/// The id a connector's definition travels under. The account service only
+/// knows UUID objects, and a catalog connector's id is its catalog name
+/// (`sentry`), so the object is a name-based UUID of the id: every device and
+/// the browser derive the same one, and the row keeps the id its tokens,
+/// tools and triggers are filed under. Kept in a local column that never
+/// travels (`075_connector_object_ids.sql`).
+pub fn object_id(id: &str) -> String {
+    uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_URL,
+        format!("subrosa:connector:{id}").as_bytes(),
+    )
+    .hyphenated()
+    .to_string()
+}
+
+/// Names the object of every connector written before its row had one, and
+/// says how many it named: those never reached the service and have to be
+/// queued again.
+pub(crate) async fn assign_object_ids(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
+    let ids: Vec<String> = query("SELECT id FROM connectors WHERE object_id IS NULL")
+        .fetch_all(pool)
+        .await?
+        .iter()
+        .map(|row| row.get("id"))
+        .collect();
+    for id in &ids {
+        query("UPDATE connectors SET object_id=? WHERE id=? AND object_id IS NULL")
+            .bind(object_id(id))
+            .bind(id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(ids.len())
+}
+
 pub async fn insert(pool: &SqlitePool, connector: &Connector) -> Result<(), AppError> {
     let now = now();
-    query("INSERT INTO connectors(id,name,url,catalog_id,auth,enabled,tool_policy,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")
+    query("INSERT INTO connectors(id,object_id,name,url,catalog_id,auth,enabled,tool_policy,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
         .bind(&connector.id)
+        .bind(object_id(&connector.id))
         .bind(&connector.name)
         .bind(&connector.url)
         .bind(&connector.catalog_id)

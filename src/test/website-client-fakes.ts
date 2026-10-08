@@ -17,6 +17,8 @@ interface Operation {
 }
 
 /** The service's journal, in memory, with the rules of `POST /api/v1/sync`. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class FakeJournal {
   changes: Change[] = [];
   heads = new Map<string, Set<string>>();
@@ -51,6 +53,10 @@ export class FakeJournal {
 
   accept(operation: Operation): PushResult {
     this.pushes.push(operation);
+    // The service's object id is a UUID (`domain::SyncOperation`): anything
+    // else is refused before it is journaled.
+    if (!UUID.test(operation.object_id))
+      throw new ApiError("invalid_request", "The object id is not a UUID.", 422);
     const known = this.results.get(operation.operation_id);
     if (known) {
       if (known.ciphertext !== operation.ciphertext)

@@ -11,7 +11,7 @@ pub(super) use super::sync_issues::{
     isolatable_file_error, isolatable_outbox_error, issue_count, issues, reconcile_issues,
     record_issue, retry_issues,
 };
-use super::sync_tables::{Table, TABLES};
+use super::sync_tables::{object_column, object_of, Table, TABLES};
 const UUID_SQL:&str="(lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-a'||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6))))";
 fn table(name: &str) -> Result<&'static Table, AppError> {
     // A distinct authenticated wire codec is mandatory: older clients ignore
@@ -83,6 +83,8 @@ fn stays_local(t: &Table, prefix: &str) -> String {
         "transactions" | "finance_rules" => {
             " AND (SELECT sync FROM finance_settings WHERE id=1)=1".to_string()
         }
+        // A connector row is named before it can leave (`object_column`).
+        "connectors" => format!(" AND {prefix}object_id IS NOT NULL"),
         _ => String::new(),
     }
 }
@@ -102,7 +104,8 @@ pub(crate) async fn enqueue_existing(
     if !bound {
         return Ok(());
     }
-    query(&format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM {} WHERE id NOT IN (SELECT object_id FROM account_sync_outbox) AND id NOT IN (SELECT object_id FROM account_sync_heads) AND ({filter}){}",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name,stays_local(t,&format!("{}.",t.name)))).execute(pool).await?;
+    let object = object_column(t);
+    query(&format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},{object},'{}',{},0 FROM {} WHERE {object} NOT IN (SELECT object_id FROM account_sync_outbox) AND {object} NOT IN (SELECT object_id FROM account_sync_heads) AND ({filter}){}",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name,stays_local(t,&format!("{}.",t.name)))).execute(pool).await?;
     Ok(())
 }
 /// For a row that belongs to a chat through its `task_id`.
@@ -219,7 +222,7 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
                 String::new()
             } + &stays_local(t, prefix);
             let name = format!("account_sync_{}_{}", t.name, action.to_lowercase());
-            let sql=format!("CREATE TRIGGER {name} AFTER {action} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN {} END",t.name,enqueue(&format!("{prefix}id"),t.kind,&snapshot_body(t,prefix),deleted,""));
+            let sql=format!("CREATE TRIGGER {name} AFTER {action} ON {} WHEN (SELECT account_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1){gate} BEGIN {} END",t.name,enqueue(&format!("{prefix}{}",object_column(t)),t.kind,&snapshot_body(t,prefix),deleted,""));
             managed.push((name, sql));
         }
     }
@@ -264,7 +267,8 @@ pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppErro
         // The first inventory is captured in the same write transaction as enable.
         if count == 0 {
             for t in TABLES {
-                let sql=format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM {} WHERE id NOT IN (SELECT object_id FROM account_sync_outbox){}",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name,stays_local(t,&format!("{}.",t.name)));
+                let object = object_column(t);
+                let sql=format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},{object},'{}',{},0 FROM {} WHERE {object} NOT IN (SELECT object_id FROM account_sync_outbox){}",t.kind,snapshot_body(t,&format!("{}.",t.name)),t.name,stays_local(t,&format!("{}.",t.name)));
                 query(&sql).execute(&mut *tx).await?;
             }
         }
@@ -765,7 +769,10 @@ fn verify(s: &Session, key: &[u8; 32], c: &Change) -> Result<Value, AppError> {
             return Err(error("sync_format_invalid"));
         }
     }
-    if body["row"]["id"] != c.object_id {
+    let row_id = body["row"]["id"]
+        .as_str()
+        .ok_or_else(|| error("sync_format_invalid"))?;
+    if object_of(name, row_id) != c.object_id {
         return Err(error("sync_format_invalid"));
     }
     Ok(body)
@@ -916,6 +923,18 @@ pub(super) async fn delete_locally(
                 .await?;
         }
         "account_session_folders" => super::session_folders::delete_locally(conn, id).await?,
+        // A connector is deleted by its object, and what this device kept
+        // about it goes with it, as its own removal would take it. Its
+        // keychain entries are this device's, and a sign-in reuses them.
+        "connectors" => {
+            for sql in [
+                "DELETE FROM connector_state WHERE connector_id IN (SELECT id FROM connectors WHERE object_id=?)",
+                "DELETE FROM connector_triggers WHERE connector_id IN (SELECT id FROM connectors WHERE object_id=?)",
+                "DELETE FROM connectors WHERE object_id=?",
+            ] {
+                query(sql).bind(id).execute(&mut *conn).await?;
+            }
+        }
         "account_note_folders" => {
             query("DELETE FROM note_folders WHERE (note_id,folder_id) IN (SELECT note_id,folder_id FROM account_note_folders WHERE id=?)")
                 .bind(id)
@@ -1080,6 +1099,10 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
     }
     if t.name == "ingests" {
         row.insert("status".into(), json!("done"));
+    }
+    // The object a connector arrived under is the one it leaves under again.
+    if t.name == "connectors" {
+        row.insert("object_id".into(), json!(c.object_id));
     }
     // A memory without a scope is the person's own (see `row_json`).
     if t.name == "memories" && !row.contains_key("scope") {
@@ -1459,9 +1482,10 @@ pub(super) async fn resolve_in_store(
         } else {
             let t = table(name)?;
             let local = query(&format!(
-                "SELECT {} AS body FROM {} WHERE id=?",
+                "SELECT {} AS body FROM {} WHERE {}=?",
                 snapshot_body(t, &format!("{}.", t.name)),
-                t.name
+                t.name,
+                object_column(t)
             ))
             .bind(&c.object_id)
             .fetch_optional(&mut *tx)
@@ -1712,3 +1736,7 @@ mod tests;
 #[cfg(test)]
 #[path = "sync_web_tests.rs"]
 mod web_tests;
+
+#[cfg(test)]
+#[path = "sync_connector_tests.rs"]
+mod connector_tests;

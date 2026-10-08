@@ -111,3 +111,9 @@ ids (`docs/accounts-sync-contract.md`), so a tab cannot count on the
 - The connector row's non-UUID object id remains a defect of ADR-0092's
   synchronisation; this design does not depend on it, and fixing it is
   separate work.
+
+## Addendum (2026-10-08)
+
+The definition row's non-UUID object id is fixed by the ADR-0092 addendum of
+the same date: a connector now travels under a UUID derived from its id. The
+relay still carries everything a tab needs, so this design is unchanged.
