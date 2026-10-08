@@ -89,7 +89,7 @@ macro_rules! with_session {
                         $pool,
                         &$connector.id,
                         "needs_sign_in",
-                        Some("Sign in again to keep using this connector."),
+                        Some(&crate::tr!("Sign in again to keep using this connector.")),
                     )
                     .await;
                     break Err(McpError::Unauthorized {
@@ -103,7 +103,7 @@ macro_rules! with_session {
                         $pool,
                         &$connector.id,
                         "needs_sign_in",
-                        Some("Sign in again to keep using this connector."),
+                        Some(&crate::tr!("Sign in again to keep using this connector.")),
                     )
                     .await;
                     break Err(McpError::Unauthorized {
@@ -195,10 +195,14 @@ pub async fn begin_sign_in(pool: &SqlitePool, connector: &Connector) -> Result<S
     }
     let endpoint = super::mcp::validate_endpoint(&connector.url)?;
     let (metadata, scope) = match Session::open(&endpoint, None).await {
-        // It answers without a token: nothing to sign in to.
+        // It answers without a token, but it was added to be signed in to:
+        // Hugging Face, for one, serves a public subset anonymously and the
+        // person's own account after a sign-in. Its metadata says how; a
+        // server that publishes none is refused below, and the person adds
+        // it with "No sign-in" instead.
         Ok(session) => {
             session.close().await;
-            return Ok(SignIn::Connected);
+            (None, None)
         }
         Err(McpError::Unauthorized {
             resource_metadata,

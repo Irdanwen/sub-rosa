@@ -14,24 +14,23 @@ pub(super) struct TurnExtensions {
     connectors_note: Option<&'static str>,
 }
 
-/// Adds the connectors' and skills' tools to the turn. Only a general
-/// conversation gets either: a custom assistant keeps what its definition
-/// grants (ADR-0058).
+/// Adds the connectors' and skills' tools to the turn. A general
+/// conversation gets every connector and the skill packs; a custom assistant
+/// only the connectors its definition names, and no skill pack (ADR-0058).
 pub(super) async fn prepare(
     repos: &Repositories,
     task_id: &str,
     last_message: &str,
-    custom_assistant: bool,
+    grant: &crate::connectors::agent::Grant,
     tools: &mut Vec<Value>,
 ) -> TurnExtensions {
-    if custom_assistant {
+    let connectors_note = crate::connectors::agent::offer(&repos.pool, task_id, tools, grant).await;
+    if *grant != crate::connectors::agent::Grant::General {
         return TurnExtensions {
             skills: SkillTurn::default(),
-            connectors_note: None,
+            connectors_note,
         };
     }
-    let connectors_note =
-        crate::connectors::agent::offer(&repos.pool, task_id, tools, custom_assistant).await;
     let skills = crate::skill_packs::agent::for_turn(&repos.pool, last_message).await;
     skills.apply(tools);
     TurnExtensions {

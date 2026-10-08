@@ -1,33 +1,36 @@
-import { useMemo } from "react";
+import { useCallback } from "react";
+import type { Connector } from "../../lib/connectors";
 import { useConnectors } from "../../lib/connectors";
 import { useMcpServers } from "../../lib/hermes-admin";
 import { t } from "../../lib/i18n";
-import { hermesMcpOauthLogin } from "../../lib/tauri";
-import { ConnectorsPanel, type HermesConnectorBridge } from "../connectors/ConnectorsPanel";
+import { ConnectorsPanel } from "../connectors/ConnectorsPanel";
 import { SkillPacksPanel } from "../connectors/SkillPacksPanel";
 
 /**
- * Settings › Connectors on the computer (ADR-0092). One catalog for both
- * shells: connecting here writes the agent runtime's MCP server list (and
- * signs in there) and files the connector's definition, which reaches the
- * phones through the account. Skill packs sit beside it, for the same reason.
+ * Settings › Connectors on the computer (ADR-0092 and its addendum). One
+ * catalog for every shell: a connector is signed in here, in the app, and
+ * the computer's agent reaches it through the app's own `subrosa_connectors`
+ * server, under the same rules as the phones. Skill packs sit beside it, for
+ * the same reason.
  */
 export function ConnectorsSection() {
   const model = useConnectors();
   const servers = useMcpServers("sandboxed");
-  const hermes = useMemo<HermesConnectorBridge | null>(() => {
-    if (servers.status !== "ready") return null;
-    return {
-      has: (name) => servers.servers.some((server) => server.name === name),
-      add: (server) =>
-        servers.add({
-          name: server.id,
-          url: server.url,
-          ...(server.auth === "oauth" ? { auth: "oauth" } : {}),
-        }),
-      signIn: (name) => hermesMcpOauthLogin({ mode: "sandboxed", server: name }),
-    };
-  }, [servers]);
+  // Before the addendum, connecting from the catalog also wrote the server
+  // into the agent's own MCP list. Removing the connector removes that copy
+  // too, when it is still the catalog's (same name, same address).
+  const onRemoved = useCallback(
+    async (connector: Connector) => {
+      const legacy = servers.servers.find(
+        (server) =>
+          connector.catalogId !== "" &&
+          server.name === connector.catalogId &&
+          server.url === connector.url,
+      );
+      if (legacy) await servers.remove(legacy.name);
+    },
+    [servers],
+  );
   return (
     <section className="settings-group" aria-labelledby="connectors-heading">
       <h2 id="connectors-heading" className="settings-group-heading">
@@ -35,7 +38,7 @@ export function ConnectorsSection() {
       </h2>
       <p className="settings-group-description">
         {t(
-          "Let the assistant read and act in your other services. Actions that change something ask you first, unless you allow them. On this computer, connecting also adds the server to the agent's MCP servers.",
+          "Let the assistant read and act in your other services. Actions that change something ask you first, unless you allow them. On this computer the agent uses the same connectors and the same rules, through Sub Rosa.",
         )}
       </p>
       <div className="settings-card">
@@ -43,7 +46,7 @@ export function ConnectorsSection() {
           connectors={model.connectors}
           catalog={model.catalog}
           refresh={model.refresh}
-          hermes={hermes}
+          onRemoved={onRemoved}
         />
       </div>
       <h2 className="settings-group-heading">{t("Skill packs")}</h2>

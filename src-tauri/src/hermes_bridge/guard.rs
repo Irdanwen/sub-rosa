@@ -9,7 +9,14 @@
 //! (`hermes/subrosa_guard.py`), enables it in the `config.yaml` it writes, and
 //! keeps a ledger next to it: the temporary chats open right now and the
 //! protected-mode switches. The plugin refuses the guarded tools from it.
+//!
+//! The same hook carries the connectors' rules (ADR-0092 addendum): the
+//! ledger names each connector tool's rule, the plugin refuses what is off
+//! and sends what asks first through the runtime's approval, and the proxy
+//! reads the same ledger back ([`published_connector_rule`]) to check that
+//! the plugin knew the rule in force.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::domain::types::AppError;
@@ -18,7 +25,7 @@ const PLUGIN_NAME: &str = "subrosa_guard";
 const PLUGIN_SOURCE: &str = include_str!("../hermes/subrosa_guard.py");
 const PLUGIN_MANIFEST: &str = "name: subrosa_guard\n\
 version: \"1\"\n\
-description: \"Sub Rosa: no memory or skill writes from a temporary chat, and the protected mode switches.\"\n\
+description: \"Sub Rosa: no memory or skill writes from a temporary chat, the protected mode switches, and connector rules.\"\n\
 author: Sub Rosa\n\
 hooks:\n  - pre_tool_call\n";
 const LEDGER_NAME: &str = "subrosa-guard.json";
@@ -48,12 +55,46 @@ pub fn render_ledger(
     temporary_sessions: &[String],
     restrictions: &crate::protected_mode::Restrictions,
 ) -> String {
+    render_ledger_with(temporary_sessions, restrictions, &BTreeMap::new())
+}
+
+/// The ledger with the connectors' rules, by the runtime's tool names.
+pub fn render_ledger_with(
+    temporary_sessions: &[String],
+    restrictions: &crate::protected_mode::Restrictions,
+    connector_rules: &BTreeMap<String, serde_json::Value>,
+) -> String {
     serde_json::json!({
         "temporarySessions": temporary_sessions,
         "memoryOff": restrictions.memory_off,
         "pastChatsOff": restrictions.past_chats_off,
+        "connectorRules": connector_rules,
     })
     .to_string()
+}
+
+/// The rule the ledger on disk gives a connector tool, as the plugin read it.
+pub fn published_connector_rule(hermes_home: &Path, name: &str) -> Option<String> {
+    let raw = std::fs::read_to_string(hermes_home.join(LEDGER_NAME)).ok()?;
+    let ledger: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    ledger
+        .pointer("/connectorRules")?
+        .get(name)?
+        .get("rule")?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// Rewrites the ledger in the background, after a connector changed here or
+/// arrived from another device. Best effort: a runtime that reads a stale
+/// ledger asks first, and the proxy refuses what it should have asked.
+pub fn publish_detached(app: &tauri::AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = publish(&app).await {
+            tracing::debug!(code = %error.code, "guard ledger not rewritten");
+        }
+    });
 }
 
 /// Rewrites the ledger from the database and the protected switches. A
@@ -63,15 +104,22 @@ pub async fn publish(app: &tauri::AppHandle) -> Result<(), AppError> {
     let hermes_home = super::resolve_june_hermes_home(app)?;
     let pool = crate::commands::repositories(app).await?.pool.clone();
     let sessions = crate::temporary_chat::session_ids(&pool).await?;
+    let connector_rules = crate::connectors::hermes::ledger_rules(&pool).await;
     write_ledger(
         &hermes_home,
-        &render_ledger(&sessions, &crate::protected_mode::restrictions()),
+        &render_ledger_with(
+            &sessions,
+            &crate::protected_mode::restrictions(),
+            &connector_rules,
+        ),
     )
 }
 
 /// The plugin and a fresh ledger, before a runtime starts.
 pub(super) async fn install(app: &tauri::AppHandle, hermes_home: &Path) -> Result<(), AppError> {
     install_plugin(hermes_home).map_err(failed)?;
+    // The connectors' MCP server sits beside the other built-in ones.
+    super::connectors_mcp::install(app)?;
     publish(app).await
 }
 
@@ -133,6 +181,7 @@ mod tests {
                 "temporarySessions": ["20261007_101010_abc123"],
                 "memoryOff": true,
                 "pastChatsOff": false,
+                "connectorRules": {},
             })
         );
     }
@@ -224,6 +273,95 @@ mod tests {
             run_plugin(home.path(), &[("memory", "x"), ("web_search", "x")]),
             ["block", "allow"]
         );
+    }
+
+    /// A connector tool runs, is refused or goes to the runtime's approval
+    /// as the ledger says, and a name or a ledger it cannot read asks.
+    #[test]
+    fn the_plugin_applies_the_connector_rules_and_asks_when_unsure() {
+        if Command::new("python3").arg("--version").output().is_err() {
+            eprintln!("python3 not found: the plugin's own test is skipped");
+            return;
+        }
+        let home = tempfile::tempdir().unwrap();
+        install_plugin(home.path()).unwrap();
+        let mut rules = BTreeMap::new();
+        let name = |tool: &str| format!("mcp__subrosa_connectors__linear__{tool}");
+        rules.insert(name("search"), serde_json::json!({"rule": "allow"}));
+        rules.insert(name("delete"), serde_json::json!({"rule": "deny"}));
+        rules.insert(
+            name("create"),
+            serde_json::json!({"rule": "ask", "message": "Linear wants to run \"create\"."}),
+        );
+        write_ledger(
+            home.path(),
+            &render_ledger_with(&[], &Restrictions::default(), &rules),
+        )
+        .unwrap();
+        let verdicts = run_connector_plugin(
+            home.path(),
+            &[
+                name("search"),
+                name("delete"),
+                name("create"),
+                name("unlisted"),
+                "web_search".to_string(),
+            ],
+        );
+        assert_eq!(verdicts[0], "none");
+        assert!(verdicts[1].starts_with("block|This action is turned off"));
+        assert!(
+            verdicts[2].starts_with("approve|Linear wants to run \"create\".\n{\"title\": \"x\"}")
+        );
+        assert!(verdicts[2].ends_with("|subrosa_connector:mcp__subrosa_connectors__linear__create"));
+        assert!(verdicts[3].starts_with("approve|"), "an unknown tool asks");
+        assert_eq!(
+            verdicts[4], "none",
+            "other tools are not the connectors' business"
+        );
+        assert_eq!(
+            published_connector_rule(home.path(), &name("delete")).as_deref(),
+            Some("deny")
+        );
+        assert_eq!(
+            published_connector_rule(home.path(), &name("unlisted")),
+            None
+        );
+
+        std::fs::write(home.path().join(LEDGER_NAME), "{not json").unwrap();
+        let verdicts = run_connector_plugin(home.path(), &[name("search")]);
+        assert!(
+            verdicts[0].starts_with("approve|"),
+            "an unreadable ledger asks"
+        );
+    }
+
+    fn run_connector_plugin(home: &Path, tools: &[String]) -> Vec<String> {
+        let output = Command::new("python3")
+            .arg("-c")
+            .arg(
+                "import json, sys, importlib.util\n\
+                 spec = importlib.util.spec_from_file_location('guard', sys.argv[1])\n\
+                 guard = importlib.util.module_from_spec(spec)\n\
+                 spec.loader.exec_module(guard)\n\
+                 for tool in json.loads(sys.argv[2]):\n\
+                 \x20   v = guard._pre_tool_call(tool_name=tool, session_id='s', args={'title': 'x'})\n\
+                 \x20   print(json.dumps('none' if v is None else '|'.join([v['action'], v.get('message', ''), v.get('rule_key', '')])))\n",
+            )
+            .arg(home.join("plugins").join(PLUGIN_NAME).join("__init__.py"))
+            .arg(serde_json::to_string(tools).unwrap())
+            .env("HERMES_HOME", home)
+            .output()
+            .expect("run python3");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|line| serde_json::from_str::<String>(line).unwrap())
+            .collect()
     }
 
     /// The `sessions` table the plugin walks for a session's parents, with a

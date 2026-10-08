@@ -67,13 +67,16 @@ impl McpError {
             ),
             McpError::Status(status) => AppError::new(
                 "connector_status",
-                format!("The connector answered with status {status}."),
+                crate::tr!(
+                    "The connector answered with status {status}.",
+                    status = status
+                ),
             ),
             McpError::Rpc { message, .. } => AppError::new(
                 "connector_refused",
-                format!(
-                    "The connector refused: {}",
-                    message.chars().take(300).collect::<String>()
+                crate::tr!(
+                    "The connector refused: {reason}",
+                    reason = message.chars().take(300).collect::<String>()
                 ),
             ),
             McpError::TooLarge => AppError::new(

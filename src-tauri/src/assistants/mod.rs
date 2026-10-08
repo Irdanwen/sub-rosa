@@ -120,6 +120,20 @@ pub(crate) fn is_tool_key(key: &str) -> bool {
         "web" | "image" | "video" | "music" | "speech" | "documents"
     )
 }
+/// A tool key, or the permission to use one connector (`connector:<id>`,
+/// ADR-0092). A connector id is a catalog id or a slug with a short suffix.
+pub(crate) fn is_permission_key(key: &str) -> bool {
+    is_tool_key(key)
+        || key
+            .strip_prefix(crate::connectors::agent::PERMISSION_PREFIX)
+            .is_some_and(|id| {
+                !id.is_empty()
+                    && id.len() <= 64
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+            })
+}
 pub async fn save(
     pool: &SqlitePool,
     mut definition: AssistantDefinition,
@@ -131,7 +145,8 @@ pub async fn save(
         || definition.instructions.len() > 64000
         || definition.opening_message.len() > 8000
         || definition.model.len() > 200
-        || definition.tools.iter().any(|key| !is_tool_key(key))
+        || definition.tools.len() > 64
+        || definition.tools.iter().any(|key| !is_permission_key(key))
     {
         return Err(error("assistant_invalid"));
     }
@@ -280,5 +295,61 @@ mod tests {
             save(&pool, malicious).await.unwrap_err().code,
             "assistant_image_invalid"
         );
+    }
+}
+
+#[cfg(test)]
+mod permission_tests {
+    use super::*;
+
+    #[test]
+    fn an_assistant_may_be_granted_connectors_by_id_and_nothing_looser() {
+        for key in [
+            "web",
+            "documents",
+            "connector:linear",
+            "connector:mine-1a2b3c",
+        ] {
+            assert!(is_permission_key(key), "{key}");
+        }
+        for key in [
+            "connector:",
+            "connector:../x",
+            "connector:a b",
+            "connectors",
+            "shell",
+        ] {
+            assert!(!is_permission_key(key), "{key}");
+        }
+        // A drafted assistant is never handed a connector by the model.
+        assert!(!is_tool_key("connector:linear"));
+        let snapshot = runtime::AssistantSnapshot {
+            definition: AssistantDefinition {
+                tools: vec!["web".into(), "connector:linear".into()],
+                ..AssistantDefinition::default()
+            },
+            references: Vec::new(),
+        };
+        assert_eq!(
+            crate::connectors::agent::Grant::of(Some(&snapshot)),
+            crate::connectors::agent::Grant::Only(vec!["linear".into()])
+        );
+        assert!(runtime::allows_tool(
+            Some(&snapshot),
+            "linear__search",
+            false
+        ));
+        let without = runtime::AssistantSnapshot {
+            definition: AssistantDefinition {
+                tools: vec!["web".into()],
+                ..AssistantDefinition::default()
+            },
+            references: Vec::new(),
+        };
+        assert!(!runtime::allows_tool(
+            Some(&without),
+            "linear__search",
+            false
+        ));
     }
 }

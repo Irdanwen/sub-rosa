@@ -862,7 +862,7 @@ async fn the_agent_is_offered_namespaced_tools_and_asks_before_a_write() {
     insert(&pool, &row).await.unwrap();
 
     let mut tools = Vec::new();
-    let note = agent::offer(&pool, "task-a", &mut tools, false).await;
+    let note = agent::offer(&pool, "task-a", &mut tools, &agent::Grant::General).await;
     assert_eq!(note, Some(agent::PROMPT_NOTE));
     let names: Vec<&str> = tools
         .iter()
@@ -879,10 +879,32 @@ async fn the_agent_is_offered_namespaced_tools_and_asks_before_a_write() {
         .unwrap();
     assert!(create.starts_with("[Tracker]") && create.contains("confirms"));
 
-    // A custom assistant gets none of it.
+    // A custom assistant gets only the connectors it was granted.
     let mut none = Vec::new();
-    assert_eq!(agent::offer(&pool, "task-b", &mut none, true).await, None);
+    let ungranted = agent::Grant::for_assistant(&["web".to_string()]);
+    assert_eq!(
+        agent::offer(&pool, "task-b", &mut none, &ungranted).await,
+        None
+    );
     assert!(none.is_empty());
+    let mut other = Vec::new();
+    let elsewhere = agent::Grant::for_assistant(&["connector:linear".to_string()]);
+    assert_eq!(
+        agent::offer(&pool, "task-b", &mut other, &elsewhere).await,
+        None
+    );
+    let mut granted = Vec::new();
+    let tracker = agent::Grant::for_assistant(&["web".into(), "connector:tracker".into()]);
+    assert_eq!(
+        agent::offer(&pool, "task-c", &mut granted, &tracker).await,
+        Some(agent::PROMPT_NOTE)
+    );
+    assert_eq!(granted.len(), 2);
+    // And a name offered to another conversation is not this one's.
+    let foreign = agent::dispatch_with(&pool, "task-b", "tracker__search", &json!({}), |_| {})
+        .await
+        .unwrap();
+    assert!(foreign.contains("not available"));
 
     // A read runs at once and leaves a card.
     let read = agent::dispatch_with(
@@ -1143,3 +1165,11 @@ fn gmail_is_present_but_gated() {
             .any(|tool| tool.name.starts_with("gmail")));
     }
 }
+
+// GitHub's device flow and the computer's runtime, each in its own file.
+mod github_tests;
+#[cfg(desktop)]
+mod hermes_tests;
+mod sign_in_tests;
+// Real servers, run by hand: `cargo test real_server -- --ignored`.
+mod real_server_tests;

@@ -4,8 +4,8 @@
  * The facade over `src-tauri/src/connectors/`. Definitions synchronise with
  * the account; tokens stay in each device's keychain and never cross into the
  * webview, so nothing here ever holds one. On the computer the general
- * assistant runs on Hermes, whose MCP configuration the catalog also writes
- * (see `ConnectorsSection`).
+ * assistant runs on Hermes, which reaches these same connectors through the
+ * app: one sign-in per device and one set of rules (ADR-0092 addendum).
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -28,7 +28,7 @@ export type ConnectorTool = {
   interactive: boolean;
 };
 
-export type ConnectorAuth = "oauth" | "none" | "token" | "google" | "microsoft";
+export type ConnectorAuth = "oauth" | "none" | "token" | "google" | "microsoft" | "github";
 
 export type Connector = {
   id: string;
@@ -54,7 +54,7 @@ export type CatalogServer = {
 };
 
 export type CatalogBuiltin = {
-  id: "google" | "microsoft";
+  id: "google" | "microsoft" | "github";
   name: string;
   available: boolean;
   description: string;
@@ -63,7 +63,14 @@ export type CatalogBuiltin = {
 
 export type ConnectorCatalog = { servers: CatalogServer[]; builtins: CatalogBuiltin[] };
 
-export type SignInResult = { authUrl: string | null; connected: boolean };
+/** A device sign-in (GitHub): the code the person types, and where. */
+export type DeviceSignIn = { userCode: string; verificationUri: string; expiresIn: number };
+
+export type SignInResult = {
+  authUrl: string | null;
+  connected: boolean;
+  device: DeviceSignIn | null;
+};
 
 export function connectorCatalog() {
   return invoke<ConnectorCatalog>("connector_catalog");

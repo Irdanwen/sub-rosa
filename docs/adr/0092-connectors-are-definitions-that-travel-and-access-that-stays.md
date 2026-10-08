@@ -145,3 +145,71 @@ through one rule per tool, and every "ask" is a row.**
   `subrosa://connector/callback` redirect at registration.
 - Desktop custom assistants and Hermes runs do not use the native
   connectors; Hermes has its own MCP servers, and the catalog fills both.
+
+## Addendum (2026-10-08): one runtime for every shell, GitHub by device flow
+
+The first cut left the computer with two connector systems. Connecting from
+the catalog wrote the server into Hermes's own MCP list and signed in there,
+so Hermes held a second token, never saw the person's allow/ask/deny rules,
+offered neither Google nor Microsoft, and kept the server after the
+connector was removed. This addendum supersedes the "On the computer,
+connecting from the catalog also writes Hermes's MCP server list" sentence,
+the "A custom assistant keeps exactly its definition's tools" bullet, and
+the last consequence above.
+
+- **Hermes reaches the connectors through the app.** The app registers one
+  built-in MCP server, `subrosa_connectors` (`hermes/subrosa_connectors_mcp.py`,
+  standard library only), beside `june_web` and the others. It holds no
+  connector, no token and no rule: `tools/list` and `tools/call` go to
+  `POST /v1/connectors` on the loopback provider proxy, where
+  `connectors::hermes` offers exactly what agent-lite offers
+  (`agent::usable`) and runs calls through the same runtime. One sign-in per
+  device; removing or turning off a connector removes its tools, which the
+  server announces with `notifications/tools/list_changed` (it polls the
+  app's fingerprint every twenty seconds). The catalog no longer writes
+  Hermes's MCP list; removing a connector also removes a copy an earlier
+  build wrote there (same name and address).
+- **"Ask" is Hermes's own approval.** The guard plugin (ADR-0083) reads a
+  `connectorRules` map from its ledger, keyed by the runtime's tool name
+  (`mcp__subrosa_connectors__<connector>__<tool>`): `allow` runs, `deny` is
+  refused, and `ask`, a name it does not find or a ledger it cannot read
+  answers `approve`, which stops the call on the runtime's human gate with a
+  sentence the app wrote in the person's language and the call's arguments.
+  The ledger is rewritten whenever a connector changes on this device and
+  after every synchronisation. The proxy then checks again what the plugin
+  could have known: `deny` is refused whatever the ledger says, and an `ask`
+  the ledger still called `allow` is refused (nobody was asked) until the
+  ledger catches up. "Always" is not offered for a connector approval: the
+  rule in Settings is where a tool is allowed for good. Routines run with
+  `cron_mode: deny`, so an "ask" tool never runs unattended.
+- **Custom assistants get a "Connectors" permission.** A definition grants a
+  connector with a `connector:<id>` entry in its tools (no new column, so it
+  synchronises like the rest of the definition). Agent-lite, which runs
+  every custom assistant on every shell, offers only those connectors
+  (`agent::Grant::Only`), under the same rules. Skill packs stay with general
+  conversations.
+- **GitHub is built in, signed in with the device flow.** GitHub's remote MCP
+  server (`https://api.githubcopilot.com/mcp/`, documented in
+  `github/github-mcp-server`) names `https://github.com/login/oauth` as its
+  authorization server in its protected resource metadata, which serves
+  only clients registered by hand. The app's own OAuth app signs in with the
+  device flow (RFC 8628), which needs a client id and no secret
+  (`SUBROSA_GITHUB_CLIENT_ID` at build time; a build without one does not
+  list GitHub). The person types a code on github.com; the app polls in
+  process, bounded by the code's lifetime, and only the latest start may
+  finish. The token is the server's bearer; every tool there follows the
+  usual rules. A device sign-in frozen by a phone's suspension is started
+  again, never resumed from a row (ADR-0018 does not apply to a sign-in the
+  person is watching).
+- **Real servers.** Ignored tests (`cargo test real_server -- --ignored`)
+  drive Cloudflare's documentation server through `initialize`,
+  `tools/list` and `tools/call` and run OAuth discovery against Linear,
+  Notion, Hugging Face and GitHub without signing in. They showed that
+  Hugging Face answers without a token while publishing OAuth metadata: an
+  OAuth connector that answers anonymously is now signed in to through its
+  metadata instead of being marked connected with no credential (which had
+  offered none of its tools).
+
+Release gates added: registering the GitHub OAuth app with the device flow
+enabled, and a check on real hardware that Hermes's approval card shows the
+connector sentence.

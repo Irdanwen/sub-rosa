@@ -38,6 +38,7 @@ import {
   type AgentTaskDto,
   type VeniceModelDto,
 } from "../../lib/tauri";
+import { AssistantConnectors } from "../connectors/AssistantConnectors";
 import { BrandGradientMark } from "../brand/Marks";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { AssistantChat } from "./AssistantChat";
@@ -747,6 +748,10 @@ function AssistantsSurface({
                         </span>
                       </label>
                     ))}
+                    <AssistantConnectors
+                      tools={draft.tools}
+                      onChange={(tools) => patch({ tools })}
+                    />
                     <hr />
                     <label className="assistant-option">
                       <input

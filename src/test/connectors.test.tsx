@@ -1,6 +1,5 @@
 // Connectors (ADR-0092): the cards a connector call leaves under a reply, the
-// one catalog both shells share, and what the desktop adds to the agent
-// runtime when it connects one.
+// one catalog every shell shares, and GitHub's device sign-in.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -156,7 +155,7 @@ describe("the connectors panel", () => {
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "connector_add") return connector({ signedIn: false, tools: [] });
       if (command === "connector_sign_in")
-        return { authUrl: "https://linear.app/oauth", connected: false };
+        return { authUrl: "https://linear.app/oauth", connected: false, device: null };
       return undefined;
     });
     const refresh = vi.fn();
@@ -174,16 +173,83 @@ describe("the connectors panel", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("on the computer, adds the server to the agent runtime and signs in there", async () => {
-    mocks.invoke.mockImplementation(async (command: string) =>
-      command === "connector_add" ? connector({ signedIn: false }) : undefined,
-    );
-    const hermes = { has: vi.fn(() => false), add: vi.fn(async () => true), signIn: vi.fn() };
-    render(<ConnectorsPanel connectors={[]} catalog={CATALOG} refresh={vi.fn()} hermes={hermes} />);
+  it("connects the same way on every shell, without a second sign-in for the agent", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "connector_add") return connector({ signedIn: false });
+      if (command === "connector_sign_in")
+        return { authUrl: "https://linear.app/oauth", connected: false, device: null };
+      return undefined;
+    });
+    render(<ConnectorsPanel connectors={[]} catalog={CATALOG} refresh={vi.fn()} />);
     fireEvent.click(screen.getAllByRole("button", { name: "Connect" }).at(-1) as HTMLElement);
-    await waitFor(() => expect(hermes.signIn).toHaveBeenCalledWith("linear"));
-    expect(hermes.add).toHaveBeenCalledWith(CATALOG.servers[0]);
-    expect(mocks.invoke).not.toHaveBeenCalledWith("connector_sign_in", expect.anything());
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("connector_sign_in", { id: "linear" }),
+    );
+    // Nothing is written into the agent runtime's own MCP list any more.
+    expect(mocks.invoke).not.toHaveBeenCalledWith("hermes_mcp_oauth_login", expect.anything());
+  });
+
+  it("shows GitHub's device code until the sign-in lands", async () => {
+    const github = {
+      id: "github" as const,
+      name: "GitHub",
+      available: true,
+      description: "",
+      gated: [],
+    };
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "connector_add")
+        return connector({ id: "github", name: "GitHub", auth: "github", signedIn: false });
+      if (command === "connector_sign_in")
+        return {
+          authUrl: "https://github.com/login/device",
+          connected: false,
+          device: {
+            userCode: "WDJB-MJHT",
+            verificationUri: "https://github.com/login/device",
+            expiresIn: 900,
+          },
+        };
+      return undefined;
+    });
+    const catalog = { ...CATALOG, builtins: [...CATALOG.builtins, github] };
+    const { rerender } = render(
+      <ConnectorsPanel connectors={[]} catalog={catalog} refresh={vi.fn()} />,
+    );
+    expect(screen.getByText(/Repositories, issues and pull requests/)).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Connect" })[1] as HTMLElement);
+    expect(await screen.findByText("WDJB-MJHT")).toBeTruthy();
+    expect(mocks.invoke).toHaveBeenCalledWith("connector_add", {
+      request: { catalogId: "github" },
+    });
+    // Once GitHub is signed in, the code goes away by itself.
+    rerender(
+      <ConnectorsPanel
+        connectors={[connector({ id: "github", name: "GitHub", auth: "github" })]}
+        catalog={catalog}
+        refresh={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("WDJB-MJHT")).toBeNull();
+  });
+
+  it("tells the shell when a connector is removed", async () => {
+    mocks.invoke.mockResolvedValue(undefined);
+    const onRemoved = vi.fn(async () => undefined);
+    render(
+      <ConnectorsPanel
+        connectors={[connector()]}
+        catalog={CATALOG}
+        refresh={vi.fn()}
+        onRemoved={onRemoved}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(onRemoved).toHaveBeenCalledWith(expect.objectContaining({ id: "linear" })),
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith("connector_remove", { id: "linear" });
+    expect(await screen.findByText("Linear removed.")).toBeTruthy();
   });
 
   it("lets each tool be allowed, asked about or turned off", async () => {

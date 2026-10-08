@@ -8,10 +8,10 @@
 //! this turn offered and applies the rule again, so a tool the model invents
 //! or one the person turned off since does not run.
 //!
-//! Offered only in a general conversation, on the phone or a computer, and in
-//! a scheduled run whose assignment ticks the connectors group. A custom
-//! assistant keeps the tools its definition grants (ADR-0058), which do not
-//! include connectors.
+//! Offered in a general conversation, on the phone or a computer, in a
+//! scheduled run whose assignment ticks the connectors group, and to a custom
+//! assistant for exactly the connectors its definition names (ADR-0058, its
+//! "Connectors" permission: `connector:<id>` entries in its tools).
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -54,10 +54,56 @@ pub fn is_connector_tool(name: &str) -> bool {
     name.contains("__")
 }
 
-/// Whether this turn may be offered connectors at all: a general chat, and,
-/// inside a scheduled run, only when its assignment allows the group.
-pub fn allowed_here(custom_assistant: bool) -> bool {
-    !custom_assistant && crate::assignments::lite::scoped_allows("connectors") != Some(false)
+/// The prefix of an assistant's permission for one connector, in its tools.
+pub const PERMISSION_PREFIX: &str = "connector:";
+
+/// Which connectors a turn may reach.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Grant {
+    /// A general conversation: every enabled connector.
+    General,
+    /// A custom assistant: only the connectors its definition names.
+    Only(Vec<String>),
+}
+
+impl Grant {
+    /// What an assistant's tools grant: its `connector:<id>` entries.
+    pub fn for_assistant(tools: &[String]) -> Self {
+        Self::Only(
+            tools
+                .iter()
+                .filter_map(|tool| tool.strip_prefix(PERMISSION_PREFIX))
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .collect(),
+        )
+    }
+
+    /// The grant of a turn: general without an assistant, the assistant's own
+    /// list with one.
+    pub fn of(snapshot: Option<&crate::assistants::runtime::AssistantSnapshot>) -> Self {
+        snapshot.map_or(Self::General, |snapshot| {
+            Self::for_assistant(&snapshot.definition.tools)
+        })
+    }
+
+    pub fn admits(&self, connector_id: &str) -> bool {
+        match self {
+            Self::General => true,
+            Self::Only(ids) => ids.iter().any(|id| id == connector_id),
+        }
+    }
+}
+
+/// Whether this turn may be offered connectors at all: a general chat or an
+/// assistant granted at least one, and, inside a scheduled run, only when its
+/// assignment allows the group.
+pub fn allowed_here(grant: &Grant) -> bool {
+    let granted = match grant {
+        Grant::General => true,
+        Grant::Only(ids) => !ids.is_empty(),
+    };
+    granted && crate::assignments::lite::scoped_allows("connectors") != Some(false)
 }
 
 /// The function name a tool goes by in a conversation: letters, digits, `_`
@@ -78,7 +124,7 @@ pub fn function_name(connector: &Connector, tool: &str) -> String {
     name
 }
 
-fn declaration(
+pub(crate) fn declaration(
     connector: &Connector,
     tool: &super::mcp::ToolInfo,
     name: &str,
@@ -109,21 +155,29 @@ fn stale(fetched_at: Option<&str>) -> bool {
         })
 }
 
-/// Adds the connectors' tools to a turn's declarations and remembers where
-/// each name goes. Returns the prompt note when anything was offered.
-pub async fn offer(
-    pool: &SqlitePool,
-    task_id: &str,
-    tools: &mut Vec<Value>,
-    custom_assistant: bool,
-) -> Option<&'static str> {
-    routes().remove(task_id);
-    if !allowed_here(custom_assistant) {
-        return None;
-    }
-    let connectors = super::list(pool).await.ok()?;
-    let mut offered: HashMap<String, Route> = HashMap::new();
-    for connector in connectors.into_iter().filter(|connector| connector.enabled) {
+/// One tool a turn may offer: where it lives, its rule now, and the name it
+/// goes by in a conversation.
+#[derive(Debug, Clone)]
+pub struct Usable {
+    pub connector: Connector,
+    pub tool: super::mcp::ToolInfo,
+    pub rule: Rule,
+    pub name: String,
+}
+
+/// The tools of every connector `grant` admits that is enabled and signed in
+/// on this device, denied ones left out, at most [`MAX_OFFERED`]. A tool list
+/// that is stale is listed again first, best effort and briefly. Shared by
+/// agent-lite and by the computer's agent runtime, so both offer the same.
+pub async fn usable(pool: &SqlitePool, grant: &Grant) -> Vec<Usable> {
+    let Ok(connectors) = super::list(pool).await else {
+        return Vec::new();
+    };
+    let mut out: Vec<Usable> = Vec::new();
+    for connector in connectors
+        .into_iter()
+        .filter(|connector| connector.enabled && grant.admits(&connector.id))
+    {
         if !super::has_credential(&connector) {
             continue;
         }
@@ -142,28 +196,57 @@ pub async fn offer(
                 local.tools
             }
         };
-        for tool in &listed {
-            if offered.len() >= MAX_OFFERED {
-                break;
+        for tool in listed {
+            if out.len() >= MAX_OFFERED {
+                return out;
             }
-            let rule = policy::effective(&connector.tool_policy, tool);
+            let rule = policy::effective(&connector.tool_policy, &tool);
             if rule == Rule::Deny {
                 continue;
             }
             let name = function_name(&connector, &tool.name);
-            if offered.contains_key(&name) {
+            if out.iter().any(|entry| entry.name == name) {
                 continue;
             }
-            tools.push(declaration(&connector, tool, &name, rule));
-            offered.insert(
+            out.push(Usable {
+                connector: connector.clone(),
+                tool,
+                rule,
                 name,
-                Route {
-                    connector_id: connector.id.clone(),
-                    tool: tool.name.clone(),
-                    rule,
-                },
-            );
+            });
         }
+    }
+    out
+}
+
+/// Adds the connectors' tools to a turn's declarations and remembers where
+/// each name goes. Returns the prompt note when anything was offered.
+pub async fn offer(
+    pool: &SqlitePool,
+    task_id: &str,
+    tools: &mut Vec<Value>,
+    grant: &Grant,
+) -> Option<&'static str> {
+    routes().remove(task_id);
+    if !allowed_here(grant) {
+        return None;
+    }
+    let mut offered: HashMap<String, Route> = HashMap::new();
+    for entry in usable(pool, grant).await {
+        tools.push(declaration(
+            &entry.connector,
+            &entry.tool,
+            &entry.name,
+            entry.rule,
+        ));
+        offered.insert(
+            entry.name,
+            Route {
+                connector_id: entry.connector.id.clone(),
+                tool: entry.tool.name.clone(),
+                rule: entry.rule,
+            },
+        );
     }
     if offered.is_empty() {
         return None;
