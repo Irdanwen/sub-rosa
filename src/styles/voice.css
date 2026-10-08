@@ -9,7 +9,9 @@
   z-index: 115;
   display: flex;
   flex-direction: column;
-  background: var(--screen-scrim);
+  /* The scrim laid on the screen colour: opaque, so the composer and its
+   * buttons never show through under the controls. */
+  background: linear-gradient(var(--screen-scrim), var(--screen-scrim)) var(--screen);
   color: var(--screen-foreground);
   padding: calc(var(--sp-4) + env(safe-area-inset-top))
     calc(var(--sp-6) + env(safe-area-inset-right)) calc(var(--sp-6) + env(safe-area-inset-bottom))
@@ -273,7 +275,8 @@
 .voice-sheet {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--sp-8) + env(safe-area-inset-bottom));
+  /* Level with the controls' own bottom edge, so it covers them whole. */
+  bottom: calc(var(--sp-6) + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);

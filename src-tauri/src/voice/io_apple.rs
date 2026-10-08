@@ -1,18 +1,21 @@
-//! iOS: the microphone and the speaker through one Voice-Processing I/O
-//! unit, so the system cancels the reply's echo before the detector hears
-//! it.
+//! iOS and macOS: the microphone and the speaker through one
+//! Voice-Processing I/O unit, so the system cancels the reply's echo before
+//! the detector hears it.
 //!
-//! cpal opens a Remote I/O unit, which records what the speaker plays. The
-//! voice-processing unit is the same audio unit family with echo
-//! cancellation, automatic gain and noise suppression, and it cancels what
-//! it plays itself: the reply has to go out through its output element, not
-//! through a second stream. The shape follows cpal's own iOS input path
-//! (enable I/O, set the stream format, set the callback), with both
-//! elements enabled and one mono float format on each side.
+//! cpal opens a Remote I/O unit on iOS and a HAL output unit on macOS, and
+//! both record what the speaker plays. The voice-processing unit is the same
+//! audio unit family with echo cancellation, automatic gain and noise
+//! suppression, present on both systems, and it cancels what it
+//! plays itself: the reply has to go out through its output element, not
+//! through a second stream. The shape follows cpal's own input path (enable
+//! I/O, set the stream format, set the callback), with both elements enabled
+//! and one mono float format on each side. On macOS the unit follows the
+//! default input and output devices; there is no audio session to configure.
 //!
-//! Unverified on hardware at the time of writing: if the unit opens but
-//! never delivers a sample, the session falls back to the plain streams
-//! (`session.rs`, the microphone watchdog).
+//! Unverified on an iPhone at the time of writing. When the unit cannot
+//! start, `io.rs` opens the plain cpal streams (and the detector raises its
+//! barge-in threshold); when it opens but never delivers a sample, the
+//! session does the same (`session.rs`, the microphone watchdog).
 
 use super::io::{AudioIo, MicSink};
 use super::player::Player;
@@ -123,4 +126,39 @@ unsafe fn first_buffer(list: *mut coreaudio::sys::AudioBufferList) -> Option<(*m
         buffer.mData as *mut u8,
         buffer.mDataByteSize as usize / std::mem::size_of::<f32>(),
     ))
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Opens the Mac's real voice-processing unit for a moment and checks
+    /// both directions run: the microphone element delivers samples and the
+    /// speaker element pulls them. Needs audio devices (and asks for the
+    /// microphone the first time), so it is not part of the default run:
+    /// `cargo test --lib voice::io_apple -- --ignored`.
+    #[test]
+    #[ignore = "opens the real microphone and speaker"]
+    fn the_unit_opens_and_runs_both_directions_on_this_mac() {
+        let heard = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&heard);
+        let io = open(Arc::new(move |samples: &[f32]| {
+            counter.fetch_add(samples.len(), Ordering::Relaxed);
+        }))
+        .unwrap_or_else(|error| panic!("the unit did not open: {error}"));
+        assert!(io.echo_cancelled);
+        assert_eq!(io.input_rate, RATE);
+        io.player.play(
+            super::super::player::ClipId { turn: 1, index: 0 },
+            vec![0.0; RATE as usize / 5],
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1_500));
+        let samples = heard.load(Ordering::Relaxed);
+        let finished = io.player.take_finished();
+        drop(io);
+        eprintln!("microphone samples in 1.5 s: {samples}; clips finished: {finished:?}");
+        assert!(samples > RATE as usize / 2, "only {samples} samples");
+        assert_eq!(finished.len(), 1, "the speaker never pulled the clip");
+    }
 }

@@ -129,6 +129,11 @@ tauri-plugin-autostart = "2.5.1"
 # iOS keychains.
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# The voice conversation plays and records through one Voice-Processing I/O
+# unit on iOS and macOS so the system cancels the reply's echo; cpal only
+# opens Remote I/O (iOS) or HAL output (macOS). The same coreaudio-rs cpal
+# links on both, with the same features, so nothing new is fetched.
+coreaudio-rs = { version = "0.11", default-features = false, features = ["audio_unit", "core_audio"] }
 # Calendar context (crate::calendar). EventKit is the same framework on both
 # platforms, so one module serves the desktop and the phone; typed bindings
 # beat hand-rolled msg_send! for an API this shaped (dates, predicates,
@@ -179,12 +184,6 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 [target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
 june-embed = { path = "../june-api/crates/embed" }
 
-# The voice conversation plays and records through one Voice-Processing I/O
-# unit on iOS so the system cancels the reply's echo; cpal only opens Remote
-# I/O. The same coreaudio-rs cpal links, so nothing new is fetched.
-[target.'cfg(target_os = "ios")'.dependencies]
-coreaudio-rs = { version = "0.11", default-features = false, features = ["audio_unit", "core_audio"] }
-
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-fs = "2"
 keyring = { version = "3", default-features = false }
@@ -221,8 +220,11 @@ window-vibrancy = "0.8"
 keyring = { version = "3", features = ["windows-native"] }
 # ShellExecuteW, so an outbound link reaches the default browser even when
 # spawning explorer.exe would not (see os_accounts::open_in_browser).
+# GDI (`Win32_Graphics_Gdi`): the voice conversation's screen frame
+# (voice/screen_windows.rs) is one BitBlt of the primary display.
 windows = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
