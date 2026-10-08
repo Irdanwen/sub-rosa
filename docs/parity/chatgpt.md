@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 135
+Gaps: 129
 
 ## Matrix
 
@@ -59,9 +59,9 @@ Gaps: 135
 | Document scanning | n/a | partial | partial | n/a | `src-tauri/src/scan/mod.rs` `src-tauri/src/scan/ios.rs` `src-tauri/src/scan/android.rs` | P4 |
 | Virtual try-on | yes | yes | yes | no | `src/components/studio/TryOnPanel.tsx` `src/components/chat-blocks/TryOnCard.tsx` | P9 |
 | Web search with sources | yes | yes | yes | no | `src-tauri/src/hermes/june_web_mcp.py` `src-tauri/src/agent_lite/mod.rs` | P9 |
-| Deep research report | partial | no | no | no | `src/lib/agent-composer-slash-commands.ts` | P5 |
+| Deep research report | yes | yes | yes | no | `src/lib/agent-composer-slash-commands.ts` `src-tauri/src/research/mod.rs` `src/components/research/ResearchDialog.tsx` `src-tauri/src/docx.rs` | P9 |
 | Apps inside deep research | no | no | no | no | | P6 |
-| Study mode | partial | partial | partial | no | `src/components/assistants/AssistantsDialog.tsx` | P5 |
+| Study mode | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/study/mod.rs` `src/lib/study-blocks.ts` `src/components/study/StudyReview.tsx` | P9 |
 | Work deliverables (documents, sheets, slides) | partial | no | no | no | `src/components/settings/ToolsetsSection.tsx` | P5 |
 | Code surface | partial | n/a | n/a | n/a | `src-tauri/src/hermes_bridge.rs` | P5 |
 | Scheduled tasks | yes | no | no | no | `src/lib/hermes-routines.ts` `src/components/routines` | P5 |
