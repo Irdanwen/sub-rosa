@@ -3,7 +3,14 @@ import { startPythonBridge, type WorkerLike } from "../lib/python/bridge";
 import { mountedFiles, safeFileName, sheetListingToCsv } from "../lib/python/files";
 import { PYTHON_PRELUDE } from "../lib/python/prelude";
 import type { PythonReply, PythonRunEvent, WorkerDone, WorkerRun } from "../lib/python/protocol";
-import { createRunner, packagesFor, type PyodideLike } from "../lib/python/runner";
+import {
+  createRunner,
+  guardFetch,
+  NO_NETWORK,
+  packagesFor,
+  type PyodideLike,
+} from "../lib/python/runner";
+import { pythonWorkerSource, pythonWorkerUrl } from "../lib/python/worker-url";
 
 function fakePyodide(answer: (code: string) => unknown = () => "{}") {
   const files = new Map<string, string>();
@@ -92,8 +99,31 @@ describe("worker runner, Pyodide mocked", () => {
     const runner = createRunner(load);
     const failed = await runner.run(RUN);
     expect(failed.error).toBe("Python could not start: wasm refused");
+    expect(failed.unavailable).toBe(true);
     expect((await runner.run(RUN)).error).toBeNull();
     expect(load).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the worker's network", () => {
+  it("reaches Pyodide's own files and refuses everything else at once", async () => {
+    const original = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("ok"),
+    );
+    const scope = { fetch: original as unknown as typeof fetch };
+    guardFetch(scope, "tauri://localhost/pyodide/");
+    await expect(scope.fetch("tauri://localhost/pyodide/numpy.whl")).resolves.toBeInstanceOf(
+      Response,
+    );
+    for (const url of [
+      "https://example.com/",
+      "tauri://localhost/assets/index.js",
+      "http://127.0.0.1:8080/v1/chat",
+      "tauri://localhost/pyodide/../secrets",
+    ]) {
+      await expect(scope.fetch(url)).rejects.toThrow(NO_NETWORK);
+    }
+    expect(original).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -246,6 +276,47 @@ describe("the webview bridge", () => {
     expect(bridge.workers).toHaveLength(2);
   });
 
+  it("says Python is unavailable when Pyodide itself could not start", async () => {
+    const bridge = harness();
+    await flush();
+    bridge.run();
+    bridge.workers[0].onmessage?.({
+      data: {
+        type: "done",
+        id: "q1",
+        unavailable: true,
+        stdout: "",
+        result: null,
+        blocks: [],
+        error: "Python could not start: CompileError",
+        files: [],
+      },
+    } as unknown as MessageEvent<WorkerDone>);
+    expect(bridge.replies.at(-1)).toEqual([
+      "q1",
+      { kind: "refused", reason: "unavailable", detail: "Python could not start: CompileError" },
+    ]);
+  });
+
+  it("lets an idle worker go when the app leaves the screen, and replies to nobody", async () => {
+    const bridge = harness();
+    await flush();
+    bridge.run();
+    bridge.workers[0].onmessage?.({
+      data: { type: "done", id: "q1", stdout: "", result: "2", blocks: [], error: null, files: [] },
+    } as unknown as MessageEvent<WorkerDone>);
+    const count = bridge.replies.length;
+    bridge.hide();
+    expect(bridge.workers[0].terminated).toBe(1);
+    expect(bridge.replies).toHaveLength(count);
+    // Hiding again with no worker is a no-op.
+    bridge.hide();
+    expect(bridge.workers[0].terminated).toBe(1);
+    bridge.state.visible = true;
+    bridge.run({ requestId: "q2" });
+    expect(bridge.workers).toHaveLength(2);
+  });
+
   it("discards the worker when Rust cancels a run past its limit", async () => {
     const bridge = harness();
     await flush();
@@ -279,5 +350,28 @@ describe("the webview bridge", () => {
       "q1",
       { kind: "refused", reason: "unavailable", detail: "module script failed" },
     ]);
+  });
+});
+
+describe("where the worker starts", () => {
+  it("is a blob that imports the bundled worker by absolute URL", () => {
+    expect(pythonWorkerSource("tauri://localhost/assets/python.worker-a1.js")).toBe(
+      'import "tauri://localhost/assets/python.worker-a1.js";\n',
+    );
+  });
+
+  it("makes one blob URL and reuses it for every worker", () => {
+    // jsdom has no object URLs.
+    const original = URL.createObjectURL;
+    const create = vi.fn((_blob: Blob) => "blob:tauri://localhost/b1");
+    URL.createObjectURL = create;
+    try {
+      expect(pythonWorkerUrl()).toBe("blob:tauri://localhost/b1");
+      expect(pythonWorkerUrl()).toBe("blob:tauri://localhost/b1");
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create.mock.calls[0][0].type).toBe("text/javascript");
+    } finally {
+      URL.createObjectURL = original;
+    }
   });
 });

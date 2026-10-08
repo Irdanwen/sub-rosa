@@ -4,20 +4,23 @@
 // time a run needs it; nothing here reaches the network.
 
 import type { WorkerRun } from "./protocol";
-import { createRunner, type PyodideLike } from "./runner";
+import { createRunner, guardFetch, type PyodideLike } from "./runner";
 
 type WorkerScope = {
-  location: { href: string };
+  fetch: typeof fetch;
   postMessage(message: unknown): void;
   onmessage: ((event: MessageEvent<WorkerRun>) => void) | null;
 };
 
 const scope = self as unknown as WorkerScope;
 
+// Relative to this module's own URL: the iPhone serves the app from a custom
+// scheme whose origin reads "null", and the worker's location is the blob it
+// was started from (worker-url.ts), which is no base for a path.
+const indexURL = new URL("/pyodide/", import.meta.url).href;
+guardFetch(scope, indexURL);
+
 const runner = createRunner(async () => {
-  // Relative to the worker's own URL: the iPhone serves the app from a
-  // custom scheme whose origin reads "null".
-  const indexURL = new URL("/pyodide/", scope.location.href).href;
   const module = (await import(/* @vite-ignore */ `${indexURL}pyodide.mjs`)) as {
     loadPyodide(options: { indexURL: string }): Promise<PyodideLike>;
   };

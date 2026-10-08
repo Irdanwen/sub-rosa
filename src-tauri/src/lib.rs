@@ -1042,6 +1042,10 @@ pub fn run() {
                     });
                 eprintln!("[subrosa] keychain probe: {probe:?}");
             }
+            // Debug-only: `SUBROSA_PYTHON_SELFTEST=1` runs the phone's Python
+            // checks (ADR-0086) through the real bridge once it answers.
+            #[cfg(debug_assertions)]
+            agent_lite::python::selftest::spawn_if_requested(app.handle());
             // Pause an active recording when a call or Siri interrupts the
             // audio session (the input goes silent anyway; a clean pause is
             // resumable from the UI).
