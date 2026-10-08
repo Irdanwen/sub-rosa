@@ -6,7 +6,14 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+/* The count beside the review icon, shown only when the chip has lost its
+ * words (below). */
+.composer-mode-count {
+  display: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .composer-mode,
@@ -28,10 +35,12 @@
   color: var(--foreground);
 }
 
+/* --accent is the theme's quiet hover surface, not a colour: a chosen state
+ * takes the brand's ink and tint, which read in both themes. */
 .composer-mode[aria-pressed="true"],
 .composer-modes-compact[data-on] {
-  border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  border-color: var(--brand-ink);
+  background: var(--brand-tint);
   color: var(--foreground);
 }
 
@@ -58,8 +67,8 @@
   min-width: 18px;
   padding: 0 var(--sp-1);
   border-radius: var(--r-pill);
-  background: var(--accent);
-  color: var(--accent-foreground);
+  background: var(--brand-ink);
+  color: var(--card);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -160,9 +169,13 @@
 
 /* Quiz */
 
+/* A card in a reply keeps the size of the other chat cards, not the reading
+ * size of the reply around it (chat-reading.css raises that on both shells). */
 .study-quiz,
 .study-flashcards {
   background: var(--card);
+  font-size: var(--fs-md);
+  line-height: 1.5;
 }
 
 .study-quiz-questions {
@@ -233,6 +246,11 @@
   gap: var(--sp-2);
 }
 
+.study-quiz-short .study-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .study-quiz-feedback {
   margin-top: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
@@ -290,7 +308,7 @@
 }
 
 .study-flashcard[data-flipped] {
-  border-color: var(--accent);
+  border-color: var(--brand-ink);
 }
 
 .study-flashcard-side {
@@ -452,8 +470,9 @@
 }
 
 .research-depth[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  border-color: var(--brand-ink);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand-ink);
 }
 
 .research-check {
@@ -462,6 +481,10 @@
   gap: var(--sp-2);
   color: var(--body-copy);
   font-size: var(--fs-sm);
+}
+
+.research-check input {
+  accent-color: var(--brand-ink);
 }
 
 .research-actions {
@@ -587,10 +610,31 @@
   font-weight: var(--fw-medium);
 }
 
+/* Drawn by hand: the platform bar paints its own track, which WebKit and
+ * Chromium do not agree on, and the brand ink fills what is done. */
 .research-bar {
   width: 100%;
   height: 6px;
-  accent-color: var(--accent);
+  appearance: none;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  overflow: hidden;
+}
+
+.research-bar::-webkit-progress-bar {
+  background: var(--muted);
+  border-radius: var(--r-pill);
+}
+
+.research-bar::-webkit-progress-value {
+  background: var(--brand-ink);
+  border-radius: var(--r-pill);
+}
+
+.research-bar::-moz-progress-bar {
+  background: var(--brand-ink);
+  border-radius: var(--r-pill);
 }
 
 .research-source {
@@ -644,11 +688,93 @@
       calc(env(safe-area-inset-bottom) + var(--sp-4));
   }
 
+  /* The backdrop's inset would otherwise frame the full-screen card and
+   * push its bottom (the last button) off the screen. */
+  .dialog-backdrop:has(> .research-dialog),
+  .dialog-backdrop:has(> .study-dialog) {
+    padding: 0;
+  }
+
   .research-depths {
     grid-template-columns: 1fr;
   }
 
+  /* A query wraps on a phone: the field grows with it rather than hide the
+   * second query behind the first. */
+  .research-section textarea {
+    min-height: 5.5em;
+    field-sizing: content;
+  }
+
   .study-review-grades {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* The desktop composer is as wide as the window leaves it, and its toolbar
+ * holds the attach button, these chips, the model, the effort, the gauge,
+ * dictation and send in one row that clips what overflows. As the box
+ * narrows, words go before controls do: first the effort's label and the
+ * review's ("Review, 3 due" becomes its icon and the count), then the mode
+ * names and the working folder's. Every control keeps its icon, its tooltip
+ * and its accessible name. */
+.agent-composer-box {
+  container: composer / inline-size;
+}
+
+.agent-composer-toolbar,
+.agent-composer-actions {
+  min-width: 0;
+}
+
+.agent-composer-actions > .agent-composer-model:not(.agent-reasoning-effort) {
+  flex: 0 1 auto;
+}
+
+.agent-composer-actions
+  > .agent-composer-model:not(.agent-reasoning-effort)
+  .agent-composer-model-trigger {
+  min-width: 88px;
+  max-width: min(190px, 30cqi);
+}
+
+.agent-composer-model-trigger > svg {
+  flex-shrink: 0;
+}
+
+/* The new-chat composer also holds the sandbox and the working folder: when
+ * the row cannot hold them and the actions, the actions take a second row
+ * (right-aligned) rather than squeeze the model to a letter. */
+.agent-composer[data-hero="true"] .agent-composer-toolbar {
+  flex-wrap: wrap;
+  row-gap: var(--sp-1);
+}
+
+.agent-composer-actions > * {
+  flex-shrink: 0;
+}
+
+@container composer (max-width: 820px) {
+  .agent-reasoning-effort .agent-composer-model-trigger > span,
+  .composer-mode:has(.composer-mode-count) .composer-mode-label {
+    display: none;
+  }
+
+  .composer-mode-count {
+    display: inline;
+  }
+}
+
+@container composer (max-width: 640px) {
+  .composer-mode-label {
+    display: none;
+  }
+
+  .composer-mode {
+    padding-inline: var(--sp-2);
+  }
+
+  .agent-workdir-trigger-label {
+    max-width: 88px;
   }
 }

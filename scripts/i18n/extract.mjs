@@ -13,6 +13,7 @@
 import ts from "typescript";
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { collectRustSentences } from "./rust-sentences.mjs";
 
 const CHECK = process.argv.includes("--check");
 const ROOTS = ["src"];
@@ -58,15 +59,17 @@ for (const file of files) {
   visit(sf);
 }
 
-// The backend's own sentences reach the screen through messageFromError,
-// which passes them through t(); they join the catalog from the list the
-// rust-messages script keeps.
+// The backend's own sentences: AppError literals reach the screen through
+// messageFromError, which passes them through t(), and tr!() literals are
+// rendered by Rust itself from this catalog. Collected fresh from the Rust
+// source and kept in backend-messages.json, which the check holds to it.
 const backendPath = "src/locales/backend-messages.json";
-if (existsSync(backendPath)) {
-  for (const sentence of JSON.parse(readFileSync(backendPath, "utf8"))) {
-    if (!sentences.has(sentence)) sentences.set(sentence, backendPath);
-  }
+const backend = collectRustSentences();
+for (const sentence of backend) {
+  if (!sentences.has(sentence)) sentences.set(sentence, backendPath);
 }
+const backendJson = `${JSON.stringify(backend, null, 2)}\n`;
+const backendStale = !existsSync(backendPath) || readFileSync(backendPath, "utf8") !== backendJson;
 const keys = [...sentences.keys()].sort((a, b) => a.localeCompare(b, "en"));
 const en = Object.fromEntries(keys.map((key) => [key, key]));
 let behind = 0;
@@ -87,9 +90,12 @@ if (CHECK) {
   const stale =
     keys.filter((key) => !(key in currentEn)).length +
     Object.keys(currentEn).filter((key) => !sentences.has(key)).length;
-  console.log(`${keys.length} sentences; ${behind} untranslated; ${stale} not in en.json`);
-  process.exit(stale === 0 && behind === 0 ? 0 : 1);
+  console.log(
+    `${keys.length} sentences; ${behind} untranslated; ${stale} not in en.json${backendStale ? "; backend-messages.json is behind the Rust source" : ""}`,
+  );
+  process.exit(stale === 0 && behind === 0 && !backendStale ? 0 : 1);
 }
+outputs[backendPath] = backend;
 for (const [path, value] of Object.entries(outputs)) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }

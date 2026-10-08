@@ -425,7 +425,7 @@ pub async fn resume_pending(app: &AppHandle) {
                 let _ = app
                     .notification()
                     .builder()
-                    .title("Your dictation is ready")
+                    .title(crate::tr!("Your dictation is ready"))
                     .body(result.text.chars().take(120).collect::<String>())
                     .extra(
                         crate::destinations::EXTRA_KEY,

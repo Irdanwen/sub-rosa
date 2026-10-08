@@ -10,6 +10,7 @@ import {
   updateHermesBridgeCronJob,
   type HermesCronJobRecord,
 } from "./tauri";
+import { ASSIGNMENT_RUN_SOURCE, hasAssignmentTag } from "./assignment-runs";
 
 /** A Hermes cron job as the app works with it: the raw dashboard-API record
  * flattened to what the Routines surfaces read. Unlike the gateway's
@@ -146,9 +147,43 @@ function routineFromRecord(record: HermesCronJobRecord): RoutineJob {
   };
 }
 
+/** Every cron job, assignment runs included: see `routinesOnly`. */
 export async function listRoutines(): Promise<RoutineJob[]> {
   const records = await withBridge(() => hermesBridgeCronJobs());
   return records.map(routineFromRecord);
+}
+
+/** The jobs an assignment's runs ride on (ADR-0091), by the tag the Rust
+ * side names them with: they are not routines. */
+export function assignmentJobIds(jobs: RoutineJob[]): Set<string> {
+  return new Set(jobs.filter((job) => hasAssignmentTag(job.name)).map((job) => job.job_id));
+}
+
+/** The assignment run jobs listed right now, read without starting the
+ * bridge: the run history polls this to know a run that has no title yet. */
+export async function listAssignmentJobIds(): Promise<Set<string>> {
+  const records = await hermesBridgeCronJobs();
+  return assignmentJobIds(records.map(routineFromRecord));
+}
+
+/** The routines the person made, without the assignments' run jobs. */
+export function routinesOnly(jobs: RoutineJob[]): RoutineJob[] {
+  return jobs.filter((job) => !hasAssignmentTag(job.name));
+}
+
+/** Routine run history without the assignments' runs. A finished run is
+ * already out (its session is titled with the tag, and the adapter gives it
+ * its own source); a run still going has no title yet, so it is known by
+ * its job, which is still listed. */
+export function withoutAssignmentRuns<T extends { id: string; source?: string }>(
+  runs: T[],
+  assignmentJobs: Set<string>,
+): T[] {
+  return runs.filter((run) => {
+    if (run.source === ASSIGNMENT_RUN_SOURCE) return false;
+    const jobId = /^cron_(.+)_\d{8}_\d{6}$/.exec(run.id)?.[1];
+    return !(jobId && assignmentJobs.has(jobId));
+  });
 }
 
 /** AppError code `listRoutines` rejects with when the on-disk cron store is

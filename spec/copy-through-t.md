@@ -31,7 +31,11 @@ red test before it ships.
   `t()`.
 - Dates and numbers format with `intlLocale()`, never a hard-coded tag.
 - A backend sentence: write it as a literal in `AppError::new(code, "…")`,
-  then run `node scripts/i18n/rust-messages.mjs` and `pnpm i18n:extract`.
+  then run `pnpm i18n:extract` (it collects the Rust literals too).
+- A sentence Rust shows by itself (a notification): `crate::tr!("…")`, with
+  `{name}` placeholders as named arguments (`tr!("{count} notes", count =
+  n)`), never `format!` on English text. `pnpm i18n:check` fails until it
+  is in the catalog and translated.
 
 ## Exceptions
 

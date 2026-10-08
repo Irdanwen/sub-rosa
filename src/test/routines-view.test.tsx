@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   updateRoutine: vi.fn<() => Promise<RoutineJob>>(),
   triggerRoutine: vi.fn(),
   resetRoutineStore: vi.fn<() => Promise<string>>(),
+  listAssignmentJobIds: vi.fn<() => Promise<Set<string>>>(),
 }));
 
 vi.mock("../lib/hermes-routines", async (importOriginal) => ({
@@ -108,6 +109,7 @@ beforeEach(() => {
   mocks.createRoutine.mockResolvedValue(job());
   mocks.updateRoutine.mockResolvedValue(job());
   adapterMocks.listScheduledRunSessions.mockResolvedValue([]);
+  mocks.listAssignmentJobIds.mockResolvedValue(new Set());
 });
 
 afterEach(() => {
@@ -617,6 +619,38 @@ describe("RoutinesView detail", () => {
 });
 
 describe("RoutinesView run history", () => {
+  it("keeps assignment run jobs and their runs out of routines (ADR-0091)", async () => {
+    mocks.listRoutines.mockResolvedValue([
+      job(),
+      job({ job_id: "asg1", name: "[assignment] Watch the tenders" }),
+    ]);
+    mocks.listAssignmentJobIds.mockResolvedValue(new Set(["asg1"]));
+    adapterMocks.listScheduledRunSessions.mockResolvedValue([
+      run(),
+      // Still going: no title yet, known by its job.
+      run({ id: "cron_asg1_20260610_100000", title: undefined, active: true, preview: "" }),
+      // Finished: the adapter gave it its own source.
+      run({
+        id: "cron_asg0_20260609_100000",
+        source: "assignment",
+        title: "Watch the tenders · Jun 09 10:00",
+      }),
+    ]);
+    renderView();
+
+    const list = await screen.findByRole("list", { name: "Routines" });
+    expect(within(list).getByText("Morning summary")).toBeInTheDocument();
+    expect(screen.queryByText(/Watch the tenders/)).toBeNull();
+    const history = screen.getByRole("region", { name: "Run history" });
+    await waitFor(() =>
+      expect(
+        within(history).getByText("Here is today's summary of your unread notes."),
+      ).toBeInTheDocument(),
+    );
+    expect(within(history).getAllByRole("button")).toHaveLength(1);
+    expect(within(history).queryByText("Routine run")).toBeNull();
+  });
+
   it("lists run history under the routines and opens a run on click", async () => {
     mocks.listRoutines.mockResolvedValue([job()]);
     const session = run();

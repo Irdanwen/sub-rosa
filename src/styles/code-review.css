@@ -168,3 +168,16 @@
   color: var(--foreground);
   background: var(--muted);
 }
+
+/* A file with no preview says so inside its card, on the diff's inset. */
+.code-review-file > .code-review-note {
+  padding: var(--sp-2) var(--sp-3);
+}
+
+/* "Revert" on a file of which no copy was kept is refused (its tooltip says
+ * why): it has to look refused too, not like the live button beside it. */
+.code-review-file-head .btn:disabled {
+  color: var(--muted-foreground);
+  cursor: default;
+  opacity: 0.6;
+}

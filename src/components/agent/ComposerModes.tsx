@@ -138,31 +138,47 @@ export function ComposerModes({
     );
   }
 
+  // In a narrow composer the chips keep their icon and drop their words
+  // (study-research.css, by the composer's width), so each one carries its
+  // name for assistive technology and a tooltip whatever is shown.
   return (
     <div className="composer-modes">
       <button
         type="button"
         className="composer-mode"
         aria-pressed={studying}
+        aria-label={t("Study")}
         title={t("A tutor that checks what you understood")}
         onClick={toggleStudy}
       >
         <IconGraduateCap size={14} aria-hidden />
-        {t("Study")}
+        <span className="composer-mode-label">{t("Study")}</span>
       </button>
       <button
         type="button"
         className="composer-mode"
+        aria-label={t("Deep research")}
         title={t("Research a question across the web and your notes")}
         onClick={() => setResearchOpen(true)}
       >
         <IconDeepSearch size={14} aria-hidden />
-        {t("Deep research")}
+        <span className="composer-mode-label">{t("Deep research")}</span>
       </button>
       {cards.total > 0 ? (
-        <button type="button" className="composer-mode" onClick={() => setReviewOpen(true)}>
+        <button
+          type="button"
+          className="composer-mode"
+          aria-label={reviewLabel}
+          title={reviewLabel}
+          onClick={() => setReviewOpen(true)}
+        >
           <IconFlashcards size={14} aria-hidden />
-          {reviewLabel}
+          <span className="composer-mode-label">{reviewLabel}</span>
+          {cards.due > 0 ? (
+            <span className="composer-mode-count" aria-hidden>
+              {cards.due}
+            </span>
+          ) : null}
         </button>
       ) : null}
       {dialogs}

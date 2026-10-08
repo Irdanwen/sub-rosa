@@ -263,7 +263,7 @@ async fn deliver_due(app: &AppHandle) -> Result<(), AppError> {
             .notification()
             .builder()
             .title(if event.title.trim().is_empty() {
-                "Your next meeting".to_string()
+                crate::tr!("Your next meeting")
             } else {
                 event.title.clone()
             })
@@ -354,9 +354,14 @@ async fn write_brief(event: &calendar::CalendarEventDto, context: &str) -> Optio
     } else {
         format!("\nWith: {}", event.attendees.join(", "))
     };
+    // The brief is read in the app's language, whatever the notes were
+    // written in.
     let prompt = format!(
-        "Meeting: {}{}\n\nTheir past notes:\n{}",
-        event.title, who, context
+        "Meeting: {}{}\n\nTheir past notes:\n{}\n\n{}",
+        event.title,
+        who,
+        context,
+        crate::i18n::write_in_line()
     );
     let response = june_api::proxy_agent_chat_completions(serde_json::json!({
         "messages": [
@@ -409,9 +414,9 @@ pub fn announce_note_ready(app: &AppHandle, note_id: &str, title: &str, content:
         return;
     };
     let title = if title.trim().is_empty() {
-        "Your note is ready".to_string()
+        crate::tr!("Your note is ready")
     } else {
-        format!("{} is ready", title.trim())
+        crate::tr!("{title} is ready", title = title.trim())
     };
     let _ = app
         .notification()

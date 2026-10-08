@@ -6,6 +6,7 @@ import {
   type HermesSessionMessage,
 } from "./tauri";
 import { stripReasoningEffortAlias } from "./reasoning-effort";
+import { ASSIGNMENT_RUN_SOURCE, hasAssignmentTag, withoutAssignmentTag } from "./assignment-runs";
 import { parseHermesProcessNotice } from "./hermes-process-notice";
 import {
   loadTemporarySessions,
@@ -231,11 +232,24 @@ export function isReplaceableScheduledRunTitle(title: unknown) {
 
 /** Gives a scheduled-run session a readable title and a clean preview when the
  * stored ones are empty or still the raw delivery preamble, so every list
- * surface stops showing "[IMPORTANT…". Non-cron sessions pass through. */
+ * surface stops showing "[IMPORTANT…". Non-cron sessions pass through.
+ *
+ * An assignment's run rides on a one-shot cron job whose name carries the
+ * assignment tag (ADR-0091): its session is not a routine run, so it leaves
+ * the routine history (source "assignment") and shows the assignment's own
+ * title, never the tag. */
 function withScheduledRunDisplay(session: HermesSessionInfo): HermesSessionInfo {
   if (!isScheduledRunSession(session)) return session;
   const cleanedPreview = stripScheduledRunPreamble(session.preview ?? "");
   const storedTitle = session.title?.trim() ?? "";
+  if (hasAssignmentTag(storedTitle)) {
+    return {
+      ...session,
+      source: ASSIGNMENT_RUN_SOURCE,
+      title: withoutAssignmentTag(storedTitle),
+      preview: cleanedPreview || session.preview,
+    };
+  }
   // Replace the stored title when it's empty or is the cron scaffolding — a
   // stored title is often truncated ("[IMPORTANT: You are running as"), so a
   // leading "[IMPORTANT" is enough to treat it as raw here, where we already
