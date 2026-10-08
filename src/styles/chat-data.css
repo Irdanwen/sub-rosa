@@ -195,7 +195,10 @@
 }
 
 .chat-data-notice,
-.chat-data-source {
+/* Scoped to the card: a reply's own paragraph rule (.agent-markdown p,
+ * .simple-markdown p) is as specific as a bare class and set the caption's
+ * margin to zero, flush against the card's edge. */
+.chat-data .chat-data-source {
   margin: var(--sp-2) var(--sp-5) 0;
   font-size: var(--fs-sm);
   color: var(--muted-foreground);

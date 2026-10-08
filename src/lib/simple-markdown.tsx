@@ -3,6 +3,7 @@ import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { type ReactNode, useState } from "react";
 import { ChatBlockSkeleton, ChatBlockView } from "../components/chat-blocks/ChatBlockView";
+import { HighlightedCode } from "../components/chat/HighlightedCode";
 import { resolveChatBlockFence } from "./chat-blocks";
 import { safeExternalHref } from "./external-link";
 import { t } from "./i18n";
@@ -204,7 +205,9 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
         </button>
       </div>
       <pre>
-        <code>{highlight(code, lang)}</code>
+        <code>
+          <HighlightedCode code={code} language={lang} fallback={highlight(code, lang)} />
+        </code>
       </pre>
     </div>
   );

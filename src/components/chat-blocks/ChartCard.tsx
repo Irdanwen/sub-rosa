@@ -305,6 +305,10 @@ function Bars({
   );
 }
 
+/** The least distance between two points, in chart units, that still draws a
+ * dot on each: three dot diameters. */
+const MIN_MARKER_SPACING = 24;
+
 /** Line or area paths, broken at every gap rather than bridging it. */
 function Lines({
   block,
@@ -319,7 +323,12 @@ function Lines({
   const zero = layout.y(
     Math.max(layout.ticks[0], Math.min(0, layout.ticks[layout.ticks.length - 1])),
   );
-  const markers = block.categories.length <= 40;
+  // A dot per point only while the points stand apart: closer than a few
+  // dot widths, the dots overlap and hide the line they mark (26 weeks on a
+  // phone read as beads with no line). The pointer still marks the hovered one.
+  const spacing =
+    block.categories.length > 1 ? Math.abs(layout.x(1) - layout.x(0)) : Number.POSITIVE_INFINITY;
+  const markers = block.categories.length <= 40 && spacing >= MIN_MARKER_SPACING;
   const lastY: { name: string; y: number; series: number }[] = [];
   const paths = block.series.map((series, seriesIndex) => {
     const upper = (index: number) => {

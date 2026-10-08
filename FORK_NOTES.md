@@ -2195,3 +2195,25 @@ Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
 - Le `shareFile` Android existant n'accepte que `filesDir`, alors que les
   données de l'app sont sous `dataDir` : partager une image Studio sur Android
   peut être refusé (non corrigé ici ; le PDF numérisé a son propre partage).
+
+## Correctifs du lot P4 (2026-10-08, addendum ADR-0088)
+
+- **Partage Android** : `AndroidExports.kt` vérifiait les chemins sous
+  `filesDir`, alors que le dossier de données de Tauri sur Android est
+  `dataDir` ; toute image Studio et tout export étaient refusés. Les deux côtés
+  nomment maintenant les mêmes dossiers sous `dataDir` (`src-tauri/src/shareable.rs`,
+  dont un test lit le source Kotlin).
+- **Bibliothèque synchronisée** : `saved_items` rejoint le registre de synchro
+  (`account/sync_tables.rs`, extrait de `sync.rs` pour le plafond de taille ;
+  `account/saved_items.rs`), id dérivé de la clé, conversations temporaires
+  exclues. Le PDF d'une numérisation reste local (addendum ADR-0088).
+- **Coloration syntaxique** : `lowlight` + `highlight.js` (22 langages, chunk
+  chargé à la demande, `src/lib/code-highlight.ts`), décorations dans
+  l'éditeur de note (`note-editor/codeHighlight.ts`), blocs de code du chat
+  sur les deux shells et aperçu du canevas de code.
+
+| Fichier upstream | Changement | Re-merge |
+|---|---|---|
+| `src/components/agent/AgentWorkspace.tsx` | `highlightText` déplacé dans `src/lib/highlight-text.tsx` ; bloc de code via `HighlightedCode` | Réappliquer |
+| `src/components/note-editor/extensions.ts` | `codeBlock: false` dans StarterKit, `NoteCodeBlock` à la place | Réappliquer |
+| `src/lib/simple-markdown.tsx` | Bloc de code via `HighlightedCode`, l'ancien colorieur en repli | Réappliquer |

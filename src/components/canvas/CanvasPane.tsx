@@ -13,6 +13,7 @@ import { requestOpenNoteFromChat } from "../../lib/chat-blocks-nav";
 import { friendlyErrorMessage } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import { useNoteRewrite } from "../../lib/note-rewrite";
+import { SimpleMarkdown } from "../../lib/simple-markdown";
 import { getNote, updateNote } from "../../lib/tauri";
 import { DotSpinner } from "../DotSpinner";
 import { NotePreview } from "../note-editor/NotePreview";
@@ -260,7 +261,13 @@ function CanvasReview({
         <InlineNotice tone="warning" body={error} />
       ) : (
         <div className="canvas-review-text" aria-live="polite" aria-busy={running}>
-          {text || <span className="canvas-review-waiting">{t("Reading the canvas")}</span>}
+          {/* Read as it will read once accepted: a document formatted, code
+           * in its coloured block. The raw markdown is what Accept writes. */}
+          {text ? (
+            <SimpleMarkdown text={text} streaming={running} />
+          ) : (
+            <span className="canvas-review-waiting">{t("Reading the canvas")}</span>
+          )}
         </div>
       )}
       <footer className="canvas-review-actions">

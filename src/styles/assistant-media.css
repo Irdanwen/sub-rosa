@@ -2,8 +2,17 @@
   display: grid;
   gap: var(--sp-6);
 }
+/* A chat card's frame has no padding of its own (each card pads its rows),
+ * so a generation or a try-on laid its text and buttons on the border. */
 .assistant-media-card {
   overflow: hidden;
+  padding: var(--sp-4) var(--sp-5);
+}
+.assistant-media-card > .chat-block-title {
+  padding: 0;
+}
+.assistant-media-card > p {
+  margin: var(--sp-2) 0 0;
 }
 .assistant-media-heading,
 .assistant-media-confirm {

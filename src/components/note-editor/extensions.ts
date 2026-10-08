@@ -19,6 +19,10 @@
  * cell is one line of inline text, so a list or a second paragraph inside a
  * cell is exactly the kind of state the file would silently flatten. Merging
  * cells and header columns are not offered for the same reason.
+ *
+ * The code block is StarterKit's node with a colouring plugin
+ * (`codeHighlight.ts`): decorations only, so the schema and the file are
+ * exactly what they were.
  */
 
 import Highlight from "@tiptap/extension-highlight";
@@ -27,6 +31,7 @@ import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table
 import StarterKit from "@tiptap/starter-kit";
 import { MAX_HEADING_LEVEL } from "../../lib/note-markdown";
 import { BlockPalette } from "./blockPalette";
+import { NoteCodeBlock } from "./codeHighlight";
 
 /** Heading levels the note styles define, and the only ones markdown carries
  * back. Derived from the converter's ceiling rather than restated, so the
@@ -40,6 +45,8 @@ export function noteStarterKit() {
   return StarterKit.configure({
     heading: { levels: NOTE_HEADING_LEVELS },
     underline: false,
+    // Replaced by the same node with syntax colour (`NoteCodeBlock`).
+    codeBlock: false,
     link: {
       openOnClick: false,
       autolink: true,
@@ -60,6 +67,7 @@ export function noteStarterKit() {
 export function noteSchemaExtensions() {
   return [
     noteStarterKit(),
+    NoteCodeBlock,
     TaskList,
     // `nested` widens a task item from `paragraph+` to `paragraph block*`, so
     // a checklist can hold a sub-checklist. A flat one is not how anybody

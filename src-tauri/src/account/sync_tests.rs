@@ -1724,3 +1724,208 @@ async fn a_chat_deleted_elsewhere_takes_its_reply_ratings_here() {
         .unwrap()
         .is_empty());
 }
+
+// --- Saved items (ADR-0088 addendum) ---------------------------------------
+
+fn saved_link(url: &str, conversation: &str) -> crate::saved_items::SaveItemRequest {
+    serde_json::from_value(json!({
+        "kind": "link",
+        "sourceKey": format!("link:{url}"),
+        "title": "The docs",
+        "payload": { "url": url, "domain": "example.com" },
+        "conversationId": conversation,
+    }))
+    .unwrap()
+}
+
+/// A saved item sealed the way another device seals its own.
+fn saved_item_change(
+    s: &Session,
+    key: &[u8; 32],
+    row: Value,
+    parent: Option<String>,
+    deleted: bool,
+) -> Change {
+    let id = row["id"].as_str().unwrap().to_string();
+    let op = uuid::Uuid::new_v4().to_string();
+    let body = json!({"v":1,"operation_id":op,"parent_revision":parent,"deleted":deleted,"table":"saved_items","row":row});
+    Change {
+        sequence: 1,
+        resolved_revisions: Vec::new(),
+        object_id: id.clone(),
+        revision: uuid::Uuid::now_v7().to_string(),
+        parent_revision: parent,
+        kind: "artifact".into(),
+        ciphertext: crypto::seal(
+            key,
+            &aad(s, "artifact", &id),
+            &serde_json::to_vec(&body).unwrap(),
+        )
+        .unwrap(),
+        deleted,
+        operation_id: Some(op),
+    }
+}
+
+async fn apply_change(pool: &SqlitePool, s: &Session, key: &[u8; 32], c: &Change) {
+    let body = verify(s, key, c).unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, c, &body).await.unwrap());
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_saved_item_leaves_under_the_id_of_what_was_saved_and_its_removal_as_a_tombstone() {
+    let pool = database().await;
+    let saved = crate::saved_items::save(&pool, &saved_link("https://example.com/a", "chat-1"))
+        .await
+        .unwrap();
+    assert_eq!(
+        saved.id,
+        crate::saved_items::item_id("link:https://example.com/a")
+    );
+    let rows = outbox_rows(&pool, &saved.id).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("kind"), "artifact");
+    let body: Value = serde_json::from_str(&rows[0].get::<String, _>("body")).unwrap();
+    assert_eq!(body["table"], "saved_items");
+    assert_eq!(body["row"]["source_key"], "link:https://example.com/a");
+    assert_eq!(body["row"]["kind"], "link");
+    assert!(body["row"]["payload"]
+        .as_str()
+        .unwrap()
+        .contains("https://example.com/a"));
+
+    // Saved and removed before anything was sent: the unsent row is rewritten
+    // in place into the tombstone.
+    crate::saved_items::remove(&pool, &saved.id).await.unwrap();
+    let rows = outbox_rows(&pool, &saved.id).await;
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].get::<bool, _>("deleted"));
+}
+
+#[tokio::test]
+async fn a_temporary_chats_saved_item_never_leaves_even_written_past_the_command() {
+    let pool = database().await;
+    let task = crate::temporary_chat::create(&pool, "a temporary chat", None)
+        .await
+        .unwrap();
+    crate::temporary_chat::register_session(&pool, "temp-session")
+        .await
+        .unwrap();
+    for conversation in [task.as_str(), "temp-session"] {
+        let id = uuid::Uuid::new_v4().to_string();
+        query("INSERT INTO saved_items(id,kind,source_key,title,payload,conversation_id,created_at) VALUES(?,'reply',?,'Kept','{}',?,'now')")
+            .bind(&id)
+            .bind(format!("reply:{conversation}:m1"))
+            .bind(conversation)
+            .execute(&pool)
+            .await
+            .unwrap();
+        query("DELETE FROM saved_items WHERE id=?")
+            .bind(&id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(outbox_rows(&pool, &id).await.is_empty(), "{conversation}");
+    }
+}
+
+#[tokio::test]
+async fn a_saved_item_from_another_device_arrives_without_echo_and_its_tombstone_removes_it() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let source_key = "place:46.20440,6.14320:Café du Marché";
+    let id = crate::saved_items::item_id(source_key);
+    // This device saved the same place under a random id, as builds before
+    // derived ids did: the arrival takes its place instead of being refused.
+    query("INSERT INTO saved_items(id,kind,source_key,title,payload,created_at) VALUES('legacy','place',?,'Café','{}','earlier')")
+        .bind(source_key)
+        .execute(&pool)
+        .await
+        .unwrap();
+    query("DELETE FROM account_sync_outbox")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let row = json!({"id":id,"kind":"place","source_key":source_key,"title":"Café du Marché","payload":"{\"lat\":46.2044,\"lng\":6.1432}","conversation_id":"chat-9","created_at":"2026-10-08T09:00:00Z"});
+    let arrival = saved_item_change(&s, &key, row.clone(), None, false);
+    apply_change(&pool, &s, &key, &arrival).await;
+
+    let items = crate::saved_items::list(&pool).await.unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, id);
+    assert_eq!(items[0].payload["lat"], 46.2044);
+    assert!(outbox_rows(&pool, &id).await.is_empty());
+    assert!(outbox_rows(&pool, "legacy").await.is_empty());
+
+    set_head(&pool, &id, &arrival.revision, "artifact").await;
+    let removal = saved_item_change(&s, &key, row, Some(arrival.revision.clone()), true);
+    apply_change(&pool, &s, &key, &removal).await;
+    assert!(crate::saved_items::list(&pool).await.unwrap().is_empty());
+    assert!(outbox_rows(&pool, &id).await.is_empty());
+}
+
+#[tokio::test]
+async fn the_same_item_saved_on_two_devices_settles_without_review() {
+    let pool = database().await;
+    let s = session_fixture();
+    let key = crypto::random_key();
+    let saved = crate::saved_items::save(&pool, &saved_link("https://example.com/a", "chat-1"))
+        .await
+        .unwrap();
+    query("DELETE FROM account_sync_outbox")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The other device saved it a minute later, from another chat, under
+    // another title: one item all the same.
+    let sibling = saved_item_change(
+        &s,
+        &key,
+        json!({"id":saved.id,"kind":"link","source_key":saved.source_key,"title":"Docs","payload":"{\"url\":\"https://example.com/a\"}","conversation_id":"chat-2","created_at":"2026-10-08T09:01:00Z"}),
+        None,
+        false,
+    );
+    query("INSERT INTO account_sync_conflicts(id,object_id,kind,ciphertext,parent_revision,operation_id,deleted,created_at) VALUES(?,?,?,?,NULL,?,0,'now')")
+        .bind(&sibling.revision)
+        .bind(&sibling.object_id)
+        .bind("artifact")
+        .bind(&sibling.ciphertext)
+        .bind(&sibling.operation_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let row = query("SELECT * FROM account_sync_conflicts WHERE id=?")
+        .bind(&sibling.revision)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(conflict_matches_local(&pool, &s, &key, &row).await.unwrap());
+}
+
+#[tokio::test]
+async fn items_saved_before_the_account_was_bound_leave_when_sync_turns_on() {
+    let pool = database().await;
+    query("UPDATE account_sync_control SET account_id=NULL WHERE id=1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let saved = crate::saved_items::save(&pool, &saved_link("https://example.com/a", "chat-1"))
+        .await
+        .unwrap();
+    assert!(outbox_rows(&pool, &saved.id).await.is_empty());
+    query("UPDATE account_sync_control SET account_id='account-one' WHERE id=1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // An account that took its first inventory long ago.
+    set_head(&pool, "earlier-object", "earlier-revision", "note").await;
+    set_enabled(&pool, true).await.unwrap();
+    let rows = outbox_rows(&pool, &saved.id).await;
+    assert_eq!(rows.len(), 1);
+    // Turning sync on again queues nothing twice.
+    set_enabled(&pool, true).await.unwrap();
+    assert_eq!(outbox_rows(&pool, &saved.id).await.len(), 1);
+}

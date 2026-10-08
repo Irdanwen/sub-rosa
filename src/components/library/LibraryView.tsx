@@ -16,6 +16,7 @@ import { chatBlocksToClipboardText } from "../../lib/chat-blocks";
 import { friendlyErrorMessage } from "../../lib/errors";
 import { safeExternalUrl } from "../../lib/external-link";
 import { t } from "../../lib/i18n";
+import { speakableReply } from "../../lib/speakable-text";
 import {
   listChatImages,
   removeSavedItem,
@@ -111,7 +112,8 @@ function SavedRow({ item, onError }: { item: SavedItem; onError: (message: strin
   )?.href;
   const meta =
     item.kind === "reply"
-      ? chatBlocksToClipboardText(text).replace(/\s+/g, " ").slice(0, 160)
+      ? // Read as prose: a heading's "##" or a list's dash is not what was said.
+        speakableReply(text).replace(/\s+/g, " ").slice(0, 160)
       : item.kind === "link"
         ? [stringField(item.payload, "domain"), stringField(item.payload, "snippet")]
             .filter(Boolean)

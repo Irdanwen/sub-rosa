@@ -88,6 +88,7 @@ pub mod scan;
 pub mod share_inbox;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
+pub mod shareable;
 pub mod spotlight;
 pub mod sse_lines;
 pub mod storefront;

@@ -1,0 +1,68 @@
+/* Syntax colour for fenced code (src/lib/code-highlight.ts): a chat reply's
+ * code blocks (.code-hl) and the note editor's, a code canvas included. Four
+ * roles on the existing code tokens, which follow data-theme and sit in the
+ * contrast gate, rather than a theme's twenty: a code block is read, not
+ * studied, and every extra hue is one more pair to keep legible on two
+ * grounds. Comments take the secondary text tone, like the phone's chat. */
+
+:is(.code-hl, .ProseMirror pre) :is(.hljs-comment, .hljs-quote, .hljs-meta) {
+  color: var(--muted-foreground);
+}
+
+:is(.code-hl, .ProseMirror pre) :is(.hljs-comment, .hljs-quote) {
+  font-style: italic;
+}
+
+:is(.code-hl, .ProseMirror pre)
+  :is(.hljs-keyword, .hljs-selector-tag, .hljs-name, .hljs-section, .hljs-doctag) {
+  color: var(--code-keyword);
+  font-weight: var(--fw-medium);
+}
+
+:is(.code-hl, .ProseMirror pre)
+  :is(
+    .hljs-string,
+    .hljs-regexp,
+    .hljs-addition,
+    .hljs-link,
+    .hljs-selector-attr,
+    .hljs-selector-pseudo,
+    .hljs-template-tag
+  ) {
+  color: var(--code-string);
+}
+
+:is(.code-hl, .ProseMirror pre)
+  :is(
+    .hljs-number,
+    .hljs-literal,
+    .hljs-symbol,
+    .hljs-bullet,
+    .hljs-built_in,
+    .hljs-type,
+    .hljs-attr,
+    .hljs-attribute,
+    .hljs-selector-id,
+    .hljs-selector-class,
+    .hljs-variable.language_,
+    .hljs-title.class_
+  ) {
+  color: var(--code-number);
+}
+
+/* A function's name is the word a reader looks for; weight, not a hue. */
+:is(.code-hl, .ProseMirror pre) .hljs-title.function_ {
+  font-weight: var(--fw-medium);
+}
+
+:is(.code-hl, .ProseMirror pre) .hljs-deletion {
+  color: var(--destructive);
+}
+
+:is(.code-hl, .ProseMirror pre) .hljs-emphasis {
+  font-style: italic;
+}
+
+:is(.code-hl, .ProseMirror pre) .hljs-strong {
+  font-weight: var(--fw-medium);
+}

@@ -148,7 +148,7 @@ pub(crate) async fn deliver(
         .path()
         .app_data_dir()
         .map_err(export_failed)?
-        .join("exports");
+        .join(crate::shareable::EXPORTS_DIR);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(export_failed)?;
     }

@@ -11,331 +11,7 @@ pub(super) use super::sync_issues::{
     isolatable_file_error, isolatable_outbox_error, issue_count, issues, reconcile_issues,
     record_issue, retry_issues,
 };
-struct Table {
-    name: &'static str,
-    kind: &'static str,
-    columns: &'static [&'static str],
-}
-const TABLES: &[Table] = &[
-    Table {
-        name: "assistants",
-        kind: "settings",
-        columns: &[
-            "id",
-            "name",
-            "description",
-            "instructions",
-            "model",
-            "opening_message",
-            "tools_json",
-            "allow_notes",
-            "allow_memory",
-            "avatar_ref",
-            "cover_ref",
-            "revision",
-            "created_at",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "assistant_references",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "assistant_id",
-            "name",
-            "format",
-            "text",
-            "status",
-            "error",
-            "note_id",
-            "file_name",
-            "created_at",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "ingests",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "url",
-            "kind",
-            "status",
-            "title",
-            "note_id",
-            "folder_id",
-            "bytes_done",
-            "bytes_total",
-            "created_at",
-            "updated_at",
-        ],
-    },
-    // The gallery's organisation (ADR-0073). Collections route as folders,
-    // marks as artifacts; neither column is a dependency `apply` waits on.
-    Table {
-        name: "studio_collections",
-        kind: "folder",
-        columns: &["id", "name", "created_at", "updated_at"],
-    },
-    Table {
-        name: "studio_marks",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "file_id",
-            "collection_id",
-            "favorite",
-            "hidden",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "account_studio_files",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "file_name",
-            "format",
-            "bytes",
-            "created_at",
-            "model",
-            "prompt",
-        ],
-    },
-    Table {
-        name: "account_turn_usage",
-        kind: "usage",
-        columns: &[
-            "id",
-            "device_id",
-            "sampled_at",
-            "turns",
-            "prompt_tokens",
-            "completion_tokens",
-            "cached_tokens",
-            "cost_usdc_micro",
-            "cache_saved_usdc_micro",
-        ],
-    },
-    Table {
-        name: "account_billing",
-        kind: "usage",
-        columns: &[
-            "id",
-            "device_id",
-            "sampled_at",
-            "available_credits",
-            "escrow_credits",
-            "rail",
-            "price_multiplier",
-        ],
-    },
-    Table {
-        name: "account_note_folders",
-        kind: "folder",
-        columns: &["id", "note_id", "folder_id", "assigned_at", "deleted"],
-    },
-    Table {
-        name: "account_session_folders",
-        kind: "folder",
-        columns: &["id", "session_id", "folder_id", "assigned_at", "deleted"],
-    },
-    Table {
-        name: "account_usage",
-        kind: "usage",
-        columns: &[
-            "id",
-            "device_id",
-            "day",
-            "model",
-            "request_count",
-            "request_bytes",
-            "response_bytes",
-        ],
-    },
-    Table {
-        name: "account_file_manifests",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "artifact_id",
-            "bytes",
-            "format",
-            "chunks_json",
-            "created_at",
-            "source_kind",
-        ],
-    },
-    Table {
-        name: "folders",
-        kind: "folder",
-        columns: &[
-            "id",
-            "name",
-            "description",
-            "created_at",
-            "updated_at",
-            "deleted_at",
-        ],
-    },
-    // A project's settings and files (ADR-0085). The settings object's id is
-    // its folder's, so two devices editing one project edit one object.
-    Table {
-        name: "project_settings",
-        kind: "folder",
-        columns: &[
-            "id",
-            "folder_id",
-            "instructions",
-            "memory_mode",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "project_files",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "folder_id",
-            "name",
-            "format",
-            "text",
-            "status",
-            "error",
-            "file_name",
-            "created_at",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "notes",
-        kind: "note",
-        columns: &[
-            "id",
-            "title",
-            "generated_content",
-            "edited_content",
-            "active_tab",
-            "processing_status",
-            "created_at",
-            "updated_at",
-            "calendar_event_id",
-            "scheduled_start",
-            "attendees_json",
-        ],
-    },
-    Table {
-        name: "recording_sessions",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "note_id",
-            "status",
-            "started_at",
-            "ended_at",
-            "expected_elapsed_ms",
-            "source_mode",
-        ],
-    },
-    Table {
-        name: "audio_artifacts",
-        kind: "artifact",
-        columns: &[
-            "id",
-            "note_id",
-            "recording_session_id",
-            "format",
-            "duration_ms",
-            "size_bytes",
-            "checksum",
-            "created_at",
-            "source",
-        ],
-    },
-    Table {
-        name: "transcripts",
-        kind: "transcript",
-        columns: &[
-            "id",
-            "note_id",
-            "audio_artifact_id",
-            "text",
-            "language",
-            "provider",
-            "status",
-            "created_at",
-            "updated_at",
-            "recording_session_id",
-            "source",
-            "start_ms",
-            "end_ms",
-            "turn_index",
-            "source_mode",
-        ],
-    },
-    Table {
-        name: "memories",
-        kind: "memory",
-        columns: &[
-            "id",
-            "text",
-            "source",
-            "importance",
-            "disabled",
-            "created_at",
-            "updated_at",
-            "scope",
-        ],
-    },
-    Table {
-        name: "agent_tasks",
-        kind: "conversation",
-        columns: &[
-            "id",
-            "title",
-            "prompt",
-            "status",
-            "safety_profile",
-            "progress_summary",
-            "created_at",
-            "updated_at",
-            "completed_at",
-            "model",
-        ],
-    },
-    // An errand travels as an ordinary revision: the service carries it without
-    // being able to read the link inside, and the device it names is the only
-    // one that acts on it (ADR-0054).
-    Table {
-        name: "account_errands",
-        kind: "errand",
-        columns: &[
-            "id",
-            "device_id",
-            "url",
-            "folder_id",
-            "requested_by",
-            "requested_at",
-            "state",
-            "note_id",
-            "message",
-            "updated_at",
-        ],
-    },
-    Table {
-        name: "agent_messages",
-        kind: "conversation",
-        columns: &[
-            "id",
-            "task_id",
-            "role",
-            "content",
-            "created_at",
-            "external_id",
-        ],
-    },
-];
+use super::sync_tables::{Table, TABLES};
 const UUID_SQL:&str="(lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-a'||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6))))";
 fn table(name: &str) -> Result<&'static Table, AppError> {
     // A distinct authenticated wire codec is mandatory: older clients ignore
@@ -397,6 +73,7 @@ fn stays_local(t: &Table, prefix: &str) -> String {
     match t.name {
         "agent_tasks" => format!(" AND {prefix}ephemeral=0"),
         "agent_messages" => outside_temporary_chat(prefix),
+        "saved_items" => super::saved_items::outside_temporary_chat(prefix),
         _ => String::new(),
     }
 }
@@ -563,6 +240,10 @@ pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppErro
                 query(&sql).execute(&mut *tx).await?;
             }
         }
+        // Saved items joined the registry after most accounts took their first
+        // inventory (ADR-0088): what was saved before that leaves now.
+        let saved = table("saved_items")?;
+        query(&format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM saved_items WHERE id NOT IN (SELECT object_id FROM account_sync_outbox) AND id NOT IN (SELECT object_id FROM account_sync_heads){}",saved.kind,snapshot_body(saved,"saved_items."),stays_local(saved,"saved_items."))).execute(&mut *tx).await?;
     }
     query("UPDATE account_sync_control SET enabled=? WHERE id=1")
         .bind(enabled)
@@ -821,6 +502,9 @@ async fn conflict_matches_local(
     };
     let local: Value = serde_json::from_str(&local.get::<String, _>("body"))
         .map_err(|_| error("sync_local_object_invalid"))?;
+    if t.name == "saved_items" {
+        return Ok(super::saved_items::same_item(&local, &remote));
+    }
     Ok(same_content(&local, &remote))
 }
 
@@ -1430,6 +1114,9 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
     {
         if t.name == "audio_artifacts" {
             row.insert("path".into(), json!(""));
+        }
+        if t.name == "saved_items" {
+            super::saved_items::make_room(conn, &row).await?;
         }
         let columns: Vec<_> = row.keys().cloned().collect();
         let assignments = columns

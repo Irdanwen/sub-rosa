@@ -80,3 +80,57 @@ pictures whose origin is a chat. Both shells show the same component.
 - **Synchronising saved items now.** It would add an object kind to the wire
   contract (ADR-0049) for a list the person can rebuild with a tap; local first
   keeps the boundary where it is.
+
+## Addendum 2026-10-08: saved items synchronise; a scan's PDF still does not
+
+The decision to keep saved items on the device was rated as the weakest part
+of the Library: the vendor's library follows the person to every device, and
+"a list the person can rebuild with a tap" is not true of a reply saved from a
+chat that only exists on the other machine. The additive registry entry the
+consequences named is now made.
+
+- **`saved_items` is a synchronised table**, routed as `artifact` like the
+  gallery's marks (ADR-0073), on the generic row codec: the outbox triggers,
+  the first inventory and a remote deletion are the registry's. Nothing is
+  added to the wire contract (ADR-0049); `artifact` is an existing kind and the
+  row is opaque to the service. The registry itself moved to
+  `account/sync_tables.rs`, unchanged otherwise, because `sync.rs` had reached
+  the file-size ceiling.
+- **An item's id is derived from what was saved**, a name-based UUID of its
+  `source_key` (`saved_items::item_id`), like a mark's (ADR-0073). Saving one
+  link on two devices then makes one object, not two rows that the unique
+  `source_key` would refuse to hold side by side. A received item that finds a
+  row for the same thing under another id (only builds before this addendum,
+  which drew ids at random, make one) replaces it.
+- **The same item saved on two devices before either heard of the other is
+  settled, not reviewed.** The two revisions differ only in when each device
+  saved it and which chat it came from; a saved item is never edited, only
+  saved and removed, so the same `source_key` is the same item. It joins the
+  "identical content" rule of `auto_resolve_identical_conflicts`. A removal on
+  one device against a save on another still stays for review, like every
+  deletion that is not clean (ADR-0072).
+- **A temporary chat's items never leave**, enforced twice: saving refuses them
+  (unchanged), and the sync trigger refuses a row whose conversation is a
+  temporary chat by task id or by Hermes session id (ADR-0083).
+- Items saved before the account was bound, or before this build, leave when
+  sync is turned on: `set_enabled` queues every saved item the server has not
+  seen, since most accounts took their first inventory long ago.
+- The Library re-reads its store when a sync applies changes, so an item saved
+  on the phone shows on an open desktop Library without a reload.
+
+A desktop item names its chat by the Hermes session id, which no other device
+knows. Nothing navigates from that id (it is provenance, and part of a reply's
+key), so the other device shows the item but cannot open the chat it came
+from; translating it the way `account_session_folders` does (ADR-0080) is a
+follow-up if the Library grows an "open the chat" action.
+
+**The scanned PDF still stays on the device.** The file lane
+(`account/files.rs`) carries three kinds of file, each tied to the row that
+names it: a recording to its `audio_artifacts` row, a Studio file to its
+gallery record, an assistant or project file to its reference. A note has no
+attachment of its own to ride it, and a scan's PDF is deliberately named by its
+note rather than by a row (see above). Carrying it would mean a fourth
+`source_kind`, with its own staging, download destination and removal lane, and
+older builds would hold its manifest waiting for a parent they cannot find.
+That is a decision of its own, recorded here as not taken; the note and its
+recognised text synchronise as before.
