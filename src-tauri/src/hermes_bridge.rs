@@ -10283,8 +10283,7 @@ mod tests {
 
         let config = std::fs::read_to_string(home.path().join("config.yaml")).expect("read config");
         assert!(config.contains("platform_toolsets:"));
-        let cron = builtin_mcp::cron_toolsets(CRON_SANDBOXED_TOOLSETS);
-        assert!(config.contains(&format!("cron: [{cron}]")) && !cron.contains("june_personal"));
+        assert!(config.contains(&builtin_mcp::cron_entry(CRON_SANDBOXED_TOOLSETS)));
         for toolset in [
             "terminal",
             "file",

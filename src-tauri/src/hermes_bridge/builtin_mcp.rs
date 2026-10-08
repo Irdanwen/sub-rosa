@@ -27,6 +27,12 @@ const CRON_MCP_SERVERS: &[&str] = &[
     crate::connectors::hermes::SERVER,
 ];
 
+/// The `config.yaml` line [`cron_toolsets`] writes, for the bridge's tests.
+#[cfg(test)]
+pub(super) fn cron_entry(sandboxed: &[&str]) -> String {
+    format!("cron: [{}]", cron_toolsets(sandboxed))
+}
+
 /// `platform_toolsets.cron`: the sandboxed toolsets, then the servers.
 pub(super) fn cron_toolsets(sandboxed: &[&str]) -> String {
     sandboxed
