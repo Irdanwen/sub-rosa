@@ -1,4 +1,4 @@
-import { number, t } from "../lib/i18n";
+import { intlLocale, number, t, websiteLocale } from "../lib/i18n";
 import type { Copy } from "../pages/docs-content";
 import benchmarkData from "./benchmarks.json";
 import indexData from "./details/index.json";
@@ -446,15 +446,25 @@ export function benchmarksFor(category: Category) {
     .sort((a, b) => coverage(b.id) - coverage(a.id));
 }
 
+/** How each language abbreviates a billion parameters ("753 Md", "753 Mrd."). */
+const BILLIONS: Record<string, string> = {
+  fr: "Md",
+  de: "Mrd.",
+  it: "Mld",
+  es: "mil M",
+  "pt-BR": "bi",
+};
+
 /** "753 Md" in French, "753B" in English: parameter counts as each language writes them. */
 export function parameterCount(value: string) {
   const match = value.trim().match(/^([\d.,]+)\s*([KMBT])$/i);
   if (!match) return value;
   const amount = Number(match[1].replace(",", "."));
   const unit = match[2].toUpperCase();
-  if (t("en", "fr") === "en") return `${match[1]}${unit}`;
-  if (unit === "T") return `${number(amount * 1000, 0)} Md`;
-  if (unit === "B") return `${number(amount, 1)} Md`;
+  const billions = BILLIONS[websiteLocale()];
+  if (!billions) return `${match[1]}${unit}`;
+  if (unit === "T") return `${number(amount * 1000, 0)} ${billions}`;
+  if (unit === "B") return `${number(amount, 1)} ${billions}`;
   return `${number(amount, 1)} ${unit === "M" ? "M" : "k"}`;
 }
 
@@ -521,7 +531,7 @@ export const latestRelease = (slug: string) => {
 export function releaseDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1, 12));
-  return new Intl.DateTimeFormat(t("en", "fr"), {
+  return new Intl.DateTimeFormat(intlLocale(), {
     year: "numeric",
     month: "long",
     ...(day ? { day: "numeric" } : {}),

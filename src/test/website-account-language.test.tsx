@@ -30,8 +30,12 @@ it("keeps the account language choice and signup intent across a reload", async 
     await screen.findByRole("heading", { name: "Votre travail à portée de main." }),
   ).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "EN" }));
-  expect(screen.getByRole("heading", { name: "Your work, within reach." })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("combobox", { name: "Langue du site" }), {
+    target: { value: "en" },
+  });
+  expect(
+    await screen.findByRole("heading", { name: "Your work, within reach." }),
+  ).toBeInTheDocument();
   expect(location.pathname + location.search).toBe("/account?intent=signup&lang=en");
 
   page.unmount();

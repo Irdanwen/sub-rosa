@@ -114,12 +114,14 @@ describe("model catalog depth", () => {
     }
   });
 
-  it("routes the guide, the comparator and every kind of work in both languages", () => {
+  it("routes the guide, the comparator and every kind of work in every language", () => {
     const site = createSitePaths("/subrosa/", "https://accounts.example");
     const origin = "https://marketing.example";
     const paths = ["guide", "compare", ...categories.map((category) => category.id)];
     for (const path of paths)
-      for (const prefix of ["/subrosa/models/", "/subrosa/fr/models/"])
+      for (const prefix of ["", "/fr", "/de", "/it", "/es", "/pt-br"].map(
+        (language) => `/subrosa${language}/models/`,
+      ))
         expect(site.handles(new URL(`${prefix}${path}`, origin), origin), path).toBe(true);
   });
 

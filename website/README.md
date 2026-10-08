@@ -2,10 +2,20 @@
 
 The public pages and account UI share the repository's React/Vite toolchain and
 single pnpm lockfile. Public pages are prerendered in English at their existing
-paths and in French below `/fr/`. A first visit to the home page follows the
-browser language; the EN/FR control remembers an explicit choice. Account,
-share and native return URLs remain unprefixed to preserve their protocols.
+paths and below `/fr/`, `/de/`, `/it/`, `/es/` and `/pt-br/` in the five other
+languages the app speaks. A first visit to the home page follows the first
+browser language the site speaks; the language select remembers an explicit
+choice. Account, share and native return URLs remain unprefixed (they take
+`?lang=`) to preserve their protocols.
 The native apps keep their own language settings.
+
+Copy is written as English/French pairs (`t("Help", "Aide")`, `Copy` data).
+German, Italian, Spanish and Brazilian Portuguese live in catalogs keyed by
+the English under `src/locales/` (ADR-0047, website addendum). After adding
+or changing a sentence, run `pnpm --filter @subrosa/website i18n:extract`,
+translate the empty entries in every catalog (the app's glossaries in
+`scripts/i18n/` apply), and `pnpm --filter @subrosa/website i18n:check`;
+`src/test/website-i18n-catalog.test.tsx` is red until every catalog is complete.
 No external font requests, analytics, browser session recording or third-party
 executable scripts.
 

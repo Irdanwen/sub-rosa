@@ -1,4 +1,4 @@
-import { t, type SiteLocale } from "../../lib/i18n";
+import { intlLocale, t, type SiteLocale } from "../../lib/i18n";
 import { localizedSiteHref } from "../../lib/paths";
 import {
   type Benchmark,
@@ -26,7 +26,7 @@ import { needs } from "../../models/needs";
 import { read } from "../docs-content";
 
 export const checkedOn = () =>
-  new Intl.DateTimeFormat(t("en", "fr"), { dateStyle: "long" }).format(
+  new Intl.DateTimeFormat(intlLocale(), { dateStyle: "long" }).format(
     new Date(`${snapshot.checkedAt}T12:00:00Z`),
   );
 

@@ -200,10 +200,12 @@ export function FamilyPage({ family, locale }: { family: Family; locale: SiteLoc
           `${number(pick.context / 1000, 0)} k jetons de contexte`,
         )
     : pick?.seconds
-      ? t(
-          `Clips up to ${pick.seconds[1]} s${pick.audio ? ", with sound" : ""}`,
-          `Plans jusqu’à ${pick.seconds[1]} s${pick.audio ? ", avec le son" : ""}`,
-        )
+      ? pick.audio
+        ? t(
+            `Clips up to ${pick.seconds[1]} s, with sound`,
+            `Plans jusqu’à ${pick.seconds[1]} s, avec le son`,
+          )
+        : t(`Clips up to ${pick.seconds[1]} s`, `Plans jusqu’à ${pick.seconds[1]} s`)
       : specRows.find((row) => row.languages)?.languages
         ? read(specRows.find((row) => row.languages)?.languages ?? ["", ""])
         : null;

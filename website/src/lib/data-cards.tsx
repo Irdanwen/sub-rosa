@@ -23,7 +23,7 @@ import {
   tableToCsv,
 } from "@subrosa/chat-core/chat-blocks-data";
 import { useMemo, useState } from "react";
-import { t, websiteLocale } from "./i18n";
+import { intlLocale, t } from "./i18n";
 import "./data-cards.css";
 
 /**
@@ -39,7 +39,7 @@ const WORDS: DataBlockWords = {
   series: (number) => t(`Series ${number}`, `Série ${number}`),
   other: () => t("Other", "Autre"),
 };
-const locale = () => (websiteLocale() === "fr" ? "fr-FR" : "en-US");
+const locale = intlLocale;
 const value = (amount: number | null, unit?: string) =>
   formatValueIn(locale(), t("No value", "Aucune valeur"), amount, unit);
 

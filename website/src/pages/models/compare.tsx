@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { number, t, type SiteLocale } from "../../lib/i18n";
+import { localizedPublicPath, number, t, type SiteLocale } from "../../lib/i18n";
 import { siteHref } from "../../lib/paths";
 import {
   type Family,
@@ -49,7 +49,7 @@ export function ComparePage({ query, locale }: { query: string; locale: SiteLoca
     history.replaceState(
       null,
       "",
-      `${siteHref(locale === "fr" ? "/fr/models/compare" : "/models/compare")}${search}`,
+      `${siteHref(localizedPublicPath("/models/compare", locale))}${search}`,
     );
   };
 
