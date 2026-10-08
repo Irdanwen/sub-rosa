@@ -1,0 +1,5 @@
+/* SubRosaShortcuts.swift (it). Keys are the English text. */
+"New audio note in ${applicationName}" = "Nuova nota audio in ${applicationName}";
+"Record with ${applicationName}" = "Registra con ${applicationName}";
+"Dictate with ${applicationName}" = "Detta con ${applicationName}";
+"Ask ${applicationName}" = "Chiedi a ${applicationName}";

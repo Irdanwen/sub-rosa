@@ -49,6 +49,7 @@ import {
   shortcutFromCapturePayload,
 } from "../shortcuts/use-shortcut-capture";
 import {
+  Select,
   selectPopoverPlacement,
   selectPopoverStyle,
   type SelectPopoverPlacement,
@@ -933,13 +934,14 @@ export function AppSettings({
                       </p>
                     </div>
                     <div className="settings-row-control">
-                      <SegmentedControl<LocaleChoice>
-                        aria-label={t("Language")}
+                      <Select
+                        ariaLabel={t("Language")}
                         value={language}
-                        options={UI_LANGUAGE_OPTIONS}
-                        onValueChange={(next) => {
-                          setLanguage(next);
-                          chooseLocaleAndReload(next);
+                        placeholder={t("System")}
+                        options={[...UI_LANGUAGE_OPTIONS]}
+                        onChange={(next) => {
+                          setLanguage(next as LocaleChoice);
+                          chooseLocaleAndReload(next as LocaleChoice);
                         }}
                       />
                     </div>

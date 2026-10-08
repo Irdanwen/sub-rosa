@@ -1,0 +1,15 @@
+<resources>
+    <string name="subrosa_recording_channel">Mikrofonaufnahme</string>
+    <string name="subrosa_recording_title">Sub Rosa nimmt auf</string>
+    <string name="subrosa_recording_description">Tippe, um zu deiner Aufnahme zurückzukehren.</string>
+    <string name="subrosa_processing_channel">Transkription</string>
+    <string name="subrosa_processing_title">Sub Rosa transkribiert</string>
+    <string name="subrosa_processing_description">Deine Notiz ist gleich fertig.</string>
+    <string name="subrosa_share_failed">Sub Rosa konnte nicht übernehmen, was du geteilt hast. Versuche es noch einmal.</string>
+    <string name="subrosa_share_label">Sub Rosa</string>
+    <string name="subrosa_widget_label">Sub Rosa</string>
+    <string name="subrosa_widget_description">Fragen, diktieren oder aufnehmen mit einem Tippen.</string>
+    <string name="subrosa_widget_ask">Fragen</string>
+    <string name="subrosa_widget_dictate">Diktieren</string>
+    <string name="subrosa_widget_record">Aufnehmen</string>
+</resources>

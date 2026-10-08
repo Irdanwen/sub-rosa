@@ -73,10 +73,10 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: subrosa
             CFBundleURLSchemes: [subrosa]
-        # English and French, the two languages of the app's own catalog: the
+        # Every language of the app's own catalog (src/locales): the
         # Shortcuts actions (Sources/os-june/Intents) read their titles from
         # the matching .lproj.
-        CFBundleLocalizations: [en, fr]
+        CFBundleLocalizations: [en, fr, de, it, es, pt-BR]
         # Background execution (see src-tauri/src/ios_background.rs):
         # `audio` keeps a note recording alive with the screen locked,
         # `processing`/`fetch` let BGTaskScheduler wake the app up later to
@@ -275,7 +275,7 @@ targets:
         CFBundleDisplayName: Sub Rosa
         CFBundleShortVersionString: 1.88.1
         CFBundleVersion: "1.88.1"
-        CFBundleLocalizations: [en, fr]
+        CFBundleLocalizations: [en, fr, de, it, es, pt-BR]
         WKApplication: true
         WKCompanionAppBundleIdentifier: xyz.carpediem.subrosa
         WKRunsIndependentlyOfCompanionApp: false

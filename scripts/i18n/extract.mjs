@@ -5,19 +5,23 @@
  *   node scripts/i18n/extract.mjs          # update src/locales/*.json
  *   node scripts/i18n/extract.mjs --check  # fail if a catalog is behind
  *
- * `en.json` lists the sentences (the key is the sentence). `fr.json` keeps
+ * `en.json` lists the sentences (the key is the sentence). Every translated
+ * catalog (`fr.json`, `de.json`, `it.json`, `es.json`, `pt-BR.json`) keeps
  * its translations, gains a "" for every new sentence, and loses the ones
  * no code says any more. The gate test refuses an empty translation, so a
- * new sentence is a red test until it is translated (ADR-0047).
+ * new sentence is a red test until it is translated in every language
+ * (ADR-0047). `--check` also runs `verify-catalogs.mjs` (placeholders,
+ * dashes, sentences left in English).
  */
 import ts from "typescript";
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { collectRustSentences } from "./rust-sentences.mjs";
+import { TRANSLATED_LOCALES, verifyLocale } from "./verify-catalogs.mjs";
 
 const CHECK = process.argv.includes("--check");
 const ROOTS = ["src"];
-const LOCALES = ["fr"];
+const LOCALES = TRANSLATED_LOCALES;
 
 const files = [];
 function walk(dir) {
@@ -73,6 +77,7 @@ const backendStale = !existsSync(backendPath) || readFileSync(backendPath, "utf8
 const keys = [...sentences.keys()].sort((a, b) => a.localeCompare(b, "en"));
 const en = Object.fromEntries(keys.map((key) => [key, key]));
 let behind = 0;
+const behindBy = {};
 const outputs = { "src/locales/en.json": en };
 for (const locale of LOCALES) {
   const path = `src/locales/${locale}.json`;
@@ -80,7 +85,10 @@ for (const locale of LOCALES) {
   const next = {};
   for (const key of keys) {
     next[key] = current[key] ?? "";
-    if (!next[key]) behind++;
+    if (!next[key]) {
+      behind++;
+      behindBy[locale] = (behindBy[locale] ?? 0) + 1;
+    }
   }
   outputs[path] = next;
 }
@@ -90,13 +98,36 @@ if (CHECK) {
   const stale =
     keys.filter((key) => !(key in currentEn)).length +
     Object.keys(currentEn).filter((key) => !sentences.has(key)).length;
+  const untranslated = Object.entries(behindBy)
+    .map(([locale, count]) => `${locale} ${count}`)
+    .join(", ");
   console.log(
-    `${keys.length} sentences; ${behind} untranslated; ${stale} not in en.json${backendStale ? "; backend-messages.json is behind the Rust source" : ""}`,
+    `${keys.length} sentences; ${behind} untranslated${untranslated ? ` (${untranslated})` : ""}; ${stale} not in en.json${backendStale ? "; backend-messages.json is behind the Rust source" : ""}`,
   );
-  process.exit(stale === 0 && behind === 0 && !backendStale ? 0 : 1);
+  // The quality gate only means something once the catalogs hold every
+  // sentence; until then the counts above say what is missing.
+  let invalid = 0;
+  if (stale === 0 && behind === 0) {
+    for (const locale of LOCALES) {
+      const { errors } = verifyLocale(locale);
+      for (const error of errors.slice(0, 20)) {
+        console.log(`${locale}: ${error.problem}: ${JSON.stringify(error.sentence)}`);
+      }
+      invalid += errors.length;
+    }
+  }
+  process.exit(stale === 0 && behind === 0 && invalid === 0 && !backendStale ? 0 : 1);
 }
 outputs[backendPath] = backend;
 for (const [path, value] of Object.entries(outputs)) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
-console.log(`${keys.length} sentences in ${files.length} files; ${behind} untranslated`);
+console.log(
+  `${keys.length} sentences in ${files.length} files; ${behind} untranslated${
+    Object.keys(behindBy).length
+      ? ` (${Object.entries(behindBy)
+          .map(([locale, count]) => `${locale} ${count}`)
+          .join(", ")})`
+      : ""
+  }`,
+);

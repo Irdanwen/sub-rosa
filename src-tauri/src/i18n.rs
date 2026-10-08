@@ -4,8 +4,8 @@
 //! Most copy reaches the screen through the webview's `t()`. Notifications
 //! do not: they are posted from Rust, often while the webview is frozen or
 //! not loaded at all (a background launch), so Rust renders them itself,
-//! from the same catalog. `src/locales/fr.json` is compiled in, the English
-//! sentence is the key, a sentence the catalog lacks comes back as written,
+//! from the same catalogs. Every `src/locales/<lang>.json` is compiled in, the
+//! English sentence is the key, a sentence the catalog lacks comes back as written,
 //! and `{name}` placeholders are filled the way `t()` fills them.
 //!
 //! Write `crate::tr!("Your day")` or `crate::tr!("{count} meetings", count =
@@ -30,15 +30,30 @@ use crate::domain::types::AppError;
 
 const LOCALE_FILE: &str = "locale.json";
 
+/// The languages the app speaks. The serialized names are the webview's
+/// locale codes (`src/lib/i18n.ts`), which `locale.json` stores.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum Locale {
+    #[serde(rename = "en")]
     En,
+    #[serde(rename = "fr")]
     Fr,
+    #[serde(rename = "de")]
+    De,
+    #[serde(rename = "it")]
+    It,
+    #[serde(rename = "es")]
+    Es,
+    #[serde(rename = "pt-BR")]
+    PtBr,
 }
 
 impl Locale {
+    const ALL: [Self; 6] = [Self::En, Self::Fr, Self::De, Self::It, Self::Es, Self::PtBr];
+
     /// A language tag reduced to a language the app has, English otherwise.
+    /// The language subtag decides: `de-CH` is German, and any Portuguese
+    /// reads the Brazilian catalog, the only Portuguese the app has.
     pub fn from_tag(tag: &str) -> Self {
         let language = tag
             .split(['-', '_', '.'])
@@ -47,6 +62,10 @@ impl Locale {
             .to_ascii_lowercase();
         match language.as_str() {
             "fr" => Self::Fr,
+            "de" => Self::De,
+            "it" => Self::It,
+            "es" => Self::Es,
+            "pt" => Self::PtBr,
             _ => Self::En,
         }
     }
@@ -57,28 +76,53 @@ impl Locale {
         match self {
             Self::En => "English",
             Self::Fr => "French",
+            Self::De => "German",
+            Self::It => "Italian",
+            Self::Es => "Spanish",
+            Self::PtBr => "Brazilian Portuguese",
         }
     }
 
     fn code(self) -> u8 {
-        match self {
-            Self::En => 0,
-            Self::Fr => 1,
-        }
+        Self::ALL
+            .iter()
+            .position(|locale| *locale == self)
+            .unwrap_or_default() as u8
     }
 
     fn from_code(code: u8) -> Self {
-        if code == 1 {
-            Self::Fr
-        } else {
-            Self::En
-        }
+        Self::ALL
+            .get(usize::from(code))
+            .copied()
+            .unwrap_or(Self::En)
     }
 }
 
-static FRENCH: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../src/locales/fr.json")).unwrap_or_default()
-});
+type Catalog = LazyLock<HashMap<String, String>>;
+
+fn parse(raw: &str) -> HashMap<String, String> {
+    serde_json::from_str(raw).unwrap_or_default()
+}
+
+static FRENCH: Catalog = LazyLock::new(|| parse(include_str!("../../src/locales/fr.json")));
+static GERMAN: Catalog = LazyLock::new(|| parse(include_str!("../../src/locales/de.json")));
+static ITALIAN: Catalog = LazyLock::new(|| parse(include_str!("../../src/locales/it.json")));
+static SPANISH: Catalog = LazyLock::new(|| parse(include_str!("../../src/locales/es.json")));
+static BRAZILIAN_PORTUGUESE: Catalog =
+    LazyLock::new(|| parse(include_str!("../../src/locales/pt-BR.json")));
+
+/// The catalog of a language, parsed on first use. English has none: the
+/// sentence is its own translation.
+fn catalog(locale: Locale) -> Option<&'static HashMap<String, String>> {
+    match locale {
+        Locale::En => None,
+        Locale::Fr => Some(&FRENCH),
+        Locale::De => Some(&GERMAN),
+        Locale::It => Some(&ITALIAN),
+        Locale::Es => Some(&SPANISH),
+        Locale::PtBr => Some(&BRAZILIAN_PORTUGUESE),
+    }
+}
 
 static CURRENT: AtomicU8 = AtomicU8::new(0);
 static LOCALE_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -150,14 +194,11 @@ fn interpolate(text: &str, vars: &[(&str, String)]) -> String {
 /// The sentence in `locale`: the catalog's translation when it has a
 /// non-empty one, the English otherwise, placeholders filled. Pure.
 pub fn render(locale: Locale, source: &str, vars: &[(&str, String)]) -> String {
-    let text = match locale {
-        Locale::En => source,
-        Locale::Fr => FRENCH
-            .get(source)
-            .map(String::as_str)
-            .filter(|translated| !translated.trim().is_empty())
-            .unwrap_or(source),
-    };
+    let text = catalog(locale)
+        .and_then(|catalog| catalog.get(source))
+        .map(String::as_str)
+        .filter(|translated| !translated.trim().is_empty())
+        .unwrap_or(source);
     interpolate(text, vars)
 }
 
@@ -178,7 +219,7 @@ pub fn write_in_line() -> String {
     format!("Write in {}.", current().english_name())
 }
 
-/// The sentence in the person's language, from `src/locales/fr.json`. Takes
+/// The sentence in the person's language, from `src/locales/<lang>.json`. Takes
 /// a literal so the catalog extractor sees every sentence; placeholders are
 /// named arguments: `tr!("{count} notes", count = n)`.
 #[macro_export]
@@ -291,15 +332,59 @@ mod tests {
         assert_eq!(Locale::from_tag("fr-CH"), Locale::Fr);
         assert_eq!(Locale::from_tag("fr_FR.UTF-8"), Locale::Fr);
         assert_eq!(Locale::from_tag("FR"), Locale::Fr);
-        assert_eq!(Locale::from_tag("de-DE"), Locale::En);
+        assert_eq!(Locale::from_tag("de-DE"), Locale::De);
+        assert_eq!(Locale::from_tag("de_CH"), Locale::De);
+        assert_eq!(Locale::from_tag("it-IT"), Locale::It);
+        assert_eq!(Locale::from_tag("es-419"), Locale::Es);
+        assert_eq!(Locale::from_tag("pt-BR"), Locale::PtBr);
+        assert_eq!(Locale::from_tag("pt-PT"), Locale::PtBr);
+        assert_eq!(Locale::from_tag("ja-JP"), Locale::En);
         assert_eq!(Locale::from_tag(""), Locale::En);
     }
 
     #[test]
-    fn every_french_translation_is_non_empty_for_the_rust_sentences() {
-        // The catalog the binary carries: the JS gate keeps it complete, and
-        // this proves Rust reads the same file.
-        assert!(FRENCH.len() > 1000);
+    fn every_catalog_is_compiled_in_and_complete_for_the_rust_sentences() {
+        // The catalogs the binary carries: the JS gate keeps them complete,
+        // and this proves Rust reads the same files.
+        let rust_sentences: Vec<String> =
+            serde_json::from_str(include_str!("../../src/locales/backend-messages.json")).unwrap();
+        for locale in Locale::ALL
+            .into_iter()
+            .filter(|locale| *locale != Locale::En)
+        {
+            let catalog = catalog(locale).unwrap();
+            assert!(
+                catalog.len() > 1000,
+                "{locale:?} catalog is not compiled in"
+            );
+            for sentence in &rust_sentences {
+                assert!(
+                    catalog
+                        .get(sentence)
+                        .is_some_and(|value| !value.trim().is_empty()),
+                    "{locale:?} lacks {sentence:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_language_renders_its_own_catalog() {
+        for locale in [Locale::De, Locale::It, Locale::Es, Locale::PtBr] {
+            let rendered = with_locale(locale, || crate::tr!("Your day"));
+            assert!(!rendered.is_empty());
+            assert_ne!(rendered, "Your day", "{locale:?}");
+        }
+    }
+
+    #[test]
+    fn codes_and_tags_round_trip() {
+        for locale in Locale::ALL {
+            assert_eq!(Locale::from_code(locale.code()), locale);
+            let tag = serde_json::to_value(locale).unwrap();
+            assert_eq!(Locale::from_tag(tag.as_str().unwrap()), locale);
+        }
+        assert_eq!(Locale::from_code(200), Locale::En);
     }
 
     #[test]
@@ -308,6 +393,8 @@ mod tests {
         let path = dir.path().join(LOCALE_FILE);
         std::fs::write(&path, r#"{"locale":"fr"}"#).unwrap();
         assert_eq!(read_stored(&path), Some(Locale::Fr));
+        std::fs::write(&path, r#"{"locale":"pt-BR"}"#).unwrap();
+        assert_eq!(read_stored(&path), Some(Locale::PtBr));
         std::fs::write(&path, "not json").unwrap();
         assert_eq!(read_stored(&path), None);
     }

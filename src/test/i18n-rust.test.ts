@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 // @ts-expect-error: a plain ES module script without types.
 import { collectRustSentences, sentencesIn } from "../../scripts/i18n/rust-sentences.mjs";
+import de from "../locales/de.json";
+import es from "../locales/es.json";
 import fr from "../locales/fr.json";
+import it_ from "../locales/it.json";
+import ptBR from "../locales/pt-BR.json";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -33,21 +37,26 @@ describe("the Rust sentence extractor", () => {
     );
   });
 
-  it("finds the notification sentences in the Rust source, each translated", () => {
+  it("finds the notification sentences in the Rust source, each translated in every language", () => {
     const sentences: string[] = collectRustSentences();
-    const catalog = fr as Record<string, string>;
-    for (const sentence of [
-      "Your day",
-      "Your next meeting",
-      "Your research report is ready in your notes.",
-      "This run did not finish. {reason}",
-      "{count} results to review",
-    ]) {
-      expect(sentences).toContain(sentence);
-      expect(catalog[sentence]).toBeTruthy();
+    for (const catalog of [fr, de, it_, es, ptBR] as Record<string, string>[]) {
+      expectTranslated(sentences, catalog);
     }
   });
 });
+
+function expectTranslated(sentences: string[], catalog: Record<string, string>) {
+  for (const sentence of [
+    "Your day",
+    "Your next meeting",
+    "Your research report is ready in your notes.",
+    "This run did not finish. {reason}",
+    "{count} results to review",
+  ]) {
+    expect(sentences).toContain(sentence);
+    expect(catalog[sentence]).toBeTruthy();
+  }
+}
 
 describe("telling Rust the language", () => {
   it("sends the resolved locale inside the app, and nothing outside it", async () => {

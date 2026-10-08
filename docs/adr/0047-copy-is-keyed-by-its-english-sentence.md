@@ -101,3 +101,52 @@ always English. Rust now renders them itself:
   device translate that sentence themselves, and `translate_known` renders
   it for the notification. The meeting brief asks the model to write in the
   app's language.
+
+## Addendum (2026-10-08): German, Italian, Spanish and Brazilian Portuguese
+
+The app now speaks six languages: English, French, German (`de`), Italian
+(`it`), Spanish (`es`) and Brazilian Portuguese (`pt-BR`). Nothing about the
+key changed; what changed is how many catalogs the gate holds and how the
+person reaches them.
+
+- **Every catalog is a gate.** `extract.mjs` keeps `fr`, `de`, `it`, `es`
+  and `pt-BR` in step with the code, and `pnpm i18n:check` fails when any
+  of them has an empty sentence. `scripts/i18n/verify-catalogs.mjs` is the
+  quality gate the catalog test and the check both run: same placeholder
+  set, no en or em dash, no product name lost, and no sentence of more than
+  three words left identical to its English (the rare legitimate one, a
+  command or a sample, is listed in `untranslated-ok.json`).
+- **A glossary per language** (`scripts/i18n/glossary.<lang>.json`) records
+  the register (du in German, tu in Italian, tú in neutral Spanish, você in
+  Brazilian Portuguese, the address of the reader modern apps use there),
+  the product names that never change, and the agreed word for each
+  recurring noun. Its term check prints warnings, never fails: inflection,
+  compounds and a natural rephrasing make it a reading aid, not a gate.
+- **Hermes is never shown** in the new languages, including where the
+  French still carries the name in a diagnostic sentence.
+- **The system decides by its language subtag.** `de-CH` reads German, and
+  any Portuguese (`pt-PT` too) reads the Brazilian catalog, the only
+  Portuguese the app has. `localeFromTag` (TypeScript) and
+  `Locale::from_tag` (Rust) agree on it, and `locale.json` stores the
+  webview's code (`"pt-BR"`).
+- **All six catalogs ship in the bundle,** statically imported, about 2.4 MB
+  of JSON before compression. Loading a catalog on demand would make the
+  boot asynchronous, and module-scope copy (the reason `i18n-boot.ts` is the
+  first import) needs the language decided synchronously. Rust compiles in
+  the same files and parses only the one it speaks, on first use.
+- **The picker names each language in itself** ("Deutsch", "Português
+  (Brasil)") so a person who landed in a language they cannot read still
+  finds theirs, and became a list (a select on the desktop, an option sheet
+  on the phone): six names do not fit a segmented control.
+- **Intl follows:** `intlLocale()` maps each language to its tag (`de-DE`,
+  `it-IT`, `es-ES`, `pt-BR`), and the page's `lang` attribute is set too.
+- **The native strings follow the same list:** the iOS widgets, the watch
+  app, its complication and the Shortcuts actions have a `.lproj` per
+  language (declared in `CFBundleLocalizations` and the project's known
+  regions), the Android widget and notifications have `values-de`,
+  `values-it`, `values-es` and `values-pt-rBR`, and the browser extension
+  has `_locales/{de,it,es,pt_BR}`. Tests hold each of them to the full list.
+
+Adding a seventh language is now: the catalog, its glossary, one entry in
+`SUPPORTED_LOCALES` and `TRANSLATED_LOCALES`, one arm in `Locale`, and the
+native tables.

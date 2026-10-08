@@ -1,0 +1,15 @@
+<resources>
+    <string name="subrosa_recording_channel">Gravação do microfone</string>
+    <string name="subrosa_recording_title">O Sub Rosa está gravando</string>
+    <string name="subrosa_recording_description">Toque para voltar à sua gravação.</string>
+    <string name="subrosa_processing_channel">Transcrição</string>
+    <string name="subrosa_processing_title">O Sub Rosa está transcrevendo</string>
+    <string name="subrosa_processing_description">Sua nota vai ficar pronta em breve.</string>
+    <string name="subrosa_share_failed">O Sub Rosa não conseguiu receber o que você compartilhou. Tente novamente.</string>
+    <string name="subrosa_share_label">Sub Rosa</string>
+    <string name="subrosa_widget_label">Sub Rosa</string>
+    <string name="subrosa_widget_description">Pergunte, dite ou grave com um toque.</string>
+    <string name="subrosa_widget_ask">Perguntar</string>
+    <string name="subrosa_widget_dictate">Ditar</string>
+    <string name="subrosa_widget_record">Gravar</string>
+</resources>

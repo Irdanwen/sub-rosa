@@ -1,0 +1,146 @@
+{
+  "extName": {
+    "message": "Sub Rosa"
+  },
+  "extDescription": {
+    "message": "Frag Sub Rosa zur Seite, die du gerade liest. Funktioniert mit der Sub Rosa App auf deinem Computer."
+  },
+  "actionTitle": {
+    "message": "Sub Rosa fragen"
+  },
+  "menuAskSelection": {
+    "message": "Sub Rosa fragen"
+  },
+  "pairTitle": {
+    "message": "Diesen Browser verbinden"
+  },
+  "pairBody": {
+    "message": "Öffne in Sub Rosa auf diesem Computer die Einstellungen, dann Browsererweiterung, und wähle Browser verbinden. Gib den angezeigten Code ein."
+  },
+  "pairCodeLabel": {
+    "message": "Code"
+  },
+  "pairButton": {
+    "message": "Verbinden"
+  },
+  "paired": {
+    "message": "Dieser Browser ist mit Sub Rosa verbunden."
+  },
+  "summarize": {
+    "message": "Zusammenfassen"
+  },
+  "summarizePrompt": {
+    "message": "Fasse diese Seite zusammen."
+  },
+  "addToNote": {
+    "message": "Zu einer Notiz hinzufügen"
+  },
+  "saveLink": {
+    "message": "Link in der Bibliothek speichern"
+  },
+  "openSidePanel": {
+    "message": "In der Seitenleiste öffnen"
+  },
+  "askPlaceholder": {
+    "message": "Frag etwas zu dieser Seite"
+  },
+  "includePage": {
+    "message": "Diese Seite mitsenden"
+  },
+  "send": {
+    "message": "Senden"
+  },
+  "stop": {
+    "message": "Stoppen"
+  },
+  "newChat": {
+    "message": "Neuer Chat"
+  },
+  "forget": {
+    "message": "Diesen Browser trennen"
+  },
+  "you": {
+    "message": "Du"
+  },
+  "assistant": {
+    "message": "Sub Rosa"
+  },
+  "selectionLabel": {
+    "message": "Markierter Text"
+  },
+  "noteSaved": {
+    "message": "Zu einer neuen Notiz hinzugefügt: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "linkSaved": {
+    "message": "In deiner Bibliothek gespeichert: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "continuesInApp": {
+    "message": "Dieser Chat ist auch in Sub Rosa, bei deinen Chats."
+  },
+  "stageThinking": {
+    "message": "Denkt nach"
+  },
+  "stageSearchingWeb": {
+    "message": "Sucht im Web"
+  },
+  "stageReadingPage": {
+    "message": "Liest eine Seite"
+  },
+  "stageSearchingNotes": {
+    "message": "Sucht in deinen Notizen"
+  },
+  "stageSearchingMemory": {
+    "message": "Prüft, was Sub Rosa sich gemerkt hat"
+  },
+  "errorAppNotRunning": {
+    "message": "Sub Rosa ist auf diesem Computer nicht geöffnet. Öffne die App und versuche es noch einmal."
+  },
+  "errorHostNotFound": {
+    "message": "Dieser Browser ist noch nicht für Sub Rosa eingerichtet. Öffne in Sub Rosa die Einstellungen, dann Browsererweiterung, und wähle Browser verbinden."
+  },
+  "errorNotPaired": {
+    "message": "Dieser Browser ist nicht mehr mit Sub Rosa verbunden. Gib einen neuen Code ein, um ihn wieder zu verbinden."
+  },
+  "errorPairingNotStarted": {
+    "message": "Sub Rosa zeigt keinen Code an. Wähle zuerst in den Einstellungen unter Browsererweiterung Browser verbinden."
+  },
+  "errorPairingWrong": {
+    "message": "Dieser Code ist nicht der, den Sub Rosa anzeigt. Prüfe ihn und versuche es noch einmal."
+  },
+  "errorPairingExpired": {
+    "message": "Dieser Code ist abgelaufen. Lass dir in Sub Rosa einen neuen anzeigen."
+  },
+  "errorPairingExhausted": {
+    "message": "Zu viele falsche Codes. Lass dir in Sub Rosa einen neuen anzeigen."
+  },
+  "errorNotAPage": {
+    "message": "Sub Rosa kann nur Webseiten lesen."
+  },
+  "errorNoAccess": {
+    "message": "Klicke in der Symbolleiste auf die Sub Rosa Taste, damit es diese Seite lesen darf."
+  },
+  "errorUpdateApp": {
+    "message": "Aktualisiere Sub Rosa, um diese Version der Erweiterung zu nutzen."
+  },
+  "errorBusy": {
+    "message": "Dieser Chat antwortet noch. Warte ab und frag dann noch einmal."
+  },
+  "errorEmptyQuestion": {
+    "message": "Gib zuerst eine Frage ein."
+  },
+  "errorGeneric": {
+    "message": "Etwas ist schiefgelaufen. Versuche es noch einmal."
+  }
+}

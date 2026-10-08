@@ -10,14 +10,22 @@ import type { ReactNode } from "react";
 import { type LocaleChoice, t } from "../../lib/i18n";
 import type { ThemePreference } from "../../lib/theme";
 
+/**
+ * Each language is named in itself ("Deutsch", not "German"), so a person
+ * who landed in a language they cannot read still finds their own. Six
+ * names do not fit a segmented control, so both shells list them.
+ */
 export const UI_LANGUAGE_OPTIONS: readonly {
   value: LocaleChoice;
-  label: ReactNode;
-  ariaLabel: string;
+  label: string;
 }[] = [
-  { value: "system", label: t("System"), ariaLabel: t("Follow the system language") },
-  { value: "en", label: t("English"), ariaLabel: "English" },
-  { value: "fr", label: t("Français"), ariaLabel: "Français" },
+  { value: "system", label: t("System") },
+  { value: "en", label: t("English") },
+  { value: "fr", label: t("Français") },
+  { value: "de", label: t("Deutsch") },
+  { value: "it", label: t("Italiano") },
+  { value: "es", label: t("Español") },
+  { value: "pt-BR", label: t("Português (Brasil)") },
 ];
 
 export const THEME_OPTIONS: readonly {
