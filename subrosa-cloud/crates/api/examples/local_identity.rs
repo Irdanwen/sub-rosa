@@ -233,6 +233,7 @@ async fn main() -> Result<()> {
             }),
             _ => None,
         },
+        publication: None,
     };
     config.validate().map_err(anyhow::Error::msg)?;
     let storage = Arc::new(StorageProvider::new(&config)?);

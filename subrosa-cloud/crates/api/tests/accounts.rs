@@ -34,6 +34,11 @@ use wiremock::{
 
 #[path = "support/oidc.rs"]
 mod oidc;
+#[path = "support/publications.rs"]
+mod publications;
+
+/// Where the fixture serves public pages from: apart from the account origin.
+const PAGES_ORIGIN: &str = "http://127.0.0.1:8789";
 
 #[derive(Serialize, Deserialize)]
 struct TestConfig {
@@ -107,6 +112,10 @@ impl Fixture {
                 "13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49".into(),
             ],
             carpe_diem: None,
+            publication: Some(subrosa_config::Publication {
+                url: PAGES_ORIGIN.into(),
+                blocked_terms: vec!["forbidden phrase".into()],
+            }),
         };
         config.validate().map_err(anyhow::Error::msg)?;
         let provider = Arc::new(OidcProvider::discover(config.clone()).await?);

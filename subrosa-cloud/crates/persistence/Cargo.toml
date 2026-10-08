@@ -18,3 +18,4 @@ uuid.workspace = true
 tracing.workspace = true
 subtle.workspace = true
 futures-util.workspace = true
+sha2.workspace = true

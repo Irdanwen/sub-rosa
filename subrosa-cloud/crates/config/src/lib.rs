@@ -39,6 +39,37 @@ pub struct Config {
     /// and the assertion route answers 404. See ADR 0069.
     #[serde(default)]
     pub carpe_diem: Option<CarpeDiem>,
+    /// Absent means nothing can be published: the owner routes, the catalog
+    /// and the public pages all answer 404. See ADR 0097.
+    #[serde(default)]
+    pub publication: Option<Publication>,
+}
+/// Public pages, profiles and the assistant catalog (ADR 0097).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Publication {
+    /// The origin public pages are served from, for example
+    /// `https://pages.example.org`. Outside development it must differ from
+    /// `public_url`: content written by anybody never shares an origin with
+    /// the account pages, their cookies and the browser vault.
+    pub url: String,
+    /// Terms the operator refuses in public content, matched as lowercase
+    /// substrings of every field. Empty by default; documented in
+    /// `docs/public-content-rules.md`.
+    #[serde(default)]
+    pub blocked_terms: Vec<String>,
+}
+impl Publication {
+    /// `host[:port]`, as a `Host` header names this origin.
+    pub fn authority(&self) -> String {
+        Url::parse(&self.url)
+            .ok()
+            .map(|url| match (url.host_str(), url.port()) {
+                (Some(host), Some(port)) => format!("{host}:{port}"),
+                (Some(host), None) => host.to_string(),
+                _ => String::new(),
+            })
+            .unwrap_or_default()
+    }
 }
 /// The header a PKCS#8 PEM starts with. Spelled in two halves because the
 /// repository hygiene check rejects the whole marker anywhere in the tree, as
@@ -203,6 +234,9 @@ impl Config {
         if let Some(carpe_diem) = &self.carpe_diem {
             self.validate_carpe_diem(carpe_diem)?;
         }
+        if let Some(publication) = &self.publication {
+            self.validate_publication(publication, &public)?;
+        }
         if self.storage.kind != "s3" && !(self.development && self.storage.kind == "local") {
             return Err("production requires S3 storage");
         }
@@ -253,6 +287,30 @@ impl Config {
             {
                 return Err("deletion ledger requires separate storage");
             }
+        }
+        Ok(())
+    }
+    fn validate_publication(
+        &self,
+        publication: &Publication,
+        public: &Url,
+    ) -> Result<(), &'static str> {
+        let url = Url::parse(&publication.url).map_err(|_| "invalid publication URL")?;
+        let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+        if url.scheme() != "https" && !(self.development && loopback && url.scheme() == "http") {
+            return Err("the publication origin requires HTTPS except loopback development");
+        }
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || url.path() != "/"
+            || publication.url.ends_with('/')
+        {
+            return Err("publication url must be an origin without trailing slash");
+        }
+        if !self.development && url.host_str() == public.host_str() {
+            return Err("public pages must be served from an origin apart from the account");
         }
         Ok(())
     }
@@ -344,7 +402,48 @@ mod tests {
             trusted_proxies: Vec::new(),
             passkey_android_cert_fingerprints: android_certificates(),
             carpe_diem: None,
+            publication: None,
         }
+    }
+
+    #[test]
+    fn public_pages_never_share_the_account_origin_outside_development()
+    -> Result<(), url::ParseError> {
+        let mut config = development();
+        config.publication = Some(Publication {
+            url: "http://127.0.0.1:8789".into(),
+            blocked_terms: Vec::new(),
+        });
+        assert_eq!(config.validate(), Ok(()));
+        assert_eq!(
+            config.publication.as_ref().map(Publication::authority),
+            Some("127.0.0.1:8789".into())
+        );
+        config.development = false;
+        config.public_url = "https://account.example.invalid".into();
+        let public = Url::parse(&config.public_url)?;
+        let check = |url: &str| {
+            config.validate_publication(
+                &Publication {
+                    url: url.into(),
+                    blocked_terms: Vec::new(),
+                },
+                &public,
+            )
+        };
+        assert_eq!(
+            check("https://account.example.invalid"),
+            Err("public pages must be served from an origin apart from the account")
+        );
+        for bad in [
+            "http://pages.example.invalid",
+            "https://pages.example.invalid/",
+            "https://pages.example.invalid/p",
+        ] {
+            assert!(check(bad).is_err(), "{bad}");
+        }
+        assert_eq!(check("https://pages.example.invalid"), Ok(()));
+        Ok(())
     }
 
     fn partner(audience: &str) -> CarpeDiem {

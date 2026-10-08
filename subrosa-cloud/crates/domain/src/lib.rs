@@ -52,8 +52,22 @@ pub enum Error {
     /// a key this account does not know as a live browser device.
     #[error("This browser is no longer a device of the account.")]
     DeviceProof,
+    /// A public address (a page slug or a profile handle) another account
+    /// already holds (ADR 0097).
+    #[error("This address is already taken.")]
+    SlugTaken,
+    /// Public content that one of the documented rules refuses (ADR 0097).
+    #[error("This content cannot be published.")]
+    ContentPolicy(publication::PolicyRule),
+    /// The operator took this down, or an exact copy of something taken down.
+    #[error("This content was taken down and cannot be published again.")]
+    TakenDown,
+    /// The account lost the right to publish after repeated takedowns.
+    #[error("Publishing is suspended for this account.")]
+    PublishingSuspended,
 }
 pub type Result<T> = std::result::Result<T, Error>;
+pub mod publication;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
     pub id: Uuid,
