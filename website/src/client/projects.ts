@@ -249,7 +249,7 @@ export async function saveProjectSettings(
   });
 }
 
-/** A file read in this browser (`documents.ts`): its text travels, ready to
+/** A file read in this browser (`documents/read.ts`): its text travels, ready to
  * search on every device, as the app's extracted files do. The bytes stay
  * here, as they stay on the device that added a file in the app. */
 export async function addProjectFile(

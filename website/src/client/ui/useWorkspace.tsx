@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 import type { Account } from "../../lib/api";
 import type { BlockRenderer } from "../../lib/chat-blocks";
 import { t } from "../../lib/i18n";
-import type { TurnExtension } from "../agent";
+import type { ChatPlan } from "../agent";
 import { conversationSnapshot, getAssistant, startAssistantChat } from "../assistants";
 import {
   type Attachment,
@@ -59,14 +59,16 @@ export function useWorkspace(input: {
   models: ChatModel[];
   live: LiveModel[];
   model: string;
-  memoryOn: boolean;
+  /** "Reference past chats", as protected mode allows it. */
   pastChats: boolean;
   flush: () => void;
   /** The chat on screen: an id, null for a new chat, "temporary". */
   chatId: string | null | "temporary";
   openChat: (id: string | null) => void;
+  /** A view of the workspace was picked (the page closes a feature's panel). */
+  onView?: () => void;
 }) {
-  const { sync, chatId, flush, openChat } = input;
+  const { sync, chatId, flush, openChat, onView } = input;
   const [view, setView] = useState<View>("chat");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [canvas, setCanvas] = useState<{ noteId: string; proposal: string | null } | null>(null);
@@ -115,12 +117,17 @@ export function useWorkspace(input: {
   const pendingAssistant =
     sync && !chatId && newChat.assistantId ? getAssistant(sync, newChat.assistantId) : null;
 
-  /** The model a turn runs on: an assistant's own, else the chosen one; an
-   * image turn on a model that reads none moves to one as private, or is
-   * refused. */
+  /** The model a turn in `turnChat` runs on: its assistant's own, else
+   * `chosen`; an image turn on a model that reads none moves to one as
+   * private, or is refused. */
   const turnModel = useCallback(
-    (hasImages: boolean): { model: string } | { error: string } => {
-      const base = snapshot?.definition.model || pendingAssistant?.model || input.model;
+    (
+      turnChat: string | null,
+      chosen: string,
+      hasImages: boolean,
+    ): { model: string } | { error: string } => {
+      const own = sync && turnChat ? conversationSnapshot(sync, turnChat) : null;
+      const base = own?.definition.model || chosen;
       if (!hasImages) return { model: base };
       const vision = visionModelFor(input.models, base);
       return vision
@@ -132,7 +139,7 @@ export function useWorkspace(input: {
             ),
           };
     },
-    [snapshot, pendingAssistant, input.model, input.models],
+    [sync, input.models],
   );
 
   /** Creates the chat a first message opens: an assistant's conversation
@@ -164,27 +171,34 @@ export function useWorkspace(input: {
     [sync, newChat],
   );
 
-  /** What this turn adds to agent-lite's, and clears the attachments it
-   * carries. */
+  /** What a turn in `turnChat` adds to agent-lite's. A turn sent from the
+   * composer carries the composer's attachments, and clears them; a
+   * feature's turn (research, an assignment's run) carries none. */
   const plan = useCallback(
-    (turnChat: string | null, history: Message[]): TurnExtension | undefined => {
+    (
+      turnChat: string | null,
+      history: Message[],
+      memory: boolean,
+      fromComposer: boolean,
+    ): ChatPlan | undefined => {
       if (!sync) return undefined;
+      const assistant = turnChat ? conversationSnapshot(sync, turnChat) : null;
       const project =
-        turnChat && !snapshot ? getProject(sync, projectIdOfChat(sync, turnChat) ?? "") : null;
-      const extension = planTurn({
+        turnChat && !assistant ? getProject(sync, projectIdOfChat(sync, turnChat) ?? "") : null;
+      const planned = planTurn({
         sync,
         chatId: turnChat,
         history,
-        memory: input.memoryOn,
+        memory,
         pastChats: input.pastChats,
         project,
-        assistant: turnChat ? conversationSnapshot(sync, turnChat) : null,
-        attachments,
+        assistant,
+        attachments: fromComposer ? attachments : [],
       });
-      setAttachments([]);
-      return extension;
+      if (fromComposer) setAttachments([]);
+      return planned;
     },
-    [sync, snapshot, input.memoryOn, input.pastChats, attachments],
+    [sync, input.pastChats, attachments],
   );
 
   const renderBlock: BlockRenderer | undefined = sync
@@ -231,13 +245,18 @@ export function useWorkspace(input: {
     );
   };
 
+  const pick = (next: View) => {
+    setView(next);
+    onView?.();
+  };
+
   const nav = (
     <nav className="wc-views" aria-label={t("More", "Plus")}>
-      <button type="button" aria-pressed={view === "chat"} onClick={() => setView("chat")}>
+      <button type="button" aria-pressed={view === "chat"} onClick={() => pick("chat")}>
         {t("Chat", "Discussion")}
       </button>
       {VIEWS.map(([id, label]) => (
-        <button key={id} type="button" aria-pressed={view === id} onClick={() => setView(id)}>
+        <button key={id} type="button" aria-pressed={view === id} onClick={() => pick(id)}>
           {label()}
         </button>
       ))}
@@ -356,11 +375,10 @@ export function useWorkspace(input: {
      * here; one without fails closed and is only read. */
     continuable: (current: Chat | undefined) => !current?.assistant || !!snapshot,
     /** An assistant chat reads memory only when the assistant may. */
-    memoryFor: (memoryOn: boolean) =>
-      memoryOn &&
-      (snapshot || pendingAssistant
-        ? !!(snapshot?.definition.allow_memory ?? pendingAssistant?.allow_memory)
-        : true),
+    memoryFor: (memoryOn: boolean, turnChat: string | null) => {
+      const own = sync && turnChat ? conversationSnapshot(sync, turnChat) : null;
+      return memoryOn && (own ? !!own.definition.allow_memory : true);
+    },
     turnModel,
     createFor,
     plan,
@@ -368,5 +386,7 @@ export function useWorkspace(input: {
       message.role === "user" && hasAttachmentMarkers(message.content),
     memoryManager: sync ? <MemoryManager sync={sync} onChanged={flush} /> : null,
     resetNewChat: () => setNewChat({}),
+    /** Back to the chat from any view. */
+    showChat: () => setView("chat"),
   };
 }

@@ -12,7 +12,7 @@ use sqlx_sqlite::SqlitePool;
 
 pub const SPENDING_TOOL: &str = "spending_summary";
 pub const SEARCH_TOOL: &str = "transactions_search";
-const SEARCH_LIMIT: u32 = 30;
+pub(crate) const SEARCH_LIMIT: u32 = 30;
 
 pub fn definitions() -> Vec<Value> {
     vec![

@@ -247,3 +247,13 @@
     break-inside: avoid;
   }
 }
+.wc-features {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.wc-composer-tools:empty {
+  display: none;
+}

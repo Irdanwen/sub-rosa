@@ -142,7 +142,10 @@ function Pictures({ ctx }: { ctx: ClientContext }) {
                 className="button"
                 type="button"
                 onClick={() =>
-                  void loadPicture(ctx.sync, ctx.account.id, ctx.vaultKey, picture.id)
+                  void loadPicture(
+                    { sync: ctx.sync, accountId: ctx.account.id, key: ctx.vaultKey },
+                    picture.id,
+                  )
                     .then((url) => setShown((value) => ({ ...value, [picture.id]: url })))
                     .catch(() =>
                       setError(

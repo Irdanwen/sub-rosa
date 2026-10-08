@@ -21,7 +21,7 @@ export interface AgentLiteExport {
   };
   limits: { maxToolRounds: number; webSearchResults: number; webPageChars: number };
   tools: ToolDefinition[];
-  tables: Record<TableName, { kind: SyncKind; columns: string[] }>;
+  tables: Record<string, TableCodec>;
   /** `data_cards::CARDS_PROMPT`: how to write chart and table blocks. */
   cardsPrompt: string;
   /** The project section, piece by piece, and its file search (ADR-0085). */
@@ -69,9 +69,11 @@ export interface ToolDefinition {
 export const AGENT_LITE = exported as unknown as AgentLiteExport;
 
 /** The routing classes a browser device reads and writes. Bounded on purpose:
- * the page holds a decryption key, so what it may pull is a decision. Within a
- * kind, only the tables below are decrypted into the page; any other table of
- * that kind (a health day, a recording) is left unread and uncached. */
+ * the page holds a decryption key, so what it may pull is a decision. The
+ * chat's tables and those Rust exports with them (projects, saved items,
+ * assistants, gallery files) are always read; a feature adds its own
+ * (`registerTables`). A revision of any other table of these classes (a
+ * health day, a recording) is skipped unread and uncached. */
 export const WEB_KINDS = [
   "conversation",
   "memory",
@@ -95,7 +97,60 @@ export type TableName =
   | "assistants"
   | "assistant_references"
   | "account_studio_files"
-  | "account_file_manifests";
+  | "account_file_manifests"
+  // A table a feature registered, named as Rust exported it.
+  | (string & {});
+
+export interface TableCodec {
+  kind: SyncKind;
+  columns: string[];
+}
+
+/** Tables beyond the chat's, added by the web client's features from their
+ * own Rust exports (`packages/chat-core/web/*.json`). */
+const registered = new Map<string, TableCodec>();
+
+/** Adds travelling tables, columns and routing kind as Rust exported them. A
+ * table already known keeps its codec: the chat's own are never redefined. */
+export function registerTables(tables: Record<string, TableCodec>) {
+  for (const [name, table] of Object.entries(tables)) {
+    if (name in AGENT_LITE.tables || registered.has(name)) continue;
+    if (!(WEB_KINDS as readonly string[]).includes(table.kind)) continue;
+    registered.set(name, { kind: table.kind, columns: [...table.columns] });
+  }
+}
+
+/** Every table this browser reads, by name. */
+export function knownTables(): Record<string, TableCodec> {
+  return {
+    ...(AGENT_LITE.tables as Record<string, TableCodec>),
+    ...Object.fromEntries(registered),
+  };
+}
+
+/** The kinds worth pulling: those with at least one table this browser
+ * reads, in the order of `WEB_KINDS`. */
+export function pulledKinds(): SyncKind[] {
+  const kinds = new Set(Object.values(knownTables()).map((table) => table.kind));
+  return WEB_KINDS.filter((kind) => kinds.has(kind));
+}
+
+/** A short digest of the tables of one kind. A cursor is kept per digest, so
+ * a browser that learns a new table reads its kind again from the start
+ * instead of missing the revisions it once skipped. */
+export function tablesFingerprint(kind: SyncKind): string {
+  const names = Object.entries(knownTables())
+    .filter(([, table]) => table.kind === kind)
+    .map(([name]) => name)
+    .sort()
+    .join(",");
+  let hash = 2166136261;
+  for (let index = 0; index < names.length; index++) {
+    hash ^= names.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
 
 export type Cell = string | number | null;
 export type Row = Record<string, Cell>;
@@ -105,19 +160,19 @@ export type Row = Record<string, Cell>;
  * assistant's own conversation, its snapshot riding beside the row. */
 export const ASSISTANT_CONVERSATIONS = "assistant_conversations";
 
-/** Whether a received body names a table this page reads. */
-export function knownTable(name: unknown): boolean {
-  return (
-    typeof name === "string" &&
-    (name === ASSISTANT_CONVERSATIONS || Object.hasOwn(AGENT_LITE.tables, name))
-  );
-}
-
 export function tableOf(name: string): { name: TableName; kind: SyncKind; columns: string[] } {
   const resolved = name === ASSISTANT_CONVERSATIONS ? "agent_tasks" : name;
-  const table = AGENT_LITE.tables[resolved as TableName];
+  const table = knownTables()[resolved];
   if (!table) throw new Error("Unknown synchronised table");
-  return { name: resolved as TableName, ...table };
+  return { name: resolved, ...table };
+}
+
+/** Whether a received body names a table this browser reads at all. */
+export function isKnownTable(name: unknown): name is string {
+  return (
+    typeof name === "string" &&
+    Object.hasOwn(knownTables(), name === ASSISTANT_CONVERSATIONS ? "agent_tasks" : name)
+  );
 }
 
 /** A row as it travels: every allowlisted column, nothing else. A column the

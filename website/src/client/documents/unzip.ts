@@ -3,11 +3,15 @@
  * directory, stored and deflated entries, nothing else. Inflating is the
  * browser's own (`DecompressionStream("deflate-raw")`), so no library is
  * shipped for it. The guards are the app's (`assistants/references.rs`): at
- * most 4096 entries, and at most 4 MiB of the selected entries, inflated.
+ * most 4096 entries, and at most 4 MiB of the selected entries, inflated,
+ * when a file a person attached is read as text; a document this page wrote
+ * (`writers/zip.ts`) is read back whole within 32 MiB.
  */
 
 export const MAX_ENTRIES = 4096;
 export const MAX_SELECTED_BYTES = 4 * 1024 * 1024;
+/** All of a document read back, inflated. */
+export const MAX_WHOLE_BYTES = 32 * 1024 * 1024;
 
 export class ZipError extends Error {}
 
@@ -83,34 +87,49 @@ async function inflate(compressed: Uint8Array, limit: number): Promise<Uint8Arra
   return out;
 }
 
-/**
- * Reads the entries `select` keeps, as text, within the shared budget. The
- * declared sizes are not trusted: inflation stops at the budget whatever the
- * header says.
- */
+/** One entry's bytes, inflated within `limit`. The declared sizes are not
+ * trusted: inflation stops at the limit whatever the header says. */
+async function entryBytes(bytes: Uint8Array, entry: ZipEntry, limit: number): Promise<Uint8Array> {
+  const data = view(bytes);
+  const local = entry.offset;
+  if (local + 30 > bytes.length || data.getUint32(local, true) !== 0x04034b50)
+    throw new ZipError("Damaged zip entry.");
+  const start = local + 30 + data.getUint16(local + 26, true) + data.getUint16(local + 28, true);
+  const raw = bytes.subarray(start, start + entry.compressedSize);
+  if (entry.method === 0) {
+    if (raw.byteLength > limit) throw new ZipError("The document is too large to read.");
+    return raw;
+  }
+  if (entry.method === 8) return inflate(raw, limit);
+  throw new ZipError("Unsupported zip compression.");
+}
+
+/** Reads the entries `select` keeps, as text, within the shared budget. */
 export async function readZipText(
   bytes: Uint8Array,
   select: (name: string) => boolean,
 ): Promise<Map<string, string>> {
-  const data = view(bytes);
   const out = new Map<string, string>();
   let budget = MAX_SELECTED_BYTES;
   const decoder = new TextDecoder();
   for (const entry of zipEntries(bytes)) {
     if (!select(entry.name)) continue;
-    const local = entry.offset;
-    if (local + 30 > bytes.length || data.getUint32(local, true) !== 0x04034b50)
-      throw new ZipError("Damaged zip entry.");
-    const start = local + 30 + data.getUint16(local + 26, true) + data.getUint16(local + 28, true);
-    const raw = bytes.subarray(start, start + entry.compressedSize);
-    let content: Uint8Array;
-    if (entry.method === 0) {
-      if (raw.byteLength > budget) throw new ZipError("The document is too large to read.");
-      content = raw;
-    } else if (entry.method === 8) content = await inflate(raw, budget);
-    else throw new ZipError("Unsupported zip compression.");
+    const content = await entryBytes(bytes, entry, budget);
     budget -= content.byteLength;
     out.set(entry.name, decoder.decode(content));
+  }
+  return out;
+}
+
+/** Every entry, by name and in order, inflated, within `MAX_WHOLE_BYTES` in
+ * all. */
+export async function readZip(bytes: Uint8Array): Promise<{ name: string; bytes: Uint8Array }[]> {
+  const out: { name: string; bytes: Uint8Array }[] = [];
+  let budget = MAX_WHOLE_BYTES;
+  for (const entry of zipEntries(bytes)) {
+    const content = await entryBytes(bytes, entry, budget);
+    budget -= content.byteLength;
+    out.push({ name: entry.name, bytes: content });
   }
   return out;
 }

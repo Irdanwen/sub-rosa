@@ -56,9 +56,9 @@ pub fn stamp(at: DateTime<Utc>) -> String {
 }
 
 /// Cards a flashcards block may add at once, and how long a side may be.
-const MAX_CARDS_PER_ADD: usize = 50;
-const MAX_SIDE_CHARS: usize = 2_000;
-const MAX_DECK_CHARS: usize = 160;
+pub(crate) const MAX_CARDS_PER_ADD: usize = 50;
+pub(crate) const MAX_SIDE_CHARS: usize = 2_000;
+pub(crate) const MAX_DECK_CHARS: usize = 160;
 
 /// The system prompt a phone turn runs with: the study section appended when
 /// the chat is in study mode, the prompt untouched otherwise (and when the

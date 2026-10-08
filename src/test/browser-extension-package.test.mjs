@@ -69,7 +69,10 @@ describe("the panel's views", () => {
   // browser run showed the main view under the pairing form.
   it("hides a hidden block whatever display it sets", () => {
     const css = readFileSync(join(root, "src/panel.css"), "utf8");
-    expect(css).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/);
+    // A comment may sit inside the rule (Biome's suppression of `!important`).
+    expect(css).toMatch(
+      /\[hidden\]\s*\{\s*(?:\/\*[\s\S]*?\*\/\s*)?display:\s*none\s*!important;?\s*\}/,
+    );
     const html = readFileSync(join(root, "src/panel.html"), "utf8");
     for (const id of ["notice", "pair", "main", "stage", "selection", "open-panel", "stop"]) {
       expect(html).toMatch(new RegExp(`id="${id}"[^>]*\\shidden`));

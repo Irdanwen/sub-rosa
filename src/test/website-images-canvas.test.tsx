@@ -234,11 +234,8 @@ describe("the gallery from the browser", () => {
       get: async (id) => blobs.get(id) as string,
     };
     const id = await saveToGallery(
-      sync,
-      ACCOUNT,
-      key(),
+      { sync, accountId: ACCOUNT, key: key(), transport: transport },
       { dataUrl: PNG, model: "flux-2", prompt: "A fox" },
-      transport,
     );
     await sync.flush();
     expect(journal.pushes.map((push) => push.kind)).toEqual(["artifact", "artifact"]);
@@ -251,7 +248,7 @@ describe("the gallery from the browser", () => {
       prompt: "A fox",
       bytes: 8,
     });
-    expect(await loadPicture(sync, ACCOUNT, key(), id, transport)).toBe(PNG);
+    expect(await loadPicture({ sync, accountId: ACCOUNT, key: key(), transport }, id)).toBe(PNG);
     const [blob] = [...blobs.values()];
     expect(blob).not.toContain("iVBOR");
   });

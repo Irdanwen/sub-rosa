@@ -16,6 +16,7 @@
  * whole conversation, to a less private model.
  */
 import type { ChatMessage } from "./carpe-diem";
+import type { TurnAddition } from "./feature";
 
 export interface Attachment {
   kind: "image" | "text";
@@ -114,3 +115,24 @@ export const canvasImageFitter: ImageFitter = async (file) => {
     bitmap.close();
   }
 };
+
+/** What a turn's attachments add to it: their content folded into its last
+ * question. */
+export function attachmentsAddition(attachments: Attachment[]): TurnAddition {
+  return {
+    tools: [],
+    messages(messages) {
+      const next = [...messages];
+      attachToLastUserMessage(next, attachments);
+      return next;
+    },
+  };
+}
+
+/** Pictures riding a feature's question (a voice turn's camera or screen
+ * frame), as data URLs: attached the way a photo from the composer is. */
+export function picturesAddition(images: string[]): TurnAddition {
+  return attachmentsAddition(
+    images.map((data, index) => ({ kind: "image", name: `picture-${index + 1}`, data })),
+  );
+}

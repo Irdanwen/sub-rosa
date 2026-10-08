@@ -23,8 +23,8 @@ use super::Connector;
 use crate::domain::types::AppError;
 
 pub const SCHEME: &str = "subrosa-app";
-const MAX_HTML_BYTES: usize = 512 * 1024;
-const MAX_OUTPUT_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_HTML_BYTES: usize = 512 * 1024;
+pub(crate) const MAX_OUTPUT_BYTES: usize = 64 * 1024;
 
 /// The mime types an interactive view is served as.
 pub fn is_app_html(mime: &str) -> bool {
@@ -94,7 +94,7 @@ fn script_json(value: &Value) -> String {
 /// The bridge every view gets, injected first in the document. It speaks the
 /// MCP Apps messages over `postMessage`, and gives views written for the
 /// older `window.openai` interface the same calls under that name.
-const BRIDGE: &str = r#"(function(){var d=JSON.parse(document.getElementById('subrosa-app-data').textContent||'{}');var n=0,w={};function rq(m,p){return new Promise(function(ok,ko){var i='sr'+(++n);w[i]=[ok,ko];parent.postMessage({jsonrpc:'2.0',id:i,method:m,params:p||{}},'*');});}window.addEventListener('message',function(e){if(e.source!==parent)return;var m=e.data;if(!m||m.jsonrpc!=='2.0')return;if(m.id&&w[m.id]){var c=w[m.id];delete w[m.id];if(m.error)c[1](new Error(m.error.message||'error'));else c[0](m.result);}});window.openai={toolInput:d.toolInput||{},toolOutput:d.toolOutput||null,theme:d.theme||'light',displayMode:'inline',widgetState:null,callTool:function(t,a){return rq('tools/call',{name:t,arguments:a||{}});},openExternal:function(o){return rq('ui/open-link',{url:o&&o.href});},sendFollowUpMessage:function(){return Promise.reject(new Error('not supported'));},setWidgetState:function(s){window.openai.widgetState=s;return Promise.resolve();}};})();"#;
+pub(crate) const BRIDGE: &str = r#"(function(){var d=JSON.parse(document.getElementById('subrosa-app-data').textContent||'{}');var n=0,w={};function rq(m,p){return new Promise(function(ok,ko){var i='sr'+(++n);w[i]=[ok,ko];parent.postMessage({jsonrpc:'2.0',id:i,method:m,params:p||{}},'*');});}window.addEventListener('message',function(e){if(e.source!==parent)return;var m=e.data;if(!m||m.jsonrpc!=='2.0')return;if(m.id&&w[m.id]){var c=w[m.id];delete w[m.id];if(m.error)c[1](new Error(m.error.message||'error'));else c[0](m.result);}});window.openai={toolInput:d.toolInput||{},toolOutput:d.toolOutput||null,theme:d.theme||'light',displayMode:'inline',widgetState:null,callTool:function(t,a){return rq('tools/call',{name:t,arguments:a||{}});},openExternal:function(o){return rq('ui/open-link',{url:o&&o.href});},sendFollowUpMessage:function(){return Promise.reject(new Error('not supported'));},setWidgetState:function(s){window.openai.widgetState=s;return Promise.resolve();}};})();"#;
 
 pub fn document(html: &str, tool_input: &Value, tool_output: &Value, theme: &str) -> String {
     let data = serde_json::json!({

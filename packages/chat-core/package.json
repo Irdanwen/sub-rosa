@@ -15,7 +15,10 @@
     "./try-on": "./src/try-on.ts",
     "./try-on-block": "./src/try-on-block.ts",
     "./canvas-block": "./src/canvas-block.ts",
-    "./agent-lite.json": "./agent-lite.json"
+    "./study-blocks": "./src/study-blocks.ts",
+    "./agent-lite.json": "./agent-lite.json",
+    "./web/*": "./web/*",
+    "./python/*": "./src/python/*.ts"
   },
-  "files": ["src", "agent-lite.json"]
+  "files": ["src", "agent-lite.json", "web"]
 }

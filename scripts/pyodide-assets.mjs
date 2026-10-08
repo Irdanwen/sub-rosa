@@ -112,9 +112,10 @@ export function pyodideBytes() {
 }
 
 /** The Vite side: served under /pyodide/ in dev, emitted into the bundle at
- * build, only for builds that want it. */
-export function pyodidePlugin(root = process.cwd()) {
-  const wanted = pyodideWanted();
+ * build, only for builds that want it. The website asks for it itself (its
+ * web client runs Python in the tab, served from the site's own origin), so
+ * it passes `wanted`; the app leaves it to `pyodideWanted`. */
+export function pyodidePlugin(root = process.cwd(), wanted = pyodideWanted()) {
   return {
     name: "subrosa-pyodide",
     async configureServer(server) {

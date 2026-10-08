@@ -329,7 +329,7 @@ fn check_pin(
     }
 }
 
-fn wrong_pin() -> AppError {
+pub(crate) fn wrong_pin() -> AppError {
     AppError::new("protected_mode_wrong_pin", "That PIN is not right.")
 }
 

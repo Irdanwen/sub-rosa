@@ -105,11 +105,8 @@ describe("WP20's rows, written by a browser", () => {
       await addMessage(sync, chat, "assistant", "Run three times.");
       await saveItem(sync, linkSaveRequest({ url: "https://example.com/a", title: "A" }, chat));
       await saveToGallery(
-        sync,
-        ACCOUNT,
-        key(),
+        { sync, accountId: ACCOUNT, key: key(), transport: nowhere },
         { dataUrl: PNG, model: "flux-2", prompt: "A fox" },
-        nowhere,
       );
       await sync.flush();
       writeFileSync(

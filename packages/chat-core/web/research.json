@@ -1,0 +1,209 @@
+{
+  "depths": {
+    "deep": {
+      "maxQueries": 14,
+      "maxSources": 50,
+      "ownSources": 10,
+      "resultsPerQuery": 8
+    },
+    "quick": {
+      "maxQueries": 4,
+      "maxSources": 10,
+      "ownSources": 2,
+      "resultsPerQuery": 5
+    },
+    "standard": {
+      "maxQueries": 8,
+      "maxSources": 25,
+      "ownSources": 5,
+      "resultsPerQuery": 6
+    }
+  },
+  "generatedBy": "src-tauri/src/agent_lite/web_features/research.rs",
+  "maxAnswerChars": 1000,
+  "maxQuestionChars": 4000,
+  "maxSections": 8,
+  "maxTokens": {
+    "clarify": 500,
+    "note": 700,
+    "plan": 1500,
+    "report": 8000
+  },
+  "promptVersion": 1,
+  "prompts": {
+    "clarify": "You prepare a research assignment. Read the person's request and decide whether anything essential is ambiguous: the scope, the period, the place, the audience or the purpose. Ask at most three short questions, only about what would change where you search or what the report concludes, and none when the request is already clear. Answer with one JSON object and nothing else: {\"questions\":[\"…\"]}. Write the questions in the language of the request.",
+    "note": "You take research notes on one source for a report. Write only what the source itself says that bears on the research question and its plan: facts, figures with their units and dates, named people and organisations, definitions, and the source's own conclusions. Keep the source's numbers exact. No opinions of your own, no introduction, at most 200 words, as short bullet points. If the source says nothing useful for the question (an error page, a cookie wall, an unrelated page), answer with the single word IRRELEVANT.",
+    "plan": "You plan a research report. Given the request and the person's answers to the clarifying questions, write the plan as one JSON object and nothing else: {\"title\":\"<the report's title>\",\"sections\":[{\"title\":\"<what this section answers>\",\"queries\":[\"<a web search query>\"]}]}. Three to six sections, in the order a reader needs them. One to three queries per section, each a short search-engine query (not a question to a person), specific enough to find primary sources, figures and recent facts. Write the title and the section titles in the language of the request; queries may be in English when the best sources are.",
+    "report": "You write a research report from numbered source notes. Rules:\n- Use only what the notes say. Never add facts from memory.\n- After every claim, cite the note it comes from as [n], using the numbers you were given. Several sources: [2][5]. Never invent a number.\n- Start with the title as a level-one heading (#), then a section headed as \"Executive summary\" (in the report's language) of five to eight sentences, then one level-two heading (##) per section of the plan, then a short conclusion that says what remains uncertain and where sources disagree.\n- Use short paragraphs, bullet lists where they help, and a markdown table when comparing figures.\n- Do not write a list of sources or references at the end: the app adds it.\n- Write in the language of the request."
+  },
+  "readPageChars": 14000,
+  "sourceHeadings": [
+    "sources",
+    "source",
+    "references",
+    "référence",
+    "références",
+    "bibliography",
+    "bibliographie",
+    "works cited",
+    "citations"
+  ],
+  "vectors": {
+    "assemble": {
+      "cited": [
+        2,
+        1,
+        3
+      ],
+      "handed": [
+        {
+          "index": 1,
+          "kind": "web",
+          "title": "Field study [2025]",
+          "url": "https://example.org/a study"
+        },
+        {
+          "index": 2,
+          "kind": "note",
+          "title": "My notes",
+          "url": null
+        },
+        {
+          "index": 3,
+          "kind": "connector",
+          "title": "Drive file",
+          "url": null
+        }
+      ],
+      "invented": [
+        9
+      ],
+      "markdown": "# Heat pumps\n\nThey work below zero [1]. Costs fell [2][3]. See [the guide](https://x.example) and [note].\nRanges [2][1].\n\n## Sources\n\n1. My notes · note\n2. [Field study (2025)](https://example.org/a%20study)\n3. Drive file · document\n",
+      "raw": "# Heat pumps\n\nThey work below zero [2]. Costs fell [1, 9][3]. See [the guide](https://x.example) and [note].\nRanges [1-2].\n\n## References\n\n1. invented",
+      "reportTitle": "Heat pumps",
+      "title": "Heat pumps in cold climates",
+      "untitledInvented": [
+        7
+      ],
+      "untitledMarkdown": "# Heat pumps in cold climates\n\nNo citation at all.\n",
+      "untitledRaw": "No citation at all [7].",
+      "withoutTitle": "They work below zero [1]. Costs fell [2][3]. See [the guide](https://x.example) and [note].\nRanges [2][1].\n\n## Sources\n\n1. My notes · note\n2. [Field study (2025)](https://example.org/a%20study)\n3. Drive file · document"
+    },
+    "estimates": [
+      {
+        "completionTokens": 15000,
+        "depth": "quick",
+        "modelCalls": 11,
+        "pageReads": 10,
+        "promptTokens": 49500,
+        "searches": 5
+      },
+      {
+        "completionTokens": 25500,
+        "depth": "standard",
+        "modelCalls": 26,
+        "pageReads": 25,
+        "promptTokens": 121500,
+        "searches": 5
+      },
+      {
+        "completionTokens": 43000,
+        "depth": "deep",
+        "modelCalls": 51,
+        "pageReads": 50,
+        "promptTokens": 241500,
+        "searches": 5
+      }
+    ],
+    "irrelevant": {
+      "- The page says irrelevant things about heat pumps and more.": false,
+      "IRRELEVANT": true,
+      "Irrelevant.": true
+    },
+    "noteUser": {
+      "plan": {
+        "sections": [
+          {
+            "queries": [
+              "heat pump COP -20C field study"
+            ],
+            "title": "How they perform below zero"
+          },
+          {
+            "queries": [
+              "heat pump installation cost 2026"
+            ],
+            "title": "What they cost"
+          }
+        ],
+        "title": "Heat pumps in cold climates"
+      },
+      "text": "Body of the page.",
+      "title": "A page",
+      "url": "https://example.org/page",
+      "user": "Request: Do heat pumps work in winter?\n\nClarifications:\n- Which country?: Switzerland\n\nPlan:\nReport: Heat pumps in cold climates\n- How they perform below zero\n- What they cost\n\nSource: A page (https://example.org/page)\n\nBody of the page.\n"
+    },
+    "parsePlan": {
+      "fallback": {
+        "sections": [
+          {
+            "queries": [
+              "Do heat pumps work in winter?"
+            ],
+            "title": "Do heat pumps work in winter?"
+          }
+        ],
+        "title": "Do heat pumps work in winter?"
+      },
+      "plan": {
+        "sections": [
+          {
+            "queries": [
+              "cop cold",
+              "heat pump arctic"
+            ],
+            "title": "Performance"
+          }
+        ],
+        "title": "Winter heat"
+      },
+      "question": "Do heat pumps work in winter?",
+      "reply": "Here is the plan:\n```json\n{\"title\":\"  Winter heat  \",\"sections\":[{\"title\":\"Performance\",\"queries\":[\"cop cold\",\"  \",\"heat pump   arctic\"]},{\"title\":\"\",\"queries\":[\"x\"]},{\"title\":\"No queries\",\"queries\":[]}]}\n```"
+    },
+    "parseQuestions": {
+      "questions": [
+        "Which city?",
+        "When?",
+        "Why?"
+      ],
+      "reply": "Sure! {\"questions\":[\"  Which   city? \",\"\",\"When?\",\"Why?\",\"Fourth?\"]}"
+    },
+    "reportUser": {
+      "notes": [
+        [
+          1,
+          "First",
+          "- a fact"
+        ],
+        [
+          2,
+          "Second",
+          "- another"
+        ]
+      ],
+      "user": "Request: Do heat pumps work in winter?\n\nClarifications:\n- Which country?: Switzerland\n\nPlan:\nReport: Heat pumps in cold climates\n- How they perform below zero\n- What they cost\n\nSource notes:\n\n[1] First\n- a fact\n\n[2] Second\n- another\n\n"
+    },
+    "requestText": {
+      "answers": [
+        "Switzerland",
+        ""
+      ],
+      "question": "Do heat pumps work in winter?",
+      "questions": [
+        "Which country?",
+        "Which year?"
+      ],
+      "text": "Request: Do heat pumps work in winter?\n\nClarifications:\n- Which country?: Switzerland\n"
+    }
+  }
+}

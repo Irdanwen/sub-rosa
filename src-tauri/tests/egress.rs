@@ -33,13 +33,24 @@ fn client_factory_exempt(path: &str) -> bool {
 }
 
 fn rust_sources(dir: &Path, out: &mut Vec<(String, String)>) {
+    let mut found = Vec::new();
+    collect_sources(dir, &mut found);
+    let test_only = test_only_modules(&found);
+    out.extend(found.into_iter().filter(|(path, _)| {
+        !test_only
+            .iter()
+            .any(|module| path == module || (module.ends_with('/') && path.starts_with(module)))
+    }));
+}
+
+fn collect_sources(dir: &Path, out: &mut Vec<(String, String)>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            rust_sources(&path, out);
+            collect_sources(&path, out);
         } else if path.extension().is_some_and(|ext| ext == "rs")
             // A module's test file (`tests.rs`, `sync_tests.rs`) is compiled
             // only under `#[cfg(test)]` where its parent declares it, so it is
@@ -54,6 +65,55 @@ fn rust_sources(dir: &Path, out: &mut Vec<(String, String)>) {
             }
         }
     }
+}
+
+/// The files of every module declared `#[cfg(test)] mod name;` (the web
+/// client's exports, `agent_lite::web_features`): compiled only for tests,
+/// they are fixtures like a `tests.rs`, whatever their name. Each entry is a
+/// file path, or a folder path ending in `/`.
+fn test_only_modules(sources: &[(String, String)]) -> Vec<String> {
+    let mut modules = Vec::new();
+    for (path, source) in sources {
+        let Some((folder, file)) = path.rsplit_once('/') else {
+            continue;
+        };
+        let parent = if ["mod.rs", "lib.rs", "main.rs"].contains(&file) {
+            folder.to_string()
+        } else {
+            path.trim_end_matches(".rs").to_string()
+        };
+        let mut after_cfg_test = false;
+        for line in source.lines().map(str::trim) {
+            if after_cfg_test {
+                let declared = line
+                    .strip_prefix("pub(crate) mod ")
+                    .or_else(|| line.strip_prefix("pub mod "))
+                    .or_else(|| line.strip_prefix("mod "))
+                    .and_then(|rest| rest.strip_suffix(';'));
+                if let Some(name) = declared {
+                    modules.push(format!("{parent}/{name}.rs"));
+                    modules.push(format!("{parent}/{name}/"));
+                }
+            }
+            after_cfg_test = line == "#[cfg(test)]";
+        }
+    }
+    modules
+}
+
+#[test]
+fn a_module_declared_for_tests_only_is_not_scanned_as_shipping_code() {
+    let sources = vec![(
+        "src/agent_lite/mod.rs".to_string(),
+        "#[cfg(test)]\nmod web_features;\nmod shipping;\n".to_string(),
+    )];
+    assert_eq!(
+        test_only_modules(&sources),
+        vec![
+            "src/agent_lite/web_features.rs".to_string(),
+            "src/agent_lite/web_features/".to_string(),
+        ]
+    );
 }
 
 /// The source with `#[cfg(test)]` modules and comment lines removed.

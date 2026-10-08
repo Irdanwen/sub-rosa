@@ -141,8 +141,10 @@ export function revisionHeads(changes: Change[]): Change[] {
  * key, so what it is allowed to pull is a decision, not a parameter. The
  * library and usage pages read notes, settings and usage; a browser device's
  * web client also reads and writes conversations, memories and folders
- * (ADR-0096), and the projects, saved items, assistants and gallery files of
- * the artifact and settings kinds (WP20). */
+ * (ADR-0096), and the rows of the artifact and settings tables the web
+ * client reads: the projects, saved items, assistants and gallery files
+ * (WP20a), and the tables its features registered (assignment runs,
+ * documents, transactions), skipping every other one. */
 export type ReadableKind =
   | "settings"
   | "usage"

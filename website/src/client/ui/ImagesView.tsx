@@ -124,7 +124,10 @@ export function ImagesView({
       const id = crypto.randomUUID();
       setResults((value) => [{ ...picture, id, note }, ...value]);
       try {
-        await saveToGallery(ctx.sync, ctx.account.id, ctx.vaultKey, picture);
+        await saveToGallery(
+          { sync: ctx.sync, accountId: ctx.account.id, key: ctx.vaultKey },
+          picture,
+        );
         ctx.flush();
         setResults((value) =>
           value.map((item) => (item.id === id ? { ...item, filed: true } : item)),

@@ -9,7 +9,7 @@ use super::NOT_SPENDING;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 
-const TOP_MERCHANTS: usize = 10;
+pub(crate) const TOP_MERCHANTS: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

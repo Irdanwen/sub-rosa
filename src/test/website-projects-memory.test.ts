@@ -134,7 +134,7 @@ describe("projects (ADR-0085)", () => {
         personalization: DEFAULT_PERSONALIZATION,
         temporary: false,
         onText: () => undefined,
-        extension: planTurn({
+        plan: planTurn({
           sync,
           chatId: chat,
           history,
@@ -215,9 +215,7 @@ describe("memory of past chats (ADR-0081)", () => {
         project: null,
         assistant: null,
         attachments: [],
-      })
-        .tools?.([])
-        .map((tool) => tool.function.name);
+      }).tools.map((tool) => tool.function.name);
     expect(plan(true, true)).toEqual(["search_past_chats"]);
     expect(plan(false, true)).toEqual([]);
     expect(plan(true, false)).toEqual([]);
@@ -264,7 +262,7 @@ describe("a custom assistant's turn (ADR-0058)", () => {
         personalization: { ...DEFAULT_PERSONALIZATION, aboutYou: "A nurse." },
         temporary: false,
         onText: () => undefined,
-        extension: planTurn({
+        plan: planTurn({
           sync,
           chatId: chat,
           history,

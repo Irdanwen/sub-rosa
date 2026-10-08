@@ -28,7 +28,7 @@ use crate::redacted::Redacted;
 
 pub const REDIRECT_URI: &str = "subrosa://connector/callback";
 /// A sign-in left unfinished this long is forgotten.
-const PENDING_TTL_SECS: i64 = 15 * 60;
+pub(crate) const PENDING_TTL_SECS: i64 = 15 * 60;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_METADATA_BYTES: usize = 256 * 1024;
 

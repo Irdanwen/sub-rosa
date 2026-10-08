@@ -5,6 +5,7 @@ import { CARPE_DIEM_OPERATOR } from "../../website/src/lib/browser-device";
 // @ts-expect-error node:crypto is available in the Vitest runtime.
 import { createHash } from "node:crypto";
 import { addIntegrity } from "../../website/sri";
+import { webConnectOrigins } from "../../website/src/client/connectors/words";
 
 /** Every place the site's Content-Security-Policy is written. They must agree:
  * the static host, the account vhost, the marketing vhost and the Caddy
@@ -61,6 +62,96 @@ describe("the website content security policy", () => {
       return [...csp.entries()].sort();
     });
     for (const other of rest) expect(other).toEqual(first);
+  });
+});
+
+/** The places that serve `/app` (the marketing vhost serves no web client),
+ * each with the policy of its `/app` block. */
+const APP_SOURCES: [string, RegExp][] = [
+  ["website/public/_headers", /^\/app\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m],
+  [
+    "subrosa-cloud/deploy/nginx-account.conf.example",
+    /location = \/app \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+  [
+    "subrosa-cloud/deploy/Caddyfile.example",
+    /header @app \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+];
+
+function directives(line: string): Map<string, string> {
+  return new Map(
+    line
+      .split(";")
+      .map((directive) => directive.trim())
+      .filter(Boolean)
+      .map((directive) => {
+        const [name, ...values] = directive.split(/\s+/);
+        return [name, values.join(" ")] as const;
+      }),
+  );
+}
+
+describe("the web client's own policy on /app", () => {
+  const operator = new URL(CARPE_DIEM_OPERATOR).origin;
+  const app = APP_SOURCES.map(([file, pattern]) => {
+    const line = pattern.exec(readFileSync(file, "utf8") as string)?.[1] ?? "";
+    return [file, directives(line)] as const;
+  });
+
+  it("adds only WebAssembly, a blob worker, the view frame and the catalog's connectors", () => {
+    const connectors = webConnectOrigins().join(" ");
+    for (const [file, csp] of app) {
+      expect(csp.get("script-src"), file).toBe("'self' 'wasm-unsafe-eval'");
+      expect(csp.get("worker-src"), file).toBe("'self' blob:");
+      expect(csp.get("frame-src"), file).toBe("'self'");
+      // Named origins, never a scheme: what the page may post to is a list.
+      expect(csp.get("connect-src"), file).toBe(`'self' ${operator} ${connectors}`);
+      expect(csp.get("connect-src"), file).not.toMatch(/(^|\s)https:(\s|$)/);
+      expect(csp.get("require-trusted-types-for"), file).toBe("'script'");
+      expect(csp.get("trusted-types"), file).toBe("subrosa");
+      expect(csp.get("frame-ancestors"), file).toBe("'none'");
+      expect(csp.has("unsafe-eval"), file).toBe(false);
+      expect([...csp.values()].join(" "), file).not.toContain("'unsafe-eval'");
+      expect([...csp.values()].join(" "), file).not.toContain("'unsafe-inline'");
+    }
+  });
+
+  it("is otherwise the site's policy, in every place that serves it", () => {
+    const site = policy("website/public/_headers");
+    for (const [file, csp] of app)
+      for (const [name, value] of site) {
+        if (["script-src", "connect-src"].includes(name)) continue;
+        if (name === "font-src" && !csp.has("font-src")) continue;
+        expect(csp.get(name), `${file} ${name}`).toBe(value);
+      }
+  });
+
+  it("lets /app use the microphone, the camera and the screen, and nothing else does", () => {
+    for (const file of APP_SOURCES.map(([name]) => name)) {
+      const text = readFileSync(file, "utf8") as string;
+      expect(text, file).toContain("camera=(self), microphone=(self), display-capture=(self)");
+      expect(text.match(/microphone=\(self\)/g)?.length, file).toBeLessThanOrEqual(2);
+    }
+    for (const file of SOURCES) expect(policy(file).get("script-src"), file).toBe("'self'");
+  });
+
+  it("serves the connector view host its own policy and lets only the site frame it", () => {
+    const markers: Record<string, string> = {
+      "website/public/_headers": "\n/connector-view.html\n",
+      "subrosa-cloud/deploy/nginx-account.conf.example": "location = /connector-view.html",
+      "subrosa-cloud/deploy/Caddyfile.example": "header @view",
+    };
+    for (const [file, marker] of Object.entries(markers)) {
+      const text = readFileSync(file, "utf8") as string;
+      const from = text.indexOf(marker);
+      expect(from, file).toBeGreaterThan(0);
+      const block = text.slice(from, text.indexOf("\n\n", from + 1) >>> 0);
+      expect(block, file).toMatch(/default-src 'none'/);
+      expect(block, file).toMatch(/frame-ancestors 'self'/);
+      expect(block, file).toMatch(/SAMEORIGIN/);
+      expect(block, file).not.toMatch(/unsafe-eval/);
+    }
   });
 });
 

@@ -1755,3 +1755,5 @@ fn is_provider_failure_detail(detail: &str) -> bool {
 mod tests;
 #[cfg(test)]
 mod web_client_export;
+#[cfg(test)]
+mod web_features;

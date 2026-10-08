@@ -37,7 +37,8 @@ export function ChatMessage({
   rating: Rating | null;
   sources?: MemorySource[];
   actions: MessageActions;
-  /** Cards the page draws with actions (canvas, try-on, saving). */
+  /** Cards the page draws itself: the canvas, try-on and saving cards, and
+   * the blocks a web client feature owns (`feature.ts`). */
   renderBlock?: BlockRenderer;
   /** Further controls for this message (saving a reply). */
   extraActions?: ReactNode;

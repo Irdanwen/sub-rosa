@@ -1,0 +1,50 @@
+/* Study blocks and the review. The site's tokens only. */
+.study-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.study-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+.study-options .button[aria-pressed="true"] {
+  border-color: var(--border-hover);
+  background: var(--accent-faint);
+}
+.study-card input {
+  font: inherit;
+  font-size: 16px;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.study-flip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  min-height: 96px;
+  font: inherit;
+  text-align: left;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+}
+.study-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.study-grades {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}

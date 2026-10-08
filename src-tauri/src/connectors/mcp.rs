@@ -24,7 +24,7 @@ use crate::sse_lines::SseLines;
 /// The protocol revision this client speaks. A server that answers with an
 /// older one is followed: the subset used here did not change.
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// The most one response may weigh. A tool that returns more is refused
 /// rather than buffered: the model could not read it anyway.
 pub const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;

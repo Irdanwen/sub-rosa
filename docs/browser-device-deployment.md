@@ -70,6 +70,14 @@ The Vercel frontend proxies `/api/operator/*` to the operator, including
   `nginx -t && systemctl reload nginx`) and `website/public/_headers` for a
   static host. The policy adds `connect-src https://carpe-diem.xyz` and Trusted
   Types; `src/test/website-csp.test.ts` keeps the four copies identical.
+- The web client's own blocks (ADR-0104): `/app` (its policy adds
+  WebAssembly, a blob worker, the connector view frame, the probed connector
+  origins, and the microphone, camera and screen), `/connector-view.html`
+  (its own policy, framed only by the site) and `/pyodide/` (module types for
+  `.mjs`, `application/wasm`). The site build now carries Pyodide under
+  `/pyodide/` (about 20 MB; `SUBROSA_PYODIDE=0` builds without it, and Python
+  is then unavailable in the tab). Check `/app` in Chrome as below, plus one
+  Python run and one voice turn.
 - After publishing, open `/account/devices` in Chrome with the developer tools
   console open and check there is no CSP or Trusted Types violation.
 

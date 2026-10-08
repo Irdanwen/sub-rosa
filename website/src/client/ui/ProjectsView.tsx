@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { date, t } from "../../lib/i18n";
 import { AGENT_LITE } from "../codec";
-import { readDocument } from "../documents";
+import { readDocument } from "../documents/read";
 import { listChats } from "../library";
 import {
   addProjectFile,

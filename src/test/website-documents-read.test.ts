@@ -5,8 +5,8 @@ import {
   withAttachmentMarkers,
 } from "../../website/src/client/attachments";
 import type { ChatMessage } from "../../website/src/client/carpe-diem";
-import { DocumentError, readDocument, xmlText } from "../../website/src/client/documents";
-import { MAX_SELECTED_BYTES, ZipError, zipEntries } from "../../website/src/client/zip";
+import { DocumentError, readDocument, xmlText } from "../../website/src/client/documents/read";
+import { MAX_SELECTED_BYTES, ZipError, zipEntries } from "../../website/src/client/documents/unzip";
 
 /** A zip the way Office writes one: deflated entries, a central directory. */
 async function zip(files: Record<string, string>, method: 0 | 8 = 8): Promise<Uint8Array> {

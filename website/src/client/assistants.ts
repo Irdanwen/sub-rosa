@@ -11,7 +11,7 @@
  * that a browser can run: its references always, reading notes when allowed,
  * memory when allowed and switched on, the web when allowed.
  */
-import { AGENT_LITE, ASSISTANT_CONVERSATIONS, timestamp, type ToolDefinition } from "./codec";
+import { AGENT_LITE, ASSISTANT_CONVERSATIONS, timestamp } from "./codec";
 import { addMessage } from "./library";
 import type { SyncClient, SyncObject } from "./sync";
 
@@ -290,17 +290,6 @@ export function assistantAllows(definition: AssistantDefinition, name: string, m
     default:
       return false;
   }
-}
-
-export function assistantTools(
-  snapshot: AssistantSnapshot,
-  offered: ToolDefinition[],
-  memoryOn: boolean,
-): ToolDefinition[] {
-  return [
-    ...offered.filter((tool) => assistantAllows(snapshot.definition, tool.function.name, memoryOn)),
-    AGENT_LITE.assistant.searchReferences,
-  ];
 }
 
 /** `reference_passages`: each reference cut into 1800-character passages,

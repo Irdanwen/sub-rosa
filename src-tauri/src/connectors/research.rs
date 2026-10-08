@@ -21,8 +21,8 @@ use crate::domain::types::AppError;
 use crate::research::store::Found;
 
 const PER_SOURCE: Duration = Duration::from_secs(20);
-const EXCERPT_CHARS: usize = 4_000;
-const MAX_CONNECTORS: usize = 6;
+pub(crate) const EXCERPT_CHARS: usize = 4_000;
+pub(crate) const MAX_CONNECTORS: usize = 6;
 
 pub async fn set_for_run(pool: &SqlitePool, run_id: &str, ids: &[String]) -> Result<(), AppError> {
     for id in ids.iter().take(MAX_CONNECTORS) {

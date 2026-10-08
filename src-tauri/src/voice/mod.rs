@@ -27,20 +27,20 @@ mod io_android;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod io_apple;
 pub mod machine;
-mod player;
+pub(crate) mod player;
 mod requests;
 mod resample;
 #[cfg(target_os = "macos")]
 mod screen;
 #[cfg(any(target_os = "macos", windows, test))]
-mod screen_frame;
+pub(crate) mod screen_frame;
 #[cfg(windows)]
 mod screen_windows;
 #[cfg(debug_assertions)]
 pub mod selftest;
-mod sentences;
-mod session;
-mod vad;
+pub(crate) mod sentences;
+pub(crate) mod session;
+pub(crate) mod vad;
 
 use crate::domain::types::AppError;
 use machine::{Input, Notice, Phase};

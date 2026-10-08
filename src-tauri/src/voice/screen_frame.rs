@@ -8,9 +8,9 @@ use std::path::PathBuf;
 
 /// A model reads text at this size; more only costs upload time.
 #[cfg(any(windows, test))]
-const LONGEST_SIDE: u32 = 1600;
+pub(crate) const LONGEST_SIDE: u32 = 1600;
 #[cfg(any(windows, test))]
-const JPEG_QUALITY: u8 = 80;
+pub(crate) const JPEG_QUALITY: u8 = 80;
 
 pub fn capture_error(detail: &str) -> AppError {
     tracing::warn!(%detail, "voice screen frame failed");

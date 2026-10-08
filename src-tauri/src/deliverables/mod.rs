@@ -34,10 +34,10 @@ use crate::domain::types::AppError;
 pub mod commands;
 mod docx_content;
 mod pptx;
-mod pptx_parts;
+pub(crate) mod pptx_parts;
 #[cfg(test)]
-mod tests_support;
-mod xlsx;
+pub(crate) mod tests_support;
+pub(crate) mod xlsx;
 
 pub const TOOL: &str = "make_document";
 /// The gallery's subfolder for documents.
@@ -214,7 +214,7 @@ fn clean_title(raw: Option<&str>, kind: DocumentKind) -> String {
 
 /// The parts of a request: `{kind, title, content}`. A model that sends the
 /// content as a JSON string gets it parsed.
-fn parse_request(args: &Value) -> Result<(DocumentKind, String, Value), AppError> {
+pub(crate) fn parse_request(args: &Value) -> Result<(DocumentKind, String, Value), AppError> {
     let kind = args
         .get("kind")
         .or_else(|| args.get("format"))

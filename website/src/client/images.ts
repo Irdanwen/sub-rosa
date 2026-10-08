@@ -12,7 +12,7 @@
  */
 import { tryOnPrompt, TRY_ON_MODEL_PREFERENCE } from "@subrosa/chat-core/try-on";
 import snapshotData from "../models/snapshot.json";
-import { CarpeDiemError, type LiveModel, type Operator } from "./carpe-diem";
+import { CarpeDiemError, failure, type LiveModel, type Operator } from "./carpe-diem";
 import { AGENT_LITE } from "./codec";
 
 export interface ImageModel {
@@ -100,20 +100,6 @@ export interface ImageCall {
 
 /** An image the operator answered with: a PNG/JPEG/WebP as a data URL. */
 export type Picture = { dataUrl: string; model: string; prompt: string };
-
-async function failure(response: Response): Promise<CarpeDiemError> {
-  let code = "carpe_diem_unavailable";
-  let message = `Carpe Diem answered ${response.status}.`;
-  try {
-    const body = (await response.json()) as Record<string, unknown>;
-    if (typeof body.code === "string") code = body.code;
-    if (typeof body.error === "string") message = body.error;
-    else if (typeof body.message === "string") message = body.message;
-  } catch {
-    // The status says enough.
-  }
-  return new CarpeDiemError(code, response.status, message);
-}
 
 function post(call: ImageCall, path: string, body: unknown): Promise<Response> {
   return call.operator.fetch(`${call.operator.root}${path}`, {

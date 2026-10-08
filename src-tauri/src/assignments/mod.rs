@@ -69,13 +69,13 @@ pub const ASSIGNMENTS_EVENT: &str = "june://assignments";
 /// which refuses it and says so: the asker gets an answer, not silence.
 pub const ERRAND_PREFIX: &str = "subrosa://assignment/";
 
-const MAX_TITLE_CHARS: usize = 120;
-const MAX_GOAL_CHARS: usize = 4_000;
+pub(crate) const MAX_TITLE_CHARS: usize = 120;
+pub(crate) const MAX_GOAL_CHARS: usize = 4_000;
 /// A phone run left pending this long is closed as failed. A turn the sweep
 /// can still finish finishes well inside it.
-const PHONE_RUN_TIMEOUT_HOURS: i64 = 6;
+pub(crate) const PHONE_RUN_TIMEOUT_HOURS: i64 = 6;
 /// A run with no handle this long after it was claimed never started.
-const START_TIMEOUT_MINUTES: i64 = 10;
+pub(crate) const START_TIMEOUT_MINUTES: i64 = 10;
 
 /// Whether this device runs any assignment on a schedule. Read by iOS while it
 /// decides whether to ask for a background refresh, so it is in memory.
@@ -747,7 +747,7 @@ pub async fn run_for_event(
     let mut row = store::get(&pool, assignment_id)
         .await?
         .ok_or_else(|| error("assignment_not_found"))?;
-    row.goal = format!("{}\n\nWhat started this run: {summary}", row.goal);
+    row.goal = format!("{}{}{summary}", row.goal, prompt::words::EVENT_CAUSE);
     let me = this_device(&pool).await;
     start_run(app, &pool, &row, Slot::Event(event_key.to_string()), &me).await
 }

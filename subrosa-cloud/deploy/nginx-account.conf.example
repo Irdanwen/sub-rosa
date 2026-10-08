@@ -101,4 +101,55 @@ server {
         add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa" always;
         try_files $uri $uri/ /index.html;
     }
+
+    # The web client (ADR-0101, WP20b) has its own policy: the site's plus
+    # WebAssembly and a blob worker for Python (ADR-0086), the catalog's
+    # connector origins a tab may call, the connector view host as a frame,
+    # and the microphone, camera and screen for voice. `rewrite ... break`
+    # serves the page from this location, so these headers are the ones sent.
+    location = /app {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+        add_header Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa" always;
+        rewrite ^ /index.html break;
+    }
+    location ^~ /app/ {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+        add_header Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa" always;
+        rewrite ^ /index.html break;
+    }
+    # A connector's interactive view (ADR-0092), framed sandboxed by /app.
+    location = /connector-view.html {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src https:; frame-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'" always;
+        add_header Cache-Control no-store always;
+        try_files $uri =404;
+    }
+    # Pyodide's files (ADR-0086), with types a module worker accepts.
+    location ^~ /pyodide/ {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+        add_header Cache-Control "public, max-age=604800" always;
+        types {
+            text/javascript mjs js;
+            application/wasm wasm;
+            application/json json;
+            application/zip zip whl;
+        }
+        default_type application/octet-stream;
+        try_files $uri =404;
+    }
 }

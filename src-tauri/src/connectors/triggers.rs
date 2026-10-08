@@ -29,9 +29,9 @@ use crate::domain::types::AppError;
 /// How often a trigger looks, at most.
 pub const CHECK_EVERY_SECS: i64 = 5 * 60;
 /// Ids remembered per trigger. Older ones fall off the front.
-const MAX_SEEN: usize = 500;
+pub(crate) const MAX_SEEN: usize = 500;
 /// Runs one check may start. More new items than this wait for the next.
-const MAX_FIRES_PER_CHECK: usize = 3;
+pub(crate) const MAX_FIRES_PER_CHECK: usize = 3;
 
 pub const KINDS: &[&str] = &[
     "calendar_event",

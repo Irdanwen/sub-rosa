@@ -206,13 +206,17 @@ export function ChatBlockList({
 }
 
 /** A block the page around the message draws itself (the web client's
- * canvas and try-on cards), or undefined to fall back to the list. */
+ * canvas, try-on and saving cards, and its features' quiz, file and
+ * connector cards), or undefined to fall back to the list. Called only for a
+ * block whose payload parsed; `id` is the block's place in the message. */
 export type BlockRenderer = (
   name: string,
-  payload: Record<string, unknown> | null,
+  payload: Record<string, unknown>,
+  id: number,
 ) => ReactNode | undefined;
 
-/** A message's prose as markdown and its blocks as lists. */
+/** A message's prose as markdown and its blocks as lists, or as the page's
+ * own cards where `renderBlock` draws one. */
 export function MessageBody({
   content,
   renderBlock,
@@ -222,17 +226,19 @@ export function MessageBody({
 }) {
   return (
     <>
-      {splitChatBlocks(content).map((part) =>
-        part.kind === "text" ? (
-          <Markdown key={part.id} text={part.text} />
-        ) : (
+      {splitChatBlocks(content).map((part) => {
+        if (part.kind === "text") return <Markdown key={part.id} text={part.text} />;
+        const drawn = part.payload ? renderBlock?.(part.name, part.payload, part.id) : undefined;
+        return (
           <Fragment key={part.id}>
-            {renderBlock?.(part.name, part.payload) ?? (
+            {drawn !== undefined ? (
+              drawn
+            ) : (
               <ChatBlockList name={part.name} payload={part.payload} />
             )}
           </Fragment>
-        ),
-      )}
+        );
+      })}
     </>
   );
 }

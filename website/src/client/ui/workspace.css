@@ -178,7 +178,8 @@
 .wc-composer {
   flex-wrap: wrap;
 }
-.wc-composer > .wc-attachments {
+.wc-composer > .wc-attachments,
+.wc-composer > .wc-composer-tools {
   flex-basis: 100%;
 }
 .wc-composer > textarea {

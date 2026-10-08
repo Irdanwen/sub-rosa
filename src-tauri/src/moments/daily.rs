@@ -29,13 +29,13 @@ use crate::domain::types::AppError;
 
 const SETTINGS_FILE: &str = "daily_brief.json";
 /// A card first written this long after its time is shown, never announced.
-const NOTIFY_WINDOW_MINUTES: i64 = 4 * 60;
-const MAX_TOPICS: usize = 5;
-const MAX_TOPIC_CHARS: usize = 80;
-const LINKS_PER_TOPIC: usize = 2;
-const MAX_NOTES: usize = 5;
-const MAX_FOLLOW_UPS: usize = 3;
-const MAX_ITEMS: usize = 5;
+pub(crate) const NOTIFY_WINDOW_MINUTES: i64 = 4 * 60;
+pub(crate) const MAX_TOPICS: usize = 5;
+pub(crate) const MAX_TOPIC_CHARS: usize = 80;
+pub(crate) const LINKS_PER_TOPIC: usize = 2;
+pub(crate) const MAX_NOTES: usize = 5;
+pub(crate) const MAX_FOLLOW_UPS: usize = 3;
+pub(crate) const MAX_ITEMS: usize = 5;
 
 static SETTINGS: std::sync::OnceLock<std::sync::Mutex<DailyBriefSettings>> =
     std::sync::OnceLock::new();
@@ -198,6 +198,19 @@ impl DailyCard {
     }
 }
 
+/// Words that make a heading a list of follow-ups, in English or French.
+pub(crate) const FOLLOW_UP_HEADINGS: [&str; 9] = [
+    "follow",
+    "next step",
+    "action",
+    "to do",
+    "todo",
+    "à faire",
+    "suite",
+    "prochaine",
+    "actions",
+];
+
 /// The follow-ups a note wrote down: the items under a heading that names
 /// them (follow-ups, next steps, action items, to do, in English or French).
 pub fn follow_ups(content: &str) -> Vec<String> {
@@ -210,19 +223,7 @@ pub fn follow_ups(content: &str) -> Vec<String> {
                 .trim_matches('*')
                 .trim()
                 .to_lowercase();
-            inside = [
-                "follow",
-                "next step",
-                "action",
-                "to do",
-                "todo",
-                "à faire",
-                "suite",
-                "prochaine",
-                "actions",
-            ]
-            .iter()
-            .any(|word| heading.contains(word));
+            inside = FOLLOW_UP_HEADINGS.iter().any(|word| heading.contains(word));
             continue;
         }
         if !inside {

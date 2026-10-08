@@ -20,7 +20,7 @@ import {
   removeReference,
   saveAssistant,
 } from "../assistants";
-import { readDocument } from "../documents";
+import { readDocument } from "../documents/read";
 import {
   importListing,
   publications,

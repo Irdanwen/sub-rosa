@@ -29,7 +29,7 @@ pub struct Assembled {
 }
 
 /// Headings a model writes over a references list it was told not to write.
-const SOURCE_HEADINGS: &[&str] = &[
+pub(crate) const SOURCE_HEADINGS: &[&str] = &[
     "sources",
     "source",
     "references",

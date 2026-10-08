@@ -50,9 +50,9 @@ use engine::StopSignal;
 /// [`research_get`]: the row is the truth, the event only says when to look.
 pub const RESEARCH_EVENT: &str = "june://research";
 
-const MAX_QUESTION_CHARS: usize = 4_000;
-const MAX_SECTIONS: usize = 8;
-const MAX_ANSWER_CHARS: usize = 1_000;
+pub(crate) const MAX_QUESTION_CHARS: usize = 4_000;
+pub(crate) const MAX_SECTIONS: usize = 8;
+pub(crate) const MAX_ANSWER_CHARS: usize = 1_000;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

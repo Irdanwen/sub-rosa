@@ -17,7 +17,7 @@
  *
  * Nothing is sent anywhere to read a file.
  */
-import { readZipText } from "./zip";
+import { readZipText } from "./unzip";
 
 export type DocumentFormat = "pdf" | "docx" | "xlsx" | "pptx" | "txt" | "md" | "csv" | "json";
 

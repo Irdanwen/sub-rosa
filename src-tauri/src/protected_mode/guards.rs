@@ -32,7 +32,7 @@ fn has_marker(text: &str) -> bool {
     ADULT_MARKERS.iter().any(|marker| text.contains(marker))
 }
 
-pub(super) fn blocked_model() -> AppError {
+pub(crate) fn blocked_model() -> AppError {
     AppError::new(
         "protected_mode_model",
         "Protected mode blocks this model. Choose another one.",

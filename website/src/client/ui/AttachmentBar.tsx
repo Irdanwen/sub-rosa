@@ -6,7 +6,7 @@ import {
   type ImageFitter,
   MAX_IMAGE_ATTACHMENTS,
 } from "../attachments";
-import { DocumentError, type PdfReader, pdfJsReader, readDocument } from "../documents";
+import { DocumentError, type PdfReader, pdfJsReader, readDocument } from "../documents/read";
 
 export const ACCEPTED_FILES =
   "image/*,.pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.json,text/plain";
