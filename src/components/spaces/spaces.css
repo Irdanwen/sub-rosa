@@ -45,10 +45,13 @@
   padding: var(--sp-3) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
+/* A basis, not `flex: 1`: with a zero basis the text column shrank under
+ * its own safety number on a phone and the buttons were drawn over it.
+ * Now the buttons wrap below when both do not fit. */
 .spaces-list-main {
   display: grid;
   gap: var(--sp-1);
-  flex: 1;
+  flex: 1 1 14rem;
   min-width: 0;
 }
 .spaces-list-title {
@@ -106,6 +109,15 @@
   display: grid;
   gap: var(--sp-4);
   min-width: 0;
+}
+/* An action in these columns is as wide as its label, never a bar. */
+.spaces-section > .btn,
+.spaces-content > .btn,
+.spaces-members > .btn,
+.spaces-editor > .btn,
+.spaces-invitation > .btn,
+.spaces-share > .btn {
+  justify-self: start;
 }
 .spaces-heading {
   margin: 0;
@@ -199,4 +211,11 @@
   font-size: var(--fs-sm);
   overflow-wrap: anywhere;
   user-select: all;
+}
+/* A <details> card: spaced by margin, like the publishing card beside it. */
+.spaces-card > * + * {
+  margin-top: var(--sp-3);
+}
+.spaces-card > .spaces-switch {
+  margin-top: var(--sp-4);
 }

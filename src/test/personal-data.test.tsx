@@ -134,6 +134,16 @@ describe("finance helpers", () => {
   it("says when the line is a net flow rather than a balance", () => {
     expect(balanceChart(overview).title).toBe("Net flow since the first transaction");
     expect(balanceChart({ ...overview, balanceKnown: true }).title).toBe("Balance");
+    // Its days read like the monthly chart's months, never as ISO dates
+    // that a phone's axis cuts in half.
+    const days = balanceChart({
+      ...overview,
+      balance: [
+        { day: "2026-05-01", balanceMinor: 0 },
+        { day: "2026-09-10", balanceMinor: 100 },
+      ],
+    }).categories;
+    expect(days).toEqual(["May 1, 26", "Sep 10, 26"]);
   });
 
   it("formats money in its currency and counts months back", () => {

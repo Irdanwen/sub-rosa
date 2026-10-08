@@ -230,6 +230,17 @@ export function WebClient({
     setOpen(id ? { kind: "chat", id } : { kind: "new" });
     setError("");
   }, []);
+  // On a phone the sidebar sits above what it opens, so a tap there changed
+  // nothing in view: bring the opened view up once it has rendered.
+  const shell = useRef<HTMLDivElement>(null);
+  const reveal = useCallback(() => {
+    if (!window.matchMedia?.("(max-width: 760px)")?.matches) return;
+    requestAnimationFrame(() => {
+      const main = shell.current?.querySelector(".wc-main, .wc-view");
+      if (main && typeof main.scrollIntoView === "function")
+        main.scrollIntoView({ block: "start" });
+    });
+  }, []);
   // Projects, assistants, pictures, library, publishing, attachments, the
   // canvas and sharing (WP20): plugged in here, built in `useWorkspace`.
   const workspace = useWorkspace({
@@ -246,7 +257,10 @@ export function WebClient({
     flush,
     chatId: open.kind === "chat" ? open.id : open.kind === "temporary" ? "temporary" : null,
     openChat,
-    onView: () => setPanel(null),
+    onView: () => {
+      setPanel(null);
+      reveal();
+    },
   });
 
   // ── What is on screen ─────────────────────────────────────────────────────
@@ -735,7 +749,7 @@ export function WebClient({
   const here = open.kind === "chat" ? open.id : open.kind === "temporary" ? "temporary" : null;
   const ActivePanel = activePanel?.Panel;
   return (
-    <div className="wc-shell">
+    <div className="wc-shell" ref={shell}>
       <aside className="wc-sidebar" aria-label={t("Your chats", "Vos discussions")}>
         <div className="wc-row">
           <button
@@ -808,6 +822,7 @@ export function WebClient({
                 workspace.showChat();
                 if (chat.model && models.some((item) => item.id === chat.model))
                   setModel(chat.model);
+                reveal();
               }}
             >
               <strong>{chat.title || t("Untitled chat", "Discussion sans titre")}</strong>
@@ -827,6 +842,7 @@ export function WebClient({
                 onClick={() => {
                   setPanel(panel === feature.id ? null : feature.id);
                   workspace.showChat();
+                  reveal();
                 }}
               >
                 {feature.label?.()}

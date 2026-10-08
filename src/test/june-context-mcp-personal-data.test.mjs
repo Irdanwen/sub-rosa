@@ -8,8 +8,10 @@ import { describe, expect, it } from "vitest";
  * The desktop agent's health and finance tools (ADR-0099) are answered by
  * the app over its local proxy, never read from SQLite here, so the computer
  * and the phones say the same figures. Advertised only with the proxy
- * coordinates, like the calendar. Plain JavaScript for the child process,
- * like june-context-mcp.test.mjs.
+ * coordinates, like the calendar, and only by the server registered with
+ * `--scope=personal-data`: a scheduled run that has the notes does not get
+ * the health and the money with them. Plain JavaScript for the child
+ * process, like june-context-mcp.test.mjs.
  */
 
 const SCRIPT = `
@@ -23,16 +25,18 @@ def fake_proxy(coords, path, payload):
     return {"answered": path}
 m.call_proxy = fake_proxy
 db = Path(sys.argv[2])
-def names(proxy):
-    listed = m.handle_message(db, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, True, proxy)
+def names(proxy, scope="personal-data"):
+    listed = m.handle_message(db, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, True, proxy, True, scope)
     return [tool["name"] for tool in listed["result"]["tools"]]
-out = {"without": names(""), "with": names("/coords.json")}
-def call(name, arguments, proxy="/coords.json"):
-    return m.handle_message(db, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": arguments}}, True, proxy)
+out = {"without": names(""), "with": names("/coords.json"), "context": names("/coords.json", "context")}
+def call(name, arguments, proxy="/coords.json", scope="personal-data"):
+    return m.handle_message(db, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": arguments}}, True, proxy, True, scope)
 out["health"] = call("health_summary", {"days": 7, "metrics": None})["result"]["structuredContent"]
 out["spending"] = call("spending_summary", {"from": "2026-09-01"})["result"]["structuredContent"]
 out["search"] = call("transactions_search", {"query": "coop", "max_amount": -10})["result"]["structuredContent"]
 out["noProxy"] = call("health_summary", {}, "")
+out["fromContext"] = call("spending_summary", {}, "/coords.json", "context")
+out["notesHere"] = call("search_meeting_notes", {})
 out["calls"] = calls
 print(json.dumps(out))
 `;
@@ -64,6 +68,17 @@ describe("june_context_mcp health and finances", () => {
       expect(result.with).toContain(name);
     }
     expect(result.noProxy.error.code).toBe(-32602);
+  });
+
+  maybe("are served by their own server, never by the context one", () => {
+    expect(result.with).toEqual(["health_summary", "spending_summary", "transactions_search"]);
+    expect(result.context).toContain("search_meeting_notes");
+    for (const name of ["health_summary", "spending_summary", "transactions_search"]) {
+      expect(result.context).not.toContain(name);
+    }
+    // Neither server answers what the other one lists.
+    expect(result.fromContext.error.code).toBe(-32602);
+    expect(result.notesHere.error.code).toBe(-32602);
   });
 
   maybe("ask the app over its proxy, without empty arguments", () => {

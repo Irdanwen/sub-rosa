@@ -360,6 +360,18 @@ export function merchantChart(overview: FinanceOverview): ChartChatBlock {
 }
 
 /** The balance over time, or the net flow when no statement stated a balance. */
+/** "May 3, 26": a balance spans months and can span years, so its days say
+ * the year the way the monthly chart's months do. */
+function balanceDay(day: string): string {
+  const [year, month, date] = day.split("-").map(Number);
+  if (!year || !month || !date) return day;
+  return new Intl.DateTimeFormat(intlLocale(), {
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+  }).format(new Date(year, month - 1, date));
+}
+
 export function balanceChart(overview: FinanceOverview): ChartChatBlock {
   const title = overview.balanceKnown ? t("Balance") : t("Net flow since the first transaction");
   return {
@@ -368,7 +380,7 @@ export function balanceChart(overview: FinanceOverview): ChartChatBlock {
     title,
     unit: overview.currency,
     stacked: false,
-    categories: overview.balance.map((point) => point.day),
+    categories: overview.balance.map((point) => balanceDay(point.day)),
     series: [{ name: title, values: overview.balance.map((point) => units(point.balanceMinor)) }],
     scatter: [],
   };

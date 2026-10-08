@@ -109,13 +109,68 @@
   background: var(--card);
   color: var(--foreground);
   font: inherit;
-  /* 16px keeps the phone from zooming into the field. */
-  font-size: max(16px, var(--fs-sm));
+  font-size: var(--fs-sm);
   min-width: 0;
 }
 
-.personal-input {
+/* 16px keeps the phone from zooming into the field. Only there: on the
+ * computer it made every field and category menu larger than its row. */
+:root[data-shell="mobile"] .personal-input,
+:root[data-shell="mobile"] .personal-select {
+  font-size: max(16px, var(--fs-sm));
+}
+
+/* Grows along a row only: in a column (a labelled field) a 12rem basis is a
+ * height, and stretched the account field to a box. */
+.personal-row > .personal-input,
+.personal-search > .personal-input {
   flex: 1 1 12rem;
+}
+
+/* The dialog card does not scroll; its body does, so the mapping and the
+ * sample never push the import button out of the card. The padding keeps
+ * the focus rings inside the scroller. */
+.personal-dialog-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-1);
+  margin: calc(-1 * var(--sp-1));
+}
+
+/* The mapping's group: the legend is its heading, not a browser frame. */
+fieldset.personal-section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+fieldset.personal-section > legend {
+  padding: 0;
+  margin-bottom: var(--sp-3);
+}
+
+/* The search field's label: the icon and the field on one line, the field
+ * drawing the only border. */
+.personal-search {
+  display: flex;
+  flex: 1 1 12rem;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--muted-foreground);
+}
+
+/* A time range or a filter is as wide as its choices, not the column. */
+.personal-section > .segmented {
+  align-self: flex-start;
+}
+
+/* On the phone the screen already draws the gutter. */
+.mobile-list-scroll > .personal-view {
+  padding-inline: 0;
 }
 
 .personal-check {
@@ -193,6 +248,14 @@
   font-size: var(--fs-xs);
 }
 
+/* A date and an account number: cut at the end rather than broken inside
+ * the number. */
+.personal-one-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .personal-amount {
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
@@ -237,6 +300,10 @@
   border-bottom: 1px solid var(--border-subtle);
   text-align: left;
   vertical-align: top;
+}
+
+.personal-sample td[data-nowrap] {
+  white-space: nowrap;
 }
 
 .personal-sample td[data-numeric] {

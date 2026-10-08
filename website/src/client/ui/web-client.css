@@ -102,6 +102,11 @@
   white-space: nowrap;
   max-width: 100%;
 }
+/* The site's .quiet sets a paragraph's top margin; in a row it pushed the
+ * date a line away from its title. */
+.wc-chat-row .quiet {
+  margin-top: 0;
+}
 .wc-chat-row[aria-current="page"],
 .wc-chat-row:hover {
   background: var(--surface);

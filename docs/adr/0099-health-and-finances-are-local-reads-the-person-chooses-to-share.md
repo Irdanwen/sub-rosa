@@ -127,3 +127,33 @@ Three facts shaped the rest:
   one arithmetic drift; the proxy already carries the calendar this way.
 - **Applying model categories directly.** A wrong category silently changes
   every total; a proposal costs one tap.
+
+## Addendum (2026-10-08): a scheduled run reads them only when it says so
+
+Point 7 held on the phone, where a run's scope is a list of agent-lite tool
+names and the "notes" group never named these three. On the desktop it did
+not: the tools rode the `june_context` MCP, and a run's tools are chosen by
+Hermes toolset, that is by server, so an assignment or a scheduled task that
+ticked "Your notes" (`mcp-june_context`) read the health and the money too,
+and so did every sandboxed routine (the cron platform takes every enabled MCP
+server when its list names none).
+
+- The three tools are a **server of their own**, `june_personal`: the same
+  script registered a second time with `--scope=personal-data`, which serves
+  them and nothing else. The context server never serves them, listed or
+  called. One script keeps one copy of the proxy contract; the separate
+  registration is what makes them selectable apart.
+- Assignments and scheduled tasks gain a **"Health and finances" group**
+  (`personal`) on every shell: `mcp-june_personal` on the desktop, the three
+  agent-lite tools on the phone and in the web client. It reads and changes
+  nothing outside the device, so "ask first" keeps it.
+- A sandboxed routine's `platform_toolsets.cron` now names the built-in
+  servers it keeps, every one but `june_personal`, which turns Hermes's MCP
+  default into an allowlist. A routine's definition that wants the personal
+  data names the toolset in its own `enabled_toolsets`.
+- A conversation is unchanged: it takes every server, as a general
+  conversation on the phone is offered the tools.
+
+Rejected: gating the tool list in the one context server by an argv flag.
+The flag is read once by a process every session of the gateway shares, so
+it can switch the tools off for everyone but not for a run.

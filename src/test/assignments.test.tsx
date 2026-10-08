@@ -22,6 +22,7 @@ import {
   minuteFromTime,
   resultSummary,
   runErrorLabel,
+  runPlaceLabel,
   timeFromMinute,
   toolChoices,
 } from "../lib/assignments";
@@ -111,8 +112,12 @@ describe("what a cadence and a run say", () => {
       "web",
       "notes",
       "memory",
+      "personal",
       "connectors",
     ]);
+    // Health and finances are their own choice on both shells, never part
+    // of the notes (ADR-0099).
+    expect(toolChoices("desktop").some((choice) => choice.id === "personal")).toBe(true);
     const desktop = toolChoices("desktop");
     expect(desktop.filter((choice) => choice.acts).map((choice) => choice.id)).toEqual([
       "files",
@@ -162,6 +167,19 @@ describe("the results inbox", () => {
       approve: true,
       feedback: "Only Geneva",
     });
+  });
+
+  it("says where a run ran by the kind of device that ran it", () => {
+    // A browser on the web client writes "browser" (ADR-0104): it is not
+    // the computer, and a kind this version does not know is not either.
+    expect(runPlaceLabel({ deviceName: "phone" })).toBe("On your phone");
+    expect(runPlaceLabel({ deviceName: "computer" })).toBe("On your computer");
+    expect(runPlaceLabel({ deviceName: "browser" })).toBe("In your browser");
+    expect(runPlaceLabel({ deviceName: "watch" })).toBe("On another device");
+    expect(runPlaceLabel({ deviceName: "" })).toBe("On another device");
+    render(<RunReview run={run({ deviceName: "browser" })} onReviewed={() => undefined} />);
+    expect(screen.getByText(/In your browser/)).toBeTruthy();
+    expect(screen.queryByText(/On your computer/)).toBeNull();
   });
 
   it("rejects without feedback, and shows a late catch-up for what it is", async () => {

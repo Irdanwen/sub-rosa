@@ -2,9 +2,11 @@
 //! tools, `health_summary`, `spending_summary` and `transactions_search`.
 //!
 //! Agent-lite offers them in a general conversation when there is something
-//! to read, never to a custom assistant. The desktop's context MCP reaches
-//! the same answers through the app's local proxy ([`proxy_route`]), so the
-//! phone and the computer describe the same figures with one implementation.
+//! to read, never to a custom assistant, and to a scheduled run only when
+//! its definition ticks the "personal" group. The desktop's `june_personal`
+//! MCP server (the context script, scoped to these three) reaches the same
+//! answers through the app's local proxy ([`proxy_route`]), so the phone and
+//! the computer describe the same figures with one implementation.
 
 use crate::domain::types::AppError;
 use serde_json::{json, Value};

@@ -127,6 +127,14 @@ CALENDAR_TOOL: dict[str, Any] = {
 # has no health store: what it answers is what a phone sent with the
 # person's consent, measure by measure. Advertised only alongside the proxy
 # coordinates, like the calendar.
+#
+# They are a server of their own: the app registers this script a second
+# time with --scope=personal-data, which serves these three tools and
+# nothing else, and the context server never serves them. A scheduled run
+# picks its tools by server, so the notes reach it without the health and
+# the money unless its definition names the personal data (ADR-0099
+# addendum).
+PERSONAL_DATA_SCOPE = "personal-data"
 PERSONAL_DATA_TOOLS: list[dict[str, Any]] = [
     {
         "name": "health_summary",
@@ -474,7 +482,7 @@ def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit(
             "Usage: june_context_mcp.py <notes.sqlite3> [--memory=off] [--past-chats=off] "
-            "[--proxy=<coords.json>]"
+            "[--proxy=<coords.json>] [--scope=personal-data]"
         )
 
     db_path = Path(sys.argv[1]).expanduser()
@@ -487,12 +495,16 @@ def main() -> None:
         (arg[len("--proxy=") :] for arg in sys.argv[2:] if arg.startswith("--proxy=")),
         "",
     )
+    scope = next(
+        (arg[len("--scope=") :] for arg in sys.argv[2:] if arg.startswith("--scope=")),
+        "context",
+    )
     while True:
         message = read_message()
         if message is None:
             return
         response = handle_message(
-            db_path, message, memory_enabled, proxy_coords, past_chats_enabled
+            db_path, message, memory_enabled, proxy_coords, past_chats_enabled, scope
         )
         if response is not None:
             write_message(response)
@@ -540,9 +552,11 @@ def handle_message(
     memory_enabled: bool = True,
     proxy_coords: str = "",
     past_chats_enabled: bool = True,
+    scope: str = "context",
 ) -> dict[str, Any] | None:
     method = message.get("method")
     request_id = message.get("id")
+    personal = scope == PERSONAL_DATA_SCOPE
 
     if method == "initialize":
         return response(
@@ -550,13 +564,22 @@ def handle_message(
             {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "serverInfo": SERVER_INFO,
+                "serverInfo": {**SERVER_INFO, "name": "june-personal"} if personal else SERVER_INFO,
             },
         )
     if method == "notifications/initialized":
         return None
     if method == "ping":
         return response(request_id, {})
+    if method == "tools/list" and personal:
+        # Without the proxy there is nothing this server can answer.
+        return response(request_id, {"tools": list(PERSONAL_DATA_TOOLS) if proxy_coords else []})
+    if method == "tools/call" and personal:
+        params = message.get("params") or {}
+        name = params.get("name")
+        if name not in PERSONAL_DATA_ROUTES or not proxy_coords:
+            return error_response(request_id, -32602, f"Unknown tool: {name}")
+        return call_tool(db_path, request_id, params, False, proxy_coords, False)
     if method == "tools/list":
         tools = list(TOOLS)
         if memory_enabled:
@@ -568,13 +591,16 @@ def handle_message(
         if proxy_coords:
             tools.append(CALENDAR_TOOL)
             tools.extend(WRITE_TOOLS)
-            tools.extend(PERSONAL_DATA_TOOLS)
         return response(request_id, {"tools": tools})
     if method == "tools/call":
+        params = message.get("params") or {}
+        if params.get("name") in PERSONAL_DATA_ROUTES:
+            # Served by the personal data server only (see PERSONAL_DATA_SCOPE).
+            return error_response(request_id, -32602, f"Unknown tool: {params.get('name')}")
         return call_tool(
             db_path,
             request_id,
-            message.get("params") or {},
+            params,
             memory_enabled,
             proxy_coords,
             memory_enabled and past_chats_enabled,
