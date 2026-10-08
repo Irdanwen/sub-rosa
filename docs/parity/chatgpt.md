@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 138
+Gaps: 135
 
 ## Matrix
 
@@ -90,7 +90,7 @@ Gaps: 138
 | Custom assistants: create | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` | P9 |
 | Custom assistants: discover and share | no | no | no | no | | P9 |
 | Public profile | no | no | no | no | | P9 |
-| Saved library | partial | partial | partial | no | `src/components/studio` `src/components/library/LibraryView.tsx` `src/components/chat/LibraryActions.tsx` | P4 |
+| Saved library | yes | yes | yes | no | `src/components/studio` `src/components/library/LibraryView.tsx` `src/components/chat/LibraryActions.tsx` `src-tauri/src/account/sync_tables.rs` | P9 |
 | Sites and pages | no | no | no | no | | P9 |
 | Office extensions | no | n/a | n/a | n/a | | P9 |
 | Group chats | no | no | no | no | | P9 |
