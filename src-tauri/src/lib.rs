@@ -5,6 +5,8 @@
 pub mod account;
 pub mod actions;
 #[cfg(desktop)]
+pub mod agent_browser;
+#[cfg(desktop)]
 pub mod agent_hud;
 pub mod agent_lite;
 pub mod agent_notes;
@@ -23,6 +25,8 @@ pub mod audio;
 pub mod background;
 pub mod calendar;
 pub mod carpe_diem;
+#[cfg(desktop)]
+pub mod chat_bar;
 pub mod chat_titles;
 pub mod child_env;
 #[cfg(desktop)]
@@ -114,6 +118,8 @@ pub mod watch_relay;
 // even though only the desktop offers a folder picker to reach it.
 pub mod bible;
 pub mod score;
+#[cfg(desktop)]
+pub mod screen_awareness;
 pub mod shotlist;
 pub mod studio_actions;
 pub mod studio_ai;
@@ -556,6 +562,21 @@ pub fn run() {
             agent_hud::agent_hud_hide,
             agent_hud::agent_hud_set_layout,
             agent_hud::agent_hud_open_agent,
+            agent_browser::agent_browser_status,
+            agent_browser::agent_browser_settings,
+            agent_browser::agent_browser_save_settings,
+            agent_browser::agent_browser_answer_consent,
+            agent_browser::agent_browser_stop,
+            chat_bar::chat_bar_settings,
+            chat_bar::chat_bar_save_settings,
+            chat_bar::chat_bar_show,
+            chat_bar::chat_bar_hide,
+            chat_bar::chat_bar_set_height,
+            chat_bar::chat_bar_open_in_app,
+            screen_awareness::screen_awareness_settings,
+            screen_awareness::screen_awareness_save_settings,
+            screen_awareness::screen_awareness_capture,
+            screen_awareness::screen_awareness_screen_permission,
             meeting_hud::meeting_hud_latest_status,
             meeting_hud::meeting_hud_reopen,
             providers::provider_model_settings,
@@ -1223,6 +1244,10 @@ pub fn run() {
                 updates::setup(app);
                 dictation::setup(app);
                 agent_hud::setup(app);
+                // After dictation: the chat bar's shortcut and screen
+                // awareness both speak through its helper (ADR-0094).
+                chat_bar::setup(app);
+                screen_awareness::setup(app);
                 meeting_detection::setup(app);
             }
             repair_agent_task_statuses_on_app_start(app);

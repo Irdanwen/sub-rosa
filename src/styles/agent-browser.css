@@ -1,0 +1,157 @@
+/* The agent browser's presence (ADR-0094): consent cards, the "using the
+ * browser" bar with its Stop, and the journal. Floats above the chat, bottom
+ * right, out of the composer's way. */
+
+.agent-browser-indicator {
+  position: fixed;
+  right: var(--sp-5);
+  bottom: var(--sp-5);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(360px, calc(100vw - 2 * var(--sp-5)));
+}
+
+.agent-browser-consent,
+.agent-browser-bar,
+.agent-browser-journal {
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-lg);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-md);
+}
+
+.agent-browser-consent {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.agent-browser-consent-question {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.agent-browser-consent-detail {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.agent-browser-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.agent-browser-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.agent-browser-bar-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-browser-journal-toggle,
+.agent-browser-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-browser-journal-toggle:hover,
+.agent-browser-stop:hover {
+  background: var(--muted);
+}
+
+.agent-browser-stop {
+  color: var(--destructive);
+}
+
+.agent-browser-journal {
+  margin: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-7);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.agent-browser-journal li + li {
+  margin-top: var(--sp-1);
+}
+
+.agent-browser-sites {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: var(--sp-3) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-browser-site {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.agent-browser-site-remove {
+  display: inline-grid;
+  place-items: center;
+  padding: var(--sp-1);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.agent-browser-site-remove:hover:not(:disabled) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.agent-browser-site-add {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.agent-browser-site-add input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--input);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.agent-attach-menu-notice {
+  max-width: 260px;
+  margin: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}

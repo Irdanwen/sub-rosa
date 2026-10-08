@@ -1,0 +1,147 @@
+/* The chat bar's panel (ADR-0094). The window is transparent; the panel is
+ * the card inside it, so the native shadow follows the rounded shape. */
+
+html.chat-bar-page,
+html.chat-bar-page body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.chat-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-xl);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  font-family: var(--font-sans);
+}
+
+.chat-bar-form {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.chat-bar-input {
+  flex: 1;
+  min-width: 0;
+  max-height: 120px;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-lg);
+  line-height: 1.4;
+  field-sizing: content;
+}
+
+.chat-bar-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.chat-bar-icon-button,
+.chat-bar-send {
+  display: inline-grid;
+  place-items: center;
+  width: var(--control-md);
+  height: var(--control-md);
+  flex: none;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.chat-bar-icon-button:hover:not(:disabled) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.chat-bar-send {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.chat-bar-send:disabled,
+.chat-bar-icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chat-bar-answer {
+  display: grid;
+  gap: var(--sp-2);
+  max-height: 420px;
+  overflow-y: auto;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.chat-bar-question,
+.chat-bar-thinking,
+.chat-bar-notice {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.chat-bar-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.chat-bar .agent-browser-consent {
+  box-shadow: none;
+}
+
+.looking-at-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.looking-at-chip-text {
+  display: grid;
+  min-width: 0;
+}
+
+.looking-at-chip-label,
+.looking-at-chip-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.looking-at-chip-detail {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.looking-at-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  padding: var(--sp-px);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.looking-at-chip-remove:hover {
+  color: var(--foreground);
+}

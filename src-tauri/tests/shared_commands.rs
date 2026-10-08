@@ -25,6 +25,12 @@ fn platform_specific(name: &str) -> bool {
         "updates::",
         "menu_bar::",
         "agent_hud::",
+        // The agent browser, the chat bar and screen awareness drive a
+        // desktop browser, a global shortcut and the frontmost window
+        // (ADR-0094); a phone has none of them.
+        "agent_browser::",
+        "chat_bar::",
+        "screen_awareness::",
         "meeting_hud::",
         "win_console::",
         "autostart",

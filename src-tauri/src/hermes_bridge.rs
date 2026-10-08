@@ -1388,45 +1388,6 @@ struct SharedProviderProxyInfo {
     token: String,
 }
 
-#[derive(Debug, Clone)]
-struct JuneContextMcpConfig {
-    command: String,
-    script_path: PathBuf,
-    database_path: PathBuf,
-    /// Snapshot of the user's memory master toggle at spawn time: when off,
-    /// the MCP is launched with `--memory=off` so the recall tool is not even
-    /// advertised to the agent.
-    memory_enabled: bool,
-    /// The provider-proxy coordinates file. The calendar is local data like
-    /// the notes, but it lives in EventKit rather than SQLite, so that one
-    /// tool round-trips through the app instead of reading the database.
-    coordinates_path: PathBuf,
-}
-
-#[derive(Debug, Clone)]
-struct JuneWebMcpConfig {
-    command: String,
-    script_path: PathBuf,
-    /// Path to the proxy-coordinates JSON the script re-reads per tool call
-    /// (see [`JUNE_WEB_MCP_COORDS_NAME`]).
-    coordinates_path: PathBuf,
-}
-
-/// The media MCP shares the provider proxy and its coordinates file with the
-/// web MCP; only the script differs.
-#[derive(Debug, Clone)]
-struct JuneMediaMcpConfig {
-    command: String,
-    script_path: PathBuf,
-    coordinates_path: PathBuf,
-}
-
-struct JuneStudioMcpConfig {
-    command: String,
-    script_path: PathBuf,
-    coordinates_path: PathBuf,
-}
-
 #[tauri::command]
 pub async fn stop_hermes_bridge(
     bridge: State<'_, HermesBridge>,
@@ -7418,6 +7379,8 @@ fn sync_june_studio_mcp(
     let script_path = mcp_dir.join(JUNE_STUDIO_MCP_SCRIPT_NAME);
     fs::write(&script_path, JUNE_STUDIO_MCP_SCRIPT)
         .map_err(|error| AppError::new("june_studio_mcp_failed", error.to_string()))?;
+    builtin_mcp::write_browser_script(&mcp_dir)
+        .map_err(|error| AppError::new("june_studio_mcp_failed", error.to_string()))?;
 
     Ok(JuneStudioMcpConfig {
         command: hermes_python_command(hermes_command),
@@ -7593,132 +7556,6 @@ skills:
         model = yaml_string(model),
         base_url = yaml_string(base_url),
         provider_proxy_token = yaml_string(provider_proxy_token),
-    )
-}
-
-/// Renders the `mcp_servers:` block listing every built-in MCP server June
-/// registers. All entries live under one key so Hermes deep-merges a single
-/// map; an empty map is emitted when none is configured.
-fn render_mcp_servers_config(
-    context: Option<&JuneContextMcpConfig>,
-    web: Option<&JuneWebMcpConfig>,
-    media: Option<&JuneMediaMcpConfig>,
-    studio: Option<&JuneStudioMcpConfig>,
-) -> String {
-    let mut entries = String::new();
-    if let Some(config) = context {
-        entries.push_str(&render_context_mcp_entry(config));
-    }
-    if let Some(config) = web {
-        entries.push_str(&render_web_mcp_entry(config));
-    }
-    if let Some(config) = media {
-        entries.push_str(&render_media_mcp_entry(config));
-    }
-    if let Some(config) = studio {
-        entries.push_str(&render_studio_mcp_entry(config));
-    }
-    if entries.is_empty() {
-        return "mcp_servers: {}\n".to_string();
-    }
-    format!("mcp_servers:\n{entries}")
-}
-
-fn render_context_mcp_entry(config: &JuneContextMcpConfig) -> String {
-    let memory_arg = crate::memory::past_chats::context_mcp_args(config.memory_enabled);
-    format!(
-        r#"  {server_name}:
-    enabled: true
-    command: {command}
-    args:
-      - {script_path}
-      - {database_path}
-{memory_arg}      - {proxy_arg}
-    env:
-      PYTHONUNBUFFERED: "1"
-    timeout: 30
-    connect_timeout: 10
-"#,
-        server_name = JUNE_CONTEXT_MCP_SERVER_NAME,
-        command = yaml_string(&config.command),
-        script_path = yaml_string(&config.script_path.to_string_lossy()),
-        database_path = yaml_string(&config.database_path.to_string_lossy()),
-        proxy_arg = yaml_string(&format!(
-            "--proxy={}",
-            config.coordinates_path.to_string_lossy()
-        )),
-    )
-}
-
-/// The web MCP gets the path to the proxy-coordinates file as its argument,
-/// not the proxy URL/token themselves: the script re-reads that file on every
-/// tool call, so a server hosted by the long-lived Hermes gateway keeps
-/// working after the app relaunches on a new ephemeral proxy port. The token
-/// lives in the (0600) coordinates file rather than argv or env.
-fn render_web_mcp_entry(config: &JuneWebMcpConfig) -> String {
-    format!(
-        r#"  {server_name}:
-    enabled: true
-    command: {command}
-    args:
-      - {script_path}
-      - {coordinates_path}
-    env:
-      PYTHONUNBUFFERED: "1"
-    timeout: 30
-    connect_timeout: 10
-"#,
-        server_name = JUNE_WEB_MCP_SERVER_NAME,
-        command = yaml_string(&config.command),
-        script_path = yaml_string(&config.script_path.to_string_lossy()),
-        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
-    )
-}
-
-/// Same coordinates-file contract as the web MCP. The timeout is much higher
-/// than the web tools': a synchronous image generation legitimately runs up
-/// to the backend's ~60 s edge cap (plus the queue fallback), and completing
-/// a video/music job downloads the file before returning.
-/// Same coordinates-file contract again. The studio surface is typed actions
-/// against the app's own commands, so 300 seconds is generous: the slowest of
-/// them starts a background reading and returns immediately.
-fn render_studio_mcp_entry(config: &JuneStudioMcpConfig) -> String {
-    format!(
-        r#"  {server_name}:
-    enabled: true
-    command: {command}
-    args:
-      - {script_path}
-      - {coordinates_path}
-    env:
-      PYTHONUNBUFFERED: "1"
-    timeout: 300
-    connect_timeout: 10
-"#,
-        server_name = JUNE_STUDIO_MCP_SERVER_NAME,
-        command = yaml_string(&config.command),
-        script_path = yaml_string(&config.script_path.to_string_lossy()),
-        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
-    )
-}
-
-fn render_media_mcp_entry(config: &JuneMediaMcpConfig) -> String {
-    format!(
-        r#"  {server_name}:
-    enabled: true
-    command: {command}
-    args:
-      - {script_path}
-      - {coordinates_path}
-    env:
-      PYTHONUNBUFFERED: "1"
-    timeout: 300
-    connect_timeout: 10
-"#,
-        server_name = JUNE_MEDIA_MCP_SERVER_NAME,
-        command = yaml_string(&config.command),
-        script_path = yaml_string(&config.script_path.to_string_lossy()),
-        coordinates_path = yaml_string(&config.coordinates_path.to_string_lossy()),
     )
 }
 
@@ -8088,6 +7925,9 @@ async fn handle_june_provider_connection(
         }
         ("POST", "/v1/studio/request") => {
             forward_studio_request(&app, &mut stream, &request.body).await?;
+        }
+        ("POST", "/v1/browser/request") => {
+            builtin_mcp::forward_browser_request(&app, &mut stream, &request.body).await?;
         }
         ("POST", "/v1/media/save") => {
             forward_media_save(&app, &mut stream, &request.body).await?;
@@ -8766,6 +8606,13 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
     ))
 }
 
+mod builtin_mcp;
+#[cfg(test)]
+use builtin_mcp::render_context_mcp_entry;
+use builtin_mcp::{
+    render_mcp_servers_config, JuneContextMcpConfig, JuneMediaMcpConfig, JuneStudioMcpConfig,
+    JuneWebMcpConfig,
+};
 pub mod guard;
 mod local_reads;
 mod project_memory;

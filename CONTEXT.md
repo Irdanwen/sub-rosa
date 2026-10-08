@@ -1503,6 +1503,30 @@ to act on once, through `subrosa://share/<id>` (ADR-0048). Not a queue the
 app polls, not storage: consumed on open, deleted after.
 _Avoid:_ "shared folder" (nothing is shared with anyone), "import queue".
 
+### The desktop around the app (fork)
+
+**Agent browser** — a Chromium-family browser the person already has,
+started by the app in a profile of its own, that the desktop agent drives
+one site at a time with their consent (ADR-0094). The person watches it and
+can Stop it; it never types a password or a card number.
+_Avoid:_ "headless browser" (it is a window the person sees), "web fetch"
+(that reads a page without a browser, `june_web`).
+
+**Site (agent browser)** — a registrable domain (`example.co.uk`), the unit
+the person allows. Not a host, not a URL.
+
+**Chat bar** — the floating field a system-wide shortcut opens, where a
+question is asked without switching to Sub Rosa; its chat is an ordinary
+chat ("Open in Sub Rosa").
+_Avoid:_ "launcher", "spotlight" (Spotlight is macOS's own search, which
+the notes also feed).
+
+**What I'm looking at** — the app the person was in, its window title, the
+text selected there and, on request, one window's picture, attached to a
+question as a removable chip, read only on a click (ADR-0094).
+_Avoid:_ "screen capture" for the whole feature (a picture is the optional
+part), "context" alone (overloaded).
+
 ### The app in your language (fork)
 
 **Sentence (copy)** — a thing a person can read on screen, written in

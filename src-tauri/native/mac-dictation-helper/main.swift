@@ -4,6 +4,7 @@ import AppKit
 import Carbon
 import CoreMedia
 import CoreGraphics
+import ScreenCaptureKit
 
 struct HelperEvent: Encodable {
     let type: String
@@ -390,6 +391,11 @@ final class ShortcutKeyMonitor {
     /// what keeps the cmd-tab phantom dead: there fn's down already matched
     /// (and was consumed) before the interruption, so nothing is pending.
     private var pendingOverlapIdentity: ShortcutIdentity?
+    /// The chat bar's shortcut (ADR-0094). Not a dictation shortcut: a press
+    /// only says "open the chat bar", so it lives beside the table above
+    /// rather than in it, and none of the push/toggle logic sees it.
+    private var chatBarShortcut: MonitoredShortcut?
+    private var chatBarHotKeyId: UInt32?
     private var isCapturingShortcut = false
     private var capturePressCount = 1
     private var pendingModifierOnlyCapture: DispatchWorkItem?
@@ -512,6 +518,11 @@ final class ShortcutKeyMonitor {
         pendingOverlapIdentity = nil
     }
 
+    func setChatBarShortcut(_ nextShortcut: MonitoredShortcut?) {
+        chatBarShortcut = nextShortcut
+        registerCarbonHotKeys()
+    }
+
     func startShortcutCapture(pressCount: Int = 1) {
         isCapturingShortcut = true
         capturePressCount = 1
@@ -561,6 +572,7 @@ final class ShortcutKeyMonitor {
             UnregisterEventHotKey(entry.ref)
         }
         carbonHotKeys.removeAll()
+        chatBarHotKeyId = nil
     }
 
     private func registerCarbonHotKeys() {
@@ -603,9 +615,46 @@ final class ShortcutKeyMonitor {
             }
             nextCarbonHotKeyId += 1
         }
+        registerChatBarHotKey()
+    }
+
+    private func registerChatBarHotKey() {
+        guard let shortcut = chatBarShortcut, !shortcut.isModifierOnly, !shortcut.modifiers.function else {
+            return
+        }
+        var carbonModifiers: UInt32 = 0
+        if shortcut.modifiers.command { carbonModifiers |= UInt32(cmdKey) }
+        if shortcut.modifiers.control { carbonModifiers |= UInt32(controlKey) }
+        if shortcut.modifiers.option { carbonModifiers |= UInt32(optionKey) }
+        if shortcut.modifiers.shift { carbonModifiers |= UInt32(shiftKey) }
+        var ref: EventHotKeyRef?
+        let id = nextCarbonHotKeyId
+        nextCarbonHotKeyId += 1
+        let status = RegisterEventHotKey(
+            UInt32(shortcut.keyCode),
+            carbonModifiers,
+            EventHotKeyID(signature: OSType(0x4A_44_48_4B), id: id),
+            GetEventDispatcherTarget(),
+            0,
+            &ref
+        )
+        if status == noErr, let ref {
+            // Kept in the same table so unregistering, capture and teardown
+            // treat it like every other hot key; the id says it is ours.
+            carbonHotKeys[id] = (ShortcutIdentity(shortcut), ref)
+            chatBarHotKeyId = id
+        } else {
+            emit("chat_bar_shortcut_unavailable", ["shortcut": shortcut.label])
+        }
     }
 
     fileprivate func handleCarbonHotKey(id: UInt32, pressed: Bool) {
+        if !isCapturingShortcut, id == chatBarHotKeyId {
+            if pressed {
+                emit("chat_bar_hotkey")
+            }
+            return
+        }
         guard !isCapturingShortcut, let entry = carbonHotKeys[id] else {
             return
         }
@@ -929,6 +978,164 @@ final class FocusTargetController {
         }
         lastExternalApp = app
         emit("focus_target", ["app": targetDescription()])
+    }
+}
+
+/// "What I'm looking at" (ADR-0094): the app the person was in, its front
+/// window's title, the text selected there, and on request a picture of that
+/// window. Read only when the app asks, which it does only after a click.
+final class AwarenessController {
+    static let shared = AwarenessController()
+
+    /// The last app activated that is neither this helper nor the app that
+    /// launched it: what the person was looking at before they came to Sub
+    /// Rosa's own window to ask about it.
+    private var lastOtherApp: NSRunningApplication?
+    private let ownPids: Set<pid_t> = [getpid(), getppid()]
+    private static let maxSelectedCharacters = 8_000
+
+    private init() {}
+
+    func start() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(applicationDidActivate(_:)),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+        if let app = NSWorkspace.shared.frontmostApplication, !ownPids.contains(app.processIdentifier) {
+            lastOtherApp = app
+        }
+    }
+
+    @objc private func applicationDidActivate(_ notification: Notification) {
+        guard
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+            !ownPids.contains(app.processIdentifier)
+        else {
+            return
+        }
+        lastOtherApp = app
+    }
+
+    private func targetApp() -> NSRunningApplication? {
+        if let front = NSWorkspace.shared.frontmostApplication, !ownPids.contains(front.processIdentifier) {
+            return front
+        }
+        guard let app = lastOtherApp, !app.isTerminated else {
+            return nil
+        }
+        return app
+    }
+
+    func capture(requestId: String, screenshotPath: String?) {
+        guard let app = targetApp() else {
+            emitJSON("awareness", ["requestId": requestId, "error": "no_app"])
+            return
+        }
+        var payload: [String: Any] = [
+            "requestId": requestId,
+            // Not "app": the dictation event log records that key as a
+            // paste target.
+            "appName": app.localizedName ?? app.bundleIdentifier ?? "",
+            "bundleId": app.bundleIdentifier ?? "",
+            "accessibility": AXIsProcessTrusted(),
+        ]
+        if AXIsProcessTrusted() {
+            let element = AXUIElementCreateApplication(app.processIdentifier)
+            if let window = axElement(element, kAXFocusedWindowAttribute) ?? axElement(element, kAXMainWindowAttribute),
+               let title = axString(window, kAXTitleAttribute), !title.isEmpty {
+                payload["windowTitle"] = title
+            }
+            if let focused = axElement(element, kAXFocusedUIElementAttribute),
+               let selected = axString(focused, kAXSelectedTextAttribute),
+               !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                payload["selectedText"] = String(selected.prefix(Self.maxSelectedCharacters))
+            }
+        }
+        guard let screenshotPath, !screenshotPath.isEmpty else {
+            emitJSON("awareness", payload)
+            return
+        }
+        guard CGPreflightScreenCaptureAccess() else {
+            payload["screenshotError"] = "permission"
+            emitJSON("awareness", payload)
+            return
+        }
+        captureFrontWindow(of: app.processIdentifier, to: screenshotPath) { error in
+            if let error {
+                payload["screenshotError"] = error
+            } else {
+                payload["screenshot"] = screenshotPath
+            }
+            emitJSON("awareness", payload)
+        }
+    }
+
+    private func axElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID()
+        else {
+            return nil
+        }
+        return (value as! AXUIElement)
+    }
+
+    private func axString(_ element: AXUIElement, _ attribute: String) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? String
+    }
+
+    /// The app's frontmost normal window, by the window server's own
+    /// front-to-back order, captured with ScreenCaptureKit.
+    private func captureFrontWindow(of pid: pid_t, to path: String, completion: @escaping (String?) -> Void) {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        let infos = (CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]) ?? []
+        let windowNumber = infos.first { info in
+            (info[kCGWindowOwnerPID as String] as? Int).map(pid_t.init) == pid
+                && (info[kCGWindowLayer as String] as? Int) == 0
+        }?[kCGWindowNumber as String] as? Int
+        guard let windowNumber else {
+            completion("no_window")
+            return
+        }
+        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
+            guard error == nil,
+                  let window = content?.windows.first(where: { Int($0.windowID) == windowNumber })
+            else {
+                completion("no_window")
+                return
+            }
+            let filter = SCContentFilter(desktopIndependentWindow: window)
+            let configuration = SCStreamConfiguration()
+            let scale = CGFloat(filter.pointPixelScale)
+            let longest = max(window.frame.width, window.frame.height) * scale
+            let fit = longest > 2_000 ? 2_000 / longest : 1
+            configuration.width = max(1, Int(window.frame.width * scale * fit))
+            configuration.height = max(1, Int(window.frame.height * scale * fit))
+            configuration.showsCursor = false
+            SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { image, error in
+                guard error == nil, let image else {
+                    completion("capture_failed")
+                    return
+                }
+                let bitmap = NSBitmapImageRep(cgImage: image)
+                guard let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
+                    completion("encode_failed")
+                    return
+                }
+                do {
+                    try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+                    completion(nil)
+                } catch {
+                    completion("write_failed")
+                }
+            }
+        }
     }
 }
 
@@ -1969,6 +2176,26 @@ func handleCommandLine(_ line: String) {
         runOnMain {
             ShortcutKeyMonitor.shared.cancelShortcutCapture()
         }
+    case "set_chat_bar_shortcut":
+        let shortcut = (command?["shortcut"] as? [String: Any]).flatMap(MonitoredShortcut.init(payload:))
+        runOnMain {
+            ShortcutKeyMonitor.shared.setChatBarShortcut(shortcut)
+        }
+    case "capture_awareness":
+        let requestId = command?["requestId"] as? String ?? ""
+        let screenshotPath = command?["screenshotPath"] as? String
+        runOnMain {
+            AwarenessController.shared.capture(requestId: requestId, screenshotPath: screenshotPath)
+        }
+    case "screen_recording_status":
+        emitJSON("screen_recording_status", ["granted": CGPreflightScreenCaptureAccess()])
+    case "request_screen_recording":
+        runOnMain {
+            // Shows the system prompt the first time, and opens nothing after
+            // that: the app explains where to grant it.
+            let granted = CGRequestScreenCaptureAccess()
+            emitJSON("screen_recording_status", ["granted": granted])
+        }
     case "toggle_listening":
         let shortcut = command?["shortcut"] as? String ?? "hotkey"
         runOnMain {
@@ -2004,6 +2231,7 @@ app.setActivationPolicy(.accessory)
 emit("ready")
 ShortcutKeyMonitor.shared.start()
 FocusTargetController.shared.start()
+AwarenessController.shared.start()
 dictation.emitDiagnostics()
 
 Thread.detachNewThread {
