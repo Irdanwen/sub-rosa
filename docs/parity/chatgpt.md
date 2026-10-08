@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 6
+Gaps: 2
 
 ## Matrix
 
@@ -60,17 +60,17 @@ Gaps: 6
 | Virtual try-on | yes | yes | yes | yes | `src/components/studio/TryOnPanel.tsx` `src/components/chat-blocks/TryOnCard.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Web search with sources | yes | yes | yes | yes | `src-tauri/src/hermes/june_web_mcp.py` `src-tauri/src/agent_lite/mod.rs` `website/src/client/research` |  |
 | Deep research report | yes | yes | yes | yes | `src/lib/agent-composer-slash-commands.ts` `src-tauri/src/research/mod.rs` `src/components/research/ResearchDialog.tsx` `src-tauri/src/docx.rs` `website/src/client/research` |  |
-| Apps inside deep research | yes | yes | yes | partial | `src-tauri/src/connectors/research.rs` `website/src/client/research` | P9 |
+| Apps inside deep research | yes | yes | yes | equiv | `src-tauri/src/connectors/research.rs` `website/src/client/research` `website/src/client/connectors/relay.ts` `src-tauri/src/connectors/relay.rs` |  |
 | Study mode | yes | yes | yes | yes | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/study/mod.rs` `src/lib/study-blocks.ts` `src/components/study/StudyReview.tsx` `website/src/client/study` |  |
 | Work deliverables (documents, sheets, slides) | yes | yes | yes | yes | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/deliverables/mod.rs` `src/components/chat-blocks/FileCard.tsx` `website/src/client/documents` |  |
 | Code surface | yes | n/a | n/a | n/a | `src-tauri/src/hermes_bridge.rs` `src-tauri/src/code_review/mod.rs` `src/components/agent/CodeReviewPanel.tsx` |  |
 | Scheduled tasks | yes | equiv | equiv | equiv | `src/lib/hermes-routines.ts` `src/components/routines` `src-tauri/src/assignments/mod.rs` `website/src/client/assignments` |  |
 | Always-available agent | equiv | equiv | equiv | equiv | `src-tauri/src/assignments/mod.rs` `website/src/client/assignments` |  |
-| Daily brief | yes | yes | yes | partial | `src-tauri/src/moments.rs` `src-tauri/src/moments/daily.rs` `src/components/assignments/TodaySurface.tsx` `src/components/mobile/screens/TodayScreen.tsx` `website/src/client/assignments` | P9 |
-| Connectors and plugins | yes | yes | yes | partial | `src/components/settings/McpServersSection.tsx` `src-tauri/src/connectors/mcp.rs` `src-tauri/src/connectors/catalog.rs` `src/components/settings/ConnectorsSection.tsx` `website/src/client/connectors` | P9 |
+| Daily brief | yes | yes | yes | yes | `src-tauri/src/moments.rs` `src-tauri/src/moments/daily.rs` `src/components/assignments/TodaySurface.tsx` `src/components/mobile/screens/TodayScreen.tsx` `website/src/client/assignments` `website/src/client/assignments/brief.ts` |  |
+| Connectors and plugins | yes | yes | yes | equiv | `src/components/settings/McpServersSection.tsx` `src-tauri/src/connectors/mcp.rs` `src-tauri/src/connectors/catalog.rs` `src/components/settings/ConnectorsSection.tsx` `website/src/client/connectors` `website/src/client/connectors/relay.ts` `src-tauri/src/connectors/relay.rs` |  |
 | Interactive apps in chat | yes | yes | yes | yes | `src/components/chat-blocks` `src/components/chat-blocks/ConnectorAppCard.tsx` `src-tauri/src/connectors/apps.rs` `website/src/client/connectors` |  |
 | Connector event triggers | equiv | equiv | equiv | equiv | `src-tauri/src/connectors/triggers.rs` `website/src/client/assignments` |  |
-| Developer mode (custom connectors in chat) | yes | yes | yes | partial | `src/components/settings/McpServersSection.tsx` `src/components/settings/McpSecuritySection.tsx` `src-tauri/src/connectors/mcp.rs` `website/src/client/connectors` | P9 |
+| Developer mode (custom connectors in chat) | yes | yes | yes | equiv | `src/components/settings/McpServersSection.tsx` `src/components/settings/McpSecuritySection.tsx` `src-tauri/src/connectors/mcp.rs` `website/src/client/connectors` `website/src/client/connectors/relay.ts` `src-tauri/src/connectors/relay.rs` |  |
 | Skills | yes | yes | yes | yes | `src/components/settings/InstalledSkillsSection.tsx` `src-tauri/src/skill_packs/mod.rs` `src/components/mobile/SkillSlashMenu.tsx` `website/src/client/skills` |  |
 | Realtime voice conversation | yes | yes | yes | yes | `src-tauri/src/voice/engine.rs` `src-tauri/src/voice/machine.rs` `src/components/voice/VoiceConversation.tsx` `website/src/client/voice` |  |
 | Voice with camera or screen | yes | yes | yes | yes | `src-tauri/src/voice/screen.rs` `src/components/voice/VoiceConversation.tsx` `src-tauri/src/voice/screen_windows.rs` `website/src/client/voice` |  |
@@ -107,6 +107,14 @@ Gaps: 6
   ADR-0009), so the desktop lists the memories a chat was given in the chat
   header rather than under each reply. The phones, which rebuild the prompt on
   every turn, show them per reply (ADR-0081).
+- **Connectors and plugins**, **Developer mode (custom connectors in chat)**
+  and **Apps inside deep research** (web): a browser tab can only call
+  connector servers that accept its origin. Six catalog servers do; for the
+  others (and any custom server the site's policy does not name) the tab
+  hands the call to the person's own open app as an errand, which runs it
+  under that device's rules and writes the result back (ADR-0107). Nothing
+  runs on the account server, so this needs one of the person's apps open,
+  as everything else here does (decision of 2026-10-07).
 - **Parental controls** (desktop, iOS, Android): the vendor links a parent's
   account to a teen's and enforces the limits on its servers. Sub Rosa's
   account server is a blind courier (ADR-0049) and holds no settings it could
