@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 7
+Gaps: 6
 
 ## Matrix
 
@@ -92,7 +92,7 @@ Gaps: 7
 | Public profile | yes | yes | yes | yes | `src-tauri/src/account/publications.rs` `src/components/publishing/PublishNoteDialog.tsx` `website/src/pages/assistants.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Saved library | yes | yes | yes | yes | `src/components/studio` `src/components/library/LibraryView.tsx` `src/components/chat/LibraryActions.tsx` `src-tauri/src/account/sync_tables.rs` `website/src/client/ui/WebClient.tsx` |  |
 | Sites and pages | yes | yes | yes | yes | `src-tauri/src/account/publications.rs` `src/components/publishing/PublishNoteDialog.tsx` `website/src/pages/assistants.tsx` `website/src/client/ui/WebClient.tsx` |  |
-| Office extensions | no | n/a | n/a | n/a | | P9 |
+| Office extensions | yes | n/a | n/a | yes | `office-addins/manifests/excel.xml` `office-addins/manifests/word.xml` `office-addins/manifests/powerpoint.xml` |  |
 | Group chats | yes | yes | yes | yes | `src-tauri/src/account/spaces/turns.rs` `src/components/spaces/SpaceChat.tsx` `website/src/client/spaces/client.ts` |  |
 | Health | yes | yes | yes | n/a | `src-tauri/src/health/mod.rs` `src/components/personal-data/HealthView.tsx` | P9 |
 | Finances | yes | yes | yes | yes | `src-tauri/src/finance/mod.rs` `src/components/personal-data/FinancesView.tsx` `website/src/client/finance` |  |
