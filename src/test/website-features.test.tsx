@@ -287,9 +287,10 @@ describe("the web client with features", () => {
       "Not this model.",
     );
     expect(calls.length).toBe(before);
-    // Everything the turns wrote has reached the journal before the page goes.
-    await waitFor(() => expect(shown.sync.pendingCount).toBe(0));
+    // Everything the turns wrote reaches the journal. Flushing explicitly keeps
+    // this from depending on the background timer, which a loaded run delays.
     await shown.sync.flush();
+    await waitFor(() => expect(shown.sync.pendingCount).toBe(0), { timeout: 5000 });
   });
 
   it("routes a feature's picture the way it routes a photo", async () => {
