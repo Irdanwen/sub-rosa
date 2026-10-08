@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The widget's two colours, mirroring the app's light surface and text
+         (src/styles/tokens.css). A widget is drawn by the launcher, outside
+         the webview, so it cannot read the tokens themselves. -->
+    <color name="subrosa_widget_surface">#FFF7F4EE</color>
+    <color name="subrosa_widget_text">#FF221F1B</color>
+
+    <style name="SubRosaWidgetButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:gravity">center</item>
+        <item name="android:drawablePadding">4dp</item>
+        <item name="android:textColor">@color/subrosa_widget_text</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+</resources>

@@ -14,6 +14,8 @@ vi.mock("../lib/destinations", () => ({
   },
 }));
 vi.mock("../lib/intents", () => intents);
+const shares = vi.hoisted(() => ({ pendingSharedItems: vi.fn() }));
+vi.mock("../lib/share-inbox", () => shares);
 
 import { useDestinationQueue } from "../app/mobile/useDestinationQueue";
 
@@ -21,6 +23,7 @@ beforeEach(() => {
   sources.handler = null;
   intents.takeIntent.mockReset().mockResolvedValue(null);
   intents.takePendingIntents.mockReset().mockResolvedValue([]);
+  shares.pendingSharedItems.mockReset().mockResolvedValue([]);
 });
 
 describe("destinations that arrive before the shell is ready", () => {
@@ -56,5 +59,26 @@ describe("destinations that arrive before the shell is ready", () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
     expect(onIntent).toHaveBeenCalledWith({ id: "i2", action: "record", send: false });
+  });
+
+  it("sweep the share inbox for a batch whose addresses were lost", async () => {
+    const onDestination = vi.fn();
+    shares.pendingSharedItems.mockResolvedValueOnce(["s1", "s2"]);
+    await act(async () => {
+      renderHook(() => useDestinationQueue({ ready: true, onDestination, onIntent: vi.fn() }));
+    });
+    expect(onDestination).toHaveBeenCalledWith({ kind: "share", itemId: "s1" });
+    expect(onDestination).toHaveBeenCalledWith({ kind: "share", itemId: "s2" });
+  });
+
+  it("act on a share once, whether its address or the sweep brings it", async () => {
+    const onDestination = vi.fn();
+    renderHook(() => useDestinationQueue({ ready: true, onDestination, onIntent: vi.fn() }));
+    act(() => sources.handler?.({ kind: "share", itemId: "s3" }));
+    shares.pendingSharedItems.mockResolvedValueOnce(["s3"]);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(onDestination.mock.calls.filter(([d]) => d.kind === "share")).toHaveLength(1);
   });
 });

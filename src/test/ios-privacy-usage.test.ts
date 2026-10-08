@@ -14,7 +14,13 @@ import { describe, expect, it } from "vitest";
 import infoPlist from "../../src-tauri/gen/apple/os-june_iOS/Info.plist?raw";
 import projectSpec from "../../src-tauri/gen/apple/project.yml?raw";
 import shareExtensionPlist from "../../src-tauri/gen/apple/ShareExtension/Info.plist?raw";
+import watchPlist from "../../src-tauri/gen/apple/Watch/Info.plist?raw";
+import watchWidgetsPlist from "../../src-tauri/gen/apple/WatchWidgets/Info.plist?raw";
+import widgetsPlist from "../../src-tauri/gen/apple/Widgets/Info.plist?raw";
 import tauriConfig from "../../src-tauri/tauri.conf.json";
+
+/** Every bundle inside the app, whose versions must match the app's. */
+const extensionPlists = [shareExtensionPlist, widgetsPlist, watchPlist, watchWidgetsPlist];
 
 /** Each protected resource the app actually reaches for, and what reaches it. */
 const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
@@ -89,13 +95,14 @@ describe("iOS privacy usage descriptions", () => {
     // app and App Store Connect answered ITMS-90473. Pin the version a person
     // reads to the one source; `pnpm ios:version` rewrites them.
     const shortVersions = [
-      ...infoPlist.matchAll(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/g),
-      ...shareExtensionPlist.matchAll(
-        /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/g,
-      ),
+      ...[infoPlist, ...extensionPlists].flatMap((plist) => [
+        ...plist.matchAll(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/g),
+      ]),
       ...projectSpec.matchAll(/CFBundleShortVersionString:\s*"?([\d.]+)"?/g),
     ].map((match) => match[1]);
-    expect(shortVersions.length).toBeGreaterThanOrEqual(3);
+    // The app, its share extension, its widgets, the watch app and its
+    // complication, each in its plist and in project.yml.
+    expect(shortVersions.length).toBeGreaterThanOrEqual(10);
     expect([...new Set(shortVersions)]).toEqual([tauriConfig.version]);
   });
 
@@ -105,11 +112,12 @@ describe("iOS privacy usage descriptions", () => {
     // sent again under its own version. CI stamps the run number into all three
     // at once, and they are worthless unless they agree with each other.
     const buildNumbers = [
-      ...infoPlist.matchAll(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/g),
-      ...shareExtensionPlist.matchAll(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/g),
+      ...[infoPlist, ...extensionPlists].flatMap((plist) => [
+        ...plist.matchAll(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/g),
+      ]),
       ...projectSpec.matchAll(/CFBundleVersion:\s*"?([\d.]+)"?/g),
     ].map((match) => match[1]);
-    expect(buildNumbers.length).toBeGreaterThanOrEqual(3);
+    expect(buildNumbers.length).toBeGreaterThanOrEqual(10);
     expect(new Set(buildNumbers).size).toBe(1);
   });
 });

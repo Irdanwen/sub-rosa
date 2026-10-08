@@ -508,6 +508,11 @@ type AgentSessionScreenProps = {
   autoSend?: boolean;
   /** Told once the initial draft has been taken, so it is not taken again. */
   onInitialDraftUsed?: () => void;
+  /** Files shared in from another app (ADR-0095), added to the composer and
+   * never sent: the person writes the question. */
+  initialAttachments?: AgentLiteAttachment[];
+  /** Told once the shared files are in the composer. */
+  onInitialAttachmentsUsed?: () => void;
 };
 
 /** One chat thread: history + composer + live status while agent-lite runs. */
@@ -523,6 +528,8 @@ export function AgentSessionScreen({
   initialDraft,
   autoSend = false,
   onInitialDraftUsed,
+  initialAttachments,
+  onInitialAttachmentsUsed,
 }: AgentSessionScreenProps) {
   const [task, setTask] = useState<AgentTaskDto | null>(null);
   // A temporary chat (ADR-0083) is chosen before its first message, and is
@@ -964,6 +971,16 @@ export function AgentSessionScreen({
     onInitialDraftUsed?.();
     if (autoSend) void send();
   }, [initialDraft, autoSend, loadingTask, taskLoadFailed, onInitialDraftUsed, send]);
+
+  // Shared files join whatever the composer holds; a second share a moment
+  // later lands beside the first rather than replacing it.
+  const attachmentsTaken = useRef<AgentLiteAttachment[] | null>(null);
+  useEffect(() => {
+    if (!initialAttachments?.length || attachmentsTaken.current === initialAttachments) return;
+    attachmentsTaken.current = initialAttachments;
+    setAttachments((current) => [...current, ...initialAttachments]);
+    onInitialAttachmentsUsed?.();
+  }, [initialAttachments, onInitialAttachmentsUsed]);
 
   // One turn the screen runs on an existing chat (retry, regenerate, an edit
   // of the last question): the same running state and failure handling as a

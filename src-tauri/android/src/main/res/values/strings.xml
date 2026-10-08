@@ -5,4 +5,11 @@
     <string name="subrosa_processing_channel">Transcription</string>
     <string name="subrosa_processing_title">Sub Rosa is transcribing</string>
     <string name="subrosa_processing_description">Your note will be ready soon.</string>
+    <string name="subrosa_share_failed">Sub Rosa could not take what you shared. Try again.</string>
+    <string name="subrosa_share_label">Sub Rosa</string>
+    <string name="subrosa_widget_label">Sub Rosa</string>
+    <string name="subrosa_widget_description">Ask, dictate or record in one tap.</string>
+    <string name="subrosa_widget_ask">Ask</string>
+    <string name="subrosa_widget_dictate">Dictate</string>
+    <string name="subrosa_widget_record">Record</string>
 </resources>

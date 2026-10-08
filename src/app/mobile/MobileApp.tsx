@@ -25,12 +25,13 @@ import { LibraryView } from "../../components/library/LibraryView";
 import { TodayScreen } from "../../components/mobile/screens/TodayScreen";
 import { MeetingAmbiguityPrompt } from "../../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../../lib/calendar-link";
-import type { CalendarEventDto } from "../../lib/tauri";
+import type { AgentLiteAttachment, CalendarEventDto } from "../../lib/tauri";
 import { importMediaFile } from "../../lib/import-media";
 import { previewIngestLink, startLinkIngest } from "../../lib/tauri";
 import type { Destination } from "../../lib/destinations";
 import type { IntentRequest } from "../../lib/intents";
 import { importSharedItem } from "../../lib/share-inbox";
+import { composerAttachment } from "./sharedAttachment";
 import { useAmbientActivity } from "./useAmbientActivity";
 import { usePythonBridge } from "../../lib/python/usePythonBridge";
 import { observeStandaloneImageJobs } from "../../lib/studio/image-job-recovery";
@@ -206,6 +207,10 @@ export function MobileApp() {
   /** Text waiting for the next fresh chat screen (`chat?q=`, a Shortcuts
    * action), and whether it may be sent without a tap. */
   const [pendingChat, setPendingChat] = useState<{ text: string; send: boolean } | null>(null);
+  /** Pictures and documents shared in (ADR-0095), waiting for the chat's
+   * composer. A batch accumulates here and lands in one fresh chat. */
+  const [pendingAttachments, setPendingAttachments] = useState<AgentLiteAttachment[]>([]);
+  const takeAttachments = useCallback(() => setPendingAttachments([]), []);
   /** A link to open the Import sheet on: a video page this phone cannot
    * read, which the sheet offers to send to a computer (ADR-0054). */
   const [importLink, setImportLink] = useState<string | null>(null);
@@ -511,6 +516,18 @@ export function MobileApp() {
     if (text) setPendingChat({ text, send });
   };
 
+  // Whether a fresh chat is on screen now, for a share that lands while an
+  // earlier one is still being read: the second joins the first.
+  const freshChatShown = useRef(false);
+  freshChatShown.current = nav.tab === "agent" && agentSessionId === undefined;
+  const attachInChat = (attachment: AgentLiteAttachment) => {
+    if (!freshChatShown.current) {
+      nav.switchTab("agent");
+      openChatSession(undefined);
+    }
+    setPendingAttachments((current) => [...current, attachment]);
+  };
+
   const handleDestination = (destination: Destination) => {
     switch (destination.kind) {
       case "note":
@@ -593,8 +610,9 @@ export function MobileApp() {
       case "share":
         nav.switchTab("notes");
         void importSharedItem(destination.itemId)
-          .then((made) => {
+          .then(async (made) => {
             if (made.kind === "platform" && made.url) setImportLink(made.url);
+            else if (made.attachment) attachInChat(await composerAttachment(made.attachment));
             else if (made.noteId) openNote(made.noteId);
           })
           .catch((err) => setError(messageFromError(err)));
@@ -1274,6 +1292,8 @@ export function MobileApp() {
             initialDraft={pendingChat?.text}
             autoSend={pendingChat?.send}
             onInitialDraftUsed={() => setPendingChat(null)}
+            initialAttachments={pendingAttachments.length ? pendingAttachments : undefined}
+            onInitialAttachmentsUsed={takeAttachments}
           />
         );
         break;

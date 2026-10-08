@@ -109,6 +109,7 @@ pub mod temporary_chat;
 pub mod theme_icon;
 #[cfg(desktop)]
 pub mod updates;
+pub mod watch_relay;
 // Writing a timeline bundle to disk: plain file work, so it builds everywhere
 // even though only the desktop offers a folder picker to reach it.
 pub mod bible;
@@ -772,6 +773,7 @@ pub fn run() {
         commands::search_everything,
         ask::ask_notes,
         share_inbox::import_shared_item,
+        share_inbox::pending_shared_items,
         intent_inbox::take_intent,
         intent_inbox::take_pending_intents,
         open_url::open_shortcuts_app,
@@ -1194,6 +1196,10 @@ pub fn run() {
             // through the one kept here. See open_url.
             #[cfg(target_os = "ios")]
             open_url::remember_app(app.handle());
+            // Questions from the Apple Watch (ADR-0095): the session is
+            // activated now, so a launch in the background for a watch
+            // message receives it.
+            watch_relay::setup(app.handle());
             // Carpe Diem fork: load settings, then start the june-api sidecar
             // pointed at Carpe Diem (or mark "unconfigured" for onboarding).
             // On desktop the sidecar is a child process; on mobile it runs
