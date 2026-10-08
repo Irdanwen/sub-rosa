@@ -65,6 +65,35 @@ export function suggestedFileName(block: FileChatBlock): string {
   return `${stem.slice(0, 80)}.${block.documentKind}`;
 }
 
+/** A document in the gallery's documents folder (`deliverable_list`), made
+ * on this device or synchronised from another. */
+export type DocumentEntry = {
+  file: string;
+  /** The title written in the file; absent when it has none. */
+  title?: string | null;
+  kind: DocumentKind;
+  bytes: number;
+  modifiedAt?: string | null;
+};
+
+/** Every document the assistant made, newest first, for the Library. */
+export async function listDeliverables(): Promise<DocumentEntry[]> {
+  const rows = await invoke<DocumentEntry[]>("deliverable_list");
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** A listed document as the card a chat shows for it, so the Library opens,
+ * shares and saves it with the same buttons. */
+export function documentBlock(entry: DocumentEntry, detail?: string): FileChatBlock {
+  return {
+    kind: "file",
+    file: entry.file,
+    title: entry.title?.trim() || entry.file,
+    documentKind: entry.kind,
+    ...(detail ? { detail } : {}),
+  };
+}
+
 /** Opens the file: its default app on the computer, the share sheet on the phone. */
 export function openDeliverable(file: string): Promise<void> {
   return invoke<void>("deliverable_open", { request: { file } });

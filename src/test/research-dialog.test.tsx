@@ -18,12 +18,17 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import { ResearchDialog } from "../components/research/ResearchDialog";
+import { forgetTextPricing } from "../lib/carpe-diem-text-pricing";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import {
   clampPlanSearches,
+  estimateForDepth,
   planSearches,
+  type ResearchDepth,
+  type ResearchEstimate,
   type ResearchPlan,
   type ResearchRun,
+  researchCeiling,
 } from "../lib/research";
 
 const PLAN: ResearchPlan = {
@@ -66,7 +71,8 @@ function run(patch: Partial<ResearchRun>): ResearchRun {
   };
 }
 
-const ESTIMATE = {
+const ESTIMATE: ResearchEstimate = {
+  depth: "standard",
   searches: 3,
   pageReads: 25,
   modelCalls: 26,
@@ -74,11 +80,33 @@ const ESTIMATE = {
   completionTokens: 100_000,
 };
 
+// What `research/mod.rs` sends for the plan's three searches.
+const DEPTH_ESTIMATES: ResearchEstimate[] = [
+  {
+    ...ESTIMATE,
+    depth: "quick",
+    pageReads: 10,
+    modelCalls: 11,
+    promptTokens: 400_000,
+    completionTokens: 40_000,
+  },
+  ESTIMATE,
+  {
+    ...ESTIMATE,
+    depth: "deep",
+    pageReads: 50,
+    modelCalls: 51,
+    promptTokens: 2_000_000,
+    completionTokens: 200_000,
+  },
+];
+
 type Handler = (args: Record<string, unknown>) => unknown;
 let handlers: Record<string, Handler>;
 const calls: [string, Record<string, unknown>][] = [];
 
 beforeEach(() => {
+  forgetTextPricing();
   calls.length = 0;
   mocks.listeners.length = 0;
   handlers = {
@@ -86,6 +114,9 @@ beforeEach(() => {
     carpe_diem_text_pricing: () => [
       { model: "flash", inputUsdPerMtok: 0.1, outputUsdPerMtok: 0.4 },
     ],
+    // Per call, as the operator's `fixedCost` prices `augment-search` and
+    // `augment-scrape`.
+    carpe_diem_web_pricing: () => ({ searchUsd: 0.01, readUsd: 0.004 }),
   };
   mocks.invoke.mockReset();
   mocks.invoke.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
@@ -93,6 +124,48 @@ beforeEach(() => {
     const handler = handlers[command];
     if (!handler) throw new Error(`unexpected ${command}`);
     return handler(args);
+  });
+});
+
+describe("the ceiling", () => {
+  const prices = {
+    model: { model: "flash", inputUsdPerMtok: 0.1, outputUsdPerMtok: 0.4 },
+    web: { searchUsd: 0.01, readUsd: 0.004 },
+  };
+
+  const run = { estimate: ESTIMATE, depthEstimates: DEPTH_ESTIMATES };
+  const at = (depth: ResearchDepth, searches: number): ResearchEstimate => {
+    const found = estimateForDepth(run, depth, searches);
+    if (!found) throw new Error(`no estimate for ${depth}`);
+    return found;
+  };
+
+  it("adds the searches and page reads to the model tokens, at every depth", () => {
+    const standard = researchCeiling(at("standard", 3), prices);
+    expect(standard.modelUsd).toBeCloseTo(0.14);
+    expect(standard.searchesUsd).toBeCloseTo(0.03);
+    expect(standard.readsUsd).toBeCloseTo(0.1);
+    expect(standard.totalUsd).toBeCloseTo(0.27);
+    // A deeper run reads more pages and makes more model calls; the searches
+    // are the plan's, capped at what the depth runs.
+    const deep = researchCeiling(at("deep", 20), prices);
+    expect(deep.searchesUsd).toBeCloseTo(0.14);
+    expect(deep.readsUsd).toBeCloseTo(0.2);
+    expect(deep.totalUsd).toBeCloseTo(0.28 + 0.14 + 0.2);
+  });
+
+  it("has no total when a price is not known", () => {
+    const partial = researchCeiling(at("quick", 3), {
+      ...prices,
+      web: { searchUsd: 0.01 },
+    });
+    expect(partial.searchesUsd).toBeCloseTo(0.03);
+    expect(partial.readsUsd).toBeUndefined();
+    expect(partial.totalUsd).toBeUndefined();
+    expect(researchCeiling(ESTIMATE, { web: prices.web }).totalUsd).toBeUndefined();
+    // A run filed before per-depth estimates still prices its own depth.
+    expect(estimateForDepth({ estimate: ESTIMATE }, "standard", 3)).toEqual(ESTIMATE);
+    expect(estimateForDepth({ estimate: ESTIMATE }, "deep", 3)).toBeUndefined();
   });
 });
 
@@ -112,7 +185,13 @@ describe("the research dialog", () => {
     handlers.research_start = () =>
       run({ clarifyQuestions: ["Which country?", "Which kind of house?"] });
     handlers.research_plan = () =>
-      run({ status: "planned", plan: PLAN, estimate: ESTIMATE, clarifyAnswers: ["France", ""] });
+      run({
+        status: "planned",
+        plan: PLAN,
+        estimate: ESTIMATE,
+        depthEstimates: DEPTH_ESTIMATES,
+        clarifyAnswers: ["France", ""],
+      });
     handlers.research_approve = (args) =>
       run({
         status: "running",
@@ -161,12 +240,17 @@ describe("the research dialog", () => {
     expect(
       screen.getByText("Up to 25 sources: 3 searches, 25 page reads and 26 model calls."),
     ).toBeTruthy();
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          "At most about $0.14 in model tokens. Searches and page reads are billed apart.",
-        ),
-      ).toBeTruthy(),
+    const breakdown = () => document.querySelector(".research-cost")?.textContent ?? "";
+    await waitFor(() => expect(breakdown()).toContain("At most$0.27"));
+    expect(breakdown()).toContain("Model tokens$0.14");
+    expect(breakdown()).toContain("3 web searches$0.03");
+    expect(breakdown()).toContain("25 page reads$0.10");
+    // Each depth says what it costs at most.
+    expect(screen.getByRole("button", { name: /^Quick/ }).textContent).toContain(
+      "At most about $0.13",
+    );
+    expect(screen.getByRole("button", { name: /^Deep/ }).textContent).toContain(
+      "At most about $0.51",
     );
     fireEvent.click(screen.getAllByRole("button", { name: "Remove this section" })[0]);
     fireEvent.change(screen.getByLabelText("Searches, one per line"), {
@@ -176,6 +260,9 @@ describe("the research dialog", () => {
     expect(
       screen.getByText("Up to 10 sources: 2 searches, 10 page reads and 11 model calls."),
     ).toBeTruthy();
+    expect(breakdown()).toContain("2 web searches$0.02");
+    expect(breakdown()).toContain("10 page reads$0.04");
+    expect(breakdown()).toContain("At most$0.12");
     fireEvent.click(screen.getByRole("button", { name: "Start research" }));
     await waitFor(() =>
       expect(calls).toContainEqual([
@@ -198,6 +285,24 @@ describe("the research dialog", () => {
       ]),
     );
     expect(await screen.findByText("Searching · Read 0 sources")).toBeTruthy();
+  });
+
+  it("shows the parts it can price and no total when a web price is not known", async () => {
+    handlers.carpe_diem_web_pricing = () => ({ searchUsd: 0.01 });
+    handlers.research_start = () => run({});
+    handlers.research_plan = () =>
+      run({ status: "planned", plan: PLAN, estimate: ESTIMATE, depthEstimates: DEPTH_ESTIMATES });
+    render(<ResearchDialog open onClose={() => undefined} initialQuestion="Heat pumps" />);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(document.querySelector(".research-cost")?.textContent).toContain(
+        "25 page readsPrice not known",
+      ),
+    );
+    expect(document.querySelector(".research-cost")?.textContent).not.toContain("At most");
+    expect(
+      screen.getByText("Some prices are not known right now, so there is no total yet."),
+    ).toBeTruthy();
   });
 
   it("goes straight to the plan when there is nothing to clarify", async () => {

@@ -309,7 +309,11 @@ pub async fn make(app: &AppHandle, args: &Value) -> Result<MadeDocument, AppErro
     })
     .await
     .map_err(|error| AppError::new("document_failed", error.to_string()))??;
-    save(&dir, kind, title, built).await
+    let made = save(&dir, kind, title, built).await?;
+    // A gallery file, so it follows the person to their other devices on the
+    // gallery's lane (best effort; the lane's inventory catches up later).
+    crate::account::studio::completed(app, Path::new(&made.path)).await;
+    Ok(made)
 }
 
 async fn save(

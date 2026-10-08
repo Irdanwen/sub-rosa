@@ -2,7 +2,8 @@ import { parseChatBlock } from "./chat-blocks";
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentTaskDto } from "./tauri";
 
-export type AssistantTool = "web" | "image" | "video" | "music" | "speech";
+/** An assistant's permissions (ADR-0058); `documents` is Office files (ADR-0090). */
+export type AssistantTool = "web" | "image" | "video" | "music" | "speech" | "documents";
 export type AssistantDefinition = {
   id: string;
   name: string;

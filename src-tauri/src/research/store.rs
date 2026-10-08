@@ -409,6 +409,33 @@ pub async fn skip_remaining(pool: &SqlitePool, run_id: &str) -> Result<(), AppEr
     Ok(())
 }
 
+/// The id the run's report note has, or will have once written: drawn the
+/// first time a run reaches its report and kept on the row from then on, so
+/// a report written again after a crash lands in the same note. Approving a
+/// plan again clears it (a new run writes a new note).
+pub async fn reserve_report_note(pool: &SqlitePool, id: &str) -> Result<String, AppError> {
+    query(
+        "UPDATE research_runs SET report_note_id = ?1, updated_at = ?2
+         WHERE id = ?3 AND report_note_id IS NULL",
+    )
+    .bind(uuid::Uuid::new_v4().to_string())
+    .bind(now())
+    .bind(id)
+    .execute(pool)
+    .await?;
+    let row = query("SELECT report_note_id FROM research_runs WHERE id = ?1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    row.and_then(|row| row.get::<Option<String>, _>("report_note_id"))
+        .ok_or_else(|| {
+            AppError::new(
+                "research_missing",
+                "This research is no longer on this device.",
+            )
+        })
+}
+
 pub async fn complete(
     pool: &SqlitePool,
     id: &str,

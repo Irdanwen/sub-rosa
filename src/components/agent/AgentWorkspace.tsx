@@ -255,8 +255,8 @@ import {
 import { SessionUsagePanel } from "./SessionUsagePanel";
 import { MemoryInChatIndicator } from "./MemoryInChatIndicator";
 import { TemporaryChatBanner, TemporaryChatToggle } from "./TemporaryChat";
-import { CodeModeControls } from "./CodeModeControls";
-import { ComposerModes, withModeContext } from "./ComposerModes";
+import { CodeModeControls, NewChatCodeModeToggle } from "./CodeModeControls";
+import { adoptCodeModeDraft, ComposerModes, withModeContext } from "./ComposerModes";
 import { ConversationShareHost, ShareConversationMenuItem } from "./ConversationShare";
 import * as temporaryChat from "../../lib/temporary-chat";
 import { AgentActivityDrawer, AgentArtifactsSection } from "./AgentActivityDrawer";
@@ -4891,6 +4891,7 @@ export function AgentWorkspace({
     const promptSubmitContent = await withModeContext(
       projects.withProjectContext(imageInputFallbackContent ?? content, projectContext),
       targetSessionId,
+      workingDirDraftRef.current,
     );
     // Issue reports skip title suggestion: the content is the wrapped
     // investigation prompt, which would title the session after the wrapper.
@@ -5004,6 +5005,7 @@ export function AgentWorkspace({
       if (workingDirDraftRef.current) {
         pushRecentWorkingDir(workingDirDraftRef.current);
       }
+      await adoptCodeModeDraft(storedSessionId, workingDirDraftRef.current);
     }
     const sessionDisplayTitle = sessionTitle || fallbackSessionTitle;
     const ensureStoredHermesSession = () =>
@@ -7603,6 +7605,9 @@ export function AgentWorkspace({
                 </span>
                 <IconChevronDownSmall size={12} aria-hidden />
               </button>
+            ) : null}
+            {heroMode && workingDirDraft ? (
+              <NewChatCodeModeToggle workingDir={workingDirDraft} />
             ) : null}
             <div className="agent-composer-actions">
               <ComposerModes chatId={selectedHermesSessionId} draft={draft} />

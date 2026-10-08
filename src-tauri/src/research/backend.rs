@@ -211,9 +211,8 @@ impl Backend for LiveBackend {
         found
     }
 
-    async fn save_report(&self, title: &str, body: &str) -> Result<String, AppError> {
-        Ok(crate::agent_notes::create(&self.app, Some(title), body)
-            .await?
-            .id)
+    async fn save_report(&self, note_id: &str, title: &str, body: &str) -> Result<(), AppError> {
+        crate::agent_notes::put(&self.app, note_id, Some(title), body).await?;
+        Ok(())
     }
 }

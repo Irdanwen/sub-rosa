@@ -558,6 +558,35 @@
   margin: 0;
 }
 
+.research-cost {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.research-cost div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.research-cost dt {
+  color: var(--body-copy);
+}
+
+.research-cost dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.research-cost-total {
+  padding-top: var(--sp-1);
+  border-top: 1px solid var(--border-subtle);
+  font-weight: var(--fw-medium);
+}
+
 .research-bar {
   width: 100%;
   height: 6px;

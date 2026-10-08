@@ -125,11 +125,14 @@ pub struct ResearchPlan {
 }
 
 /// What a run will spend at most, said before it starts. Token counts are
-/// ceilings; the screen prices them with the model's own rates when it knows
-/// them.
+/// ceilings; the screen prices them with the model's own rates, and the
+/// searches and page reads with the operator's per-call prices for the two
+/// web routes (`carpe_diem_web_pricing`), when it knows them. Every source is
+/// counted as a web page read, the most a depth can cost.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEstimate {
+    pub depth: Depth,
     pub searches: usize,
     pub page_reads: usize,
     pub model_calls: usize,
@@ -143,6 +146,7 @@ pub fn estimate(depth: Depth, searches: usize) -> ResearchEstimate {
     let page_tokens = (prompts::READ_PAGE_CHARS / 4) as u64 + 600;
     let note_tokens = u64::from(prompts::NOTE_MAX_TOKENS);
     ResearchEstimate {
+        depth,
         searches,
         page_reads,
         // One note per page, and the report.
@@ -236,6 +240,9 @@ pub struct ResearchRunDto {
     pub sources_found: usize,
     pub sources_read: usize,
     pub estimate: Option<ResearchEstimate>,
+    /// The same ceiling at every depth, for the plan's depth picker, each
+    /// with no more searches than that depth runs. Empty without a plan.
+    pub depth_estimates: Vec<ResearchEstimate>,
     pub sources: Vec<ResearchSourceDto>,
     /// A step is being worked on in this process right now.
     pub live: bool,
@@ -257,6 +264,13 @@ pub async fn dto(
     Ok(ResearchRunDto {
         live: is_live(&run.id),
         estimate: run.plan.as_ref().map(|_| estimate(run.depth, searches)),
+        depth_estimates: match &run.plan {
+            Some(_) => [Depth::Quick, Depth::Standard, Depth::Deep]
+                .into_iter()
+                .map(|depth| estimate(depth, searches.min(depth.max_queries())))
+                .collect(),
+            None => Vec::new(),
+        },
         max_sources: run.depth.max_sources(),
         sources_found: sources.len(),
         sources_read: sources.iter().filter(|s| s.status == "read").count(),

@@ -2,7 +2,13 @@ import "../../styles/code-review.css";
 import { IconCode } from "central-icons/IconCode";
 import { IconFiles } from "central-icons/IconFiles";
 import { useState } from "react";
-import { startCodeMode, useCodeMode } from "../../lib/code-mode";
+import {
+  codeModeStartFailure,
+  setCodeModeDraft,
+  startCodeMode,
+  useCodeMode,
+  useCodeModeDraft,
+} from "../../lib/code-mode";
 import { messageFromError } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import { CodeReviewPanel } from "./CodeReviewPanel";
@@ -26,6 +32,8 @@ export function CodeModeControls({
   const [reviewOpen, setReviewOpen] = useState(false);
   // A review of another folder (the chat's folder changed since) restarts.
   const on = status.active && status.folder === workingDir;
+  // Chosen for the new chat but refused when its first message started it.
+  const failure = on ? undefined : (error ?? codeModeStartFailure(sessionId) ?? null);
 
   const start = () => {
     setStarting(true);
@@ -43,12 +51,12 @@ export function CodeModeControls({
         aria-pressed={on}
         disabled={starting || on}
         title={
-          error ??
+          failure ??
           (on
             ? t("Code mode is on: every file the assistant changes is listed for review.")
             : t("Work on the code in this folder and review every change"))
         }
-        data-error={error ? "true" : undefined}
+        data-error={failure ? "true" : undefined}
         onClick={start}
       >
         <IconCode size={13} aria-hidden />
@@ -73,5 +81,34 @@ export function CodeModeControls({
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * Code mode for a chat not started yet (ADR-0090): shown in the new-chat
+ * composer once a working folder is chosen. The choice is held for that
+ * folder and taken up when the first message creates the chat, which records
+ * where the folder starts before the agent reads the message.
+ */
+export function NewChatCodeModeToggle({ workingDir }: { workingDir: string }) {
+  const draft = useCodeModeDraft();
+  const on = draft === workingDir;
+  return (
+    <button
+      type="button"
+      className="agent-sandbox-trigger code-mode-draft-toggle"
+      aria-pressed={on}
+      title={
+        on
+          ? t(
+              "This chat starts in Code mode: every file the assistant changes is listed for review.",
+            )
+          : t("Start this chat in Code mode on the working folder")
+      }
+      onClick={() => setCodeModeDraft(on ? null : workingDir)}
+    >
+      <IconCode size={14} aria-hidden />
+      {t("Code")}
+    </button>
   );
 }

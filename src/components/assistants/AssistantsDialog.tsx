@@ -848,6 +848,11 @@ function toolOptions(): { id: AssistantTool; label: string; description: string 
     { id: "video", label: t("Video"), description: t("Propose video clips from your ideas.") },
     { id: "music", label: t("Music"), description: t("Propose songs and instrumental tracks.") },
     { id: "speech", label: t("Speech"), description: t("Propose spoken audio from your text.") },
+    {
+      id: "documents",
+      label: t("Office files"),
+      description: t("Make Word, Excel and PowerPoint files you can open and share."),
+    },
   ];
 }
 

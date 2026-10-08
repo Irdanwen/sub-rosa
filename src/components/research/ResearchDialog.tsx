@@ -15,18 +15,23 @@ import {
   clampPlanSearches,
   type DocumentFormat,
   deleteResearch,
-  estimatedModelCost,
+  estimateForDepth,
   exportNoteDocument,
+  formatCeilingUsd,
   getResearch,
   listResearch,
   onResearchChanged,
   planResearch,
   planSearches,
   RESEARCH_DEPTHS,
+  type ResearchCeiling,
   type ResearchDepth,
   type ResearchPlan,
+  type ResearchPrices,
   type ResearchRun,
   type ResearchSource,
+  researchCeiling,
+  researchPrices,
   resumeResearch,
   startResearch,
   stopResearch,
@@ -297,9 +302,12 @@ function statusLabel(run: ResearchRun): string {
 function DepthPicker({
   value,
   onChange,
+  ceilings,
 }: {
   value: ResearchDepth;
   onChange: (depth: ResearchDepth) => void;
+  /** What each depth costs at most, when every price is known. */
+  ceilings?: Partial<Record<ResearchDepth, string>>;
 }) {
   return (
     <fieldset className="research-depths">
@@ -316,6 +324,11 @@ function DepthPicker({
           <span className="study-muted">
             {t("Up to {count} sources", { count: RESEARCH_DEPTHS[depth].sources })}
           </span>
+          {ceilings?.[depth] ? (
+            <span className="study-muted">
+              {t("At most about {cost}", { cost: ceilings[depth] })}
+            </span>
+          ) : null}
         </button>
       ))}
     </fieldset>
@@ -390,26 +403,34 @@ function ResearchPlanEditor({
 }) {
   const [plan, setPlan] = useState<ResearchPlan>(() => run.plan as ResearchPlan);
   const [depth, setDepth] = useState<ResearchDepth>(run.depth);
-  const [cost, setCost] = useState<string | undefined>();
+  const [prices, setPrices] = useState<ResearchPrices | null>(null);
   const limits = RESEARCH_DEPTHS[depth];
   const searches = planSearches(plan);
   const pageReads = limits.sources;
   const modelCalls = pageReads + 1;
 
   useEffect(() => {
-    if (!run.estimate) return;
-    // The ceiling scales with the sources a depth reads; the Rust estimate
-    // is for the run's own depth.
-    const scale = limits.sources / RESEARCH_DEPTHS[run.depth].sources;
-    void estimatedModelCost(
-      {
-        ...run.estimate,
-        promptTokens: run.estimate.promptTokens * scale,
-        completionTokens: run.estimate.completionTokens * scale,
-      },
-      run.model,
-    ).then(setCost);
-  }, [run.estimate, run.model, run.depth, limits.sources]);
+    let current = true;
+    void researchPrices(run.model).then((found) => {
+      if (current) setPrices(found);
+    });
+    return () => {
+      current = false;
+    };
+  }, [run.model]);
+
+  // The ceiling of every depth, for the plan as it is edited: model tokens,
+  // web searches and page reads, each at its own price.
+  const ceilingOf = (of: ResearchDepth): ResearchCeiling | undefined => {
+    const estimate = estimateForDepth(run, of, searches);
+    return estimate && prices ? researchCeiling(estimate, prices) : undefined;
+  };
+  const ceiling = ceilingOf(depth);
+  const ceilings: Partial<Record<ResearchDepth, string>> = {};
+  for (const of of DEPTHS) {
+    const total = ceilingOf(of)?.totalUsd;
+    if (total !== undefined) ceilings[of] = formatCeilingUsd(total);
+  }
 
   const updateSection = (index: number, patch: Partial<ResearchPlan["sections"][number]>) =>
     setPlan((current) => ({
@@ -499,7 +520,7 @@ function ResearchPlanEditor({
         <IconPlusSmall size={14} aria-hidden />
         {t("Add a section")}
       </button>
-      <DepthPicker value={depth} onChange={setDepth} />
+      <DepthPicker value={depth} onChange={setDepth} ceilings={ceilings} />
       <div className="research-estimate" role="status">
         <p>
           {t(
@@ -519,13 +540,13 @@ function ResearchPlanEditor({
             })}
           </p>
         ) : null}
-        <p className="study-muted">
-          {cost
-            ? t("At most about {cost} in model tokens. Searches and page reads are billed apart.", {
-                cost,
-              })
-            : t("Searches and page reads are billed apart from the model tokens.")}
-        </p>
+        {ceiling ? (
+          <CeilingBreakdown
+            ceiling={ceiling}
+            searches={Math.min(searches, limits.searches)}
+            pageReads={pageReads}
+          />
+        ) : null}
       </div>
       <div className="research-actions">
         <button
@@ -537,6 +558,53 @@ function ResearchPlanEditor({
         </button>
       </div>
     </form>
+  );
+}
+
+/** What the run costs at most, part by part, and in all. */
+function CeilingBreakdown({
+  ceiling,
+  searches,
+  pageReads,
+}: {
+  ceiling: ResearchCeiling;
+  searches: number;
+  pageReads: number;
+}) {
+  const price = (usd: number | undefined) =>
+    usd === undefined ? t("Price not known") : formatCeilingUsd(usd);
+  return (
+    <>
+      <dl className="research-cost">
+        <div>
+          <dt>{t("Model tokens")}</dt>
+          <dd>{price(ceiling.modelUsd)}</dd>
+        </div>
+        <div>
+          <dt>{t("{count} web searches", { count: searches })}</dt>
+          <dd>{price(ceiling.searchesUsd)}</dd>
+        </div>
+        <div>
+          <dt>{t("{count} page reads", { count: pageReads })}</dt>
+          <dd>{price(ceiling.readsUsd)}</dd>
+        </div>
+        {ceiling.totalUsd !== undefined ? (
+          <div className="research-cost-total">
+            <dt>{t("At most")}</dt>
+            <dd>{formatCeilingUsd(ceiling.totalUsd)}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {ceiling.totalUsd === undefined ? (
+        <p className="study-muted">
+          {t("Some prices are not known right now, so there is no total yet.")}
+        </p>
+      ) : (
+        <p className="study-muted">
+          {t("Every source is counted as a page read, the most this depth can cost.")}
+        </p>
+      )}
+    </>
   );
 }
 

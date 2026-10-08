@@ -112,6 +112,14 @@ pub async fn snapshot(pool: &SqlitePool, id: &str) -> Result<AssistantDefinition
         .ok_or_else(|| error("assistant_not_found"))?;
     decode(row)
 }
+/// The permissions an assistant may hold (ADR-0058): web search, the media
+/// proposals, and Office files (ADR-0090).
+pub(crate) fn is_tool_key(key: &str) -> bool {
+    matches!(
+        key,
+        "web" | "image" | "video" | "music" | "speech" | "documents"
+    )
+}
 pub async fn save(
     pool: &SqlitePool,
     mut definition: AssistantDefinition,
@@ -123,10 +131,7 @@ pub async fn save(
         || definition.instructions.len() > 64000
         || definition.opening_message.len() > 8000
         || definition.model.len() > 200
-        || definition
-            .tools
-            .iter()
-            .any(|key| !matches!(key.as_str(), "web" | "image" | "video" | "music" | "speech"))
+        || definition.tools.iter().any(|key| !is_tool_key(key))
     {
         return Err(error("assistant_invalid"));
     }

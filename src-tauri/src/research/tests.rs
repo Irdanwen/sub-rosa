@@ -47,6 +47,12 @@ struct Scripted {
     completions: AtomicUsize,
     report_prompt: Mutex<String>,
     saved: Mutex<Vec<(String, String)>>,
+    /// The notes the reports were written into, by id, as an upsert keeps
+    /// them: one entry per note however often it is written.
+    notes: Mutex<HashMap<String, (String, String)>>,
+    /// Writes the note, then fails as a process killed before the run was
+    /// marked done would.
+    die_after_save: std::sync::atomic::AtomicBool,
     /// Pages that never answer, to stop a run in the middle of a read.
     hang_on: Option<String>,
     hanging: Arc<Notify>,
@@ -93,12 +99,19 @@ impl Backend for Scripted {
         self.own.clone()
     }
 
-    async fn save_report(&self, title: &str, body: &str) -> Result<String, AppError> {
+    async fn save_report(&self, note_id: &str, title: &str, body: &str) -> Result<(), AppError> {
         self.saved
             .lock()
             .unwrap()
             .push((title.to_string(), body.to_string()));
-        Ok("note-report".into())
+        self.notes
+            .lock()
+            .unwrap()
+            .insert(note_id.to_string(), (title.to_string(), body.to_string()));
+        if self.die_after_save.swap(false, Ordering::SeqCst) {
+            return Err(AppError::new("killed", "the process died here"));
+        }
+        Ok(())
     }
 }
 
@@ -206,7 +219,9 @@ async fn a_run_searches_reads_and_writes_a_note_with_sources_the_app_resolved() 
 
     let run = store::run_row(&pool, &id).await.unwrap().unwrap();
     assert_eq!(run.status, "done");
-    assert_eq!(run.report_note_id.as_deref(), Some("note-report"));
+    let notes = backend.notes.lock().unwrap().clone();
+    assert_eq!(notes.len(), 1);
+    assert!(notes.contains_key(run.report_note_id.as_deref().unwrap()));
     // Every search ran once, in the plan's order.
     assert_eq!(
         *backend.searches.lock().unwrap(),
@@ -294,6 +309,103 @@ async fn a_run_cut_off_midway_resumes_where_it_was_without_paying_twice() {
     assert_eq!(run.status, "done");
     assert_eq!(second.saved.lock().unwrap().len(), 1);
     assert!(store::unfinished(&pool).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_crash_after_the_report_note_is_written_does_not_make_a_second_note() {
+    let pool = pool().await;
+    let id = approved_run(&pool, Depth::Standard, true).await;
+    let first = scripted();
+    first.die_after_save.store(true, Ordering::SeqCst);
+    let mut run = store::run_row(&pool, &id).await.unwrap().unwrap();
+    // Searches and reads go through; the report step writes its note and
+    // the process dies before the run is marked done.
+    let error = loop {
+        match engine::advance(&pool, &first, &run).await {
+            Ok(_) => run = store::run_row(&pool, &id).await.unwrap().unwrap(),
+            Err(error) => break error,
+        }
+    };
+    assert_eq!(error.code, "killed");
+    let run = store::run_row(&pool, &id).await.unwrap().unwrap();
+    assert_eq!(run.status, "running");
+    let reserved = run
+        .report_note_id
+        .clone()
+        .expect("the note id is on the row");
+    assert_eq!(
+        first
+            .notes
+            .lock()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![reserved.clone()]
+    );
+
+    // The next launch's sweep resumes the run: the report is written again,
+    // into the same note.
+    let second = scripted();
+    engine::drive(&pool, &second, &id, &StopSignal::default(), &|| {})
+        .await
+        .unwrap();
+    let run = store::run_row(&pool, &id).await.unwrap().unwrap();
+    assert_eq!(run.status, "done");
+    assert_eq!(run.report_note_id.as_deref(), Some(reserved.as_str()));
+    assert_eq!(
+        second
+            .notes
+            .lock()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![reserved.clone()]
+    );
+
+    // Approving the plan again is a new run, and a new note.
+    store::approve(
+        &pool,
+        &id,
+        Depth::Standard,
+        &clamp_plan(&plan(), Depth::Standard).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(store::run_row(&pool, &id)
+        .await
+        .unwrap()
+        .unwrap()
+        .report_note_id
+        .is_none());
+    let again = store::reserve_report_note(&pool, &id).await.unwrap();
+    assert_ne!(again, reserved);
+    assert_eq!(store::reserve_report_note(&pool, &id).await.unwrap(), again);
+}
+
+/// The live backend writes the report with `agent_notes::put`: the same id
+/// written twice is one note, holding the second report.
+#[tokio::test]
+async fn writing_a_report_note_twice_keeps_one_note() {
+    let pool = pool().await;
+    let repos = crate::db::repositories::Repositories::new(pool.clone());
+    let id = uuid::Uuid::new_v4().to_string();
+    crate::agent_notes::put_in(&repos, &id, Some("Report"), "First draft")
+        .await
+        .unwrap();
+    let saved = crate::agent_notes::put_in(&repos, &id, Some("Report"), "Second draft")
+        .await
+        .unwrap();
+    assert_eq!(saved.id, id);
+    assert_eq!(saved.title, "Report");
+    assert_eq!(saved.edited_content.as_deref(), Some("Second draft"));
+    let count: i64 = sqlx::query_scalar::query_scalar("SELECT count(*) FROM notes WHERE id = ?1")
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
 }
 
 #[tokio::test]
@@ -524,6 +636,34 @@ fn the_estimate_grows_with_depth_and_counts_one_note_per_page_and_the_report() {
     assert!(deep.prompt_tokens > quick.prompt_tokens * 4);
     assert!(quick.completion_tokens >= u64::from(prompts::REPORT_MAX_TOKENS));
     assert_eq!(Depth::Standard.own_sources(), 5);
+}
+
+#[tokio::test]
+async fn a_planned_run_states_its_ceiling_at_every_depth() {
+    let pool = pool().await;
+    let id = approved_run(&pool, Depth::Standard, true).await;
+    let run = store::run_row(&pool, &id).await.unwrap().unwrap();
+    let dto = dto(&pool, run).await.unwrap();
+    let estimate = dto.estimate.clone().unwrap();
+    assert_eq!((estimate.depth, estimate.searches), (Depth::Standard, 3));
+    let depths: Vec<_> = dto
+        .depth_estimates
+        .iter()
+        .map(|e| (e.depth, e.searches, e.page_reads))
+        .collect();
+    assert_eq!(
+        depths,
+        vec![
+            (Depth::Quick, 3, 10),
+            (Depth::Standard, 3, 25),
+            (Depth::Deep, 3, 50)
+        ]
+    );
+    // The run's own depth reads the same numbers in both places.
+    assert_eq!(dto.depth_estimates[1], estimate);
+    let json = serde_json::to_value(&dto).unwrap();
+    assert_eq!(json["depthEstimates"][2]["depth"], "deep");
+    assert_eq!(json["estimate"]["pageReads"], 25);
 }
 
 #[test]

@@ -350,6 +350,61 @@ fn text_prices(pricing: &serde_json::Value) -> Vec<TextPriceDto> {
         .collect()
 }
 
+/// The operator's `fixedCost` ids for the two web routes the sidecar's
+/// `/v1/web/search` and `/v1/web/fetch` reach (Venice's `/augment/search`
+/// and `/augment/scrape`).
+const WEB_SEARCH_PRICE_ID: &str = "augment-search";
+const WEB_READ_PRICE_ID: &str = "augment-scrape";
+
+/// What one web search and one page read cost, as the operator prices them
+/// today (USD per call, multiplier already applied). A price the table does
+/// not carry is absent, and the screen says it does not know it rather than
+/// counting it as free.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebPriceDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_usd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_usd: Option<f64>,
+}
+
+/// The operator's per-call prices for web search and page reads, for the
+/// ceiling deep research announces before it runs (ADR-0089).
+#[tauri::command]
+pub async fn carpe_diem_web_pricing() -> Result<WebPriceDto, AppError> {
+    let Some((credential_base, key)) = settings::credentials() else {
+        return Err(AppError::new(
+            "media_no_api_key",
+            "No API key is stored yet.",
+        ));
+    };
+    if !key.expose_str().starts_with("cdm_") {
+        return Ok(WebPriceDto::default());
+    }
+    let client = media_http_client();
+    let operator_root = settings::operator_root_of(&credential_base);
+    let pricing = fetch_json(client, &format!("{operator_root}/pricing"), None).await?;
+    Ok(web_prices(&pricing))
+}
+
+fn web_prices(pricing: &serde_json::Value) -> WebPriceDto {
+    let usd = |id: &str| {
+        pricing
+            .get("fixedCost")?
+            .as_array()?
+            .iter()
+            .find(|entry| entry.get("model").and_then(serde_json::Value::as_str) == Some(id))?
+            .get("costUsd")?
+            .as_f64()
+            .filter(|usd| usd.is_finite() && *usd >= 0.0)
+    };
+    WebPriceDto {
+        search_usd: usd(WEB_SEARCH_PRICE_ID),
+        read_usd: usd(WEB_READ_PRICE_ID),
+    }
+}
+
 /// The last catalog fetched, and when. For a decision taken inside a turn
 /// (which models exist and read images), where three network reads per turn
 /// would be paid for nothing: prices are not what such a caller reads.
@@ -1355,6 +1410,38 @@ fn context_tokens(spec: &serde_json::Value) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn web_prices_are_read_from_the_fixed_costs_and_absent_when_missing() {
+        // The shape the operator's `/pricing` served on 2026-10-08.
+        let pricing = serde_json::json!({
+            "models": [],
+            "fixedCost": [
+                { "model": "gpt-image-1-5", "type": "image", "costUsd": 0.1082, "costCredits": 10.82 },
+                { "model": "augment-search", "type": "augment", "costUsd": 0.0042, "costCredits": 0.42 },
+                { "model": "augment-scrape", "type": "augment", "costUsd": 0.0051, "costCredits": 0.51 }
+            ]
+        });
+        assert_eq!(
+            super::web_prices(&pricing),
+            super::WebPriceDto {
+                search_usd: Some(0.0042),
+                read_usd: Some(0.0051),
+            }
+        );
+        let partial = serde_json::json!({ "fixedCost": [
+            { "model": "augment-search", "costUsd": "free" }
+        ]});
+        assert_eq!(super::web_prices(&partial), super::WebPriceDto::default());
+        assert_eq!(
+            serde_json::to_string(&super::WebPriceDto {
+                search_usd: Some(0.01),
+                read_usd: None,
+            })
+            .unwrap(),
+            r#"{"searchUsd":0.01}"#
+        );
+    }
+
     use super::*;
     use serde_json::json;
 

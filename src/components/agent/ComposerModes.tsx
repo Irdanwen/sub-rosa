@@ -4,7 +4,7 @@ import { IconFlashcards } from "central-icons/IconFlashcards";
 import { IconGraduateCap } from "central-icons/IconGraduateCap";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../lib/i18n";
-import { withCodeContext } from "../../lib/code-mode";
+import { withCodeContext, withCodeDraftContext } from "../../lib/code-mode";
 import { sessionWorkingDir } from "../../lib/agent-session-working-dir";
 import {
   STUDY_CARDS_CHANGED_EVENT,
@@ -18,12 +18,20 @@ import { ResearchDialog } from "../research/ResearchDialog";
 import { StudyReview } from "../study/StudyReview";
 
 export { studyChatStarted, withStudyContext } from "../../lib/study";
+export { adoptCodeModeDraft } from "../../lib/code-mode";
 
 /** Desktop sends: study mode's block, then Code mode's (ADR-0090) when the
- * chat is in Code mode on its working folder. */
-export async function withModeContext(text: string, chatId?: string | null): Promise<string> {
+ * chat is in Code mode on its working folder. A new chat has no id yet: it
+ * carries the block when Code mode was chosen for `newChatFolder` before its
+ * first message. */
+export async function withModeContext(
+  text: string,
+  chatId?: string | null,
+  newChatFolder?: string | null,
+): Promise<string> {
   const studied = await withStudyContext(text, chatId);
-  return withCodeContext(studied, chatId, chatId ? sessionWorkingDir(chatId) : null);
+  if (!chatId) return withCodeDraftContext(studied, newChatFolder);
+  return withCodeContext(studied, chatId, sessionWorkingDir(chatId));
 }
 
 /**
