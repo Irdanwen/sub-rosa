@@ -251,6 +251,39 @@ describe("the shared project", () => {
   });
 });
 
+describe("the group chat", () => {
+  it("opens on its newest message, whatever the height left to the thread", async () => {
+    const message = (id: string): SpaceMessage => ({
+      id,
+      role: "user",
+      text: `Message ${id}`,
+      authorId: "bob",
+      authorName: "Bob",
+      isMine: false,
+      model: null,
+      paidByName: null,
+      pending: false,
+      createdAt: "x",
+    });
+    const height = vi
+      .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains("spaces-messages") ? 900 : 0;
+      });
+    route({
+      spaces_get: () => space(),
+      spaces_mark_read: () => undefined,
+      spaces_sync: () => undefined,
+      spaces_messages: () => ["1", "2", "3"].map(message),
+    });
+    render(<SpaceDialog spaceId={SPACE_ID} onClose={() => undefined} />);
+    await screen.findByText("Message 3");
+    const thread = document.querySelector(".spaces-messages");
+    expect(thread?.scrollTop).toBe(900);
+    height.mockRestore();
+  });
+});
+
 describe("small rules", () => {
   it("names whose key paid for a reply", () => {
     const reply: SpaceMessage = {

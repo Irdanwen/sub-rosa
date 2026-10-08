@@ -90,7 +90,7 @@ export function FinanceTransactions({
             { value: "suggested", label: t("Suggestions") },
           ]}
         />
-        <label className="personal-row personal-input">
+        <label className="personal-search">
           <IconMagnifyingGlass size={16} />
           <input
             className="personal-input"
@@ -158,7 +158,7 @@ export function FinanceTransactions({
                 <span className="personal-list-title" title={row.description}>
                   {row.description || row.counterparty || t("No description")}
                 </span>
-                <span className="personal-list-meta">
+                <span className="personal-list-meta personal-one-line">
                   {row.account ? `${row.bookedOn} · ${row.account}` : row.bookedOn}
                 </span>
                 {row.suggestion && row.categorySource !== "person" ? (

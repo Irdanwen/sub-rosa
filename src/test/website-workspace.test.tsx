@@ -203,4 +203,28 @@ describe("the web client's workspace (WP20)", () => {
     const system = systemOf(calls.find((call) => call.path === "/v1/chat/completions")?.body ?? {});
     expect(system.startsWith("You are Coach, a private assistant in Sub Rosa.")).toBe(true);
   });
+  it("brings what the sidebar opened into view on a phone, where it sits below", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("max-width"),
+      media: query,
+    }));
+    const scrolled = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrolled,
+    });
+    try {
+      setup(["Hi."]);
+      await screen.findByLabelText("Message");
+      await user.click(screen.getByRole("button", { name: "Projects" }));
+      await waitFor(() => expect(scrolled).toHaveBeenCalledWith({ block: "start" }));
+      expect((scrolled.mock.contexts.at(-1) as Element).classList.contains("wc-view")).toBe(true);
+      scrolled.mockClear();
+      await user.click(screen.getByRole("button", { name: "Finances" }));
+      await waitFor(() => expect(scrolled).toHaveBeenCalled());
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
 });

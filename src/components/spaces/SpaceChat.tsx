@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { messageFromError } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import {
@@ -71,6 +71,14 @@ export function SpaceChat({
     }
   }
 
+  // A chat reads from the bottom: the newest message is the one in view,
+  // whatever the height the dialog leaves the thread.
+  const thread = useRef<HTMLOListElement>(null);
+  useLayoutEffect(() => {
+    const list = thread.current;
+    if (list && messages.length > 0) list.scrollTop = list.scrollHeight;
+  }, [messages]);
+
   const turns = space.turns.filter((turn) => turn.conversationId === openId);
   return (
     <div className="spaces-chat">
@@ -122,7 +130,7 @@ export function SpaceChat({
           </p>
         ) : (
           <>
-            <ol className="spaces-messages" aria-live="polite">
+            <ol ref={thread} className="spaces-messages" aria-live="polite">
               {messages.map((message) => (
                 <li
                   key={message.id}

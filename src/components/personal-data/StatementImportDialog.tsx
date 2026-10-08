@@ -156,7 +156,7 @@ export function StatementImportDialog({ file, onClose, onImported }: Props) {
         </>
       }
     >
-      <div className="personal-section">
+      <div className="personal-section personal-dialog-scroll">
         {error ? (
           <p className="personal-error" role="alert">
             {error}
@@ -290,7 +290,7 @@ export function StatementImportDialog({ file, onClose, onImported }: Props) {
                   <tbody>
                     {sampleRows(preview.sample).map(({ key, row }) => (
                       <tr key={key}>
-                        <td>{row.bookedOn}</td>
+                        <td data-nowrap>{row.bookedOn}</td>
                         <td>{row.description}</td>
                         <td data-numeric>{formatMoney(row.amountMinor, row.currency)}</td>
                       </tr>
