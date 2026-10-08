@@ -194,3 +194,35 @@ envoyer un doublon. Le défaut reste `true`. Ne pas inclure `Externals` dans les
 sources de `project.yml` : `libapp.a` est une dépendance de liaison, jamais une
 ressource à copier. Deux archives debug/release copiées sous le même nom font
 échouer le build Xcode (`Multiple commands produce .../libapp.a`).
+
+## Widgets iOS et Apple Watch (ADR-0095) : trois bundles de plus
+
+L'app embarque désormais trois bundles supplémentaires, chacun avec son App ID
+et son profil App Store. Tant que les trois secrets manquent, la lane
+`ios-release.yml` s'arrête à l'import des profils avec un message qui les
+nomme (même parti pris que pour l'extension de partage).
+
+1. **App ID des widgets** : `xyz.carpediem.subrosa.widgets`, capacité
+   *App Groups* cochée sur `group.xyz.carpediem.subrosa`. Profil App Store
+   (« Sub Rosa Widgets App Store ») → secret `IOS_WIDGETS_PROVISION_PROFILE`
+   (base64 du `.mobileprovision`).
+2. **App ID de l'app Watch** : `xyz.carpediem.subrosa.watchkitapp` (plateforme
+   watchOS, aucune capacité). Profil App Store → secret
+   `IOS_WATCH_PROVISION_PROFILE`.
+3. **App ID de la complication** : `xyz.carpediem.subrosa.watchkitapp.widgets`
+   (watchOS, aucune capacité). Profil App Store → secret
+   `IOS_WATCH_WIDGETS_PROVISION_PROFILE`.
+
+Les trois profils utilisent le même certificat Apple Distribution que l'app.
+L'export manuel mappe chaque bundle sur l'UUID de son profil ; l'export
+automatique les sélectionne s'ils sont gérés par Xcode. Le build number des
+cinq bundles est tamponné à l'identique (une app Watch doit porter exactement
+la version de son app iPhone). Côté App Store Connect, la fiche de l'app gagne
+une section Apple Watch : y déposer au moins une capture d'écran de la montre
+avant la soumission en revue (TestFlight n'en a pas besoin).
+
+**Non vérifié sans matériel** : les widgets sur l'écran d'accueil et l'écran
+verrouillé, la complication sur un cadran, la dictée sur la montre, le réveil
+de l'iPhone en arrière-plan par un message WatchConnectivity et la lecture à
+voix haute. Le build simulateur compile les cibles ; seul un iPhone appairé à
+une Apple Watch prouve le trajet complet.

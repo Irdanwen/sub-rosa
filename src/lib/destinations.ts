@@ -100,9 +100,10 @@ export function parseDestination(raw: string): Destination | null {
       return ID_RE.test(segment) ? { kind: "note", noteId: segment } : null;
     case "chat": {
       const query = url.searchParams.get("q")?.trim();
+      // `chat/new` is a fresh chat (the widgets' "Ask"), never a session id.
       return {
         kind: "chat",
-        sessionId: ID_RE.test(segment) ? segment : undefined,
+        sessionId: ID_RE.test(segment) && segment !== "new" ? segment : undefined,
         query: query ? query.slice(0, MAX_QUERY) : undefined,
       };
     }

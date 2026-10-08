@@ -13,9 +13,16 @@ name: iOS release (TestFlight)
 # - IOS_DIST_CERT_PASSWORD Password for the imported .p12
 # - IOS_PROVISION_PROFILE  App Store profile for the app, base64
 # - IOS_SHARE_PROVISION_PROFILE App Store profile for the share extension, base64
+# - IOS_WIDGETS_PROVISION_PROFILE App Store profile for the widgets
+#                          (xyz.carpediem.subrosa.widgets, with the App Group)
+# - IOS_WATCH_PROVISION_PROFILE App Store profile for the watch app
+#                          (xyz.carpediem.subrosa.watchkitapp)
+# - IOS_WATCH_WIDGETS_PROVISION_PROFILE App Store profile for the watch face
+#                          complication (xyz.carpediem.subrosa.watchkitapp.widgets)
 #
-# Signing imports the distribution identity and both provisioning profiles.
-# Export uses manual signing; both profiles must authorize the shared App Group.
+# Signing imports the distribution identity and the five provisioning profiles
+# (ADR-0048, ADR-0095). Export uses manual signing; the app, share extension
+# and widgets profiles must authorize the shared App Group.
 # The API key authenticates App Store Connect access/upload, not cloud signing.
 
 on:
@@ -74,6 +81,17 @@ jobs:
             exit 1
           fi
 
+      # The watch app's asset catalog (ADR-0095) is compiled by an actool that
+      # needs the watchOS platform installed, device build included. Runner
+      # images usually carry it; fetch it when this one does not.
+      - name: Make sure the watchOS platform is installed
+        run: |
+          if xcrun simctl list runtimes | grep -q 'watchOS'; then
+            echo "watchOS runtime present."
+          else
+            xcodebuild -downloadPlatform watchOS
+          fi
+
       - name: Setup Node + pnpm
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -111,6 +129,9 @@ jobs:
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
           IOS_PROVISION_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE }}
           IOS_SHARE_PROVISION_PROFILE: ${{ secrets.IOS_SHARE_PROVISION_PROFILE }}
+          IOS_WIDGETS_PROVISION_PROFILE: ${{ secrets.IOS_WIDGETS_PROVISION_PROFILE }}
+          IOS_WATCH_PROVISION_PROFILE: ${{ secrets.IOS_WATCH_PROVISION_PROFILE }}
+          IOS_WATCH_WIDGETS_PROVISION_PROFILE: ${{ secrets.IOS_WATCH_WIDGETS_PROVISION_PROFILE }}
         run: |
           if [ -z "${IOS_DIST_CERT_P12:-}" ] || [ -z "${IOS_PROVISION_PROFILE:-}" ]; then
             echo "Missing IOS_DIST_CERT_P12 / IOS_PROVISION_PROFILE secrets." >&2; exit 1
@@ -121,6 +142,13 @@ jobs:
           if [ -z "${IOS_SHARE_PROVISION_PROFILE:-}" ]; then
             echo "Missing IOS_SHARE_PROVISION_PROFILE (the share extension's profile, see HANDOFF.md)." >&2; exit 1
           fi
+          # The widgets, the watch app and its complication (ADR-0095) are
+          # three more bundles, each with its own profile (HANDOFF.md §10).
+          for name in IOS_WIDGETS_PROVISION_PROFILE IOS_WATCH_PROVISION_PROFILE IOS_WATCH_WIDGETS_PROVISION_PROFILE; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing $name (see HANDOFF.md, widgets and Apple Watch)." >&2; exit 1
+            fi
+          done
           KC="$RUNNER_TEMP/sr-ios-sign.keychain-db"
           KCPASS=$(openssl rand -base64 24)
           security create-keychain -p "$KCPASS" "$KC"
@@ -138,6 +166,9 @@ jobs:
           mkdir -p "$PROFILES_DIR"
           printf '%s' "$IOS_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-appstore.mobileprovision"
           printf '%s' "$IOS_SHARE_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-share-appstore.mobileprovision"
+          printf '%s' "$IOS_WIDGETS_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-widgets-appstore.mobileprovision"
+          printf '%s' "$IOS_WATCH_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-watch-appstore.mobileprovision"
+          printf '%s' "$IOS_WATCH_WIDGETS_PROVISION_PROFILE" | base64 --decode > "$PROFILES_DIR/subrosa-watch-widgets-appstore.mobileprovision"
           # Profiles renewed through Xcode have managed names. Resolve the
           # installed UUIDs instead of requiring a portal-created display name.
           APP_PROFILE_UUID=$(security cms -D -i "$PROFILES_DIR/subrosa-appstore.mobileprovision" | plutil -extract UUID raw -o - -)
@@ -146,6 +177,9 @@ jobs:
           echo "IOS_SHARE_PROFILE_UUID=$SHARE_PROFILE_UUID" >> "$GITHUB_ENV"
           security cms -D -i "$PROFILES_DIR/subrosa-appstore.mobileprovision" > "$RUNNER_TEMP/app-profile.plist"
           security cms -D -i "$PROFILES_DIR/subrosa-share-appstore.mobileprovision" > "$RUNNER_TEMP/share-profile.plist"
+          for part in widgets watch watch-widgets; do
+            security cms -D -i "$PROFILES_DIR/subrosa-$part-appstore.mobileprovision" > "$RUNNER_TEMP/$part-profile.plist"
+          done
 
       # Archive through the Tauri CLI (not a raw `xcodebuild archive`): the Xcode
       # "Build Rust Code" phase runs `tauri ios xcode-script`, which needs the
@@ -190,20 +224,36 @@ jobs:
           echo "Build number for this delivery: $BUILD"
           stamped=0
           for plist in "$ARCHIVE"/Products/Applications/*.app/Info.plist \
-                       "$ARCHIVE"/Products/Applications/*.app/PlugIns/*.appex/Info.plist; do
+                       "$ARCHIVE"/Products/Applications/*.app/PlugIns/*.appex/Info.plist \
+                       "$ARCHIVE"/Products/Applications/*.app/Watch/*.app/Info.plist \
+                       "$ARCHIVE"/Products/Applications/*.app/Watch/*.app/PlugIns/*.appex/Info.plist; do
             [ -f "$plist" ] || continue
             /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$plist"
             echo "  $plist -> $BUILD"
             stamped=$((stamped + 1))
           done
-          # The app and its share extension. Fewer means the archive layout moved
-          # and the delivery would go out carrying the version it must not reuse.
-          if [ "$stamped" -lt 2 ]; then
-            echo "::error::Stamped $stamped bundles, expected the app and its extension" >&2
+          # The app, its share extension, its widgets, the watch app and its
+          # complication. Fewer means the archive layout moved and the delivery
+          # would go out carrying the version it must not reuse (a watch app's
+          # build number must also equal its iPhone app's).
+          if [ "$stamped" -lt 5 ]; then
+            echo "::error::Stamped $stamped bundles, expected the app, its two extensions, the watch app and its complication" >&2
             exit 1
           fi
           /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $BUILD" \
             "$ARCHIVE/Info.plist" || true
+          # Tauri archives with one architecture; a watch app also wants
+          # arm64_32 for the watches before Series 9 (ADR-0095). Say so loudly
+          # rather than ship a watch app most watches cannot install.
+          for watch_bin in "$ARCHIVE"/Products/Applications/*.app/Watch/*.app/SubRosaWatch; do
+            [ -f "$watch_bin" ] || continue
+            archs=$(lipo -archs "$watch_bin")
+            echo "Watch app architectures: $archs"
+            case " $archs " in
+              *" arm64_32 "*) ;;
+              *) echo "::warning::The watch app was archived without arm64_32 ($archs)." ;;
+            esac
+          done
 
       # Re-sign with the imported identity and installed App Store profiles.
       # Match the signing style to the profile origin: Xcode-managed profiles
@@ -220,7 +270,8 @@ jobs:
           python3 - <<'PY'
           import os, pathlib, plistlib
           temp = pathlib.Path(os.environ["RUNNER_TEMP"])
-          profiles = [plistlib.loads((temp / name).read_bytes()) for name in ("app-profile.plist", "share-profile.plist")]
+          names = ("app", "share", "widgets", "watch", "watch-widgets")
+          profiles = [plistlib.loads((temp / f"{name}-profile.plist").read_bytes()) for name in names]
           # Xcode rejects managed profiles under manual signing even when
           # their UUID and certificate match. Automatic selection can reuse
           # these installed profiles and the imported distribution identity.
@@ -233,9 +284,11 @@ jobs:
           }
           if not managed:
               options["signingCertificate"] = "Apple Distribution"
+              bundles = ("xyz.carpediem.subrosa", "xyz.carpediem.subrosa.share",
+                         "xyz.carpediem.subrosa.widgets", "xyz.carpediem.subrosa.watchkitapp",
+                         "xyz.carpediem.subrosa.watchkitapp.widgets")
               options["provisioningProfiles"] = {
-                  "xyz.carpediem.subrosa": os.environ["IOS_PROFILE_UUID"],
-                  "xyz.carpediem.subrosa.share": os.environ["IOS_SHARE_PROFILE_UUID"],
+                  bundle: profile["UUID"] for bundle, profile in zip(bundles, profiles)
               }
           pathlib.Path("build/ExportOptions-asc.plist").write_bytes(plistlib.dumps(options))
           print("Export signing style:", options["signingStyle"])

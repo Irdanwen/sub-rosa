@@ -330,4 +330,14 @@ describe("mobile chat controls", () => {
     await screen.findByText("Second answer");
     expect(screen.queryByRole("button", { name: /tokens used$/ })).toBeNull();
   });
+
+  it("puts files shared in from another app in the composer, unsent", async () => {
+    const used = vi.fn();
+    const shared = [{ kind: "text" as const, name: "report.pdf", data: "Quarterly figures" }];
+    render(<AgentSessionScreen initialAttachments={shared} onInitialAttachmentsUsed={used} />);
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+    expect(used).toHaveBeenCalledTimes(1);
+    expect(tauriMocks.agentLiteRun).not.toHaveBeenCalled();
+    expect(tauriMocks.createAgentTask).not.toHaveBeenCalled();
+  });
 });

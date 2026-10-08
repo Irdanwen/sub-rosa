@@ -52,6 +52,11 @@ pub async fn sweep(app: &AppHandle) {
     crate::connectors::triggers::tick(app).await;
     // A chat turn cut off between the user's message and the reply.
     crate::agent_lite::resume_interrupted_turns(app).await;
+    // A question asked from the Apple Watch whose answer has not reached the
+    // wrist yet (ADR-0095). After the chat resume, which may have just
+    // written it.
+    #[cfg(target_os = "ios")]
+    crate::watch_relay::deliver_pending(app).await;
     // A chat whose first reply landed but whose title never came back.
     crate::chat_titles::resume_pending(app).await;
     // A link the user pasted whose download never finished. Cross-platform:

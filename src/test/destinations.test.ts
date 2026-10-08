@@ -61,6 +61,12 @@ describe("destination addresses", () => {
       sessionId: undefined,
       query: undefined,
     });
+    // The widgets' "Ask" (ADR-0095): a fresh chat, never a session named "new".
+    expect(parseDestination("subrosa://chat/new")).toEqual({
+      kind: "chat",
+      sessionId: undefined,
+      query: undefined,
+    });
     expect(parseDestination("subrosa://dictation")).toEqual({ kind: "dictation" });
     expect(parseDestination("subrosa://studio")).toEqual({ kind: "studio" });
     expect(parseDestination("subrosa://record")).toEqual({ kind: "record" });

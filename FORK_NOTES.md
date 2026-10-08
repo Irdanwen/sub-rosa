@@ -2218,3 +2218,30 @@ Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
 | `src/components/agent/AgentWorkspace.tsx` | `highlightText` déplacé dans `src/lib/highlight-text.tsx` ; bloc de code via `HighlightedCode` | Réappliquer |
 | `src/components/note-editor/extensions.ts` | `codeBlock: false` dans StarterKit, `NoteCodeBlock` à la place | Réappliquer |
 | `src/lib/simple-markdown.tsx` | Bloc de code via `HighlightedCode`, l'ancien colorieur en repli | Réappliquer |
+
+## Widgets, Apple Watch et partage Android (2026-10-08, ADR-0095)
+
+- `src-tauri/gen/apple/Widgets/` (cible `os-june_Widgets`, App Group),
+  `Watch/` (cible `os-june_Watch`, app watchOS 10 à cible unique, embarquée
+  dans `$(CONTENTS_FOLDER_PATH)/Watch`) et `WatchWidgets/` (complication,
+  embarquée dans l'app Watch) ; `Sources/os-june/Watch/WatchBridge.swift`
+  (session WatchConnectivity côté iPhone, classe `SubRosaWatchBridge` appelée
+  par Rust). Projet régénéré avec `xcodegen` puis `git checkout
+  os-june_iOS/Info.plist` (le plist committé porte
+  `ITSAppUsesNonExemptEncryption`, absent de `project.yml`). Compilation
+  seule : `xcodebuild -target os-june_Widgets -sdk iphonesimulator
+  CODE_SIGNING_ALLOWED=NO` et `-target os-june_Watch -sdk watchsimulator`
+  (sans runtime watchOS installé, ajouter `EXCLUDED_SOURCE_FILE_NAMES=Assets.xcassets
+  ASSETCATALOG_COMPILER_APPICON_NAME=` : l'actool de Xcode 26 l'exige).
+- `src-tauri/src/watch_relay.rs` (question de la montre → conversation
+  agent-lite + `watch-requests/<id>.json`, relivré par `background::sweep`),
+  `share_inbox.rs` (boîte Android sous `dataDir`, pièces jointes image et
+  document, `pending_shared_items` mobile seulement).
+- `src-tauri/android/` : `ShareReceiverActivity.kt` (SEND/SEND_MULTIPLE),
+  `AskWidgetProvider.kt` + `res/layout/subrosa_widget.xml`,
+  `res/xml/subrosa_widget_info.xml`, déclarés dans le manifeste de la
+  bibliothèque.
+- `ios-release.yml` : trois profils de plus (`IOS_WIDGETS_PROVISION_PROFILE`,
+  `IOS_WATCH_PROVISION_PROFILE`, `IOS_WATCH_WIDGETS_PROVISION_PROFILE`),
+  cinq bundles tamponnés, plateforme watchOS installée si absente ;
+  `scripts/sync-ios-version.mjs` couvre les trois nouveaux plists.
