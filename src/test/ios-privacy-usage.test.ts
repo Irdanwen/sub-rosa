@@ -57,6 +57,12 @@ const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
     key: "NSHealthShareUsageDescription",
     reachedBy: "reading the health measures the person picked (crate::health)",
   },
+  // App Store Connect refuses an app that links HealthKit without the write
+  // sentence too, even one that never writes (the 1.89.0 upload, 409).
+  {
+    key: "NSHealthUpdateUsageDescription",
+    reachedBy: "nothing: Sub Rosa never writes to Health, Apple requires the sentence anyway",
+  },
   // Two keys, one resource: iOS 17 renamed it, the deployment target is 15,
   // so the app has to satisfy both systems (crate::calendar asks with
   // whichever selector the OS answers to).

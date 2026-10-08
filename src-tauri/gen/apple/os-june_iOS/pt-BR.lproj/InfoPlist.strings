@@ -10,3 +10,4 @@
 
 /* Health, read only (ADR-0099). Shown by iOS when Sub Rosa asks to read the measures the person picked. */
 "NSHealthShareUsageDescription" = "O Sub Rosa lê as medidas de saúde que você escolher (passos, sono, frequência cardíaca, treinos, peso) para mostrar seus resumos diários e responder às suas perguntas sobre elas. Ele nunca grava no Saúde, e nada sai deste iPhone a menos que você ative a sincronização de uma medida.";
+"NSHealthUpdateUsageDescription" = "O Sub Rosa nunca grava no app Saúde. O iOS pede esta frase sempre que um app usa o Saúde; o Sub Rosa só lê as medições que você escolhe.";
