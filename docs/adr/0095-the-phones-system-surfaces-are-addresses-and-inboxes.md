@@ -111,3 +111,17 @@ a durable row and answers when it can.**
   the iPhone for a watch message, speech, and the Android share sheet and
   widget. The Swift targets compile for their simulators and devices; the
   Kotlin compiles only in the Android lane.
+
+## Addendum, 2026-10-08: the lane makes its own profiles
+
+- The widgets left the app group. They are links and read nothing the app
+  keeps, and associating a group with a bundle is the one step the App Store
+  Connect API cannot take, so keeping it would have meant a portal visit for
+  nothing. `phone-widgets-watch.test.ts` now pins them outside it.
+- `ios-release.yml` no longer requires the three profile secrets.
+  `scripts/ios-provision.mjs` registers the bundle ids, turns on HealthKit for
+  the app (ADR-0099), and makes or remakes each App Store profile through the
+  API at run time; the secrets are a fallback. A bundle that still has no
+  profile is removed from the archive before export (the complication with
+  its watch app) and the app ships without it, with a warning. Only the app is
+  required.

@@ -2245,6 +2245,12 @@ Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
   `IOS_WATCH_PROVISION_PROFILE`, `IOS_WATCH_WIDGETS_PROVISION_PROFILE`),
   cinq bundles tamponnés, plateforme watchOS installée si absente ;
   `scripts/sync-ios-version.mjs` couvre les trois nouveaux plists.
+  Depuis le 2026-10-08, ces profils ne sont plus des secrets obligatoires :
+  `scripts/ios-provision.mjs` (logique pure et testée dans
+  `scripts/ios-signing.mjs`, `src/test/ios-signing.test.mjs`) enregistre les
+  bundle ids, active HealthKit et fait ou refait chaque profil App Store par
+  l'API ; un bundle sans profil est retiré de l'archive. Les widgets ne sont
+  plus dans l'App Group (`Widgets.entitlements` supprimé).
 
 ## La conversation vocale (2026-10-08, ADR-0093)
 
