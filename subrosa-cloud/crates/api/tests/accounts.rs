@@ -2132,6 +2132,8 @@ impl Partner {
             operator_url: Some(operator.uri()),
             kid: "sr-test".into(),
             signing_key: Secret(pem),
+            browser_daily_cap_credits: 150,
+            browser_key_days: 7,
         });
         config.validate().map_err(anyhow::Error::msg)?;
         let partner = subrosa_providers::CarpeDiemPartnerProvider::new(&config)?
@@ -2900,5 +2902,439 @@ async fn the_security_history_keeps_ninety_days_and_returns_at_most_a_page() -> 
             .await
             .is_err()
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// A browser is a device (ADR 0096): admission, proofs, the bounded assertion
+// and revocation through the same outbox as an app.
+// ---------------------------------------------------------------------------
+
+/// A browser's device key as `WebCrypto` would hold it: P-256, signing raw
+/// `r||s`, the private half never leaving this struct.
+struct BrowserKey {
+    signing: p256::ecdsa::SigningKey,
+    x: String,
+    y: String,
+}
+impl BrowserKey {
+    fn new() -> Self {
+        let signing = p256::ecdsa::SigningKey::random(&mut rand::rngs::OsRng);
+        let point = signing.verifying_key().to_encoded_point(false);
+        let encode = |value: Option<&p256::FieldBytes>| {
+            value
+                .map(|bytes| URL_SAFE_NO_PAD.encode(bytes))
+                .unwrap_or_default()
+        };
+        let (x, y) = (encode(point.x()), encode(point.y()));
+        Self { signing, x, y }
+    }
+    /// A proof for `path`. Without `kid` it carries the public key, which is
+    /// how a browser that is not a device yet presents the key it will be.
+    fn proof(&self, kid: Option<&str>, path: &str, bound: Option<&str>) -> String {
+        use p256::ecdsa::signature::Signer;
+        let header = match kid {
+            Some(kid) => json!({"alg":"ES256","typ":"subrosa-device+jwt","kid":kid}),
+            None => {
+                json!({"alg":"ES256","typ":"subrosa-device+jwt","jwk":{"kty":"EC","crv":"P-256","x":self.x,"y":self.y}})
+            }
+        };
+        let mut claims = json!({
+            "htm":"POST",
+            "htu":format!("http://localhost:8787{path}"),
+            "iat":Utc::now().timestamp(),
+            "jti":Uuid::new_v4().to_string(),
+        });
+        if let Some(bound) = bound {
+            claims["ath"] = json!(URL_SAFE_NO_PAD.encode(hash(bound)));
+        }
+        let input = format!(
+            "{}.{}",
+            URL_SAFE_NO_PAD.encode(header.to_string()),
+            URL_SAFE_NO_PAD.encode(claims.to_string())
+        );
+        let signature: p256::ecdsa::Signature = self.signing.sign(input.as_bytes());
+        format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()))
+    }
+}
+/// A browser session request, with a device proof when given.
+async fn as_browser(
+    app: &Router,
+    path: &str,
+    browser: &Browser,
+    body: Value,
+    proof: Option<String>,
+) -> Result<(StatusCode, Value)> {
+    let mut request = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header(header::COOKIE, &browser.cookie)
+        .header(header::ORIGIN, "http://localhost:8787")
+        .header("x-csrf-token", &browser.csrf)
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(proof) = proof {
+        request = request.header("subrosa-device-proof", proof);
+    }
+    decode_response(
+        app.clone()
+            .oneshot(request.body(Body::from(serde_json::to_vec(&body)?))?)
+            .await?,
+    )
+    .await
+}
+fn recovery_proof() -> (String, String) {
+    recovery_proof_of([7u8; 32])
+}
+/// Creates the vault with a verifier and admits `key` by the recovery path.
+async fn recovery_admitted(f: &Fixture, browser: &Browser, key: &BrowserKey) -> Result<Value> {
+    let (proof, verifier) = recovery_proof();
+    let (status, _) = f
+        .json(
+            "PUT",
+            "/api/v1/vault",
+            browser,
+            json!({"expected_version":0,"envelope":"sealed","admission_verifier":verifier}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    let (status, device) = as_browser(
+        &f.app,
+        "/api/v1/browser-devices",
+        browser,
+        json!({"name":"Browser - Firefox","admission":{"recovery_proof":proof}}),
+        Some(key.proof(None, "/api/v1/browser-devices", None)),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{device}");
+    Ok(device["data"].clone())
+}
+
+#[tokio::test]
+async fn a_browser_becomes_a_device_only_after_a_pairing_an_app_approved() -> Result<()> {
+    let f = Fixture::new().await?;
+    let browser = f.login("alice").await?;
+    let other_tab = f.login("alice").await?;
+    let app = app_device(&f, "alice", "Alice laptop").await?;
+    let key = BrowserKey::new();
+    let admit = |pairing: Uuid, proof: String| {
+        as_browser(
+            &f.app,
+            "/api/v1/browser-devices",
+            &browser,
+            json!({"name":"Browser - Firefox","admission":{"pairing_request_id":pairing}}),
+            Some(proof),
+        )
+    };
+    let pair = |id: Uuid| {
+        f.json(
+            "POST",
+            "/api/v1/pairing",
+            &browser,
+            json!({"request_id":id}),
+        )
+    };
+
+    // Not approved yet, then approved by another browser tab: neither admits.
+    let by_tab = Uuid::new_v4();
+    assert_eq!(pair(by_tab).await?.0, StatusCode::OK);
+    let (status, body) = admit(by_tab, key.proof(None, "/api/v1/browser-devices", None)).await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "admission_required");
+    let approve = format!("/api/v1/pairing/{by_tab}/approve");
+    assert_eq!(
+        f.json("POST", &approve, &other_tab, json!({"envelope":"sealed"}))
+            .await?
+            .0,
+        StatusCode::OK
+    );
+    let (status, body) = admit(by_tab, key.proof(None, "/api/v1/browser-devices", None)).await?;
+    assert_eq!(
+        (status, body["error"]["code"].clone()),
+        (StatusCode::FORBIDDEN, json!("admission_required")),
+        "a browser tab is not a device and cannot admit one"
+    );
+
+    // Approved by the app: the proof must still be signed by the key it carries.
+    let by_app = Uuid::new_v4();
+    assert_eq!(pair(by_app).await?.0, StatusCode::OK);
+    let (status, _) = bearer(
+        &f.app,
+        "POST",
+        &format!("/api/v1/pairing/{by_app}/approve"),
+        &app["access_token"],
+        json!({"envelope":"sealed"}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let impostor = BrowserKey::new();
+    let forged = {
+        let honest = key.proof(None, "/api/v1/browser-devices", None);
+        let signed_elsewhere = impostor.proof(None, "/api/v1/browser-devices", None);
+        let (head, _) = honest.rsplit_once('.').context("jws")?;
+        let (_, signature) = signed_elsewhere.rsplit_once('.').context("jws")?;
+        format!("{head}.{signature}")
+    };
+    let (status, body) = admit(by_app, forged).await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["error"]["code"], "device_proof_invalid");
+    let (status, device) = admit(by_app, key.proof(None, "/api/v1/browser-devices", None)).await?;
+    assert_eq!(status, StatusCode::OK, "{device}");
+    assert_eq!(device["data"]["kind"], "browser");
+    assert_eq!(device["data"]["name"], "Browser - Firefox");
+
+    // One approval, one browser.
+    let (status, _) = admit(
+        by_app,
+        BrowserKey::new().proof(None, "/api/v1/browser-devices", None),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (_, list) = f
+        .json("GET", "/api/v1/devices", &browser, json!({}))
+        .await?;
+    let kinds: Vec<_> = list["data"]
+        .as_array()
+        .context("devices")?
+        .iter()
+        .map(|d| (d["name"].clone(), d["kind"].clone()))
+        .collect();
+    assert!(kinds.contains(&(json!("Browser - Firefox"), json!("browser"))));
+    assert!(kinds.contains(&(json!("Alice laptop"), json!("native"))));
+    let owner = account_id(&f, &browser).await?;
+    assert!(
+        history(&f, owner)
+            .await?
+            .contains(&("device_added".into(), Some("Browser - Firefox".into())))
+    );
+
+    // An app session cannot turn itself into a browser device.
+    let (status, _) = bearer(
+        &f.app,
+        "POST",
+        "/api/v1/browser-devices",
+        &app["access_token"],
+        json!({"name":"x","admission":{"pairing_request_id":Uuid::new_v4()}}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_recovery_key_admits_a_browser_through_a_verifier_that_follows_the_vault() -> Result<()>
+{
+    let f = Fixture::new().await?;
+    let browser = f.login("alice").await?;
+    let (proof, verifier) = recovery_proof();
+    let admit = |proof: String, key: BrowserKey| {
+        as_browser(
+            &f.app,
+            "/api/v1/browser-devices",
+            &browser,
+            json!({"name":"Browser - Safari","admission":{"recovery_proof":proof}}),
+            Some(key.proof(None, "/api/v1/browser-devices", None)),
+        )
+    };
+    // No vault, then a vault without a verifier: nothing to compare against.
+    assert_eq!(
+        admit(proof.clone(), BrowserKey::new()).await?.0,
+        StatusCode::FORBIDDEN
+    );
+    let put = |version: i64, verifier: Option<&str>| {
+        let mut body = json!({"expected_version":version,"envelope":format!("sealed-{version}")});
+        if let Some(v) = verifier {
+            body["admission_verifier"] = json!(v);
+        }
+        f.json("PUT", "/api/v1/vault", &browser, body)
+    };
+    assert_eq!(put(0, Some(&verifier)).await?.0, StatusCode::OK);
+    let (wrong, _) = recovery_proof_of([8u8; 32]);
+    assert_eq!(
+        admit(wrong, BrowserKey::new()).await?.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        admit("short".into(), BrowserKey::new()).await?.0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, body) = admit(proof.clone(), BrowserKey::new()).await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // A new envelope without a verifier clears it.
+    assert_eq!(put(1, None).await?.0, StatusCode::OK);
+    assert_eq!(
+        admit(proof.clone(), BrowserKey::new()).await?.0,
+        StatusCode::FORBIDDEN
+    );
+    // Writing one later is a step-up action, and admitting is one too.
+    sqlx::query("UPDATE sessions SET authenticated_at=now()-interval '10 minutes'")
+        .execute(&f.pool)
+        .await?;
+    let (status, body) = put(2, Some(&verifier)).await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "recent_auth_required");
+    let (status, body) = admit(proof, BrowserKey::new()).await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "recent_auth_required");
+    Ok(())
+}
+fn recovery_proof_of(bytes: [u8; 32]) -> (String, String) {
+    (
+        URL_SAFE_NO_PAD.encode(bytes),
+        URL_SAFE_NO_PAD.encode(hash(bytes)),
+    )
+}
+
+#[tokio::test]
+async fn a_browser_device_gets_a_bounded_assertion_while_it_lives() -> Result<()> {
+    let f = Fixture::new().await?;
+    let p = Partner::arm(&f).await?;
+    let browser = f.login("alice").await?;
+    let key = BrowserKey::new();
+    let device = recovery_admitted(&f, &browser, &key).await?;
+    let id = device["id"].as_str().context("device id")?.to_owned();
+    let ask = |proof: Option<String>| {
+        as_browser(
+            &p.app,
+            "/api/v1/carpe-diem/assertion",
+            &browser,
+            json!({"jkt": JKT}),
+            proof,
+        )
+    };
+    let (status, body) = ask(None).await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "device_required");
+    // Bound to another ephemeral key, or signed for another route: refused.
+    let (status, _) = ask(Some(key.proof(
+        Some(&id),
+        "/api/v1/carpe-diem/assertion",
+        Some("0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4J"),
+    )))
+    .await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = ask(Some(key.proof(
+        Some(&id),
+        "/api/v1/browser-devices",
+        Some(JKT),
+    )))
+    .await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // Another key claiming this device's id: refused.
+    let (status, _) = ask(Some(BrowserKey::new().proof(
+        Some(&id),
+        "/api/v1/carpe-diem/assertion",
+        Some(JKT),
+    )))
+    .await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // The session is no longer recent: a live browser device still renews.
+    sqlx::query("UPDATE sessions SET authenticated_at=now()-interval '2 days'")
+        .execute(&f.pool)
+        .await?;
+    let proof = key.proof(Some(&id), "/api/v1/carpe-diem/assertion", Some(JKT));
+    let (status, body) = ask(Some(proof.clone())).await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let claims = p.claims(body["data"]["assertion"].as_str().context("assertion")?)?;
+    assert_eq!(claims["device_id"], json!(id));
+    assert_eq!(claims["device_name"], "Browser - Firefox");
+    assert_eq!(claims["kind"], "browser");
+    assert_eq!(
+        claims["bound"],
+        json!({"daily_cap_credits":150,"valid_seconds":7 * 86_400})
+    );
+    assert_eq!(claims["cnf"]["jkt"], JKT);
+    // A proof is single use.
+    let (status, body) = ask(Some(proof)).await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["error"]["code"], "device_proof_invalid");
+
+    // Revoked from the device list: the key goes on the outbox and the
+    // browser can ask for nothing more.
+    let owner = account_id(&f, &browser).await?;
+    let fresh = f.login("alice").await?;
+    assert_eq!(
+        f.json(
+            "DELETE",
+            &format!("/api/v1/devices/{id}"),
+            &fresh,
+            json!({})
+        )
+        .await?
+        .0,
+        StatusCode::OK
+    );
+    let device_id = Uuid::parse_str(&id)?;
+    // The per-minute assertion budget is spent; what is tested next is the
+    // revocation, not the rate limit.
+    sqlx::query("DELETE FROM rate_limits")
+        .execute(&f.pool)
+        .await?;
+    assert!(outbox(&f).await?.contains(&(
+        owner,
+        Some(device_id),
+        "device_revoked".into(),
+        0,
+        false
+    )));
+    let (status, _) = ask(Some(key.proof(
+        Some(&id),
+        "/api/v1/carpe-diem/assertion",
+        Some(JKT),
+    )))
+    .await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // An app's assertion carries no kind and no bound: unchanged for them.
+    let token = app_device(&f, "alice", "Alice laptop").await?;
+    let (_, body) = p
+        .assertion(&token["access_token"], json!({"jkt": JKT}))
+        .await?;
+    let claims = p.claims(body["data"]["assertion"].as_str().context("assertion")?)?;
+    assert!(claims.get("kind").is_none() && claims.get("bound").is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_browser_device_signs_itself_out_without_a_step_up() -> Result<()> {
+    let f = Fixture::new().await?;
+    let browser = f.login("alice").await?;
+    let key = BrowserKey::new();
+    let device = recovery_admitted(&f, &browser, &key).await?;
+    let id = device["id"].as_str().context("device id")?.to_owned();
+    sqlx::query("UPDATE sessions SET authenticated_at=now()-interval '2 days'")
+        .execute(&f.pool)
+        .await?;
+    let renounce = || {
+        as_browser(
+            &f.app,
+            "/api/v1/browser-devices/renounce",
+            &browser,
+            json!({}),
+            Some(key.proof(Some(&id), "/api/v1/browser-devices/renounce", None)),
+        )
+    };
+    assert_eq!(renounce().await?.0, StatusCode::OK);
+    let owner = account_id(&f, &browser).await?;
+    assert!(outbox(&f).await?.contains(&(
+        owner,
+        Some(Uuid::parse_str(&id)?),
+        "signed_out".into(),
+        0,
+        false
+    )));
+    assert_eq!(renounce().await?.0, StatusCode::UNAUTHORIZED);
+    // Another account's session cannot use this device's proof.
+    let bob = f.login("bob").await?;
+    let (status, _) = as_browser(
+        &f.app,
+        "/api/v1/browser-devices/renounce",
+        &bob,
+        json!({}),
+        Some(key.proof(Some(&id), "/api/v1/browser-devices/renounce", None)),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
     Ok(())
 }

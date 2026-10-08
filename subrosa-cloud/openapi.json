@@ -3641,6 +3641,10 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 262144
+                  },
+                  "admission_verifier": {
+                    "type": "string",
+                    "description": "Optional base64url SHA-256 (32 bytes) of the value derived from this envelope's recovery key with HKDF-SHA256, info subrosa:admission:v1:{account_id}. Admits browsers as devices (ADR 0096). Absent clears it; setting it on a version above 0 requires an authentication within five minutes."
                   }
                 },
                 "required": [
@@ -4965,11 +4969,14 @@
     },
     "/api/v1/carpe-diem/assertion": {
       "post": {
-        "summary": "Vouch to Carpe Diem that this recently authenticated app device may obtain its own key bound to jkt (ADR 0069). The Carpe Diem key is never returned here",
-        "description": "See docs/carpe-diem-partner-contract.md section 1. The assertion is an ES256 JWS, typ partner-assertion+jwt, valid 120 seconds, carried by the app to the Carpe Diem operator with a DPoP proof from the same ephemeral key.",
+        "summary": "Vouch to Carpe Diem that this device may obtain its own key bound to jkt (ADR 0069, ADR 0096). The Carpe Diem key is never returned here",
+        "description": "See docs/carpe-diem-partner-contract.md section 1. The assertion is an ES256 JWS, typ partner-assertion+jwt, valid 120 seconds, carried by the app to the Carpe Diem operator with a DPoP proof from the same ephemeral key. A browser device asks with its browser session and a subrosa-device-proof header bound to jkt; it need not be recent, and its assertion carries kind browser and bound {daily_cap_credits, valid_seconds}. A browser session without a proof answers 403 device_required.",
         "security": [
           {
             "nativeSession": []
+          },
+          {
+            "browserSession": []
           }
         ],
         "requestBody": {
@@ -5076,6 +5083,241 @@
               }
             }
           }
+        },
+        "parameters": [
+          {
+            "name": "subrosa-device-proof",
+            "in": "header",
+            "required": false,
+            "description": "Browser devices only. ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and, for the assertion, ath = base64url(SHA-256(jkt)). The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/browser-devices": {
+      "post": {
+        "summary": "Make this browser a device of its account (ADR 0096)",
+        "description": "Browser session with CSRF, authenticated within five minutes. The proof header carries the new device key as jwk. Admission is either a pairing request this browser session created and a live app approved within five minutes (consumed), or recovery_proof, the 32 bytes derived from the recovery key whose SHA-256 the vault holds as admission_verifier. 403 admission_required otherwise, 403 recent_auth_required for an old sign-in, 401 device_proof_invalid for a bad proof, 403 forbidden for an app session or past ten live browser devices.",
+        "security": [
+          {
+            "browserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subrosa-device-proof",
+            "in": "header",
+            "required": true,
+            "description": "ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and, for the assertion, ath = base64url(SHA-256(jkt)). The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "admission": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Exactly one of the two",
+                    "properties": {
+                      "pairing_request_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "recovery_proof": {
+                        "type": "string",
+                        "description": "base64url of 32 bytes"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "admission"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Device"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Retry after delay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/browser-devices/renounce": {
+      "post": {
+        "summary": "The browser device signs itself out; no step-up. Its Carpe Diem key goes on the revocation outbox with reason signed_out",
+        "security": [
+          {
+            "browserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subrosa-device-proof",
+            "in": "header",
+            "required": true,
+            "description": "ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and, for the assertion, ath = base64url(SHA-256(jkt)). The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "revoked": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Retry after delay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -5142,6 +5384,14 @@
                 "type": "null"
               }
             ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "native",
+              "browser"
+            ],
+            "description": "native for an app, browser for a browser admitted as a device (ADR 0096)"
           }
         },
         "required": [
@@ -5149,7 +5399,8 @@
           "name",
           "created_at",
           "last_seen_at",
-          "revoked_at"
+          "revoked_at",
+          "kind"
         ]
       },
       "SecurityEvent": {

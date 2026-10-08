@@ -13,6 +13,10 @@ use subrosa_domain::{
 };
 use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
+mod browser;
+pub use browser::{
+    AdmissionRequest, DEVICE_PROOF_HEADER, DEVICE_PROOF_TYPE, thumbprint as jwk_thumbprint,
+};
 #[derive(Clone)]
 pub struct Service {
     pub config: Arc<Config>,
@@ -111,21 +115,30 @@ impl Service {
     /// verified account may obtain its own key bound to `jkt`. The key itself
     /// is created and delivered by Carpe Diem to the app; it never passes here.
     ///
-    /// Only an app's session on a live device qualifies: a browser has no
-    /// device to bind the key to, and a session renewed by the device secret
-    /// is not recent (ADR 0056), so a stolen secret can keep a device signed in
-    /// but can never mint it a key.
+    /// An app's session on a live device qualifies when it is recent: a
+    /// session renewed by the device secret is not (ADR 0056), so a stolen
+    /// secret can keep a device signed in but can never mint it a key.
+    ///
+    /// A browser qualifies only as an admitted browser device (ADR 0096): its
+    /// session plus a `proof` signed by its non-extractable device key and
+    /// bound to `jkt`. It need not be recent, which is what lets its short
+    /// lived key be renewed while the device stays live, and its assertion
+    /// asks Carpe Diem for the browser bound.
     pub async fn carpe_diem_assertion(
         &self,
         session: &Session,
         jkt: &str,
+        proof: Option<&str>,
     ) -> Result<IssuanceAssertion> {
         let partner = self.carpe_diem.as_ref().ok_or(Error::NotFound)?;
-        let device_id = match session.device_id {
-            Some(id) if !session.browser => id,
+        let browser = match (session.browser, session.device_id, proof) {
+            (false, Some(_), _) => {
+                Self::recent(session)?;
+                None
+            }
+            (true, None, Some(proof)) => Some(proof),
             _ => return Err(Error::DeviceRequired),
         };
-        Self::recent(session)?;
         self.repository
             .rate_limit(
                 &hash(format!("carpe-diem-assertion:{}", session.account.id)),
@@ -135,6 +148,15 @@ impl Service {
         if !valid_thumbprint(jkt) {
             return Err(Error::Invalid);
         }
+        let (device_id, bound) = match (browser, session.device_id) {
+            (Some(proof), _) => (
+                self.browser_device(session, proof, browser::ASSERTION_PATH, Some(jkt))
+                    .await?,
+                Some(partner.browser_bound()),
+            ),
+            (None, Some(id)) => (id, None),
+            (None, None) => return Err(Error::DeviceRequired),
+        };
         let name = self
             .repository
             .live_device_name(session.account.id, device_id)
@@ -155,6 +177,7 @@ impl Service {
             device_id,
             device_name: device_name(&name),
             jkt: jkt.into(),
+            browser: bound,
         })
     }
     /// Delivers due revocations. A failure stays in the outbox with its
@@ -541,6 +564,7 @@ impl Service {
         session: &Session,
         expected: i64,
         envelope: &serde_json::Value,
+        admission_verifier: Option<&str>,
     ) -> Result<i64> {
         if expected < 0
             || expected == i64::MAX
@@ -552,12 +576,29 @@ impl Service {
         {
             return Err(Error::Invalid);
         }
+        let verifier = admission_verifier
+            .map(|value| {
+                URL_SAFE_NO_PAD
+                    .decode(value)
+                    .ok()
+                    .filter(|bytes| bytes.len() == 32)
+                    .ok_or(Error::Invalid)
+            })
+            .transpose()?;
+        // A verifier admits browsers as devices (ADR 0096). The one written
+        // with a new vault comes from whoever just made its recovery key;
+        // replacing it later asks for a sign-in minutes old, the bar every
+        // other way of adding a device already has.
+        if verifier.is_some() && expected > 0 {
+            Self::recent(session)?;
+        }
         self.repository
             .save_vault(VaultParams {
                 owner: session.account.id,
                 expected,
                 envelope,
                 quota: self.config.account_quota_bytes,
+                admission_verifier: verifier.as_deref(),
             })
             .await
     }

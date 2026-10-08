@@ -36,7 +36,8 @@ and a failure is `{"error": {"code": "…", "message": "…"}}` (see
   apart from "sign in again".
 - No valid session: `401 unauthorized`.
 - Auth: native bearer session (`Authorization: Bearer <access token>`) bound to a
-  live device. Browser cookie sessions are refused (`403 device_required`).
+  live device. Browser cookie sessions are refused (`403 device_required`),
+  unless the browser is an admitted browser device (section 7).
 - The session must be **recent**: `authenticated_at` within 300 s
   (`Service::recent`). Otherwise `403 recent_auth_required`, the service's
   existing step-up code, and the app asks the person to sign in again. A session
@@ -63,6 +64,8 @@ Claims:
   "device_name": "<the device's name in this service, at most 64 Unicode code points>",
   "scope": "key:issue",
   "cnf": {"jkt": "<jkt>"},
+  "kind": "browser (browser devices only, section 7)",
+  "bound": {"daily_cap_credits": 200, "valid_seconds": 604800},
   "jti": "<uuid v4>",
   "iat": 1790000000,
   "exp": 1790000120
@@ -140,6 +143,8 @@ Response `201`:
 ```json
 {"status":"issued","key":"cdm_…","keyId":"<uuid>","prefix":"cdm_1a2b3c4d...","wallet":"0x…","linked":"created|existing|confirmed","availableCredits":0}
 ```
+
+A browser key's body also carries `expiresAt` and `bound` (section 7).
 
 Errors (body `{"error": "...", "code": "..."}`): `404 NOT_FOUND` when no partner
 is configured; `401 ASSERTION_INVALID`; `401 PROOF_INVALID`; `409 ASSERTION_REPLAYED`;
@@ -326,3 +331,92 @@ newest first, at most 50.
 `/pay/done?r=subrosa` offers a button to `subrosa://credits/return`. The app
 treats it as "refresh the balance now"; the real signal is its own fast poll of
 `GET /v1/credits` (every 3 s for 2 minutes after opening the checkout).
+
+## 7. Browser devices (2026-10-08)
+
+A browser can become a device of its Sub Rosa account (Sub Rosa ADR 0096) and
+obtain its own key through sections 1 to 3, with three differences: who may
+ask, what the assertion says, and what Carpe Diem holds the key to.
+
+### Account service
+
+- The browser becomes a device through `POST /api/v1/browser-devices`: a browser
+  session authenticated within five minutes, plus an out-of-band admission (a
+  pairing request a live app of the account approved, or a value derived from
+  the recovery key). Its device key is a WebCrypto P-256 key generated
+  non-extractable; the service keeps the public half.
+- `POST /api/v1/carpe-diem/assertion` accepts, besides an app's bearer
+  session, a browser session with a `subrosa-device-proof` header: an ES256 JWS,
+  `typ` `subrosa-device+jwt`, `kid` = the device id, claims `htm`, `htu`
+  (exact), `iat` (±60 s), `jti` (single use) and `ath` =
+  base64url(SHA-256(`jkt`)). It need not be recent, so the key can be renewed
+  while the device is live. A browser session without a proof still answers
+  `403 device_required`.
+- Revoking the browser device, or the browser signing itself out
+  (`POST /api/v1/browser-devices/renounce`), enqueues the same section 4
+  revocation as an app (`device_revoked` / `signed_out`).
+
+### Assertion claims
+
+A browser device's issuance assertion carries two more claims. An app's
+assertion carries neither, exactly as before.
+
+```json
+{
+  "kind": "browser",
+  "bound": {"daily_cap_credits": 200, "valid_seconds": 604800}
+}
+```
+
+The operator checks, in addition to section 3:
+
+- `kind` absent (or `null`) means an app. Any value other than `"browser"` →
+  `401 ASSERTION_INVALID`.
+- With `kind: "browser"`, `bound` is required: `daily_cap_credits` an integer
+  ≥ 1, `valid_seconds` an integer ≥ 3600. Missing or malformed →
+  `401 ASSERTION_INVALID`. Values above the operator's ceilings
+  (5000 credits, 7 days) are lowered to them, never refused: the partner may
+  ask for less, never for more.
+- A link request (the `202` consent path) stores the bound, and the key the
+  poll delivers after confirmation carries it.
+
+### Issuance
+
+- The key row stores `bound_kind = "browser"`, `bound_daily_cap_micros =
+  daily_cap_credits × 10 000` and `bound_expires_at = now + valid_seconds`.
+- Issuing again for the same `(partner, sub, device_id)` still revokes the
+  previous key (section 3). That is how a browser renews. A renewal that
+  replaced an active key of the same browser sends no new notification mail;
+  the browser's first key, and every app key, still does.
+- The `201` body gains two fields for a browser key only:
+
+```json
+{"expiresAt": "<ISO>", "bound": {"kind": "browser", "dailyCapCredits": 200}}
+```
+
+### What a browser key may do
+
+Checked inside the operator on every request carrying the key (before body
+validation), in this order:
+
+1. Expired (`now ≥ bound_expires_at`) → `401 {"code":"KEY_EXPIRED"}`, except
+   `POST /v1/keys/self/revoke`, which always works.
+2. `/router/*` or any `x402` path → `403 {"code":"BROWSER_KEY_RAIL_REFUSED"}`.
+3. Anything other than `/v1/chat/completions`, `/v1/embeddings`,
+   `/v1/audio/*`, `/v1/image/*`, `/v1/augment/*`, `/v1/models`, `/v1/pricing`,
+   `/v1/credits` and `/v1/keys/self/revoke` → `403 {"code":"BROWSER_KEY_ROUTE"}`.
+4. A non-`GET` request when the key's spend over the last 24 hours (the usage
+   ledger, `usage_events.cost_usdc`) is at or above its cap →
+   `429 {"code":"KEY_DAILY_CAP"}` with `Retry-After: 3600`. The check runs
+   before serving, so one request in flight can overshoot by at most its own
+   cost.
+
+The rail stays pinned to `credits`, as for every partner key.
+
+### CORS
+
+The Sub Rosa site origins `https://subrosa.furetier.com` and
+`https://furetier.com` are allowed on `/partner/keys`, `/partner/keys/poll`,
+`/partner/capabilities` and the routes listed in rule 3 above, and on nothing
+else. Every other origin rule is unchanged. The site's own CSP allows
+`connect-src` to `https://carpe-diem.xyz` and nothing else beyond itself.

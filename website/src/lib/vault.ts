@@ -94,8 +94,45 @@ export async function prepareVault(accountId: string) {
   );
   const recoveryCode = encode(recovery);
   recovery.fill(0);
-  return { key, recoveryCode, envelope };
+  // Travels with the envelope, so the recovery key can later admit a browser
+  // as a device without the service ever seeing it (ADR 0096).
+  const proof = await recoveryAdmissionProof(accountId, recoveryCode);
+  const admissionVerifier = await verifierFor(proof);
+  proof.fill(0);
+  return { key, recoveryCode, envelope, admissionVerifier };
 }
+
+/** The value the recovery key proves itself with: HKDF-SHA256 of the recovery
+ * secret, bound to the account. One-way, so it opens nothing. */
+export async function recoveryAdmissionProof(
+  accountId: string,
+  recoveryCode: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const secret = decode(recoveryCode.trim());
+  try {
+    if (secret.length !== 32) throw new Error("Invalid recovery key");
+    const key = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveBits"]);
+    return new Uint8Array(
+      await crypto.subtle.deriveBits(
+        {
+          name: "HKDF",
+          hash: "SHA-256",
+          salt: new Uint8Array(0),
+          info: encoder.encode(`subrosa:admission:v1:${accountId}`),
+        },
+        key,
+        256,
+      ),
+    );
+  } finally {
+    secret.fill(0);
+  }
+}
+/** What the vault stores: SHA-256 of the admission proof. */
+export async function verifierFor(proof: Uint8Array<ArrayBuffer>): Promise<string> {
+  return encode(new Uint8Array(await crypto.subtle.digest("SHA-256", proof)));
+}
+
 export async function unlockVault(accountId: string, recoveryCode: string, record: VaultRecord) {
   const recovery = decode(recoveryCode.trim());
   try {
