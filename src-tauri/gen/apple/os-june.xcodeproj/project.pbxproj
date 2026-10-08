@@ -29,7 +29,6 @@
 		6D390559D583C09667ADA71E /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C97DDE2AB34816EEFBCC74FE /* ShareViewController.swift */; };
 		70858B23D2491BDED4E5F6E0 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = B18A03BA8980AA671798502E /* Localizable.strings */; };
 		74E9D70793D09C7BCA57D583 /* os-june_Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DD69DF2AD0B278CFF7EB8CAC /* os-june_Widgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		9118A5B34D40C65B9700D272 /* os-june_Watch.app in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = A28C2BB4C2EDCBC606FF8D7E /* os-june_Watch.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		9715D0665A1546B63D6C48C8 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 62B3DD19D40FE0568D025890 /* Localizable.strings */; };
 		9724B51ECFF23EB81CB44239 /* SubRosaWatchWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7222276CFF60CB3C8AC6AFE0 /* SubRosaWatchWidgets.swift */; };
 		A503D5A495CE0C9A4A2BA5D3 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 36211209D06BC21E8EDBDE62 /* SwiftUI.framework */; };
@@ -63,13 +62,6 @@
 			remoteGlobalIDString = 65DC4823F5470A076AD46580;
 			remoteInfo = "os-june_WatchWidgets";
 		};
-		335F3ED3D2B9E3D9946A3BD9 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A690F21E17FFBE64C5E92CB2 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 43B02D75B7A298F894A9A778;
-			remoteInfo = "os-june_Watch";
-		};
 		41F47FE95DF41B5B0DCA0216 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A690F21E17FFBE64C5E92CB2 /* Project object */;
@@ -97,17 +89,6 @@
 				74E9D70793D09C7BCA57D583 /* os-june_Widgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		304FA59C16A6132B0D556048 /* Embed Dependencies */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
-			dstSubfolderSpec = 16;
-			files = (
-				9118A5B34D40C65B9700D272 /* os-june_Watch.app in Embed Dependencies */,
-			);
-			name = "Embed Dependencies";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CC4552AA935258450B514944 /* Embed Foundation Extensions */ = {
@@ -1368,14 +1349,12 @@
 				E622B8E2292418CF22563EA3 /* Resources */,
 				8D16B4D77FD4F88B8C9E22D7 /* Frameworks */,
 				2133EA5276F999CC5F67B211 /* Embed Foundation Extensions */,
-				304FA59C16A6132B0D556048 /* Embed Dependencies */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				199000AE630843FF672C93E1 /* PBXTargetDependency */,
 				09D7972E801EFD99BC6EC1BD /* PBXTargetDependency */,
-				3D4A72BBE8608DCEA5F73456 /* PBXTargetDependency */,
 			);
 			name = "os-june_iOS";
 			packageProductDependencies = (
@@ -1563,11 +1542,6 @@
 			target = 37B9B34A0B800AF3DFC48440 /* os-june_Share */;
 			targetProxy = 41F47FE95DF41B5B0DCA0216 /* PBXContainerItemProxy */;
 		};
-		3D4A72BBE8608DCEA5F73456 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 43B02D75B7A298F894A9A778 /* os-june_Watch */;
-			targetProxy = 335F3ED3D2B9E3D9946A3BD9 /* PBXContainerItemProxy */;
-		};
 		69A7FBBA99E1CFFA976528A8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 65DC4823F5470A076AD46580 /* os-june_WatchWidgets */;
@@ -1748,7 +1722,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.carpediem.subrosa.watchkitapp;
 				PRODUCT_NAME = SubRosaWatch;
 				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
+				SKIP_INSTALL = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
@@ -1946,7 +1920,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.carpediem.subrosa.watchkitapp;
 				PRODUCT_NAME = SubRosaWatch;
 				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
+				SKIP_INSTALL = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;

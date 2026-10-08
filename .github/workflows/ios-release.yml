@@ -219,6 +219,43 @@ jobs:
           pnpm tauri ios build --export-method app-store-connect --verbose || \
             echo "Tauri's own export failed (expected); exporting the xcarchive manually."
 
+      # The watch app is not part of Tauri's build: Tauri passes `-sdk
+      # iphoneos` to xcodebuild, which forces every dependency of the app onto
+      # the iPhone SDK, and watchOS code does not compile there (run
+      # 37847393168). So the app target leaves it out (project.yml) and it is
+      # built here for watchOS, its complication inside it, with the same
+      # unsigned `release` configuration as the rest of the archive; `install`
+      # gives the stripped product an archive would hold, with both watch
+      # architectures and no destination to resolve. It goes where Xcode
+      # embeds a single-target watch app, and the export signs it with the
+      # watch profiles like every other bundle. Without a watch profile there
+      # is nothing to sign it with, so the build ships without it.
+      - name: Put the watch app in the archive
+        run: |
+          ARCHIVE=$(find src-tauri/gen/apple/build -name '*.xcarchive' -print | head -1)
+          if [ -z "$ARCHIVE" ]; then echo "No xcarchive produced by Tauri." >&2; exit 1; fi
+          for dropped in ${IOS_DROPPED_BUNDLES:-}; do
+            if [ "$dropped" = "xyz.carpediem.subrosa.watchkitapp" ]; then
+              echo "The watch app has no App Store profile; not building it."; exit 0
+            fi
+          done
+          WATCH="$RUNNER_TEMP/watch"
+          xcodebuild -project src-tauri/gen/apple/os-june.xcodeproj \
+            -target os-june_Watch -sdk watchos -configuration release install \
+            DSTROOT="$WATCH/dst" SYMROOT="$WATCH/sym" OBJROOT="$WATCH/obj" \
+            CODE_SIGNING_ALLOWED=NO
+          BUILT="$WATCH/dst/Applications/SubRosaWatch.app"
+          if [ ! -f "$BUILT/Info.plist" ]; then echo "The watch build left no SubRosaWatch.app." >&2; exit 1; fi
+          APP=$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print | head -1)
+          rm -rf "$APP/Watch"
+          mkdir -p "$APP/Watch"
+          ditto "$BUILT" "$APP/Watch/SubRosaWatch.app"
+          mkdir -p "$ARCHIVE/dSYMs"
+          for dsym in "$WATCH"/sym/release-watchos/*.dSYM; do
+            [ -d "$dsym" ] && ditto "$dsym" "$ARCHIVE/dSYMs/$(basename "$dsym")"
+          done
+          find "$APP/Watch" -maxdepth 3 -name Info.plist -print
+
       # A bundle without a profile cannot be signed by the export, so it
       # leaves the archive here, loudly, and the app ships without it. The
       # export re-signs the app, so its seal no longer lists what was removed.

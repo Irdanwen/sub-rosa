@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   APP_GROUP,
+  apiPaths,
   apiToken,
   bundleIdPayload,
   candidateProfiles,
@@ -158,6 +159,35 @@ describe("App Store Connect requests", () => {
         Buffer.from(signature, "base64url"),
       ),
     ).toBe(true);
+  });
+
+  // Run 37847393168: `bundleIdCapabilities?limit=200` answered 400 for every
+  // bundle, so each one fell back to its secret or was left out.
+  it("page the top-level lists, never a relationship", () => {
+    expect(apiPaths.bundleIdCapabilities("8F3PFQ92WM")).toBe(
+      "bundleIds/8F3PFQ92WM/bundleIdCapabilities",
+    );
+    expect(apiPaths.profile("ABC123")).toBe("profiles/ABC123");
+    const lists = [
+      apiPaths.bundleIds("xyz.carpediem.subrosa"),
+      apiPaths.distributionCertificates(),
+      apiPaths.appStoreProfiles(),
+    ];
+    for (const path of lists) {
+      const [resource, query] = path.split("?");
+      expect(resource, path).toMatch(/^(bundleIds|certificates|profiles)$/);
+      expect(new URLSearchParams(query).get("limit"), path).toBe("200");
+    }
+    expect(apiPaths.bundleIds("xyz.carpediem.subrosa")).toContain(
+      "filter[identifier]=xyz.carpediem.subrosa&",
+    );
+  });
+
+  it("reach App Store Connect only through those paths", () => {
+    const script = readFileSync("scripts/ios-provision.mjs", "utf8");
+    const literalQueries = [...script.matchAll(/call\(\s*[`"][^`"]*\?/g)];
+    expect(literalQueries.map((match) => match[0])).toEqual([]);
+    expect(script).not.toMatch(/bundleIdCapabilities\?/);
   });
 
   it("register a watch bundle id as an IOS one", () => {
