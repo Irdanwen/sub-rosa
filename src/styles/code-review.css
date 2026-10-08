@@ -161,3 +161,10 @@
 .code-review-off {
   margin-inline-end: auto;
 }
+
+/* The new-chat composer's Code toggle sits in the sandbox toolbar and takes
+ * its trigger look; on, it reads like a chosen working folder. */
+.code-mode-draft-toggle[aria-pressed="true"] {
+  color: var(--foreground);
+  background: var(--muted);
+}

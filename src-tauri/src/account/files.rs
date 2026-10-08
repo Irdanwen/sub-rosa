@@ -206,8 +206,14 @@ async fn remove_queued_files(
                 if name.components().count() != 1 {
                     Ok(())
                 } else {
-                    let target = gallery.join(name);
-                    ensure_contained(gallery, &target)
+                    let home = super::studio::folder(
+                        gallery,
+                        name.extension()
+                            .and_then(|v| v.to_str())
+                            .unwrap_or_default(),
+                    );
+                    let target = home.join(name);
+                    ensure_contained(&home, &target)
                         .map_err(|_| std::io::Error::other("outside gallery"))
                         .and_then(|_| {
                             // Its poster goes with it (a missing one is the
@@ -356,7 +362,7 @@ pub(super) async fn upload_one(
         if file.components().count() != 1 {
             return Err(file_error());
         }
-        let path = gallery
+        let path = super::studio::folder(gallery, &row.get::<String, _>("format"))
             .join(file)
             .canonicalize()
             .map_err(|_| file_error())?;
@@ -486,7 +492,8 @@ pub(super) async fn download_one(
     let dir = if assistant {
         root.join("assistant-references")
     } else if studio {
-        gallery.to_path_buf()
+        // An Office file goes back in the documents folder (ADR-0090).
+        super::studio::folder(gallery, &row.get::<String, _>("format"))
     } else {
         root.join("recordings").join("synced")
     };

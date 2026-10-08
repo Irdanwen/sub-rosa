@@ -492,5 +492,7 @@ function toolLabel(tool: AssistantDefinition["tools"][number]) {
       return t("Music");
     case "speech":
       return t("Speech");
+    case "documents":
+      return t("Office files");
   }
 }

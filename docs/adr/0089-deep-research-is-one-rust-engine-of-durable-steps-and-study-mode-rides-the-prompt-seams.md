@@ -108,3 +108,24 @@ The constraints that shaped the answer:
 - The cost shown before a run is a ceiling for model tokens; searches and
   page reads are billed apart, and the screen says so rather than guessing
   their price.
+
+## Addendum 2026-10-08: the ceiling prices the web, and the report note is written once
+
+- **The announced ceiling now includes searches and page reads.** The
+  operator publishes per-call prices for the two web routes the sidecar's
+  `/v1/web/search` and `/v1/web/fetch` reach (`augment-search` and
+  `augment-scrape` in the `fixedCost` section of `/pricing`, multiplier
+  applied); `carpe_diem_web_pricing` reads them. The plan screen shows model
+  tokens, searches and page reads apart and their total, for the chosen depth
+  and beside each depth in the picker (`depthEstimates`, one per depth, with
+  no more searches than the depth runs). Every source is counted as a web
+  page read, the most a depth can cost. A part whose price is not known has
+  no price, and then there is no total: a ceiling that leaves out part of the
+  bill is not one.
+- **The report's note id is on the row before the note exists.** The report
+  step draws the id once (`store::reserve_report_note`) and writes the report
+  with `agent_notes::put`, which creates the note under that id or rewrites
+  it. A process killed after the note was written and before the run was
+  marked done writes the same note again when the sweep resumes it, instead
+  of a second one. Approving a plan again clears the id, so a new run writes
+  a new note.

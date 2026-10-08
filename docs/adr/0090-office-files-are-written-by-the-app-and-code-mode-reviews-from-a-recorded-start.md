@@ -123,3 +123,34 @@ A chat with a working folder turns it on from the session bar
   runs clean filters (LFS uploads among them) on every refresh.
 - **Documents beside the Studio media in the gallery's top level.** The
   Studio would have adopted them as pictures it cannot draw.
+
+## Addendum 2026-10-08: documents in the Library and on the gallery's lane, an assistant permission, Code mode from a new chat
+
+The consequences above left three gaps; they are closed here.
+
+- **Office files synchronise on the gallery's file lane.** A document is a
+  gallery file, so it rides the Studio lane of account sync
+  (`account/studio.rs`) rather than a new one: an `account_studio_files`
+  record and an upload row naming the file alone, `source_kind` `studio`.
+  Where a file of that lane lives follows from its extension
+  (`studio::folder`): `docx`, `xlsx` and `pptx` in `documents/`, everything
+  else at the top level. Upload, download and a remote deletion all resolve
+  the name that way, and registering refuses a file outside the folder of its
+  kind. `make_document` registers its file when it is saved, and the lane's
+  inventory scans `documents/` too. Nothing is added to the wire contract
+  (ADR-0049). A build older than this one cannot place such a file: its
+  download stops on `sync_file_type_unsupported`, which is isolated as a
+  download issue for that one file and holds up nothing else.
+- **The Library has a "Files" section** on both shells (ADR-0088), listing
+  `documents/` newest first (`deliverable_list`) with the title read from the
+  file's own `docProps/core.xml`, so a document synchronised from another
+  device is titled too. Each row is the chat's `subrosa:file` card.
+- **`make_document` is an assistant permission** (`documents`, ADR-0058),
+  in the editor of both shells. An assistant saved before it existed does
+  not have it; the default chat keeps the tool.
+- **Code mode can be chosen in the new-chat composer** once a working folder
+  is picked. The choice is held for that folder until the first message
+  creates the session; the start is recorded under the new session before
+  the message reaches the agent, and the first message carries the Code mode
+  block. A start the app refuses leaves the session bar's Code button off,
+  with the reason.

@@ -4,18 +4,22 @@ import { IconArrowUpRight } from "central-icons/IconArrowUpRight";
 import { IconBookmark } from "central-icons/IconBookmark";
 import { IconBubbleQuotes } from "central-icons/IconBubbleQuotes";
 import { IconClipboard } from "central-icons/IconClipboard";
+import { IconFiles } from "central-icons/IconFiles";
 import { IconGlobe } from "central-icons/IconGlobe";
 import { IconImages1 } from "central-icons/IconImages1";
 import { IconMapPin } from "central-icons/IconMapPin";
 import { IconSidebarSimpleRightWide } from "central-icons/IconSidebarSimpleRightWide";
 import { IconTrashCan } from "central-icons/IconTrashCan";
+import { listen } from "@tauri-apps/api/event";
 import { type ReactNode, useEffect, useState } from "react";
+import { ACCOUNT_SYNC_UPDATED_EVENT } from "../../lib/account-sync-events";
 import { useArtifactDataUrl, useArtifactThumbnail } from "../../lib/artifact-media";
 import { openReplyInCanvas } from "../../lib/canvas";
 import { chatBlocksToClipboardText } from "../../lib/chat-blocks";
 import { friendlyErrorMessage } from "../../lib/errors";
 import { safeExternalUrl } from "../../lib/external-link";
-import { t } from "../../lib/i18n";
+import { type DocumentEntry, documentBlock, listDeliverables } from "../../lib/file-block";
+import { intlLocale, t } from "../../lib/i18n";
 import { speakableReply } from "../../lib/speakable-text";
 import {
   listChatImages,
@@ -25,16 +29,18 @@ import {
 } from "../../lib/chat-library";
 import type { StudioArtifact } from "../../lib/studio/types";
 import { openExternalUrl } from "../../lib/tauri";
+import { FileCard } from "../chat-blocks/FileCard";
 import { Dialog } from "../ui/Dialog";
 import { EmptyState } from "../ui/EmptyState";
 import { SegmentedControl } from "../ui/SegmentedControl";
 
-type Section = "saved" | "images";
+type Section = "saved" | "images" | "files";
 
 /**
- * The Library (ADR-0088): what a person kept from their chats, and every
- * picture a chat made. The same view on both shells; each shell gives it its
- * own frame (a page on the desktop, a pushed screen on the phone).
+ * The Library (ADR-0088): what a person kept from their chats, every
+ * picture a chat made, and every Office file the assistant made (ADR-0090).
+ * The same view on both shells; each shell gives it its own frame (a page on
+ * the desktop, a pushed screen on the phone).
  */
 export function LibraryView({ header }: { header?: ReactNode }) {
   const [section, setSection] = useState<Section>("saved");
@@ -49,11 +55,18 @@ export function LibraryView({ header }: { header?: ReactNode }) {
           options={[
             { value: "saved", label: t("Saved") },
             { value: "images", label: t("Images") },
+            { value: "files", label: t("Files") },
           ]}
         />
       </div>
       <div className="library-view-body">
-        {section === "saved" ? <SavedList /> : <ChatImages />}
+        {section === "saved" ? (
+          <SavedList />
+        ) : section === "images" ? (
+          <ChatImages />
+        ) : (
+          <ChatFiles />
+        )}
       </div>
     </div>
   );
@@ -238,6 +251,80 @@ function ChatImages() {
         {open ? <ImageDetail image={open} /> : null}
       </Dialog>
     </>
+  );
+}
+
+/** What a document's card says under its title: when it was made, and how big. */
+function documentDetail(entry: DocumentEntry): string {
+  const size =
+    entry.bytes >= 1024 * 1024
+      ? t("{size} MB", { size: (entry.bytes / (1024 * 1024)).toFixed(1) })
+      : t("{size} KB", { size: Math.max(1, Math.round(entry.bytes / 1024)) });
+  const date = entry.modifiedAt ? new Date(entry.modifiedAt) : null;
+  if (!date || Number.isNaN(date.getTime())) return size;
+  return t("{date}, {size}", {
+    date: date.toLocaleDateString(intlLocale(), { dateStyle: "medium" }),
+    size,
+  });
+}
+
+/** The Word, Excel and PowerPoint files the assistant made, each with the
+ * card its chat showed. Read again when a sync brings one from another
+ * device. */
+function ChatFiles() {
+  const [files, setFiles] = useState<DocumentEntry[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      listDeliverables()
+        .then((found) => {
+          if (!cancelled) {
+            setFiles(found);
+            setFailed(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setFailed(true);
+        });
+    void load();
+    let stop: (() => void) | null = null;
+    void listen(ACCOUNT_SYNC_UPDATED_EVENT, () => void load())
+      .then((unlisten) => {
+        if (cancelled) unlisten();
+        else stop = unlisten;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, []);
+
+  if (failed) {
+    return <p className="library-view-error">{t("Your files could not be listed.")}</p>;
+  }
+  if (!files) return <p className="library-view-quiet">{t("Loading")}</p>;
+  if (files.length === 0) {
+    return (
+      <EmptyState
+        icon={<IconFiles size={28} />}
+        title={t("No files from your chats yet")}
+        description={t(
+          "Ask the assistant for a Word document, a spreadsheet or slides and the file waits for you here.",
+        )}
+      />
+    );
+  }
+  return (
+    <ul className="library-file-list">
+      {files.map((entry) => (
+        <li key={entry.file}>
+          <FileCard block={documentBlock(entry, documentDetail(entry))} />
+        </li>
+      ))}
+    </ul>
   );
 }
 

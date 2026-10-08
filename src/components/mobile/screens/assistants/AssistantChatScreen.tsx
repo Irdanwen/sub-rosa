@@ -695,5 +695,7 @@ export function toolLabel(tool: AssistantTool): string {
       return t("Music");
     case "speech":
       return t("Speech");
+    case "documents":
+      return t("Office files");
   }
 }

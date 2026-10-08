@@ -377,6 +377,15 @@
   font-size: var(--fs-sm);
 }
 
+.library-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .library-saved-list {
   list-style: none;
   margin: 0;

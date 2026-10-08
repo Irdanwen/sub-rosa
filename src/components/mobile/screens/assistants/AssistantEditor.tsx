@@ -493,7 +493,7 @@ export function AssistantEditor({
           title={t("Tools")}
           footer={t("Media generation always asks you to confirm before spending credits.")}
         >
-          {(["web", "image", "video", "music", "speech"] as const).map((tool) => (
+          {(["web", "image", "video", "music", "speech", "documents"] as const).map((tool) => (
             <SettingsToggleRow
               key={tool}
               label={toolLabel(tool)}
@@ -631,5 +631,7 @@ function toolDetail(tool: AssistantTool): string {
       return t("Propose songs and instrumental tracks.");
     case "speech":
       return t("Propose spoken audio from your text.");
+    case "documents":
+      return t("Make Word, Excel and PowerPoint files you can open and share.");
   }
 }

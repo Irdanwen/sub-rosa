@@ -46,12 +46,15 @@ pub trait Backend: Sync {
     /// The person's own material for a query: notes, the project's files,
     /// and connected apps once they exist (P6). Best effort.
     fn own_sources(&self, run: &RunRow, query: &str) -> impl Future<Output = Vec<Found>> + Send;
-    /// Saves the report as a note and answers its id.
+    /// Writes the report into the note `note_id`, creating it under that id
+    /// when it does not exist yet and rewriting it when it does, so writing
+    /// the same report twice leaves one note.
     fn save_report(
         &self,
+        note_id: &str,
         title: &str,
         body: &str,
-    ) -> impl Future<Output = Result<String, AppError>> + Send;
+    ) -> impl Future<Output = Result<(), AppError>> + Send;
 }
 
 /// Stop for a live run. The flag answers "was it stopped" at any time; the
@@ -262,6 +265,10 @@ pub async fn advance<B: Backend>(
             )
         })
         .collect();
+    // The report's note id is on the row before the note exists. A run killed
+    // after the note was written and before the run was marked done writes
+    // the same note again when it resumes, rather than a second one.
+    let note_id = store::reserve_report_note(pool, &run.id).await?;
     let raw = backend
         .complete(
             prompts::REPORT_SYSTEM,
@@ -272,7 +279,7 @@ pub async fn advance<B: Backend>(
     let assembled = report::assemble(&plan.title, &raw, &handed);
     let title = report::report_title(&assembled.markdown, &plan.title);
     let body = report::without_title(&assembled.markdown);
-    let note_id = backend.save_report(&title, &body).await?;
+    backend.save_report(&note_id, &title, &body).await?;
     store::complete(
         pool,
         &run.id,

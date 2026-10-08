@@ -1,7 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { formatUsd } from "./carpe-diem-billing";
-import { estimateCostUsd, priceFor, textPricing } from "./carpe-diem-text-pricing";
+import {
+  estimateCostUsd,
+  priceFor,
+  type TextPrice,
+  textPricing,
+  type WebPrice,
+  webPricing,
+} from "./carpe-diem-text-pricing";
 
 /**
  * Deep research (ADR-0089), for both shells: the commands of
@@ -18,6 +25,7 @@ export type ResearchPlanSection = { title: string; queries: string[] };
 export type ResearchPlan = { title: string; sections: ResearchPlanSection[] };
 
 export type ResearchEstimate = {
+  depth: ResearchDepth;
   searches: number;
   pageReads: number;
   modelCalls: number;
@@ -59,6 +67,8 @@ export type ResearchRun = {
   sourcesFound: number;
   sourcesRead: number;
   estimate?: ResearchEstimate | null;
+  /** The same ceiling at every depth, for the depth picker. */
+  depthEstimates?: ResearchEstimate[];
   sources: ResearchSource[];
   live: boolean;
   createdAt: string;
@@ -166,17 +176,62 @@ export function clampPlanSearches(plan: ResearchPlan, depth: ResearchDepth): Res
   };
 }
 
-/** The model tokens of an estimate priced at the model's own rates, as
- * "$0.42", or undefined when the price is not known. */
-export async function estimatedModelCost(
+/** The prices a ceiling is computed from: the model's per-token rates and
+ * the operator's per-call prices for the two web routes the engine uses. */
+export type ResearchPrices = { model?: TextPrice; web: WebPrice };
+
+export async function researchPrices(model: string): Promise<ResearchPrices> {
+  const [table, web] = await Promise.all([textPricing(), webPricing()]);
+  return { model: priceFor(model, table), web };
+}
+
+/** What a run costs at most, in USD, by what it pays for. A part whose price
+ * is not known is undefined, and so is the total: a ceiling that leaves out
+ * part of the bill is not one. */
+export type ResearchCeiling = {
+  modelUsd?: number;
+  searchesUsd?: number;
+  readsUsd?: number;
+  totalUsd?: number;
+};
+
+export function researchCeiling(
   estimate: ResearchEstimate,
-  model: string,
-): Promise<string | undefined> {
-  const usd = estimateCostUsd(
+  prices: ResearchPrices,
+): ResearchCeiling {
+  const modelUsd = estimateCostUsd(
     { promptTokens: estimate.promptTokens, completionTokens: estimate.completionTokens },
-    priceFor(model, await textPricing()),
+    prices.model,
   );
-  if (usd === undefined) return undefined;
+  const searchesUsd =
+    prices.web.searchUsd === undefined ? undefined : estimate.searches * prices.web.searchUsd;
+  const readsUsd =
+    prices.web.readUsd === undefined ? undefined : estimate.pageReads * prices.web.readUsd;
+  const totalUsd =
+    modelUsd === undefined || searchesUsd === undefined || readsUsd === undefined
+      ? undefined
+      : modelUsd + searchesUsd + readsUsd;
+  return { modelUsd, searchesUsd, readsUsd, totalUsd };
+}
+
+/** The ceiling of `depth` for a plan of `searches` searches, from the run's
+ * per-depth estimates (the plan is edited on screen, so its searches are
+ * counted here, capped at what the depth runs). */
+export function estimateForDepth(
+  run: Pick<ResearchRun, "depthEstimates" | "estimate">,
+  depth: ResearchDepth,
+  searches: number,
+): ResearchEstimate | undefined {
+  const found =
+    run.depthEstimates?.find((estimate) => estimate.depth === depth) ??
+    (run.estimate?.depth === depth ? run.estimate : undefined);
+  if (!found) return undefined;
+  return { ...found, searches: Math.min(searches, RESEARCH_DEPTHS[depth].searches) };
+}
+
+/** A price as the screen shows it: never below a cent, so a part that costs
+ * something never reads as free. */
+export function formatCeilingUsd(usd: number): string {
   return formatUsd(Math.max(usd, 0.01));
 }
 

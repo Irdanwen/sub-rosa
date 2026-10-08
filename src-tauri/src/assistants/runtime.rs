@@ -176,6 +176,10 @@ pub fn allows_tool(snapshot: Option<&AssistantSnapshot>, name: &str, memory_enab
             .tools
             .iter()
             .any(|tool| matches!(tool.as_str(), "image" | "video" | "music" | "speech")),
+        // Office files (ADR-0090) are their own permission, off until the
+        // person turns it on: a file in the gallery is not implied by web
+        // search or a media proposal.
+        crate::deliverables::TOOL => definition.tools.iter().any(|tool| tool == "documents"),
         // Calendar, production files and paid note processing are not implied
         // by permission to read notes or generate a media proposal.
         _ => false,
@@ -767,6 +771,27 @@ mod tests {
         assert!(allows_tool(Some(&snapshot), "propose_media", true));
         assert!(allows_tool(Some(&snapshot), "web_search", true));
         assert!(!allows_tool(Some(&snapshot), "search_calendar", true));
+        assert!(!allows_tool(Some(&snapshot), "make_document", true));
+    }
+
+    /// `make_document` is a permission of its own (ADR-0090): an assistant
+    /// saved before it existed, or with every other tool on, does not get it.
+    #[test]
+    fn office_files_are_a_permission_off_by_default() {
+        let mut snapshot = private_snapshot();
+        assert!(!allows_tool(Some(&snapshot), "make_document", true));
+        snapshot.definition.tools = vec![
+            "image".into(),
+            "music".into(),
+            "speech".into(),
+            "video".into(),
+            "web".into(),
+        ];
+        assert!(!allows_tool(Some(&snapshot), "make_document", true));
+        snapshot.definition.tools.push("documents".into());
+        assert!(allows_tool(Some(&snapshot), "make_document", true));
+        // The default chat keeps it.
+        assert!(allows_tool(None, "make_document", true));
     }
 
     /// Personalization and past chats belong to the default chat (ADR-0081):

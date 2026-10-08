@@ -7,13 +7,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
-import { CodeModeControls } from "../components/agent/CodeModeControls";
+import { CodeModeControls, NewChatCodeModeToggle } from "../components/agent/CodeModeControls";
+import { withModeContext } from "../components/agent/ComposerModes";
 import { CodeReviewPanel } from "../components/agent/CodeReviewPanel";
 import { forgetSessionWorkingDir } from "../lib/agent-session-working-dir";
 import {
+  adoptCodeModeDraft,
   type CodeReviewStatus,
+  codeModeDraftFor,
+  codeModeStartFailure,
   diffLineKind,
   type FileChange,
+  setCodeModeDraft,
   withCodeContext,
 } from "../lib/code-mode";
 
@@ -44,6 +49,7 @@ function change(path: string, extra: Partial<FileChange> = {}): FileChange {
 }
 
 beforeEach(() => {
+  setCodeModeDraft(null);
   status = { active: false };
   changes = [];
   calls.length = 0;
@@ -126,6 +132,70 @@ describe("the session bar", () => {
     await waitFor(() =>
       expect(calls).toContainEqual(["code_review_stop", { request: { sessionId: "s9" } }]),
     );
+  });
+});
+
+describe("a new chat", () => {
+  it("offers Code mode on the folder chosen before the first message", () => {
+    render(<NewChatCodeModeToggle workingDir={FOLDER} />);
+    const code = screen.getByRole("button", { name: "Code" });
+    expect(code.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(code);
+    expect(code.getAttribute("aria-pressed")).toBe("true");
+    expect(codeModeDraftFor(FOLDER)).toBe(true);
+    expect(codeModeDraftFor("/elsewhere")).toBe(false);
+    fireEvent.click(code);
+    expect(codeModeDraftFor(FOLDER)).toBe(false);
+    // Nothing is recorded until the chat exists.
+    expect(calls.some(([command]) => command === "code_review_start")).toBe(false);
+  });
+
+  it("tells the agent with the first message, then records the start under the new chat", async () => {
+    setCodeModeDraft(FOLDER);
+    // No chat id yet: the block rides the first message, for that folder only.
+    const first = await withModeContext("Add a test", undefined, FOLDER);
+    expect(first).toContain(
+      "Add a test\n\n--- Attached Context ---\n\nCode mode is on for this chat.",
+    );
+    expect(first).toContain(FOLDER);
+    expect(await withModeContext("Add a test", undefined, "/elsewhere")).toBe("Add a test");
+
+    // The send created session s2: the start is recorded under it before the
+    // message reaches the agent, and the choice is spent.
+    await adoptCodeModeDraft("s2", FOLDER);
+    expect(calls).toContainEqual([
+      "code_review_start",
+      { request: { sessionId: "s2", folder: FOLDER } },
+    ]);
+    expect(codeModeDraftFor(FOLDER)).toBe(false);
+    expect(await withModeContext("Next chat", undefined, FOLDER)).toBe("Next chat");
+
+    // Its follow-ups carry the block from the record, like any chat in Code mode.
+    localStorage.setItem("june.agent.sessionWorkingDirs", JSON.stringify({ s2: FOLDER }));
+    expect(await withModeContext("And another", "s2")).toContain("Code mode is on");
+  });
+
+  it("starts nothing when the chat began on another folder, or without the choice", async () => {
+    setCodeModeDraft(FOLDER);
+    await adoptCodeModeDraft("s3", "/elsewhere");
+    await adoptCodeModeDraft("s4", null);
+    expect(calls.some(([command]) => command === "code_review_start")).toBe(false);
+    expect(codeModeDraftFor(FOLDER)).toBe(false);
+  });
+
+  it("keeps a refused start for the session bar, which stays off", async () => {
+    setCodeModeDraft(FOLDER);
+    const fallback = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "code_review_start") throw { code: "x", message: "The folder is too large." };
+      return fallback?.(command, args);
+    });
+    await adoptCodeModeDraft("s5", FOLDER);
+    expect(codeModeStartFailure("s5")).toBe("The folder is too large.");
+    render(<CodeModeControls sessionId="s5" workingDir={FOLDER} />);
+    const code = await screen.findByRole("button", { name: "Code" });
+    expect(code.getAttribute("aria-pressed")).toBe("false");
+    expect(code.getAttribute("title")).toBe("The folder is too large.");
   });
 });
 

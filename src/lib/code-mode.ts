@@ -7,7 +7,8 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { messageFromError } from "./errors";
 
 export type CodeReviewStatus = {
   active: boolean;
@@ -120,6 +121,83 @@ export async function withCodeContext(
     return `${text}${separator}${codeModeBlock(workingDir)}`;
   } catch {
     return text;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Code mode chosen before a chat exists
+ *
+ * A new chat has no session id until its first message creates one, and the
+ * record of where the folder started is filed under that id. So the choice
+ * made in the new-chat composer is held here, for the folder it was made on,
+ * and taken up the moment the session exists, before the first message
+ * reaches the agent: the start is recorded before anything can change.
+ * ------------------------------------------------------------------ */
+
+let draftFolder: string | null = null;
+const draftListeners = new Set<() => void>();
+
+function draftChanged() {
+  for (const listener of draftListeners) listener();
+}
+
+/** Turns Code mode on (a folder) or off (null) for the chat about to start. */
+export function setCodeModeDraft(folder: string | null): void {
+  if (draftFolder === folder) return;
+  draftFolder = folder;
+  draftChanged();
+}
+
+/** Whether the new chat will start in Code mode on `folder`. */
+export function codeModeDraftFor(folder: string | null | undefined): boolean {
+  return Boolean(folder) && draftFolder === folder;
+}
+
+/** The folder the new chat will start Code mode on, kept current. */
+export function useCodeModeDraft(): string | null {
+  return useSyncExternalStore(
+    (listener) => {
+      draftListeners.add(listener);
+      return () => draftListeners.delete(listener);
+    },
+    () => draftFolder,
+  );
+}
+
+/** The first message of a new chat, with the Code mode block when the chat
+ * starts in Code mode on its folder. */
+export function withCodeDraftContext(text: string, folder?: string | null): string {
+  if (!folder || !codeModeDraftFor(folder)) return text;
+  const separator = text.includes(CONTEXT_MARKER) ? "\n\n" : `\n\n${CONTEXT_MARKER}\n\n`;
+  return `${text}${separator}${codeModeBlock(folder)}`;
+}
+
+/** Why the last chat that should have started in Code mode did not, by
+ * session, for the session bar's button to say. */
+const draftFailures = new Map<string, string>();
+
+export function codeModeStartFailure(sessionId: string): string | undefined {
+  return draftFailures.get(sessionId);
+}
+
+/**
+ * The new chat's session now exists: records where its folder starts when
+ * Code mode was chosen for that folder, then clears the choice (the next new
+ * chat starts without it). Never fails a send; a refusal is kept for the
+ * session bar's Code button, which stays off.
+ */
+export async function adoptCodeModeDraft(
+  sessionId: string,
+  folder: string | null | undefined,
+): Promise<void> {
+  const chosen = codeModeDraftFor(folder);
+  setCodeModeDraft(null);
+  if (!chosen || !folder) return;
+  try {
+    await startCodeMode(sessionId, folder);
+  } catch (cause) {
+    draftFailures.set(sessionId, messageFromError(cause));
+    changed(sessionId);
   }
 }
 

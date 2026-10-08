@@ -22,6 +22,7 @@
 //!   lands in the same list, is searchable, and is a plain note rather than a
 //!   *meeting note*, which is what a transcribed recording produces.
 
+use crate::db::repositories::Repositories;
 use crate::domain::types::{AppError, NoteDto};
 use tauri::{AppHandle, Emitter};
 
@@ -62,6 +63,51 @@ pub async fn create(
         .map_err(|error| AppError::new("agent_note_create_failed", error.to_string()))?;
     announce(app, std::slice::from_ref(&note.id));
     Ok(saved)
+}
+
+/// Writes `content` into the note `note_id`: created under that id when it
+/// does not exist yet, rewritten when it does. For a writer that runs again
+/// after a crash and must not leave a second note behind (a research report,
+/// ADR-0089), where [`create`] would draw a fresh id every time.
+pub async fn put(
+    app: &AppHandle,
+    note_id: &str,
+    title: Option<&str>,
+    content: &str,
+) -> Result<NoteDto, AppError> {
+    let repos = crate::commands::repositories(app).await?;
+    let saved = put_in(&repos, note_id, title, content).await?;
+    announce(app, std::slice::from_ref(&saved.id));
+    Ok(saved)
+}
+
+/// [`put`] against a database, without the events.
+pub(crate) async fn put_in(
+    repos: &Repositories,
+    note_id: &str,
+    title: Option<&str>,
+    content: &str,
+) -> Result<NoteDto, AppError> {
+    let body = clean_body(content)?;
+    let title = title
+        .and_then(clean_title)
+        .unwrap_or_else(|| UNTITLED.to_string());
+    let failed =
+        |error: sqlx::error::Error| AppError::new("agent_note_create_failed", error.to_string());
+    let now = crate::db::repositories::timestamp();
+    sqlx::query::query(
+        "INSERT OR IGNORE INTO notes (id, title, processing_status, created_at, updated_at) VALUES (?, '', 'draft', ?, ?)",
+    )
+    .bind(note_id)
+    .bind(&now)
+    .bind(&now)
+    .execute(&repos.pool)
+    .await
+    .map_err(failed)?;
+    repos
+        .update_note(note_id, Some(title), Some(body), None)
+        .await
+        .map_err(failed)
 }
 
 /// Appends `content` to an existing note, below what is already there.

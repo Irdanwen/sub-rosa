@@ -63,8 +63,14 @@ beforeEach(() => {
       stored = stored.filter((item) => item.id !== args?.id);
       return null;
     }
+    if (command === "deliverable_list") return documents;
     return null;
   });
+});
+
+let documents: unknown[] = [];
+beforeEach(() => {
+  documents = [];
 });
 
 describe("what a thing is saved as", () => {
@@ -232,5 +238,54 @@ describe("the Library view", () => {
     await userEvent.click(screen.getByRole("button", { name: "Images" }));
     expect(await screen.findByRole("button", { name: "a cat" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "studio work" })).not.toBeInTheDocument();
+  });
+
+  it("lists the Office files the assistant made, and opens one with the chat card's buttons", async () => {
+    documents = [
+      {
+        file: "0b7c1d2e-1111-4222-8333-444455556667.xlsx",
+        title: "Q3 budget",
+        kind: "xlsx",
+        bytes: 20_480,
+        modifiedAt: "2026-10-08T09:00:00Z",
+      },
+      {
+        file: "0b7c1d2e-1111-4222-8333-444455556666.docx",
+        title: null,
+        kind: "docx",
+        bytes: 900,
+        modifiedAt: null,
+      },
+    ];
+    render(<LibraryView />);
+    await userEvent.click(screen.getByRole("button", { name: "Files" }));
+    const budget = await screen.findByRole("region", { name: "Q3 budget" });
+    expect(within(budget).getByText(/^Excel workbook, .*20 KB$/)).toBeInTheDocument();
+    // A file without a title inside it is named by its file.
+    const untitled = screen.getByRole("region", {
+      name: "0b7c1d2e-1111-4222-8333-444455556666.docx",
+    });
+    expect(within(untitled).getByText("Word document, 1 KB")).toBeInTheDocument();
+    await userEvent.click(within(budget).getByRole("button", { name: "Open" }));
+    expect(mocks.invoke).toHaveBeenCalledWith("deliverable_open", {
+      request: { file: "0b7c1d2e-1111-4222-8333-444455556667.xlsx" },
+    });
+  });
+
+  it("shows a file made on another device once a sync lands", async () => {
+    render(<LibraryView />);
+    await userEvent.click(screen.getByRole("button", { name: "Files" }));
+    expect(await screen.findByText("No files from your chats yet")).toBeInTheDocument();
+    documents = [
+      {
+        file: "0b7c1d2e-1111-4222-8333-444455556668.pptx",
+        title: "Pitch",
+        kind: "pptx",
+        bytes: 4096,
+        modifiedAt: "2026-10-08T09:00:00Z",
+      },
+    ];
+    events.handlers.get("subrosa://sync-updated")?.();
+    expect(await screen.findByRole("region", { name: "Pitch" })).toBeInTheDocument();
   });
 });
