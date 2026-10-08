@@ -7617,6 +7617,7 @@ fn render_mcp_servers_config(
     }
     if let Some(config) = studio {
         entries.push_str(&render_studio_mcp_entry(config));
+        entries.push_str(&connectors_mcp::entry(config));
     }
     if entries.is_empty() {
         return "mcp_servers: {}\n".to_string();
@@ -8096,6 +8097,7 @@ async fn handle_june_provider_connection(
             let (status, body) = crate::deliverables::proxy_route(&app, &request.body).await;
             write_json_response(&mut stream, status, body).await?;
         }
+        ("POST", "/v1/connectors") => connectors_mcp::route(&app, &mut stream, &request).await?,
         ("POST", "/v1/media/refine") => {
             let (status, body) = crate::image_refine::proxy_route(&app, &request.body).await;
             write_json_response(&mut stream, status, body).await?;
@@ -8766,6 +8768,7 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
     ))
 }
 
+mod connectors_mcp;
 pub mod guard;
 mod local_reads;
 mod project_memory;

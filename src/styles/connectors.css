@@ -156,7 +156,9 @@
 
 .composer-skill-menu {
   list-style: none;
-  margin: 0 0 var(--sp-2);
+  /* The composer card's own side margin, so the two line up; the card's
+     top margin is the gap between them. */
+  margin: 0 var(--sp-3);
   padding: var(--sp-1);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
@@ -181,4 +183,47 @@
 .composer-skill-option span + span {
   font-size: var(--fs-sm);
   color: var(--muted-foreground);
+}
+
+/* A device sign-in (GitHub): the code to type, large enough to read across
+   a desk, selectable in one tap. */
+.connector-device {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.connector-device-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xl);
+  letter-spacing: 0.12em;
+  color: var(--foreground);
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+/* A connector's row carries a status line and its actions under the name:
+   the icon and the switch sit with the name, not in the middle of the
+   block. */
+.connectors-row[data-expanded] {
+  align-items: flex-start;
+}
+
+.connectors-row[data-expanded] > .chat-block-row-icon {
+  margin-top: 2px;
+}
+
+.connectors-form > button[type="submit"] {
+  align-self: flex-start;
+}
+
+/* A result's links inside the card: their text lines up with the card's own
+   text, and the hover ground still reaches past it. */
+.connector-card-body > .chat-block-rows {
+  padding: 0;
+  margin-inline: calc(-1 * var(--sp-4));
 }

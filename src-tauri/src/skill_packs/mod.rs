@@ -29,20 +29,25 @@ mod tests;
 pub const MAX_BODY_CHARS: usize = 20_000;
 const MAX_DESCRIPTION_CHARS: usize = 400;
 
+/// Each message a literal the i18n extractor reads (ADR-0047).
 fn error(code: &str) -> AppError {
-    AppError::new(
-        code,
-        match code {
-            "skill_pack_invalid" => {
-                "This file is not a skill. It needs a name and a description at the top, between two lines of three dashes."
-            }
-            "skill_pack_name" => {
-                "A skill name uses lowercase letters, digits and dashes, up to 64 characters."
-            }
-            "skill_pack_missing" => "This skill no longer exists.",
-            _ => "The skill could not be saved. Try again.",
-        },
-    )
+    match code {
+        "skill_pack_invalid" => AppError::new(
+            "skill_pack_invalid",
+            "This file is not a skill. It needs a name and a description at the top, between two lines of three dashes.",
+        ),
+        "skill_pack_name" => AppError::new(
+            "skill_pack_name",
+            "A skill name uses lowercase letters, digits and dashes, up to 64 characters.",
+        ),
+        "skill_pack_missing" => {
+            AppError::new("skill_pack_missing", "This skill no longer exists.")
+        }
+        _ => AppError::new(
+            "skill_pack_failed",
+            "The skill could not be saved. Try again.",
+        ),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

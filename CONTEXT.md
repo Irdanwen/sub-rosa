@@ -1457,12 +1457,12 @@ the folder, can be reverted.
 ### Connectors and skill packs (fork)
 
 **Connector** — another service the assistant may read and act in: a remote
-MCP server, or the built-in Google or Microsoft tools (ADR-0092). Its
+MCP server, or the built-in Google, Microsoft or GitHub (ADR-0092). Its
 definition (name, address, the person's **tool rules**) synchronises; its
-access never does, it is in each device's keychain. On the computer the
-general assistant reaches connectors through Hermes's MCP servers; on the
-phones, through agent-lite's own client. Custom assistants get none
-(ADR-0058).
+access never does, it is in each device's keychain. Every runtime reaches it
+through the app's own client: agent-lite directly, Hermes through the app's
+`subrosa_connectors` MCP server, so one sign-in per device serves both. A
+custom assistant reaches only the connectors its **connector grant** names.
 _Avoid:_ "integration", "plugin", "app" (an MCP server is not an "app" in
 copy; the "interactive view" is).
 
@@ -1471,6 +1471,15 @@ copy; the "interactive view" is).
 tool nobody ruled on follows its server's hint: reading runs, anything else
 asks.
 _Avoid:_ "permission" (an assistant's, ADR-0058), "scope" (OAuth's).
+
+**Connector grant** — an assistant's permission to use one connector, a
+`connector:<id>` entry in its tools (ADR-0092 addendum, ADR-0058). Without
+one, an assistant reaches no connector.
+_Avoid:_ "connector scope" (an OAuth scope is the service's).
+
+**Device sign-in** — signing in by typing a short code on the service's own
+page (GitHub, RFC 8628) while the app waits, for a service that registers no
+client by itself and whose app cannot hold a secret.
 
 **Connector call** — one call the assistant made or asked to make through a
 connector, a `connector_calls` row with its result, shown under the reply as

@@ -333,7 +333,10 @@ fn api_error(status: u16) -> AppError {
         404 => AppError::new("connector_missing", "The service could not find that item."),
         _ => AppError::new(
             "connector_status",
-            format!("The connector answered with status {status}."),
+            crate::tr!(
+                "The connector answered with status {status}.",
+                status = status
+            ),
         ),
     }
 }

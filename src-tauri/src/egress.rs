@@ -74,7 +74,7 @@ pub const DECLARED_EGRESS: &[EgressHost] = &[
     host(
         "github.com",
         Reach::Always,
-        "The agent runtime, downloaded once and checked against a known fingerprint.",
+        "The agent runtime, downloaded once and checked against a known fingerprint, and GitHub's sign-in when you connect GitHub.",
     ),
     host(
         "objects.githubusercontent.com",
@@ -167,6 +167,11 @@ pub const DECLARED_EGRESS: &[EgressHost] = &[
         "docs.mcp.cloudflare.com",
         Reach::WhenAsked,
         "Cloudflare's documentation, when you connect it. No account is used.",
+    ),
+    host(
+        "api.githubcopilot.com",
+        Reach::WhenAsked,
+        "GitHub's own MCP server, when you connect GitHub: the assistant reads and updates the repositories you allow.",
     ),
     host(
         "accounts.google.com",

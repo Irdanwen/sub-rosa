@@ -536,7 +536,7 @@ async fn run_turn(
                 repos,
                 task_id,
                 last.unwrap_or_default(),
-                snapshot.is_some(),
+                &crate::connectors::agent::Grant::of(snapshot.as_ref()),
                 tools,
             )
             .await,

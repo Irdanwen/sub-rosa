@@ -5,6 +5,8 @@ import {
   type CatalogServer,
   type Connector,
   type ConnectorCatalog,
+  type DeviceSignIn,
+  type SignInResult,
   connectorAdd,
   connectorRemove,
   connectorSetEnabled,
@@ -16,23 +18,16 @@ import {
 } from "../../lib/connectors";
 import { friendlyErrorMessage } from "../../lib/errors";
 import { t } from "../../lib/i18n";
+import { openExternalUrl } from "../../lib/tauri";
 import { Switch } from "../ui/Switch";
 import { ToolRules, connectorStateLabel } from "./ToolRules";
-
-/** What the computer's agent runtime needs to hear about a catalog server:
- * the desktop adds it to Hermes's MCP servers and signs in there too. The
- * phones pass nothing. */
-export type HermesConnectorBridge = {
-  has: (name: string) => boolean;
-  add: (server: CatalogServer) => Promise<boolean>;
-  signIn: (name: string) => Promise<unknown>;
-};
 
 type Props = {
   connectors: Connector[] | null;
   catalog: ConnectorCatalog | null;
   refresh: () => void;
-  hermes?: HermesConnectorBridge | null;
+  /** Called once a connector is removed, for what a shell keeps beside it. */
+  onRemoved?: (connector: Connector) => Promise<unknown>;
 };
 
 /**
@@ -40,8 +35,9 @@ type Props = {
  * and their tools' rules; the one-tap catalog; and, in developer mode, any
  * server by its address.
  */
-export function ConnectorsPanel({ connectors, catalog, refresh, hermes }: Props) {
+export function ConnectorsPanel({ connectors, catalog, refresh, onRemoved }: Props) {
   const [open, setOpen] = useState<string | null>(null);
+  const [device, setDevice] = useState<{ connectorId: string; sign: DeviceSignIn } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [developer, setDeveloper] = useState(readDeveloperMode);
@@ -64,36 +60,41 @@ export function ConnectorsPanel({ connectors, catalog, refresh, hermes }: Props)
     }
   };
 
+  /** What a sign-in asks of the person next: a code to type, or the
+   * browser it opened. */
+  const followSignIn = (connectorId: string, result: SignInResult) => {
+    if (result.device) {
+      setDevice({ connectorId, sign: result.device });
+      return;
+    }
+    if (!result.connected) {
+      setNotice({
+        text: t("Finish signing in in your browser. Sub Rosa comes back by itself."),
+        error: false,
+      });
+    }
+  };
+
   const signIn = (connector: Connector) =>
-    run(connector.id, async () => {
-      const result = await connectorSignIn(connector.id);
-      if (!result.connected) {
-        setNotice({
-          text: t("Finish signing in in your browser. Sub Rosa comes back by itself."),
-          error: false,
-        });
-      }
+    run(connector.id, async () => followSignIn(connector.id, await connectorSignIn(connector.id)));
+
+  /** Adds a catalog entry or a built-in provider and signs in to it, the same
+   * on every shell: the computer's agent reaches it through the app. */
+  const connect = (catalogId: string) =>
+    run(catalogId, async () => {
+      const added = await connectorAdd({ catalogId });
+      followSignIn(added.id, await connectorSignIn(added.id));
     });
 
-  const connectServer = (server: CatalogServer) =>
-    run(server.id, async () => {
-      const added = await connectorAdd({ catalogId: server.id });
-      if (hermes && !hermes.has(server.id)) {
-        // The computer's agent gets the same server, signed in through its
-        // own runtime.
-        if ((await hermes.add(server)) && server.auth === "oauth") {
-          await hermes.signIn(server.id);
-        }
-        return;
-      }
-      const result = await connectorSignIn(added.id);
-      if (!result.connected) {
-        setNotice({
-          text: t("Finish signing in in your browser. Sub Rosa comes back by itself."),
-          error: false,
-        });
-      }
-    });
+  const remove = (connector: Connector) =>
+    run(
+      connector.id,
+      async () => {
+        await connectorRemove(connector.id);
+        await onRemoved?.(connector);
+      },
+      t("{name} removed.", { name: connector.name }),
+    );
 
   const added = new Set((connectors ?? []).map((connector) => connector.id));
 
@@ -107,6 +108,10 @@ export function ConnectorsPanel({ connectors, catalog, refresh, hermes }: Props)
         >
           {notice.text}
         </p>
+      ) : null}
+
+      {device && !connectors?.some((item) => item.id === device.connectorId && item.signedIn) ? (
+        <DeviceCode sign={device.sign} onDismiss={() => setDevice(null)} />
       ) : null}
 
       <h3 className="settings-row-title">{t("Your connectors")}</h3>
@@ -167,13 +172,7 @@ export function ConnectorsPanel({ connectors, catalog, refresh, hermes }: Props)
                     type="button"
                     className="proposal-do"
                     disabled={busy !== null}
-                    onClick={() =>
-                      void run(
-                        connector.id,
-                        () => connectorRemove(connector.id),
-                        t("{name} removed.", { name: connector.name }),
-                      )
-                    }
+                    onClick={() => void remove(connector)}
                   >
                     {t("Remove")}
                   </button>
@@ -203,13 +202,7 @@ export function ConnectorsPanel({ connectors, catalog, refresh, hermes }: Props)
           <li key={builtin.id} className="connectors-row">
             <span className="connectors-row-body">
               <span className="connectors-row-title">{builtin.name}</span>
-              <span className="connectors-row-meta">
-                {builtin.id === "google"
-                  ? t(
-                      "Calendar, contacts, and only the Drive files Sub Rosa created or that you opened with it.",
-                    )
-                  : t("Outlook calendar and mail, and OneDrive.")}
-              </span>
+              <span className="connectors-row-meta">{builtinDescription(builtin.id)}</span>
               {builtin.gated.map((gate) => (
                 <span key={gate.id} className="connectors-row-meta">
                   {t("{name}: requires verification by Google before Sub Rosa may read it.", {
@@ -223,12 +216,7 @@ export function ConnectorsPanel({ connectors, catalog, refresh, hermes }: Props)
                 type="button"
                 className="proposal-do"
                 disabled={busy !== null || added.has(builtin.id)}
-                onClick={() =>
-                  void run(builtin.id, async () => {
-                    const connector = await connectorAdd({ catalogId: builtin.id });
-                    await connectorSignIn(connector.id);
-                  })
-                }
+                onClick={() => void connect(builtin.id)}
               >
                 {added.has(builtin.id) ? t("Added") : t("Connect")}
               </button>
@@ -247,7 +235,7 @@ export function ConnectorsPanel({ connectors, catalog, refresh, hermes }: Props)
               type="button"
               className="proposal-do"
               disabled={busy !== null || added.has(server.id)}
-              onClick={() => void connectServer(server)}
+              onClick={() => void connect(server.id)}
             >
               {added.has(server.id) ? t("Added") : t("Connect")}
             </button>
@@ -277,11 +265,64 @@ export function ConnectorsPanel({ connectors, catalog, refresh, hermes }: Props)
           onAdd={(request) =>
             run("custom", async () => {
               const connector = await connectorAdd(request);
-              if (connector.auth === "oauth") await connectorSignIn(connector.id);
+              if (connector.auth === "oauth") {
+                followSignIn(connector.id, await connectorSignIn(connector.id));
+              }
             })
           }
         />
       ) : null}
+    </div>
+  );
+}
+
+function builtinDescription(id: string): string {
+  switch (id) {
+    case "google":
+      return t(
+        "Calendar, contacts, and only the Drive files Sub Rosa created or that you opened with it.",
+      );
+    case "github":
+      return t("Repositories, issues and pull requests, through GitHub's own MCP server.");
+    default:
+      return t("Outlook calendar and mail, and OneDrive.");
+  }
+}
+
+/** The code a device sign-in shows: typed on the service's own page, in the
+ * browser Sub Rosa opened, while the app waits for it. */
+function DeviceCode({ sign, onDismiss }: { sign: DeviceSignIn; onDismiss: () => void }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="connector-device" role="status">
+      <span className="connectors-row-meta">
+        {t("Type this code on the page that opened in your browser. Sub Rosa finishes by itself.")}
+      </span>
+      <code className="connector-device-code">{sign.userCode}</code>
+      <span className="connector-card-actions">
+        <button
+          type="button"
+          className="proposal-do"
+          onClick={() =>
+            void navigator.clipboard
+              ?.writeText(sign.userCode)
+              .then(() => setCopied(true))
+              .catch(() => undefined)
+          }
+        >
+          {copied ? t("Copied") : t("Copy code")}
+        </button>
+        <button
+          type="button"
+          className="proposal-do"
+          onClick={() => void openExternalUrl(sign.verificationUri)}
+        >
+          {t("Open the page again")}
+        </button>
+        <button type="button" className="proposal-do" onClick={onDismiss}>
+          {t("Hide")}
+        </button>
+      </span>
     </div>
   );
 }

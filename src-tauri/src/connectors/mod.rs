@@ -16,9 +16,10 @@
 //!   views in a sandboxed frame; [`triggers`]: events that start assignment
 //!   runs; [`research`]: connector sources in deep research.
 //!
-//! On the computer the general assistant runs on Hermes, whose own MCP
-//! configuration the catalog writes from the webview; these rows are what the
-//! phones and custom assistants read.
+//! On the computer the general assistant runs on Hermes, which reaches the
+//! same connectors through the app ([`hermes`]): one sign-in per device, one
+//! set of rules, and nothing of a connector left in the runtime once it is
+//! removed.
 
 use serde::{Deserialize, Serialize};
 use sqlx::query::query;
@@ -33,6 +34,9 @@ pub mod apps;
 pub mod builtin;
 pub mod calls;
 pub mod catalog;
+pub mod github;
+#[cfg(desktop)]
+pub mod hermes;
 pub mod mcp;
 pub mod oauth;
 pub mod policy;
@@ -46,22 +50,40 @@ mod tests;
 
 pub const CHANGED_EVENT: &str = "connectors://changed";
 
+/// The errors this module raises, each a literal the i18n extractor reads
+/// (ADR-0047): a message picked by a `match` on the code is invisible to it.
 pub(crate) fn error(code: &str) -> AppError {
-    AppError::new(
-        code,
-        match code {
-            "connector_not_found" => "This connector no longer exists.",
-            "connector_url_invalid" => "Use the connector's full https address.",
-            "connector_duplicate" => "This connector is already added.",
-            "connector_unavailable" => "This connector is not available in this build.",
-            "connector_requires_verification" => {
-                "Full Gmail access needs a security review Google has not completed for Sub Rosa yet."
-            }
-            "connector_token_missing" => "Paste the access token the service gave you.",
-            "connector_policy_invalid" => "Choose allow, ask or deny.",
-            _ => "The connector could not be updated. Try again.",
-        },
-    )
+    match code {
+        "connector_not_found" => {
+            AppError::new("connector_not_found", "This connector no longer exists.")
+        }
+        "connector_url_invalid" => AppError::new(
+            "connector_url_invalid",
+            "Use the connector's full https address.",
+        ),
+        "connector_duplicate" => {
+            AppError::new("connector_duplicate", "This connector is already added.")
+        }
+        "connector_unavailable" => AppError::new(
+            "connector_unavailable",
+            "This connector is not available in this build.",
+        ),
+        "connector_requires_verification" => AppError::new(
+            "connector_requires_verification",
+            "Full Gmail access needs a security review Google has not completed for Sub Rosa yet.",
+        ),
+        "connector_token_missing" => AppError::new(
+            "connector_token_missing",
+            "Paste the access token the service gave you.",
+        ),
+        "connector_policy_invalid" => {
+            AppError::new("connector_policy_invalid", "Choose allow, ask or deny.")
+        }
+        _ => AppError::new(
+            "connector_failed",
+            "The connector could not be updated. Try again.",
+        ),
+    }
 }
 
 pub(crate) async fn pool(app: &AppHandle) -> Result<SqlitePool, AppError> {
@@ -70,6 +92,9 @@ pub(crate) async fn pool(app: &AppHandle) -> Result<SqlitePool, AppError> {
 
 pub(crate) fn emit_changed(app: &AppHandle) {
     let _ = app.emit(CHANGED_EVENT, ());
+    // The computer's agent runtime reads the rules from its guard ledger.
+    #[cfg(desktop)]
+    crate::hermes_bridge::guard::publish_detached(app);
 }
 
 fn now() -> String {
@@ -84,7 +109,8 @@ pub struct Connector {
     pub name: String,
     pub url: String,
     pub catalog_id: String,
-    /// `oauth`, `none`, `token` (developer mode), `google` or `microsoft`.
+    /// `oauth`, `none`, `token` (developer mode), `google`, `microsoft` or
+    /// `github` (the device flow, then GitHub's remote MCP server).
     pub auth: String,
     pub enabled: bool,
     pub tool_policy: std::collections::BTreeMap<String, String>,
@@ -335,11 +361,27 @@ pub struct CatalogDto {
     pub builtins: Vec<BuiltinDto>,
 }
 
+/// The built-in providers this build offers. GitHub is listed only when the
+/// build carries its client id: without one there is nothing to offer.
+pub fn builtins() -> Vec<BuiltinDto> {
+    let mut builtins = builtin::catalog();
+    if github::available() {
+        builtins.push(BuiltinDto {
+            id: github::ID,
+            name: github::NAME,
+            available: true,
+            description: "Repositories, issues and pull requests",
+            gated: Vec::new(),
+        });
+    }
+    builtins
+}
+
 #[tauri::command]
 pub async fn connector_catalog() -> Result<CatalogDto, AppError> {
     Ok(CatalogDto {
         servers: catalog::CATALOG.to_vec(),
-        builtins: builtin::catalog(),
+        builtins: builtins(),
     })
 }
 
@@ -377,6 +419,19 @@ pub fn connector_for(request: &ConnectorAddRequest) -> Result<Connector, AppErro
         tool_policy: Default::default(),
     };
     if let Some(id) = request.catalog_id.as_deref().filter(|id| !id.is_empty()) {
+        if id == github::ID {
+            if !github::available() {
+                return Err(error("connector_unavailable"));
+            }
+            return Ok(Connector {
+                id: github::ID.to_string(),
+                name: github::NAME.to_string(),
+                url: github::MCP_URL.to_string(),
+                catalog_id: github::ID.to_string(),
+                auth: github::ID.to_string(),
+                ..blank
+            });
+        }
         if let Some(provider) = builtin::provider(id) {
             if !provider.available() {
                 return Err(error("connector_unavailable"));
@@ -442,23 +497,31 @@ pub async fn connector_add(
     Ok(dto(&pool, connector).await)
 }
 
+/// Everything this device keeps about a connector: its access, its state,
+/// its triggers and its row. The runtime's tools and rules follow from the
+/// rows ([`hermes`]), so nothing else needs undoing.
+pub async fn remove_rows(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+    let _ = oauth::forget_tokens(id);
+    let _ = tokens::remove(&tokens::tokens_slot(id));
+    query("DELETE FROM connector_state WHERE connector_id=?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    query("DELETE FROM connector_triggers WHERE connector_id=?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    query("DELETE FROM connectors WHERE id=?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn connector_remove(app: AppHandle, id: String) -> Result<(), AppError> {
     let pool = pool(&app).await?;
-    let _ = oauth::forget_tokens(&id);
-    let _ = tokens::remove(&tokens::tokens_slot(&id));
-    query("DELETE FROM connector_state WHERE connector_id=?")
-        .bind(&id)
-        .execute(&pool)
-        .await?;
-    query("DELETE FROM connector_triggers WHERE connector_id=?")
-        .bind(&id)
-        .execute(&pool)
-        .await?;
-    query("DELETE FROM connectors WHERE id=?")
-        .bind(&id)
-        .execute(&pool)
-        .await?;
+    remove_rows(&pool, &id).await?;
     emit_changed(&app);
     Ok(())
 }
@@ -521,12 +584,17 @@ pub struct SignInDto {
     pub auth_url: Option<String>,
     /// Connected without a sign-in (the server asked for none).
     pub connected: bool,
+    /// A device sign-in (GitHub): the code to type, and where.
+    pub device: Option<github::DeviceStart>,
 }
 
 #[tauri::command]
 pub async fn connector_sign_in(app: AppHandle, id: String) -> Result<SignInDto, AppError> {
     let pool = pool(&app).await?;
     let connector = get(&pool, &id).await?;
+    if connector.auth == github::ID {
+        return github_sign_in(app, pool, connector).await;
+    }
     let outcome = runtime::begin_sign_in(&pool, &connector).await;
     match outcome {
         Ok(runtime::SignIn::Connected) => {
@@ -535,6 +603,7 @@ pub async fn connector_sign_in(app: AppHandle, id: String) -> Result<SignInDto, 
             Ok(SignInDto {
                 auth_url: None,
                 connected: true,
+                device: None,
             })
         }
         Ok(runtime::SignIn::Browser(url)) => {
@@ -543,6 +612,7 @@ pub async fn connector_sign_in(app: AppHandle, id: String) -> Result<SignInDto, 
             Ok(SignInDto {
                 auth_url: Some(url),
                 connected: false,
+                device: None,
             })
         }
         Err(failure) => {
@@ -551,6 +621,48 @@ pub async fn connector_sign_in(app: AppHandle, id: String) -> Result<SignInDto, 
             Err(failure)
         }
     }
+}
+
+/// GitHub's device flow: a code for the person to type on github.com,
+/// opened for them, and the token collected in the background while they do.
+async fn github_sign_in(
+    app: AppHandle,
+    pool: SqlitePool,
+    connector: Connector,
+) -> Result<SignInDto, AppError> {
+    let client_id = github::client_id().ok_or_else(|| error("connector_unavailable"))?;
+    let code = github::request_code(&github::GITHUB, client_id).await?;
+    let start = code.start.clone();
+    let generation = github::claim_wait(&connector.id);
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let outcome = github::wait_for_token(&github::GITHUB, client_id, &code).await;
+        if !github::is_current(&connector.id, generation) {
+            return;
+        }
+        match outcome.and_then(|tokens| oauth::save_tokens(&connector.id, &tokens)) {
+            Ok(()) => {
+                set_status(&pool, &connector.id, "connected", None).await;
+                let _ = runtime::refresh_tools(&pool, &connector).await;
+            }
+            Err(failure) => {
+                set_status(
+                    &pool,
+                    &connector.id,
+                    "needs_sign_in",
+                    Some(&failure.message),
+                )
+                .await;
+            }
+        }
+        emit_changed(&handle);
+    });
+    let _ = crate::open_url::open_external_url(app, start.verification_uri.clone()).await;
+    Ok(SignInDto {
+        auth_url: Some(start.verification_uri.clone()),
+        connected: false,
+        device: Some(start),
+    })
 }
 
 #[tauri::command]
@@ -626,7 +738,7 @@ pub fn on_deep_link(app: &AppHandle, url: &str) {
                     &pool,
                     &flow.connector_id,
                     "needs_sign_in",
-                    Some("The sign-in was cancelled."),
+                    Some(&crate::tr!("The sign-in was cancelled.")),
                 )
                 .await;
                 emit_changed(&app);
@@ -665,4 +777,13 @@ pub fn setup(app: &AppHandle) {
         }
     });
     triggers::start_clock(app);
+    // Rules that arrive from another device reach the runtime's ledger too.
+    #[cfg(desktop)]
+    {
+        use tauri::Listener as _;
+        let handle = app.clone();
+        app.listen("subrosa://sync-updated", move |_| {
+            crate::hermes_bridge::guard::publish_detached(&handle);
+        });
+    }
 }

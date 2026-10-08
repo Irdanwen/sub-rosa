@@ -341,7 +341,7 @@ async fn check(app: &AppHandle, pool: &SqlitePool, trigger: &TriggerRow) {
                 pool,
                 &trigger.id,
                 None,
-                Some("This trigger cannot look at that connector."),
+                Some(&crate::tr!("This trigger cannot look at that connector.")),
             )
             .await;
             return;

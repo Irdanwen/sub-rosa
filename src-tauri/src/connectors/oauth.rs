@@ -32,25 +32,41 @@ const PENDING_TTL_SECS: i64 = 15 * 60;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_METADATA_BYTES: usize = 256 * 1024;
 
+/// Each message a literal the i18n extractor reads (ADR-0047).
 fn error(code: &str) -> AppError {
-    AppError::new(
-        code,
-        match code {
-            "connector_oauth_discovery" => {
-                "This connector does not say how to sign in. Check its address."
-            }
-            "connector_oauth_pkce" => {
-                "This connector's sign-in does not support the protection Sub Rosa requires."
-            }
-            "connector_oauth_registration" => {
-                "This connector does not let apps register themselves, so Sub Rosa cannot sign in to it yet."
-            }
-            "connector_oauth_expired" => "That sign-in took too long. Start it again.",
-            "connector_oauth_denied" => "The sign-in was cancelled.",
-            "connector_sign_in" => "This connector needs you to sign in again.",
-            _ => "The sign-in could not be completed. Try again.",
-        },
-    )
+    match code {
+        "connector_oauth_discovery" => AppError::new(
+            "connector_oauth_discovery",
+            "This connector does not say how to sign in. Check its address.",
+        ),
+        "connector_oauth_pkce" => AppError::new(
+            "connector_oauth_pkce",
+            "This connector's sign-in does not support the protection Sub Rosa requires.",
+        ),
+        "connector_oauth_registration" => AppError::new(
+            "connector_oauth_registration",
+            "This connector does not let apps register themselves, so Sub Rosa cannot sign in to it yet.",
+        ),
+        "connector_oauth_expired" => AppError::new(
+            "connector_oauth_expired",
+            "That sign-in took too long. Start it again.",
+        ),
+        "connector_oauth_denied" => {
+            AppError::new("connector_oauth_denied", "The sign-in was cancelled.")
+        }
+        "connector_sign_in" => AppError::new(
+            "connector_sign_in",
+            "This connector needs you to sign in again.",
+        ),
+        "connector_keychain" => AppError::new(
+            "connector_keychain",
+            "Your system credential store is unavailable.",
+        ),
+        _ => AppError::new(
+            "connector_oauth_failed",
+            "The sign-in could not be completed. Try again.",
+        ),
+    }
 }
 
 pub struct Pkce {

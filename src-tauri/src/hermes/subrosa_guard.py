@@ -20,6 +20,13 @@ whenever it changes (`subrosa-guard.json` next to `config.yaml`):
 
 A ledger that exists but cannot be read refuses the guarded tools: it is
 written atomically, so an unreadable one is damage, not a race.
+
+The connectors (ADR-0092 addendum) reach this runtime as one built-in MCP
+server, `subrosa_connectors`. Their rules are in the ledger too, under
+`connectorRules`, by the runtime's tool name: `allow` runs, `deny` is
+refused, and `ask`, or a connector tool the ledger does not name, goes to the
+runtime's own approval with the sentence the app wrote. What the plugin
+cannot read it asks about: the safe direction for a connector is a question.
 """
 
 from __future__ import annotations
@@ -41,6 +48,10 @@ PAST_CHAT_TOOLS = frozenset({"session_search"})
 PAST_CHAT_SUFFIXES = ("search_past_chats",)
 # How far up a session's parents the lineage check walks.
 MAX_LINEAGE = 16
+# The connectors' tools, as the runtime names them.
+CONNECTOR_PREFIX = "mcp__subrosa_connectors__"
+# How much of a call's arguments the approval shows.
+MAX_ARGUMENTS_SHOWN = 600
 
 TEMPORARY_MESSAGE = (
     "This is a temporary chat: nothing from it may be saved to memory or to "
@@ -54,6 +65,11 @@ PAST_CHATS_OFF_MESSAGE = (
     "Past chats are turned off on this device by protected mode. Answer "
     "without searching other conversations."
 )
+CONNECTOR_OFF_MESSAGE = (
+    "This action is turned off for this connector in Sub Rosa. Tell the user "
+    "it is off, and that they can allow it in Settings, Connectors."
+)
+CONNECTOR_ASK_MESSAGE = "Sub Rosa asks you before a connector changes something."
 UNREADABLE_MESSAGE = (
     "Sub Rosa could not confirm that this chat may use memory, so nothing is "
     "saved or recalled. Answer without it."
@@ -156,7 +172,43 @@ def decide(tool_name: str, session_id: str, home: Optional[Path] = None) -> Opti
     return None
 
 
-def _pre_tool_call(tool_name: str = "", session_id: str = "", **_: Any):
+def connector_directive(
+    tool_name: str, args: Any = None, home: Optional[Path] = None
+) -> Optional[dict]:
+    """The directive for a connector tool, or None when it is not one or may run."""
+    if not tool_name.startswith(CONNECTOR_PREFIX):
+        return None
+    home = home or _home()
+    try:
+        rules = _ledger(home).get("connectorRules")
+    except _Unreadable:
+        rules = None
+    entry = rules.get(tool_name) if isinstance(rules, dict) else None
+    rule = entry.get("rule") if isinstance(entry, dict) else None
+    if rule == "allow":
+        return None
+    if rule == "deny":
+        return {"action": "block", "message": CONNECTOR_OFF_MESSAGE}
+    message = entry.get("message") if isinstance(entry, dict) else None
+    if not isinstance(message, str) or not message:
+        message = CONNECTOR_ASK_MESSAGE
+    if isinstance(args, dict) and args:
+        shown = json.dumps(args, ensure_ascii=False, sort_keys=True)
+        if len(shown) > MAX_ARGUMENTS_SHOWN:
+            shown = shown[:MAX_ARGUMENTS_SHOWN] + "..."
+        message = f"{message}\n{shown}"
+    # One approval per tool: "for this session" covers this tool only.
+    return {"action": "approve", "message": message, "rule_key": f"subrosa_connector:{tool_name}"}
+
+
+def _pre_tool_call(tool_name: str = "", session_id: str = "", args: Any = None, **_: Any):
+    name = str(tool_name or "")
+    if name.startswith(CONNECTOR_PREFIX):
+        try:
+            return connector_directive(name, args)
+        except Exception:
+            # Never let a connector call through on the hook's own failure.
+            return {"action": "approve", "message": CONNECTOR_ASK_MESSAGE}
     try:
         message = decide(str(tool_name or ""), str(session_id or ""))
     except Exception:
