@@ -20,33 +20,33 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 77
+Gaps: 46
 
 ## Matrix
 
 | Feature | Desktop | iOS | Android | Web | Evidence | Lot |
 |---|---|---|---|---|---|---|
-| Unlimited chat with history | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` | P9 |
-| Model picker | yes | yes | yes | no | `src/components/settings/ModelPickerDialog.tsx` `src/components/mobile/ModelSheet.tsx` | P9 |
-| Reasoning effort control | yes | yes | yes | no | `src/lib/reasoning-effort.ts` `src-tauri/src/hermes_bridge/provider_proxy.rs` | P9 |
-| Context window shown | yes | yes | yes | no | `src/components/chat/ContextGauge.tsx` `src/lib/context-gauge.ts` | P9 |
-| Streaming replies | yes | yes | yes | no | `src-tauri/src/agent_lite/mod.rs` | P9 |
-| Stop a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src-tauri/src/agent_lite/cancel.rs` | P9 |
-| Edit a sent message | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/agent/ChatTurnControls.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
-| Regenerate a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/agent/ChatTurnControls.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
-| Branch a conversation | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src-tauri/src/agent_lite/controls.rs` | P9 |
-| Copy a reply | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` | P9 |
-| Read a reply aloud | yes | yes | yes | no | `src/components/chat/ReadAloudButton.tsx` `src/lib/speakable-text.ts` | P9 |
-| Rate a reply | yes | yes | yes | no | `src/components/chat/RateReply.tsx` `src-tauri/src/reply_ratings.rs` | P9 |
-| Export a conversation | yes | yes | yes | no | `src-tauri/src/conversation_export/mod.rs` `src/lib/conversation-export.ts` | P9 |
-| Search across conversations | yes | yes | yes | no | `src-tauri/src/db/repositories.rs` `src/components/agent/AgentSessionsList.tsx` | P9 |
-| Archive a conversation | yes | yes | yes | no | `src-tauri/src/account/session_folders.rs` `src/components/agent/AgentSessionsList.tsx` | P9 |
-| Temporary chat | yes | yes | yes | no | `src-tauri/src/temporary_chat/mod.rs` `src/components/agent/TemporaryChat.tsx` | P9 |
+| Unlimited chat with history | yes | yes | yes | yes | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` `website/src/client/ui/WebClient.tsx` |  |
+| Model picker | yes | yes | yes | yes | `src/components/settings/ModelPickerDialog.tsx` `src/components/mobile/ModelSheet.tsx` `website/src/client/ui/WebClient.tsx` |  |
+| Reasoning effort control | yes | yes | yes | yes | `src/lib/reasoning-effort.ts` `src-tauri/src/hermes_bridge/provider_proxy.rs` `website/src/client/ui/WebClient.tsx` |  |
+| Context window shown | yes | yes | yes | yes | `src/components/chat/ContextGauge.tsx` `src/lib/context-gauge.ts` `website/src/client/ui/WebClient.tsx` |  |
+| Streaming replies | yes | yes | yes | yes | `src-tauri/src/agent_lite/mod.rs` `website/src/client/ui/WebClient.tsx` |  |
+| Stop a reply | yes | yes | yes | yes | `src/components/agent/AgentWorkspace.tsx` `src-tauri/src/agent_lite/cancel.rs` `website/src/client/ui/WebClient.tsx` |  |
+| Edit a sent message | yes | yes | yes | yes | `src/components/agent/AgentWorkspace.tsx` `src/components/agent/ChatTurnControls.tsx` `src-tauri/src/agent_lite/controls.rs` `website/src/client/ui/WebClient.tsx` |  |
+| Regenerate a reply | yes | yes | yes | yes | `src/components/agent/AgentWorkspace.tsx` `src/components/agent/ChatTurnControls.tsx` `src-tauri/src/agent_lite/controls.rs` `website/src/client/ui/WebClient.tsx` |  |
+| Branch a conversation | yes | yes | yes | yes | `src/components/agent/AgentWorkspace.tsx` `src-tauri/src/agent_lite/controls.rs` `website/src/client/ui/WebClient.tsx` |  |
+| Copy a reply | yes | yes | yes | yes | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` `website/src/client/ui/WebClient.tsx` |  |
+| Read a reply aloud | yes | yes | yes | yes | `src/components/chat/ReadAloudButton.tsx` `src/lib/speakable-text.ts` `website/src/client/ui/WebClient.tsx` |  |
+| Rate a reply | yes | yes | yes | yes | `src/components/chat/RateReply.tsx` `src-tauri/src/reply_ratings.rs` `website/src/client/ui/WebClient.tsx` |  |
+| Export a conversation | yes | yes | yes | yes | `src-tauri/src/conversation_export/mod.rs` `src/lib/conversation-export.ts` `website/src/client/ui/WebClient.tsx` |  |
+| Search across conversations | yes | yes | yes | yes | `src-tauri/src/db/repositories.rs` `src/components/agent/AgentSessionsList.tsx` `website/src/client/ui/WebClient.tsx` |  |
+| Archive a conversation | yes | yes | yes | yes | `src-tauri/src/account/session_folders.rs` `src/components/agent/AgentSessionsList.tsx` `website/src/client/ui/WebClient.tsx` |  |
+| Temporary chat | yes | yes | yes | yes | `src-tauri/src/temporary_chat/mod.rs` `src/components/agent/TemporaryChat.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Share a conversation by link | yes | yes | yes | no | `src-tauri/src/account/shares.rs` `website/src/pages/share.tsx` | P9 |
-| Custom instructions and personality | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/personalization/mod.rs` `src/components/settings/PersonalizationSettingsSection.tsx` `src/components/mobile/screens/PersonalizationScreen.tsx` | P9 |
-| Memory | yes | yes | yes | no | `src/components/settings/MemorySettingsSection.tsx` `src/components/mobile/screens/MemoryScreen.tsx` | P9 |
+| Custom instructions and personality | yes | yes | yes | partial | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/personalization/mod.rs` `src/components/settings/PersonalizationSettingsSection.tsx` `src/components/mobile/screens/PersonalizationScreen.tsx` `website/src/client/ui/WebClient.tsx` | P9 |
+| Memory | yes | yes | yes | partial | `src/components/settings/MemorySettingsSection.tsx` `src/components/mobile/screens/MemoryScreen.tsx` `website/src/client/ui/WebClient.tsx` | P9 |
 | Memory of past chats | yes | yes | yes | no | `src-tauri/src/db/repositories.rs` `src-tauri/src/memory/past_chats.rs` | P9 |
-| Memory sources shown on a reply | equiv | yes | yes | no | `src-tauri/src/memory/sources.rs` `src/components/mobile/MemorySourcesChip.tsx` `src/components/agent/MemoryInChatIndicator.tsx` | P9 |
+| Memory sources shown on a reply | equiv | yes | yes | yes | `src-tauri/src/memory/sources.rs` `src/components/mobile/MemorySourcesChip.tsx` `src/components/agent/MemoryInChatIndicator.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Projects with instructions, files and memory | yes | yes | yes | no | `src/components/folders` `src-tauri/src/projects/mod.rs` `src/components/folders/ProjectSettingsDialog.tsx` `src/components/mobile/screens/ProjectSettingsScreen.tsx` `src-tauri/src/hermes_bridge/project_memory.rs` | P9 |
 | Shared projects | no | no | no | no | | P9 |
 | File uploads (PDF, Word, Excel) | yes | yes | yes | no | `src-tauri/src/assistants/references.rs` `src-tauri/src/documents.rs` `src/components/mobile/ChatComposer.tsx` | P9 |
@@ -88,14 +88,14 @@ Gaps: 77
 | Meeting record mode | yes | yes | yes | n/a | `src-tauri/src/meeting_detection.rs` | |
 | Audio uploads to notes | yes | yes | yes | n/a | `src-tauri/src/audio/decode.rs` `src-tauri/src/ingest` | |
 | Custom assistants: create | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` | P9 |
-| Custom assistants: discover and share | no | no | no | no | | P9 |
-| Public profile | no | no | no | no | | P9 |
+| Custom assistants: discover and share | yes | yes | yes | partial | `src-tauri/src/account/publications.rs` `src/components/publishing/PublishNoteDialog.tsx` `website/src/pages/assistants.tsx` | P9 |
+| Public profile | yes | yes | yes | partial | `src-tauri/src/account/publications.rs` `src/components/publishing/PublishNoteDialog.tsx` `website/src/pages/assistants.tsx` | P9 |
 | Saved library | yes | yes | yes | no | `src/components/studio` `src/components/library/LibraryView.tsx` `src/components/chat/LibraryActions.tsx` `src-tauri/src/account/sync_tables.rs` | P9 |
-| Sites and pages | no | no | no | no | | P9 |
+| Sites and pages | yes | yes | yes | partial | `src-tauri/src/account/publications.rs` `src/components/publishing/PublishNoteDialog.tsx` `website/src/pages/assistants.tsx` | P9 |
 | Office extensions | no | n/a | n/a | n/a | | P9 |
 | Group chats | no | no | no | no | | P9 |
-| Health | n/a | no | no | n/a | | P9 |
-| Finances | no | no | no | no | | P9 |
+| Health | yes | yes | yes | n/a | `src-tauri/src/health/mod.rs` `src/components/personal-data/HealthView.tsx` | P9 |
+| Finances | yes | yes | yes | no | `src-tauri/src/finance/mod.rs` `src/components/personal-data/FinancesView.tsx` | P9 |
 | Parental controls | equiv | equiv | equiv | no | `src-tauri/src/protected_mode/mod.rs` `src/components/settings/ProtectedModeSection.tsx` `src-tauri/src/protected_mode/restrictions.rs` | P9 |
 | Privacy: no training, data controls | yes | yes | yes | yes | `src-tauri/src/egress.rs` | |
 | Account security history | yes | yes | yes | yes | `subrosa-cloud/migrations/0010_security_events.sql` `website/src/pages/security-history.tsx` `src-tauri/src/account/security_events.rs` `src/components/settings/AccountSecurityHistory.tsx` |  |
