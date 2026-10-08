@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 2
+Gaps: 0
 
 ## Matrix
 
@@ -48,7 +48,7 @@ Gaps: 2
 | Memory of past chats | yes | yes | yes | yes | `src-tauri/src/db/repositories.rs` `src-tauri/src/memory/past_chats.rs` `website/src/client/ui/WebClient.tsx` |  |
 | Memory sources shown on a reply | equiv | yes | yes | yes | `src-tauri/src/memory/sources.rs` `src/components/mobile/MemorySourcesChip.tsx` `src/components/agent/MemoryInChatIndicator.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Projects with instructions, files and memory | yes | yes | yes | yes | `src/components/folders` `src-tauri/src/projects/mod.rs` `src/components/folders/ProjectSettingsDialog.tsx` `src/components/mobile/screens/ProjectSettingsScreen.tsx` `src-tauri/src/hermes_bridge/project_memory.rs` `website/src/client/ui/WebClient.tsx` |  |
-| Shared projects | yes | yes | yes | partial | `src-tauri/src/account/spaces/commands.rs` `src/components/spaces/SpaceDialog.tsx` `website/src/client/spaces/SpacesPanel.tsx` | P9 |
+| Shared projects | yes | yes | yes | yes | `src-tauri/src/account/spaces/commands.rs` `src/components/spaces/SpaceDialog.tsx` `website/src/client/spaces/SpacesPanel.tsx` `website/src/client/spaces/membership.ts` |  |
 | File uploads (PDF, Word, Excel) | yes | yes | yes | yes | `src-tauri/src/assistants/references.rs` `src-tauri/src/documents.rs` `src/components/mobile/ChatComposer.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Vision | yes | yes | yes | yes | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Data analysis | yes | yes | yes | yes | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/data_cards.rs` `src-tauri/src/agent_lite/python.rs` `src/lib/python/bridge.ts` `src-tauri/src/agent_lite/python_selftest.rs` `website/src/client/analysis` |  |
@@ -84,7 +84,7 @@ Gaps: 2
 | Share into the app | n/a | yes | yes | n/a | `src-tauri/gen/apple/ShareExtension` `src-tauri/android/src/main/java/xyz/carpediem/subrosa/nativebridge/ShareReceiverActivity.kt` `src-tauri/src/share_inbox.rs` |  |
 | Siri and Shortcuts | n/a | yes | n/a | n/a | `src-tauri/gen/apple/Sources/os-june/Intents` | |
 | Spotlight | yes | yes | n/a | n/a | `src-tauri/src/spotlight.rs` | |
-| Interface languages | yes | yes | yes | partial | `src/locales/fr.json` `src/locales/de.json` `src/locales/it.json` `src/locales/es.json` `src/locales/pt-BR.json` `scripts/i18n/verify-catalogs.mjs` | P9 |
+| Interface languages | yes | yes | yes | yes | `src/locales/fr.json` `src/locales/de.json` `src/locales/it.json` `src/locales/es.json` `src/locales/pt-BR.json` `scripts/i18n/verify-catalogs.mjs` `website/src/locales/de.json` `scripts/i18n/website.mjs` |  |
 | Meeting record mode | yes | yes | yes | n/a | `src-tauri/src/meeting_detection.rs` | |
 | Audio uploads to notes | yes | yes | yes | n/a | `src-tauri/src/audio/decode.rs` `src-tauri/src/ingest` | |
 | Custom assistants: create | yes | yes | yes | yes | `src/components/assistants/AssistantsDialog.tsx` `website/src/client/ui/WebClient.tsx` |  |
@@ -135,6 +135,13 @@ Gaps: 2
   (ADR-0091). A browser tab with the web client open counts as an open
   app and runs what names it (ADR-0104). When every app is closed, nothing
   runs.
+
+## Shipped behind a gate
+
+- **Shared projects** and **Group chats** are end-to-end encrypted with a
+  protocol of Sub Rosa's own (ADR-0098, `docs/security/spaces-protocol.md`).
+  They ship behind a "Preview" switch, off by default, until an independent
+  review of that protocol, which is an external gate.
 
 ## Out of this matrix
 
