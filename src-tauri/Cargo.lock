@@ -2566,6 +2566,7 @@ dependencies = [
  "rand_core 0.6.4",
  "sha2 0.10.9",
  "subtle",
+ "x25519-dalek",
  "zeroize",
 ]
 
@@ -4298,8 +4299,10 @@ dependencies = [
  "cpal",
  "diffy",
  "dotenvy",
+ "ed25519-dalek",
  "encoding_rs",
  "hound",
+ "hpke",
  "image",
  "jni 0.21.1",
  "june-embed",
@@ -4351,6 +4354,7 @@ dependencies = [
  "uuid",
  "window-vibrancy 0.8.0",
  "windows 0.61.3",
+ "x25519-dalek",
  "zeroize",
  "zip",
 ]

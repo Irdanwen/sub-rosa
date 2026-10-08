@@ -17,6 +17,7 @@ import {
   projectSave,
 } from "../../../lib/projects";
 import type { FolderDto } from "../../../lib/tauri";
+import { ShareProjectButton } from "../../spaces/ShareProjectButton";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { SettingsActionRow, SettingsGroup, SettingsRow } from "../SettingsList";
 import { StackHeader } from "../StackHeader";
@@ -268,6 +269,7 @@ export function ProjectSettingsScreen({
           }}
         />
 
+        {folderId ? <ShareProjectButton folderId={folderId} /> : null}
         {error ? (
           <p className="mobile-memory-error" role="alert">
             {error}

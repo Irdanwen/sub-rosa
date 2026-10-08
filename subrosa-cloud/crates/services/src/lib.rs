@@ -15,6 +15,11 @@ use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
 mod browser;
 pub mod publication;
+/// Shared projects (ADR 0098): the routes call the repository directly, the
+/// service has no logic of its own to add over a blind courier.
+pub mod space {
+    pub use subrosa_persistence::{EpochWrite, InvitationWrite};
+}
 pub use browser::{
     AdmissionRequest, DEVICE_PROOF_HEADER, DEVICE_PROOF_TYPE, thumbprint as jwk_thumbprint,
 };

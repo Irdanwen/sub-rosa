@@ -41,6 +41,7 @@ import { SyncClient, type SyncTransport, serviceTransport } from "../sync";
 import { ChatMessage } from "./ChatMessage";
 import { SettingsDialog } from "./SettingsDialog";
 import { useWorkspace } from "./useWorkspace";
+import { SpacesEntry } from "../spaces/SpacesPanel";
 import "./web-client.css";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -832,6 +833,13 @@ export function WebClient({
               </button>
             ))}
         </nav>
+        <SpacesEntry
+          account={account}
+          vaultKey={vaultKey}
+          openKey={openKey}
+          operator={operator}
+          model={model}
+        />
         <div className="wc-sidebar-foot">
           {notice && (
             <p className="quiet" role="status">

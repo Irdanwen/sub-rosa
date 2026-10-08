@@ -1,0 +1,202 @@
+/* Shared projects (ADR-0098): the settings card, the project dialog and its
+   three tabs. Tokens only. */
+.spaces-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  vertical-align: middle;
+}
+.spaces-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-md);
+}
+.spaces-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.spaces-row .dialog-input {
+  flex: 1;
+  min-width: 0;
+}
+.spaces-list {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.spaces-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.spaces-list-main {
+  display: grid;
+  gap: var(--sp-1);
+  flex: 1;
+  min-width: 0;
+}
+.spaces-list-title {
+  font-size: var(--fs-md);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.spaces-unread {
+  margin-left: var(--sp-2);
+  color: var(--primary);
+  font-size: var(--fs-sm);
+}
+.spaces-hint,
+.spaces-confirm {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+.spaces-confirm {
+  flex: 1;
+  min-width: 0;
+  color: var(--foreground);
+}
+.spaces-dialog {
+  max-height: calc(100dvh - var(--sp-12));
+}
+.spaces-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.spaces-tab {
+  padding: var(--sp-2) var(--sp-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+.spaces-tab[aria-selected="true"] {
+  border-bottom-color: var(--primary);
+  color: var(--foreground);
+}
+.spaces-panel {
+  min-height: 0;
+  overflow: auto;
+}
+.spaces-section,
+.spaces-content,
+.spaces-members,
+.spaces-editor,
+.spaces-invitation,
+.spaces-share {
+  display: grid;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.spaces-heading {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+.spaces-chat {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) 1fr;
+  gap: var(--sp-5);
+  min-height: 20rem;
+}
+@media (max-width: 640px) {
+  .spaces-chat {
+    grid-template-columns: 1fr;
+  }
+}
+.spaces-chat-list {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-1);
+}
+.spaces-chat-item {
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.spaces-chat-item[aria-current="true"] {
+  background: var(--surface-subtle);
+}
+.spaces-chat-thread {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.spaces-messages {
+  display: grid;
+  gap: var(--sp-3);
+  max-height: 22rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.spaces-message {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+.spaces-message[data-mine] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.spaces-message-author,
+.spaces-message-meta {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+.spaces-message-text {
+  font-size: var(--fs-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.spaces-composer {
+  display: grid;
+  gap: var(--sp-3);
+}
+.spaces-safety-digits {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: var(--sp-2) var(--sp-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-variant-numeric: tabular-nums;
+}
+.spaces-code {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+  user-select: all;
+}

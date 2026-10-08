@@ -81,6 +81,7 @@ mod pairing;
 mod passkeys;
 mod public_pages;
 mod publications;
+mod spaces;
 
 /// The address a request is charged to, as the guard worked it out. Handlers
 /// that keep a per-address count (reports) read it rather than recompute it.
@@ -95,6 +96,7 @@ pub fn router(service: Service) -> Router {
         .merge(carpe_diem::routes())
         .merge(browser_devices::routes())
         .merge(publications::routes())
+        .merge(spaces::routes())
         .route("/api/v1/me", get(me).delete(delete_me))
         .route("/api/v1/session/refresh", post(refresh_session))
         .route("/api/v1/session/renew", post(renew_session))
