@@ -1670,6 +1670,16 @@ Carpe Diem themselves and which travels between devices through the vault.
 _Avoid:_ "account key" (the account holds no key), "generated key" (Carpe Diem
 creates every key; what differs is who asked), "shared key".
 
+**Browser device** (French copy: *navigateur* in the device list, *utiliser ce
+navigateur comme appareil* for the action): a browser admitted as a device of
+its account ([ADR-0096](docs/adr/0096-a-browser-is-a-device.md)). It holds a
+non-extractable WebCrypto key the service knows the public half of, was
+admitted by another device's approval or the recovery key, and obtains a
+**bounded device key**: a daily spending cap and a one week life, renewed while
+it stays a device, refused on the router and x402. Revoked like any device.
+_Avoid:_ "web session" (a session is not a device), "trusted browser" (nothing
+is trusted beyond the admission), "web key" (it is a device key with a bound).
+
 **Carpe Diem link**: Carpe Diem's record that a Sub Rosa account is one of its
 accounts. Created on the first device key when Carpe Diem had no account for
 that address, or confirmed by the person at Carpe Diem, with a code shown in
@@ -1689,7 +1699,8 @@ _Avoid:_ "purchase in Sub Rosa", "subscription" (nothing renews), "deposit"
 
 **Web reader**: the account website showing your own notes, read only, decrypted
 in that tab. Same page and same decryptor as the share viewer, different door.
-_Avoid:_ "web app", "web client" (it neither writes nor syncs).
+_Avoid:_ "web app", "web client" (it neither writes nor syncs). The web client
+that does both runs in a **browser device** (ADR-0096).
 
 ## Charter vocabulary
 

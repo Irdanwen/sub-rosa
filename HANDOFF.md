@@ -1,5 +1,21 @@
 # HANDOFF — Ce que le fork Sub Rosa attend de l'humain
 
+## Mise à jour du 8 octobre 2026 : un navigateur devient un appareil (ADR-0096)
+
+Le client web pourra obtenir sa propre clé Carpe Diem, bornée (2 $ par jour,
+7 jours, ni routeur ni x402). Trois déploiements, **dans cet ordre** :
+
+1. **Carpe Diem (porte externe, Geolours)** : la branche locale
+   `feat/subrosa-browser-devices` du dépôt Carpe Diem (non poussée) porte la
+   borne dans l'opérateur et le CORS du site Sub Rosa. À relire, fusionner et
+   déployer sur le CVM Phala.
+2. **Service de comptes** : migration `0011` et deux routes, seulement après
+   l'opérateur (sinon l'ancien opérateur émettrait une clé sans borne).
+3. **Site** : rebuild (intégrité SRI) et nouvelle CSP dans les vhosts nginx du
+   VPS (`connect-src https://carpe-diem.xyz`, Trusted Types).
+
+Détails et vérifications : [docs/browser-device-deployment.md](docs/browser-device-deployment.md).
+
 ## Mise à jour du 15 septembre 2026 : site public sur le VPS
 
 Le site anglais est publié sur **https://furetier.com/subrosa/** avec HTTPS et

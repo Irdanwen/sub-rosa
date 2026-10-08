@@ -3,14 +3,16 @@ use chrono::{DateTime, Utc};
 use futures_util::TryStreamExt;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use subrosa_domain::{
-    Account, Change, Device, DeviceRequest, Error, Identity, JournalPage, LoginAttempt, Operation,
-    OperationResult, PendingRevocation, Result, RevocationReason, Secret, SecurityEventKind,
-    Session, Share, SharePreview, Vault,
+    Account, Change, Device, DeviceKind, DeviceRequest, Error, Identity, JournalPage, LoginAttempt,
+    Operation, OperationResult, PendingRevocation, Result, RevocationReason, Secret,
+    SecurityEventKind, Session, Share, SharePreview, Vault,
 };
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
+mod browser_devices;
 mod security_events;
+pub use browser_devices::{Admission, MAX_BROWSER_DEVICES, NewBrowserDevice};
 use security_events::record_event;
 pub use security_events::{
     PAGE as SECURITY_EVENTS_PAGE, RETENTION_DAYS as SECURITY_EVENTS_RETENTION_DAYS,
@@ -24,6 +26,18 @@ fn db(error: sqlx::Error) -> Error {
     tracing::error!(kind = ?error.as_database_error().map(sqlx::error::DatabaseError::code), "database operation failed");
     drop(error);
     Error::Unavailable
+}
+fn device_row(r: &sqlx::postgres::PgRow) -> Device {
+    Device {
+        id: r.get("id"),
+        name: r.get("name"),
+        created_at: r.get("created_at"),
+        last_seen_at: r.get("last_seen_at"),
+        revoked_at: r.get("revoked_at"),
+        renewed_at: r.get("renewed_at"),
+        renew_count: r.get("renew_count"),
+        kind: DeviceKind::parse(r.get("kind")),
+    }
 }
 fn account(row: &sqlx::postgres::PgRow) -> Account {
     Account {
@@ -330,18 +344,7 @@ impl Repository {
                 .fetch_all(&self.pool)
                 .await
                 .map_err(db)?;
-        Ok(rows
-            .iter()
-            .map(|r| Device {
-                id: r.get("id"),
-                name: r.get("name"),
-                created_at: r.get("created_at"),
-                last_seen_at: r.get("last_seen_at"),
-                revoked_at: r.get("revoked_at"),
-                renewed_at: r.get("renewed_at"),
-                renew_count: r.get("renew_count"),
-            })
-            .collect())
+        Ok(rows.iter().map(device_row).collect())
     }
     /// A label, not a credential: renaming never touches what the device may do.
     /// A revoked device keeps the name it had, so the list stays readable.
@@ -865,7 +868,9 @@ impl Repository {
         {
             return Err(Error::Quota);
         }
-        sqlx::query("INSERT INTO vaults(account_id,version,envelope) VALUES($1,$2,$3) ON CONFLICT(account_id) DO UPDATE SET version=EXCLUDED.version,envelope=EXCLUDED.envelope").bind(p.owner).bind(version+1).bind(p.envelope).execute(&mut *tx).await.map_err(db)?;
+        // The verifier belongs to the recovery key that sealed this envelope, so
+        // a new envelope without one clears it rather than keep a stale one.
+        sqlx::query("INSERT INTO vaults(account_id,version,envelope,admission_verifier) VALUES($1,$2,$3,$4) ON CONFLICT(account_id) DO UPDATE SET version=EXCLUDED.version,envelope=EXCLUDED.envelope,admission_verifier=EXCLUDED.admission_verifier").bind(p.owner).bind(version+1).bind(p.envelope).bind(p.admission_verifier).execute(&mut *tx).await.map_err(db)?;
         let kind = if version == 0 {
             SecurityEventKind::VaultCreated
         } else {
@@ -1024,7 +1029,7 @@ impl Repository {
     }
     pub async fn approve_pairing(&self, session: &Session, id: Uuid, envelope: &str) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
-        let n=sqlx::query("UPDATE pairing_requests SET envelope=$4 WHERE id=$1 AND account_id=$2 AND NOT ((requester_device_id IS NOT NULL AND requester_device_id IS NOT DISTINCT FROM $5::uuid) OR (requester_device_id IS NULL AND requester_hash=$3)) AND expires_at>now() AND envelope IS NULL").bind(id).bind(session.account.id).bind(&session.token_hash).bind(envelope).bind(session.device_id).execute(&mut *tx).await.map_err(db)?.rows_affected();
+        let n=sqlx::query("UPDATE pairing_requests SET envelope=$4,approved_by_device=$5,approved_at=now() WHERE id=$1 AND account_id=$2 AND NOT ((requester_device_id IS NOT NULL AND requester_device_id IS NOT DISTINCT FROM $5::uuid) OR (requester_device_id IS NULL AND requester_hash=$3)) AND expires_at>now() AND envelope IS NULL").bind(id).bind(session.account.id).bind(&session.token_hash).bind(envelope).bind(session.device_id).execute(&mut *tx).await.map_err(db)?.rows_affected();
         if n == 0 {
             return Err(Error::Conflict);
         }
@@ -1292,6 +1297,7 @@ impl Repository {
             "DELETE FROM device_requests WHERE expires_at<now()",
             "DELETE FROM sessions WHERE expires_at<now()",
             "DELETE FROM rate_limits WHERE window_start<now()-interval '2 minutes'",
+            "DELETE FROM device_proofs WHERE expires_at<now()",
         ] {
             sqlx::query(q).execute(&self.pool).await.map_err(db)?;
         }
@@ -1340,6 +1346,9 @@ pub struct VaultParams<'a> {
     pub expected: i64,
     pub envelope: &'a serde_json::Value,
     pub quota: i64,
+    /// SHA-256 of the value derived from this envelope's recovery key, which
+    /// admits a browser as a device (ADR 0096). `None` clears it.
+    pub admission_verifier: Option<&'a [u8]>,
 }
 pub struct ShareParams<'a> {
     pub owner: Uuid,

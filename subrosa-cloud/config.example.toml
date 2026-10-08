@@ -41,3 +41,7 @@ region = "eu-west-3"
 # audience = "https://carpe-diem.example.invalid/api/operator"
 # kid = "sr-REPLACE_WITH_RENDERED_KID"
 # signing_key = "REPLACE_WITH_SECRET_MANAGER_VALUE"
+# What a browser device's Carpe Diem key may do (ADR 0096): credits per 24 h
+# (hundredths of a dollar) and days before the browser asks again.
+# browser_daily_cap_credits = 200
+# browser_key_days = 7

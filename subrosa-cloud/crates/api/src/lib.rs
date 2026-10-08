@@ -45,6 +45,8 @@ impl IntoResponse for ApiError {
             Error::RecentAuth => (403, "recent_auth_required"),
             Error::Unavailable => (503, "unavailable"),
             Error::DeviceRequired => (403, "device_required"),
+            Error::AdmissionRequired => (403, "admission_required"),
+            Error::DeviceProof => (401, "device_proof_invalid"),
         };
         let mut response = (
             StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
@@ -60,6 +62,7 @@ impl IntoResponse for ApiError {
     }
 }
 type Result<T> = std::result::Result<T, ApiError>;
+mod browser_devices;
 mod carpe_diem;
 mod pairing;
 mod passkeys;
@@ -70,6 +73,7 @@ pub fn router(service: Service) -> Router {
         .merge(pairing::routes())
         .merge(passkeys::routes())
         .merge(carpe_diem::routes())
+        .merge(browser_devices::routes())
         .route("/api/v1/me", get(me).delete(delete_me))
         .route("/api/v1/session/refresh", post(refresh_session))
         .route("/api/v1/session/renew", post(renew_session))
@@ -585,6 +589,10 @@ async fn vault(State(s): State<Arc<Service>>, h: HeaderMap) -> Result<Response> 
 struct VaultWrite {
     expected_version: i64,
     envelope: Value,
+    /// base64url SHA-256 of the value derived from the recovery key that
+    /// sealed `envelope`; absent clears it (ADR 0096).
+    #[serde(default)]
+    admission_verifier: Option<String>,
 }
 async fn save_vault(
     State(s): State<Arc<Service>>,
@@ -593,7 +601,7 @@ async fn save_vault(
 ) -> Result<Response> {
     let a = session(&s, &h, true).await?;
     Ok(
-        ok(json!({"version":s.save_vault(&a,b.expected_version,&b.envelope).await?}))
+        ok(json!({"version":s.save_vault(&a,b.expected_version,&b.envelope,b.admission_verifier.as_deref()).await?}))
             .into_response(),
     )
 }

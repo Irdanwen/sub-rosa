@@ -22,6 +22,8 @@ export interface Device {
   created_at: string;
   last_seen_at: string | null;
   revoked_at: string | null;
+  /** Absent from services older than ADR 0096, which only had apps. */
+  kind?: "native" | "browser";
 }
 /** One line of the account's security history. The service records no
  * address, user agent or place, so there is nothing more to show. */

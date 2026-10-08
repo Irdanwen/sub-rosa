@@ -44,6 +44,14 @@ pub enum Error {
     Unavailable,
     #[error("Sign in from the app on this device.")]
     DeviceRequired,
+    /// A browser asked to become a device without the out-of-band admission:
+    /// a pairing approved by another device, or the recovery key (ADR 0096).
+    #[error("Approve this browser from a device, or use your recovery key.")]
+    AdmissionRequired,
+    /// A browser device's proof was missing, malformed, replayed, or signed by
+    /// a key this account does not know as a live browser device.
+    #[error("This browser is no longer a device of the account.")]
+    DeviceProof,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -79,6 +87,24 @@ pub struct Device {
     /// it happening, which is why there is no secret rotation (ADR 0056).
     pub renewed_at: Option<DateTime<Utc>>,
     pub renew_count: i32,
+    /// `native` for an app, `browser` for a browser admitted as a device
+    /// (ADR 0096). Both are revoked the same way.
+    pub kind: DeviceKind,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceKind {
+    Native,
+    Browser,
+}
+impl DeviceKind {
+    pub fn parse(value: &str) -> Self {
+        if value == "browser" {
+            Self::Browser
+        } else {
+            Self::Native
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Operation {
@@ -313,6 +339,17 @@ pub struct IssuanceClaims {
     pub device_name: String,
     /// RFC 7638 thumbprint of the app's ephemeral P-256 key, base64url.
     pub jkt: String,
+    /// Present for a browser device only. Carpe Diem mints the key with this
+    /// bound and holds it in its TEE (ADR 0096); an app's key has none.
+    pub browser: Option<BrowserBound>,
+}
+/// What a browser device's key may do at Carpe Diem: spend at most
+/// `daily_cap_credits` (hundredths of a dollar) in any 24 hours, and live
+/// `valid_seconds` before the browser must ask again while it is still a device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct BrowserBound {
+    pub daily_cap_credits: u32,
+    pub valid_seconds: u32,
 }
 #[derive(Debug, Serialize)]
 pub struct IssuanceAssertion {
@@ -334,6 +371,9 @@ pub struct PendingRevocation {
 #[async_trait]
 pub trait CarpeDiemPartner: Send + Sync {
     fn issuance_assertion(&self, claims: &IssuanceClaims) -> Result<IssuanceAssertion>;
+    /// The bound this deployment asks Carpe Diem to put on a browser device's
+    /// key. An app's key carries none.
+    fn browser_bound(&self) -> BrowserBound;
     async fn revoke(&self, revocation: &PendingRevocation) -> Result<()>;
 }
 

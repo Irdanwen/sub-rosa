@@ -60,6 +60,28 @@ pub struct CarpeDiem {
     pub kid: String,
     /// PKCS#8 PEM of a P-256 private key.
     pub signing_key: Secret,
+    /// The most a browser device's key may spend in any 24 hours, in Carpe
+    /// Diem credits (hundredths of a dollar). Carpe Diem enforces it and may
+    /// lower it, never raise it (ADR 0096).
+    #[serde(default = "browser_daily_cap_credits")]
+    pub browser_daily_cap_credits: u32,
+    /// How long a browser device's key lives before the browser asks again,
+    /// which it can only do while it is still a device.
+    #[serde(default = "browser_key_days")]
+    pub browser_key_days: u32,
+}
+/// Two dollars a day: a working day of chat, and what an attacker who ran
+/// script on the site could burn per day before anyone revoked the browser.
+pub const BROWSER_DAILY_CAP_CREDITS: u32 = 200;
+pub const BROWSER_KEY_DAYS: u32 = 7;
+/// The ceilings this service will ever ask for. Carpe Diem holds its own.
+pub const BROWSER_DAILY_CAP_CEILING: u32 = 5000;
+pub const BROWSER_KEY_DAYS_CEILING: u32 = 7;
+fn browser_daily_cap_credits() -> u32 {
+    BROWSER_DAILY_CAP_CREDITS
+}
+fn browser_key_days() -> u32 {
+    BROWSER_KEY_DAYS
 }
 impl CarpeDiem {
     pub fn operator_url(&self) -> &str {
@@ -270,6 +292,11 @@ impl Config {
         {
             return Err("Carpe Diem signing key must be a PKCS#8 PEM");
         }
+        if !(1..=BROWSER_DAILY_CAP_CEILING).contains(&carpe_diem.browser_daily_cap_credits)
+            || !(1..=BROWSER_KEY_DAYS_CEILING).contains(&carpe_diem.browser_key_days)
+        {
+            return Err("browser key bound must be 1 to 5000 credits a day and 1 to 7 days");
+        }
         Ok(())
     }
     pub fn session_cookie(&self) -> &'static str {
@@ -326,6 +353,22 @@ mod tests {
             operator_url: None,
             kid: "sr-test".into(),
             signing_key: Secret(format!("{PKCS8_HEADER}\nAAAA\n")),
+            browser_daily_cap_credits: BROWSER_DAILY_CAP_CREDITS,
+            browser_key_days: BROWSER_KEY_DAYS,
+        }
+    }
+
+    #[test]
+    fn the_browser_bound_stays_within_its_ceilings() {
+        let mut config = development();
+        let mut carpe_diem = partner("http://127.0.0.1:3001");
+        config.carpe_diem = Some(carpe_diem.clone());
+        assert!(config.validate().is_ok());
+        for (cap, days) in [(0, 7), (5001, 7), (200, 0), (200, 8)] {
+            carpe_diem.browser_daily_cap_credits = cap;
+            carpe_diem.browser_key_days = days;
+            config.carpe_diem = Some(carpe_diem.clone());
+            assert!(config.validate().is_err(), "{cap} credits, {days} days");
         }
     }
 
