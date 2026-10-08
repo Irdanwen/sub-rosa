@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 125
+Gaps: 113
 
 ## Matrix
 
@@ -62,11 +62,11 @@ Gaps: 125
 | Deep research report | yes | yes | yes | no | `src/lib/agent-composer-slash-commands.ts` `src-tauri/src/research/mod.rs` `src/components/research/ResearchDialog.tsx` `src-tauri/src/docx.rs` | P9 |
 | Apps inside deep research | no | no | no | no | | P6 |
 | Study mode | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/study/mod.rs` `src/lib/study-blocks.ts` `src/components/study/StudyReview.tsx` | P9 |
-| Work deliverables (documents, sheets, slides) | partial | no | no | no | `src/components/settings/ToolsetsSection.tsx` | P5 |
-| Code surface | partial | n/a | n/a | n/a | `src-tauri/src/hermes_bridge.rs` | P5 |
-| Scheduled tasks | yes | no | no | no | `src/lib/hermes-routines.ts` `src/components/routines` | P5 |
-| Always-available agent | no | no | no | no | | P5 |
-| Daily brief | partial | partial | partial | no | `src-tauri/src/moments.rs` | P5 |
+| Work deliverables (documents, sheets, slides) | yes | yes | yes | no | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/deliverables/mod.rs` `src/components/chat-blocks/FileCard.tsx` | P9 |
+| Code surface | yes | n/a | n/a | n/a | `src-tauri/src/hermes_bridge.rs` `src-tauri/src/code_review/mod.rs` `src/components/agent/CodeReviewPanel.tsx` |  |
+| Scheduled tasks | yes | equiv | equiv | no | `src/lib/hermes-routines.ts` `src/components/routines` `src-tauri/src/assignments/mod.rs` | P9 |
+| Always-available agent | equiv | equiv | equiv | no | `src-tauri/src/assignments/mod.rs` | P9 |
+| Daily brief | yes | yes | yes | no | `src-tauri/src/moments.rs` `src-tauri/src/moments/daily.rs` `src/components/assignments/TodaySurface.tsx` `src/components/mobile/screens/TodayScreen.tsx` | P9 |
 | Connectors and plugins | partial | no | no | no | `src/components/settings/McpServersSection.tsx` | P6 |
 | Interactive apps in chat | partial | partial | partial | no | `src/components/chat-blocks` | P6 |
 | Connector event triggers | no | no | no | no | | P6 |
@@ -114,6 +114,15 @@ Gaps: 125
   memory, image and video generation, voice, past chats) are a protected mode
   on the device, behind a PIN, enforced in Rust where requests leave
   (ADR-0084). There is no parent account and no notification to a parent.
+- **Always-available agent** and **Scheduled tasks** (phones): the vendor runs
+  its agents and tasks on its own servers, around the clock. Sub Rosa's
+  decision of 2026-10-07 is that agents run only while an app is open (the
+  desktop app in the menu bar counts), never on the account server
+  (ADR-0049). Assignments and phone tasks therefore run on the app's own clock:
+  on the desktop while it is open (offered at login), on a phone in the
+  foreground or opportunistically in the background, otherwise handed to a
+  paired desktop as an errand, and a missed slot runs once, marked late
+  (ADR-0091). When every app is closed, nothing runs.
 
 ## Out of this matrix
 
