@@ -2245,3 +2245,45 @@ Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
   `IOS_WATCH_PROVISION_PROFILE`, `IOS_WATCH_WIDGETS_PROVISION_PROFILE`),
   cinq bundles tamponnés, plateforme watchOS installée si absente ;
   `scripts/sync-ios-version.mjs` couvre les trois nouveaux plists.
+
+## La conversation vocale (2026-10-08, ADR-0093)
+
+Lot P7 de la parité (ADR-0078), desktop et téléphones : parler à l'assistant
+et l'entendre répondre, mains libres.
+
+- **La boucle en Rust** (`src-tauri/src/voice/`) : détecteur d'énergie local
+  (`vad.rs`), découpe en phrases du flux de la réponse (`sentences.rs`),
+  machine d'états pure (`machine.rs`, `engine.rs`), une session par thread
+  qui possède micro et haut-parleur (`session.rs`, `io.rs`). Transcription
+  par le rail de la dictée (`/v1/dictate`), voix par `/audio/speech` (proxy
+  média, donc mode protégé et heures calmes compris), une phrase rendue
+  d'avance, pas plus.
+- **Le tour est celui du shell** : la webview l'envoie par le `send` du
+  composer (desktop : `submitHermesSession` ; téléphone : `send` de
+  `AgentScreen`) et renvoie la réponse au fil du flux
+  (`src/lib/voice/voice-controller.ts`, `reply-snapshot.ts`).
+- **Écho** : Voice-Processing I/O sur iOS (`io_ios.rs`, session
+  `.voiceChat`), préréglage `VoiceCommunication` d'Oboe sur Android
+  (`io_android.rs`), seuil d'interruption relevé sur desktop.
+- **Caméra / écran** : aperçu caméra dans la webview (téléphones), image
+  d'écran par le helper audio système (`--screenshot`, ScreenCaptureKit).
+- **Mode protégé** : « Voix » coupée appliquée en Rust
+  (`protected_mode::check_voice`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/components/agent/AgentWorkspace.tsx` | Le bouton micro du composer devient `DesktopComposerVoice` (dictée + conversation vocale) | Réappliquer |
+| `src-tauri/native/mac-system-audio-recorder/main.swift` | Mode `--screenshot` (ScreenCaptureKit, sans les fenêtres de l'app) | Réappliquer |
+| `src-tauri/build.rs` | Frameworks `ScreenCaptureKit`, `ImageIO`, `UniformTypeIdentifiers` pour ce helper | Réappliquer |
+| `src-tauri/Info.plist` | Texte du micro : la conversation vocale | Réappliquer |
+
+### Pièges
+
+- `cpal` n'ouvre que Remote I/O sur iOS et le préréglage `VoiceRecognition`
+  sur Android : sans les deux modules natifs, pas d'annulation d'écho.
+  Non vérifié sur appareil au moment de l'écriture ; une entrée qui reste
+  muette 3 s est rouverte sur les flux simples.
+- `useCallback` ne garde la forme compacte de Biome que pour une flèche sans
+  paramètre : le tour parlé passe à `send` par une ref (`spokenRef`).

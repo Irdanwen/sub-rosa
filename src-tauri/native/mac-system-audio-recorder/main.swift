@@ -5,6 +5,9 @@ import CoreAudio
 import Darwin
 import Foundation
 import IOKit.pwr_mgt
+import ImageIO
+import ScreenCaptureKit
+import UniformTypeIdentifiers
 
 extension String: @retroactive Error {}
 
@@ -729,6 +732,59 @@ guard #available(macOS 14.2, *) else {
     writeLog("unsupported macOS version", logURL: logPath.map { URL(fileURLWithPath: $0) })
     emitProcessStatus(["event": "error", "message": "System audio recording requires macOS 14.2 or later."], statusPath: statusPath)
     exit(2)
+}
+
+// One picture of the screen for a voice turn (Sub Rosa's voice conversation,
+// ADR-0093): ask for Screen Recording when it is missing, capture the main
+// display without Sub Rosa's own windows, write a JPEG, exit. Nothing is
+// recorded and nothing stays running.
+@available(macOS 14.0, *)
+func captureScreenshot(to path: String, statusPath: String?, logURL: URL?) -> Never {
+    if !CGPreflightScreenCaptureAccess() {
+        writeLog("screen capture not allowed yet; requesting", logURL: logURL)
+        if !CGRequestScreenCaptureAccess() {
+            emitProcessStatus(["event": "error", "code": "permission", "message": "Screen Recording permission is not granted."], statusPath: statusPath)
+            exit(3)
+        }
+    }
+    Task {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
+                throw "No display is available to capture."
+            }
+            let ownApps = content.applications.filter { $0.bundleIdentifier.hasPrefix("xyz.carpediem.subrosa") }
+            let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+            let configuration = SCStreamConfiguration()
+            // A model reads text at this size; more only costs upload time.
+            let longest = Double(max(display.width, display.height))
+            let scale = min(1.0, 1600.0 / max(longest, 1.0))
+            configuration.width = max(1, Int(Double(display.width) * scale))
+            configuration.height = max(1, Int(Double(display.height) * scale))
+            configuration.showsCursor = true
+            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            let url = URL(fileURLWithPath: path) as CFURL
+            guard let destination = CGImageDestinationCreateWithURL(url, UTType.jpeg.identifier as CFString, 1, nil) else {
+                throw "The screen picture could not be written."
+            }
+            CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+            guard CGImageDestinationFinalize(destination) else {
+                throw "The screen picture could not be written."
+            }
+            emitProcessStatus(["event": "captured", "path": path], statusPath: statusPath)
+            exit(0)
+        } catch {
+            let message = describeError(error)
+            writeLog("screenshot failed: \(message)", logURL: logURL)
+            emitProcessStatus(["event": "error", "message": message], statusPath: statusPath)
+            exit(1)
+        }
+    }
+    dispatchMain()
+}
+
+if let screenshotPath = argumentValue("--screenshot", from: CommandLine.arguments) {
+    captureScreenshot(to: screenshotPath, statusPath: statusPath, logURL: logPath.map { URL(fileURLWithPath: $0) })
 }
 
 let checkOnly = CommandLine.arguments.contains("--check")

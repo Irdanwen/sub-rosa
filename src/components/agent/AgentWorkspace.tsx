@@ -75,7 +75,6 @@ import { IconGauge } from "central-icons/IconGauge";
 import { IconGhost2 } from "central-icons/IconGhost2";
 import { IconLock } from "central-icons/IconLock";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
-import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPencil } from "central-icons/IconPencil";
 import { IconPencilLine } from "central-icons/IconPencilLine";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
@@ -384,6 +383,7 @@ import { desktopRuntimeModel } from "../../lib/reasoning-effort";
 import { type RewriteTargets, rewriteTargetsFor } from "../../lib/hermes-turn-rewrite";
 import * as turnRewrites from "../../lib/hermes-turn-rewrite-actions";
 import { DesktopContextGauge, ExportChatItems, ReplyExtras } from "./ChatReplyExtras";
+import { DesktopComposerVoice } from "../voice/DesktopComposerVoice";
 import { ReasoningEffortControl, RegenerateAction, UserTurnEditor } from "./ChatTurnControls";
 import {
   assignArtifactsToTurns,
@@ -7629,15 +7629,17 @@ export function AgentWorkspace({
                 messages={selectedHermesMessages}
                 onNewChat={() => void startNewTask()}
               />
-              <button
-                type="button"
-                className="agent-composer-mic"
-                aria-label={t("Dictate")}
-                title={t("Start dictation")}
-                onClick={() => void startDictation()}
-              >
-                <IconMicrophone size={18} />
-              </button>
+              <DesktopComposerVoice
+                onDictate={startDictation}
+                turns={visibleTurns}
+                sessionId={selectedHermesSessionId}
+                workingIds={workingSessionIds}
+                send={(text, files) => submitHermesSession(text, undefined, { attachments: files })}
+                stop={stopHermesSession}
+                model={resolvedGenerationModel}
+                visionModel={preferredVisionModel}
+                selectModel={handleSelectGenerationModel}
+              />
               {selectedHermesSessionId &&
               !selectedHermesSessionIsProvisional &&
               workingSessionIds.has(selectedHermesSessionId) ? (

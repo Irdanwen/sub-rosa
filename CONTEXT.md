@@ -529,6 +529,15 @@ read. One reply speaks at a time.
 _Avoid_: TTS (the rail, not the action), voice mode (a spoken conversation,
 which this is not).
 
+**Voice conversation**:
+Talking with the assistant out loud: the person speaks, the words go out as
+an ordinary chat turn, and the reply is spoken back sentence by sentence while
+it streams; talking over it stops it (**barge-in**). Its turns are the chat's
+turns, saved like typed ones (ADR-0093). Distinct from **dictation** (text
+into the foreground app) and from **read aloud** (one finished reply).
+_Avoid_: voice mode (the button's name only), realtime voice (there is no
+realtime rail), call.
+
 **Reply rating**:
 A thumbs up or down a person gives a reply, with an optional reason on a
 thumbs down. For themselves only: kept on the device, never synchronised,

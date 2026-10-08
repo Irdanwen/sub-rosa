@@ -202,6 +202,9 @@ fn build_system_audio_helper() {
                 "AVFoundation",
                 "CoreAudio",
                 "AudioToolbox",
+                "ScreenCaptureKit",
+                "ImageIO",
+                "UniformTypeIdentifiers",
             ],
         );
         if !built {

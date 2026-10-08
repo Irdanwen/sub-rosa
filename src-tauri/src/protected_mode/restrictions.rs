@@ -6,8 +6,9 @@
 //! Each switch is enforced where requests leave, not in the webview: quiet
 //! hours and the media switch in the chat and media proxies, memory and past
 //! chats at the memory seams (`memory::settings` reads them) and in the
-//! desktop runtime's own tools (the `subrosa_guard` plugin's ledger). Voice
-//! is stored for the voice mode to come and guards nothing yet.
+//! desktop runtime's own tools (the `subrosa_guard` plugin's ledger), voice
+//! where a voice conversation starts and before each utterance is
+//! transcribed (`crate::voice`, ADR-0093).
 
 use crate::domain::types::AppError;
 use serde::{Deserialize, Serialize};
@@ -44,7 +45,7 @@ pub struct Restrictions {
     pub quiet_hours: Option<QuietHours>,
     pub memory_off: bool,
     pub media_off: bool,
-    /// Reserved for the voice mode: stored and shown, enforced by nothing yet.
+    /// No voice conversation (`crate::voice` refuses to start or go on).
     pub voice_off: bool,
     pub past_chats_off: bool,
 }
@@ -83,6 +84,22 @@ fn media_refusal() -> AppError {
         "protected_mode_media_off",
         "Protected mode turned off image and video generation.",
     )
+}
+
+fn voice_refusal() -> AppError {
+    AppError::new(
+        "protected_mode_voice_off",
+        "Protected mode turned off voice conversations.",
+    )
+}
+
+/// Refuses a voice conversation while voice is off, and during quiet hours
+/// like any chat.
+pub fn check_voice(restrictions: &Restrictions, minute: u16) -> Result<(), AppError> {
+    if restrictions.voice_off {
+        return Err(voice_refusal());
+    }
+    check_chat(restrictions, minute)
 }
 
 /// Refuses a chat request during quiet hours.
@@ -175,6 +192,30 @@ mod tests {
         );
         assert!(check_chat(&quiet, 12 * 60).is_ok());
         assert!(check_chat(&Restrictions::default(), 22 * 60).is_ok());
+    }
+
+    #[test]
+    fn voice_off_refuses_a_voice_conversation_and_quiet_hours_do_too() {
+        let off = Restrictions {
+            voice_off: true,
+            ..Restrictions::default()
+        };
+        assert_eq!(
+            check_voice(&off, 12 * 60).unwrap_err().code,
+            "protected_mode_voice_off"
+        );
+        // Voice off leaves typed chat alone.
+        assert!(check_chat(&off, 12 * 60).is_ok());
+        let quiet = Restrictions {
+            quiet_hours: window(21 * 60, 7 * 60),
+            ..Restrictions::default()
+        };
+        assert_eq!(
+            check_voice(&quiet, 22 * 60).unwrap_err().code,
+            "protected_mode_quiet_hours"
+        );
+        assert!(check_voice(&quiet, 12 * 60).is_ok());
+        assert!(check_voice(&Restrictions::default(), 22 * 60).is_ok());
     }
 
     #[test]

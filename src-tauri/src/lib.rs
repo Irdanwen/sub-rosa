@@ -110,6 +110,7 @@ pub mod theme_icon;
 #[cfg(desktop)]
 pub mod updates;
 pub mod watch_relay;
+pub mod voice;
 // Writing a timeline bundle to disk: plain file work, so it builds everywhere
 // even though only the desktop offers a folder picker to reach it.
 pub mod bible;
@@ -666,6 +667,14 @@ pub fn run() {
             protected_mode::protected_mode_verify,
             protected_mode::protected_mode_set_restrictions,
             protected_mode::protected_mode_check_model,
+            voice::voice_availability,
+            voice::voice_start,
+            voice::voice_stop,
+            voice::voice_reply,
+            voice::voice_turn_failed,
+            voice::voice_set_muted,
+            voice::voice_interrupt,
+            voice::voice_screen_frame,
             account::account_status,
             account::conversations::account_conversations_list,
             account::conversations::account_conversation_get,
@@ -1060,6 +1069,14 @@ pub fn run() {
         protected_mode::protected_mode_verify,
         protected_mode::protected_mode_set_restrictions,
         protected_mode::protected_mode_check_model,
+        voice::voice_availability,
+        voice::voice_start,
+        voice::voice_stop,
+        voice::voice_reply,
+        voice::voice_turn_failed,
+        voice::voice_set_muted,
+        voice::voice_interrupt,
+        voice::voice_screen_frame,
         account::account_status,
         account::conversations::account_conversations_list,
         account::conversations::account_conversation_get,

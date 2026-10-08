@@ -67,6 +67,39 @@ pub fn configure_for_recording() -> Result<(), AppError> {
     Ok(())
 }
 
+/// Put the shared audio session in the voice conversation's mode: play and
+/// record, `.voiceChat` (the mode voice processing is tuned for, routes
+/// narrowed to what a call uses), speaker by default, Bluetooth headsets
+/// allowed. Released by [`deactivate`] when the conversation ends.
+pub fn configure_for_voice_chat() -> Result<(), AppError> {
+    let session = shared_session()?;
+    let category = NSString::from_str("AVAudioSessionCategoryPlayAndRecord");
+    let mode = NSString::from_str("AVAudioSessionModeVoiceChat");
+    unsafe {
+        let result: Result<(), Retained<NSError>> = msg_send![
+            session,
+            setCategory: &*category,
+            mode: &*mode,
+            options: CATEGORY_OPTIONS,
+            error: _
+        ];
+        result.map_err(|error| {
+            AppError::new(
+                "audio_session_failed",
+                error.localizedDescription().to_string(),
+            )
+        })?;
+        let result: Result<(), Retained<NSError>> = msg_send![session, setActive: true, error: _];
+        result.map_err(|error| {
+            AppError::new(
+                "audio_session_failed",
+                error.localizedDescription().to_string(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
 /// Put the shared audio session in playback mode and activate it, so Studio
 /// media keeps playing with the screen locked or the silent switch on
 /// (`.playback` + `UIBackgroundModes: audio` is the policy pair). Recording

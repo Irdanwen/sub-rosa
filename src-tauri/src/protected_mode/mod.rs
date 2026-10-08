@@ -106,6 +106,12 @@ pub fn check_chat(model: Option<&str>) -> Result<(), AppError> {
     restrictions::check_chat(&restrictions(), restrictions::local_minute())
 }
 
+/// Refuses a voice conversation while protected mode turns voice off, or
+/// during quiet hours (ADR-0084 addendum, ADR-0093).
+pub fn check_voice() -> Result<(), AppError> {
+    restrictions::check_voice(&restrictions(), restrictions::local_minute())
+}
+
 /// The media proxy's body as it may leave (see [`guards::guard_media_body`]),
 /// after the quiet hours and the image and video switch.
 pub fn guard_media_request(

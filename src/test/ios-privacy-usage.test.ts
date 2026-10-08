@@ -24,7 +24,10 @@ const extensionPlists = [shareExtensionPlist, widgetsPlist, watchPlist, watchWid
 
 /** Each protected resource the app actually reaches for, and what reaches it. */
 const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
-  { key: "NSMicrophoneUsageDescription", reachedBy: "recording a note or a dictation" },
+  {
+    key: "NSMicrophoneUsageDescription",
+    reachedBy: "recording a note or a dictation, and the voice conversation",
+  },
   {
     key: "NSAudioCaptureUsageDescription",
     reachedBy: "the microphone plus system audio source",
@@ -32,7 +35,7 @@ const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
   {
     key: "NSCameraUsageDescription",
     reachedBy:
-      'the chat attachment picker, Studio\'s capture="environment" button and the document scanner (VisionKit)',
+      "the chat attachment picker, Studio's capture=\"environment\" button, the document scanner (VisionKit) and the voice conversation's camera",
   },
   {
     key: "NSPhotoLibraryAddUsageDescription",

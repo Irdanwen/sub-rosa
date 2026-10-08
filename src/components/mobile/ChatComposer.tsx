@@ -48,6 +48,7 @@ export function ChatComposer({
   running = false,
   onStop,
   skills = false,
+  voice,
 }: {
   draft: string;
   onDraftChange: Dispatch<SetStateAction<string>>;
@@ -69,6 +70,8 @@ export function ChatComposer({
   /** Offer the skill packs on `/` (ADR-0092): the Chat tab, not an
    * assistant, whose definition decides what it follows. */
   skills?: boolean;
+  /** The voice conversation's button, beside the round one. */
+  voice?: ReactNode;
 }) {
   const ownInput = useRef<HTMLTextAreaElement>(null);
   const field = inputRef ?? ownInput;
@@ -287,6 +290,7 @@ export function ChatComposer({
           ) : null}
           {chip}
           <span className="mobile-composer-spacer" />
+          {voice}
           {/* One round button that changes with the field: the microphone
               while there is nothing to send, the arrow once there is, and
               the stop square for as long as a reply is being written. */}

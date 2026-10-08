@@ -32,7 +32,7 @@ function features(): { key: FeatureKey; label: string; description: string }[] {
     {
       key: "voiceOff",
       label: t("Voice"),
-      description: t("For the voice conversations to come. Nothing uses it yet."),
+      description: t("No talking with the assistant out loud."),
     },
     {
       key: "pastChatsOff",

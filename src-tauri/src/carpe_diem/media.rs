@@ -91,7 +91,7 @@ pub async fn carpe_diem_media_request(
 /// The proxy itself, callable from Rust. The durable job runner
 /// ([`super::jobs`]) polls through this rather than through the command, so
 /// the allowlist and the key handling stay in one place.
-pub(super) async fn send(
+pub(crate) async fn send(
     method: &str,
     path: &str,
     body: Option<&serde_json::Value>,
