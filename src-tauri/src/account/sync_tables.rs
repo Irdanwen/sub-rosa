@@ -463,6 +463,57 @@ pub(super) const TABLES: &[Table] = &[
             "updated_at",
         ],
     },
+    // A connector one device runs for the others, and the calls they ask it
+    // to make (ADR-0107). The offer is a record its device alone writes; a
+    // call is an errand like the one above, with the same guards, plus a
+    // lifetime of minutes rather than days.
+    Table {
+        name: "connector_relays",
+        kind: "settings",
+        columns: &[
+            "id",
+            "device_id",
+            "device_name",
+            "connector_id",
+            "connector_name",
+            "tools",
+            "updated_at",
+        ],
+    },
+    Table {
+        name: "connector_errands",
+        kind: "errand",
+        columns: &[
+            "id",
+            "device_id",
+            "connector_id",
+            "tool",
+            "arguments",
+            "approved",
+            "requested_by",
+            "requested_at",
+            "state",
+            "result",
+            "message",
+            "updated_at",
+        ],
+    },
+    // A daily brief card, as the device that composed it wrote it (ADR-0107):
+    // history wherever it lands, read by the devices that have no calendar.
+    Table {
+        name: "daily_brief_cards",
+        kind: "artifact",
+        columns: &[
+            "id",
+            "day",
+            "device_id",
+            "device_name",
+            "card",
+            "status",
+            "created_at",
+            "updated_at",
+        ],
+    },
     Table {
         name: "agent_messages",
         kind: "conversation",

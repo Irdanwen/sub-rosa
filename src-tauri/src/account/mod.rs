@@ -1333,6 +1333,10 @@ pub fn setup(app: &AppHandle) {
             interval.tick().await;
             sync::resume(&app).await;
             spaces::resume(&app).await;
+            // A connector call a browser tab asked this device to make
+            // (ADR-0107): somebody is waiting for it, so it is looked for
+            // after every synchronisation rather than every minute.
+            crate::connectors::relay::run_pending(&app).await;
         }
     });
 }

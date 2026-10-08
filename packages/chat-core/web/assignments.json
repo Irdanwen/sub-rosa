@@ -19,6 +19,7 @@
       "prochaine",
       "actions"
     ],
+    "keepDays": 14,
     "linksPerTopic": 2,
     "maxFollowUps": 3,
     "maxItems": 5,
@@ -78,6 +79,19 @@
         "updated_at"
       ],
       "kind": "settings"
+    },
+    "daily_brief_cards": {
+      "columns": [
+        "id",
+        "day",
+        "device_id",
+        "device_name",
+        "card",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "kind": "artifact"
     }
   },
   "toolGroups": [
@@ -135,6 +149,139 @@
     }
   ],
   "vectors": {
+    "agendas": [
+      {
+        "agenda": {
+          "count": 3,
+          "firstAt": "09:00",
+          "firstTitle": "Stand-up"
+        },
+        "events": [
+          {
+            "allDay": false,
+            "at": "09:00",
+            "start": 1000,
+            "title": "Stand-up"
+          },
+          {
+            "allDay": true,
+            "at": "",
+            "start": 500,
+            "title": "Holiday"
+          },
+          {
+            "allDay": false,
+            "at": "14:00",
+            "start": 5000,
+            "title": "Review"
+          },
+          {
+            "allDay": false,
+            "at": "12:00",
+            "start": 3000,
+            "title": "Lunch"
+          }
+        ],
+        "now": 0
+      },
+      {
+        "agenda": {
+          "count": 3,
+          "firstAt": "12:00",
+          "firstTitle": "Lunch"
+        },
+        "events": [
+          {
+            "allDay": false,
+            "at": "09:00",
+            "start": 1000,
+            "title": "Stand-up"
+          },
+          {
+            "allDay": true,
+            "at": "",
+            "start": 500,
+            "title": "Holiday"
+          },
+          {
+            "allDay": false,
+            "at": "14:00",
+            "start": 5000,
+            "title": "Review"
+          },
+          {
+            "allDay": false,
+            "at": "12:00",
+            "start": 3000,
+            "title": "Lunch"
+          }
+        ],
+        "now": 2000
+      },
+      {
+        "agenda": {
+          "count": 3,
+          "firstAt": "09:00",
+          "firstTitle": "Stand-up"
+        },
+        "events": [
+          {
+            "allDay": false,
+            "at": "09:00",
+            "start": 1000,
+            "title": "Stand-up"
+          },
+          {
+            "allDay": true,
+            "at": "",
+            "start": 500,
+            "title": "Holiday"
+          },
+          {
+            "allDay": false,
+            "at": "14:00",
+            "start": 5000,
+            "title": "Review"
+          },
+          {
+            "allDay": false,
+            "at": "12:00",
+            "start": 3000,
+            "title": "Lunch"
+          }
+        ],
+        "now": 9000
+      },
+      {
+        "agenda": null,
+        "events": [
+          {
+            "allDay": true,
+            "at": "",
+            "start": 500,
+            "title": "Holiday"
+          }
+        ],
+        "now": 0
+      },
+      {
+        "agenda": null,
+        "events": [],
+        "now": 0
+      }
+    ],
+    "cardIds": [
+      {
+        "day": "2026-10-08",
+        "device": "mac",
+        "id": "8c125a83-43f5-5abd-8742-f0f9c282f271"
+      },
+      {
+        "day": "2026-12-31",
+        "device": "0191d1a4-0000-7000-8000-00000000b10b",
+        "id": "3dcb6b99-c655-5ccd-983b-e25f11d862b8"
+      }
+    ],
     "followUps": [
       {
         "content": "# Notes\nWe met.\n## Next steps\n- [ ] Call Anna\n- **Send** the deck\n* Book the room\n- Too many",

@@ -1722,6 +1722,18 @@ happens on your own machine), "queue" (an errand is addressed, not taken).
 An errand can also ask a device to run one of the account's assignments now
 (`subrosa://assignment/<id>`, ADR-0091).
 
+**Connector relay**: a connector call a browser tab cannot make, made for it
+by one of the person's own apps
+([ADR-0107](docs/adr/0107-a-connector-a-tab-cannot-reach-is-an-errand-to-an-open-app.md)).
+The app files an **offer** (`connector_relays`: which connector, which tools,
+under which rule) only while its owner switched on "Run connectors for my
+browser"; the tab sends each call as a **connector errand**
+(`connector_errands`), addressed, single use, and perishable within minutes,
+and the answer comes back in the same row.
+_Avoid:_ "proxy" (nothing passes through the account service, which only
+carries ciphertext), "remote connector" (the connector is the person's own,
+on their own machine).
+
 **Device key** (French copy: *clé d'appareil*): a `cdm_` key that one device
 obtained from Carpe Diem because its Sub Rosa account vouched for it
 ([ADR-0069](docs/adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md)).

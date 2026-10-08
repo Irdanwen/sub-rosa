@@ -81,6 +81,10 @@ export const WEB_KINDS = [
   "folder",
   "artifact",
   "settings",
+  // Only the errands a feature reads: a connector call this browser asked
+  // one of the person's apps to make (ADR-0107). A link errand is another
+  // table of the kind and is left unread.
+  "errand",
 ] as const;
 export type SyncKind = (typeof WEB_KINDS)[number];
 

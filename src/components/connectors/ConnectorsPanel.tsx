@@ -20,6 +20,7 @@ import { friendlyErrorMessage } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import { openExternalUrl } from "../../lib/tauri";
 import { Switch } from "../ui/Switch";
+import { RelaySwitch } from "./RelaySwitch";
 import { ToolRules, connectorStateLabel } from "./ToolRules";
 
 type Props = {
@@ -242,6 +243,8 @@ export function ConnectorsPanel({ connectors, catalog, refresh, onRemoved }: Pro
           </li>
         ))}
       </ul>
+
+      <RelaySwitch />
 
       <div className="connectors-row">
         <span className="connectors-row-body">

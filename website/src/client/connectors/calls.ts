@@ -24,6 +24,10 @@ export interface CallRecord {
   /** The interactive view this call produced, when it did. */
   appId: string | null;
   createdAt: string;
+  /** Made by another of the person's devices for this tab (ADR-0107): the
+   * device, and the call's errand once sent. `closed` once its answer was
+   * read or it was given up. */
+  relay?: { deviceId: string; deviceName: string; errandId: string | null; closed: boolean };
 }
 
 const MAX_RESULT_CHARS = 4_000;
@@ -41,7 +45,9 @@ export const callKey = (id: string) => `call:${id}`;
 
 export async function fileCall(
   store: FeatureStore,
-  call: Omit<CallRecord, "id" | "createdAt" | "result" | "error" | "appId">,
+  call: Omit<CallRecord, "id" | "createdAt" | "result" | "error" | "appId" | "relay"> & {
+    relay?: CallRecord["relay"];
+  },
 ): Promise<CallRecord> {
   const record: CallRecord = {
     ...call,

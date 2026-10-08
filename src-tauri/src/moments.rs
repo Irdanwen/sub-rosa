@@ -23,6 +23,7 @@ use crate::domain::types::AppError;
 use crate::{calendar, destinations, june_api};
 
 pub mod daily;
+pub mod daily_cards;
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 

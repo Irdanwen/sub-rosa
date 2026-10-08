@@ -29,6 +29,7 @@ import {
   readResource,
   refreshTools,
 } from "./runtime";
+import { type Offer, offerFor, relayCall, relayedConnectors } from "./relay";
 import { type Connector, getConnector, listConnectors, localState } from "./store";
 import { CONNECTORS, fill, webAvailability, webRefusal } from "./words";
 
@@ -39,6 +40,8 @@ interface Route {
   connectorId: string;
   tool: string;
   rule: Rule;
+  /** Made by another of the person's devices (ADR-0107). */
+  relayed: boolean;
 }
 
 /** A turn's addition, plus the cards it puts under the reply. */
@@ -59,15 +62,19 @@ export interface Usable {
   tool: ToolInfo;
   rule: Rule;
   name: string;
+  /** The device that makes the call for this tab, when the tab cannot. */
+  relay?: { deviceId: string; deviceName: string };
 }
 
 /** `agent::usable`: every enabled, signed-in tool on this browser, denied
  * ones left out, at most the limit; a stale list is listed again, briefly. */
 export async function usable(env: ConnectorEnv): Promise<Usable[]> {
   const out: Usable[] = [];
+  const here = new Set<string>();
   for (const connector of listConnectors(env.sync)) {
     if (!connector.enabled || !reachableFromWeb(connector)) continue;
     if (!(await hasCredential(env, connector))) continue;
+    here.add(connector.id);
     const local = await localState(env.store, connector.id);
     let tools = local.tools;
     const stale =
@@ -87,7 +94,46 @@ export async function usable(env: ConnectorEnv): Promise<Usable[]> {
       out.push({ connector, tool, rule, name });
     }
   }
+  // Then what one of the person's apps runs for this tab (ADR-0107), under
+  // the rules that device applies; a connector this tab reaches itself is
+  // never relayed.
+  for (const offer of relayedConnectors(env.sync, env.deviceId ?? null)) {
+    if (here.has(offer.connectorId)) continue;
+    const row = getConnector(env.sync, offer.connectorId);
+    if (row && !row.enabled) continue;
+    const connector = row ?? relayedConnector(offer);
+    const relay = { deviceId: offer.deviceId, deviceName: offer.deviceName };
+    for (const tool of offer.tools) {
+      if (out.length >= CONNECTORS.limits.maxOffered) return out;
+      const name = functionName(offer.connectorId, tool.name);
+      if (out.some((entry) => entry.name === name)) continue;
+      out.push({ connector, tool, rule: tool.rule, name, relay });
+    }
+  }
   return out;
+}
+
+/** A connector as its offer describes it, when its definition is not on
+ * this browser. */
+function relayedConnector(offer: Offer): Connector {
+  return {
+    id: offer.connectorId,
+    name: offer.connectorName || offer.connectorId,
+    url: "",
+    catalogId: "",
+    auth: "relay",
+    enabled: true,
+    toolPolicy: {},
+  };
+}
+
+/** The name a relayed call's connector goes by. */
+function relayedName(env: ConnectorEnv, connectorId: string): string {
+  return (
+    offerFor(env.sync, connectorId, env.deviceId ?? null)?.connectorName ||
+    getConnector(env.sync, connectorId)?.name ||
+    connectorId
+  );
 }
 
 /** Keeps the interactive view a call produced, when it produced one. */
@@ -165,11 +211,63 @@ export async function connectorTurn(
       connectorId: entry.connector.id,
       tool: entry.tool.name,
       rule: entry.rule,
+      relayed: Boolean(entry.relay),
     });
   }
   const cards: string[] = [];
   const push = (fence: string) => {
     if (cards.length < 12 && !cards.includes(fence)) cards.push(fence);
+  };
+  /** A call one of the person's apps makes for this tab (ADR-0107). The
+   * device's rule, read again from its offer, decides here as it will there. */
+  const runRelayed = async (
+    route: Route,
+    argumentsObject: Record<string, unknown>,
+    turn: TurnInfo,
+  ): Promise<string> => {
+    const offer = offerFor(env.sync, route.connectorId, env.deviceId ?? null);
+    if (!offer) return CONNECTORS.sentences.notOffered;
+    const row = getConnector(env.sync, route.connectorId);
+    const tool = offer.tools.find((item) => item.name === route.tool);
+    if (!tool || (row && !row.enabled)) return CONNECTORS.sentences.turnedOff;
+    const name = offer.connectorName || route.connectorId;
+    const relay = {
+      deviceId: offer.deviceId,
+      deviceName: offer.deviceName,
+      errandId: null,
+      closed: false,
+    };
+    if (tool.rule === "ask") {
+      // Approving it here sends it to the device, saying so.
+      const call = await fileCall(env.store, {
+        chatId: turn.chatId,
+        connectorId: route.connectorId,
+        tool: route.tool,
+        arguments: argumentsObject,
+        status: "pending",
+        relay,
+      });
+      push(callFence(call.id));
+      return CONNECTORS.sentences.awaitsConfirmation;
+    }
+    turn.onStatus?.("using-connector", name);
+    const call = await fileCall(env.store, {
+      chatId: turn.chatId,
+      connectorId: route.connectorId,
+      tool: route.tool,
+      arguments: argumentsObject,
+      status: "running",
+      relay,
+    });
+    const outcome = await relayCall(env, call, name, false, { signal: turn.signal });
+    push(callFence(call.id));
+    if (outcome.kind === "ask") return CONNECTORS.sentences.awaitsConfirmation;
+    return outcome.kind === "done"
+      ? fill(CONNECTORS.sentences.resultFrom, {
+          connector: name,
+          result: Array.from(outcome.result.text).slice(0, CONNECTORS.limits.resultChars).join(""),
+        })
+      : fill(CONNECTORS.sentences.couldNot, { connector: name, reason: outcome.reason });
   };
   return {
     tools,
@@ -179,6 +277,8 @@ export async function connectorTurn(
       if (!isConnectorTool(name)) return undefined;
       const route = routes.get(name);
       if (!route) return CONNECTORS.sentences.notOffered;
+      const argumentsObject = args && typeof args === "object" && !Array.isArray(args) ? args : {};
+      if (route.relayed) return runRelayed(route, argumentsObject, turn);
       const connector = getConnector(env.sync, route.connectorId);
       if (!connector) return CONNECTORS.sentences.removed;
       // The rule may have changed since the turn began: read it again.
@@ -187,7 +287,6 @@ export async function connectorTurn(
       );
       const rule = known ? effectiveRule(connector.toolPolicy, known) : route.rule;
       if (!connector.enabled || rule === "deny") return CONNECTORS.sentences.turnedOff;
-      const argumentsObject = args && typeof args === "object" && !Array.isArray(args) ? args : {};
       if (rule === "ask") {
         const call = await fileCall(env.store, {
           chatId: turn.chatId,
@@ -252,15 +351,27 @@ export async function decide(
       return;
     }
     if (!(await claim(env.store, callId))) return;
-    const connector = getConnector(env.sync, call.connectorId);
-    if (!connector) {
+    let outcome: { ok: true; result: unknown } | { ok: false; reason: string };
+    const connector = call.relay ? null : getConnector(env.sync, call.connectorId);
+    if (!call.relay && !connector) {
       await updateCall(env.store, callId, {
         status: "failed",
         error: CONNECTORS.sentences.removed,
       });
       return;
     }
-    const outcome = await runCall(env, connector, callId, call.chatId, call.tool, call.arguments);
+    if (call.relay || !connector) {
+      // Approved here, made by the device that offers it (ADR-0107).
+      const relayed = await relayCall(env, call, relayedName(env, call.connectorId), true);
+      outcome =
+        relayed.kind === "done"
+          ? { ok: true, result: { content: [{ type: "text", text: relayed.result.text }] } }
+          : {
+              ok: false,
+              reason:
+                relayed.kind === "ask" ? CONNECTORS.relay.sentences.needsApproval : relayed.reason,
+            };
+    } else outcome = await runCall(env, connector, callId, call.chatId, call.tool, call.arguments);
     if (!call.chatId || host.busy) return;
     const body = outcome.ok
       ? `${t(

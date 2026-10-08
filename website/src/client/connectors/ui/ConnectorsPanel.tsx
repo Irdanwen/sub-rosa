@@ -21,8 +21,10 @@ import {
   setToolRule,
 } from "../store";
 import { deleteTrigger, listTriggers, saveTrigger, type TriggerRecord } from "../triggers";
+import { offerFor } from "../relay";
 import { reachableFromWeb } from "../turn";
 import { CONNECTORS, PROBED_AT, webAvailability, webRefusal } from "../words";
+import { RelayedList, relayText } from "./relay-words";
 import { failureText, unavailableReason } from "./words";
 import "./connectors.css";
 
@@ -119,7 +121,9 @@ export function ConnectorsPanel({ host }: { host: FeatureHost }) {
                 <strong>{connector.name}</strong>
                 <span className="quiet">
                   {!reachable
-                    ? t("Not available in the browser", "Indisponible dans le navigateur")
+                    ? offerFor(host.sync, connector.id, host.device.id)
+                      ? t("Through your app", "Par votre app")
+                      : t("Not available in the browser", "Indisponible dans le navigateur")
                     : !connector.enabled
                       ? t("Off", "Désactivé")
                       : local.status === "needs_sign_in" || !signedIn
@@ -129,7 +133,14 @@ export function ConnectorsPanel({ host }: { host: FeatureHost }) {
                           : t("Connected", "Connecté")}
                 </span>
               </div>
-              {!reachable && <p className="quiet">{unavailableReason(reason)}</p>}
+              {!reachable && (
+                <p className="quiet">
+                  {relayText(
+                    offerFor(host.sync, connector.id, host.device.id),
+                    unavailableReason(reason),
+                  )}
+                </p>
+              )}
               <div className="wc-row">
                 {reachable && connector.auth === "oauth" && (
                   <button
@@ -210,6 +221,7 @@ export function ConnectorsPanel({ host }: { host: FeatureHost }) {
           );
         })}
       </ul>
+      <RelayedList host={host} known={connectors.map((item) => item.id)} />
 
       <h2>{t("Catalog", "Catalogue")}</h2>
       <p className="quiet">

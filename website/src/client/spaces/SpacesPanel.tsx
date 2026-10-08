@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Account } from "../../lib/api";
 import { t } from "../../lib/i18n";
 import type { Operator } from "../carpe-diem";
+import { type FeatureStore, featureStore } from "../feature";
 import { type ClientStore, availableClientStore } from "../store";
 import {
   type Me,
@@ -22,6 +23,16 @@ import {
   serviceSpaces,
   write,
 } from "./client";
+import {
+  type MadeInvitation,
+  type PendingInvitation,
+  admit,
+  createInvitation,
+  pendingInvitations,
+  removeMember,
+  revokeInvitation,
+  rotateIfDue,
+} from "./membership";
 import "./spaces.css";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -34,7 +45,22 @@ function failure(error: unknown): string {
       "The service showed an older state of this shared project than this browser has already seen. Nothing was changed.",
       "Le service a montré un état de ce projet partagé plus ancien que celui que ce navigateur a déjà vu. Rien n’a été modifié.",
     );
-  if (code === "space_invitation_invalid" || code === "not_found" || code === "conflict")
+  if (code === "space_acceptance_unverifiable")
+    return t(
+      "This acceptance could not be verified in this browser. Withdraw the invitation and send a new link from here.",
+      "Cette acceptation n’a pas pu être vérifiée dans ce navigateur. Retirez l’invitation et envoyez un nouveau lien depuis ici.",
+    );
+  if (code === "space_owner_only")
+    return t(
+      "Only the owner of this shared project can do this.",
+      "Seul le propriétaire de ce projet partagé peut faire cela.",
+    );
+  if (
+    code === "space_invitation_invalid" ||
+    code === "space_invitation_unavailable" ||
+    code === "not_found" ||
+    code === "conflict"
+  )
     return t(
       "This invitation has expired, was already used, or was withdrawn. Ask for a new link.",
       "Cette invitation a expiré, a déjà servi ou a été retirée. Demandez un nouveau lien.",
@@ -43,6 +69,24 @@ function failure(error: unknown): string {
     "This shared project could not be opened or verified. Nothing was changed.",
     "Ce projet partagé n’a pas pu être ouvert ni vérifié. Rien n’a été modifié.",
   );
+}
+
+/** Where an invitation link sends the person: this site's own `/app`. */
+function appUrl(): string {
+  return `${window.location.origin}${import.meta.env.BASE_URL ?? "/"}app`;
+}
+
+/** Opens a space and makes the rotation a signed departure (or, for the
+ * owner, a vanished account) calls for, then reads it again if it made one. */
+async function openAndRotate(
+  transport: SpacesTransport,
+  store: ClientStore,
+  me: Me,
+  spaceId: string,
+): Promise<SpaceView> {
+  const view = await openSpace(transport, store, me, spaceId);
+  const rotated = await rotateIfDue(transport, me, view).catch(() => false);
+  return rotated ? openSpace(transport, store, me, spaceId) : view;
 }
 
 /** The invitation code in this page's address, when it was opened from a link. */
@@ -84,6 +128,10 @@ export function SpacesEntry({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const code = useMemo(codeInAddress, []);
+  const secrets = useMemo(
+    () => (store ? featureStore(account.id, vaultKey, store, "spaces") : null),
+    [store, account.id, vaultKey],
+  );
 
   useEffect(() => {
     if (givenStore) return;
@@ -203,16 +251,17 @@ export function SpacesEntry({
           </div>
         </div>
       ) : null}
-      {enabled && me && view && store ? (
+      {enabled && me && view && store && secrets ? (
         <SpaceRoom
           me={me}
           view={view}
           transport={transport}
+          secrets={secrets}
           openKey={openKey}
           operator={operator}
           model={model}
           onBack={() => setView(null)}
-          onReload={() => openSpace(transport, store, me, view.id).then(setView)}
+          onReload={() => openAndRotate(transport, store, me, view.id).then(setView)}
           onLeft={() => {
             setView(null);
             void listSpaces(transport).then(setSpaces);
@@ -223,8 +272,8 @@ export function SpacesEntry({
           {spaces.length === 0 && (
             <li className="quiet">
               {t(
-                "No shared projects yet. Share one from the app, or open an invitation link.",
-                "Aucun projet partagé pour l’instant. Partagez-en un depuis l’app, ou ouvrez un lien d’invitation.",
+                "No shared projects yet. Share a project from the app, or open an invitation link.",
+                "Aucun projet partagé pour l’instant. Partagez un projet depuis l’app, ou ouvrez un lien d’invitation.",
               )}
             </li>
           )}
@@ -236,7 +285,7 @@ export function SpacesEntry({
                 disabled={busy || !store}
                 onClick={() =>
                   void run(async () => {
-                    if (store) setView(await openSpace(transport, store, me, space.id));
+                    if (store) setView(await openAndRotate(transport, store, me, space.id));
                   })
                 }
               >
@@ -261,6 +310,7 @@ function SpaceRoom({
   me,
   view,
   transport,
+  secrets,
   openKey,
   operator,
   model,
@@ -271,6 +321,7 @@ function SpaceRoom({
   me: Me;
   view: SpaceView;
   transport: SpacesTransport;
+  secrets: FeatureStore;
   openKey: () => Promise<string | null>;
   operator: Operator;
   model: string;
@@ -286,6 +337,21 @@ function SpaceRoom({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const owner = view.latest.owner === me.accountId;
+  const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
+  const [made, setMade] = useState<MadeInvitation | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void pendingInvitations(secrets, me, view)
+      .then((list) => {
+        if (live) setInvitations(list);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [secrets, me, view]);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -329,7 +395,7 @@ function SpaceRoom({
           {error}
         </p>
       )}
-      <details>
+      <details open={owner && invitations.some((i) => i.state === "ready")}>
         <summary>{t("Members and safety numbers", "Membres et numéros de sécurité")}</summary>
         <ul className="wc-spaces-list">
           {view.members.map((member) => (
@@ -340,15 +406,71 @@ function SpaceRoom({
               {member.isMe ? null : (
                 <span className="wc-spaces-safety">{member.safetyNumber.join(" ")}</span>
               )}
+              {owner && !member.isMe ? (
+                removing === member.accountId ? (
+                  <div className="wc-spaces-card">
+                    <p className="quiet">
+                      {t(
+                        "They keep everything they already downloaded, and every key up to now. They cannot read anything written after this.",
+                        "Cette personne garde tout ce qu’elle a déjà téléchargé, et toutes les clés jusqu’à maintenant. Elle ne pourra rien lire de ce qui sera écrit ensuite.",
+                      )}
+                    </p>
+                    <div className="wc-row">
+                      <button
+                        type="button"
+                        className="button primary"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            await removeMember(transport, me, view, member.accountId);
+                            setRemoving(null);
+                          })
+                        }
+                      >
+                        {t("Remove", "Retirer")}
+                      </button>
+                      <button type="button" className="button" onClick={() => setRemoving(null)}>
+                        {t("Cancel", "Annuler")}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={busy}
+                    onClick={() => setRemoving(member.accountId)}
+                  >
+                    {t("Remove from the project", "Retirer du projet")}
+                  </button>
+                )
+              ) : null}
             </li>
           ))}
         </ul>
-        <p className="quiet">
-          {t(
-            "Inviting, admitting and removing members happen in the app.",
-            "Inviter, faire entrer et retirer des membres se fait dans l’app.",
-          )}
-        </p>
+        {owner ? (
+          <Invitations
+            invitations={invitations}
+            made={made}
+            busy={busy}
+            onInvite={() =>
+              void run(async () => {
+                setMade(await createInvitation(transport, secrets, me, view, appUrl()));
+              })
+            }
+            onAdmit={(id) =>
+              void run(async () => {
+                await admit(transport, secrets, me, view, id);
+              })
+            }
+            onWithdraw={(id) =>
+              void run(async () => {
+                await revokeInvitation(transport, secrets, view.id, id);
+                if (made?.id === id) setMade(null);
+              })
+            }
+          />
+        ) : null}
       </details>
       <details>
         <summary>{t("Notes and files", "Notes et fichiers")}</summary>
@@ -479,6 +601,114 @@ function SpaceRoom({
           {t("Leave shared project", "Quitter le projet partagé")}
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * The owner's invitations: make a link, see who answered, and admit only
+ * after comparing the safety number. A link made in the app is admitted from
+ * the app: its secret is there, not here.
+ */
+function Invitations({
+  invitations,
+  made,
+  busy,
+  onInvite,
+  onAdmit,
+  onWithdraw,
+}: {
+  invitations: PendingInvitation[];
+  made: MadeInvitation | null;
+  busy: boolean;
+  onInvite: () => void;
+  onAdmit: (id: string) => void;
+  onWithdraw: (id: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="wc-spaces-room">
+      <button type="button" className="button" disabled={busy} onClick={onInvite}>
+        {t("Invite someone", "Inviter quelqu’un")}
+      </button>
+      {made ? (
+        <div className="wc-spaces-card">
+          <p className="quiet">
+            {t(
+              "Send this link to one person, through a channel you trust. It works once, for seven days. Keep this browser: their answer is checked here.",
+              "Envoyez ce lien à une seule personne, par un canal de confiance. Il sert une fois, pendant sept jours. Gardez ce navigateur : sa réponse est vérifiée ici.",
+            )}
+          </p>
+          <input
+            className="wc-spaces-input"
+            readOnly
+            value={made.link}
+            aria-label={t("Invitation link", "Lien d’invitation")}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <button
+            type="button"
+            className="button"
+            onClick={() =>
+              void navigator.clipboard
+                ?.writeText(made.link)
+                .then(() => setCopied(true))
+                .catch(() => undefined)
+            }
+          >
+            {copied ? t("Copied", "Copié") : t("Copy link", "Copier le lien")}
+          </button>
+        </div>
+      ) : null}
+      {invitations.length ? (
+        <ul className="wc-spaces-list">
+          {invitations.map((invitation) => (
+            <li key={invitation.id} className="wc-spaces-card">
+              {invitation.state === "waiting" ? (
+                <p className="quiet">
+                  {t(
+                    "An invitation is waiting for an answer.",
+                    "Une invitation attend une réponse.",
+                  )}
+                </p>
+              ) : invitation.state === "unverifiable" ? (
+                <p className="quiet">
+                  {t(
+                    "Someone answered a link made on another device. Admit them from that device, or withdraw it and send a new link from here.",
+                    "Quelqu’un a répondu à un lien fait sur un autre appareil. Faites-le entrer depuis cet appareil, ou retirez-le et envoyez un nouveau lien depuis ici.",
+                  )}
+                </p>
+              ) : (
+                <>
+                  <p>
+                    {t(
+                      "Someone accepted your invitation. Before you let them in, compare this safety number with theirs, in person or on a call. If it differs, do not admit them.",
+                      "Quelqu’un a accepté votre invitation. Avant de la faire entrer, comparez ce numéro de sécurité avec le sien, en personne ou par téléphone. S’il diffère, ne la faites pas entrer.",
+                    )}
+                  </p>
+                  <p className="wc-spaces-safety">{invitation.safetyNumber.join(" ")}</p>
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={busy}
+                    onClick={() => onAdmit(invitation.id)}
+                  >
+                    {t("The numbers match, admit", "Les numéros correspondent, faire entrer")}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="button"
+                disabled={busy}
+                onClick={() => onWithdraw(invitation.id)}
+              >
+                {t("Withdraw", "Retirer l’invitation")}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

@@ -147,6 +147,7 @@ It is excluded from the AI usage counters.
 | Imports | Historical ingest metadata and resulting notes/transcripts; no remote download or paid execution |
 | Studio | Completed gallery files and available prompt/model metadata; the gallery's collections, favourites and hidden marks (ADR-0073); a gallery delete removes the file on every device; no remote job execution |
 | Assignments | Assignments and scheduled tasks (`assignments`) and their runs with verdicts and feedback (`assignment_runs`); only the device a row names runs it, under the errand guards, and the slot ledger stays local (ADR-0091) |
+| Connector relay and daily brief cards | What a device offers to run for a browser tab (`connector_relays`), the calls a tab addresses to it and their bounded answers (`connector_errands`, an errand kind under the errand guards, with a local single-use ledger), and each device's daily brief card with its agenda line (`daily_brief_cards`, history wherever it lands) (ADR-0107) |
 | Health and finances | Daily health summaries for each measure whose sync the person switched on (`health_days`), and, with finance sync on, transactions and rules (`transactions`, `finance_rules`); the choices themselves, model suggestions and statement files stay local (ADR-0099) |
 | Provider configuration | Encrypted URL/key, activated only after explicit authenticated validation |
 | Usage | Observed request counts/bytes, available turn counters, and dated balance snapshots |

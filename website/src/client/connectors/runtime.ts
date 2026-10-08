@@ -37,6 +37,9 @@ export interface ConnectorEnv {
   fetch: Fetch;
   /** Where a sign-in comes back: the site's own `/app`. */
   redirectUri: string;
+  /** This browser as a device of the account, so a call relayed through
+   * another device is never addressed to itself (ADR-0107). */
+  deviceId?: string | null;
 }
 
 /** Thrown when a connector needs the person to sign in (again). */

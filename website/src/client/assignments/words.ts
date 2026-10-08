@@ -63,6 +63,8 @@ export interface AssignmentsExport {
     maxItems: number;
     followUpHeadings: string[];
     defaultAtMinute: number;
+    /** How long a device keeps its own travelling cards (ADR-0107). */
+    keepDays: number;
   };
   vectors: {
     prompts: {
@@ -85,10 +87,16 @@ export interface AssignmentsExport {
     summaries: { answer: string; summary: string }[];
     runIds: { assignmentId: string; slot: string; runId: string }[];
     followUps: { content: string; followUps: string[] }[];
+    agendas: {
+      events: { start: number; allDay: boolean; title: string; at: string }[];
+      now: number;
+      agenda: { count: number; firstTitle: string; firstAt: string } | null;
+    }[];
+    cardIds: { device: string; day: string; id: string }[];
   };
 }
 
 export const ASSIGNMENTS = exported as unknown as AssignmentsExport;
 
-// The browser reads and writes both tables as the app does.
+// The browser reads and writes these tables as the app does.
 registerTables(ASSIGNMENTS.tables);

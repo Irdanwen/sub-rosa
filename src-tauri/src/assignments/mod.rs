@@ -670,6 +670,8 @@ pub fn start_clock(app: &AppHandle) {
             tick(&app).await;
             crate::moments::daily::tick(&app).await;
             crate::errands::run_pending(&app).await;
+            // What this device offers to run for a browser tab (ADR-0107).
+            crate::connectors::relay::publish(&app).await;
         }
     });
 }

@@ -3,7 +3,8 @@
  * spoken to the same routes. This tab reads a space, writes notes and
  * messages, accepts an invitation, leaves, and asks the assistant with the
  * browser device's own key (ADR-0096). Inviting, admitting and removing are
- * the owner's, from the app.
+ * the owner's, from any of the owner's devices, this tab included
+ * (`membership.ts`).
  *
  * What it keeps between reloads is public by nature: the last head it
  * verified per space (so an older one is a rollback) and the inviter it
@@ -112,11 +113,29 @@ export interface SpaceSummary {
 export const listSpaces = (transport: SpacesTransport) =>
   transport.get<SpaceSummary[]>("/api/v1/spaces");
 
+/** An invitation as the service shows it to the owner: who claimed it, and
+ * the acceptance they sent, which only the device holding the link's secret
+ * can check. */
+export interface DetailInvitation {
+  id: string;
+  expires_at: string;
+  claimed_by: string | null;
+  acceptance: unknown;
+}
+/** A leave statement a member signed, waiting for the rotation that takes
+ * them out. */
+export interface DetailDeparture {
+  account_id: string;
+  epoch: number;
+  statement: string;
+}
 interface Detail {
   current_epoch: number;
   members: { account_id: string; identity: IdentityBundle | null }[];
   heads: { epoch: number; head: EpochHead }[];
   keys: { epoch: number; sealed: string }[];
+  invitations?: DetailInvitation[];
+  departures?: DetailDeparture[];
 }
 
 export interface SpaceMember {
@@ -144,6 +163,14 @@ export interface SpaceView {
   members: SpaceMember[];
   items: Map<string, SpaceItem>;
   sequenceOf: Map<string, number>;
+  /** Every head of the chain, by epoch: an admission seals the earlier keys
+   * against the heads that committed to them. */
+  heads: Map<number, EpochHead>;
+  /** What the service said beside the heads: the accounts it still lists
+   * as members, the owner's invitations, the signed departures. */
+  onService: string[];
+  invitations: DetailInvitation[];
+  departures: DetailDeparture[];
 }
 
 const headKey = (id: string) => `space-head:${id}`;
@@ -205,6 +232,10 @@ export async function openSpace(
     members,
     items: new Map(),
     sequenceOf: new Map(),
+    heads: byEpoch,
+    onService: detail.members.map((m) => m.account_id),
+    invitations: detail.invitations ?? [],
+    departures: detail.departures ?? [],
   };
   let cursor = 0;
   for (;;) {

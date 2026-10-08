@@ -829,12 +829,23 @@ export function inviteToken(secret: Bytes, invitationId: string) {
 export async function tokenHash(token: Bytes) {
   return b64(await sha256(token));
 }
+/** The exact plaintext a payload seals: its fields, and the inviter's, in
+ * protocol order, whatever order a stored bundle came back in (the service
+ * keeps it as `jsonb`, which reorders keys). */
 export function payloadPlaintext(payload: InvitePayload): string {
+  const inviter = payload.inviter;
   return JSON.stringify({
     v: payload.v,
     space_id: payload.space_id,
     space_name: payload.space_name,
-    inviter: payload.inviter,
+    inviter: {
+      v: inviter.v,
+      account_id: inviter.account_id,
+      x25519: inviter.x25519,
+      ed25519: inviter.ed25519,
+      created_at: inviter.created_at,
+      signature: inviter.signature,
+    },
     expires_at: payload.expires_at,
   });
 }
