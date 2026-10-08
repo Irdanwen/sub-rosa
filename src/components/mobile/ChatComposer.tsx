@@ -5,8 +5,10 @@
 // so the two never drift into two ways of typing a message.
 
 import { IconArrowUp } from "central-icons/IconArrowUp";
+import { ASK_ABOUT_SELECTION_EVENT, takePendingQuote } from "../../lib/ask-selection";
 import { IconMicrophone } from "central-icons/IconMicrophone";
 import { IconPaperclip1 } from "central-icons/IconPaperclip1";
+import { IconScanTextSparkle } from "central-icons/IconScanTextSparkle";
 import { IconStop } from "central-icons/IconStop";
 import {
   type Dispatch,
@@ -23,6 +25,7 @@ import { hapticImpact, hapticNotify } from "../../lib/haptics";
 import { t } from "../../lib/i18n";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
 import { documentExtract, isExtractableDocument } from "../../lib/projects";
+import { scanDocument, scanTitle, supportsDocumentScan } from "../../lib/scan";
 import {
   type AgentLiteAttachment,
   mobileDictationStart,
@@ -64,6 +67,20 @@ export function ChatComposer({
 }) {
   const ownInput = useRef<HTMLTextAreaElement>(null);
   const field = inputRef ?? ownInput;
+  // "Ask Sub Rosa" on a selection (lib/ask-selection): the quote goes on top
+  // of the draft, taken once, whether it was asked for before this composer
+  // mounted or while it is on screen.
+  useEffect(() => {
+    const take = () => {
+      const quote = takePendingQuote();
+      if (!quote) return;
+      onDraftChange((current) => `${quote}${current}`);
+      field.current?.focus();
+    };
+    take();
+    window.addEventListener(ASK_ABOUT_SELECTION_EVENT, take);
+    return () => window.removeEventListener(ASK_ABOUT_SELECTION_EVENT, take);
+  }, [onDraftChange, field]);
   const fileInput = useRef<HTMLInputElement>(null);
   const keyboardInset = useKeyboardInset();
   const [dictating, setDictating] = useState(false);
@@ -120,6 +137,30 @@ export function ChatComposer({
     },
     [onAttachmentsChange, onError],
   );
+
+  // Paper into the conversation: the scan becomes a note of its own, and its
+  // text rides this turn the way a PDF's does.
+  const [scanning, setScanning] = useState(false);
+  const scan = useCallback(async () => {
+    setScanning(true);
+    try {
+      const result = await scanDocument();
+      if (!result) return;
+      if (!result.text.trim()) {
+        onError(t("No text was found on these pages. The scan is saved in your notes."));
+        return;
+      }
+      onAttachmentsChange((current) => [
+        ...current,
+        { kind: "text", name: scanTitle(), data: result.text },
+      ]);
+      hapticNotify("success");
+    } catch (err) {
+      onError(messageFromError(err));
+    } finally {
+      setScanning(false);
+    }
+  }, [onAttachmentsChange, onError]);
 
   const toggleDictation = useCallback(async () => {
     if (dictating) {
@@ -219,6 +260,17 @@ export function ChatComposer({
           >
             <IconPaperclip1 size={19} />
           </button>
+          {supportsDocumentScan() ? (
+            <button
+              type="button"
+              className="mobile-composer-bare"
+              aria-label={t("Scan a document")}
+              disabled={scanning}
+              onClick={() => void scan()}
+            >
+              <IconScanTextSparkle size={19} />
+            </button>
+          ) : null}
           {chip}
           <span className="mobile-composer-spacer" />
           {/* One round button that changes with the field: the microphone

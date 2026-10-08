@@ -37,6 +37,8 @@ type NotesScreenProps = {
   onRecord: () => void;
   onCreateNote: () => void;
   onImportAudio: (file: File) => void;
+  /** Paper into a note through the document camera; absent without one. */
+  onScanDocument?: () => void;
   onOpenFolder: (folderId: string) => void;
   /** Dictation lives here now that it has no tab of its own. */
   onOpenDictation: () => void;
@@ -62,6 +64,7 @@ export function NotesScreen({
   onRecord,
   onCreateNote,
   onImportAudio,
+  onScanDocument,
   onOpenFolder,
   onOpenDictation,
   onDeleteNote,
@@ -478,6 +481,14 @@ export function NotesScreen({
         <ImportSheet
           initialUrl={importUrl}
           onOpenAccount={onOpenAccount}
+          onScan={
+            onScanDocument
+              ? () => {
+                  setImporting(false);
+                  onScanDocument();
+                }
+              : undefined
+          }
           onChooseFile={() => {
             setImporting(false);
             importInputRef.current?.click();

@@ -18,6 +18,10 @@ import { notifyCreditsChanged } from "../../lib/credits-events";
 import { SIDECAR_STATUS_EVENT } from "../../components/settings/CarpeDiemSettings";
 import { TabBar } from "../../components/mobile/TabBar";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../../lib/chat-blocks-nav";
+import { ASK_ABOUT_SELECTION_EVENT } from "../../lib/ask-selection";
+import { OPEN_CANVAS_EVENT, type OpenCanvasDetail } from "../../lib/canvas";
+import { CanvasPane } from "../../components/canvas/CanvasPane";
+import { LibraryView } from "../../components/library/LibraryView";
 import { MeetingAmbiguityPrompt } from "../../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../../lib/calendar-link";
 import type { CalendarEventDto } from "../../lib/tauri";
@@ -34,6 +38,7 @@ import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
 import { ComposeScreen } from "../../components/mobile/screens/studio/ComposeScreen";
 import { RetouchScreen } from "../../components/mobile/screens/studio/RetouchScreen";
 import { AgentScreen, AgentSessionScreen } from "../../components/mobile/screens/AgentScreen";
+import { StackHeader } from "../../components/mobile/StackHeader";
 import { DictationScreen } from "../../components/mobile/screens/DictationScreen";
 import { FolderScreen } from "../../components/mobile/screens/FoldersScreen";
 import { ProjectSettingsScreen } from "../../components/mobile/screens/ProjectSettingsScreen";
@@ -96,6 +101,7 @@ import { Spinner } from "../../components/ui/Spinner";
  * before it is abandoned. Keep below SIDECAR_STATUS_TIMEOUT_MS in App.tsx. */
 const SHELL_LOADING_SLOW_MS = 6_000;
 import { useScrollRestoration } from "./useScrollRestoration";
+import { scanDocument, supportsDocumentScan } from "../../lib/scan";
 
 /**
  * Error banner with a real exit path: replacing the message re-runs the
@@ -610,6 +616,29 @@ export function MobileApp() {
     return () => window.removeEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
   }, [openNote]);
 
+  // A canvas (ADR-0087) is a screen of its own on the phone, pushed over the
+  // tab it was opened from; "Ask Sub Rosa" brings the chat back to the front,
+  // where its composer takes the quote.
+  useEffect(() => {
+    let seq = 0;
+    function handleOpenCanvas(event: Event) {
+      const detail = (event as CustomEvent<OpenCanvasDetail>).detail;
+      if (!detail?.noteId) return;
+      seq += 1;
+      nav.push({ view: "canvas", noteId: detail.noteId, proposal: detail.proposal, seq });
+    }
+    window.addEventListener(OPEN_CANVAS_EVENT, handleOpenCanvas);
+    return () => window.removeEventListener(OPEN_CANVAS_EVENT, handleOpenCanvas);
+  }, [nav.push]);
+  useEffect(() => {
+    function handleAsk() {
+      if (nav.top?.view === "canvas") nav.pop();
+      if (nav.tab !== "agent") nav.switchTab("agent");
+    }
+    window.addEventListener(ASK_ABOUT_SELECTION_EVENT, handleAsk);
+    return () => window.removeEventListener(ASK_ABOUT_SELECTION_EVENT, handleAsk);
+  }, [nav]);
+
   const handleCreateNote = useCallback(
     async (options?: { folderId?: string; record?: boolean }) => {
       try {
@@ -1005,6 +1034,7 @@ export function MobileApp() {
           openChatSession(sessionId);
           nav.pop();
         }}
+        onOpenLibrary={() => nav.push({ view: "library" })}
         archiveFolderId={archiveFolderId}
         ensureArchiveFolder={async () => {
           if (archiveFolderId) return archiveFolderId;
@@ -1067,6 +1097,28 @@ export function MobileApp() {
         onBack={nav.pop}
         onOpenConversation={(taskId) => nav.push({ view: "assistant-chat", taskId })}
       />
+    );
+  } else if (top?.view === "canvas") {
+    screen = (
+      <div className="mobile-screen-root">
+        <CanvasPane
+          key={top.noteId}
+          noteId={top.noteId}
+          proposal={top.proposal}
+          proposalSeq={top.seq}
+          layout="screen"
+          onClose={nav.pop}
+        />
+      </div>
+    );
+  } else if (top?.view === "library") {
+    screen = (
+      <div className="mobile-screen-root">
+        <StackHeader title={t("Library")} large onBack={nav.pop} />
+        <div className="mobile-list-scroll">
+          <LibraryView />
+        </div>
+      </div>
     );
   } else if (top?.view === "studio-retouch") {
     screen = <RetouchScreen artifactId={top.artifactId} rootId={top.rootId} onBack={nav.pop} />;
@@ -1146,6 +1198,14 @@ export function MobileApp() {
             onRecord={() => void handleCreateNote({ record: true })}
             onCreateNote={() => void handleCreateNote()}
             onImportAudio={(file) => void handleImportAudio(file)}
+            onScanDocument={
+              supportsDocumentScan()
+                ? () =>
+                    void scanDocument()
+                      .then((scan) => scan && openNote(scan.noteId))
+                      .catch((err: unknown) => setError(messageFromError(err)))
+                : undefined
+            }
             onOpenFolder={(folderId) => nav.push({ view: "folder", folderId })}
             onOpenDictation={() => nav.push({ view: "dictation" })}
             onDeleteNote={(noteId) => void handleDeleteNote(noteId)}

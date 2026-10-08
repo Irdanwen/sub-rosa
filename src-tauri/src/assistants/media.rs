@@ -431,6 +431,7 @@ async fn submit(app: &AppHandle, p: &MediaProposal) -> Result<(), AppError> {
             },
         )
         .await?;
+        crate::image_refine::file_chat_media(app, &artifact, Some(&chat_generation(p))).await;
         let repos = crate::commands::repositories(app).await?;
         query("UPDATE assistant_media SET status='completed',artifact_file_name=?,updated_at=? WHERE id=?")
             .bind(artifact.file_name).bind(chrono::Utc::now().to_rfc3339()).bind(&p.id).execute(&repos.pool).await?;
@@ -453,6 +454,21 @@ async fn submit(app: &AppHandle, p: &MediaProposal) -> Result<(), AppError> {
     let mut queued = p.clone();
     queued.queue_id = Some(queue.into());
     handoff(app, &queued).await
+}
+
+/// What the gallery files for a proposal that rendered inline.
+fn chat_generation(p: &MediaProposal) -> Value {
+    let kind = match p.kind.as_str() {
+        "video" | "music" | "speech" => p.kind.as_str(),
+        _ => "image",
+    };
+    json!({
+        "kind": kind,
+        "model": p.model,
+        "prompt": p.prompt,
+        "costCredits": p.cost_credits,
+        "origin": crate::image_refine::chat_origin(Some(&p.task_id)),
+    })
 }
 
 async fn snapshot_image(
@@ -566,6 +582,13 @@ async fn reconcile(app: &AppHandle) -> Result<(), AppError> {
             if let Some(job) = repos.get_media_job(queue_id).await? {
                 match job.status {
                     crate::domain::types::MediaJobStatus::Completed => {
+                        // The landing filed it as a chat picture; this names the chat.
+                        if let Some(file) = job.artifact_file_name.as_deref() {
+                            let origin = json!({"origin": crate::image_refine::chat_origin(Some(&p.task_id))});
+                            let _ =
+                                crate::studio_project::record_landed_artifact(app, file, &origin)
+                                    .await;
+                        }
                         query("UPDATE assistant_media SET status='completed',artifact_file_name=?,updated_at=? WHERE id=?")
                             .bind(job.artifact_file_name).bind(job.updated_at).bind(&p.id).execute(&repos.pool).await?;
                     }

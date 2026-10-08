@@ -612,8 +612,16 @@ async fn deliver(app: &AppHandle, job: &MediaJobDto, payload: Payload) -> bool {
                 {
                     // What was asked for is filed with the file now, not when
                     // a panel happens to be open to hear the job finish.
-                    let generation =
+                    let mut generation =
                         landed_generation(&updated, chrono::Utc::now().timestamp_millis());
+                    // A chat's render is a chat picture; a refine edit brings
+                    // its version lineage back (`crate::image_refine`).
+                    let context = client_context(&repos.pool, &job.id).await.ok().flatten();
+                    crate::image_refine::apply_landed_context(
+                        &mut generation,
+                        updated.source.as_deref(),
+                        context.as_ref(),
+                    );
                     if let Some(id) = updated.artifact_file_name.as_deref() {
                         if let Err(error) =
                             crate::studio_project::record_landed_artifact(app, id, &generation)

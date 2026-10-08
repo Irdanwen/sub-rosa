@@ -13,6 +13,8 @@ import {
   pixelOffset,
 } from "../../lib/map-projection";
 import { openExternalUrl, placesPhotoDataUrl, renderMapCard } from "../../lib/tauri";
+import { placeSaveRequest } from "../../lib/chat-library";
+import { SaveToggle } from "../chat/LibraryActions";
 
 /** Logical map banner height; width follows the card. */
 const MAP_HEIGHT = 200;
@@ -246,6 +248,7 @@ export function PlacesCard({ block }: { block: PlacesChatBlock }) {
                   <IconGlobe size={15} />
                 </button>
               ) : null}
+              <SaveToggle request={placeSaveRequest(place)} className="chat-block-place-site" />
             </div>
           </li>
         ))}

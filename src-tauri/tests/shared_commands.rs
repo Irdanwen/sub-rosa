@@ -44,6 +44,8 @@ fn platform_specific(name: &str) -> bool {
         "photos_ios::",
         "share_ios::",
         "android_exports::",
+        // The document camera exists on the phone only (VisionKit, ML Kit).
+        "scan::",
         // The share sheet's inbox (ADR-0048): only the phone has a share
         // extension to fill it.
         "share_inbox::",

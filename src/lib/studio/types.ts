@@ -178,10 +178,20 @@ export interface StudioArtifact {
   height?: number;
   peaks?: number[];
   posterVersion?: number;
+  /** Where the request came from, when it was not the Studio itself. A chat
+   * image carries `{ surface: "chat" }` (and the chat's task id when known),
+   * which is how the Library finds every picture made in a conversation. */
+  origin?: ArtifactOrigin;
+}
+
+/** The surface that asked for a gallery file. */
+export interface ArtifactOrigin {
+  surface: "chat";
+  taskId?: string;
 }
 
 /** How a retouch version was made. */
-export type RetouchOperation = "prompt" | "zone" | "variant" | "upscale" | "extend";
+export type RetouchOperation = "prompt" | "zone" | "variant" | "upscale" | "extend" | "refine";
 
 /** The lineage a retouch version carries, stored with its generation metadata
  * so the version tree survives a restart without a table of its own. */

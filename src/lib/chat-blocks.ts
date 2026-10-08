@@ -22,7 +22,9 @@ import {
   parseTableBlock,
   type TableChatBlock,
 } from "./chat-blocks-data";
+import { type CanvasChatBlock, canvasMarkdown, parseCanvasPayload } from "./canvas-block";
 import { safeExternalUrl } from "./external-link";
+import { type TryOnChatBlock, parseTryOnPayload, tryOnPlainText } from "./try-on-block";
 
 export type { ChartChatBlock, TableChatBlock } from "./chat-blocks-data";
 
@@ -107,7 +109,9 @@ export type ChatBlock =
   | ProposalChatBlock
   | MediaChatBlock
   | ChartChatBlock
-  | TableChatBlock;
+  | TableChatBlock
+  | CanvasChatBlock
+  | TryOnChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -394,6 +398,10 @@ function chatBlockPlainText(block: ChatBlock): string[] {
     case "chart":
     case "table":
       return dataBlockPlainText(block);
+    case "canvas":
+      return [block.title, "", ...canvasMarkdown(block).split("\n")];
+    case "tryon":
+      return tryOnPlainText(block);
     default:
       return [];
   }
@@ -432,6 +440,10 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parseChartBlock(payload);
     case "table":
       return parseTableBlock(payload);
+    case "canvas":
+      return parseCanvasPayload(payload);
+    case "tryon":
+      return parseTryOnPayload(payload);
     default:
       return null;
   }

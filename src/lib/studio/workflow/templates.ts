@@ -9,6 +9,7 @@ import {
   type WorkflowNode,
   type WorkflowNodeType,
 } from "./schema";
+import { TRY_ON_MODEL_PREFERENCE, tryOnPrompt } from "../try-on";
 
 const LEVEL_X = 300;
 const ROW_Y = 220;
@@ -247,6 +248,34 @@ function shortFilm(): Workflow {
   };
 }
 
+/** Virtual try-on: a photo of a person and a photo of a garment, composed
+ * into the person wearing it. The prompt is the tuned one the chat card uses
+ * (`try-on.ts`); both photos are picked from the gallery before a run. */
+function tryItOn(): Workflow {
+  return {
+    id: "template-try-it-on",
+    name: "Try it on",
+    description: "A photo of you and a photo of a garment: see yourself wearing it.",
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("person", "asset", "Your photo", 0, 0, { assetKind: "image" }),
+      node("garment", "asset", "The garment", 0, 1, { assetKind: "image" }),
+      node("fitting", "imageEdit", "Try it on", 1, 0, {
+        model: TRY_ON_MODEL_PREFERENCE[0],
+        prompt: tryOnPrompt(),
+      }),
+      node("out", "output", "You, wearing it", 2, 0),
+    ],
+    // The person first: the edit keeps image 1 and borrows from image 2.
+    edges: [
+      edge("person", "fitting", "images"),
+      edge("garment", "fitting", "images"),
+      edge("fitting", "out"),
+    ],
+  };
+}
+
 /** Fresh copies each call so callers can mutate their clone safely. */
 export function templateWorkflows(): Workflow[] {
   return [
@@ -256,5 +285,6 @@ export function templateWorkflows(): Workflow[] {
     shortVideoAd(),
     twoShotSequence(),
     shortFilm(),
+    tryItOn(),
   ];
 }

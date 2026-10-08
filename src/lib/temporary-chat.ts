@@ -61,6 +61,14 @@ export function useIsTemporaryChat(id: string | null | undefined): boolean {
   return isTemporaryChat(id);
 }
 
+/** Whether a temporary chat is open on a surface right now. A card inside a
+ * reply does not know which chat it is in, so it asks this before offering to
+ * keep anything (the Library's "Save" is one more way out, ADR-0088). */
+export function useTemporaryChatOpen(): boolean {
+  useSyncExternalStore(subscribe, () => version);
+  return holds.size > 0;
+}
+
 /** Records that `id` is a temporary chat, in this webview. */
 export function markTemporaryChat(id: string) {
   if (known.has(id)) return;
@@ -145,7 +153,9 @@ function discard(id: string, kind: TemporaryChatKind) {
  * (a re-render, React's development double mount) takes it back in time.
  */
 export function holdTemporaryChat(id: string, kind: TemporaryChatKind): () => void {
+  const opened = !holds.has(id);
   holds.set(id, (holds.get(id) ?? 0) + 1);
+  if (opened) changed();
   let released = false;
   return () => {
     if (released) return;
@@ -156,6 +166,7 @@ export function holdTemporaryChat(id: string, kind: TemporaryChatKind): () => vo
       return;
     }
     holds.delete(id);
+    changed();
     setTimeout(() => {
       if (holds.has(id)) return;
       discard(id, kind);

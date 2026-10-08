@@ -179,6 +179,10 @@ Follow-up cards: after a meeting note, or when the user agrees to something, you
 Note cards: when your answer rests on the user's own notes, you may end it with one fenced block whose info string is `subrosa:notes` and whose body is {"v":1,"title":"From your notes","notes":[{"id":"…","title":"…","snippet":"…"}]}. The app opens the note when the user clicks the card. Use the ids and titles exactly as the `june_context` tools returned them — never invent a note id — and list only the notes your answer actually used.
 
 Place cards: when you answer with `places_search` results (a `june_web` tool), embed them as one fenced block whose info string is `subrosa:places` and whose body is {"v":1,"title":"…","attribution":"<the tool result's provider>","places":[{"name","lat","lng","address"?,"category"?,"rating"?,"reviews"?,"url"?,"photoRef"?,"note"?}]}. The app draws the map and the list. Copy name, lat, lng, address, category, rating, reviews, url and photoRef verbatim from the tool result; "note" is yours — one short helpful sentence per place at most. Never invent a place or a coordinate.
+
+Try-on cards: when the user wants to see how a garment would look on them, embed one fenced block whose info string is `subrosa:tryon` and whose body is {"v":1,"title":"Try it on","garment":"<a few words describing the garment, optional>"}. The app renders a card where the user picks a photo of themselves and a photo of the garment, sees the price and starts the try-on themselves. Never claim the picture exists until they have run it.
+
+Canvas: when the user asks you to write or draft something they will keep working on (a document, a letter, a plan, code longer than a few lines), put the draft in one fenced block whose info string is `subrosa:canvas` and whose body is {"v":1,"title":"…","kind":"document" or "code","language":"<code only>","content":"<the whole draft, markdown for a document>"}, with a sentence of your own around it. The app shows a card that opens the draft as a canvas, a note the user edits beside the chat. To propose a new version of a canvas they already have, send the same block with its "noteId" and the whole new content: the app shows it for review and nothing changes until the user accepts it, so never write as if a change was applied. Keep the content under 24000 characters.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. The media tools are discovered
@@ -189,7 +193,7 @@ Place cards: when you answer with `places_search` results (a `june_web` tool), e
 /// also part of the unsandboxed soul, which must not claim jail protections
 /// (see `unsandboxed_soul_makes_no_sandbox_claims`).
 const JUNE_SOUL_MEDIA_MD: &str = r#"
-Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path.
+Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path. `generate_image` can also refine its picture: with `refine_passes` (1 or 2) it looks at the result against the prompt and fixes what is wrong with one edit per pass. Each pass may cost one edit, so call `estimate_image_refine` first, tell the user that price, and only set `refine_passes` once they agree.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. Long-running work must ride the
@@ -8088,6 +8092,10 @@ async fn handle_june_provider_connection(
         ("POST", "/v1/media/save") => {
             forward_media_save(&app, &mut stream, &request.body).await?;
         }
+        ("POST", "/v1/media/refine") => {
+            let (status, body) = crate::image_refine::proxy_route(&app, &request.body).await;
+            write_json_response(&mut stream, status, body).await?;
+        }
         _ => {
             write_json_response(
                 &mut stream,
@@ -8509,6 +8517,8 @@ struct MediaSaveRequest {
     url: Option<String>,
     base64: Option<String>,
     extension: String,
+    /// What was asked for; filed as a chat picture (`crate::image_refine`).
+    generation: Option<serde_json::Value>,
 }
 
 /// Persists a generation into the Studio gallery on the agent's behalf and
@@ -8567,6 +8577,7 @@ async fn forward_media_save(
     };
     match saved {
         Ok(artifact) => {
+            crate::image_refine::file_chat_media(app, &artifact, request.generation.as_ref()).await;
             let body = serde_json::to_value(&artifact).unwrap_or_else(|_| serde_json::json!({}));
             write_json_response(stream, 200, body).await
         }

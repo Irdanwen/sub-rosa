@@ -30,6 +30,7 @@ function rewriteLabel(kind: RewriteRun["kind"]): string {
     restructure: t("Reorganised text"),
     translate: t("Translated text"),
     custom: t("Rewritten text"),
+    canvas: t("Proposed version"),
   }[kind];
 }
 

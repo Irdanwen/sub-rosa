@@ -1,0 +1,18 @@
+[
+  { "raw": "Plain line of text", "escaped": "Plain line of text" },
+  { "raw": "- 12 € la ligne", "escaped": "\\- 12 € la ligne" },
+  { "raw": "# 3 rue des Lilas", "escaped": "\\# 3 rue des Lilas" },
+  { "raw": "> quoted", "escaped": "\\> quoted" },
+  { "raw": "+ plus", "escaped": "\\+ plus" },
+  { "raw": "| a | b |", "escaped": "\\| a | b |" },
+  { "raw": "1. First item", "escaped": "1\\. First item" },
+  { "raw": "2024) a year", "escaped": "2024\\) a year" },
+  { "raw": "Total *TTC* 3 * 4", "escaped": "Total \\*TTC\\* 3 \\* 4" },
+  { "raw": "snake_case_word and _edge_", "escaped": "snake_case_word and \\_edge\\_" },
+  { "raw": "___", "escaped": "\\__\\_" },
+  { "raw": "---", "escaped": "\\---" },
+  { "raw": "a ~~ b == c ~ d = e", "escaped": "a \\~~ b \\== c ~ d = e" },
+  { "raw": "see [note](here) and [1]", "escaped": "see [note\\](here) and [1]" },
+  { "raw": "C:\\path `code`", "escaped": "C:\\\\path \\`code\\`" },
+  { "raw": "Prix : 4,50 € (TVA 20 %)", "escaped": "Prix : 4,50 € (TVA 20 %)" }
+]

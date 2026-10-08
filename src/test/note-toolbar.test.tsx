@@ -3,6 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotePreview } from "../components/note-editor/NotePreview";
 import { blockPaletteItems } from "../components/note-editor/blockPalette";
+import { noteSchemaExtensions } from "../components/note-editor/extensions";
+import { Editor } from "@tiptap/react";
+import { ASK_ABOUT_SELECTION_EVENT, takePendingQuote } from "../lib/ask-selection";
+import { docToMarkdown, markdownToDoc } from "../lib/note-markdown";
 
 /**
  * The writing surface.
@@ -94,6 +98,7 @@ describe("the selection toolbar", () => {
       "Code",
       "Link",
       "Rewrite",
+      "Ask Sub Rosa",
     ]);
     expect(labels).not.toContain("Underline");
   });
@@ -218,6 +223,24 @@ describe("what a link is allowed to be", () => {
   });
 });
 
+describe("asking about a selection", () => {
+  it("carries the selected passage to the chat as a quote, and leaves the note alone", () => {
+    mobile.value = true;
+    const heard: string[] = [];
+    const listener = (event: Event) =>
+      heard.push((event as CustomEvent<{ quote: string }>).detail.quote);
+    window.addEventListener(ASK_ABOUT_SELECTION_EVENT, listener);
+    const { view, editable, onChange } = renderPreview("**Budget** is 12k");
+    selectAll(editable);
+    const toolbar = view.container.querySelector(".selection-toolbar") as HTMLElement;
+    fireEvent.click(within(toolbar).getByLabelText("Ask Sub Rosa"));
+    window.removeEventListener(ASK_ABOUT_SELECTION_EVENT, listener);
+    expect(heard).toEqual(["> **Budget** is 12k\n\n"]);
+    expect(takePendingQuote()).toBe("> **Budget** is 12k\n\n");
+    expect(markdownAfterBlur(editable, onChange)).toBe("**Budget** is 12k");
+  });
+});
+
 describe("the block palette", () => {
   it("lists every block, each labelled with the shortcut that also makes it", () => {
     const items = blockPaletteItems("");
@@ -231,6 +254,7 @@ describe("the block palette", () => {
       "Task list",
       "Quote",
       "Code block",
+      "Table",
       "Divider",
     ]);
     expect(items.find((item) => item.label === "Task list")?.hint).toBe("[] ");
@@ -243,5 +267,24 @@ describe("the block palette", () => {
     expect(blockPaletteItems("separator").map((item) => item.id)).toEqual(["horizontalRule"]);
     expect(blockPaletteItems("head").map((item) => item.id)).toEqual(["h1", "h2", "h3"]);
     expect(blockPaletteItems("zzz")).toEqual([]);
+  });
+
+  it("inserts a table the file can hold, its first row the header", () => {
+    const editor = new Editor({ extensions: noteSchemaExtensions(), content: markdownToDoc("/") });
+    const [table] = blockPaletteItems("grid");
+    expect(table.id).toBe("table");
+    table.run(editor, { from: 1, to: 2 });
+    const markdown = docToMarkdown(editor.state.doc);
+    expect(markdown).toBe(
+      [
+        "|     |     |     |",
+        "| --- | --- | --- |",
+        "|     |     |     |",
+        "|     |     |     |",
+      ].join("\n"),
+    );
+    const firstRow = editor.state.doc.firstChild?.firstChild;
+    expect(firstRow?.firstChild?.type.name).toBe("tableHeader");
+    editor.destroy();
   });
 });

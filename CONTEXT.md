@@ -168,6 +168,28 @@ is already written.
 _Avoid_: slash command (that is the composer's, and it does other things),
 block menu.
 
+**Canvas**:
+A note opened beside the chat (a split view on the desktop, a screen of its
+own on the phone) to work on a draft or a file of code with the assistant
+(ADR-0087). It *is* a note: no canvas table, no canvas format. A **code
+canvas** is a note whose body is one fenced code block. The assistant reaches
+it only through **proposed versions**.
+_Avoid_: artifact (that is a Studio gallery file and the published page of the
+tooling), document (a canvas is a note), editor (that is the component).
+
+**Proposed version**:
+A whole new body for a canvas, from a `subrosa:canvas` block naming it or from
+an instruction typed under it, shown in place of the document until it is
+accepted or discarded. The whole-document form of a **revision**, under the
+same rule: never stored, never applied without a gesture.
+_Avoid_: diff, patch, edit (that is what the person does by typing).
+
+**Ask about a selection**:
+"Ask Sub Rosa" on the **selection toolbar**: the selected passage goes to the
+chat composer as a markdown quote, taken once by whichever composer is on
+screen or mounts next. It changes nothing in the note.
+_Avoid_: share selection, send to chat.
+
 ### Imports (fork)
 
 **Import**:
@@ -891,8 +913,27 @@ generation provenance; the older browser index remains an import source. It is a
 surfaces: anything produced can be pulled into any image input, and anything
 worth keeping is written into it rather than held in a form's state. See
 [ADR-0020](docs/adr/0020-the-gallery-is-the-studio-exchange-format.md).
-_Avoid_: library, assets, media pool, uploads (nothing is uploaded); "the
-gallery" is the word in the code, the desktop UI, and the mobile sheet alike.
+_Avoid_: library (that is the chat **Library**, which reads the gallery),
+assets, media pool, uploads (nothing is uploaded); "the gallery" is the word
+in the code, the desktop UI, and the mobile sheet alike.
+
+**Chat picture**:
+A gallery file asked for in a conversation, tagged in its generation metadata
+with `origin: {surface: "chat", taskId?}` (ADR-0088). It is an ordinary gallery
+file; the origin is only how the **Library** finds it.
+_Avoid_: chat image (fine in prose, but the code field is `origin`).
+
+**Refine**:
+Image generation "with thinking": a vision critique of a picture against its
+prompt, then, unless it already matches, one edit, at most twice; each edit is
+a durable media job whose result is a new gallery version with lineage
+`op: "refine"`. Its extra price is shown before it runs (ADR-0088).
+_Avoid_: improve, upscale (that is a different operation), retouch (that is
+the person's own instruction).
+
+**Try-on**:
+A picture of a person wearing a garment, made with `/image/multi-edit` from a
+photo of each, from the Studio or a `subrosa:tryon` card in a chat.
 
 **Collection**:
 A named group of gallery files, shown to the user as a folder ("Dossier"). A
@@ -1176,6 +1217,25 @@ with age when a passphrase is given (`.subrosa`, `.subrosa.age`). Written and
 restored on purpose (ADR-0042). Importing is an upsert by id.
 _Avoid_: backup (implies a schedule), sync (there is none, by decision), export
 alone (that is one note to PDF or Markdown).
+
+**Library**:
+What the chats made and what the person kept from them, on both shells: the
+**chat pictures** in the gallery, and the **saved items** (ADR-0088). A view,
+not a store.
+_Avoid_: gallery (that is every Studio file), collection (a gallery folder).
+
+**Saved item**:
+A reply, a link or a place kept from a chat with "Save", a `saved_items` row on
+this device only, keyed by what it is so saving twice keeps one. Refused in a
+temporary chat.
+_Avoid_: bookmark, favourite (that is a gallery **mark**), pin (a pinned chat).
+
+**Scan**:
+Paper read by the phone's document camera into a note: the recognized text is
+the body and the PDF is kept beside it, named by the note (ADR-0088). The PDF
+stays on the device.
+_Avoid_: import (that is media fetched or dropped), attachment (notes have
+none).
 
 **Report**:
 A bug, feedback or feature request filed as a GitHub Issue with the user's own

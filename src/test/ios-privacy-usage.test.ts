@@ -25,7 +25,8 @@ const REQUIRED_USAGE_KEYS: Array<{ key: string; reachedBy: string }> = [
   },
   {
     key: "NSCameraUsageDescription",
-    reachedBy: 'the chat attachment picker and Studio\'s capture="environment" button',
+    reachedBy:
+      'the chat attachment picker, Studio\'s capture="environment" button and the document scanner (VisionKit)',
   },
   {
     key: "NSPhotoLibraryAddUsageDescription",

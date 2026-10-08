@@ -65,7 +65,7 @@ targets:
         # Taking a photo to attach to a chat, and the Studio reference picker's
         # camera button (capture="environment").
         NSCameraUsageDescription:
-          Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation.
+          Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation, and when you scan a document into a note.
         # Saving a Studio generation to the photo library. Write only: the
         # picker reads through PHPicker, which needs no permission.
         NSPhotoLibraryAddUsageDescription:
@@ -151,6 +151,10 @@ targets:
       - sdk: QuartzCore.framework
       - sdk: Security.framework
       - sdk: UIKit.framework
+      # The document scanner (crate::scan): VisionKit's camera and Vision's
+      # text recognition, from the Objective-C file in Rust's static library.
+      - sdk: Vision.framework
+      - sdk: VisionKit.framework
       - sdk: WebKit.framework
       # The Shortcuts actions (iOS 16+). Weak, because the app still runs on
       # iOS 15, where a strong link to a framework that does not exist stops

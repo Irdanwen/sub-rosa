@@ -3,6 +3,7 @@
 // in both.
 
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { ReplyLibraryActions } from "../chat/LibraryActions";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconBranchSimple } from "central-icons/IconBranchSimple";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
@@ -147,6 +148,13 @@ export function ReplyActions({
   return (
     <div className="mobile-chat-actions">
       <CopyReplyButton text={text} />
+      <ReplyLibraryActions
+        text={text}
+        conversationId={conversationId}
+        messageId={messageId}
+        className="mobile-chat-copy"
+        onPress={hapticSelection}
+      />
       {messageId ? (
         <ReadAloudButton
           speechKey={`${conversationId ?? "chat"}:${messageId}`}

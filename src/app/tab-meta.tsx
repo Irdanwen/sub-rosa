@@ -5,6 +5,7 @@ import { IconNoteText } from "central-icons/IconNoteText";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
+import { IconLibrary } from "central-icons/IconLibrary";
 import { IconZap } from "central-icons/IconZap";
 import type { ReactNode } from "react";
 import type { TabItem } from "../components/tabs/TabBar";
@@ -90,6 +91,11 @@ export function tabMeta(
       return {
         title: t("Studio"),
         icon: <IconSparkle3 size={TAB_ICON_SIZE} />,
+      };
+    case "library":
+      return {
+        title: t("Library"),
+        icon: <IconLibrary size={TAB_ICON_SIZE} />,
       };
     case "dictation":
       return {

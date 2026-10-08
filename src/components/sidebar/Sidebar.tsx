@@ -1,6 +1,7 @@
 import { AgentSessionContextMenu, formatSessionTime, NoteContextMenu } from "./sidebar-context";
 import { t } from "../../lib/i18n";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
+import { IconLibrary } from "central-icons/IconLibrary";
 import { IconZap } from "central-icons/IconZap";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconRobot2 } from "central-icons/IconRobot2";
@@ -90,6 +91,7 @@ export type SidebarView =
   | "folders"
   | "dictation"
   | "studio"
+  | "library"
   | "routines"
   | "agent"
   | "agent-sessions";
@@ -1151,6 +1153,18 @@ export function Sidebar({
                 <IconSparkle3 size={16} />
               </span>
               <span className="sidebar-nav-label">{t("Studio")}</span>
+            </button>
+            <button
+              type="button"
+              className="sidebar-nav-item"
+              data-active={activeView === "library"}
+              aria-current={activeView === "library" ? "page" : undefined}
+              onClick={() => onChangeView("library")}
+            >
+              <span className="sidebar-nav-icon">
+                <IconLibrary size={16} />
+              </span>
+              <span className="sidebar-nav-label">{t("Library")}</span>
             </button>
             <button
               type="button"
