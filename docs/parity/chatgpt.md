@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 85
+Gaps: 80
 
 ## Matrix
 
@@ -73,14 +73,14 @@ Gaps: 85
 | Developer mode (custom connectors in chat) | yes | yes | yes | no | `src/components/settings/McpServersSection.tsx` `src/components/settings/McpSecuritySection.tsx` `src-tauri/src/connectors/mcp.rs` | P9 |
 | Skills | yes | yes | yes | no | `src/components/settings/InstalledSkillsSection.tsx` `src-tauri/src/skill_packs/mod.rs` `src/components/mobile/SkillSlashMenu.tsx` | P9 |
 | Realtime voice conversation | yes | yes | yes | no | `src-tauri/src/voice/engine.rs` `src-tauri/src/voice/machine.rs` `src/components/voice/VoiceConversation.tsx` | P9 |
-| Voice with camera or screen | partial | yes | yes | no | `src-tauri/src/voice/screen.rs` `src/components/voice/VoiceConversation.tsx` | P7 |
+| Voice with camera or screen | yes | yes | yes | no | `src-tauri/src/voice/screen.rs` `src/components/voice/VoiceConversation.tsx` `src-tauri/src/voice/screen_windows.rs` | P9 |
 | Voice with connected apps | yes | yes | yes | no | `src-tauri/src/voice/engine.rs` | P9 |
-| Agent browser | no | n/a | n/a | n/a | | P8 |
-| Global chat bar | no | n/a | n/a | n/a | | P8 |
-| Screen and app awareness | no | n/a | n/a | n/a | | P8 |
+| Agent browser | yes | n/a | n/a | n/a | `src-tauri/src/agent_browser/mod.rs` |  |
+| Global chat bar | yes | n/a | n/a | n/a | `src-tauri/src/chat_bar/mod.rs` |  |
+| Screen and app awareness | yes | n/a | n/a | n/a | `src-tauri/src/screen_awareness/mod.rs` |  |
 | Home screen widgets | n/a | yes | yes | n/a | `src-tauri/gen/apple/Widgets` `src-tauri/android/src/main/java/xyz/carpediem/subrosa/nativebridge/AskWidgetProvider.kt` |  |
 | Watch app | n/a | yes | n/a | n/a | `src-tauri/gen/apple/Watch` `src-tauri/src/watch_relay.rs` |  |
-| Browser extension | no | n/a | n/a | n/a | | P8 |
+| Browser extension | yes | n/a | n/a | n/a | `browser-extension/manifest.json` `src-tauri/src/browser_extension/mod.rs` |  |
 | Share into the app | n/a | yes | yes | n/a | `src-tauri/gen/apple/ShareExtension` `src-tauri/android/src/main/java/xyz/carpediem/subrosa/nativebridge/ShareReceiverActivity.kt` `src-tauri/src/share_inbox.rs` |  |
 | Siri and Shortcuts | n/a | yes | n/a | n/a | `src-tauri/gen/apple/Sources/os-june/Intents` | |
 | Spotlight | yes | yes | n/a | n/a | `src-tauri/src/spotlight.rs` | |
