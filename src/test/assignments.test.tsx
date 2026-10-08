@@ -107,7 +107,12 @@ describe("what a cadence and a run say", () => {
   });
 
   it("offers the machine's tools on the desktop only, and marks what leaves the device", () => {
-    expect(toolChoices("phone").map((choice) => choice.id)).toEqual(["web", "notes", "memory"]);
+    expect(toolChoices("phone").map((choice) => choice.id)).toEqual([
+      "web",
+      "notes",
+      "memory",
+      "connectors",
+    ]);
     const desktop = toolChoices("desktop");
     expect(desktop.filter((choice) => choice.acts).map((choice) => choice.id)).toEqual([
       "files",

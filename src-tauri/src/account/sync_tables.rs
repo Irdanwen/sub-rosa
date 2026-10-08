@@ -360,6 +360,38 @@ pub(super) const TABLES: &[Table] = &[
             "updated_at",
         ],
     },
+    // Connector and skill pack definitions (ADR-0092). A connector's tokens
+    // are in the keychain of each device and never travel; only what it is,
+    // where it lives and the person's rules for its tools do.
+    Table {
+        name: "connectors",
+        kind: "settings",
+        columns: &[
+            "id",
+            "name",
+            "url",
+            "catalog_id",
+            "auth",
+            "enabled",
+            "tool_policy",
+            "created_at",
+            "updated_at",
+        ],
+    },
+    Table {
+        name: "skill_packs",
+        kind: "settings",
+        columns: &[
+            "id",
+            "name",
+            "description",
+            "body",
+            "tools",
+            "enabled",
+            "created_at",
+            "updated_at",
+        ],
+    },
     // An errand travels as an ordinary revision: the service carries it without
     // being able to read the link inside, and the device it names is the only
     // one that acts on it (ADR-0054).

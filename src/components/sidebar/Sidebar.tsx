@@ -28,6 +28,7 @@ import { IconToolbox } from "central-icons/IconToolbox";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconHeartBeat } from "central-icons/IconHeartBeat";
+import { IconConnectors1 } from "central-icons/IconConnectors1";
 import { IconServer1 } from "central-icons/IconServer1";
 import { IconShield } from "central-icons/IconShield";
 import { IconShieldCheck } from "central-icons/IconShieldCheck";
@@ -271,6 +272,11 @@ export const SETTINGS_SIDEBAR_GROUPS: {
         icon: <IconServer1 size={16} />,
       },
       {
+        id: "connectors",
+        label: t("Connectors"),
+        icon: <IconConnectors1 size={16} />,
+      },
+      {
         id: "mcp-diagnostics",
         label: t("MCP diagnostics"),
         icon: <IconHeartBeat size={16} />,
@@ -313,6 +319,7 @@ export const SETTINGS_SIDEBAR_GROUPS: {
  * the index harder to read.
  */
 const SETTINGS_SEARCH_ALIASES: Partial<Record<SettingsTab, string>> = {
+  connectors: "connector integration google microsoft notion linear oauth skill pack",
   general: "appearance theme accent language startup",
   "carpe-diem": "api key credits balance top up account billing endpoint",
   shortcuts: "hotkey keyboard keybinding shortcut keys",

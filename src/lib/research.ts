@@ -82,6 +82,8 @@ export function startResearch(request: {
   depth: ResearchDepth;
   useNotes: boolean;
   chatId?: string | null;
+  /** Connectors the run may search (ADR-0092). */
+  connectors?: string[];
 }): Promise<ResearchRun> {
   return invoke<ResearchRun>("research_start", {
     request: { ...request, chatId: request.chatId || undefined },

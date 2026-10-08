@@ -34,10 +34,17 @@ import {
 } from "./study-blocks";
 import { type TryOnChatBlock, parseTryOnPayload, tryOnPlainText } from "./try-on-block";
 import { type FileChatBlock, filePlainText, parseFilePayload } from "./file-block";
+import {
+  type ConnectorAppChatBlock,
+  type ConnectorCallChatBlock,
+  parseAppPayload,
+  parseConnectorPayload,
+} from "./connector-blocks";
 
 export type { ChartChatBlock, TableChatBlock } from "./chat-blocks-data";
 export type { FlashcardsChatBlock, QuizChatBlock } from "./study-blocks";
 export type { FileChatBlock } from "./file-block";
+export type { ConnectorAppChatBlock, ConnectorCallChatBlock } from "./connector-blocks";
 
 export const CHAT_BLOCK_FENCE_PREFIX = "subrosa:";
 
@@ -125,7 +132,9 @@ export type ChatBlock =
   | TryOnChatBlock
   | QuizChatBlock
   | FlashcardsChatBlock
-  | FileChatBlock;
+  | FileChatBlock
+  | ConnectorCallChatBlock
+  | ConnectorAppChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -470,6 +479,10 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parseFlashcardsPayload(payload);
     case "file":
       return parseFilePayload(payload);
+    case "connector":
+      return parseConnectorPayload(payload);
+    case "app":
+      return parseAppPayload(payload);
     default:
       return null;
   }

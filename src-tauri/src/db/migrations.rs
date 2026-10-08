@@ -590,6 +590,18 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/060_assignments.sql"),
     )
     .await?;
+    replay(
+        _pool,
+        "063_connectors.sql",
+        include_str!("../../migrations/063_connectors.sql"),
+    )
+    .await?;
+    replay(
+        _pool,
+        "064_skill_packs.sql",
+        include_str!("../../migrations/064_skill_packs.sql"),
+    )
+    .await?;
     crate::account::sync::install(_pool).await?;
     crate::diagnostics::mark("migrations");
 

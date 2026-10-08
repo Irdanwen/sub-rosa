@@ -1,3 +1,4 @@
+import { ConnectorTriggers } from "./ConnectorTriggers";
 import { IconPause } from "central-icons/IconPause";
 import { IconPencil } from "central-icons/IconPencil";
 import { IconPlay } from "central-icons/IconPlay";
@@ -179,6 +180,8 @@ export function AssignmentDetail({
           </p>
         ) : null}
       </section>
+
+      <ConnectorTriggers assignmentId={assignment.id} />
 
       {waiting.length ? (
         <section className="assignment-section" aria-label={t("To review")}>

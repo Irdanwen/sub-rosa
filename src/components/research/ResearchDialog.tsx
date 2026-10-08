@@ -1,3 +1,4 @@
+import { ResearchConnectorPicker } from "./ResearchConnectorPicker";
 import "../../styles/study-research.css";
 import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
@@ -144,8 +145,8 @@ export function ResearchDialog({
           recent={recent}
           onOpen={(id) => void act(() => getResearch(id))}
           onDelete={(id) => void deleteResearch(id).then(refreshList)}
-          onStart={(question, depth, useNotes) =>
-            void act(() => startResearch({ question, depth, useNotes, chatId }))
+          onStart={(question, depth, useNotes, connectors) =>
+            void act(() => startResearch({ question, depth, useNotes, chatId, connectors }))
           }
         />
       ) : run.status === "clarifying" ? (
@@ -204,9 +205,15 @@ function ResearchStart({
   recent: ResearchRun[];
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
-  onStart: (question: string, depth: ResearchDepth, useNotes: boolean) => void;
+  onStart: (
+    question: string,
+    depth: ResearchDepth,
+    useNotes: boolean,
+    connectors: string[],
+  ) => void;
 }) {
   const [question, setQuestion] = useState(initialQuestion);
+  const [connectors, setConnectors] = useState<string[]>([]);
   const [depth, setDepth] = useState<ResearchDepth>("standard");
   const [useNotes, setUseNotes] = useState(true);
   const fieldId = useId();
@@ -215,7 +222,7 @@ function ResearchStart({
       className="research-start"
       onSubmit={(event) => {
         event.preventDefault();
-        if (question.trim() && !busy) onStart(question.trim(), depth, useNotes);
+        if (question.trim() && !busy) onStart(question.trim(), depth, useNotes, connectors);
       }}
     >
       <label className="dialog-field-label" htmlFor={fieldId}>
@@ -238,6 +245,7 @@ function ResearchStart({
         />
         {t("Also read my notes and the project's files")}
       </label>
+      <ResearchConnectorPicker value={connectors} onChange={setConnectors} />
       <div className="research-actions">
         <button
           type="submit"

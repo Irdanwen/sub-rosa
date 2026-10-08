@@ -428,6 +428,9 @@ pub struct ResearchStartRequest {
     pub chat_id: Option<String>,
     #[serde(default)]
     pub project_id: Option<String>,
+    /// Connectors the run may search (ADR-0092).
+    #[serde(default)]
+    pub connectors: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -487,6 +490,7 @@ pub async fn research_start(
         },
     )
     .await?;
+    crate::connectors::research::set_for_run(&repos.pool, &id, &request.connectors).await?;
     let backend = backend::LiveBackend::new(app.clone(), model);
     // Best effort: a request that cannot be clarified is planned as asked.
     let questions = match engine::Backend::complete(

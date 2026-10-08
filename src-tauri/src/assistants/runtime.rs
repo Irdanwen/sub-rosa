@@ -153,6 +153,14 @@ pub async fn reference_image(
 }
 
 pub fn allows_tool(snapshot: Option<&AssistantSnapshot>, name: &str, memory_enabled: bool) -> bool {
+    // Connector tools and skill packs reach a general conversation only, and
+    // a scheduled run whose assignment ticks the connectors (ADR-0092).
+    if crate::connectors::agent::is_connector_tool(name) {
+        return crate::connectors::agent::allowed_here(snapshot.is_some());
+    }
+    if name == crate::skill_packs::agent::TOOL {
+        return snapshot.is_none();
+    }
     if matches!(name, "remember" | "search_memories") && !memory_enabled {
         return false;
     }

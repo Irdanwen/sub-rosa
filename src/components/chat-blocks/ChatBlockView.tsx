@@ -17,6 +17,8 @@ import { TryOnCard } from "./TryOnCard";
 import { QuizCard } from "./QuizCard";
 import { FlashcardsCard } from "./FlashcardsCard";
 import { FileCard } from "./FileCard";
+import { ConnectorAppCard } from "./ConnectorAppCard";
+import { ConnectorCallCard } from "./ConnectorCallCard";
 
 /**
  * Renders one parsed chat block (see src/lib/chat-blocks.ts). Shared by the
@@ -49,6 +51,10 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
       return <FlashcardsCard block={block} />;
     case "file":
       return <FileCard block={block} />;
+    case "connector":
+      return <ConnectorCallCard key={block.callId} block={block} />;
+    case "app":
+      return <ConnectorAppCard key={block.appId} block={block} />;
     default:
       return null;
   }

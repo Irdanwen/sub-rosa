@@ -82,6 +82,14 @@ pub const TOOL_GROUPS: &[ToolGroup] = &[
         lite: &["search_memories", "remember"],
         acts: false,
     },
+    // The connected services (ADR-0092). Each connector tool keeps its own
+    // allow, ask or deny rule inside a run, so an "ask" waits as a card.
+    ToolGroup {
+        id: "connectors",
+        hermes: &[],
+        lite: &["connectors"],
+        acts: false,
+    },
     ToolGroup {
         id: "files",
         hermes: &["file", "code_execution"],

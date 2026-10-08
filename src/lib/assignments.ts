@@ -118,7 +118,18 @@ export function toolChoices(platform: "desktop" | "phone"): ToolChoice[] {
     },
     { id: "memory", label: t("Memory"), detail: t("Recall and remember facts."), acts: false },
   ];
-  if (platform === "phone") return shared;
+  // The phone's runs use its own connectors (ADR-0092); each tool keeps its
+  // allow, ask or deny rule inside a run.
+  if (platform === "phone")
+    return [
+      ...shared,
+      {
+        id: "connectors",
+        label: t("Connectors"),
+        detail: t("Use your connected services. Changes still ask first."),
+        acts: false,
+      },
+    ];
   return [
     ...shared,
     { id: "files", label: t("Files"), detail: t("Read and change files, run code."), acts: true },

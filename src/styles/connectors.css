@@ -1,0 +1,184 @@
+/* Connectors (ADR-0092): the call card, the interactive view card and the
+   settings rows. Tokens only (spec/design-tokens.md). */
+
+.connector-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5) var(--sp-2);
+}
+
+.connector-card-body {
+  padding: 0 var(--sp-5) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.connector-card-text {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.connector-card-args {
+  margin: 0;
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--card);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--foreground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.connector-card-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.connector-card-status {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.connector-card-status[data-tone="error"] {
+  color: var(--destructive);
+}
+
+.connector-app-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--card);
+}
+
+.connector-app-note {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-5) var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.connectors-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.connectors-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.connectors-row:last-child {
+  border-bottom: 0;
+}
+
+.connectors-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.connectors-row-title {
+  font-size: var(--fs-md);
+  color: var(--foreground);
+}
+
+.connectors-row-meta {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.connectors-row-meta[data-tone="error"] {
+  color: var(--destructive);
+}
+
+.connectors-tools {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.connectors-tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.connectors-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.connectors-input {
+  min-height: var(--control-md);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+}
+
+.connectors-textarea {
+  min-height: 120px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.composer-skill-menu {
+  list-style: none;
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  max-height: 200px;
+  overflow: auto;
+}
+
+.composer-skill-option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+  font-size: var(--fs-md);
+}
+
+.composer-skill-option span + span {
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}

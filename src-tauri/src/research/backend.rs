@@ -74,12 +74,12 @@ pub fn web_results(body: &[u8]) -> Vec<Found> {
         .collect()
 }
 
-/// What connected apps (mail, drive, calendar) know about a query. Empty
-/// until connectors exist (P6): a connector's finds are filed with kind
-/// `connector`, which the table already accepts, and read like the
-/// person's notes are, from the passages it returns.
-async fn connector_sources(_app: &AppHandle, _run: &RunRow, _query: &str) -> Vec<Found> {
-    Vec::new()
+/// What connected apps (mail, drive, calendar) know about a query: the
+/// connectors the person picked for this run (ADR-0092). Their finds are filed
+/// with kind `connector` and read like the person's notes are, from the
+/// passages they return.
+async fn connector_sources(app: &AppHandle, run: &RunRow, query: &str) -> Vec<Found> {
+    crate::connectors::research::sources(app, &run.id, query).await
 }
 
 impl Backend for LiveBackend {

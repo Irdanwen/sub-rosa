@@ -183,3 +183,20 @@ fn the_asset_scope_names_only_what_the_app_writes() {
         );
     }
 }
+
+#[test]
+fn frames_load_only_connector_views_from_their_own_scheme() {
+    // A connector's interactive view (ADR-0092) is the only thing the page
+    // frames, and it comes from the app's own `subrosa-app:` scheme, which
+    // serves it under its own, stricter policy in a sandbox without
+    // `allow-same-origin`. A remote origin here would let a model-authored
+    // page frame anything.
+    let policy = directives();
+    let frame_src = policy.get("frame-src").expect("frame-src must be declared");
+    for source in frame_src {
+        assert!(
+            source == "subrosa-app:" || source == "http://subrosa-app.localhost",
+            "frame-src may name only the connector view scheme: {frame_src:?}"
+        );
+    }
+}

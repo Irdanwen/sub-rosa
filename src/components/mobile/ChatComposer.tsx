@@ -24,6 +24,7 @@ import { messageFromError } from "../../lib/errors";
 import { hapticImpact, hapticNotify } from "../../lib/haptics";
 import { t } from "../../lib/i18n";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
+import { SkillSlashMenu } from "./SkillSlashMenu";
 import { documentExtract, isExtractableDocument } from "../../lib/projects";
 import { scanDocument, scanTitle, supportsDocumentScan } from "../../lib/scan";
 import {
@@ -46,6 +47,7 @@ export function ChatComposer({
   inputRef,
   running = false,
   onStop,
+  skills = false,
 }: {
   draft: string;
   onDraftChange: Dispatch<SetStateAction<string>>;
@@ -64,6 +66,9 @@ export function ChatComposer({
   /** A reply is being written. With `onStop`, the round button stops it. */
   running?: boolean;
   onStop?: () => void;
+  /** Offer the skill packs on `/` (ADR-0092): the Chat tab, not an
+   * assistant, whose definition decides what it follows. */
+  skills?: boolean;
 }) {
   const ownInput = useRef<HTMLTextAreaElement>(null);
   const field = inputRef ?? ownInput;
@@ -214,6 +219,15 @@ export function ChatComposer({
         </div>
       ) : null}
       {above}
+      {skills ? (
+        <SkillSlashMenu
+          draft={draft}
+          onPick={(next) => {
+            onDraftChange(next);
+            field.current?.focus();
+          }}
+        />
+      ) : null}
       <div className="mobile-chat-composer-card">
         <input
           ref={fileInput}

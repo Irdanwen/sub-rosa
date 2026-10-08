@@ -1454,6 +1454,47 @@ its new start, so it leaves the change review; reverting puts back the start (or
 removes a file that did not exist). Only a file listed as changed, inside
 the folder, can be reverted.
 
+### Connectors and skill packs (fork)
+
+**Connector** — another service the assistant may read and act in: a remote
+MCP server, or the built-in Google or Microsoft tools (ADR-0092). Its
+definition (name, address, the person's **tool rules**) synchronises; its
+access never does, it is in each device's keychain. On the computer the
+general assistant reaches connectors through Hermes's MCP servers; on the
+phones, through agent-lite's own client. Custom assistants get none
+(ADR-0058).
+_Avoid:_ "integration", "plugin", "app" (an MCP server is not an "app" in
+copy; the "interactive view" is).
+
+**Tool rule** — what one connector tool may do: allow (runs), ask first (a
+**connector call** waits as a card until the person approves), or off. A
+tool nobody ruled on follows its server's hint: reading runs, anything else
+asks.
+_Avoid:_ "permission" (an assistant's, ADR-0058), "scope" (OAuth's).
+
+**Connector call** — one call the assistant made or asked to make through a
+connector, a `connector_calls` row with its result, shown under the reply as
+a `subrosa:connector` card. A pending call is the durable proposal behind an
+"ask first"; approving claims it once and runs it.
+
+**Interactive view** — the HTML a connector tool returns as a `ui://`
+resource, drawn in a sandboxed frame (`subrosa:app`) that can reach only its
+server's origin and talks to the app through a checked bridge.
+_Avoid:_ "widget", "mini app", "canvas" (the editable draft).
+
+**Connector trigger** — "when this happens" for an assignment: a new
+calendar event, a new message matching a search, a new item a connector
+lists, or a resource it says changed. Looked at while the app is open on the
+device that runs the assignment; the first look only learns.
+_Avoid:_ "webhook", "automation".
+
+**Skill pack** — a `SKILL.md` made portable (name, description, body, the
+tools it narrows a turn to), synchronised as a definition and read by
+agent-lite: described every turn, loaded with `load_skill`, or picked with
+`/name` at the start of a phone message. A desktop Hermes skill is not a
+skill pack until it is imported as one.
+_Avoid:_ "plugin", "prompt template".
+
 ### Sharing in (fork)
 
 **Share inbox** — the folder in the app group container where the iOS
