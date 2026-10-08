@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// How long the playback level is held after the speaker goes quiet.
-const ECHO_TAIL: Duration = Duration::from_millis(250);
+pub(crate) const ECHO_TAIL: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClipId {

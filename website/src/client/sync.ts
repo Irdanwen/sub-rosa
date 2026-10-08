@@ -24,7 +24,17 @@
  */
 import { ApiError, type Change, readChangesFrom } from "../lib/api";
 import { decrypt, decryptObject, encrypt, type ProtectedObject, sendObject } from "../lib/vault";
-import { type Row, type SyncKind, type TableName, tableOf, validRow, WEB_KINDS } from "./codec";
+import {
+  isKnownTable,
+  pulledKinds,
+  type Row,
+  type SyncKind,
+  type TableName,
+  tableOf,
+  tablesFingerprint,
+  validRow,
+  WEB_KINDS,
+} from "./codec";
 import type { ClientStore } from "./store";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -182,6 +192,9 @@ export class SyncClient {
     if (!(WEB_KINDS as readonly string[]).includes(change.kind)) return null;
     const value: ProtectedObject = await decryptObject(this.key, this.accountId, change);
     if ((value.resolved_revisions ?? []).length > 64) throw new Error("Too many resolutions");
+    // A table of a pulled kind that this browser does not read (another
+    // settings or artifact table): authenticated, then left alone.
+    if (typeof value.table !== "string" || !isKnownTable(value.table)) return null;
     const table = tableOf(value.table);
     if (table.kind !== change.kind) throw new Error("Table and kind disagree");
     if (!validRow(value.table, value.row) || value.row.id !== change.object_id)
@@ -194,8 +207,12 @@ export class SyncClient {
 
   /** Pulls every kind from its own cursor and applies what arrived. */
   async pull(signal?: AbortSignal): Promise<void> {
-    for (const kind of WEB_KINDS) {
-      const cursorKey = `${this.prefix}cursor:${kind}`;
+    for (const kind of pulledKinds()) {
+      // One cursor per kind and set of tables read: a browser that learns a
+      // table reads its kind again from the start (what it already holds is
+      // recognised by sequence and skipped) instead of missing what it once
+      // passed over unread.
+      const cursorKey = `${this.prefix}cursor:${kind}:${tablesFingerprint(kind)}`;
       const after = (await this.store.get<number>("meta", cursorKey)) ?? 0;
       const page = await this.transport.pull(kind, after, signal);
       for (const change of page.changes) {

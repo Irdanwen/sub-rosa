@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { MessageBody } from "../../lib/chat-blocks";
 import { t } from "../../lib/i18n";
 import type { Message } from "../library";
@@ -25,6 +25,7 @@ export function ChatMessage({
   rating,
   sources,
   actions,
+  renderBlock,
 }: {
   message: Message;
   /** The last reply of the chat: the one Regenerate replaces. */
@@ -35,6 +36,8 @@ export function ChatMessage({
   rating: Rating | null;
   sources?: MemorySource[];
   actions: MessageActions;
+  /** Draws a chat block a web client feature owns (`feature.ts`). */
+  renderBlock?: (name: string, payload: Record<string, unknown>, id: number) => ReactNode;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [showSources, setShowSources] = useState(false);
@@ -73,7 +76,7 @@ export function ChatMessage({
         <p className="wc-question">{message.content}</p>
       ) : (
         <div className="wc-reply">
-          <MessageBody content={message.content} />
+          <MessageBody content={message.content} renderBlock={renderBlock} />
         </div>
       )}
       {editing === null && (

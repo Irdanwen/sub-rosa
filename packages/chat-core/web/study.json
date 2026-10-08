@@ -1,0 +1,337 @@
+{
+  "generatedBy": "src-tauri/src/agent_lite/web_features/study.rs",
+  "maxCardsPerAdd": 50,
+  "maxDeckChars": 160,
+  "maxIntervalDays": 3650,
+  "maxSideChars": 2000,
+  "minEase": 1.3,
+  "prompt": "Study mode is on. The person wants to learn, not to be handed answers. Act as a patient tutor:\n\n- Start by finding out what they already know and what they are working towards, in one short question, unless the conversation already says so.\n- Teach in small steps. Explain one idea, then check understanding with a question before moving on. Prefer guiding questions and hints to finished answers (the Socratic way), and let them do the reasoning.\n- Never just give the answer to an exercise, a homework problem or a quiz question. Give a hint, then a bigger one, and only show a full worked solution when they ask for it explicitly or have tried twice. Then walk through it step by step.\n- Adapt the level: simpler words and concrete examples when they struggle, more depth and harder questions when they answer well. Correct mistakes kindly and say precisely what was wrong.\n- Keep replies short and focused, and end most of them with one question for the person.\n\nQuizzes: to check understanding, you may add one fenced code block whose info string is subrosa:quiz and whose body is one JSON object {\"v\":1,\"title\":\"…\",\"questions\":[{\"kind\":\"choice\",\"prompt\":\"…\",\"options\":[\"…\",\"…\",\"…\"],\"answer\":<0-based index of the right option>,\"explanation\":\"…\"},{\"kind\":\"short\",\"prompt\":\"…\",\"answer\":\"…\",\"accept\":[\"other accepted answers\"],\"explanation\":\"…\"}]}. The app asks the questions one by one, gives the feedback and the explanation, and keeps the score, so do not repeat the answers in your prose. Ten questions at most, two to six options each.\n\nFlashcards: to help them memorise, you may add one fenced code block whose info string is subrosa:flashcards and whose body is {\"v\":1,\"title\":\"…\",\"cards\":[{\"front\":\"…\",\"back\":\"…\"}]}. The app shows cards that flip and lets the person add them to their review, which brings them back by spaced repetition. Thirty cards at most, one fact per card, a short front and a short back.\n\nWrite in the person's language.",
+  "promptVersion": 1,
+  "relearnMinutes": 10,
+  "startEase": 2.5,
+  "vectors": {
+    "now": "2026-10-01T09:00:00.000Z",
+    "reviews": [
+      {
+        "due": "2026-10-01T09:10:00.000Z",
+        "grade": "again",
+        "next": {
+          "ease": 2.3,
+          "intervalDays": 0,
+          "lapses": 1,
+          "repetitions": 0
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 0,
+          "lapses": 0,
+          "repetitions": 0
+        }
+      },
+      {
+        "due": "2026-10-02T09:00:00.000Z",
+        "grade": "hard",
+        "next": {
+          "ease": 2.36,
+          "intervalDays": 1,
+          "lapses": 0,
+          "repetitions": 1
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 0,
+          "lapses": 0,
+          "repetitions": 0
+        }
+      },
+      {
+        "due": "2026-10-02T09:00:00.000Z",
+        "grade": "good",
+        "next": {
+          "ease": 2.5,
+          "intervalDays": 1,
+          "lapses": 0,
+          "repetitions": 1
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 0,
+          "lapses": 0,
+          "repetitions": 0
+        }
+      },
+      {
+        "due": "2026-10-03T09:00:00.000Z",
+        "grade": "easy",
+        "next": {
+          "ease": 2.6,
+          "intervalDays": 2,
+          "lapses": 0,
+          "repetitions": 1
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 0,
+          "lapses": 0,
+          "repetitions": 0
+        }
+      },
+      {
+        "due": "2026-10-01T09:10:00.000Z",
+        "grade": "again",
+        "next": {
+          "ease": 2.3,
+          "intervalDays": 0,
+          "lapses": 1,
+          "repetitions": 0
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 6,
+          "lapses": 0,
+          "repetitions": 2
+        }
+      },
+      {
+        "due": "2026-10-08T09:00:00.000Z",
+        "grade": "hard",
+        "next": {
+          "ease": 2.36,
+          "intervalDays": 7,
+          "lapses": 0,
+          "repetitions": 3
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 6,
+          "lapses": 0,
+          "repetitions": 2
+        }
+      },
+      {
+        "due": "2026-10-16T09:00:00.000Z",
+        "grade": "good",
+        "next": {
+          "ease": 2.5,
+          "intervalDays": 15,
+          "lapses": 0,
+          "repetitions": 3
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 6,
+          "lapses": 0,
+          "repetitions": 2
+        }
+      },
+      {
+        "due": "2026-10-21T09:00:00.000Z",
+        "grade": "easy",
+        "next": {
+          "ease": 2.6,
+          "intervalDays": 20,
+          "lapses": 0,
+          "repetitions": 3
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 6,
+          "lapses": 0,
+          "repetitions": 2
+        }
+      },
+      {
+        "due": "2026-10-01T09:10:00.000Z",
+        "grade": "again",
+        "next": {
+          "ease": 2.3,
+          "intervalDays": 0,
+          "lapses": 1,
+          "repetitions": 0
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 10,
+          "lapses": 0,
+          "repetitions": 3
+        }
+      },
+      {
+        "due": "2026-10-13T09:00:00.000Z",
+        "grade": "hard",
+        "next": {
+          "ease": 2.36,
+          "intervalDays": 12,
+          "lapses": 0,
+          "repetitions": 4
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 10,
+          "lapses": 0,
+          "repetitions": 3
+        }
+      },
+      {
+        "due": "2026-10-26T09:00:00.000Z",
+        "grade": "good",
+        "next": {
+          "ease": 2.5,
+          "intervalDays": 25,
+          "lapses": 0,
+          "repetitions": 4
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 10,
+          "lapses": 0,
+          "repetitions": 3
+        }
+      },
+      {
+        "due": "2026-11-03T09:00:00.000Z",
+        "grade": "easy",
+        "next": {
+          "ease": 2.6,
+          "intervalDays": 33,
+          "lapses": 0,
+          "repetitions": 4
+        },
+        "state": {
+          "ease": 2.5,
+          "intervalDays": 10,
+          "lapses": 0,
+          "repetitions": 3
+        }
+      },
+      {
+        "due": "2026-10-01T09:10:00.000Z",
+        "grade": "again",
+        "next": {
+          "ease": 1.3,
+          "intervalDays": 0,
+          "lapses": 3,
+          "repetitions": 0
+        },
+        "state": {
+          "ease": 1.36,
+          "intervalDays": 40,
+          "lapses": 2,
+          "repetitions": 7
+        }
+      },
+      {
+        "due": "2026-11-18T09:00:00.000Z",
+        "grade": "hard",
+        "next": {
+          "ease": 1.3,
+          "intervalDays": 48,
+          "lapses": 2,
+          "repetitions": 8
+        },
+        "state": {
+          "ease": 1.36,
+          "intervalDays": 40,
+          "lapses": 2,
+          "repetitions": 7
+        }
+      },
+      {
+        "due": "2026-11-24T09:00:00.000Z",
+        "grade": "good",
+        "next": {
+          "ease": 1.36,
+          "intervalDays": 54,
+          "lapses": 2,
+          "repetitions": 8
+        },
+        "state": {
+          "ease": 1.36,
+          "intervalDays": 40,
+          "lapses": 2,
+          "repetitions": 7
+        }
+      },
+      {
+        "due": "2026-12-10T09:00:00.000Z",
+        "grade": "easy",
+        "next": {
+          "ease": 1.4600000000000002,
+          "intervalDays": 70,
+          "lapses": 2,
+          "repetitions": 8
+        },
+        "state": {
+          "ease": 1.36,
+          "intervalDays": 40,
+          "lapses": 2,
+          "repetitions": 7
+        }
+      },
+      {
+        "due": "2026-10-01T09:10:00.000Z",
+        "grade": "again",
+        "next": {
+          "ease": 2.6999999999999997,
+          "intervalDays": 0,
+          "lapses": 1,
+          "repetitions": 0
+        },
+        "state": {
+          "ease": 2.9,
+          "intervalDays": 3000,
+          "lapses": 0,
+          "repetitions": 9
+        }
+      },
+      {
+        "due": "2036-08-09T09:00:00.000Z",
+        "grade": "hard",
+        "next": {
+          "ease": 2.76,
+          "intervalDays": 3600,
+          "lapses": 0,
+          "repetitions": 10
+        },
+        "state": {
+          "ease": 2.9,
+          "intervalDays": 3000,
+          "lapses": 0,
+          "repetitions": 9
+        }
+      },
+      {
+        "due": "2036-09-28T09:00:00.000Z",
+        "grade": "good",
+        "next": {
+          "ease": 2.9,
+          "intervalDays": 3650,
+          "lapses": 0,
+          "repetitions": 10
+        },
+        "state": {
+          "ease": 2.9,
+          "intervalDays": 3000,
+          "lapses": 0,
+          "repetitions": 9
+        }
+      },
+      {
+        "due": "2036-09-28T09:00:00.000Z",
+        "grade": "easy",
+        "next": {
+          "ease": 3.0,
+          "intervalDays": 3650,
+          "lapses": 0,
+          "repetitions": 10
+        },
+        "state": {
+          "ease": 2.9,
+          "intervalDays": 3000,
+          "lapses": 0,
+          "repetitions": 9
+        }
+      }
+    ]
+  }
+}

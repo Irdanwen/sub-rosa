@@ -1,0 +1,28 @@
+/* Documents in the web client: the file card and the Files panel. The
+   site's own tokens (style.css), no new colour. */
+.doc-card .wc-row {
+  margin-top: 8px;
+}
+.doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.doc-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.doc-list li > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}

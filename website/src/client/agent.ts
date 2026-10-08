@@ -26,13 +26,14 @@ import {
   type Message,
   remember,
 } from "./library";
+import type { TurnAddition, TurnInfo } from "./feature";
 import { searchMemories, searchNotes } from "./search";
 import type { SyncClient } from "./sync";
 
 /** What a browser cannot run, said to the model once so it does not promise
  * them. Web-only prose: the shared prompt above it is untouched. */
 export const BROWSER_SECTION =
-  "This conversation runs in the user's web browser. Only the tools you were given work here: the calendar, places, imports, long-form summaries, files and code are in the Sub Rosa app. If the user asks for one of those, say it is available in the app.";
+  "This conversation runs in the user's web browser. Only the tools you were given work here: the calendar, places, imports and long-form summaries are in the Sub Rosa app. If the user asks for one of those, say it is available in the app.";
 
 export interface Personalization {
   enabled: boolean;
@@ -72,10 +73,18 @@ export function memoryBlock(memories: Memory[]): string | null {
 /** The system prompt: agent-lite's, then the blocks joined the way
  * `personalization::default_chat_context` joins them, then the browser's
  * note. */
-export function systemPrompt(personalization: string | null, memory: string | null): string {
+export function systemPrompt(
+  personalization: string | null,
+  memory: string | null,
+  extra: (string | null | undefined)[] = [],
+): string {
   const blocks = [personalization, memory].map((block) => block?.trimEnd() ?? "").filter(Boolean);
   const context = blocks.length ? `\n\n${blocks.join("\n\n")}` : "";
-  return `${AGENT_LITE.systemPrompt}${context}\n\n${BROWSER_SECTION}`;
+  // A feature's words (a mode, the skills, protected mode) after the shared
+  // prompt, the way the phone appends them after it is chosen.
+  const added = extra.map((block) => block?.trim() ?? "").filter(Boolean);
+  const after = added.length ? `\n\n${added.join("\n\n")}` : "";
+  return `${AGENT_LITE.systemPrompt}${context}${after}\n\n${BROWSER_SECTION}`;
 }
 
 export interface TurnContext {
@@ -92,6 +101,16 @@ export interface TurnContext {
   signal?: AbortSignal;
   onText: (fragment: string) => void;
   onStatus?: (stage: string, detail?: string) => void;
+  /** The chat the turn belongs to (null when temporary), for the features. */
+  chatId?: string | null;
+  /** What the web client's features add to this turn (`feature.ts`). */
+  additions?: TurnAddition[];
+  /** Offers only the tools this answers yes to. */
+  allowTool?: (name: string) => boolean;
+  /** Joined to the system prompt after the features' words (protected mode). */
+  promptBlocks?: (string | null)[];
+  /** The person's last message; read from the history when absent. */
+  question?: string;
 }
 export interface TurnResult {
   answer: string;
@@ -253,8 +272,14 @@ export async function executeTool(
           ? "That fact is already remembered."
           : `Remembered: ${fact}`;
       }
-      default:
+      default: {
+        const turn = turnInfo(context, args);
+        for (const addition of context.additions ?? []) {
+          const answer = await addition.run?.(name, args, turn);
+          if (answer !== undefined) return answer;
+        }
         return `The tool ${name} is not available in the browser.`;
+      }
     }
   } catch (error) {
     if (signal?.aborted) throw error;
@@ -263,20 +288,67 @@ export async function executeTool(
   }
 }
 
+function turnInfo(context: TurnContext, _args: Record<string, unknown>): TurnInfo {
+  // `runTurn` fills `question` from the history before any tool runs.
+  return {
+    chatId: context.chatId ?? null,
+    temporary: context.temporary,
+    question: context.question ?? "",
+    signal: context.signal,
+    onStatus: context.onStatus,
+  };
+}
+
+/** Every tool the turn offers: the chat's own, then each feature's, a name
+ * offered once, narrowed by `allowTool`. */
+export function turnTools(context: TurnContext): ToolDefinition[] {
+  const seen = new Set<string>();
+  const tools: ToolDefinition[] = [];
+  const narrowed = (context.additions ?? [])
+    .map((addition) => addition.narrow ?? [])
+    .filter((names) => names.length > 0);
+  const offered = [
+    ...offeredTools(context.memory, context.temporary),
+    ...(context.additions ?? []).flatMap((addition) => addition.tools),
+  ];
+  for (const tool of offered) {
+    const name = tool.function.name;
+    if (seen.has(name) || (context.allowTool && !context.allowTool(name))) continue;
+    if (narrowed.some((names) => !names.includes(name))) continue;
+    seen.add(name);
+    tools.push(tool);
+  }
+  return tools;
+}
+
 /**
  * Runs one turn over `history` (the chat's messages, ending on the question)
  * and returns the answer. The loop and its budget are agent-lite's: tools
  * while rounds remain, then an answer pass with the tools declared but
  * refused, then one without declarations.
  */
-export async function runTurn(context: TurnContext, history: Message[]): Promise<TurnResult> {
+export async function runTurn(given: TurnContext, history: Message[]): Promise<TurnResult> {
+  const context: TurnContext = {
+    ...given,
+    question:
+      given.question ?? [...history].reverse().find((message) => message.role === "user")?.content,
+  };
   const memories = memoriesForTurn(context.sync, context.memory);
-  const prompt = systemPrompt(personalizationBlock(context.personalization), memoryBlock(memories));
-  const messages: ChatMessage[] = [
+  const prompt = systemPrompt(
+    personalizationBlock(context.personalization),
+    memoryBlock(memories),
+    [
+      ...(context.additions ?? []).map((addition) => addition.prompt),
+      ...(context.promptBlocks ?? []),
+    ],
+  );
+  let messages: ChatMessage[] = [
     { role: "system", content: prompt },
-    ...history.map((message) => ({ role: message.role, content: message.content })),
+    ...history.map((message) => ({ role: message.role, content: message.content }) as ChatMessage),
   ];
-  const tools = offeredTools(context.memory, context.temporary);
+  for (const addition of context.additions ?? [])
+    if (addition.messages) messages = addition.messages(messages);
+  const tools = turnTools(context);
   const written: string[] = [];
   let rounds = 0;
   let answerTries = 0;
@@ -302,7 +374,12 @@ export async function runTurn(context: TurnContext, history: Message[]): Promise
       context.signal,
     );
     if (!reply.toolCalls.length || !research) {
-      if (reply.content.trim()) return { answer: reply.content, memories, notesWritten: written };
+      if (reply.content.trim()) {
+        let answer = reply.content;
+        for (const addition of context.additions ?? [])
+          if (addition.seal) answer = addition.seal(answer);
+        return { answer, memories, notesWritten: written };
+      }
       if (research) break;
       continue;
     }

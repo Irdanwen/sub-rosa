@@ -10,7 +10,10 @@
     "./speakable-text": "./src/speakable-text.ts",
     "./chat-block-fence": "./src/chat-block-fence.ts",
     "./conversation-markdown": "./src/conversation-markdown.ts",
-    "./agent-lite.json": "./agent-lite.json"
+    "./study-blocks": "./src/study-blocks.ts",
+    "./agent-lite.json": "./agent-lite.json",
+    "./web/*": "./web/*",
+    "./python/*": "./src/python/*.ts"
   },
-  "files": ["src", "agent-lite.json"]
+  "files": ["src", "agent-lite.json", "web"]
 }

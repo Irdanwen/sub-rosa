@@ -40,12 +40,12 @@ macro_rules! level_style {
     };
 }
 
-pub(super) const NS: &str = ns!();
+pub(crate) const NS: &str = ns!();
 
-pub(super) const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+pub(crate) const ROOT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#;
 
-pub(super) const SLIDE_MASTER: &str = xml_part!(
+pub(crate) const SLIDE_MASTER: &str = xml_part!(
     "<p:sldMaster ", ns!(), "><p:cSld><p:bg><p:bgRef idx=\"1001\"><a:schemeClr val=\"bg1\"/></p:bgRef></p:bg><p:spTree>",
     empty_tree!(),
     "</p:spTree></p:cSld>",
@@ -57,10 +57,10 @@ pub(super) const SLIDE_MASTER: &str = xml_part!(
     "</p:otherStyle></p:txStyles></p:sldMaster>"
 );
 
-pub(super) const SLIDE_MASTER_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+pub(crate) const SLIDE_MASTER_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>"#;
 
-pub(super) const SLIDE_LAYOUT: &str = xml_part!(
+pub(crate) const SLIDE_LAYOUT: &str = xml_part!(
     "<p:sldLayout ",
     ns!(),
     " type=\"blank\" preserve=\"1\"><p:cSld name=\"Blank\"><p:spTree>",
@@ -68,11 +68,11 @@ pub(super) const SLIDE_LAYOUT: &str = xml_part!(
     "</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"
 );
 
-pub(super) const SLIDE_LAYOUT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+pub(crate) const SLIDE_LAYOUT_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>"#;
 
 /// The notes page: the slide's picture on top, the notes below.
-pub(super) const NOTES_MASTER: &str = xml_part!(
+pub(crate) const NOTES_MASTER: &str = xml_part!(
     "<p:notesMaster ",
     ns!(),
     "><p:cSld><p:bg><p:bgRef idx=\"1001\"><a:schemeClr val=\"bg1\"/></p:bgRef></p:bg><p:spTree>",
@@ -86,19 +86,19 @@ pub(super) const NOTES_MASTER: &str = xml_part!(
     "</p:notesStyle></p:notesMaster>"
 );
 
-pub(super) const NOTES_MASTER_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+pub(crate) const NOTES_MASTER_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme2.xml"/></Relationships>"#;
 
-pub(super) const THEME: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+pub(crate) const THEME: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Sub Rosa"><a:themeElements><a:clrScheme name="Sub Rosa"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F2328"/></a:dk2><a:lt2><a:srgbClr val="F4F1EA"/></a:lt2><a:accent1><a:srgbClr val="9A7B2F"/></a:accent1><a:accent2><a:srgbClr val="4F6D7A"/></a:accent2><a:accent3><a:srgbClr val="7A8B5A"/></a:accent3><a:accent4><a:srgbClr val="A0522D"/></a:accent4><a:accent5><a:srgbClr val="5B5F97"/></a:accent5><a:accent6><a:srgbClr val="6B6B6B"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="Sub Rosa"><a:majorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="Sub Rosa"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="12700"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="19050"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>"#;
 
-pub(super) const PRES_PROPS: &str = xml_part!("<p:presentationPr ", ns!(), "/>");
+pub(crate) const PRES_PROPS: &str = xml_part!("<p:presentationPr ", ns!(), "/>");
 
-pub(super) const VIEW_PROPS: &str = xml_part!(
+pub(crate) const VIEW_PROPS: &str = xml_part!(
     "<p:viewPr ",
     ns!(),
     "><p:normalViewPr><p:restoredLeft sz=\"15620\"/><p:restoredTop sz=\"94660\"/></p:normalViewPr><p:gridSpacing cx=\"76200\" cy=\"76200\"/></p:viewPr>"
 );
 
-pub(super) const TABLE_STYLES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+pub(crate) const TABLE_STYLES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>"#;

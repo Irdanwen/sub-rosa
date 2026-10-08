@@ -8,7 +8,13 @@ use super::{list, SkillPack};
 
 pub const TOOL: &str = "load_skill";
 /// Most skills described in one turn's instructions.
-const MAX_OFFERED: usize = 30;
+pub(crate) const MAX_OFFERED: usize = 30;
+
+/// `load_skill`'s answer when no enabled pack has that name.
+pub(crate) fn missing(name: &str) -> String {
+    format!("No enabled skill is called {name}.")
+}
+pub(crate) const UNREADABLE: &str = "The skills could not be read.";
 
 /// What a turn takes from the skills.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -121,7 +127,7 @@ pub async fn load(pool: &SqlitePool, args: &Value) -> String {
             .iter()
             .find(|pack| pack.enabled && pack.name == name)
             .map(body_block)
-            .unwrap_or_else(|| format!("No enabled skill is called {name}.")),
-        Err(_) => "The skills could not be read.".into(),
+            .unwrap_or_else(|| missing(name)),
+        Err(_) => UNREADABLE.into(),
     }
 }

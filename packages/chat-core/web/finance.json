@@ -1,0 +1,133 @@
+{
+  "categories": [
+    "groceries",
+    "dining",
+    "transport",
+    "housing",
+    "utilities",
+    "health",
+    "insurance",
+    "shopping",
+    "leisure",
+    "travel",
+    "subscriptions",
+    "education",
+    "taxes",
+    "fees",
+    "cash",
+    "income",
+    "savings",
+    "transfers",
+    "other"
+  ],
+  "generatedBy": "src-tauri/src/agent_lite/web_features/finance.rs",
+  "notSpending": [
+    "transfers",
+    "savings"
+  ],
+  "searchLimit": 30,
+  "tables": {
+    "finance_rules": {
+      "columns": [
+        "id",
+        "pattern",
+        "is_regex",
+        "category",
+        "position",
+        "created_at"
+      ],
+      "kind": "settings"
+    },
+    "transactions": {
+      "columns": [
+        "id",
+        "dedup_key",
+        "account",
+        "booked_on",
+        "amount_minor",
+        "currency",
+        "description",
+        "counterparty",
+        "reference",
+        "balance_minor",
+        "category",
+        "category_source",
+        "created_at",
+        "updated_at"
+      ],
+      "kind": "artifact"
+    }
+  },
+  "tools": [
+    {
+      "function": {
+        "description": "Summarise the user's spending and income from the bank statements they imported into Sub Rosa: totals, spending by category and by month, the merchants the money goes to, and the balance trend. Amounts are in the account currency, money out positive in spending. Transfers between the user's own accounts and savings are left out of spending. Use it for questions like how much they spent on something, where their money goes, or how a month compares.",
+        "name": "spending_summary",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "Only this category (for example groceries, dining, transport, housing, subscriptions).",
+              "type": "string"
+            },
+            "currency": {
+              "description": "A currency code, when the user has accounts in several.",
+              "type": "string"
+            },
+            "from": {
+              "description": "First day, YYYY-MM-DD. Defaults to the first day of the month three months ago.",
+              "type": "string"
+            },
+            "to": {
+              "description": "Last day, YYYY-MM-DD. Defaults to today.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "description": "Find individual transactions in the bank statements the user imported into Sub Rosa, newest first: by words in the description or the payee, a category, a period, or an amount range. Amounts are signed, negative for money out.",
+        "name": "transactions_search",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "A category, or an empty string for the ones not filed yet.",
+              "type": "string"
+            },
+            "from": {
+              "description": "First day, YYYY-MM-DD.",
+              "type": "string"
+            },
+            "limit": {
+              "description": "How many, 1 to 30. Defaults to 15.",
+              "type": "integer"
+            },
+            "max_amount": {
+              "description": "Highest signed amount, in currency units.",
+              "type": "number"
+            },
+            "min_amount": {
+              "description": "Lowest signed amount, in currency units.",
+              "type": "number"
+            },
+            "query": {
+              "description": "Words to look for, such as a merchant name.",
+              "type": "string"
+            },
+            "to": {
+              "description": "Last day, YYYY-MM-DD.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ],
+  "topMerchants": 10,
+  "uncategorized": "uncategorized"
+}

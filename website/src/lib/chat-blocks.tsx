@@ -200,17 +200,24 @@ export function ChatBlockList({
   );
 }
 
-/** A message's prose as markdown and its blocks as lists. */
-export function MessageBody({ content }: { content: string }) {
+/** A message's prose as markdown and its blocks as lists. The web client
+ * draws the kinds its features own through `renderBlock` (a quiz, a file
+ * card); anything it returns `undefined` for is listed as here. */
+export function MessageBody({
+  content,
+  renderBlock,
+}: {
+  content: string;
+  renderBlock?: (name: string, payload: Record<string, unknown>, id: number) => ReactNode;
+}) {
   return (
     <>
-      {splitChatBlocks(content).map((part) =>
-        part.kind === "text" ? (
-          <Markdown key={part.id} text={part.text} />
-        ) : (
-          <ChatBlockList key={part.id} name={part.name} payload={part.payload} />
-        ),
-      )}
+      {splitChatBlocks(content).map((part) => {
+        if (part.kind === "text") return <Markdown key={part.id} text={part.text} />;
+        const drawn = part.payload ? renderBlock?.(part.name, part.payload, part.id) : undefined;
+        if (drawn !== undefined) return drawn;
+        return <ChatBlockList key={part.id} name={part.name} payload={part.payload} />;
+      })}
     </>
   );
 }

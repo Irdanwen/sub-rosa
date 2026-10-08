@@ -26,8 +26,13 @@ export interface Completion {
   toolCalls: ToolCall[];
   finishReason: string | null;
 }
+/** A part of a multimodal user message: text, or a picture as a data URL. */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
 export type ChatMessage =
-  | { role: "system" | "user"; content: string }
+  | { role: "system"; content: string }
+  | { role: "user"; content: string | ContentPart[] }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
@@ -41,7 +46,8 @@ export const defaultOperator = (): Operator => ({
   fetch: (...args) => fetch(...args),
 });
 
-async function failure(response: Response): Promise<CarpeDiemError> {
+/** The operator's refusal, as an error that keeps its code and status. */
+export async function failure(response: Response): Promise<CarpeDiemError> {
   let code = "carpe_diem_unavailable";
   let message = `Carpe Diem answered ${response.status}.`;
   try {
@@ -62,7 +68,8 @@ async function failure(response: Response): Promise<CarpeDiemError> {
   return new CarpeDiemError(code, response.status, message);
 }
 
-function request(key: string, body: unknown, signal?: AbortSignal): RequestInit {
+/** A JSON `POST` with the browser's key: no cookie, no redirect, no referrer. */
+export function request(key: string, body: unknown, signal?: AbortSignal): RequestInit {
   return {
     method: "POST",
     headers: {

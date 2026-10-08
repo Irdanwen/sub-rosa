@@ -72,21 +72,21 @@ pub fn validate(restrictions: &Restrictions) -> Result<(), AppError> {
     Ok(())
 }
 
-pub(super) fn quiet_hours_refusal() -> AppError {
+pub(crate) fn quiet_hours_refusal() -> AppError {
     AppError::new(
         "protected_mode_quiet_hours",
         "Quiet hours are on. Chat and Studio are paused until they end.",
     )
 }
 
-fn media_refusal() -> AppError {
+pub(crate) fn media_refusal() -> AppError {
     AppError::new(
         "protected_mode_media_off",
         "Protected mode turned off image and video generation.",
     )
 }
 
-fn voice_refusal() -> AppError {
+pub(crate) fn voice_refusal() -> AppError {
     AppError::new(
         "protected_mode_voice_off",
         "Protected mode turned off voice conversations.",

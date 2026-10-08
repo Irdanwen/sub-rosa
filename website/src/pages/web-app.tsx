@@ -178,7 +178,12 @@ function VaultStage({ account, record }: { account: Account; record: DeviceRecor
     );
   return (
     <section className="wc-page">
-      <WebClient account={account} vaultKey={vaultKey} openKey={open} />
+      <WebClient
+        account={account}
+        vaultKey={vaultKey}
+        openKey={open}
+        device={{ id: record.deviceId, name: record.name }}
+      />
     </section>
   );
 }

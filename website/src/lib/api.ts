@@ -141,8 +141,16 @@ export function revisionHeads(changes: Change[]): Change[] {
  * key, so what it is allowed to pull is a decision, not a parameter. The
  * library and usage pages read notes, settings and usage; a browser device's
  * web client also reads and writes conversations, memories and folders
- * (ADR-0096). */
-export type ReadableKind = "settings" | "usage" | "note" | "conversation" | "memory" | "folder";
+ * (ADR-0096), and the artifact rows of the tables its features registered
+ * (assignment runs, documents, transactions), skipping every other one. */
+export type ReadableKind =
+  | "settings"
+  | "usage"
+  | "note"
+  | "conversation"
+  | "memory"
+  | "folder"
+  | "artifact";
 
 export async function readChanges(signal?: AbortSignal, kind?: ReadableKind): Promise<Change[]> {
   return (await readChangesFrom(0, signal, kind)).changes;

@@ -15,7 +15,7 @@ use super::schedule::{Cadence, Schedule};
 use crate::domain::types::AppError;
 
 /// How long an approval waits to be carried out before it perishes.
-const CARRY_OUT_DAYS: i64 = 7;
+pub(crate) const CARRY_OUT_DAYS: i64 = 7;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

@@ -17,7 +17,7 @@ pub const ASSIGNMENT_PROMPT_VERSION: u32 = 1;
 
 /// How many reviewed results a run reads back.
 pub const FEEDBACK_IN_PROMPT: usize = 5;
-const MAX_RESULT_IN_PROMPT: usize = 600;
+pub(crate) const MAX_RESULT_IN_PROMPT: usize = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -170,34 +170,71 @@ fn clipped(text: &str, limit: usize) -> String {
     cut
 }
 
+/// The words a run's prompt is made of, in the order [`run_prompt`] joins
+/// them. Kept as values so the web client reads the same sentences
+/// (`agent_lite::web_features::assignments`) instead of a copy.
+pub(crate) mod words {
+    pub const APPROVED_BEFORE_TITLE: &str = "You are working on my assignment \"";
+    pub const APPROVED_AFTER_TITLE: &str = "\". You proposed the following and I approved it. Carry it out now, within the tools you have, then tell me plainly what you did and anything you could not do.\n\nYour proposal:\n";
+    pub const TASK_BEFORE_TITLE: &str = "This is a scheduled task I set up, \"";
+    pub const TASK_AFTER_TITLE: &str = "\". Do it now:\n";
+    pub const ASSIGNMENT_BEFORE_TITLE: &str =
+        "You are working on a standing assignment I gave you, \"";
+    pub const ASSIGNMENT_AFTER_TITLE: &str = "\". This is one of its regular runs.\n\nThe goal:\n";
+    pub const ASK_RULE: &str = "Ask before anything leaves this device: do not send, post, buy, book, delete or change anything outside this conversation. Read, research and prepare, then end with a short proposal of what you would do next. I approve or reject it before anything happens.";
+    pub const ACT_RULE: &str =
+        "You may act within the tools you have, and only toward this goal. End with what you did.";
+    pub const APPROVED: &str = "I approved";
+    pub const REJECTED: &str = "I rejected";
+    pub const YOUR_RESULT: &str = " your result";
+    pub const RESULT_OPEN: &str = " (\"";
+    pub const RESULT_CLOSE: &str = "\")";
+    pub const MY_FEEDBACK: &str = ". My feedback: ";
+    pub const FEEDBACK_HEADER: &str =
+        "What I said about your recent results, newest first. Take it into account:\n";
+    pub const LATE_BEFORE_SLOT: &str = "This run is late: it was due at ";
+    pub const LATE_AFTER_SLOT: &str = ". Check whether anything has gone out of date since.";
+    pub const SUMMARY_RULE: &str = "Finish with a short summary of the result, at most three sentences, under the heading \"Result\".";
+    /// Joined to the goal of a run a connector event started.
+    pub const EVENT_CAUSE: &str = "\n\nWhat started this run: ";
+    /// How much of an approved proposal the carry-out run reads.
+    pub const MAX_PROPOSAL_CHARS: usize = 2_000;
+}
+
 /// The message a run starts from. It is the user turn of the run's chat, so
 /// it reads as the person's own standing instruction.
 pub fn run_prompt(input: &RunPrompt) -> String {
     let mut parts = Vec::new();
     if let Some(proposal) = input.approved_proposal {
         parts.push(format!(
-            "You are working on my assignment \"{}\". You proposed the following and I approved it. Carry it out now, within the tools you have, then tell me plainly what you did and anything you could not do.\n\nYour proposal:\n{}",
+            "{}{}{}{}",
+            words::APPROVED_BEFORE_TITLE,
             input.title.trim(),
-            clipped(proposal, 2_000)
+            words::APPROVED_AFTER_TITLE,
+            clipped(proposal, words::MAX_PROPOSAL_CHARS)
         ));
         return parts.join("\n\n");
     }
     if input.kind == "task" {
         parts.push(format!(
-            "This is a scheduled task I set up, \"{}\". Do it now:\n{}",
+            "{}{}{}{}",
+            words::TASK_BEFORE_TITLE,
             input.title.trim(),
+            words::TASK_AFTER_TITLE,
             input.goal.trim()
         ));
     } else {
         parts.push(format!(
-            "You are working on a standing assignment I gave you, \"{}\". This is one of its regular runs.\n\nThe goal:\n{}",
+            "{}{}{}{}",
+            words::ASSIGNMENT_BEFORE_TITLE,
             input.title.trim(),
+            words::ASSIGNMENT_AFTER_TITLE,
             input.goal.trim()
         ));
     }
     parts.push(match input.autonomy {
-        Autonomy::Ask => "Ask before anything leaves this device: do not send, post, buy, book, delete or change anything outside this conversation. Read, research and prepare, then end with a short proposal of what you would do next. I approve or reject it before anything happens.".to_string(),
-        Autonomy::Act => "You may act within the tools you have, and only toward this goal. End with what you did.".to_string(),
+        Autonomy::Ask => words::ASK_RULE.to_string(),
+        Autonomy::Act => words::ACT_RULE.to_string(),
     });
     let reviewed: Vec<String> = input
         .reviewed
@@ -205,35 +242,36 @@ pub fn run_prompt(input: &RunPrompt) -> String {
         .take(FEEDBACK_IN_PROMPT)
         .map(|review| {
             let verdict = if review.approved {
-                "I approved"
+                words::APPROVED
             } else {
-                "I rejected"
+                words::REJECTED
             };
-            let mut line = format!("- {}: {verdict} your result", review.when);
+            let mut line = format!("- {}: {verdict}{}", review.when, words::YOUR_RESULT);
             if let Some(result) = review.result.as_deref().filter(|r| !r.trim().is_empty()) {
-                line.push_str(&format!(" (\"{}\")", clipped(result, MAX_RESULT_IN_PROMPT)));
+                line.push_str(&format!(
+                    "{}{}{}",
+                    words::RESULT_OPEN,
+                    clipped(result, MAX_RESULT_IN_PROMPT),
+                    words::RESULT_CLOSE
+                ));
             }
             if let Some(feedback) = review.feedback.as_deref().filter(|f| !f.trim().is_empty()) {
-                line.push_str(&format!(". My feedback: {}", feedback.trim()));
+                line.push_str(&format!("{}{}", words::MY_FEEDBACK, feedback.trim()));
             }
             line
         })
         .collect();
     if !reviewed.is_empty() {
-        parts.push(format!(
-            "What I said about your recent results, newest first. Take it into account:\n{}",
-            reviewed.join("\n")
-        ));
+        parts.push(format!("{}{}", words::FEEDBACK_HEADER, reviewed.join("\n")));
     }
     if let Some(slot) = input.late_for {
         parts.push(format!(
-            "This run is late: it was due at {slot}. Check whether anything has gone out of date since."
+            "{}{slot}{}",
+            words::LATE_BEFORE_SLOT,
+            words::LATE_AFTER_SLOT
         ));
     }
-    parts.push(
-        "Finish with a short summary of the result, at most three sentences, under the heading \"Result\"."
-            .to_string(),
-    );
+    parts.push(words::SUMMARY_RULE.to_string());
     parts.join("\n\n")
 }
 

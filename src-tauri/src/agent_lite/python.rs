@@ -34,15 +34,15 @@ pub const PYTHON_CANCEL_EVENT: &str = "agent-lite://python-cancel";
 
 /// The webview answers "started" at once; silence this long means it is not
 /// there to run anything (backgrounded, frozen, or a build without Python).
-const FIRST_ANSWER: Duration = Duration::from_secs(5);
+pub(crate) const FIRST_ANSWER: Duration = Duration::from_secs(5);
 /// The whole run, including the first load of Pyodide and pandas.
-const RUN_LIMIT: Duration = Duration::from_secs(120);
-const MAX_CODE_CHARS: usize = 20_000;
+pub(crate) const RUN_LIMIT: Duration = Duration::from_secs(120);
+pub(crate) const MAX_CODE_CHARS: usize = 20_000;
 /// What the turn's attachments may put in the worker, all files together.
 const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
-const MAX_BLOCKS: usize = 4;
-const MAX_BLOCK_CHARS: usize = 60_000;
-const MAX_STDOUT_CHARS: usize = 8_000;
+pub(crate) const MAX_BLOCKS: usize = 4;
+pub(crate) const MAX_BLOCK_CHARS: usize = 60_000;
+pub(crate) const MAX_STDOUT_CHARS: usize = 8_000;
 
 /// Said to the model, which passes it on in its own words.
 const NEEDS_APP_OPEN: &str = "Analysis needs the app open: Python runs on this phone only while Sub Rosa is on screen, and it is not right now. Do not retry in this turn. Answer from what you have, and tell the user to keep the app open and ask again for the computed result.";
@@ -139,7 +139,7 @@ pub fn agent_lite_python_reply(request_id: String, reply: PythonReply) -> Result
     Ok(())
 }
 
-pub(super) fn definition() -> serde_json::Value {
+pub(crate) fn definition() -> serde_json::Value {
     serde_json::json!({
         "type": "function",
         "function": {

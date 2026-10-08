@@ -22,8 +22,8 @@ const DEFAULT_LOG_N: u8 = 15;
 const DEFAULT_R: u32 = 8;
 const DEFAULT_P: u32 = 1;
 /// Wrong PINs in a row before the next try has to wait.
-const MAX_FAILURES: u32 = 5;
-const LOCKOUT: Duration = Duration::from_secs(30);
+pub(crate) const MAX_FAILURES: u32 = 5;
+pub(crate) const LOCKOUT: Duration = Duration::from_secs(30);
 
 /// What the settings file keeps of the PIN.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -106,14 +106,14 @@ fn failed() -> AppError {
 /// only: a restart clears it, which is acceptable for a guard against casual
 /// change (ADR-0084).
 #[derive(Debug, Default)]
-pub(super) struct Throttle {
+pub(crate) struct Throttle {
     failures: u32,
     locked_until: Option<Instant>,
 }
 
 impl Throttle {
     /// Refuses while a lockout is running.
-    pub(super) fn check(&mut self, now: Instant) -> Result<(), AppError> {
+    pub(crate) fn check(&mut self, now: Instant) -> Result<(), AppError> {
         match self.locked_until {
             Some(until) if now < until => Err(AppError::new(
                 "protected_mode_locked",
@@ -128,7 +128,7 @@ impl Throttle {
         }
     }
 
-    pub(super) fn record(&mut self, ok: bool, now: Instant) {
+    pub(crate) fn record(&mut self, ok: bool, now: Instant) {
         if ok {
             *self = Self::default();
             return;

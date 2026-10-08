@@ -1,0 +1,28 @@
+{
+  "echoCancelledCouplingDb": -24.0,
+  "echoTailMs": 250,
+  "frame": {
+    "jpegQuality": 80,
+    "longestSide": 1600
+  },
+  "frameSamples": 320,
+  "generatedBy": "src-tauri/src/agent_lite/web_features/voice.rs",
+  "sampleRate": 16000,
+  "sentences": {
+    "maxChars": 280,
+    "minChars": 24
+  },
+  "vad": {
+    "aboveFloorDb": 10.0,
+    "bargeInOnsetMs": 300,
+    "echoCouplingDb": -6.0,
+    "echoMarginDb": 8.0,
+    "endSilenceMs": 700,
+    "hysteresisDb": 4.0,
+    "maxUtteranceMs": 30000,
+    "minSpeechDb": -48.0,
+    "minVoicedMs": 300,
+    "onsetMs": 160,
+    "preRollMs": 300
+  }
+}
