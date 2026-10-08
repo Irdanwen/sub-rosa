@@ -63,3 +63,8 @@
   border-radius: 9px;
   padding: 8px 10px;
 }
+.wc-spaces-share,
+.wc-spaces-share label {
+  display: grid;
+  gap: 8px;
+}

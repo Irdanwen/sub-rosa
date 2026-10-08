@@ -1,6 +1,7 @@
 // Changing who is in a shared project from a tab, against the vectors the app
 // generated (`operations` in src-tauri/tests/fixtures/spaces-v1.json, written
-// by `client::compose_rotation`): an invitation's request and code, the
+// by `client::compose_rotation` and `compose_creation`): a new space, an
+// invitation's request and code, the
 // owner's check of an acceptance, an admission, a removal and the rotation
 // a member makes after someone signed out. Every request must come out the
 // same as the app's, byte for byte once parsed.
@@ -11,6 +12,7 @@ import vectors from "../../src-tauri/tests/fixtures/spaces-v1.json";
 import type { FeatureStore } from "../../website/src/client/feature";
 import {
   checkAcceptance,
+  composeCreation,
   composeInvitation,
   composeRotation,
   type Rotation,
@@ -22,7 +24,9 @@ import {
   IdentitySecret,
   memberFromBundle,
   ROLE_MEMBER,
+  headHash,
   unb64,
+  unwrapKey,
   verifyNext,
 } from "../../website/src/client/spaces/protocol";
 
@@ -51,6 +55,14 @@ const v = vectors as unknown as {
   };
   operations: {
     ephemerals_from: string;
+    creation: {
+      space_id: string;
+      key: string;
+      created_at: string;
+      ephemeral_secret: string;
+      request: { head: EpochHead; wrapped_key: string };
+      hash: string;
+    };
     invitation_request: Record<string, string>;
     acceptance_carol: { member: IdentityBundle; proof: string };
     admission: Operation & { known_epochs: number[] };
@@ -93,6 +105,23 @@ function memoryFeatureStore(): FeatureStore {
 const parsed = (rotation: Rotation) => JSON.parse(JSON.stringify(rotation));
 
 describe("membership changes from a tab, as the app makes them", () => {
+  it("creates a space as the app does: epoch 1, its key sealed to its owner", async () => {
+    const creation = await composeCreation({
+      identity: who("alice"),
+      me: id("alice"),
+      bundle: v.identities.alice.bundle,
+      spaceId: ops.creation.space_id,
+      key: unb64(ops.creation.key),
+      createdAt: ops.creation.created_at,
+      ephemeral: unb64(ops.creation.ephemeral_secret),
+    });
+    expect(JSON.parse(JSON.stringify(creation))).toEqual(ops.creation.request);
+    expect(creation.head).toEqual(heads[0]);
+    expect(await headHash(creation.head)).toBe(ops.creation.hash);
+    const opened = await unwrapKey(who("alice"), creation.wrapped_key, creation.head, id("alice"));
+    expect(opened).toEqual(key(1));
+  });
+
   it("makes the invitation request and code the app makes", async () => {
     const made = await composeInvitation(
       v.invitation.invitation_id,

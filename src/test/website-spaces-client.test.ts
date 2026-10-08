@@ -45,6 +45,7 @@ import type { FeatureStore } from "../../website/src/client/feature";
 import {
   admit,
   createInvitation,
+  createSpace,
   pendingInvitations,
   removeMember,
   revokeInvitation,
@@ -151,6 +152,33 @@ class FakeService {
             sealed_private: b.sealed_private as string,
           });
           return { version: 1 } as T;
+        }
+        if (path === "/api/v1/spaces" && method === "POST") {
+          // `create_space`: a first head the caller signed as its only
+          // member and owner, and that key sealed to them.
+          const head = b.head as EpochHead;
+          if (
+            head.epoch !== 1 ||
+            head.prev !== "" ||
+            head.owner !== account ||
+            head.author !== account ||
+            head.members.length !== 1 ||
+            head.members[0].account_id !== account ||
+            head.members[0].role !== "owner" ||
+            typeof b.wrapped_key !== "string" ||
+            this.spaces.has(head.space_id)
+          )
+            throw new ApiError("invalid", "x", 400);
+          this.spaces.set(head.space_id, {
+            owner: account,
+            epoch: 1,
+            members: new Map([[account, "owner"]]),
+            heads: [head],
+            wraps: new Map([[`1:${account}`, b.wrapped_key]]),
+            objects: [],
+            invitations: new Map(),
+          });
+          return { id: head.space_id } as T;
         }
         const objects = /^\/api\/v1\/spaces\/([^/]+)\/objects$/.exec(path);
         if (objects) {
@@ -407,6 +435,49 @@ describe("shared projects in the browser", () => {
     ]);
     expect(thread[1]?.author).toBe(BOB);
     expect(thread[1]?.data.paid_by).toBe(BOB);
+  });
+
+  it("shares a project from a tab: a space it owns, the project copied in, an invitation from here", async () => {
+    const service = new FakeService();
+    const alice = await loadIdentity(service.as(ALICE), vault(), ALICE);
+    const created = await createSpace(service.as(ALICE), memoryClientStore(), alice, {
+      name: "  Launch plan  ",
+      instructions: "Be brief.",
+      files: [
+        { name: "venues.md", format: "md", text: "Hall A, Hall B" },
+        { name: "photo.png", format: "png", text: "" },
+      ],
+    });
+    expect(created.latest).toMatchObject({ epoch: 1, owner: ALICE, author: ALICE });
+    expect(service.spaces.get(created.id)?.owner).toBe(ALICE);
+    // Another tab of the same account reads it back from the service alone.
+    const again = await openSpace(service.as(ALICE), memoryClientStore(), alice, created.id);
+    expect(again.name).toBe("Launch plan");
+    expect(again.instructions).toBe("Be brief.");
+    expect(itemsOf(again, "file").map((file) => file.data.name)).toEqual(["venues.md"]);
+
+    // The owner invites from this tab, and a member joins and reads the copy.
+    const secrets = memoryFeatureStore();
+    const made = await createInvitation(
+      service.as(ALICE),
+      secrets,
+      alice,
+      again,
+      "https://example.test/app",
+    );
+    const bobStore = memoryClientStore();
+    const bob = await loadIdentity(service.as(BOB), vault(), BOB);
+    await acceptInvitation(
+      service.as(BOB),
+      bobStore,
+      bob,
+      await openInvitation(service.as(BOB), bob, made.link),
+    );
+    const claimed = await openSpace(service.as(ALICE), memoryClientStore(), alice, created.id);
+    await admit(service.as(ALICE), secrets, alice, claimed, made.id);
+    const bobView = await openSpace(service.as(BOB), bobStore, bob, created.id);
+    expect(bobView.name).toBe("Launch plan");
+    expect(itemsOf(bobView, "file")[0]?.data.text).toBe("Hall A, Hall B");
   });
 
   it("catches a rollback, and a removed member reads nothing written after", async () => {

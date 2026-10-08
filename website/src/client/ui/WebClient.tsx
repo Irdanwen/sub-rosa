@@ -835,6 +835,7 @@ export function WebClient({
         </nav>
         <SpacesEntry
           account={account}
+          sync={sync}
           vaultKey={vaultKey}
           openKey={openKey}
           operator={operator}
