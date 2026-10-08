@@ -105,6 +105,7 @@ import { NameSheet } from "../NameSheet";
 import { formatNoteTime } from "./NoteRow";
 import { PullToRefresh } from "../PullToRefresh";
 import { StackHeader } from "../StackHeader";
+import { ComposerModes, studyChatStarted } from "../../agent/ComposerModes";
 import { SwipeableRow } from "../SwipeableRow";
 
 const CHAT_MODEL_STORAGE_KEY = "subrosa:mobile:chat-model";
@@ -858,6 +859,8 @@ export function AgentSessionScreen({
         taskIdRef.current = current.id;
         setTask(current);
         onSessionCreated?.(current.id);
+        // Study mode switched on before the chat existed (ADR-0089).
+        await studyChatStarted(current.id);
         // The question is stored from here: a failure below is retried, not
         // put back in the composer (sending it again would ask it twice).
         persistedTaskId = current.id;
@@ -1369,6 +1372,7 @@ export function AgentSessionScreen({
               <span className="mobile-composer-model-name">{activeModelLabel}</span>
               <IconChevronDownSmall size={14} aria-hidden />
             </button>
+            <ComposerModes chatId={task?.id} draft={draft} compact />
             {messages.length > 0 ? <ContextGauge reading={gauge} onNewChat={onNewChat} /> : null}
           </>
         }

@@ -14,6 +14,8 @@ import { CanvasCard } from "./CanvasCard";
 import { SaveToggle } from "../chat/LibraryActions";
 import { linkSaveRequest } from "../../lib/chat-library";
 import { TryOnCard } from "./TryOnCard";
+import { QuizCard } from "./QuizCard";
+import { FlashcardsCard } from "./FlashcardsCard";
 
 /**
  * Renders one parsed chat block (see src/lib/chat-blocks.ts). Shared by the
@@ -40,6 +42,10 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
       return <CanvasCard block={block} />;
     case "tryon":
       return <TryOnCard block={block} />;
+    case "quiz":
+      return <QuizCard block={block} />;
+    case "flashcards":
+      return <FlashcardsCard block={block} />;
     default:
       return null;
   }

@@ -37,6 +37,7 @@ pub mod dictation;
 #[cfg(mobile)]
 pub mod dictation_mobile;
 pub mod documents;
+pub mod docx;
 pub mod domain;
 pub mod egress;
 pub mod egress_ledger;
@@ -82,6 +83,7 @@ pub mod providers;
 pub mod redacted;
 pub mod reflex;
 pub mod reply_ratings;
+pub mod research;
 pub mod rewrite_stream;
 pub mod saved_items;
 pub mod scan;
@@ -94,6 +96,7 @@ pub mod sse_lines;
 pub mod storefront;
 #[cfg(desktop)]
 pub mod stream_relay;
+pub mod study;
 pub mod temporary_chat;
 #[cfg(desktop)]
 pub mod theme_icon;
@@ -577,6 +580,22 @@ pub fn run() {
             saved_items::saved_items_list,
             saved_items::saved_item_save,
             saved_items::saved_item_remove,
+            research::research_start,
+            research::research_plan,
+            research::research_approve,
+            research::research_stop,
+            research::research_resume,
+            research::research_get,
+            research::research_list,
+            research::research_delete,
+            research::export::note_export_document,
+            study::study_mode,
+            study::study_prompt,
+            study::study_cards_add,
+            study::study_cards_due,
+            study::study_card_review,
+            study::study_cards_stats,
+            study::study_card_delete,
             conversation_export::export_conversation,
             conversation_export::data::export_chat_data,
             temporary_chat::temporary_chat_create,
@@ -913,6 +932,22 @@ pub fn run() {
         saved_items::saved_items_list,
         saved_items::saved_item_save,
         saved_items::saved_item_remove,
+        research::research_start,
+        research::research_plan,
+        research::research_approve,
+        research::research_stop,
+        research::research_resume,
+        research::research_get,
+        research::research_list,
+        research::research_delete,
+        research::export::note_export_document,
+        study::study_mode,
+        study::study_prompt,
+        study::study_cards_add,
+        study::study_cards_due,
+        study::study_card_review,
+        study::study_cards_stats,
+        study::study_card_delete,
         conversation_export::export_conversation,
         conversation_export::data::export_chat_data,
         temporary_chat::temporary_chat_create,

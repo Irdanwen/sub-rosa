@@ -24,9 +24,18 @@ import {
 } from "./chat-blocks-data";
 import { type CanvasChatBlock, canvasMarkdown, parseCanvasPayload } from "./canvas-block";
 import { safeExternalUrl } from "./external-link";
+import {
+  type FlashcardsChatBlock,
+  flashcardsPlainText,
+  parseFlashcardsPayload,
+  parseQuizPayload,
+  type QuizChatBlock,
+  quizPlainText,
+} from "./study-blocks";
 import { type TryOnChatBlock, parseTryOnPayload, tryOnPlainText } from "./try-on-block";
 
 export type { ChartChatBlock, TableChatBlock } from "./chat-blocks-data";
+export type { FlashcardsChatBlock, QuizChatBlock } from "./study-blocks";
 
 export const CHAT_BLOCK_FENCE_PREFIX = "subrosa:";
 
@@ -111,7 +120,9 @@ export type ChatBlock =
   | ChartChatBlock
   | TableChatBlock
   | CanvasChatBlock
-  | TryOnChatBlock;
+  | TryOnChatBlock
+  | QuizChatBlock
+  | FlashcardsChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -402,6 +413,10 @@ function chatBlockPlainText(block: ChatBlock): string[] {
       return [block.title, "", ...canvasMarkdown(block).split("\n")];
     case "tryon":
       return tryOnPlainText(block);
+    case "quiz":
+      return quizPlainText(block);
+    case "flashcards":
+      return flashcardsPlainText(block);
     default:
       return [];
   }
@@ -444,6 +459,10 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parseCanvasPayload(payload);
     case "tryon":
       return parseTryOnPayload(payload);
+    case "quiz":
+      return parseQuizPayload(payload);
+    case "flashcards":
+      return parseFlashcardsPayload(payload);
     default:
       return null;
   }

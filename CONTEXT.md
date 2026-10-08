@@ -1374,6 +1374,48 @@ the memory still holds the state after. Settings › Memory calls the journal
 _Avoid:_ "auto-edit", "AI edit", "suggestion" (nothing is proposed: it is
 done, and can be undone).
 
+### Research and study (fork)
+
+**Deep research** — a question read across the web and the person's own
+notes and project files, written up as a note (ADR-0089). It moves in four
+steps the person sees: clarifying questions (at most three, often none), a
+**research plan** (sections and their searches, edited and approved, with
+its **depth** and what it costs at most), the **run**, and the **report**.
+_Avoid:_ "deep search", "agent mode", "investigation".
+
+**Research run** — one deep research, a row (`research_runs`) with one row
+per search (`research_steps`) and per source read (`research_sources`), so
+it survives the app being suspended or quit and the background sweep picks
+it up again (ADR-0018). It is running, stopped, done or failed; a stopped
+run resumes, or writes its report from what it read.
+_Avoid:_ "job" (Studio's), "task" (the agent's).
+
+**Depth** — the budget of a run: Quick (up to 10 sources), Standard (25) or
+Deep (50), which also caps the searches the plan may hold.
+
+**Research source** — a web page, note or project file a run read, numbered
+by the app when the report is written. Always "research source" in code; in
+copy, "source" only inside the research surfaces.
+_Avoid:_ "source" alone in code (an audio lane), "reference" (an
+assistant's file), "link" (a chat card).
+
+**Report** — the note a run writes: a summary, sections, citations the app
+resolved and a sources list the app wrote (the ADR-0044 discipline). It is
+an ordinary note and exports as Markdown, PDF or Word.
+_Avoid:_ "research note", "document".
+
+**Study mode** — a chat that teaches: the assistant guides with questions
+and hints rather than giving answers, checks understanding with a **quiz**
+(`subrosa:quiz`) and helps memorise with **flashcards**
+(`subrosa:flashcards`). Switched per chat from the composer, on both shells.
+_Avoid:_ "tutor mode", "learning mode".
+
+**Review** — the cards a person added from flashcards, brought back when
+they are due by spaced repetition (SM-2, `study_cards`, kept on this
+device). Each answer is Again, Hard, Good or Easy.
+_Avoid:_ "deck" for the review (a deck is one flashcards block), "quiz"
+(answered in the chat, never stored).
+
 ### Sharing in (fork)
 
 **Share inbox** — the folder in the app group container where the iOS

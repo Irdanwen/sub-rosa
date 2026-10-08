@@ -1,0 +1,148 @@
+import "../../styles/study-research.css";
+import { IconDeepSearch } from "central-icons/IconDeepSearch";
+import { IconFlashcards } from "central-icons/IconFlashcards";
+import { IconGraduateCap } from "central-icons/IconGraduateCap";
+import { useCallback, useEffect, useState } from "react";
+import { t } from "../../lib/i18n";
+import { STUDY_CARDS_CHANGED_EVENT, setStudyMode, studyStats, useStudyMode } from "../../lib/study";
+import { ActionSheet } from "../mobile/ActionSheet";
+import { ResearchDialog } from "../research/ResearchDialog";
+import { StudyReview } from "../study/StudyReview";
+
+export { studyChatStarted, withStudyContext } from "../../lib/study";
+
+/**
+ * The composer's two modes (ADR-0089), shared by both shells: "Study"
+ * switches the chat to a tutor that quizzes and makes flashcards, and "Deep
+ * research" opens the research dialog on what is typed. "Review" appears
+ * once there are cards, with the number due. The desktop shows them as
+ * chips beside the model; the phone, short of room, gathers them behind one
+ * button.
+ */
+export function ComposerModes({
+  chatId,
+  draft,
+  compact = false,
+}: {
+  chatId?: string | null;
+  draft: string;
+  compact?: boolean;
+}) {
+  const studying = useStudyMode(chatId);
+  const [researchOpen, setResearchOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [cards, setCards] = useState({ total: 0, due: 0 });
+
+  const refreshCards = useCallback(() => {
+    void studyStats()
+      .then((stats) => setCards({ total: stats.total, due: stats.due }))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    refreshCards();
+    window.addEventListener(STUDY_CARDS_CHANGED_EVENT, refreshCards);
+    return () => window.removeEventListener(STUDY_CARDS_CHANGED_EVENT, refreshCards);
+  }, [refreshCards]);
+
+  const toggleStudy = () => void setStudyMode(chatId, !studying);
+  const reviewLabel = cards.due > 0 ? t("Review, {count} due", { count: cards.due }) : t("Review");
+
+  const dialogs = (
+    <>
+      <ResearchDialog
+        open={researchOpen}
+        onClose={() => setResearchOpen(false)}
+        initialQuestion={draft.trim()}
+        chatId={chatId}
+      />
+      <StudyReview
+        open={reviewOpen}
+        onClose={() => {
+          setReviewOpen(false);
+          refreshCards();
+        }}
+      />
+    </>
+  );
+
+  if (compact) {
+    return (
+      <>
+        <button
+          type="button"
+          className="composer-modes-compact"
+          data-on={studying || undefined}
+          aria-label={studying ? t("Study mode is on. More modes") : t("Study and research")}
+          onClick={() => setMenuOpen(true)}
+        >
+          <IconGraduateCap size={17} aria-hidden />
+          {studying ? <span>{t("Study")}</span> : null}
+          {cards.due > 0 ? <span className="composer-modes-badge">{cards.due}</span> : null}
+        </button>
+        {menuOpen ? (
+          <ActionSheet
+            title={t("Study and research")}
+            onClose={() => setMenuOpen(false)}
+            actions={[
+              {
+                label: studying ? t("Turn study mode off") : t("Turn study mode on"),
+                onAction: () => {
+                  setMenuOpen(false);
+                  toggleStudy();
+                },
+              },
+              {
+                label: t("Deep research"),
+                onAction: () => {
+                  setMenuOpen(false);
+                  setResearchOpen(true);
+                },
+              },
+              {
+                label: reviewLabel,
+                onAction: () => {
+                  setMenuOpen(false);
+                  setReviewOpen(true);
+                },
+              },
+            ]}
+          />
+        ) : null}
+        {dialogs}
+      </>
+    );
+  }
+
+  return (
+    <div className="composer-modes">
+      <button
+        type="button"
+        className="composer-mode"
+        aria-pressed={studying}
+        title={t("A tutor that checks what you understood")}
+        onClick={toggleStudy}
+      >
+        <IconGraduateCap size={14} aria-hidden />
+        {t("Study")}
+      </button>
+      <button
+        type="button"
+        className="composer-mode"
+        title={t("Research a question across the web and your notes")}
+        onClick={() => setResearchOpen(true)}
+      >
+        <IconDeepSearch size={14} aria-hidden />
+        {t("Deep research")}
+      </button>
+      {cards.total > 0 ? (
+        <button type="button" className="composer-mode" onClick={() => setReviewOpen(true)}>
+          <IconFlashcards size={14} aria-hidden />
+          {reviewLabel}
+        </button>
+      ) : null}
+      {dialogs}
+    </div>
+  );
+}
