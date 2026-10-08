@@ -152,7 +152,8 @@ export type ReadableKind =
   | "conversation"
   | "memory"
   | "folder"
-  | "artifact";
+  | "artifact"
+  | "errand";
 
 export async function readChanges(signal?: AbortSignal, kind?: ReadableKind): Promise<Change[]> {
   return (await readChangesFrom(0, signal, kind)).changes;

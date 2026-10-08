@@ -122,3 +122,30 @@ member is removed, and in the protocol document.
   behaviour (a person may admit without comparing), but the numbers are always
   shown where trust is decided, and the link itself carries the inviter's keys
   outside the service.
+
+## Addendum (2026-10-08): the owner's side runs in a tab too
+
+The decision's last bullet of Consequences said inviting, admitting and
+removing stay in the app. The web client now does all three, with the same
+protocol and nothing new on the service
+(`website/src/client/spaces/membership.ts`):
+
+- **An invitation's secret stays where the link was made.** A link made in a
+  tab keeps its secret in that browser's feature store, sealed under the vault
+  key, and the acceptance it brings back is checked there, before the safety
+  number is shown and the person admits. A link made in the app is admitted
+  from the app, and the tab says so rather than admitting what it cannot
+  check, as the app already did for a link made on another device.
+- **Every membership change is one composition.** `client::compose_rotation`
+  (Rust) and `composeRotation` (TypeScript) build the head, the key sealed to
+  every member and, for a newcomer, the earlier keys; each applies the head
+  rules to its own head before sending it. The shared vectors now include an
+  admission, a removal and a member's rotation after a signed departure, with
+  fixed ephemerals, so the two must produce the same request.
+- **A tab rotates out a member who left** when it opens the space, under the
+  same rule as the app: the owner rotates anyone out, any other member only
+  those who signed themselves out.
+- The Preview switch is unchanged: off by default in each browser, labelled
+  "Preview", with the sentence that the protocol has not been independently
+  reviewed. Creating a space still starts from a project in the app.
+

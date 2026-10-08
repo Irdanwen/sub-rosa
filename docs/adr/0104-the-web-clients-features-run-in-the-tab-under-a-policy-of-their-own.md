@@ -142,3 +142,12 @@ implementation:
   'self'`, its PostScript functions compiled under the `'wasm-unsafe-eval'`
   already granted), pictures are `data:` URLs (`img-src 'self' data:`), and
   pictures are fetched only from Carpe Diem's origin.
+
+## Addendum, 2026-10-08: connectors a tab cannot reach
+
+Decision 6 stands for what a tab reaches itself. A connector it cannot reach
+is no longer only "use it in the app": one of the person's own open apps can
+make the call for the tab, as an errand, under that device's rules
+([ADR-0107](0107-a-connector-a-tab-cannot-reach-is-an-errand-to-an-open-app.md)).
+Nothing is proxied through the account service, and the page's policy is
+unchanged.

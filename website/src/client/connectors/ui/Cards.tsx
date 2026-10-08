@@ -17,8 +17,11 @@ import { effectiveRule } from "../rules";
 import { callTool } from "../runtime";
 import { getConnector, localState } from "../store";
 import { decide } from "../turn";
+import { relayError, relayStatus } from "./relay-words";
 
 function statusText(call: CallRecord) {
+  const waiting = relayStatus(call);
+  if (waiting) return waiting;
   switch (call.status) {
     case "pending":
       return t("Waiting for your approval", "En attente de votre accord");
@@ -91,7 +94,7 @@ function CallView({
           {link.title}
         </a>
       ))}
-      {call.error && <p className="quiet">{call.error}</p>}
+      {call.error && <p className="quiet">{relayError(call)}</p>}
       {call.appId && <AppFrame host={host} appId={call.appId} />}
     </section>
   );

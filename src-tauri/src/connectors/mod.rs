@@ -14,7 +14,8 @@
 //!   behind an "ask";
 //! - [`agent`]: what agent-lite offers and dispatches; [`apps`]: interactive
 //!   views in a sandboxed frame; [`triggers`]: events that start assignment
-//!   runs; [`research`]: connector sources in deep research.
+//!   runs; [`research`]: connector sources in deep research; [`relay`]:
+//!   the calls a browser tab asks one of the person's apps to make.
 //!
 //! On the computer the general assistant runs on Hermes, which reaches the
 //! same connectors through the app ([`hermes`]): one sign-in per device, one
@@ -40,6 +41,7 @@ pub mod hermes;
 pub mod mcp;
 pub mod oauth;
 pub mod policy;
+pub mod relay;
 pub mod research;
 pub mod runtime;
 pub mod tokens;

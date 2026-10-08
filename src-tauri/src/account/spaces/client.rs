@@ -442,6 +442,82 @@ pub struct Admission<'a> {
     pub member: &'a IdentityBundle,
 }
 
+/// What one new epoch sends: the head, the key sealed to every member (and,
+/// for a newcomer, the earlier keys), and the invitation it admits through.
+pub struct Rotation {
+    pub head: EpochHead,
+    pub wrapped_keys: Vec<Value>,
+    pub admit: Vec<String>,
+}
+impl Rotation {
+    /// The body of `POST /api/v1/spaces/{id}/epochs`.
+    pub fn body(&self) -> Value {
+        json!({"head": self.head, "wrapped_keys": self.wrapped_keys, "admit": self.admit})
+    }
+}
+
+/// The pieces of a rotation that need no network: the browser builds the
+/// same ones (`composeRotation` in `website/src/client/spaces/client.ts`),
+/// and the shared vectors hold the two to the same bytes. `ephemeral` gives
+/// each wrap its HPKE ephemeral secret, in order: the members in head order,
+/// then the newcomer's earlier epochs in ascending order.
+#[allow(clippy::too_many_arguments)]
+pub fn compose_rotation(
+    identity: &IdentitySecret,
+    me: &str,
+    latest: &EpochHead,
+    keys: &BTreeMap<u64, Zeroizing<[u8; 32]>>,
+    members: Vec<HeadMember>,
+    departures: Vec<Departure>,
+    admission: Option<&Admission<'_>>,
+    key: &[u8; 32],
+    created_at: &str,
+    mut ephemeral: impl FnMut() -> Zeroizing<[u8; 32]>,
+) -> Result<Rotation, AppError> {
+    let space_id = latest.space_id.as_str();
+    let epoch = latest.epoch + 1;
+    let head = EpochHead::sign(
+        HeadDraft {
+            space_id,
+            epoch,
+            prev: Some(latest),
+            owner: &latest.owner,
+            members,
+            key,
+            author: me,
+            departures,
+            created_at,
+        },
+        identity,
+    );
+    // The same rules every member will apply, applied first by the author.
+    protocol::verify_next(Some(latest), &head)?;
+    let mut wrapped = Vec::new();
+    for member in &head.members {
+        wrapped.push(json!({
+            "account_id": member.account_id,
+            "epoch": epoch,
+            "sealed": protocol::wrap_key_with(&ephemeral(), key, &member.x25519, space_id, epoch, &member.account_id)?,
+        }));
+    }
+    let mut admit = Vec::new();
+    if let Some(admission) = admission {
+        for (old_epoch, old_key) in keys {
+            wrapped.push(json!({
+                "account_id": admission.member.account_id,
+                "epoch": old_epoch,
+                "sealed": protocol::wrap_key_with(&ephemeral(), old_key, &admission.member.x25519, space_id, *old_epoch, &admission.member.account_id)?,
+            }));
+        }
+        admit.push(admission.invitation_id.to_string());
+    }
+    Ok(Rotation {
+        head,
+        wrapped_keys: wrapped,
+        admit,
+    })
+}
+
 /// One new epoch: a fresh key, a head this account signs, the key sealed to
 /// every member, and for a newcomer the earlier keys too, so a project's
 /// history is theirs to read. Every membership change goes through here.
@@ -453,48 +529,27 @@ pub async fn rotate(
     departures: Vec<Departure>,
     admission: Option<Admission<'_>>,
 ) -> Result<(), AppError> {
+    if v.latest.space_id != space_id {
+        return Err(protocol::invalid());
+    }
     let key = protocol::random_space_key();
-    let epoch = v.latest.epoch + 1;
-    let head = EpochHead::sign(
-        HeadDraft {
-            space_id,
-            epoch,
-            prev: Some(&v.latest),
-            owner: &v.latest.owner,
-            members,
-            key: &key,
-            author: ctx.me(),
-            departures,
-            created_at: &chrono::Utc::now().to_rfc3339(),
-        },
+    let rotation = compose_rotation(
         &ctx.identity,
-    );
-    // The same rules every member will apply, applied first by the author.
-    protocol::verify_next(Some(&v.latest), &head)?;
-    let mut wrapped = Vec::new();
-    for member in &head.members {
-        wrapped.push(json!({
-            "account_id": member.account_id,
-            "epoch": epoch,
-            "sealed": protocol::wrap_key(&key, &member.x25519, space_id, epoch, &member.account_id)?,
-        }));
-    }
-    let mut admit = Vec::new();
-    if let Some(admission) = &admission {
-        for (old_epoch, old_key) in &v.keys {
-            wrapped.push(json!({
-                "account_id": admission.member.account_id,
-                "epoch": old_epoch,
-                "sealed": protocol::wrap_key(old_key, &admission.member.x25519, space_id, *old_epoch, &admission.member.account_id)?,
-            }));
-        }
-        admit.push(admission.invitation_id.to_string());
-    }
+        ctx.me(),
+        &v.latest,
+        &v.keys,
+        members,
+        departures,
+        admission.as_ref(),
+        &key,
+        &chrono::Utc::now().to_rfc3339(),
+        || Zeroizing::new(rand::random()),
+    )?;
     call(
         &ctx.s,
         Method::POST,
         &format!("/api/v1/spaces/{space_id}/epochs"),
-        Some(json!({"head": head, "wrapped_keys": wrapped, "admit": admit})),
+        Some(rotation.body()),
     )
     .await?;
     Ok(())

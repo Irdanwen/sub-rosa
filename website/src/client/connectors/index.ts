@@ -8,6 +8,7 @@
 import { t } from "../../lib/i18n";
 import type { WebFeature } from "../feature";
 import { connectorOptions, envFor } from "./env";
+import { reconcileRelayed } from "./relay";
 import { registerConnectorResearch } from "./research";
 import { completeSignIn } from "./runtime";
 import { checkTriggers } from "./triggers";
@@ -41,5 +42,9 @@ export const connectorsFeature: WebFeature = {
     } else host.notify(failureText(new OAuthError(outcome.reason)));
   },
   turn: (host, turn) => connectorTurn(envFor(host), turn),
-  tick: (host, signal) => checkTriggers(envFor(host), signal),
+  async tick(host, signal) {
+    // A relayed call's late answer reaches its card (ADR-0107).
+    await reconcileRelayed(envFor(host)).catch(() => undefined);
+    await checkTriggers(envFor(host), signal);
+  },
 };

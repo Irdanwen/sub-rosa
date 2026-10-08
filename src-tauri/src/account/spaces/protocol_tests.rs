@@ -190,6 +190,163 @@ fn identity_vector(secret: &IdentitySecret, seed: u8, account: &str) -> Value {
     })
 }
 
+/// Deterministic HPKE ephemerals for one rotation: `0xa0`, `0xa1`, ... in
+/// the order `compose_rotation` asks for them.
+fn ephemerals() -> impl FnMut() -> Zeroizing<[u8; 32]> {
+    let mut next = 0xa0u8;
+    move || {
+        let value = Zeroizing::new([next; 32]);
+        next = next.wrapping_add(1);
+        value
+    }
+}
+fn known_keys(
+    epochs: std::ops::RangeInclusive<u8>,
+) -> std::collections::BTreeMap<u64, Zeroizing<[u8; 32]>> {
+    epochs
+        .map(|e| (u64::from(e), Zeroizing::new(key(e))))
+        .collect()
+}
+
+/// The membership changes as the app composes them
+/// (`client::compose_rotation`), with fixed keys, times and ephemerals, so
+/// the browser's `composeRotation` is held to the same request bytes:
+/// - the owner admits Carol at epoch 3 (her earlier keys sealed to her);
+/// - the owner removes Bob at epoch 4 (no departure, no key for him);
+/// - Carol rotates Bob out at epoch 4 after he signed a leave statement.
+fn operations() -> Value {
+    use crate::account::spaces::client::{compose_rotation, Admission};
+    let heads = chain();
+    let carol_bundle = carol().bundle(CAROL, CREATED);
+    let invite_secret = [0x5a; 32];
+    let carol_proof = acceptance_proof(&invite_secret, INVITATION, SPACE, &carol_bundle);
+    verify_acceptance(
+        &invite_secret,
+        INVITATION,
+        SPACE,
+        &carol_bundle,
+        &carol_proof,
+    )
+    .unwrap();
+    let mut admitted_members = heads[1].members.clone();
+    admitted_members.push(HeadMember::from_bundle(&carol_bundle, ROLE_MEMBER));
+    let admission = compose_rotation(
+        &alice(),
+        ALICE,
+        &heads[1],
+        &known_keys(1..=2),
+        admitted_members,
+        vec![],
+        Some(&Admission {
+            invitation_id: INVITATION,
+            member: &carol_bundle,
+        }),
+        &key(3),
+        CREATED,
+        ephemerals(),
+    )
+    .unwrap();
+    assert_eq!(
+        admission.head, heads[2],
+        "an admission is the chain's epoch 3"
+    );
+    let removal = compose_rotation(
+        &alice(),
+        ALICE,
+        &heads[2],
+        &known_keys(1..=3),
+        heads[2]
+            .members
+            .iter()
+            .filter(|m| m.account_id != BOB)
+            .cloned()
+            .collect(),
+        vec![],
+        None,
+        &key(4),
+        CREATED,
+        ephemerals(),
+    )
+    .unwrap();
+    let departure = compose_rotation(
+        &carol(),
+        CAROL,
+        &heads[2],
+        &known_keys(1..=3),
+        heads[3].members.clone(),
+        heads[3].departures.clone(),
+        None,
+        &key(4),
+        CREATED,
+        ephemerals(),
+    )
+    .unwrap();
+    assert_eq!(
+        departure.head, heads[3],
+        "a rotation after a leave is the chain's epoch 4"
+    );
+    // Every wrap opens for its recipient against the head it names.
+    for (rotation, others) in [
+        (&admission, &heads),
+        (&removal, &heads),
+        (&departure, &heads),
+    ] {
+        for wrapped in &rotation.wrapped_keys {
+            let account = wrapped["account_id"].as_str().unwrap();
+            let epoch = wrapped["epoch"].as_u64().unwrap();
+            let secret = [(ALICE, alice()), (BOB, bob()), (CAROL, carol())]
+                .into_iter()
+                .find(|(id, _)| *id == account)
+                .unwrap()
+                .1;
+            let head = if epoch == rotation.head.epoch {
+                &rotation.head
+            } else {
+                &others[usize::try_from(epoch).unwrap() - 1]
+            };
+            unwrap_key(&secret, wrapped["sealed"].as_str().unwrap(), head, account).unwrap();
+        }
+    }
+    let expires_at = "2026-10-15T12:00:00Z";
+    let payload = InvitePayload {
+        v: 1,
+        space_id: SPACE.into(),
+        space_name: "Launch plan".into(),
+        inviter: alice().bundle(ALICE, CREATED),
+        expires_at: expires_at.into(),
+    };
+    json!({
+        "ephemerals_from": b64(&[0xa0u8; 32]),
+        "invitation_request": {
+            "id": INVITATION,
+            "token_hash": token_hash(&invite_token(&invite_secret, INVITATION)),
+            "payload": seal_payload_with_nonce(&invite_secret, INVITATION, &payload, [4u8; 12]).unwrap(),
+            "expires_at": expires_at,
+        },
+        "acceptance_carol": {"member": carol_bundle, "proof": carol_proof},
+        "admission": {
+            "prev_epoch": 2,
+            "known_epochs": [1, 2],
+            "key": b64(&key(3)),
+            "request": admission.body(),
+            "hash": admission.head.hash(),
+        },
+        "removal": {
+            "prev_epoch": 3,
+            "removed": BOB,
+            "key": b64(&key(4)),
+            "request": removal.body(),
+            "hash": removal.head.hash(),
+        },
+        "departure": {
+            "prev_epoch": 3,
+            "author": CAROL,
+            "key": b64(&key(4)),
+            "request": departure.body(),
+        },
+    })
+}
+
 fn vectors() -> Value {
     let heads = chain();
     let recipient_secret = [9u8; 32];
@@ -288,6 +445,7 @@ fn vectors() -> Value {
             "sealed_payload": seal_payload_with_nonce(&invite_secret, INVITATION, &payload, [4u8; 12]).unwrap(),
             "acceptance_bob": acceptance_proof(&invite_secret, INVITATION, SPACE, &bob_bundle),
         },
+        "operations": operations(),
         "profile_id": {
             "space_id": SPACE,
             "account_id": CAROL,

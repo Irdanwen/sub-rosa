@@ -2,7 +2,9 @@
 // keeps the routes' rules: an owner shares, invites and admits; a member
 // reads the history, writes, asks the assistant with their own key; a
 // rollback is caught; a removed member reads nothing written after; an
-// invitation works once.
+// invitation works once. The owner's side runs in a tab too: a link made
+// here, the acceptance checked with its secret, an admission, a removal, and
+// a member rotating out someone who signed themselves out.
 // @ts-expect-error node:crypto is available in the Vitest runtime.
 import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,6 +15,7 @@ import {
   type SpacesTransport,
   acceptInvitation,
   askAssistant,
+  leave,
   itemsOf,
   loadIdentity,
   messagesOf,
@@ -38,6 +41,15 @@ import {
   tokenHash,
   wrapKey,
 } from "../../website/src/client/spaces/protocol";
+import type { FeatureStore } from "../../website/src/client/feature";
+import {
+  admit,
+  createInvitation,
+  pendingInvitations,
+  removeMember,
+  revokeInvitation,
+  rotateIfDue,
+} from "../../website/src/client/spaces/membership";
 import { memoryClientStore } from "../../website/src/client/store";
 import { fakeOperator, text } from "./website-client-fakes";
 
@@ -56,6 +68,7 @@ interface FakeSpace {
     string,
     { tokenHash: string; payload: string; claimedBy?: string; acceptance?: unknown }
   >;
+  departures?: { account_id: string; epoch: number; statement: string }[];
 }
 /** The routes this client calls, with the service's authorization rules. */
 class FakeService {
@@ -114,6 +127,17 @@ class FakeService {
             keys: [...space.wraps.entries()]
               .filter(([key]) => key.endsWith(`:${account}`))
               .map(([key, sealed]) => ({ epoch: Number(key.split(":")[0]), sealed })),
+            // Only the owner sees the invitations, as the service does.
+            invitations:
+              space.owner === account
+                ? [...space.invitations.entries()].map(([id, i]) => ({
+                    id,
+                    expires_at: "2026-10-15T12:00:00Z",
+                    claimed_by: i.claimedBy ?? null,
+                    acceptance: i.acceptance ?? null,
+                  }))
+                : [],
+            departures: space.departures ?? [],
           }) as T;
         }
         throw notFound();
@@ -138,6 +162,55 @@ class FakeService {
             return { revision: o.revision, sequence };
           });
           return { results } as T;
+        }
+        const invitations = /^\/api\/v1\/spaces\/([^/]+)\/invitations(?:\/([^/]+))?$/.exec(path);
+        if (invitations) {
+          const space = member(invitations[1]);
+          if (space.owner !== account) throw new ApiError("forbidden", "x", 403);
+          if (method === "DELETE") {
+            space.invitations.delete(invitations[2] ?? "");
+            return { revoked: true } as T;
+          }
+          space.invitations.set(b.id as string, {
+            tokenHash: b.token_hash as string,
+            payload: b.payload as string,
+          });
+          return { id: b.id } as T;
+        }
+        const epochs = /^\/api\/v1\/spaces\/([^/]+)\/epochs$/.exec(path);
+        if (epochs) {
+          const space = member(epochs[1]);
+          const head = b.head as EpochHead;
+          if (head.epoch !== space.epoch + 1 || head.author !== account)
+            throw new ApiError("conflict", "x", 409);
+          const roles = new Map(head.members.map((m) => [m.account_id, m.role]));
+          for (const id of b.admit as string[]) {
+            const invitation = space.invitations.get(id);
+            if (!invitation?.claimedBy || !roles.has(invitation.claimedBy))
+              throw new ApiError("invalid", "x", 400);
+            space.invitations.delete(id);
+          }
+          space.heads.push(head);
+          space.epoch = head.epoch;
+          space.members = roles;
+          for (const w of b.wrapped_keys as { account_id: string; epoch: number; sealed: string }[])
+            space.wraps.set(`${w.epoch}:${w.account_id}`, w.sealed);
+          for (const [key] of [...space.wraps])
+            if (!roles.has(key.split(":")[1])) space.wraps.delete(key);
+          space.departures = [];
+          return { epoch: head.epoch } as T;
+        }
+        const leaving = /^\/api\/v1\/spaces\/([^/]+)\/leave$/.exec(path);
+        if (leaving) {
+          const space = member(leaving[1]);
+          space.members.delete(account);
+          for (const [key] of [...space.wraps])
+            if (key.endsWith(`:${account}`)) space.wraps.delete(key);
+          space.departures = [
+            ...(space.departures ?? []),
+            { account_id: account, epoch: b.epoch as number, statement: b.statement as string },
+          ];
+          return { left: true } as T;
         }
         const open = /^\/api\/v1\/space-invitations\/([^/]+)\/(open|accept)$/.exec(path);
         if (open) {
@@ -397,4 +470,156 @@ describe("shared projects in the browser", () => {
       acceptInvitation(service.as(CAROL), memoryClientStore(), carol, opened),
     ).rejects.toMatchObject({ status: 409 });
   });
+
+  it("lets the owner invite, admit and remove from a tab, with the safety number first", async () => {
+    const service = new FakeService();
+    const aliceStore = memoryClientStore();
+    const bobStore = memoryClientStore();
+    const secrets = memoryFeatureStore();
+    const alice = await loadIdentity(service.as(ALICE), vault(), ALICE);
+    const bob = await loadIdentity(service.as(BOB), vault(), BOB);
+    await share(service, alice);
+    let view = await openSpace(service.as(ALICE), aliceStore, alice, SPACE);
+    await write(service.as(ALICE), alice, view, "project", SPACE, {
+      name: "Launch plan",
+      instructions: "Be brief.",
+    });
+    await write(service.as(ALICE), alice, view, "note", crypto.randomUUID(), {
+      title: "Venue",
+      body: "Book it",
+    });
+    view = await openSpace(service.as(ALICE), aliceStore, alice, SPACE);
+
+    const made = await createInvitation(
+      service.as(ALICE),
+      secrets,
+      alice,
+      view,
+      "https://example.test/app",
+    );
+    expect(made.link).toBe(`https://example.test/app#join=${made.code}`);
+    // Only the owner makes links, and a member is told so.
+    await expect(createInvitation(service.as(BOB), secrets, bob, view, "x")).rejects.toMatchObject({
+      code: "space_owner_only",
+    });
+
+    const opened = await openInvitation(service.as(BOB), bob, made.link);
+    expect(opened.payload.space_name).toBe("Launch plan");
+    view = await openSpace(service.as(ALICE), aliceStore, alice, SPACE);
+    expect((await pendingInvitations(secrets, alice, view))[0]?.state).toBe("waiting");
+    await acceptInvitation(service.as(BOB), bobStore, bob, opened);
+
+    view = await openSpace(service.as(ALICE), aliceStore, alice, SPACE);
+    const [pending] = await pendingInvitations(secrets, alice, view);
+    expect(pending?.state).toBe("ready");
+    // The number the owner compares is the one the invitee was shown.
+    expect(pending?.safetyNumber).toEqual(opened.safetyNumber);
+    await admit(service.as(ALICE), secrets, alice, view, made.id);
+    // The secret is gone with the invitation: a replay admits nobody.
+    expect(await secrets.list("invitation:")).toEqual([]);
+
+    const bobView = await openSpace(service.as(BOB), bobStore, bob, SPACE);
+    expect(bobView.latest.epoch).toBe(2);
+    expect(bobView.name).toBe("Launch plan");
+    expect(itemsOf(bobView, "note")[0]?.data.title).toBe("Venue");
+
+    view = await openSpace(service.as(ALICE), aliceStore, alice, SPACE);
+    await expect(removeMember(service.as(BOB), bob, bobView, ALICE)).rejects.toMatchObject({
+      code: "space_owner_only",
+    });
+    expect(await removeMember(service.as(ALICE), alice, view, BOB)).toBe(true);
+    view = await openSpace(service.as(ALICE), aliceStore, alice, SPACE);
+    expect(view.latest.epoch).toBe(3);
+    expect(view.members.map((m) => m.accountId)).toEqual([ALICE]);
+    await write(service.as(ALICE), alice, view, "note", crypto.randomUUID(), {
+      title: "After",
+      body: "secret",
+    });
+    await expect(openSpace(service.as(BOB), bobStore, bob, SPACE)).rejects.toMatchObject({
+      status: 404,
+    });
+    const wire = service.spaces.get(SPACE)?.objects.at(-1) as Stored;
+    const author = headMember(view.latest, ALICE);
+    if (!author) throw new Error("author");
+    for (const old of bobView.keys.values())
+      await expect(openObject(old, SPACE, wire, author)).rejects.toThrow();
+  });
+
+  it("refuses an acceptance this browser cannot check, and withdraws a link", async () => {
+    const service = new FakeService();
+    const aliceStore = memoryClientStore();
+    const alice = await loadIdentity(service.as(ALICE), vault(), ALICE);
+    const bob = await loadIdentity(service.as(BOB), vault(), BOB);
+    await share(service, alice);
+    // A link made on another of Alice's devices: its secret is not here.
+    const elsewhere = await invite(service, alice);
+    await acceptInvitation(
+      service.as(BOB),
+      memoryClientStore(),
+      bob,
+      await openInvitation(service.as(BOB), bob, elsewhere.link),
+    );
+    const secrets = memoryFeatureStore();
+    let view = await openSpace(service.as(ALICE), aliceStore, alice, SPACE);
+    expect((await pendingInvitations(secrets, alice, view))[0]?.state).toBe("unverifiable");
+    await expect(
+      admit(service.as(ALICE), secrets, alice, view, elsewhere.id),
+    ).rejects.toMatchObject({ code: "space_acceptance_unverifiable" });
+    expect(service.spaces.get(SPACE)?.epoch).toBe(1);
+
+    await revokeInvitation(service.as(ALICE), secrets, SPACE, elsewhere.id);
+    view = await openSpace(service.as(ALICE), aliceStore, alice, SPACE);
+    expect(await pendingInvitations(secrets, alice, view)).toEqual([]);
+  });
+
+  it("rotates out a member who left: any member may, and only for a signed departure", async () => {
+    const service = new FakeService();
+    const alice = await loadIdentity(service.as(ALICE), vault(), ALICE);
+    const bob = await loadIdentity(service.as(BOB), vault(), BOB);
+    const carol = await loadIdentity(service.as(CAROL), vault(), CAROL);
+    const stores = { bob: memoryClientStore(), carol: memoryClientStore() };
+    const keys = await share(service, alice);
+    for (const [person, store] of [
+      [bob, stores.bob],
+      [carol, stores.carol],
+    ] as const) {
+      const link = await invite(service, alice);
+      await acceptInvitation(
+        service.as(person.accountId),
+        store,
+        person,
+        await openInvitation(service.as(person.accountId), person, link.link),
+      );
+    }
+    await rotate(service, alice, keys, [alice.bundle, bob.bundle, carol.bundle], bob.bundle);
+    let carolView = await openSpace(service.as(CAROL), stores.carol, carol, SPACE);
+    // Nobody left: nothing to do.
+    expect(await rotateIfDue(service.as(CAROL), carol, carolView)).toBe(false);
+
+    const bobView = await openSpace(service.as(BOB), stores.bob, bob, SPACE);
+    await leave(service.as(BOB), bob, bobView);
+    carolView = await openSpace(service.as(CAROL), stores.carol, carol, SPACE);
+    expect(await rotateIfDue(service.as(CAROL), carol, carolView)).toBe(true);
+    carolView = await openSpace(service.as(CAROL), stores.carol, carol, SPACE);
+    expect(carolView.latest.epoch).toBe(3);
+    expect(carolView.latest.author).toBe(CAROL);
+    expect(carolView.latest.departures.map((d) => d.account_id)).toEqual([BOB]);
+    expect(carolView.members.map((m) => m.accountId).sort()).toEqual([ALICE, CAROL]);
+    // The owner reads Carol's epoch and verifies it like any other.
+    const aliceView = await openSpace(service.as(ALICE), memoryClientStore(), alice, SPACE);
+    expect(aliceView.latest.epoch).toBe(3);
+  });
 });
+
+function memoryFeatureStore(): FeatureStore {
+  const entries = new Map<string, unknown>();
+  return {
+    get: async <T>(name: string) => structuredClone(entries.get(name)) as T | undefined,
+    put: async (name, value) => void entries.set(name, structuredClone(value)),
+    delete: async (name) => void entries.delete(name),
+    list: async <T>(prefix = "") =>
+      [...entries]
+        .filter(([name]) => name.startsWith(prefix))
+        .map(([name, value]) => ({ id: name, value: value as T })),
+  };
+}

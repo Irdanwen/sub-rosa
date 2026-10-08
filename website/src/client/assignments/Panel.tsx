@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { api, type Device } from "../../lib/api";
 import { date, t } from "../../lib/i18n";
 import type { FeatureHost } from "../feature";
+import { BriefAgenda, SharedBrief } from "./BriefAgenda";
 import {
   type BriefSettings,
   DEFAULT_BRIEF,
@@ -665,8 +666,8 @@ export function AssignmentsPanel({ host }: { host: FeatureHost }) {
         <h2 id="as-brief">{t("Daily brief", "Point du jour")}</h2>
         <p className="quiet">
           {t(
-            "One card a day at the time you choose, while this tab is open: yesterday's notes and their follow-ups, results to review, runs that failed, and what is new on the topics you follow. Nothing when there is nothing to say. Your calendar stays in the app, so the brief here has no agenda.",
-            "Une carte par jour à l’heure choisie, tant que cet onglet est ouvert : les notes d’hier et leurs suites, les résultats à examiner, les exécutions en échec, et le nouveau sur les sujets suivis. Rien quand il n’y a rien à dire. Votre agenda reste dans l’app : le point du jour ici n’en a pas.",
+            "One card a day at the time you choose, while this tab is open: today's meetings, yesterday's notes and their follow-ups, results to review, runs that failed, and what is new on the topics you follow. Nothing when there is nothing to say. The meetings come from Google or Microsoft connected in an app that runs connectors for your browser, or from the brief your phone or computer wrote today.",
+            "Une carte par jour à l’heure choisie, tant que cet onglet est ouvert : les réunions du jour, les notes d’hier et leurs suites, les résultats à examiner, les exécutions en échec, et le nouveau sur les sujets suivis. Rien quand il n’y a rien à dire. Les réunions viennent de Google ou Microsoft connecté dans une app qui exécute les connecteurs pour votre navigateur, ou du point du jour écrit aujourd’hui par votre téléphone ou votre ordinateur.",
           )}
         </p>
         <label className="check">
@@ -743,19 +744,29 @@ export function AssignmentsPanel({ host }: { host: FeatureHost }) {
             {t("Prepare today's brief now", "Préparer le point du jour maintenant")}
           </button>
         </div>
-        {card && <BriefCard stored={card} />}
+        {card ? <BriefCard host={host} stored={card} /> : <SharedBrief host={host} />}
       </section>
     </div>
   );
 }
 
-function BriefCard({ stored }: { stored: StoredCard }) {
+export function BriefCard({
+  host,
+  stored,
+  from,
+}: {
+  host: FeatureHost;
+  stored: StoredCard;
+  /** The device that wrote it, when it is not this browser. */
+  from?: string;
+}) {
   const { card } = stored;
   if (stored.status === "silent")
     return <p className="quiet">{t("Nothing to report today.", "Rien à signaler aujourd’hui.")}</p>;
   return (
     <article className="as-card" aria-label={t("Your day", "Votre journée")}>
       <h3>{t("Your day", "Votre journée")}</h3>
+      <BriefAgenda host={host} card={card} from={from} />
       {card.notes.length > 0 && (
         <>
           <h4>{t("Yesterday's notes", "Notes d’hier")}</h4>

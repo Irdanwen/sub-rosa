@@ -57,6 +57,21 @@ interface Export {
     maxOffered: number;
     maxBodyChars: number;
   };
+  /** A call one of the person's apps makes for this tab (ADR-0107). */
+  relay: {
+    waitSeconds: number;
+    expirySeconds: number;
+    maxArgumentBytes: number;
+    sentences: {
+      notAccepting: string;
+      tooLate: string;
+      notSignedIn: string;
+      needsApproval: string;
+      tooLarge: string;
+      noAnswer: string;
+    };
+    offerIds: { device: string; connector: string; id: string }[];
+  };
   tables: Record<string, TableCodec>;
 }
 

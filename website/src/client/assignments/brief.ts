@@ -4,16 +4,22 @@
  * and silent when there is nothing to say. What it says is read, never
  * written by a model: yesterday's notes and the follow-ups they wrote down,
  * results waiting for review, runs that failed, and what is new on the topics
- * the person follows, one web search each. The calendar lives in the app, so
- * the web card has no agenda line.
+ * the person follows, one web search each.
  *
- * The settings, the followed topics and each day's card stay in this browser
- * (the app keeps them per device too), sealed in the feature's store.
+ * The calendar lives in the apps (ADR-0025), so the agenda line comes from a
+ * Google or Microsoft calendar an app reads for this tab, else from the card
+ * one of the person's devices composed today, else the panel says which
+ * device would add it (ADR-0107, `agenda.ts`).
+ *
+ * The settings and the followed topics stay in this browser (the app keeps
+ * them per device too), sealed in the feature's store. Each day's card is
+ * kept there and also filed on the account, as the app files its own.
  */
 import { t } from "../../lib/i18n";
 import { webSearch } from "../carpe-diem";
 import type { FeatureHost } from "../feature";
 import { listNotes } from "../library";
+import { type Agenda, agendaFromCalendars, deviceCards, fileCard } from "./agenda";
 import { resultSummary } from "./prompt";
 import { listAssignments, listRuns, needsReview } from "./rows";
 import { ASSIGNMENTS } from "./words";
@@ -55,6 +61,10 @@ export interface CardTopic {
 export interface DailyCard {
   day: string;
   createdAt: string;
+  /** Today's meetings, as one line, when a calendar was read. */
+  agenda?: Agenda | null;
+  /** Where the agenda came from when another device composed it. */
+  agendaFrom?: string | null;
   notes: CardNote[];
   reviews: CardItem[];
   failures: CardItem[];
@@ -98,6 +108,7 @@ export function followUps(content: string): string[] {
 /** Nothing to say: the silence rule. */
 export function isEmpty(card: DailyCard): boolean {
   return (
+    !card.agenda &&
     !card.notes.length &&
     !card.reviews.length &&
     !card.failures.length &&
@@ -155,6 +166,8 @@ export function headline(card: DailyCard): string {
     const [en, fr] = n === 1 ? one : many(n);
     parts.push(t(en, fr));
   };
+  if (card.agenda)
+    count(card.agenda.count, ["1 meeting", "1 réunion"], (n) => [`${n} meetings`, `${n} réunions`]);
   if (card.notes.length)
     count(card.notes.length, ["1 note from yesterday", "1 note d’hier"], (n) => [
       `${n} notes from yesterday`,
@@ -234,9 +247,22 @@ export async function compose(
       }
     topics.push({ topic, links });
   }
+  const day = dayOf(now);
+  let agenda = await agendaFromCalendars(host, now, signal).catch(() => null);
+  let agendaFrom: string | null = null;
+  if (!agenda) {
+    // The line one of the person's devices composed this morning.
+    const shared = deviceCards<DailyCard>(host, day).find((entry) => entry.card.agenda);
+    if (shared) {
+      agenda = shared.card.agenda ?? null;
+      agendaFrom = shared.deviceName;
+    }
+  }
   return {
-    day: dayOf(now),
+    day,
     createdAt: now.toISOString(),
+    agenda,
+    agendaFrom,
     notes,
     reviews,
     failures,
@@ -319,6 +345,10 @@ async function writeCard(
     status: isEmpty(card) ? "silent" : announce ? "delivered" : "quiet",
   };
   await store.put(key, stored);
+  if (stored.status !== "silent")
+    await fileCard(host, card, stored.status, ASSIGNMENTS.dailyBrief.keepDays, now).catch(
+      () => undefined,
+    );
   if (stored.status === "delivered")
     host.notify(t(`Your day: ${headline(card)}`, `Votre journée : ${headline(card)}`));
   host.refresh();

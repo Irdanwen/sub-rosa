@@ -150,11 +150,61 @@ fn follow_up_vectors() -> serde_json::Value {
     .collect()
 }
 
+/// The agenda line of a day's entries (`daily::agenda_of`), which the web
+/// client computes from a connected calendar's events.
+fn agenda_vectors() -> serde_json::Value {
+    let event = |start: i64, all_day: bool, title: &str, at: &str| daily::AgendaEvent {
+        start,
+        all_day,
+        title: title.into(),
+        at: at.into(),
+    };
+    let day = [
+        event(1_000, false, "Stand-up", "09:00"),
+        event(500, true, "Holiday", ""),
+        event(5_000, false, "Review", "14:00"),
+        event(3_000, false, "Lunch", "12:00"),
+    ];
+    let cases: [(&[daily::AgendaEvent], i64); 5] = [
+        (&day, 0),
+        (&day, 2_000),
+        (&day, 9_000),
+        (&day[1..2], 0),
+        (&[], 0),
+    ];
+    cases
+        .iter()
+        .map(|(events, now)| {
+            serde_json::json!({
+                "events": events,
+                "now": now,
+                "agenda": daily::agenda_of(events, *now),
+            })
+        })
+        .collect()
+}
+
+fn card_id_vectors() -> serde_json::Value {
+    [
+        ("mac", "2026-10-08"),
+        ("0191d1a4-0000-7000-8000-00000000b10b", "2026-12-31"),
+    ]
+    .iter()
+    .map(|(device, day)| {
+        serde_json::json!({
+            "device": device,
+            "day": day,
+            "id": crate::moments::daily_cards::card_id(device, day),
+        })
+    })
+    .collect()
+}
+
 fn export() -> serde_json::Value {
     serde_json::json!({
         "generatedBy": "src-tauri/src/agent_lite/web_features/assignments.rs",
         "promptVersion": prompt::ASSIGNMENT_PROMPT_VERSION,
-        "tables": super::tables(&["assignments", "assignment_runs"]),
+        "tables": super::tables(&["assignments", "assignment_runs", "daily_brief_cards"]),
         "toolGroups": groups(),
         "feedbackInPrompt": prompt::FEEDBACK_IN_PROMPT,
         "maxResultInPrompt": prompt::MAX_RESULT_IN_PROMPT,
@@ -202,12 +252,15 @@ fn export() -> serde_json::Value {
             "maxItems": daily::MAX_ITEMS,
             "followUpHeadings": daily::FOLLOW_UP_HEADINGS,
             "defaultAtMinute": daily::DailyBriefSettings::default().at_minute,
+            "keepDays": crate::moments::daily_cards::KEEP_DAYS,
         },
         "vectors": {
             "prompts": prompt_vectors(),
             "summaries": summary_vectors(),
             "runIds": run_id_vectors(),
             "followUps": follow_up_vectors(),
+            "agendas": agenda_vectors(),
+            "cardIds": card_id_vectors(),
         },
     })
 }

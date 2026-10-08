@@ -7,7 +7,9 @@
 use serde_json::{json, Value};
 
 use crate::connectors::mcp::{self, ToolInfo};
-use crate::connectors::{agent, apps, catalog, oauth, policy, research, slug, triggers, Connector};
+use crate::connectors::{
+    agent, apps, catalog, oauth, policy, relay, research, slug, triggers, Connector,
+};
 use crate::skill_packs::{agent as skills, SkillPack};
 
 fn connector(id: &str, name: &str, auth: &str) -> Connector {
@@ -363,7 +365,29 @@ fn export() -> Value {
             "searchTools": search_tools(),
             "documents": documents(),
         },
-        "tables": super::tables(&["connectors", "skill_packs"]),
+        "relay": {
+            "waitSeconds": relay::WAIT_SECS,
+            "expirySeconds": relay::EXPIRY_SECS,
+            "maxArgumentBytes": relay::MAX_ARGUMENT_BYTES,
+            "sentences": {
+                "notAccepting": relay::NOT_ACCEPTING,
+                "tooLate": relay::TOO_LATE,
+                "notSignedIn": relay::NOT_SIGNED_IN,
+                "needsApproval": relay::NEEDS_APPROVAL,
+                "tooLarge": relay::TOO_LARGE,
+                "noAnswer": relay::NO_ANSWER,
+            },
+            "offerIds": [
+                {"device": "mac", "connector": "sentry", "id": relay::offer_id("mac", "sentry")},
+                {"device": "0191d1a4-0000-7000-8000-00000000d001", "connector": "google-ab12", "id": relay::offer_id("0191d1a4-0000-7000-8000-00000000d001", "google-ab12")},
+            ],
+        },
+        "tables": super::tables(&[
+            "connectors",
+            "skill_packs",
+            "connector_relays",
+            "connector_errands",
+        ]),
     })
 }
 

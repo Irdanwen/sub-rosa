@@ -375,8 +375,14 @@ with their bundles and fingerprints, a sealed identity, a safety number, a
 four-epoch chain (create, admit, admit, a member leaves and another rotates)
 with its hashes, a leave statement, a wrapped key, every object kind sealed
 and signed, an invitation (code, token, token hash, sealed payload, acceptance
-proof) and a profile id. The browser implementation reproduces every value
-byte for byte (`src/test/website-spaces-protocol.test.ts`), and the Rust HPKE
+proof) and a profile id. Its `operations` section holds the membership
+changes as the app composes them (`client::compose_rotation`, with fixed keys,
+times and HPKE ephemerals): an invitation's request to the service, Carol's
+acceptance, the owner admitting her (her earlier keys sealed to her), the
+owner removing Bob (no key for him), and Carol rotating Bob out after he
+signed a leave statement. The browser implementation reproduces every value
+byte for byte (`src/test/website-spaces-protocol.test.ts`,
+`src/test/website-spaces-membership.test.ts`), and the Rust HPKE
 seal is opened by an independent RFC 9180 implementation (the `hpke` crate) in
 `hpke.rs`'s tests.
 
@@ -395,7 +401,10 @@ Behaviour tests:
   and non-owner rotation, identity immutability while in a space, deletion.
 - Browser (`src/test/website-spaces-client.test.ts`): a whole share, invite,
   admit, write, ask and read cycle, rollback detection, removal, invitation
-  replay, against an in-memory service.
+  replay, against an in-memory service; and the owner's side from a tab
+  (2026-10-08): a link made and admitted from the tab after the safety number,
+  an acceptance the tab cannot check refused, a link withdrawn, a removal, and
+  a member rotating out someone who left.
 
 ## 13. For the independent review
 

@@ -223,9 +223,11 @@ export class SyncClient {
     return { table: value.table, row: value.row as Row, extra };
   }
 
-  /** Pulls every kind from its own cursor and applies what arrived. */
-  async pull(signal?: AbortSignal): Promise<void> {
+  /** Pulls every kind from its own cursor and applies what arrived, or only
+   * the kinds named (a tab waiting for one errand's answer). */
+  async pull(signal?: AbortSignal, only?: SyncKind[]): Promise<void> {
     for (const kind of pulledKinds()) {
+      if (only && !only.includes(kind)) continue;
       // One cursor per kind and set of tables read: a browser that learns a
       // table reads its kind again from the start (what it already holds is
       // recognised by sequence and skipped) instead of missing what it once

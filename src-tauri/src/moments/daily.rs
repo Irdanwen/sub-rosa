@@ -277,30 +277,57 @@ fn local_midnight(day: chrono::NaiveDate) -> DateTime<Local> {
         .unwrap_or_else(Local::now)
 }
 
+/// One calendar entry as the agenda line reads it: when it starts, whether it
+/// fills the day, its title, and its start as the card prints it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgendaEvent {
+    pub start: i64,
+    pub all_day: bool,
+    pub title: String,
+    /// `HH:MM`, in the composing device's time.
+    pub at: String,
+}
+
+/// The agenda line of a day's entries: the meetings that are not all-day,
+/// counted, and the next one still ahead at `now`, else the first. Pure, and
+/// ported to the web client, which reads its entries from a connected
+/// calendar instead (ADR-0107).
+pub fn agenda_of(events: &[AgendaEvent], now: i64) -> Option<Agenda> {
+    let mut events: Vec<&AgendaEvent> = events.iter().filter(|event| !event.all_day).collect();
+    events.sort_by_key(|event| event.start);
+    let first = events
+        .iter()
+        .find(|event| event.start >= now)
+        .or_else(|| events.first())?;
+    Some(Agenda {
+        count: events.len(),
+        first_title: first.title.clone(),
+        first_at: first.at.clone(),
+    })
+}
+
 fn agenda(now: &DateTime<Local>) -> Option<Agenda> {
     if crate::calendar::access_state() != crate::calendar::CalendarAccess::Granted {
         return None;
     }
     let start = local_midnight(now.date_naive());
     let end = start + chrono::Duration::days(1);
-    let mut events: Vec<_> = crate::calendar::events_in_window(start.timestamp(), end.timestamp())
-        .into_iter()
-        .filter(|event| !event.all_day)
-        .collect();
-    events.sort_by_key(|event| event.start);
-    let first = events
-        .iter()
-        .find(|event| event.start >= now.timestamp())
-        .or_else(|| events.first())?;
-    Some(Agenda {
-        count: events.len(),
-        first_title: first.title.clone(),
-        first_at: Local
-            .timestamp_opt(first.start, 0)
-            .single()
-            .map(|at| at.format("%H:%M").to_string())
-            .unwrap_or_default(),
-    })
+    let events: Vec<AgendaEvent> =
+        crate::calendar::events_in_window(start.timestamp(), end.timestamp())
+            .into_iter()
+            .map(|event| AgendaEvent {
+                start: event.start,
+                all_day: event.all_day,
+                at: Local
+                    .timestamp_opt(event.start, 0)
+                    .single()
+                    .map(|at| at.format("%H:%M").to_string())
+                    .unwrap_or_default(),
+                title: event.title,
+            })
+            .collect();
+    agenda_of(&events, now.timestamp())
 }
 
 async fn yesterdays_notes(pool: &SqlitePool, now: &DateTime<Local>) -> Vec<CardNote> {
@@ -552,14 +579,21 @@ pub async fn delivered_since(pool: &SqlitePool, since: &str) -> i64 {
 /// this far announces nothing.
 async fn store_card(pool: &SqlitePool, card: &DailyCard, status: &str) -> bool {
     let body = serde_json::to_string(card).unwrap_or_else(|_| "{}".into());
-    query("INSERT OR IGNORE INTO daily_briefs(day,card,status,created_at) VALUES(?,?,?,?)")
-        .bind(&card.day)
-        .bind(body)
-        .bind(status)
-        .bind(&card.created_at)
-        .execute(pool)
-        .await
-        .is_ok_and(|done| done.rows_affected() == 1)
+    let stored =
+        query("INSERT OR IGNORE INTO daily_briefs(day,card,status,created_at) VALUES(?,?,?,?)")
+            .bind(&card.day)
+            .bind(body)
+            .bind(status)
+            .bind(&card.created_at)
+            .execute(pool)
+            .await
+            .is_ok_and(|done| done.rows_affected() == 1);
+    // The card travels too, agenda line included, for the devices that read
+    // no calendar (ADR-0107). A silent card has nothing to show anywhere.
+    if stored && status != "silent" {
+        super::daily_cards::record(pool, card, status).await;
+    }
+    stored
 }
 
 /// Writes today's card when it is owed, and announces it when there is

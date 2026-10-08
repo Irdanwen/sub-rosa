@@ -86,6 +86,197 @@
     "token": "WXupXMBMMy89EwB0M3a7ujLrvfoQtoIjnOkyKb1rmbM",
     "token_hash": "lzi13idPgxaa3FRD20UvD_O6g3KIKevC2kijI-bxPbY"
   },
+  "operations": {
+    "acceptance_carol": {
+      "member": {
+        "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+        "created_at": "2026-10-08T12:00:00Z",
+        "ed25519": "EqQVksi3wX1AWeeym2Ho_5bHQV8vgDNI8vAX4Fueodo",
+        "signature": "DxitWi-qY7gmOHIMxco_9N7ToAWqOQ61NmPBp8d1xQuDBplgxHx2avUclBT63vXT9gYCzGbUW5fAU_HPnhDvBw",
+        "v": 1,
+        "x25519": "Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI"
+      },
+      "proof": "IDGSMnA-hsigsMrUBnEMn_zTv4zDKNIKMl3Ae-XUh2I"
+    },
+    "admission": {
+      "hash": "v3rceqxWNPBfGQ4yutz_A8sWFiT9RWWCLHt4mKTTZsg",
+      "key": "Q0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0M",
+      "known_epochs": [
+        1,
+        2
+      ],
+      "prev_epoch": 2,
+      "request": {
+        "admit": [
+          "0191d1a4-1000-7000-8000-00000000f001"
+        ],
+        "head": {
+          "author": "0191d1a4-0000-7000-8000-0000000000a1",
+          "created_at": "2026-10-08T12:00:00Z",
+          "departures": [],
+          "epoch": 3,
+          "key_commitment": "SrBLBqJDZOrH04HLC09sle1EAa69u_fqEoxY9AYaLWA",
+          "members": [
+            {
+              "account_id": "0191d1a4-0000-7000-8000-0000000000a1",
+              "ed25519": "1i8Bah79Hk_feT60LNhEceG6nwzwTRKHtcxx9hYofLg",
+              "role": "owner",
+              "x25519": "pOCSkrZRwni5dyxWn1-puxPZBrRqtoyd-dwrRAn4ogk"
+            },
+            {
+              "account_id": "0191d1a4-0000-7000-8000-0000000000b2",
+              "ed25519": "NLTZBDFWy23PC-sKKUm3VZyUDSvLbb6MU6mzAnjjp0Y",
+              "role": "member",
+              "x25519": "zo060cy2M-x7cMF4FKXHbs0CloUFDTRHRboFhw5YfVk"
+            },
+            {
+              "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+              "ed25519": "EqQVksi3wX1AWeeym2Ho_5bHQV8vgDNI8vAX4Fueodo",
+              "role": "member",
+              "x25519": "Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI"
+            }
+          ],
+          "owner": "0191d1a4-0000-7000-8000-0000000000a1",
+          "prev": "VIDU9vddVsCfI4BrW9uQTV1lTcWjEJ-vy3ylFEWcKek",
+          "signature": "8k5MQJqU1l4KwGDkNaoEBtWUDDjNSIYB_CPDKqQ8fa0HlypgM1PjuKrMPfMB5RnvTMvAqFm4avT1ys-AvHwtBg",
+          "space_id": "0191d1a4-5a00-7000-8000-00000000a001",
+          "v": 1
+        },
+        "wrapped_keys": [
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000a1",
+            "epoch": 3,
+            "sealed": "{\"v\":1,\"enc\":\"8LT9i-SANJKTq2HwUF67W6_M34pBJ94iHm7z2yDgPSk\",\"ct\":\"ddr_C6UQzWc_BKcQuPyTnPAwLBwDTEkLdA6ErVz1TK2akye3aponTmrzyszOmwlW\"}"
+          },
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000b2",
+            "epoch": 3,
+            "sealed": "{\"v\":1,\"enc\":\"wwb7DvK_i3-TutmBVfo32ux02wxMvtpsbx26nTZVglI\",\"ct\":\"dv1TTRRHl1-UGibv4G7lnmEtaThgHhNUq-kdE-HIHjn_N2l4OxJjjLmK9y_1CNiX\"}"
+          },
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+            "epoch": 3,
+            "sealed": "{\"v\":1,\"enc\":\"PFxs4t2Z4Q0sPeBddzqhXj5tlx7U5BOJyTtLvdoXchI\",\"ct\":\"qbTGfnJ2roVvj3s3ye75Tq_YfXa-pi39KUxdDgyzyvdgdWyFZ9YRGkf_rug91nO4\"}"
+          },
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+            "epoch": 1,
+            "sealed": "{\"v\":1,\"enc\":\"X8L4oSRDevzufUVn_jHgLC0EKTnelvB7BuKMDEw690A\",\"ct\":\"zK3X8IxYnP434bQ7y0EzeW6UVnvUwIxlcFziZM0fHBKEAS9V5K2XLJEfWSn7iusM\"}"
+          },
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+            "epoch": 2,
+            "sealed": "{\"v\":1,\"enc\":\"1qJSfAGN_OCFpKUK1m4AEN00E76Uy7CnUjMpmmr-GAA\",\"ct\":\"nIgmFouiOyeGi50dYPVIC3AHJfZrJBp0LZEOyMRwn9-KTdOuNpcmyPGwpqM-Yy4Y\"}"
+          }
+        ]
+      }
+    },
+    "departure": {
+      "author": "0191d1a4-0000-7000-8000-0000000000c3",
+      "key": "REREREREREREREREREREREREREREREREREREREREREQ",
+      "prev_epoch": 3,
+      "request": {
+        "admit": [],
+        "head": {
+          "author": "0191d1a4-0000-7000-8000-0000000000c3",
+          "created_at": "2026-10-08T12:00:00Z",
+          "departures": [
+            {
+              "account_id": "0191d1a4-0000-7000-8000-0000000000b2",
+              "signature": "gnsyyUrYnKWQlZWz8H24VZbS3i4YYoefDrPCA0kUHHx18-5UdaBolv0GDcrBSLtiNMKgHdyVNTOuL55N_xGvAA"
+            }
+          ],
+          "epoch": 4,
+          "key_commitment": "Nj9N1O0V_V0NhYyZqXkSRPGJbM1Ddk7O3eiUz1iZcXU",
+          "members": [
+            {
+              "account_id": "0191d1a4-0000-7000-8000-0000000000a1",
+              "ed25519": "1i8Bah79Hk_feT60LNhEceG6nwzwTRKHtcxx9hYofLg",
+              "role": "owner",
+              "x25519": "pOCSkrZRwni5dyxWn1-puxPZBrRqtoyd-dwrRAn4ogk"
+            },
+            {
+              "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+              "ed25519": "EqQVksi3wX1AWeeym2Ho_5bHQV8vgDNI8vAX4Fueodo",
+              "role": "member",
+              "x25519": "Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI"
+            }
+          ],
+          "owner": "0191d1a4-0000-7000-8000-0000000000a1",
+          "prev": "v3rceqxWNPBfGQ4yutz_A8sWFiT9RWWCLHt4mKTTZsg",
+          "signature": "knwcapEgFFtJ9faWhxi9BmX1bNY_2A8QsRwLh5KO16IHn2JfREz9M_HPAKH0hMKQPT48HogPnnT4CneRxU4BDw",
+          "space_id": "0191d1a4-5a00-7000-8000-00000000a001",
+          "v": 1
+        },
+        "wrapped_keys": [
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000a1",
+            "epoch": 4,
+            "sealed": "{\"v\":1,\"enc\":\"8LT9i-SANJKTq2HwUF67W6_M34pBJ94iHm7z2yDgPSk\",\"ct\":\"renHMF9XeI-_e_YOhFpiPAxKlYjfZHwmjfcHm2nMiThkamh_s-kCNv_pDHn__gDC\"}"
+          },
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+            "epoch": 4,
+            "sealed": "{\"v\":1,\"enc\":\"wwb7DvK_i3-TutmBVfo32ux02wxMvtpsbx26nTZVglI\",\"ct\":\"ZUrEV6j2VI6uEznJINkzOmYUL0y70FFXGvvYS2bUaxLoJqPEytpe75TROMrgGB76\"}"
+          }
+        ]
+      }
+    },
+    "ephemerals_from": "oKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKA",
+    "invitation_request": {
+      "expires_at": "2026-10-15T12:00:00Z",
+      "id": "0191d1a4-1000-7000-8000-00000000f001",
+      "payload": "{\"v\":1,\"nonce\":\"BAQEBAQEBAQEBAQE\",\"ciphertext\":\"4xbHpwFPO6FSFYH5bD76jgSEQ509pQLwyvMH-xFGNgZLiHPjhY-DaAw79_9jeCBTzIT7_dvY63CZe45mzNJxwpnPSoq4GmLgmQsM23uE_RRcI7i_1sTHK9ExQWfnxhVDZbwzdUgd0qKJe4hk48Mq4KkKVU-8pgn-DCAdXEEE0TTogS7O6-NEPvby6tWexYZxaxVZofP4OBwz9yhDURe8tUltbIqXc2VvXM8s13oyjtSPY2Aax03aZdT4c-pwR52WBPf0FDhT8pBy1tRJ-lysBQXdmd7hE38Wo_eNv5Bzt3OWX2qK_pBHZGBLpxRpCnzRL_xRvvCh6c2H3TFyh90yaqmX9BM8kb5_xG0b7XGhDW024rHS4yrR5AWAzVmDsCLA3GyDnU_aaq5Gf8dr_RjvkRDKddVnKqtnmRc81B5qeVhOJXrP58P0Vu6QN8s-PDfBtz-9hA6M0qy-7Rus_JxKNrFbum7PpNEu5fdSCJwPH7VrnIWfercBhDEOA4dxMhAQrSWrYev9wyJT-TuCmgNUEu5tbni5K1bzRXA4RJJkCd1QGB3te5Zle-Vj7F5YetRgufc86AmNT7-PIuqLNFfkwGqlDRFWiQ\"}",
+      "token_hash": "lzi13idPgxaa3FRD20UvD_O6g3KIKevC2kijI-bxPbY"
+    },
+    "removal": {
+      "hash": "86_3_wwEcCKKbevQANMgy-xiQduMttVFnCGO-ruenO4",
+      "key": "REREREREREREREREREREREREREREREREREREREREREQ",
+      "prev_epoch": 3,
+      "removed": "0191d1a4-0000-7000-8000-0000000000b2",
+      "request": {
+        "admit": [],
+        "head": {
+          "author": "0191d1a4-0000-7000-8000-0000000000a1",
+          "created_at": "2026-10-08T12:00:00Z",
+          "departures": [],
+          "epoch": 4,
+          "key_commitment": "Nj9N1O0V_V0NhYyZqXkSRPGJbM1Ddk7O3eiUz1iZcXU",
+          "members": [
+            {
+              "account_id": "0191d1a4-0000-7000-8000-0000000000a1",
+              "ed25519": "1i8Bah79Hk_feT60LNhEceG6nwzwTRKHtcxx9hYofLg",
+              "role": "owner",
+              "x25519": "pOCSkrZRwni5dyxWn1-puxPZBrRqtoyd-dwrRAn4ogk"
+            },
+            {
+              "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+              "ed25519": "EqQVksi3wX1AWeeym2Ho_5bHQV8vgDNI8vAX4Fueodo",
+              "role": "member",
+              "x25519": "Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI"
+            }
+          ],
+          "owner": "0191d1a4-0000-7000-8000-0000000000a1",
+          "prev": "v3rceqxWNPBfGQ4yutz_A8sWFiT9RWWCLHt4mKTTZsg",
+          "signature": "vxCY288dhpPTek0gh-FcpdakkvlWNZm3uUt093rskDaTpFfld-gSZvfwfwCBRFq0dV_gH9ELIwbSGUkPAFULDg",
+          "space_id": "0191d1a4-5a00-7000-8000-00000000a001",
+          "v": 1
+        },
+        "wrapped_keys": [
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000a1",
+            "epoch": 4,
+            "sealed": "{\"v\":1,\"enc\":\"8LT9i-SANJKTq2HwUF67W6_M34pBJ94iHm7z2yDgPSk\",\"ct\":\"renHMF9XeI-_e_YOhFpiPAxKlYjfZHwmjfcHm2nMiThkamh_s-kCNv_pDHn__gDC\"}"
+          },
+          {
+            "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
+            "epoch": 4,
+            "sealed": "{\"v\":1,\"enc\":\"wwb7DvK_i3-TutmBVfo32ux02wxMvtpsbx26nTZVglI\",\"ct\":\"ZUrEV6j2VI6uEznJINkzOmYUL0y70FFXGvvYS2bUaxLoJqPEytpe75TROMrgGB76\"}"
+          }
+        ]
+      }
+    }
+  },
   "profile_id": {
     "account_id": "0191d1a4-0000-7000-8000-0000000000c3",
     "id": "e5d87868-d1d9-5227-a4f1-0406955a651e",

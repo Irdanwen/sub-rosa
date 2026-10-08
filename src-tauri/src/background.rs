@@ -68,6 +68,8 @@ pub async fn sweep(app: &AppHandle) {
     // sweep on purpose: an errand that started before the app died is
     // finished by that queue, and this pass only has to notice and close it.
     crate::errands::run_pending(app).await;
+    // A connector call a browser tab is waiting for (ADR-0107).
+    crate::connectors::relay::run_pending(app).await;
     // A long-form summary is a dozen model calls over several minutes, which
     // on iOS is several lifetimes of a foreground session. Cross-platform on
     // purpose: the desktop gets killed too.

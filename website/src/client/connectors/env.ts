@@ -50,5 +50,6 @@ export function envFor(host: FeatureHost): ConnectorEnv {
     secrets: new Secrets(host.account.id, options.secrets),
     fetch: options.fetch,
     redirectUri: options.redirectUri(),
+    deviceId: host.device.id,
   };
 }
