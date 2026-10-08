@@ -51,6 +51,9 @@ const RETURN_TO: &[&str] = &[
     "/account/usage",
     // The web client (WP19) offers "sign in" from its own page.
     "/app",
+    // An Office add-in signs in from a dialog window, whose session carries
+    // the pane's device calls (ADR-0102).
+    "/office/session.html",
 ];
 
 /// How many issuance assertions one account may ask for per minute. A person
@@ -816,5 +819,11 @@ mod tests {
     #[test]
     fn the_web_client_can_be_returned_to_after_sign_in() {
         assert!(RETURN_TO.contains(&"/app"));
+    }
+
+    /// An Office add-in's sign-in window lands back on itself (ADR-0102).
+    #[test]
+    fn the_office_sign_in_window_can_be_returned_to_after_sign_in() {
+        assert!(RETURN_TO.contains(&"/office/session.html"));
     }
 }

@@ -3,3 +3,4 @@ packages:
   - packages/chat-core
   - website
   - browser-extension
+  - office-addins

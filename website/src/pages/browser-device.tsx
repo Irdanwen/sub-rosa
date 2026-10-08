@@ -88,6 +88,7 @@ export function BrowserDeviceCard({
   setRecord,
   onDevicesChanged,
   store = indexedDbStore,
+  office,
 }: {
   accountId: string;
   devices: Device[] | null;
@@ -95,6 +96,15 @@ export function BrowserDeviceCard({
   setRecord: (record: DeviceRecord | null) => void;
   onDevicesChanged: () => void;
   store?: DeviceStore;
+  /** An Office task pane (ADR-0102): its own heading and device name, its
+   * sign-in through a window rather than this frame, and, when its calls
+   * travel through Office's channel, no recovery key typed into it. */
+  office?: {
+    heading: string;
+    deviceName: string;
+    allowRecovery: boolean;
+    signInAgain: () => void;
+  };
 }) {
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
   const [busy, setBusy] = useState(false);
@@ -191,7 +201,9 @@ export function BrowserDeviceCard({
 
   const admit = async (admission: Admission) => {
     const family = browserFamily(navigator.userAgent);
-    const name = family ? `${t("Browser", "Navigateur")} - ${family}` : t("Browser", "Navigateur");
+    const name =
+      office?.deviceName ??
+      (family ? `${t("Browser", "Navigateur")} - ${family}` : t("Browser", "Navigateur"));
     const admitted = await admitBrowser(store, accountId, name, admission);
     setRecord(admitted);
     setStage({ kind: "idle" });
@@ -343,7 +355,7 @@ export function BrowserDeviceCard({
 
   return (
     <article className="card">
-      <h2>{t("This browser", "Ce navigateur")}</h2>
+      <h2>{office?.heading ?? t("This browser", "Ce navigateur")}</h2>
       {notice && (
         <p className="notice" role="status">
           {notice}
@@ -352,11 +364,16 @@ export function BrowserDeviceCard({
       {error && (
         <p className="error" role="alert">
           {error}{" "}
-          {stepUp && (
-            <a href="/auth/login?return_to=/account/devices">
-              {t("Sign in again", "Se reconnecter")}
-            </a>
-          )}
+          {stepUp &&
+            (office ? (
+              <button className="button" type="button" onClick={office.signInAgain}>
+                {t("Sign in again", "Se reconnecter")}
+              </button>
+            ) : (
+              <a href="/auth/login?return_to=/account/devices">
+                {t("Sign in again", "Se reconnecter")}
+              </a>
+            ))}
         </p>
       )}
       {record === undefined ? (
@@ -514,9 +531,15 @@ export function BrowserDeviceCard({
             >
               {t("Approve from the app", "Approuver depuis l’app")}
             </button>
-            <button className="button" type="button" onClick={() => setStage({ kind: "recovery" })}>
-              {t("Use my recovery key", "Utiliser ma clé de récupération")}
-            </button>
+            {office?.allowRecovery !== false && (
+              <button
+                className="button"
+                type="button"
+                onClick={() => setStage({ kind: "recovery" })}
+              >
+                {t("Use my recovery key", "Utiliser ma clé de récupération")}
+              </button>
+            )}
           </div>
         </>
       )}

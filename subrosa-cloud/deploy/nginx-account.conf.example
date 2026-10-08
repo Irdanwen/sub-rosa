@@ -136,6 +136,19 @@ server {
         add_header Cache-Control no-store always;
         try_files $uri =404;
     }
+
+    # The Office task panes (ADR-0102). Office on the web frames them, so no
+    # X-Frame-Options and a frame-ancestors naming Office's hosts; Office.js
+    # comes from Microsoft's CDN and loads its files through its own "officejs"
+    # Trusted Types policy; the Excel pane runs Python like /app.
+    location ^~ /office/ {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs" always;
+        try_files $uri =404;
+    }
     # Pyodide's files (ADR-0086), with types a module worker accepts.
     location ^~ /pyodide/ {
         add_header Strict-Transport-Security "max-age=31536000" always;

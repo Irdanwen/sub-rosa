@@ -1773,6 +1773,17 @@ in the tab. Distinct from the **web reader**, which only reads notes.
 _Avoid:_ "web app" (it is the same Sub Rosa, not a second product), "online
 mode" (the app is not offline without it).
 
+**Office add-in** (French copy: *complément Office*): Sub Rosa in a Word, Excel
+or PowerPoint task pane, a **browser device** of its own that reads nothing of
+the account and proposes every change before making it
+([ADR-0102](docs/adr/0102-an-office-task-pane-is-a-browser-device-whose-session-a-sign-in-window-carries.md)).
+Its **sign-in window** is the Office dialog on the account origin that signs in
+and carries the pane's few device calls when the pane's own frame has no
+session (Office on the web). The window holds no key.
+_Avoid:_ "plugin" or "extension" (the browser extension is another thing),
+"Office integration" (it writes nothing to the account), "login popup" for the
+sign-in window (it stays open to carry calls).
+
 **Shared project** (code and service: **space**): a project several accounts
 read and write, end-to-end encrypted, with its own members, chats, notes and
 file texts ([ADR-0098](docs/adr/0098-a-shared-project-is-a-space-whose-key-changes-with-its-members.md)).

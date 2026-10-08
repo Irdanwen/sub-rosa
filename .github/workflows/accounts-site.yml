@@ -37,7 +37,7 @@ jobs:
           paths = [] if all_changed else subprocess.check_output(['git', 'diff', '--name-only', base, 'HEAD', '--'], text=True).splitlines()
           workflow = '.github/workflows/accounts-site.yml' in paths
           cloud = all_changed or workflow or any(p.startswith('subrosa-cloud/') for p in paths)
-          website = all_changed or workflow or any(p.startswith('website/') or p in {'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'} for p in paths)
+          website = all_changed or workflow or any(p.startswith(('website/', 'office-addins/')) or p in {'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'} for p in paths)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'cloud={str(cloud).lower()}\nwebsite={str(website).lower()}\n')
           PY

@@ -7,7 +7,7 @@
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "dev:website": "pnpm --filter @subrosa/website dev",
-    "build:website": "pnpm --filter @subrosa/website build",
+    "build:website": "pnpm --filter @subrosa/website build && pnpm --filter @subrosa/office-addins build",
     "test:cloud": "cargo test --manifest-path subrosa-cloud/Cargo.toml --workspace --locked",
     "website:releases": "node website/scripts/update-releases.mjs",
     "website:models": "node website/scripts/update-models.mjs",

@@ -1,0 +1,232 @@
+/* The Office task panes (ADR-0102): about 320 pixels wide, beside a document.
+   The charter's values from the shared primitives (ADR-0052), the site's own
+   semantics restated only for the classes the panes and the device card use. */
+@import "@subrosa/design/primitives.css";
+
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+}
+:root {
+  --background: var(--sr-cream);
+  --foreground: var(--sr-on-cream);
+  --muted: var(--sr-on-cream-muted);
+  --brand: var(--sr-gold-ink);
+  --brand-hover: var(--sr-gold-ink-hover);
+  --on-brand: var(--sr-cream-raised);
+  --surface: var(--sr-cream-raised);
+  --border: var(--sr-ink-mix-light);
+  --danger: var(--sr-danger);
+  --radius: 10px;
+  font-family: var(--sr-font-sans);
+  font-feature-settings: var(--sr-font-features-sans);
+  font-size: 14px;
+  line-height: var(--sr-leading-body);
+  color: var(--foreground);
+  background: var(--background);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: var(--sr-ink);
+    --foreground: var(--sr-on-ink);
+    --muted: var(--sr-on-ink-muted);
+    --brand: var(--sr-gold-ink-dark);
+    --brand-hover: var(--sr-gold-ink-dark-hover);
+    --on-brand: var(--sr-ink);
+    --surface: var(--sr-ink-raised);
+    --border: var(--sr-ink-mix-dark);
+    --danger: var(--sr-danger-on-ink);
+    color-scheme: dark;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--background);
+}
+textarea,
+input,
+select {
+  font: inherit;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.office-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 24px;
+  max-width: 560px;
+}
+.office-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.office-brand {
+  margin: 0;
+  font-family: var(--sr-font-serif);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: var(--sr-tracking-title);
+}
+.office-session {
+  padding: 24px;
+}
+h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+p {
+  margin: 0 0 8px;
+}
+.quiet {
+  color: var(--muted);
+}
+.card,
+.office-proposal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.office-proposal-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 10px;
+}
+.office-formula,
+.secret {
+  display: block;
+  font-family: var(--sr-font-mono);
+  font-size: 13px;
+  padding: 8px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.office-slides {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.office-slides ul {
+  margin: 4px 0 8px;
+  padding-left: 16px;
+}
+.office-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.office-tabs button {
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.office-tabs button.active {
+  color: var(--foreground);
+  border-bottom-color: var(--brand);
+}
+.office-section,
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.office-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.office-row {
+  display: flex;
+  gap: 6px;
+}
+.office-row select {
+  flex: 1;
+}
+.office-field,
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 500;
+}
+.office-check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+textarea {
+  resize: vertical;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.button {
+  font: inherit;
+  font-weight: 500;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background-color var(--sr-t-fast) var(--sr-ease-out);
+}
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.button.primary {
+  color: var(--on-brand);
+  background: var(--brand);
+  border-color: var(--brand);
+}
+.button.primary:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+.button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.quiet-button {
+  align-self: flex-start;
+}
+.notice {
+  color: var(--foreground);
+}
+.error {
+  color: var(--danger);
+}
+.office-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}

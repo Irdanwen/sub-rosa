@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sub Rosa for PowerPoint</title>
+    <link rel="icon" type="image/png" href="/office/icon-32.png" />
+    <!-- Office requires its library from Microsoft's CDN; it is the one
+         script this page loads from another origin (ADR-0102). The attribute
+         makes it load its own files through its "officejs" Trusted Types
+         policy, which the /office/ policy admits. -->
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" data-enable-trusted-types="1"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/powerpoint/main.tsx"></script>
+  </body>
+</html>
