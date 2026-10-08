@@ -141,8 +141,10 @@ describe("the read-aloud voice", () => {
 describe("choosing the voice in Settings", () => {
   it("on the desktop: an engine, one of its voices, and a preview in that voice", async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    // jsdom cannot pause; the stub lets leaving the card be checked below.
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
     const user = userEvent.setup();
-    render(<VoiceSettingsCard />);
+    const { unmount } = render(<VoiceSettingsCard />);
 
     const engine = await screen.findByRole("combobox", { name: "Voice engine" });
     await waitFor(() => expect(engine).toHaveValue("kokoro"));
@@ -163,6 +165,9 @@ describe("choosing the voice in Settings", () => {
       voice: "Blade",
     });
     expect(await screen.findByRole("button", { name: "Stop" })).toBeInTheDocument();
+    // Leaving the card stops the preview.
+    unmount();
+    expect(pause).toHaveBeenCalled();
   });
 
   it("on the phone: the same choice, from sheets", async () => {

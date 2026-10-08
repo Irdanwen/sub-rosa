@@ -16,7 +16,7 @@ import {
   restoreChat,
 } from "../../website/src/client/library";
 import type { Change } from "../../website/src/lib/api";
-import { memoryClientStore } from "../../website/src/client/store";
+import { type ClientStore, memoryClientStore } from "../../website/src/client/store";
 import { SyncClient } from "../../website/src/client/sync";
 import { decode, decrypt, encode } from "../../website/src/lib/vault";
 import { FakeJournal } from "./website-client-fakes";
@@ -159,6 +159,63 @@ describe("the web client's sync writer", () => {
     expect(sent).toHaveLength(2);
     expect(sent[1]).toEqual(sent[0]);
     expect(journal.changes).toHaveLength(1);
+  });
+
+  it("never sends a second body under an operation it already sent", async () => {
+    // An edit that lands while the object's unsent write is being frozen
+    // either goes into the bytes sent or queues behind them, as `sync.rs`
+    // seals with a compare and set on the body. Here the edit stops just
+    // before it is kept, and the flush starts in that gap. The edit goes on
+    // once that flush is answered, or after a moment if the flush waits for
+    // it: either way, the result must be the same.
+    const journal = new FakeJournal();
+    const memory = memoryClientStore();
+    let gate: { reached: () => void; release: Promise<void> } | null = null;
+    const store: ClientStore = {
+      ...memory,
+      put: async (area, key, value) => {
+        const held = area === "outbox" ? gate : null;
+        if (held) {
+          gate = null;
+          held.reached();
+          await held.release;
+        }
+        await memory.put(area, key, value);
+      },
+    };
+    const sync = new SyncClient(ACCOUNT, vaultKey(), store, journal.transport());
+    const note = await createNote(sync, "Draft", "One");
+    const row = sync.objects.get(note.id)?.row ?? {};
+    let release = () => {};
+    let reached = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const atPut = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    gate = { reached, release: held };
+    const edit = sync.write("notes", { ...row, edited_content: "Two" });
+    await atPut;
+    const first = sync.flush();
+    await Promise.race([first, new Promise((resolve) => setTimeout(resolve, 50))]);
+    release();
+    await edit;
+    await first;
+    await sync.flush();
+
+    const bodies = new Map<string, Set<string>>();
+    for (const operation of journal.pushes)
+      bodies.set(
+        operation.operation_id,
+        (bodies.get(operation.operation_id) ?? new Set()).add(operation.ciphertext),
+      );
+    for (const sent of bodies.values()) expect(sent.size).toBe(1);
+    expect(sync.pendingCount).toBe(0);
+    // The edit was not dropped with the write it was folded into.
+    const reader = new SyncClient(ACCOUNT, vaultKey(), memoryClientStore(), journal.transport());
+    await reader.pull();
+    expect(reader.objects.get(note.id)?.row.edited_content).toBe("Two");
   });
 
   it("keeps a concurrent edit as a conflict, and acknowledges one that agrees", async () => {

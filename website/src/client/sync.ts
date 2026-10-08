@@ -132,6 +132,8 @@ export class SyncClient {
   private nextSequence = 1;
   private listeners = new Set<() => void>();
   private flushing: Promise<void> | null = null;
+  /** Edits and sealing take turns: see `exclusive`. */
+  private turn: Promise<unknown> = Promise.resolve();
   private readonly prefix: string;
 
   /** The current row of `table` with this id, deleted or not. */
@@ -155,6 +157,20 @@ export class SyncClient {
   }
   private changed() {
     for (const listener of this.listeners) listener();
+  }
+
+  /** Runs `action` once every edit and seal started before it has finished.
+   * `sync.rs` gets this from SQLite: its triggers rewrite only a row whose
+   * ciphertext is still null, and sealing sets the ciphertext only if the
+   * body it read is still there. Here an edit decides whether it may rewrite
+   * the object's unsent write and rewrites it in one turn, and sealing reads
+   * the body it freezes in one turn, so an edit never lands in a write
+   * already frozen (which would drop the edit when that write is
+   * acknowledged, or send a second body under its operation id). */
+  private exclusive<T>(action: () => Promise<T>): Promise<T> {
+    const next = this.turn.then(action);
+    this.turn = next.catch(() => undefined);
+    return next;
   }
 
   /** Writes that have not reached the service yet, and the ones it refused. */
@@ -374,12 +390,21 @@ export class SyncClient {
    * Queues an edit of `row` (its `id` names the object, `objectIdOf`). Like the app's
    * triggers, an edit rewrites the object's last unsent, never-sent write in
    * place instead of queueing another; one that may already be on the
-   * service, or a resolution, is never rewritten.
+   * service, or a resolution, is never rewritten. Edits apply in the order
+   * they were made.
    */
-  async write(
+  write(
     table: TableName,
     row: Row,
     options: { deleted?: boolean; extra?: Record<string, unknown>; bodyTable?: string } = {},
+  ): Promise<void> {
+    return this.exclusive(() => this.edit(table, row, options));
+  }
+
+  private async edit(
+    table: TableName,
+    row: Row,
+    options: { deleted?: boolean; extra?: Record<string, unknown>; bodyTable?: string },
   ): Promise<void> {
     const id = await objectIdOf(table, row.id);
     if (id === null || !validRow(table, row)) throw new Error("Invalid row");
@@ -448,15 +473,19 @@ export class SyncClient {
 
   private async flushOnce(signal?: AbortSignal) {
     for (let round = 0; round < 500; round++) {
-      const entry = this.outbox.find(
+      const picked = this.outbox.find(
         (item) =>
           !item.failed &&
           !this.outbox.some(
             (earlier) => earlier.objectId === item.objectId && earlier.sequence < item.sequence,
           ),
       );
-      if (!entry || signal?.aborted) return;
-      const sealed = await this.seal(entry);
+      if (!picked || signal?.aborted) return;
+      // Read again in its turn: an edit made before it may have rewritten
+      // it, or it may be gone.
+      const frozen = await this.seal(picked.operationId);
+      if (!frozen) continue;
+      const { entry, sealed } = frozen;
       const body = JSON.stringify({
         operations: [
           {
@@ -494,7 +523,18 @@ export class SyncClient {
     }
   }
 
-  private async seal(entry: OutboxEntry): Promise<{ parent: string | null; ciphertext: string }> {
+  private seal(operationId: string): Promise<{
+    entry: OutboxEntry;
+    sealed: { parent: string | null; ciphertext: string };
+  } | null> {
+    return this.exclusive(async () => {
+      const entry = this.outbox.find((item) => item.operationId === operationId);
+      if (!entry || entry.failed) return null;
+      return { entry, sealed: await this.freeze(entry) };
+    });
+  }
+
+  private async freeze(entry: OutboxEntry): Promise<{ parent: string | null; ciphertext: string }> {
     if (entry.sealed) return entry.sealed;
     const body = await decrypt<Body>(this.key, entry.local, this.localContext(entry.operationId));
     const parent = this.heads.get(entry.objectId) ?? null;
