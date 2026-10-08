@@ -56,12 +56,12 @@
   font-size: var(--fs-sm);
 }
 
+/* Wraps rather than truncating: the site is the end of the sentence and the
+ * one thing the person needs to read. */
 .agent-browser-bar-label {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .agent-browser-journal-toggle,

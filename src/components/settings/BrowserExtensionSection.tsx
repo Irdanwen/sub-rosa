@@ -123,7 +123,11 @@ export function BrowserExtensionSection() {
                   "Install the Sub Rosa extension, open it, and type this code. It works once, for five minutes.",
                 )}
               </p>
-              <p className="settings-row-title" aria-live="polite" data-testid="pairing-code">
+              <p
+                className="browser-extension-pairing-code"
+                aria-live="polite"
+                data-testid="pairing-code"
+              >
                 {formatPairingCode(status.pairing.code)}
               </p>
             </div>

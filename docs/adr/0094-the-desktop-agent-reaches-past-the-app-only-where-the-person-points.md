@@ -97,3 +97,33 @@ reaching.**
   starts and whenever the helper says it is ready; on macOS, a missing helper
   means no chat bar from the keyboard (and no screen awareness), the same way
   it means no dictation.
+
+## Addendum (2026-10-08): Arc is not offered, and Screen Recording belongs to the helper
+
+- **Arc is left out of detection.** The decision above listed Arc among the
+  browsers the app may drive, with its profile handling unverified. Checked
+  since: nothing The Browser Company documents says `--user-data-dir` gives a
+  separate profile rather than opening the person's own (the one thing this
+  design never does); public reports show Arc crashing when a tab is created
+  over DevTools (`Target.createTarget`, which `cdp::attach_to_page` falls
+  back to when the window has no page yet); and its updater relaunches it
+  without the command-line flags. Arc was not installed on the machine used
+  to check, so it could not be tried. `launch::candidates` no longer lists
+  it (a test pins that), and the copy names Chrome, Edge, Brave and
+  Chromium. Putting it back needs all three verified on a real install.
+- **Screen Recording is granted to "Sub Rosa Dictation Helper", not to
+  "Sub Rosa".** The window picture is taken by the dictation helper, which is
+  its own app bundle inside Sub Rosa (`xyz.carpediem.subrosa.dictation-helper`,
+  display name "Sub Rosa Dictation Helper"). Measured on the installed 1.88.1
+  with `responsibility_get_pid_responsible_for_pid`: the helper the app spawns
+  is its own responsible process, so macOS attributes its permission requests
+  to it, the same way the system audio helper already holds its own Audio
+  Capture entry (`xyz.carpediem.subrosa.audio-capture` in the TCC database).
+  For the person this means the macOS prompt and the switch in System
+  Settings, Privacy and Security, Screen Recording, both say "Sub Rosa
+  Dictation Helper", and a grant takes effect once the helper restarts, which
+  restarting Sub Rosa does. Settings › Privacy now says so before macOS asks
+  and again when the permission is missing. Moving the capture into the main
+  binary was not chosen: the helper already owns the frontmost-app tracking
+  and Accessibility this feature reads, and a second capture path would split
+  one permission story into two.

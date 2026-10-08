@@ -547,3 +547,14 @@ async fn real_browser_end_to_end() {
         let _ = child.start_kill();
     }
 }
+
+#[test]
+fn arc_is_not_offered_as_the_agent_browser() {
+    // ADR-0094 addendum: no documented separate profile, a crash on
+    // `Target.createTarget`, and an updater that drops the flags.
+    for (id, name, path) in super::launch::candidates() {
+        assert_ne!(id, "arc");
+        assert_ne!(name, "Arc");
+        assert!(!path.to_string_lossy().contains("Arc.app"), "{path:?}");
+    }
+}

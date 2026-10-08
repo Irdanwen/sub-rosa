@@ -61,6 +61,20 @@ describe("the extension manifest", () => {
   });
 });
 
+describe("the panel's views", () => {
+  // The panel switches views with the `hidden` attribute. A block that sets
+  // its own `display` beats the user agent's `[hidden]` rule, and a real
+  // browser run showed the main view under the pairing form.
+  it("hides a hidden block whatever display it sets", () => {
+    const css = readFileSync(join(root, "src/panel.css"), "utf8");
+    expect(css).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/);
+    const html = readFileSync(join(root, "src/panel.html"), "utf8");
+    for (const id of ["notice", "pair", "main", "stage", "selection", "open-panel", "stop"]) {
+      expect(html).toMatch(new RegExp(`id="${id}"[^>]*\\shidden`));
+    }
+  });
+});
+
 describe("the extension's languages", () => {
   const sourceFiles = readdirSync(join(root, "src")).map((name) =>
     readFileSync(join(root, "src", name), "utf8"),

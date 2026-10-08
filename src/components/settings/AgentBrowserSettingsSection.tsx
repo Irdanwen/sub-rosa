@@ -76,7 +76,7 @@ export function AgentBrowserSettingsSection() {
               </h3>
               <p className="settings-row-description">
                 {noBrowser
-                  ? t("No Chrome, Edge, Brave, Arc or Chromium was found on this computer.")
+                  ? t("No Chrome, Edge, Brave or Chromium was found on this computer.")
                   : t("Turning it off closes the browser if it is open.")}
               </p>
             </div>
@@ -164,7 +164,11 @@ export function AgentBrowserSettingsSection() {
             {t("Add")}
           </button>
         </form>
-        {error ? <p className="settings-row-description">{error}</p> : null}
+        {error ? (
+          <p className="settings-row-error" role="alert">
+            {error}
+          </p>
+        ) : null}
       </div>
     </section>
   );

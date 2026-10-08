@@ -34,6 +34,12 @@
   box-sizing: border-box;
 }
 
+/* Several blocks set their own `display`, which beats the user agent's
+   `[hidden]` rule: without this the main view showed under the pairing form. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);

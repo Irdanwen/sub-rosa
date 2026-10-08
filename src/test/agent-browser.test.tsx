@@ -3,7 +3,7 @@
  * answers with the person's choice, Stop reaches the backend, and the journal
  * says what happened without ever holding what was typed.
  */
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const listeners = new Map<string, (event: { payload: unknown }) => void>();
@@ -31,6 +31,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { AgentBrowserIndicator } from "../components/agent-browser/AgentBrowserIndicator";
 import { AgentBrowserSettingsSection } from "../components/settings/AgentBrowserSettingsSection";
+import agentBrowserCss from "../styles/agent-browser.css?raw";
+import appCss from "../styles/app.css?raw";
 import {
   type AgentBrowserStatus,
   consentQuestion,
@@ -119,6 +121,42 @@ describe("AgentBrowserIndicator", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     expect(invokeMock).toHaveBeenCalledWith("agent_browser_stop", undefined);
   });
+
+  it("numbers the newest step last, so the top line is not step 1", async () => {
+    render(<AgentBrowserIndicator />);
+    await waitFor(() => expect(listeners.has("agent-browser://state")).toBe(true));
+    act(() => {
+      listeners.get("agent-browser://state")?.({
+        payload: {
+          ...idle,
+          active: true,
+          journal: [
+            { at: "1", action: "open", target: "example.com" },
+            { at: "2", action: "snapshot", target: "" },
+          ],
+        },
+      });
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Steps" }));
+    const list = screen.getByRole("list");
+    expect(list).toHaveAttribute("reversed");
+    const items = within(list).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual(["Read the page", "Opened example.com"]);
+  });
+});
+
+describe("the styles these surfaces rely on", () => {
+  // A real render showed both: a primary answer as faint as its neighbours,
+  // and the site name cut off the end of the bar.
+  it("fills a primary button everywhere, and lets the bar's sentence wrap", () => {
+    expect(appCss).toMatch(
+      /\n\.btn-primary \{\s*background: var\(--primary\);\s*color: var\(--primary-foreground\);/,
+    );
+    const bar = /\.agent-browser-bar-label \{([^}]*)\}/.exec(agentBrowserCss)?.[1];
+    expect(bar).toBeDefined();
+    expect(bar).not.toContain("nowrap");
+    expect(bar).not.toContain("ellipsis");
+  });
 });
 
 describe("Settings › Agent browser", () => {
@@ -141,9 +179,7 @@ describe("Settings › Agent browser", () => {
     settings = { settings: { enabled: true, allowedSites: [], browser: null }, browsers: [] };
     render(<AgentBrowserSettingsSection />);
     expect(
-      await screen.findByText(
-        "No Chrome, Edge, Brave, Arc or Chromium was found on this computer.",
-      ),
+      await screen.findByText("No Chrome, Edge, Brave or Chromium was found on this computer."),
     ).toBeInTheDocument();
   });
 });

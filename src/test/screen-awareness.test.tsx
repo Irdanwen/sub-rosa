@@ -11,14 +11,20 @@ let capture: () => unknown = () => ({});
 const invokeMock = vi.fn(async (command: string, _args?: unknown) => {
   if (command === "screen_awareness_settings") return awareness;
   if (command === "screen_awareness_capture") return capture();
+  if (command === "screen_awareness_screen_permission") return false;
+  if (command === "screen_awareness_save_settings")
+    return (_args as { settings: unknown }).settings;
   return undefined;
 });
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (command: string, args?: unknown) => invokeMock(command, args),
 }));
+vi.mock("@tauri-apps/plugin-os", () => ({ platform: () => "macos" }));
 
 import { LookingAtMenuItem } from "../components/agent/LookingAtMenuItem";
 import { LookingAtChip } from "../components/chat-bar/LookingAtChip";
+import buildRs from "../../src-tauri/build.rs?raw";
+import { ScreenAwarenessCard } from "../components/settings/ScreenAwarenessCard";
 import {
   type LookingAt,
   lookingAtChipDetail,
@@ -108,5 +114,31 @@ describe("the composer's menu item", () => {
     expect(
       await screen.findByRole("menuitem", { name: "What I’m looking at, with a picture" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Settings › Privacy on macOS", () => {
+  // The capture runs in the dictation helper, which macOS holds responsible
+  // for its own Screen Recording request (measured on 1.88.1: the helper is
+  // its own responsible process). The prompt and System Settings show the
+  // helper's bundle name, so the copy must name the same switch.
+  const helperName =
+    /<key>CFBundleDisplayName<\/key>\s*<string>(Sub Rosa Dictation Helper)<\/string>/.exec(
+      buildRs,
+    )?.[1];
+
+  it("names the helper macOS asks Screen Recording for, before and after it asks", async () => {
+    expect(helperName).toBe("Sub Rosa Dictation Helper");
+    render(<ScreenAwarenessCard />);
+    fireEvent.click(await screen.findByRole("switch", { name: "Include a picture of the window" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(`It asks for ${helperName}`);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      new RegExp(`turn on ${helperName}, restart Sub Rosa`),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("screen_awareness_screen_permission", {
+      request: true,
+    });
   });
 });
