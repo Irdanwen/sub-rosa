@@ -10,6 +10,7 @@ import { IconDivider } from "central-icons/IconDivider";
 import { IconH1 } from "central-icons/IconH1";
 import { IconH2 } from "central-icons/IconH2";
 import { IconH3 } from "central-icons/IconH3";
+import { IconLayoutGrid1 } from "central-icons/IconLayoutGrid1";
 import { IconNumberedList } from "central-icons/IconNumberedList";
 import { IconOpenQuote1 } from "central-icons/IconOpenQuote1";
 import { IconText1 } from "central-icons/IconText1";
@@ -118,6 +119,18 @@ const ENTRIES: BlockPaletteEntry[] = [
     Icon: IconCodeLines,
     run: (editor, range) => {
       at(range, editor).toggleCodeBlock().run();
+    },
+  },
+  {
+    // Three by three with a header row: markdown has no headerless table, so
+    // the first row is the header from the start rather than by surprise.
+    id: "table",
+    label: t("Table"),
+    hint: "| |",
+    aliases: ["grid", "columns", "rows"],
+    Icon: IconLayoutGrid1,
+    run: (editor, range) => {
+      at(range, editor).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
     },
   },
   {

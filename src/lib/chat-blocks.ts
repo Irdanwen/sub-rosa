@@ -15,7 +15,9 @@
  * call site (return null — never a half-valid card).
  */
 
+import { type CanvasChatBlock, canvasMarkdown, parseCanvasPayload } from "./canvas-block";
 import { safeExternalUrl } from "./external-link";
+import { type TryOnChatBlock, parseTryOnPayload, tryOnPlainText } from "./try-on-block";
 
 export const CHAT_BLOCK_FENCE_PREFIX = "subrosa:";
 
@@ -96,7 +98,9 @@ export type ChatBlock =
   | PlacesChatBlock
   | NotesChatBlock
   | ProposalChatBlock
-  | MediaChatBlock;
+  | MediaChatBlock
+  | CanvasChatBlock
+  | TryOnChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -380,6 +384,10 @@ function chatBlockPlainText(block: ChatBlock): string[] {
         block.title || "Suggested follow-ups",
         ...block.actions.map((action) => `- ${action.label}`),
       ];
+    case "canvas":
+      return [block.title, "", ...canvasMarkdown(block).split("\n")];
+    case "tryon":
+      return tryOnPlainText(block);
     default:
       return [];
   }
@@ -414,6 +422,10 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parseNotes(payload);
     case "proposal":
       return parseProposal(payload);
+    case "canvas":
+      return parseCanvasPayload(payload);
+    case "tryon":
+      return parseTryOnPayload(payload);
     default:
       return null;
   }

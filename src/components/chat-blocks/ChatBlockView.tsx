@@ -8,6 +8,10 @@ import { openExternalUrl } from "../../lib/tauri";
 import { PlacesCard } from "./PlacesCard";
 import { ProposalCard } from "./ProposalCard";
 import { AssistantMediaCard } from "./AssistantMediaCard";
+import { CanvasCard } from "./CanvasCard";
+import { SaveToggle } from "../chat/LibraryActions";
+import { linkSaveRequest } from "../../lib/chat-library";
+import { TryOnCard } from "./TryOnCard";
 
 /**
  * Renders one parsed chat block (see src/lib/chat-blocks.ts). Shared by the
@@ -26,6 +30,10 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
       return <NotesCard block={block} />;
     case "proposal":
       return <ProposalCard block={block} />;
+    case "canvas":
+      return <CanvasCard block={block} />;
+    case "tryon":
+      return <TryOnCard block={block} />;
     default:
       return null;
   }
@@ -84,7 +92,7 @@ function LinkPreviewCard({ block }: { block: LinksChatBlock }) {
       {block.title ? <h4 className="chat-block-title">{block.title}</h4> : null}
       <ul className="chat-block-rows">
         {block.links.map((link) => (
-          <li key={link.url}>
+          <li key={link.url} className="chat-block-row-with-action">
             <button
               type="button"
               className="chat-block-row"
@@ -106,6 +114,7 @@ function LinkPreviewCard({ block }: { block: LinksChatBlock }) {
                 <IconArrowUpRight size={14} />
               </span>
             </button>
+            <SaveToggle request={linkSaveRequest(link)} className="chat-block-save" />
           </li>
         ))}
       </ul>

@@ -2144,3 +2144,54 @@ Lot P1-WP4 de la parité (ADR-0078), desktop et téléphones :
   devient `?`. L'export Markdown garde tout.
 - `AndroidExports.shareFile` donnait `image/*` à toute extension inconnue : un
   `.md` est maintenant `text/markdown`.
+
+## Canevas, bibliothèque, numérisation, essayage, image affinée (2026-10-08, ADR-0087, ADR-0088)
+
+Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
+
+- **Canevas** (`src/components/canvas/`, `src/lib/canvas.ts`,
+  `src/lib/canvas-block.ts`) : une note ouverte à côté du chat (vue scindée
+  desktop `CanvasHost`, écran pushé sur le téléphone). Le bloc
+  `subrosa:canvas` ouvre un brouillon ou propose une version d'un canevas
+  existant ; une consigne sous le canevas lance une réécriture `canvas` de
+  tout le document (`note_ai`, `note-rewrite-v2`). Rien n'est écrit sans
+  « Accepter ». « Demander à Sub Rosa » cite la sélection dans le chat
+  (`src/lib/ask-selection.ts`).
+- **Tableaux dans les notes** : `@tiptap/extension-table`, cellule limitée à
+  un paragraphe, tableaux GFM alignés, convertisseur et corpus d'abord
+  (`note-markdown.ts`, `note-markdown.test.ts`), puis « Tableau » dans la
+  palette `/`.
+- **Bibliothèque** (`src/components/library/LibraryView.tsx`,
+  `src/lib/chat-library.ts`, `src-tauri/src/saved_items.rs`, migration 054) :
+  réponses, liens et lieux enregistrés (local, archive seulement) et images
+  des conversations (galerie, `origin: chat`).
+- **Image affinée** (`src-tauri/src/image_refine.rs`, `RefinePanel.tsx`,
+  `estimate_image_refine` et `refine_passes` dans `june_media_mcp.py`) et
+  **essayage** (`src/lib/studio/try-on.ts`, `TryOnPanel.tsx`, `TryOnCard.tsx`).
+- **Numérisation** (`src-tauri/src/scan/`, `native/document-scanner/`,
+  `DocumentScanner.kt`) : VisionKit et Vision sur iPhone, ML Kit sur Android ;
+  une note par numérisation, le PDF à `scans/<id de note>.pdf`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src/app/App.tsx` | `CanvasHost` autour d'`AgentWorkspace`, vue `library`, écoute de « Demander à Sub Rosa » | Réappliquer |
+| `src/components/sidebar/Sidebar.tsx`, `src/app/tab-meta.tsx` | Entrée « Bibliothèque » | Réappliquer |
+| `src/components/agent/composer/ComposerEditor.tsx` | Prend la citation en attente | Réappliquer |
+| `src/components/note-editor/SelectionToolbar.tsx` | Bouton « Demander à Sub Rosa » | Réappliquer |
+| `src/lib/tauri.ts` | `RewriteKind` gagne `canvas` | Réappliquer |
+| `src-tauri/src/lib.rs` | Modules et commandes (les deux listes ; `scan::` mobile seulement) | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | Paragraphes canevas et essayage du SOUL, route `/v1/media/refine`, `generation` sur `/v1/media/save` | Réappliquer |
+| `src-tauri/src/hermes/june_media_mcp.py` | `refine_passes`, `estimate_image_refine` | Réappliquer |
+| `src-tauri/build.rs`, `gen/apple/project.yml`, `project.pbxproj` | Pont Objective-C du scanner, VisionKit et Vision liés | Réappliquer |
+
+### Pièges
+
+- Le canevas n'est pas une note à part : ne jamais l'écrire depuis l'agent,
+  toujours passer par une version proposée.
+- `display: contents` sur `.canvas-split` fermé : changer l'arbre autour
+  d'`AgentWorkspace` le remonterait et perdrait la conversation en cours.
+- Le `shareFile` Android existant n'accepte que `filesDir`, alors que les
+  données de l'app sont sous `dataDir` : partager une image Studio sur Android
+  peut être refusé (non corrigé ici ; le PDF numérisé a son propre partage).

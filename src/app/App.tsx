@@ -28,6 +28,9 @@ import { ImportLinkBar } from "../components/notes-list/ImportLinkBar";
 import { OfflineBanner, useOfflineState } from "../components/notes-list/OfflineBanner";
 import { startLinkIngest } from "../lib/tauri";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
+import { ASK_ABOUT_SELECTION_EVENT } from "../lib/ask-selection";
+import { CanvasHost } from "../components/canvas/CanvasHost";
+import { LibraryView } from "../components/library/LibraryView";
 import { FILM_FROM_NOTE_EVENT } from "../lib/film-from-note";
 import { STUDIO_FILM_NOTE_KEY, STUDIO_TAB_STORAGE_KEY } from "../components/studio/studio-keys";
 import { requestRetouch } from "../lib/studio/retouch/jobs";
@@ -1562,6 +1565,14 @@ export function App() {
     return () => window.removeEventListener(OPEN_NOTE_FROM_CHAT_EVENT, handleOpenNoteFromChat);
   }, []);
 
+  // "Ask Sub Rosa" on a selection brings the chat forward; its composer takes
+  // the quote (lib/ask-selection), whether it is on screen or mounts now.
+  useEffect(() => {
+    const showChat = () => setActiveView("agent");
+    window.addEventListener(ASK_ABOUT_SELECTION_EVENT, showChat);
+    return () => window.removeEventListener(ASK_ABOUT_SELECTION_EVENT, showChat);
+  }, []);
+
   // A note that has been read as shots is a film, and the way to it is the
   // Studio. Same decoupling: the note editor dispatches, this answers.
   useEffect(() => {
@@ -3048,6 +3059,8 @@ export function App() {
                 />
               ) : activeView === "studio" ? (
                 <StudioView />
+              ) : activeView === "library" ? (
+                <LibraryView header={<h1 className="library-view-title">{t("Library")}</h1>} />
               ) : activeView === "routines" ? (
                 <RoutinesView
                   onCreateRoutine={(prompt) => {
@@ -3075,60 +3088,63 @@ export function App() {
               ) : activeView === "agent" ? (
                 // The origin crumbs render inside the workspace's own sticky
                 // session bar, so they persist while the chat scrolls beneath.
-                <AgentWorkspace
-                  initialSession={activeAgentSessionSeed}
-                  initialSessionId={activeAgentSessionId}
-                  onSessionSelected={setActiveAgentSession}
-                  topUpLabel={topUpLabel}
-                  onTopUp={handleTopUp}
-                  origin={
-                    agentOriginFolder
-                      ? {
-                          projectFolderId: agentOriginFolder.id,
-                          backLabel: `Back to ${agentOriginFolder.name}`,
-                          onBack: handleReturnToAgentOriginFolder,
-                          crumbs: [
-                            {
-                              label: t("Projects"),
-                              onClick: () => {
-                                setActiveView("folders");
-                                dispatch({
-                                  type: "folderSelected",
-                                  folderId: undefined,
-                                });
-                                setActiveAgentSession(undefined);
-                                setAgentOrigin(undefined);
-                              },
-                            },
-                            {
-                              label: agentOriginFolder.name,
-                              onClick: handleReturnToAgentOriginFolder,
-                            },
-                          ],
-                        }
-                      : agentOrigin?.kind === "routines"
+                // The canvas opens beside it (ADR-0087).
+                <CanvasHost>
+                  <AgentWorkspace
+                    initialSession={activeAgentSessionSeed}
+                    initialSessionId={activeAgentSessionId}
+                    onSessionSelected={setActiveAgentSession}
+                    topUpLabel={topUpLabel}
+                    onTopUp={handleTopUp}
+                    origin={
+                      agentOriginFolder
                         ? {
-                            backLabel: "Back to routines",
-                            onBack: handleReturnToRoutines,
+                            projectFolderId: agentOriginFolder.id,
+                            backLabel: `Back to ${agentOriginFolder.name}`,
+                            onBack: handleReturnToAgentOriginFolder,
                             crumbs: [
                               {
-                                label: t("Routines"),
-                                onClick: handleReturnToRoutines,
+                                label: t("Projects"),
+                                onClick: () => {
+                                  setActiveView("folders");
+                                  dispatch({
+                                    type: "folderSelected",
+                                    folderId: undefined,
+                                  });
+                                  setActiveAgentSession(undefined);
+                                  setAgentOrigin(undefined);
+                                },
+                              },
+                              {
+                                label: agentOriginFolder.name,
+                                onClick: handleReturnToAgentOriginFolder,
                               },
                             ],
                           }
-                        : {
-                            backLabel: "Back to sessions",
-                            onBack: handleReturnToAgentsList,
-                            crumbs: [
-                              {
-                                label: t("Sessions"),
-                                onClick: handleReturnToAgentsList,
-                              },
-                            ],
-                          }
-                  }
-                />
+                        : agentOrigin?.kind === "routines"
+                          ? {
+                              backLabel: "Back to routines",
+                              onBack: handleReturnToRoutines,
+                              crumbs: [
+                                {
+                                  label: t("Routines"),
+                                  onClick: handleReturnToRoutines,
+                                },
+                              ],
+                            }
+                          : {
+                              backLabel: "Back to sessions",
+                              onBack: handleReturnToAgentsList,
+                              crumbs: [
+                                {
+                                  label: t("Sessions"),
+                                  onClick: handleReturnToAgentsList,
+                                },
+                              ],
+                            }
+                    }
+                  />
+                </CanvasHost>
               ) : activeView === "agent-sessions" ? (
                 <AgentSessionsList
                   ref={agentSessionsListRef}

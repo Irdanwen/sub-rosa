@@ -1,6 +1,7 @@
 // What the desktop chat adds around a reply and a conversation, kept out of
 // AgentWorkspace (which is at its size ceiling): read a reply aloud and rate
-// it, export the open chat, and the context gauge beside the composer.
+// it, open it in a canvas or save it to the Library, export the open chat, and
+// the context gauge beside the composer.
 
 import { IconFileText } from "central-icons/IconFileText";
 import { IconFilePdf } from "central-icons/IconFilePdf";
@@ -12,6 +13,7 @@ import { isBranchableMessageId } from "../../lib/hermes-session-branch";
 import { t } from "../../lib/i18n";
 import type { HermesSessionMessage, VeniceModelDto } from "../../lib/tauri";
 import { ContextGauge } from "../chat/ContextGauge";
+import { ReplyLibraryActions } from "../chat/LibraryActions";
 import { RateReply } from "../chat/RateReply";
 import { ReadAloudButton } from "../chat/ReadAloudButton";
 
@@ -43,6 +45,12 @@ export function ReplyExtras({ turn, sessionId }: { turn: AgentChatTurn; sessionI
       {sessionId && isBranchableMessageId(turn.id) ? (
         <RateReply conversationId={sessionId} messageId={turn.id} className="agent-turn-action" />
       ) : null}
+      <ReplyLibraryActions
+        text={text}
+        conversationId={sessionId}
+        messageId={sessionId && isBranchableMessageId(turn.id) ? turn.id : undefined}
+        className="agent-turn-action"
+      />
     </>
   );
 }

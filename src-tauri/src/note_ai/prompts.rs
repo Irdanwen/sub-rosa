@@ -22,7 +22,7 @@
 /// Bump when a prompt below changes in a way that would produce a different
 /// rewrite. Distinct from `LONGFORM_PROMPT_VERSION` and from upstream's
 /// `notes-mvp-v5`: they answer different questions about the same note.
-pub const NOTE_AI_PROMPT_VERSION: &str = "note-rewrite-v1";
+pub const NOTE_AI_PROMPT_VERSION: &str = "note-rewrite-v2";
 
 /// The delimiter the selection arrives in. Named once so the prompts and the
 /// message builder cannot drift apart.
@@ -88,6 +88,13 @@ Translate the prose. Do not translate proper nouns, company and product names, i
 Keep the markdown structure exactly: same headings, same list markers, same checkboxes and their state, same emphasis, same links.",
             target_language.unwrap_or("English")
         ),
+
+        super::RewriteKind::Canvas => "The passage is the whole document of a canvas: a draft, or a file of code, that the person is writing with you. Apply the instruction below to it and return the whole document as it should now read.
+
+This task is allowed to change the structure: add, remove, move or rewrite sections, rows, items or lines when the instruction asks for it. Change nothing the instruction does not ask you to change, and keep the person's own words wherever they still work. If the document is a single fenced code block, return a single fenced code block in the same language, with the whole file, not a fragment and not a diff.
+
+Do not invent facts about the person, their meetings or their work. When the instruction asks for content you do not have, write it as a clearly marked placeholder rather than a confident guess."
+            .to_string(),
 
         super::RewriteKind::Custom => "Apply the instruction below to the passage.
 

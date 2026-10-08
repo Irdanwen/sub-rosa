@@ -47,7 +47,11 @@ export type MobileRoute =
   | { view: "assistant-create"; idea?: string }
   | { view: "assistant-references"; assistantId: string; assistantName?: string }
   /** Every conversation with an assistant. */
-  | { view: "assistant-history" };
+  | { view: "assistant-history" }
+  /** A note opened as a canvas (ADR-0087), with a proposed version to review. */
+  | { view: "canvas"; noteId: string; proposal?: string; seq?: number }
+  /** What the chats made and what was kept from them (ADR-0088). */
+  | { view: "library" };
 
 export type MobileNav = {
   tab: MobileTab;

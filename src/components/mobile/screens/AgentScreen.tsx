@@ -29,6 +29,7 @@ import { IconImageSparkle } from "central-icons/IconImageSparkle";
 import { IconNoteText } from "central-icons/IconNoteText";
 import { IconSparklesSoft } from "central-icons/IconSparklesSoft";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
+import { IconLibrary } from "central-icons/IconLibrary";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
@@ -124,6 +125,8 @@ type AgentScreenProps = {
   archiveFolderId?: string;
   /** Present when the list is pushed over a conversation (the default shape). */
   onBack?: () => void;
+  /** The Library: what the chats made and what was kept from them. */
+  onOpenLibrary?: () => void;
 };
 
 /** Session list for the mobile chat (agent-lite), with swipe to archive
@@ -133,6 +136,7 @@ export function AgentScreen({
   ensureArchiveFolder,
   archiveFolderId,
   onBack,
+  onOpenLibrary,
 }: AgentScreenProps) {
   const [tasks, setTasks] = useState<ChatSessionItem[]>([]);
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
@@ -301,14 +305,26 @@ export function AgentScreen({
         large
         onBack={onBack}
         trailing={
-          <button
-            type="button"
-            className="mobile-icon-button"
-            aria-label={t("New chat")}
-            onClick={() => onOpenSession(undefined)}
-          >
-            <IconPlusMedium size={20} />
-          </button>
+          <>
+            {onOpenLibrary ? (
+              <button
+                type="button"
+                className="mobile-icon-button"
+                aria-label={t("Library")}
+                onClick={onOpenLibrary}
+              >
+                <IconLibrary size={20} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="mobile-icon-button"
+              aria-label={t("New chat")}
+              onClick={() => onOpenSession(undefined)}
+            >
+              <IconPlusMedium size={20} />
+            </button>
+          </>
         }
       />
       {tasks.length > 0 ? (

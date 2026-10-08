@@ -46,6 +46,7 @@ pub mod hermes_image_fit;
 #[cfg(desktop)]
 pub mod hermes_working_dir;
 pub mod http_client;
+pub mod image_refine;
 pub mod ingest;
 pub mod intent_inbox;
 pub mod ios_background;
@@ -81,6 +82,8 @@ pub mod redacted;
 pub mod reflex;
 pub mod reply_ratings;
 pub mod rewrite_stream;
+pub mod saved_items;
+pub mod scan;
 pub mod share_inbox;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
@@ -432,6 +435,8 @@ pub fn run() {
             assistants::media::assistant_media_list,
             assistants::media::assistant_media_get,
             assistants::media::assistant_media_execute,
+            image_refine::image_refine_estimate,
+            image_refine::image_refine_pass,
             actions::action_states,
             spotlight::spotlight_get_settings,
             spotlight::spotlight_set_settings,
@@ -566,6 +571,9 @@ pub fn run() {
             personalization::personalization_set_settings,
             reply_ratings::reply_rating_set,
             reply_ratings::reply_ratings_list,
+            saved_items::saved_items_list,
+            saved_items::saved_item_save,
+            saved_items::saved_item_remove,
             conversation_export::export_conversation,
             temporary_chat::temporary_chat_create,
             temporary_chat::temporary_chat_register,
@@ -784,6 +792,8 @@ pub fn run() {
         assistants::media::assistant_media_list,
         assistants::media::assistant_media_get,
         assistants::media::assistant_media_execute,
+        image_refine::image_refine_estimate,
+        image_refine::image_refine_pass,
         actions::action_states,
         spotlight::spotlight_get_settings,
         spotlight::spotlight_set_settings,
@@ -851,6 +861,9 @@ pub fn run() {
         android_exports::share_text,
         #[cfg(target_os = "android")]
         android_exports::share_file,
+        scan::commands::document_scan,
+        scan::commands::document_scan_pdf_exists,
+        scan::commands::document_scan_share,
         #[cfg(target_os = "ios")]
         audio::ios_session::set_playback_audio_session,
         providers::provider_model_settings,
@@ -892,6 +905,9 @@ pub fn run() {
         personalization::personalization_set_settings,
         reply_ratings::reply_rating_set,
         reply_ratings::reply_ratings_list,
+        saved_items::saved_items_list,
+        saved_items::saved_item_save,
+        saved_items::saved_item_remove,
         conversation_export::export_conversation,
         temporary_chat::temporary_chat_create,
         temporary_chat::temporary_chat_register,

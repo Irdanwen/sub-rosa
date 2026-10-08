@@ -40,6 +40,15 @@ function doc(...content: unknown[]) {
 function item(...content: unknown[]) {
   return { type: "listItem", content };
 }
+function cell(type: "tableHeader" | "tableCell", ...content: unknown[]) {
+  return { type, content: [paragraph(...content)] };
+}
+function table(...rows: unknown[][]) {
+  return {
+    type: "table",
+    content: rows.map((cells) => ({ type: "tableRow", content: cells })),
+  };
+}
 
 /* ------------------------------------------------------------------ *
  * The regressions this replaces
@@ -86,6 +95,16 @@ describe("what the previous converter destroyed", () => {
 
   it("keeps a highlight", () => {
     const markdown = "Some ==highlighted== text.";
+    expect(docToMarkdown(docFrom(markdownToDoc(markdown)))).toBe(markdown);
+  });
+
+  it("keeps a table, padded so its columns line up", () => {
+    const markdown = "| Name | Role      |\n| ---- | --------- |\n| Ana  | **Owner** |";
+    expect(docToMarkdown(docFrom(markdownToDoc(markdown)))).toBe(markdown);
+  });
+
+  it("keeps a table's column alignment", () => {
+    const markdown = "| a   | b   | c   |\n| :-- | :-: | --: |\n| 1   | 2   | 3   |";
     expect(docToMarkdown(docFrom(markdownToDoc(markdown)))).toBe(markdown);
   });
 
@@ -328,8 +347,71 @@ const DOC_CORPUS: { name: string; json: ReturnType<typeof doc> }[] = [
     json: doc(paragraph(text("2 ** 3 and ~ and * alone"))),
   },
   {
-    name: "a markdown table stays literal text",
+    name: "a paragraph that merely looks like a table stays a paragraph",
     json: doc(paragraph(text("| a | b |"), { type: "hardBreak" }, text("| - | - |"))),
+  },
+  {
+    name: "table with a header row",
+    json: doc(
+      table(
+        [cell("tableHeader", text("Name")), cell("tableHeader", text("Role"))],
+        [cell("tableCell", text("Ana")), cell("tableCell", text("Owner", "bold"))],
+        [cell("tableCell"), cell("tableCell", text("empty name"))],
+      ),
+    ),
+  },
+  {
+    name: "table cells holding pipes, code and links",
+    json: doc(
+      table(
+        [cell("tableHeader", text("a | b")), cell("tableHeader", text("x|y", "code"))],
+        [
+          cell("tableCell", {
+            type: "text",
+            text: "docs",
+            marks: [{ type: "link", attrs: { href: "https://example.com/a" } }],
+          }),
+          cell("tableCell", text("ends with a backslash \\")),
+        ],
+      ),
+    ),
+  },
+  {
+    name: "aligned columns",
+    json: doc(
+      table(
+        [
+          { type: "tableHeader", attrs: { align: "left" }, content: [paragraph(text("l"))] },
+          { type: "tableHeader", attrs: { align: "center" }, content: [paragraph(text("c"))] },
+          { type: "tableHeader", attrs: { align: "right" }, content: [paragraph(text("r"))] },
+        ],
+        [
+          { type: "tableCell", attrs: { align: "left" }, content: [paragraph(text("1"))] },
+          { type: "tableCell", attrs: { align: "center" }, content: [paragraph(text("2"))] },
+          { type: "tableCell", attrs: { align: "right" }, content: [paragraph(text("3"))] },
+        ],
+      ),
+    ),
+  },
+  {
+    name: "table inside a list item, between paragraphs",
+    json: doc(
+      paragraph(text("before")),
+      {
+        type: "bulletList",
+        content: [
+          item(
+            paragraph(text("item")),
+            table([cell("tableHeader", text("h"))], [cell("tableCell", text("v"))]),
+          ),
+        ],
+      },
+      paragraph(text("| after")),
+    ),
+  },
+  {
+    name: "two tables in a row",
+    json: doc(table([cell("tableHeader", text("one"))]), table([cell("tableHeader", text("two"))])),
   },
 ];
 
@@ -375,6 +457,11 @@ const MARKDOWN_CORPUS = [
   "- plain first\n- [ ] then a box",
   "==mark== and ==== and a = b",
   "1. [ ] a checkbox on an ordered item",
+  "| no | delimiter |\n| row | here |",
+  "| a | b |\n| --- |",
+  "| a |\n| --- |\n| 1 | 2 | 3 |",
+  "| `a|b` | c \\| d |\n| - | - |",
+  "Paragraph text\n| x |\n| - |\n| 1 |",
 ];
 
 describe("markdown normalizes once and then holds still", () => {
@@ -424,6 +511,7 @@ type J = {
 };
 
 const TEXTBLOCK = new Set(["paragraph", "heading"]);
+const CELL = new Set(["tableHeader", "tableCell"]);
 const LIST = new Set(["bulletList", "orderedList", "taskList"]);
 
 function isBreak(node: J) {
@@ -437,15 +525,15 @@ function endsRenderedLineInSpace(node: J | undefined) {
 }
 
 /** Apply the four documented rules to one textblock. Returns null when nothing
- * is left of it. */
-function normalizeTextblock(node: J): J | null {
+ * is left of it. `oneLine` is a heading's rule, which a table cell shares. */
+function normalizeTextblock(node: J, oneLine = node.type === "heading"): J | null {
   let kids = [...(node.content ?? [])];
 
   while (kids.length && isBreak(kids[kids.length - 1])) kids.pop();
   while (kids.length && isBreak(kids[0])) kids.shift();
   kids = kids.filter((kid, index) => !(isBreak(kid) && isBreak(kids[index - 1] ?? { type: "" })));
 
-  if (node.type === "heading") {
+  if (oneLine) {
     const flattened: J[] = [];
     for (const kid of kids) {
       if (!isBreak(kid)) {
@@ -469,6 +557,59 @@ function normalizeTextblock(node: J): J | null {
   return kids.length ? { ...node, content: kids } : null;
 }
 
+/** A table cell's paragraph: one line, trimmed at both ends, and a pipe in a
+ * link target spelled `%7C`. Never dropped: an empty cell is still a cell. */
+function normalizeCellParagraph(paragraphNode: J): J {
+  const withHrefs: J = {
+    ...paragraphNode,
+    content: paragraphNode.content?.map((kid) =>
+      kid.marks?.some((mark) => mark.type === "link")
+        ? {
+            ...kid,
+            marks: kid.marks.map((mark) =>
+              mark.type === "link"
+                ? {
+                    ...mark,
+                    attrs: {
+                      ...mark.attrs,
+                      href: String(mark.attrs?.href ?? "").replace(/\|/g, "%7C"),
+                    },
+                  }
+                : mark,
+            ),
+          }
+        : kid,
+    ),
+  };
+  const normalized = normalizeTextblock(withHrefs, true);
+  if (!normalized) return { type: "paragraph" };
+  const kids = [...(normalized.content ?? [])];
+  const first = kids[0];
+  if (first?.type === "text" && !first.marks?.length) {
+    kids[0] = { ...first, text: (first.text ?? "").replace(/^[ \t]+/, "") };
+  }
+  const content = kids.filter((kid) => kid.type !== "text" || (kid.text ?? "").length > 0);
+  return content.length ? { ...normalized, content } : { type: "paragraph" };
+}
+
+/** The first row is the header, every column takes its header cell's
+ * alignment, and each cell is one line. */
+function normalizeTable(node: J): J {
+  const rows = node.content ?? [];
+  const aligns = (rows[0]?.content ?? []).map((first) => first.attrs?.align ?? null);
+  return {
+    ...node,
+    content: rows.map((row, rowIndex) => ({
+      ...row,
+      content: (row.content ?? []).map((tableCell, column) => ({
+        type: rowIndex === 0 ? "tableHeader" : "tableCell",
+        attrs: { colspan: 1, rowspan: 1, colwidth: null, align: aligns[column] ?? null },
+        content: [normalizeCellParagraph(tableCell.content?.[0] ?? { type: "paragraph" })],
+      })),
+    })),
+  };
+}
+
 /** Two lists of the same kind with nothing between them read back as one. */
 function mergeAdjacentLists(blocks: J[]): J[] {
   const merged: J[] = [];
@@ -488,6 +629,8 @@ function mergeAdjacentLists(blocks: J[]): J[] {
 
 function normalizeBlock(node: J): J | null {
   if (node.type === "codeBlock") return node;
+  if (node.type === "table") return normalizeTable(node);
+  if (CELL.has(node.type)) return node;
   if (TEXTBLOCK.has(node.type)) return normalizeTextblock(node);
   if (!node.content) return node;
   const content = mergeAdjacentLists(
@@ -678,14 +821,14 @@ const REAL_WORLD = {
     "Le point ==bloquant== reste la facture de l'électricien.",
   ].join("\n"),
 
-  "a note with an unsupported table in it": [
+  "a note with a table in it": [
     "# Numbers",
     "",
     "| region | growth |",
     "| ------ | ------ |",
     "| EU     | 12%    |",
     "",
-    "Nothing here renders as a table, and every character is still here.",
+    "The table renders as a table, and every character is still here.",
   ].join("\n"),
 };
 
@@ -733,6 +876,7 @@ const WORDS = [
   "phi | chi",
   "psi",
   "omega   ",
+  "| pipe",
 ];
 const MARK_NAMES = ["bold", "italic", "strike", "code", "highlight"] as const;
 
@@ -793,6 +937,28 @@ function randomBlock(random: () => number, depth: number): unknown {
     return {
       type: "blockquote",
       content: [{ type: "paragraph", content: randomInline(random, depth + 1) }],
+    };
+  }
+  if (depth < 2 && roll < 0.3) {
+    const columns = 1 + Math.floor(random() * 3);
+    const rows = 1 + Math.floor(random() * 3);
+    const aligns = [null, "left", "center", "right"];
+    return {
+      type: "table",
+      content: Array.from({ length: rows }, (_row, rowIndex) => ({
+        type: "tableRow",
+        content: Array.from({ length: columns }, () => ({
+          // A body row of header cells, and per-cell alignment, are states the
+          // file normalizes: generate them so the normalizer is exercised.
+          type: rowIndex === 0 || random() < 0.1 ? "tableHeader" : "tableCell",
+          attrs: { align: aligns[Math.floor(random() * aligns.length)] },
+          content: [
+            random() < 0.15
+              ? { type: "paragraph" }
+              : { type: "paragraph", content: randomInline(random, depth + 1) },
+          ],
+        })),
+      })),
     };
   }
   if (roll < 0.32) return { type: "horizontalRule" };

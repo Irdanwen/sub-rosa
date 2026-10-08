@@ -2245,8 +2245,7 @@ export async function forgetNoteSummary(noteId: string) {
  * of showing nothing for twenty seconds. */
 export const NOTE_REWRITE_EVENT = "june://note-rewrite";
 
-/** What a rewrite is asked to do. Only `restructure` may change the markdown
- * structure it was handed. */
+/** What a rewrite is asked to do. Only `restructure` and `canvas` may reshape it. */
 export type RewriteKind =
   | "correct"
   | "reformulate"
@@ -2254,7 +2253,8 @@ export type RewriteKind =
   | "expand"
   | "restructure"
   | "translate"
-  | "custom";
+  | "custom"
+  | "canvas";
 
 export type NoteRewriteEvent = {
   requestId: string;
