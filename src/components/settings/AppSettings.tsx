@@ -87,6 +87,7 @@ import { InstalledSkillsSection } from "./InstalledSkillsSection";
 import { McpDiagnosticsSection } from "./McpDiagnosticsSection";
 import { McpSecuritySection } from "./McpSecuritySection";
 import { ConnectorsSection } from "./ConnectorsSection";
+import { BrowserExtensionSection } from "./BrowserExtensionSection";
 import { McpServersSection } from "./McpServersSection";
 import { SetupSnapshotSection } from "./SetupSnapshotSection";
 import { ArchiveSection } from "./ArchiveSection";
@@ -182,6 +183,7 @@ export type SettingsTab =
   | "external-dirs"
   | "mcp"
   | "connectors"
+  | "browser-extension"
   | "mcp-diagnostics"
   | "mcp-security"
   | "toolsets"
@@ -207,6 +209,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "external-dirs", label: t("External skill directories") },
   { id: "mcp", label: t("MCP servers") },
   { id: "connectors", label: t("Connectors") },
+  { id: "browser-extension", label: t("Browser extension") },
   { id: "mcp-diagnostics", label: t("MCP diagnostics") },
   { id: "mcp-security", label: t("MCP security") },
   { id: "toolsets", label: t("Toolsets") },
@@ -1340,6 +1343,7 @@ export function AppSettings({
 
         {activeTab === "mcp" ? <McpServersSection /> : null}
         {activeTab === "connectors" ? <ConnectorsSection /> : null}
+        {activeTab === "browser-extension" ? <BrowserExtensionSection /> : null}
         {activeTab === "mcp-diagnostics" ? <McpDiagnosticsSection /> : null}
         {activeTab === "mcp-security" ? <McpSecuritySection /> : null}
         {activeTab === "toolsets" ? <ToolsetsSection /> : null}

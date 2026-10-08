@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "short_name": "Sub Rosa",
+  "description": "__MSG_extDescription__",
+  "version": "1.0.0",
+  "default_locale": "en",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA42GSE9FxPdG0KSo80KBdLOzpe6oUixfKaA44g7cyJ/H/Lk91g/47CvM31cbwsu1MOEkS3sAvifp0hNLPjCD8s+RAAkaC/aJlOWxhpx744QQZn4GKZOFQLQ5SchssjWu8l6eTUUrkKwI6ywD4quTrUy6+wk+9QD4tp/5n9jwR5y2RDvVSD016SZumvnHe1fINNkbjNc5H+SukGJFagjnmRdwzwZoVIt75lbmHF6cqXnudBP0RSJrrp4LCmbwmwVorWFonIqeyPWHMV79Mf/4BzjceIZxzKrGM3ZxJc007F6ClxqsowwKYBChrqffuca1O8HJRRr+cejd4IgmuJ9tQ/QIDAQAB",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "32": "icons/32.png",
+    "64": "icons/64.png",
+    "128": "icons/128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "nativeMessaging",
+    "sidePanel",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "__MSG_actionTitle__",
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "32": "icons/32.png",
+      "64": "icons/64.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "src/panel.html"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      }
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "browser-extension@subrosa.carpediem.xyz",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}

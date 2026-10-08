@@ -2297,3 +2297,39 @@ et l'entendre répondre, mains libres.
   muette 3 s est rouverte sur les flux simples.
 - `useCallback` ne garde la forme compacte de Biome que pour une flèche sans
   paramètre : le tour parlé passe à `send` par une ref (`spokenRef`).
+
+## L'extension de navigateur (2026-10-08, ADR-0100)
+
+- `browser-extension/` : paquet du workspace pnpm sans dépendance (Manifest
+  V3, panneau latéral et popup sur une seule page, menu de sélection,
+  `_locales` en et fr). `pnpm --filter @subrosa/browser-extension build`
+  produit `dist/chrome`, `dist/firefox` et les zips des boutiques. Doc :
+  `docs/browser-extension.md`.
+- `src-tauri/src/browser_extension/` : enregistrement de l'hôte de messagerie
+  native par navigateur (`host_manifest.rs`), le binaire en relais
+  (`relay.rs`, détecté dans `main.rs` avant Tauri), socket ou tube nommé
+  (`endpoint.rs`), appairage par code (`pairing.rs`), décision pure par trame
+  (`session.rs`), écoute et tour agent-lite (`server.rs`). Desktop seulement.
+- Réglages › Extension de navigateur : `BrowserExtensionSection.tsx`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/main.rs` | Le binaire lancé par un navigateur devient le relais et sort avant Tauri | Réappliquer |
+| `src-tauri/src/lib.rs` | Module `browser_extension` (desktop), `setup`, cinq commandes dans la liste desktop | Réappliquer |
+| `src-tauri/Cargo.toml` | Fonction `io-std` de tokio (desktop) pour le relais | Réappliquer |
+| `src/components/settings/AppSettings.tsx`, `src/components/sidebar/Sidebar.tsx` | Onglet « Browser extension » | Réappliquer |
+
+### Pièges
+
+- L'id Chromium d'une installation décompressée vient de la `key` du
+  manifeste ; un test vérifie qu'il est celui de `CHROMIUM_EXTENSION_IDS`.
+  La clé privée n'est pas gardée : elle ne sert à rien pour une installation
+  décompressée, et les boutiques attribuent leur propre id, à ajouter à la
+  liste avant la sortie de l'app qui doit l'accepter.
+- Un build debug et un build release enregistrent le même nom d'hôte ; le
+  dernier lancé gagne (la release réécrit ses manifestes au démarrage).
+- macOS limite le chemin d'un socket à 104 octets : le fichier s'appelle
+  `bx.sock`, et un chemin trop long désactive l'extension plutôt que de
+  tronquer.

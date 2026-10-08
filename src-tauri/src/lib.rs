@@ -23,6 +23,8 @@ pub mod assignments;
 pub mod assistants;
 pub mod audio;
 pub mod background;
+#[cfg(desktop)]
+pub mod browser_extension;
 pub mod calendar;
 pub mod carpe_diem;
 #[cfg(desktop)]
@@ -674,6 +676,11 @@ pub fn run() {
             code_review::code_review_keep,
             code_review::code_review_revert,
             code_review::code_review_stop,
+            browser_extension::browser_extension_status,
+            browser_extension::browser_extension_connect,
+            browser_extension::browser_extension_cancel_pairing,
+            browser_extension::browser_extension_forget,
+            browser_extension::browser_extension_disconnect,
             conversation_export::export_conversation,
             conversation_export::data::export_chat_data,
             temporary_chat::temporary_chat_create,
@@ -1262,6 +1269,7 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 council::seat_models::setup(app);
+                browser_extension::setup(app);
                 updates::setup(app);
                 dictation::setup(app);
                 agent_hud::setup(app);

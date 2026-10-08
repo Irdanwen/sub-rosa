@@ -1545,6 +1545,14 @@ question as a removable chip, read only on a click (ADR-0094).
 _Avoid:_ "screen capture" for the whole feature (a picture is the optional
 part), "context" alone (overloaded).
 
+**Browser pairing** — the consent that lets one browser extension ask the
+desktop app anything: a six-digit code shown in Settings › Browser extension,
+typed into the extension, traded for a token bound to that extension
+(ADR-0100). Registering the host only lets the browser start the relay;
+pairing is what the app checks.
+_Avoid:_ "login" (no account is involved), "connection" for the pairing
+itself (the port connects and disconnects all the time).
+
 ### The app in your language (fork)
 
 **Sentence (copy)** — a thing a person can read on screen, written in

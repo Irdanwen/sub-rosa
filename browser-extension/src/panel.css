@@ -1,0 +1,251 @@
+/*
+ * The panel and the popup. Colours, type and motion come from the shared
+ * primitives (packages/design/primitives.css, copied in by the build), the
+ * same values the app and the website use.
+ */
+:root {
+  color-scheme: light dark;
+  --bg: var(--sr-cream);
+  --surface: var(--sr-cream-raised);
+  --text: var(--sr-on-cream);
+  --muted: var(--sr-on-cream-muted);
+  --accent: var(--sr-gold-ink);
+  --accent-hover: var(--sr-gold-ink-hover);
+  --on-accent: var(--sr-cream-raised);
+  --line: color-mix(in srgb, var(--sr-on-cream) 14%, transparent);
+  --danger: var(--sr-danger);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--sr-ink);
+    --surface: var(--sr-ink-raised);
+    --text: var(--sr-on-ink);
+    --muted: var(--sr-on-ink-muted);
+    --accent: var(--sr-gold-ink-dark);
+    --accent-hover: var(--sr-gold-ink-dark-hover);
+    --on-accent: var(--sr-ink);
+    --line: color-mix(in srgb, var(--sr-on-ink) 16%, transparent);
+    --danger: var(--sr-danger-on-ink);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sr-font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+body[data-surface="popup"] {
+  width: 380px;
+  max-height: 560px;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  min-height: 100vh;
+}
+
+body[data-surface="popup"] .shell {
+  min-height: 0;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  font-family: var(--sr-font-serif);
+  font-size: 20px;
+  letter-spacing: var(--sr-tracking-title);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.notice {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.notice[data-tone="error"] {
+  border-color: var(--danger);
+}
+
+.pair-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.pair-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pair-form input {
+  flex: 1;
+  font: inherit;
+  font-size: 16px;
+  letter-spacing: 0.2em;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+button {
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform var(--sr-t-fast) var(--sr-ease-out);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+button.link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message-author {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.message[data-role="user"] .message-body {
+  color: var(--muted);
+}
+
+.stage {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.selection {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.selection blockquote {
+  margin: 2px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  max-height: 6em;
+  overflow: hidden;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer textarea {
+  font: inherit;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.composer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.include {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+}

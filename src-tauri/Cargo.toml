@@ -119,8 +119,9 @@ tauri-plugin-haptics = "2.3.2"
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 # Spawning the user's own yt-dlp (ADR-0028, desktop rail). Declared per-target
 # rather than in the shared dependency so the iOS build carries no
-# process-spawning machinery it can never use.
-tokio = { version = "1.42", features = ["process"] }
+# process-spawning machinery it can never use. `io-std`: the binary run as a
+# browser's native messaging host relays stdin and stdout (ADR-0100).
+tokio = { version = "1.42", features = ["process", "io-std"] }
 tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2.10.1"

@@ -9,6 +9,7 @@ import { IconRobot2 } from "central-icons/IconRobot2";
 import { IconChevronLeftSmall } from "central-icons/IconChevronLeftSmall";
 import { IconAudio } from "central-icons/IconAudio";
 import { IconBox2 } from "central-icons/IconBox2";
+import { IconPuzzle } from "central-icons/IconPuzzle";
 import { IconBookmark } from "central-icons/IconBookmark";
 import { IconPeopleSparkles } from "central-icons/IconPeopleSparkles";
 import { IconCirclesThree } from "central-icons/IconCirclesThree";
@@ -277,6 +278,11 @@ export const SETTINGS_SIDEBAR_GROUPS: {
         icon: <IconConnectors1 size={16} />,
       },
       {
+        id: "browser-extension",
+        label: t("Browser extension"),
+        icon: <IconPuzzle size={16} />,
+      },
+      {
         id: "mcp-diagnostics",
         label: t("MCP diagnostics"),
         icon: <IconHeartBeat size={16} />,
@@ -320,6 +326,7 @@ export const SETTINGS_SIDEBAR_GROUPS: {
  */
 const SETTINGS_SEARCH_ALIASES: Partial<Record<SettingsTab, string>> = {
   connectors: "connector integration google microsoft notion linear oauth skill pack",
+  "browser-extension": "chrome edge brave firefox add-on plugin web page sidebar",
   general: "appearance theme accent language startup",
   "carpe-diem": "api key credits balance top up account billing endpoint",
   shortcuts: "hotkey keyboard keybinding shortcut keys",
