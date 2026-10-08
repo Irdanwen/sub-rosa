@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 29
+Gaps: 7
 
 ## Matrix
 
@@ -48,33 +48,33 @@ Gaps: 29
 | Memory of past chats | yes | yes | yes | yes | `src-tauri/src/db/repositories.rs` `src-tauri/src/memory/past_chats.rs` `website/src/client/ui/WebClient.tsx` |  |
 | Memory sources shown on a reply | equiv | yes | yes | yes | `src-tauri/src/memory/sources.rs` `src/components/mobile/MemorySourcesChip.tsx` `src/components/agent/MemoryInChatIndicator.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Projects with instructions, files and memory | yes | yes | yes | yes | `src/components/folders` `src-tauri/src/projects/mod.rs` `src/components/folders/ProjectSettingsDialog.tsx` `src/components/mobile/screens/ProjectSettingsScreen.tsx` `src-tauri/src/hermes_bridge/project_memory.rs` `website/src/client/ui/WebClient.tsx` |  |
-| Shared projects | no | no | no | no | | P9 |
+| Shared projects | yes | yes | yes | partial | `src-tauri/src/account/spaces/commands.rs` `src/components/spaces/SpaceDialog.tsx` `website/src/client/spaces/SpacesPanel.tsx` | P9 |
 | File uploads (PDF, Word, Excel) | yes | yes | yes | yes | `src-tauri/src/assistants/references.rs` `src-tauri/src/documents.rs` `src/components/mobile/ChatComposer.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Vision | yes | yes | yes | yes | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` `website/src/client/ui/WebClient.tsx` |  |
-| Data analysis | yes | yes | yes | no | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/data_cards.rs` `src-tauri/src/agent_lite/python.rs` `src/lib/python/bridge.ts` `src-tauri/src/agent_lite/python_selftest.rs` | P9 |
+| Data analysis | yes | yes | yes | yes | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/data_cards.rs` `src-tauri/src/agent_lite/python.rs` `src/lib/python/bridge.ts` `src-tauri/src/agent_lite/python_selftest.rs` `website/src/client/analysis` |  |
 | Interactive tables and charts | yes | yes | yes | yes | `src/components/chat-blocks/ChartCard.tsx` `src/components/chat-blocks/TableCard.tsx` `src/lib/chat-blocks-data.ts` `website/src/client/ui/WebClient.tsx` |  |
 | Writing and code blocks (canvas) | yes | yes | yes | yes | `src/components/note-editor` `src/components/canvas/CanvasHost.tsx` `src/components/canvas/CanvasPane.tsx` `src/components/chat-blocks/CanvasCard.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Image generation and editing | yes | yes | yes | yes | `src/components/studio/ImageStudio.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Image generation with thinking | yes | yes | yes | yes | `src-tauri/src/image_refine.rs` `src/lib/image-refine.ts` `website/src/client/ui/WebClient.tsx` |  |
 | Document scanning | n/a | yes | yes | n/a | `src-tauri/src/scan/mod.rs` `src-tauri/src/scan/ios.rs` `src-tauri/src/scan/android.rs` |  |
 | Virtual try-on | yes | yes | yes | yes | `src/components/studio/TryOnPanel.tsx` `src/components/chat-blocks/TryOnCard.tsx` `website/src/client/ui/WebClient.tsx` |  |
-| Web search with sources | yes | yes | yes | no | `src-tauri/src/hermes/june_web_mcp.py` `src-tauri/src/agent_lite/mod.rs` | P9 |
-| Deep research report | yes | yes | yes | no | `src/lib/agent-composer-slash-commands.ts` `src-tauri/src/research/mod.rs` `src/components/research/ResearchDialog.tsx` `src-tauri/src/docx.rs` | P9 |
-| Apps inside deep research | yes | yes | yes | no | `src-tauri/src/connectors/research.rs` | P9 |
-| Study mode | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/study/mod.rs` `src/lib/study-blocks.ts` `src/components/study/StudyReview.tsx` | P9 |
-| Work deliverables (documents, sheets, slides) | yes | yes | yes | no | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/deliverables/mod.rs` `src/components/chat-blocks/FileCard.tsx` | P9 |
+| Web search with sources | yes | yes | yes | yes | `src-tauri/src/hermes/june_web_mcp.py` `src-tauri/src/agent_lite/mod.rs` `website/src/client/research` |  |
+| Deep research report | yes | yes | yes | yes | `src/lib/agent-composer-slash-commands.ts` `src-tauri/src/research/mod.rs` `src/components/research/ResearchDialog.tsx` `src-tauri/src/docx.rs` `website/src/client/research` |  |
+| Apps inside deep research | yes | yes | yes | partial | `src-tauri/src/connectors/research.rs` `website/src/client/research` | P9 |
+| Study mode | yes | yes | yes | yes | `src/components/assistants/AssistantsDialog.tsx` `src-tauri/src/study/mod.rs` `src/lib/study-blocks.ts` `src/components/study/StudyReview.tsx` `website/src/client/study` |  |
+| Work deliverables (documents, sheets, slides) | yes | yes | yes | yes | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/deliverables/mod.rs` `src/components/chat-blocks/FileCard.tsx` `website/src/client/documents` |  |
 | Code surface | yes | n/a | n/a | n/a | `src-tauri/src/hermes_bridge.rs` `src-tauri/src/code_review/mod.rs` `src/components/agent/CodeReviewPanel.tsx` |  |
-| Scheduled tasks | yes | equiv | equiv | no | `src/lib/hermes-routines.ts` `src/components/routines` `src-tauri/src/assignments/mod.rs` | P9 |
-| Always-available agent | equiv | equiv | equiv | no | `src-tauri/src/assignments/mod.rs` | P9 |
-| Daily brief | yes | yes | yes | no | `src-tauri/src/moments.rs` `src-tauri/src/moments/daily.rs` `src/components/assignments/TodaySurface.tsx` `src/components/mobile/screens/TodayScreen.tsx` | P9 |
-| Connectors and plugins | yes | yes | yes | no | `src/components/settings/McpServersSection.tsx` `src-tauri/src/connectors/mcp.rs` `src-tauri/src/connectors/catalog.rs` `src/components/settings/ConnectorsSection.tsx` | P9 |
-| Interactive apps in chat | yes | yes | yes | no | `src/components/chat-blocks` `src/components/chat-blocks/ConnectorAppCard.tsx` `src-tauri/src/connectors/apps.rs` | P9 |
-| Connector event triggers | equiv | equiv | equiv | no | `src-tauri/src/connectors/triggers.rs` | P9 |
-| Developer mode (custom connectors in chat) | yes | yes | yes | no | `src/components/settings/McpServersSection.tsx` `src/components/settings/McpSecuritySection.tsx` `src-tauri/src/connectors/mcp.rs` | P9 |
-| Skills | yes | yes | yes | no | `src/components/settings/InstalledSkillsSection.tsx` `src-tauri/src/skill_packs/mod.rs` `src/components/mobile/SkillSlashMenu.tsx` | P9 |
-| Realtime voice conversation | yes | yes | yes | no | `src-tauri/src/voice/engine.rs` `src-tauri/src/voice/machine.rs` `src/components/voice/VoiceConversation.tsx` | P9 |
-| Voice with camera or screen | yes | yes | yes | no | `src-tauri/src/voice/screen.rs` `src/components/voice/VoiceConversation.tsx` `src-tauri/src/voice/screen_windows.rs` | P9 |
-| Voice with connected apps | yes | yes | yes | no | `src-tauri/src/voice/engine.rs` | P9 |
+| Scheduled tasks | yes | equiv | equiv | equiv | `src/lib/hermes-routines.ts` `src/components/routines` `src-tauri/src/assignments/mod.rs` `website/src/client/assignments` |  |
+| Always-available agent | equiv | equiv | equiv | equiv | `src-tauri/src/assignments/mod.rs` `website/src/client/assignments` |  |
+| Daily brief | yes | yes | yes | partial | `src-tauri/src/moments.rs` `src-tauri/src/moments/daily.rs` `src/components/assignments/TodaySurface.tsx` `src/components/mobile/screens/TodayScreen.tsx` `website/src/client/assignments` | P9 |
+| Connectors and plugins | yes | yes | yes | partial | `src/components/settings/McpServersSection.tsx` `src-tauri/src/connectors/mcp.rs` `src-tauri/src/connectors/catalog.rs` `src/components/settings/ConnectorsSection.tsx` `website/src/client/connectors` | P9 |
+| Interactive apps in chat | yes | yes | yes | yes | `src/components/chat-blocks` `src/components/chat-blocks/ConnectorAppCard.tsx` `src-tauri/src/connectors/apps.rs` `website/src/client/connectors` |  |
+| Connector event triggers | equiv | equiv | equiv | equiv | `src-tauri/src/connectors/triggers.rs` `website/src/client/assignments` |  |
+| Developer mode (custom connectors in chat) | yes | yes | yes | partial | `src/components/settings/McpServersSection.tsx` `src/components/settings/McpSecuritySection.tsx` `src-tauri/src/connectors/mcp.rs` `website/src/client/connectors` | P9 |
+| Skills | yes | yes | yes | yes | `src/components/settings/InstalledSkillsSection.tsx` `src-tauri/src/skill_packs/mod.rs` `src/components/mobile/SkillSlashMenu.tsx` `website/src/client/skills` |  |
+| Realtime voice conversation | yes | yes | yes | yes | `src-tauri/src/voice/engine.rs` `src-tauri/src/voice/machine.rs` `src/components/voice/VoiceConversation.tsx` `website/src/client/voice` |  |
+| Voice with camera or screen | yes | yes | yes | yes | `src-tauri/src/voice/screen.rs` `src/components/voice/VoiceConversation.tsx` `src-tauri/src/voice/screen_windows.rs` `website/src/client/voice` |  |
+| Voice with connected apps | yes | yes | yes | yes | `src-tauri/src/voice/engine.rs` `website/src/client/voice` |  |
 | Agent browser | yes | n/a | n/a | n/a | `src-tauri/src/agent_browser/mod.rs` |  |
 | Global chat bar | yes | n/a | n/a | n/a | `src-tauri/src/chat_bar/mod.rs` |  |
 | Screen and app awareness | yes | n/a | n/a | n/a | `src-tauri/src/screen_awareness/mod.rs` |  |
@@ -93,10 +93,10 @@ Gaps: 29
 | Saved library | yes | yes | yes | yes | `src/components/studio` `src/components/library/LibraryView.tsx` `src/components/chat/LibraryActions.tsx` `src-tauri/src/account/sync_tables.rs` `website/src/client/ui/WebClient.tsx` |  |
 | Sites and pages | yes | yes | yes | yes | `src-tauri/src/account/publications.rs` `src/components/publishing/PublishNoteDialog.tsx` `website/src/pages/assistants.tsx` `website/src/client/ui/WebClient.tsx` |  |
 | Office extensions | no | n/a | n/a | n/a | | P9 |
-| Group chats | no | no | no | no | | P9 |
+| Group chats | yes | yes | yes | yes | `src-tauri/src/account/spaces/turns.rs` `src/components/spaces/SpaceChat.tsx` `website/src/client/spaces/client.ts` |  |
 | Health | yes | yes | yes | n/a | `src-tauri/src/health/mod.rs` `src/components/personal-data/HealthView.tsx` | P9 |
-| Finances | yes | yes | yes | no | `src-tauri/src/finance/mod.rs` `src/components/personal-data/FinancesView.tsx` | P9 |
-| Parental controls | equiv | equiv | equiv | no | `src-tauri/src/protected_mode/mod.rs` `src/components/settings/ProtectedModeSection.tsx` `src-tauri/src/protected_mode/restrictions.rs` | P9 |
+| Finances | yes | yes | yes | yes | `src-tauri/src/finance/mod.rs` `src/components/personal-data/FinancesView.tsx` `website/src/client/finance` |  |
+| Parental controls | equiv | equiv | equiv | equiv | `src-tauri/src/protected_mode/mod.rs` `src/components/settings/ProtectedModeSection.tsx` `src-tauri/src/protected_mode/restrictions.rs` `website/src/client/protected` |  |
 | Privacy: no training, data controls | yes | yes | yes | yes | `src-tauri/src/egress.rs` | |
 | Account security history | yes | yes | yes | yes | `subrosa-cloud/migrations/0010_security_events.sql` `website/src/pages/security-history.tsx` `src-tauri/src/account/security_events.rs` `src/components/settings/AccountSecurityHistory.tsx` |  |
 
@@ -113,7 +113,8 @@ Gaps: 29
   enforce, so the same limits (adult models and Studio safe mode, quiet hours,
   memory, image and video generation, voice, past chats) are a protected mode
   on the device, behind a PIN, enforced in Rust where requests leave
-  (ADR-0084). There is no parent account and no notification to a parent.
+  (ADR-0084). On the web the same guards are a per-browser PIN lock
+  (ADR-0104). There is no parent account and no notification to a parent.
 - **Always-available agent**, **Scheduled tasks** (phones) and
   **Connector event triggers**: the vendor runs
   its agents and tasks on its own servers, around the clock. Sub Rosa's
@@ -123,7 +124,9 @@ Gaps: 29
   on the desktop while it is open (offered at login), on a phone in the
   foreground or opportunistically in the background, otherwise handed to a
   paired desktop as an errand, and a missed slot runs once, marked late
-  (ADR-0091). When every app is closed, nothing runs.
+  (ADR-0091). A browser tab with the web client open counts as an open
+  app and runs what names it (ADR-0104). When every app is closed, nothing
+  runs.
 
 ## Out of this matrix
 
