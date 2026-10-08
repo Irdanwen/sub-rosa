@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 151
+Gaps: 138
 
 ## Matrix
 
@@ -51,13 +51,13 @@ Gaps: 151
 | Shared projects | no | no | no | no | | P9 |
 | File uploads (PDF, Word, Excel) | yes | yes | yes | no | `src-tauri/src/assistants/references.rs` `src-tauri/src/documents.rs` `src/components/mobile/ChatComposer.tsx` | P9 |
 | Vision | yes | yes | yes | no | `src/components/agent/AgentWorkspace.tsx` `src/components/mobile/screens/AgentScreen.tsx` | P9 |
-| Data analysis | partial | no | no | no | `src/components/settings/ToolsetsSection.tsx` | P4 |
-| Interactive tables and charts | no | no | no | no | | P4 |
-| Writing and code blocks (canvas) | partial | no | no | no | `src/components/note-editor` | P4 |
+| Data analysis | yes | partial | partial | no | `src/components/settings/ToolsetsSection.tsx` `src-tauri/src/data_cards.rs` `src-tauri/src/agent_lite/python.rs` `src/lib/python/bridge.ts` | P4 |
+| Interactive tables and charts | yes | yes | yes | no | `src/components/chat-blocks/ChartCard.tsx` `src/components/chat-blocks/TableCard.tsx` `src/lib/chat-blocks-data.ts` | P9 |
+| Writing and code blocks (canvas) | yes | yes | yes | no | `src/components/note-editor` `src/components/canvas/CanvasHost.tsx` `src/components/canvas/CanvasPane.tsx` `src/components/chat-blocks/CanvasCard.tsx` | P9 |
 | Image generation and editing | yes | yes | yes | no | `src/components/studio/ImageStudio.tsx` | P9 |
-| Image generation with thinking | no | no | no | no | | P4 |
-| Document scanning | n/a | no | no | n/a | | P4 |
-| Virtual try-on | no | no | no | no | | P4 |
+| Image generation with thinking | yes | yes | yes | no | `src-tauri/src/image_refine.rs` `src/lib/image-refine.ts` | P9 |
+| Document scanning | n/a | partial | partial | n/a | `src-tauri/src/scan/mod.rs` `src-tauri/src/scan/ios.rs` `src-tauri/src/scan/android.rs` | P4 |
+| Virtual try-on | yes | yes | yes | no | `src/components/studio/TryOnPanel.tsx` `src/components/chat-blocks/TryOnCard.tsx` | P9 |
 | Web search with sources | yes | yes | yes | no | `src-tauri/src/hermes/june_web_mcp.py` `src-tauri/src/agent_lite/mod.rs` | P9 |
 | Deep research report | partial | no | no | no | `src/lib/agent-composer-slash-commands.ts` | P5 |
 | Apps inside deep research | no | no | no | no | | P6 |
@@ -90,7 +90,7 @@ Gaps: 151
 | Custom assistants: create | yes | yes | yes | no | `src/components/assistants/AssistantsDialog.tsx` | P9 |
 | Custom assistants: discover and share | no | no | no | no | | P9 |
 | Public profile | no | no | no | no | | P9 |
-| Saved library | partial | partial | partial | no | `src/components/studio` | P4 |
+| Saved library | partial | partial | partial | no | `src/components/studio` `src/components/library/LibraryView.tsx` `src/components/chat/LibraryActions.tsx` | P4 |
 | Sites and pages | no | no | no | no | | P9 |
 | Office extensions | no | n/a | n/a | n/a | | P9 |
 | Group chats | no | no | no | no | | P9 |
