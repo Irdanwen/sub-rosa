@@ -1,0 +1,75 @@
+# Public pages origin (ADR 0097). Like nginx-account.conf.example, this names
+# a placeholder host: substitute the real pages hostname when installing, e.g.
+#   sed 's/pages.example.invalid/<pages host>/g' nginx-pages.conf.example \
+#     > /etc/nginx/sites-available/subrosa-pages
+# Published pages and profiles are written by anybody, so they live on their
+# own origin, never the account's: no account cookie, no browser vault, no
+# account page is reachable here. Only the three public prefixes go to the
+# service, which itself refuses them on any other Host and sends each page
+# its own Content-Security-Policy (no script at all). Everything else is 404.
+# Enable only after DNS, the certificate, and `[publication] url` in the
+# service configuration exist. Nginx stays managed separately from the stack.
+
+limit_req_zone $binary_remote_addr zone=subrosa_pages:10m rate=20r/s;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name pages.example.invalid;
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+    location / { return 308 https://pages.example.invalid$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name pages.example.invalid;
+    ssl_certificate /etc/letsencrypt/live/pages.example.invalid/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/pages.example.invalid/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    server_tokens off;
+    access_log off;
+    # A report form is the only body this origin accepts.
+    client_max_body_size 16k;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port 443;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_read_timeout 30s;
+    # Cookies never travel to or from this origin.
+    proxy_set_header Cookie "";
+    proxy_hide_header Set-Cookie;
+
+    location ^~ /p/ {
+        limit_req zone=subrosa_pages burst=40 nodelay;
+        proxy_pass http://127.0.0.1:18088;
+    }
+    location ^~ /u/ {
+        limit_req zone=subrosa_pages burst=40 nodelay;
+        proxy_pass http://127.0.0.1:18088;
+    }
+    location ^~ /_pub/ {
+        limit_req zone=subrosa_pages burst=20 nodelay;
+        proxy_pass http://127.0.0.1:18088;
+    }
+    location = /robots.txt {
+        default_type text/plain;
+        return 200 "User-agent: *\nAllow: /p/\nAllow: /u/\nDisallow: /_pub/\n";
+    }
+    location / { return 404; }
+}

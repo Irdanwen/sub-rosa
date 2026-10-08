@@ -98,6 +98,10 @@ import { PROCESSING_DEMO_NOTE_ID, shouldPollProcessingStatus } from "../processi
 import { createInitialState, notesReducer } from "../state/app-state";
 import { useMobileNav } from "./nav";
 import { useDestinationQueue } from "./useDestinationQueue";
+import {
+  AssistantImportHost,
+  requestAssistantImport,
+} from "../../components/publishing/AssistantImportDialog";
 import { useMobileBootstrap } from "./useMobileBootstrap";
 import { Spinner } from "../../components/ui/Spinner";
 
@@ -557,6 +561,9 @@ export function MobileApp() {
         break;
       case "assistants":
         nav.switchTab("assistants");
+        break;
+      case "assistantImport":
+        requestAssistantImport(destination.listingId);
         break;
       case "dictation":
         openDictation(Boolean(destination.start));
@@ -1320,6 +1327,12 @@ export function MobileApp() {
       <RailSwitchBanner compact />
       <ReflexNotice compact />
       <AddCreditsHost />
+      <AssistantImportHost
+        onImported={(definition) => {
+          nav.switchTab("assistants");
+          nav.push({ view: "assistant-editor", assistantId: definition.id });
+        }}
+      />
       {calendarAmbiguity ? (
         <MeetingAmbiguityPrompt
           noteId={calendarAmbiguity.noteId}

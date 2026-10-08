@@ -1,6 +1,6 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IconChainLink1 } from "central-icons/IconChainLink1";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   accountShareConversation,
   accountShareNote,
@@ -10,6 +10,7 @@ import {
   type ShareWindow,
 } from "../../lib/account";
 import { t } from "../../lib/i18n";
+import { PublishNoteDialog } from "../publishing/PublishNoteDialog";
 import { accountError } from "../settings/AccountSettingsSection";
 import { Dialog } from "../ui/Dialog";
 
@@ -38,6 +39,13 @@ export function ShareNoteDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  // Publishing (ADR-0097) is the other way to show a note: public, in the
+  // clear and with no end date. It is offered here, never chosen for you.
+  const [publishing, setPublishing] = useState(false);
+  useEffect(() => {
+    if (!open) setPublishing(false);
+  }, [open]);
+  if (publishing) return <PublishNoteDialog noteId={noteId} open={open} onClose={onClose} />;
   return (
     <ShareLinkDialog
       open={open}
@@ -48,6 +56,11 @@ export function ShareNoteDialog({
         "Anyone with the link can read this note in a browser. Sub Rosa stores it encrypted and never receives the key that opens it.",
       )}
       linkLabel={t("Link to this note")}
+      alternative={
+        <button type="button" className="publish-switch" onClick={() => setPublishing(true)}>
+          {t("Publish it as a public page instead")}
+        </button>
+      }
     />
   );
 }
@@ -87,6 +100,7 @@ function ShareLinkDialog({
   title,
   description,
   linkLabel,
+  alternative,
 }: {
   open: boolean;
   onClose: () => void;
@@ -94,6 +108,7 @@ function ShareLinkDialog({
   title: string;
   description: string;
   linkLabel: string;
+  alternative?: ReactNode;
 }) {
   const [window, setWindow] = useState<ShareWindow>(SHARE_WINDOWS[0]);
   const [link, setLink] = useState<ShareLink | null>(null);
@@ -198,6 +213,7 @@ function ShareLinkDialog({
           "Revoking stops the link working. It cannot erase a copy someone has already downloaded.",
         )}
       </p>
+      {link ? null : alternative}
     </Dialog>
   );
 }

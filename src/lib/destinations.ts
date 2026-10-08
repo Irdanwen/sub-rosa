@@ -34,6 +34,10 @@ export type Destination =
   | { kind: "assistant"; taskId: string }
   /** Open the assistants library (the phone's Assistants tab). */
   | { kind: "assistants" }
+  /** "Add to Sub Rosa" from the public catalog (ADR-0097). The id names a
+   * listing on this app's own account site; the app reads it from there and
+   * shows it for review. Nothing is added without a tap. */
+  | { kind: "assistantImport"; listingId: string }
   /** Open the dictation surface; `start` also starts listening. Only an
    * address can ask for that: a notification tap never turns a microphone on. */
   | { kind: "dictation"; start?: boolean }
@@ -68,6 +72,8 @@ export type Destination =
 const ID_RE = /^[\w-]{1,64}$/;
 /** Gallery ids are file names the app minted: a token and an image extension. */
 const GALLERY_ID_RE = /^[\w-]{1,64}\.(png|jpe?g|webp)$/;
+/** A catalog listing id: a UUID, which is all the service hands out. */
+const LISTING_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_QUERY = 200;
 const MAX_IMPORT_URL = 2048;
 
@@ -107,8 +113,18 @@ export function parseDestination(raw: string): Destination | null {
         query: query ? query.slice(0, MAX_QUERY) : undefined,
       };
     }
-    case "assistant":
+    case "assistant": {
+      // `assistant/import?id=…` is the catalog's "Add to Sub Rosa"; any other
+      // segment is a conversation. The id is the only thing read from the
+      // link: where the listing comes from is the app's own account site.
+      if (segment === "import") {
+        const listingId = url.searchParams.get("id") ?? "";
+        return LISTING_ID_RE.test(listingId)
+          ? { kind: "assistantImport", listingId: listingId.toLowerCase() }
+          : null;
+      }
       return ID_RE.test(segment) ? { kind: "assistant", taskId: segment } : null;
+    }
     case "assistants":
       return segment ? null : { kind: "assistants" };
     case "dictation":
@@ -158,6 +174,8 @@ export function destinationUrl(destination: Destination): string {
       return `${DESTINATION_SCHEME}note/${destination.noteId}`;
     case "assistant":
       return `${DESTINATION_SCHEME}assistant/${destination.taskId}`;
+    case "assistantImport":
+      return `${DESTINATION_SCHEME}assistant/import?id=${destination.listingId}`;
     case "import":
       return `${DESTINATION_SCHEME}import?url=${encodeURIComponent(destination.url)}`;
     case "share":

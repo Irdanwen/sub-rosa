@@ -113,6 +113,8 @@ def init(directory, account_origin, identity_base):
         "smtp": {"host": "", "port": "587", "from": "", "user": "", "password": "", "starttls": "true", "ssl": "false", "auth": "true"},
         # Empty until Carpe Diem is ready to pin this service's key (ADR 0069).
         "carpe_diem": {"audience": ""},
+        # Empty until a public pages host has DNS and a certificate (ADR 0097).
+        "publication": {"url": "", "blocked_terms": []},
     }
     write(directory / "operator.json", json.dumps(operator, indent=2) + "\n")
     write(directory / "stack.env", "\n".join([
@@ -216,6 +218,14 @@ ALTER SCHEMA public OWNER TO keycloak;
             raise ValueError("SMTP must require TLS")
         realm["smtpServer"] = smtp
     write(private / "subrosa-realm.json", json.dumps(realm, indent=2) + "\n")
+    # Public pages (ADR 0097) are served from their own origin, never the
+    # account's: content anybody wrote must not share cookies or the vault.
+    publication = op.get("publication") or {}
+    publication_url = publication.get("url") or ""
+    if publication_url:
+        if origin(publication_url).hostname == urlsplit(s["account_origin"]).hostname:
+            raise ValueError("Serve public pages from a host apart from the account origin")
+    blocked_terms = [str(term) for term in publication.get("blocked_terms") or [] if str(term).strip()]
     partner = None
     audience = (op.get("carpe_diem") or {}).get("audience") or ""
     if audience:
@@ -235,6 +245,8 @@ ALTER SCHEMA public OWNER TO keycloak;
         if partner:
             kid, pem = partner
             lines += ["", "[carpe_diem]", f"audience = {q(audience)}", f"kid = {q(kid)}", f"signing_key = {q(pem)}"]
+        if publication_url:
+            lines += ["", "[publication]", f"url = {q(publication_url)}", f"blocked_terms = {json.dumps(blocked_terms)}"]
         write(private / (prefix + ".toml"), "\n".join(lines) + "\n")
 
 

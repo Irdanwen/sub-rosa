@@ -16,6 +16,7 @@ import {
   listAssistants,
   saveAssistant,
 } from "../../../../lib/assistants";
+import { PublishAssistantAction } from "../../../publishing/PublishAssistantDialog";
 import {
   clearEditorDraft,
   readEditorDraft,
@@ -531,6 +532,16 @@ export function AssistantEditor({
               label={t("Duplicate")}
               disabled={busy}
               onClick={() => void duplicate()}
+            />
+            <PublishAssistantAction
+              assistant={saved}
+              trigger={(open) => (
+                <SettingsActionRow
+                  label={t("Publish to the catalog")}
+                  disabled={busy || dirty}
+                  onClick={open}
+                />
+              )}
             />
             <SettingsActionRow
               label={t("Delete assistant")}

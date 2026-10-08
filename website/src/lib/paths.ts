@@ -1,3 +1,8 @@
+/** Pages the account origin serves: the account itself, and the assistant
+ * catalog (ADR-0097), which reads the account service's public routes. */
+function servedByAccount(path: string) {
+  return /^\/(?:account|assistants)(?:$|[/?])/.test(path);
+}
 /** Marketing may share a host; account cookies and APIs stay on their own origin. */
 export function createSitePaths(base = "/", accountOrigin = "") {
   if (!/^\/(?:[a-zA-Z0-9_-]+\/)*$/.test(base))
@@ -16,11 +21,7 @@ export function createSitePaths(base = "/", accountOrigin = "") {
   const href = (path: string) => {
     if (!path.startsWith("/") || path.startsWith("//") || /[\\#]/.test(path))
       throw new Error("Invalid website path.");
-    if (
-      (path === "/account" || path.startsWith("/account/") || path.startsWith("/account?")) &&
-      accountOrigin
-    )
-      return `${accountOrigin}${path}`;
+    if (servedByAccount(path) && accountOrigin) return `${accountOrigin}${path}`;
     return `${prefix}${path}`;
   };
   const handles = (url: URL, currentOrigin: string) => {
@@ -66,7 +67,7 @@ export const sitePaths = createSitePaths(
 );
 export const siteHref = sitePaths.href;
 export function localizedSiteHref(path: string, locale: "en" | "fr") {
-  if (path === "/account" || path.startsWith("/account/") || path.startsWith("/account?")) {
+  if (servedByAccount(path)) {
     const separator = path.includes("?") ? "&" : "?";
     return siteHref(`${path}${separator}lang=${locale}`);
   }

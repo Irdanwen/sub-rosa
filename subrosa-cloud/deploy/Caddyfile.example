@@ -28,3 +28,29 @@ account.example.invalid {
         file_server
     }
 }
+
+# Public pages (ADR 0097): their own origin, never the account's. Only the
+# three public prefixes reach the service, which sends each page its own
+# Content-Security-Policy and refuses them on any other Host.
+pages.example.invalid {
+    encode zstd gzip
+    request_body {
+        max_size 16KB
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        X-Frame-Options "DENY"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        -Set-Cookie
+    }
+    @public path /p/* /u/* /_pub/*
+    handle @public {
+        request_header -Cookie
+        reverse_proxy subrosa-cloud:8088
+    }
+    handle {
+        respond 404
+    }
+}

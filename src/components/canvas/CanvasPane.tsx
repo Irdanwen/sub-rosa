@@ -6,6 +6,7 @@ import { IconCheckmark1 } from "central-icons/IconCheckmark1";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconCode } from "central-icons/IconCode";
 import { IconFileText } from "central-icons/IconFileText";
+import { IconGlobe } from "central-icons/IconGlobe";
 import { IconX } from "central-icons/IconX";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { codeOfCanvas } from "../../lib/canvas";
@@ -17,6 +18,8 @@ import { SimpleMarkdown } from "../../lib/simple-markdown";
 import { getNote, updateNote } from "../../lib/tauri";
 import { DotSpinner } from "../DotSpinner";
 import { NotePreview } from "../note-editor/NotePreview";
+import { PublishNoteDialog } from "../publishing/PublishNoteDialog";
+import { useCanShare } from "../share/useCanShare";
 import { InlineNotice } from "../ui/InlineNotice";
 
 /**
@@ -141,6 +144,10 @@ export function CanvasPane({
       : t("Code")
     : t("Document");
 
+  // A canvas is a note (ADR-0087), so it publishes as one (ADR-0097).
+  const canPublish = useCanShare();
+  const [publishing, setPublishing] = useState(false);
+
   return (
     <section className="canvas-pane" data-layout={layout} aria-label={t("Canvas")}>
       <header className="canvas-pane-head">
@@ -161,6 +168,17 @@ export function CanvasPane({
         >
           {copied ? <IconCheckmark1 size={15} /> : <IconClipboard size={15} />}
         </button>
+        {canPublish ? (
+          <button
+            type="button"
+            className="canvas-pane-action"
+            onClick={() => setPublishing(true)}
+            aria-label={t("Publish this canvas")}
+            title={t("Publish this canvas")}
+          >
+            <IconGlobe size={15} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="canvas-pane-action"
@@ -181,6 +199,14 @@ export function CanvasPane({
         </button>
       </header>
 
+      {publishing ? (
+        <PublishNoteDialog
+          noteId={noteId}
+          kind="canvas"
+          open
+          onClose={() => setPublishing(false)}
+        />
+      ) : null}
       {saveError ? <InlineNotice tone="warning" body={saveError} /> : null}
 
       <div className="canvas-pane-body">

@@ -1625,6 +1625,33 @@ after the `#` is the key, it never reaches the service, and it is what makes
 the link a bearer credential rather than an address.
 _Avoid:_ "share URL" when only the address is meant (half a link opens nothing).
 
+**Publication**: a note, a canvas, a profile or an assistant made public on
+purpose, in the clear, with no end date, until it is unpublished
+([ADR-0097](docs/adr/0097-a-publication-is-plaintext-the-service-renders-on-an-origin-of-its-own.md)).
+_Avoid_: "share" for it; a share is sealed and dated, a publication is neither.
+
+**Page** (published page): one note or canvas as the service rendered it at the
+last publish, at `/p/<slug>` on the publication origin. "Publish changes"
+replaces it; unpublishing deletes it.
+
+**Site**: an ordered set of one account's pages with a home page and
+navigation. Its address is its home page's.
+
+**Public profile**: the opt-in page `/u/<handle>` listing what one account
+published. A page never names its author; a profile lists, it does not
+attribute.
+
+**Catalog listing**: an assistant definition published to the public catalog,
+with only the references the publisher ticked. "Add to Sub Rosa" imports it as
+an ordinary assistant, with the permissions the importer chose.
+
+**Publication origin**: the host public pages are served from, apart from the
+account origin, so content anybody wrote never shares its cookies or vault.
+
+**Takedown**: the operator hiding public content with its tool, recorded so an
+identical copy is refused and three suspend publishing. Distinct from
+unpublishing, which is the owner's.
+
 **Assignment** (French copy: *mission*): a standing goal the assistant
 works on again and again, on a cadence, on the one device the row names, and
 only while an app is open there, the menu bar included (ADR-0091). It has an

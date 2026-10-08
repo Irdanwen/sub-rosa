@@ -130,6 +130,29 @@ class BootstrapTest(unittest.TestCase):
             bootstrap.write(op_path, old_op)
             bootstrap.render(self.directory)
 
+    def test_public_pages_render_only_for_a_host_apart_from_the_account(self):
+        op_path = self.directory / "operator.json"
+        old_op = op_path.read_text()
+        private = self.directory / "private"
+        try:
+            bootstrap.render(self.directory)
+            self.assertNotIn("[publication]", (private / "runtime.toml").read_text())
+            op = json.loads(old_op)
+            op["publication"] = {"url": "https://pages.example.com", "blocked_terms": ["spam phrase", " "]}
+            bootstrap.write(op_path, json.dumps(op))
+            bootstrap.render(self.directory)
+            rendered = (private / "runtime.toml").read_text()
+            self.assertIn('[publication]\nurl = "https://pages.example.com"', rendered)
+            self.assertIn('blocked_terms = ["spam phrase"]', rendered)
+            for bad in ("https://accounts.example.com", "http://pages.example.com", "https://pages.example.com/"):
+                op["publication"] = {"url": bad}
+                bootstrap.write(op_path, json.dumps(op))
+                with self.assertRaises(ValueError, msg=bad):
+                    bootstrap.render(self.directory)
+        finally:
+            bootstrap.write(op_path, old_op)
+            bootstrap.render(self.directory)
+
     def test_the_carpe_diem_partner_key_is_made_once_and_only_its_public_half_leaves(self):
         op_path = self.directory / "operator.json"
         old_op = op_path.read_text()

@@ -75,6 +75,10 @@ import { agentSessionTabTitle, tabMeta } from "./tab-meta";
 import { AgentBrowserIndicator } from "../components/agent-browser/AgentBrowserIndicator";
 import { AskNoteOverlay } from "../components/ask/AskNoteOverlay";
 import { ShareNoteDialog } from "../components/share/ShareNoteDialog";
+import {
+  AssistantImportHost,
+  requestAssistantImport,
+} from "../components/publishing/AssistantImportDialog";
 import { useCanShare } from "../components/share/useCanShare";
 import { exportNoteMarkdown } from "../lib/note-export";
 import { BreadcrumbBar } from "../components/ui/BreadcrumbBar";
@@ -1510,6 +1514,9 @@ export function App() {
         break;
       case "assistants":
         openAssistants();
+        break;
+      case "assistantImport":
+        requestAssistantImport(destination.listingId);
         break;
       case "dictation":
         setActiveView("dictation");
@@ -3465,6 +3472,7 @@ export function App() {
         </section>
       </div>
       <AgentBrowserIndicator />
+      <AssistantImportHost onImported={() => openAssistants()} />
       {shareNoteId ? (
         <ShareNoteDialog noteId={shareNoteId} open={true} onClose={() => setShareNoteId(null)} />
       ) : null}
