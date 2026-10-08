@@ -22,9 +22,12 @@
  * site has to be taught here rather than silently left in English.
  *
  * Each sentence belongs to one catalog, loaded with the code that shows it:
- * `app` (the web client, `src/client/`), `models` (the model catalog),
- * `models:<kind>` (a kind's family depth, with its detail chunk) or `site`
- * (everything else, and any sentence two of them share).
+ * `app` (the web client, `src/client/`), `addins` (the Office task panes,
+ * `office-addins/src/`, which borrow the site's `t` and load `site` and
+ * `app` too), `models` (the model catalog), `models:<kind>` (a kind's
+ * family depth, with its detail chunk) or `site` (everything else, and any
+ * sentence two of them share; one the panes share with the web client stays
+ * in `app`, which both load).
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -41,10 +44,18 @@ const DETAIL_KINDS = readdirSync(
   .map((name) => name.slice(0, -5))
   .sort();
 /** `models:<kind>` is a family's depth, loaded with its detail chunk. */
-export const PARTS = ["site", "app", "models", ...DETAIL_KINDS.map((kind) => `models:${kind}`)];
+export const PARTS = [
+  "site",
+  "app",
+  "addins",
+  "models",
+  ...DETAIL_KINDS.map((kind) => `models:${kind}`),
+];
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const SRC = join(ROOT, "website/src");
+/** The Office task panes (ADR-0102): they call the site's `t`, so their copy is the site's to translate. */
+const ADDINS_SRC = join(ROOT, "office-addins/src");
 const LOCALES_DIR = join(SRC, "locales");
 
 export const catalogPath = (part, locale) =>
@@ -54,6 +65,7 @@ const rel = (path) => relative(ROOT, path).split("\\").join("/");
 
 function partOf(file) {
   const path = rel(file);
+  if (path.startsWith("office-addins/src/")) return "addins";
   if (path.startsWith("website/src/client/") || path === "website/src/pages/web-app.tsx")
     return "app";
   if (path.startsWith("website/src/models/") || path.startsWith("website/src/pages/models/"))
@@ -239,7 +251,7 @@ const splitPath = (path) => path.match(/\[\]|[^.[\]]+/g) ?? [];
  * pairs it with and the catalog it belongs to.
  */
 export function collectWebsiteSentences() {
-  const files = sourceFiles(SRC);
+  const files = [...sourceFiles(SRC), ...sourceFiles(ADDINS_SRC)];
   const config = ts.getParsedCommandLineOfConfigFile(
     join(ROOT, "website/tsconfig.json"),
     {},
@@ -337,7 +349,9 @@ export function collectWebsiteSentences() {
         ? parts[0]
         : parts.every((name) => name.startsWith("models"))
           ? "models"
-          : "site";
+          : parts.every((name) => name === "app" || name === "addins")
+            ? "app"
+            : "site";
     if (entry.fr.size > 1 && !entry.templated)
       for (const fr of entry.fr) {
         const key = `${en} [fr: ${fr}]`;

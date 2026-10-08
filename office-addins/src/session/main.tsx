@@ -6,11 +6,11 @@ import { SessionWindow } from "./SessionWindow";
 import "../office.css";
 
 const office = officeGlobal();
-void officeReady(office).then((host) => {
+void officeReady(office).then(async (host) => {
   const root = document.getElementById("root");
   // Only an add-in opens this window; outside Office it has nobody to carry for.
   if (!root || !office || !host) return;
-  applyOfficeLanguage(office);
+  await applyOfficeLanguage(office);
   createRoot(root).render(
     <StrictMode>
       <SessionWindow
