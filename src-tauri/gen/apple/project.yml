@@ -34,6 +34,9 @@ targets:
       # Rust static libraries are linked below, never copied into the app.
       # Including this directory as sources makes XcodeGen copy both debug
       # and release libapp.a to the same resource path after a local build.
+      # Also carries <lang>.lproj/InfoPlist.strings: the usage descriptions
+      # below in every language of src/locales, which XcodeGen picks up as a
+      # variant group. The Mac app ships the same files (tauri.macos.conf.json).
       - path: os-june_iOS
       - path: assets
         buildPhase: resources

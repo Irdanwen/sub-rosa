@@ -22,7 +22,13 @@
       "minimumSystemVersion": "14.0",
       "files": {
         "embedded.provisionprofile": "embedded.provisionprofile",
-        "MacOS/june-api": "binaries/june-api-macos"
+        "MacOS/june-api": "binaries/june-api-macos",
+        "Resources/en.lproj/InfoPlist.strings": "gen/apple/os-june_iOS/en.lproj/InfoPlist.strings",
+        "Resources/fr.lproj/InfoPlist.strings": "gen/apple/os-june_iOS/fr.lproj/InfoPlist.strings",
+        "Resources/de.lproj/InfoPlist.strings": "gen/apple/os-june_iOS/de.lproj/InfoPlist.strings",
+        "Resources/it.lproj/InfoPlist.strings": "gen/apple/os-june_iOS/it.lproj/InfoPlist.strings",
+        "Resources/es.lproj/InfoPlist.strings": "gen/apple/os-june_iOS/es.lproj/InfoPlist.strings",
+        "Resources/pt-BR.lproj/InfoPlist.strings": "gen/apple/os-june_iOS/pt-BR.lproj/InfoPlist.strings"
       }
     },
     "externalBin": []
