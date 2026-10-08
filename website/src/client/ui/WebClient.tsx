@@ -27,6 +27,7 @@ import { availableClientStore, type ClientStore } from "../store";
 import { SyncClient, type SyncTransport, serviceTransport } from "../sync";
 import { ChatMessage } from "./ChatMessage";
 import { SettingsDialog } from "./SettingsDialog";
+import { SpacesEntry } from "../spaces/SpacesPanel";
 import "./web-client.css";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -524,6 +525,13 @@ export function WebClient({
             </button>
           ))}
         </nav>
+        <SpacesEntry
+          account={account}
+          vaultKey={vaultKey}
+          openKey={openKey}
+          operator={operator}
+          model={model}
+        />
         <div className="wc-sidebar-foot">
           <button className="button" type="button" onClick={() => setSettingsOpen(true)}>
             {t("Personalization and memory", "Personnalisation et mémoire")}

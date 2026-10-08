@@ -19,6 +19,7 @@ import {
   projectSave,
 } from "../../lib/projects";
 import type { FolderDto } from "../../lib/tauri";
+import { ShareProjectButton } from "../spaces/ShareProjectButton";
 import { Dialog, DialogField } from "../ui/Dialog";
 
 type ProjectSettingsDialogProps = {
@@ -295,6 +296,7 @@ export function ProjectSettingsDialog({ open, onClose, folder }: ProjectSettings
             {t("Try again")}
           </button>
         ) : null}
+        <ShareProjectButton folderId={folder.id} />
       </form>
     </Dialog>
   );

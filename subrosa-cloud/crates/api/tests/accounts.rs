@@ -36,6 +36,8 @@ use wiremock::{
 mod oidc;
 #[path = "support/publications.rs"]
 mod publications;
+#[path = "support/spaces.rs"]
+mod spaces;
 
 /// Where the fixture serves public pages from: apart from the account origin.
 const PAGES_ORIGIN: &str = "http://127.0.0.1:8789";

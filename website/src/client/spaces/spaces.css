@@ -1,0 +1,65 @@
+/* Shared projects in the web client (ADR-0098). The site's tokens only. */
+.wc-spaces,
+.wc-spaces-room {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.wc-spaces {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.wc-spaces-badge {
+  display: inline-block;
+  padding: 0 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.wc-spaces-list,
+.wc-spaces-messages {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wc-spaces-messages li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--accent-faint);
+}
+.wc-spaces-messages li[data-mine] {
+  border: 1px solid var(--accent-line);
+}
+.wc-spaces-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wc-spaces-safety {
+  display: block;
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.wc-spaces-card {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.wc-spaces-input {
+  width: 100%;
+  font: inherit;
+  font-size: 16px;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+}

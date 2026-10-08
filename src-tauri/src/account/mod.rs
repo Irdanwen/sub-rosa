@@ -11,6 +11,7 @@ mod saved_items;
 pub mod security_events;
 mod session_folders;
 pub mod shares;
+pub mod spaces;
 pub(crate) mod studio;
 mod summaries;
 pub mod sync;
@@ -1331,6 +1332,7 @@ pub fn setup(app: &AppHandle) {
         loop {
             interval.tick().await;
             sync::resume(&app).await;
+            spaces::resume(&app).await;
         }
     });
 }

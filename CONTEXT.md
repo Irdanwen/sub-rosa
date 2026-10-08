@@ -1773,6 +1773,47 @@ in the tab. Distinct from the **web reader**, which only reads notes.
 _Avoid:_ "web app" (it is the same Sub Rosa, not a second product), "online
 mode" (the app is not offline without it).
 
+**Shared project** (code and service: **space**): a project several accounts
+read and write, end-to-end encrypted, with its own members, chats, notes and
+file texts ([ADR-0098](docs/adr/0098-a-shared-project-is-a-space-whose-key-changes-with-its-members.md)).
+Sharing a project copies it into a space; the local project stays as it was.
+"Space" is the protocol's and the service's word; the screens say "shared
+project". A preview until an independent review of
+[the protocol](docs/security/spaces-protocol.md).
+_Avoid:_ "share" (a share is a dated read-only envelope for whoever holds a
+link), "team", "workspace", "shared folder".
+
+**Group chat**: a conversation in a shared project whose messages, and the
+assistant's replies, reach every member. When someone asks the assistant,
+their own device answers with their own key, and the reply says who paid.
+_Avoid:_ "channel", "room".
+
+**Identity** (identity keys): an account's X25519 and Ed25519 key pairs for
+shared projects, the private halves sealed in the vault. One per account, not
+per device. Distinct from the **device key** (ADR-0069, ADR-0096) and the
+**vault key**.
+
+**Epoch**: one stretch of a shared project's life with one membership and one
+key. Every membership change starts a new epoch. A member removed at an epoch
+keeps the keys of the epochs before it and none after.
+
+**Head** (epoch head): the signed statement of an epoch's members and a
+commitment to its key, chained to the previous head by hash. A device that
+sees an older head than one it verified reports a **rollback**.
+
+**Owner** (of a shared project): the account that created it, fixed for its
+life. Only the owner invites, admits and removes; any member may leave.
+_Avoid:_ "admin".
+
+**Invitation link**: a link that admits one account to one shared project
+once, within seven days, whose fragment carries a secret and the owner's
+identity. Accepting it asks; the owner admits.
+_Avoid:_ "share link" (that is ADR-0053's).
+
+**Safety number**: sixty digits, twelve groups of five, computed from two
+identities, the same on both devices. Compared out of band, matching numbers
+mean nobody is in between.
+
 ## Charter vocabulary
 
 The visual charter is [docs/design/charte.md](docs/design/charte.md); the values

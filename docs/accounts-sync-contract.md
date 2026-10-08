@@ -258,6 +258,42 @@ outside development is another host than `public_url`): `GET /p/{slug}`,
 report form `POST /_pub/report` (form-encoded). HTML pages carry
 `Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`.
 
+## Shared projects (8 October 2026)
+
+End-to-end encrypted projects and group chats between accounts, a preview
+until an independent review ([ADR-0098](adr/0098-a-shared-project-is-a-space-whose-key-changes-with-its-members.md)).
+The protocol (identities, epochs, heads, HPKE wraps, objects, invitations,
+safety numbers) is [security/spaces-protocol.md](security/spaces-protocol.md);
+this section is the wire. Every route takes the ordinary session (cookie with
+CSRF and origin, or a bearer) and the `x-subrosa-account-id` assertion. A
+space answers `404` to anyone who is not a member.
+
+| Method and route | Contract |
+| --- | --- |
+| `GET /api/v1/identity` | `{ version, public, sealed_private }` or `404`. `public` is the self-signed bundle `{ v, account_id, x25519, ed25519, created_at, signature }`; `sealed_private` an envelope under the vault key with context `subrosa:identity:v1:{account_uuid}`. |
+| `PUT /api/v1/identity` | `{ expected_version, public, sealed_private }`, compare-and-swap like the vault. The bundle must name the session's account. `409` while the account belongs to any space. |
+| `GET /api/v1/spaces` | The spaces this account is in: `{ id, owner_account_id, role, current_epoch, latest_sequence, member_count, pending_departures, created_at }`. At most 100 per account. |
+| `POST /api/v1/spaces` | `{ head, wrapped_key }`: the epoch 1 head (owner alone, author = owner = caller, keys equal to the published ones) and the key sealed to the owner. |
+| `GET /api/v1/spaces/{id}` | `{ id, owner_account_id, current_epoch, latest_sequence, members: [{ account_id, role, joined_epoch, identity }], heads: [{ epoch, head }], keys: [{ account_id, epoch, sealed }] (the caller's only), invitations (owner only: open or claimed, not admitted), departures: [{ account_id, epoch, statement }] }`. |
+| `DELETE /api/v1/spaces/{id}` | Owner only. Deletes the space and everything in it. |
+| `POST /api/v1/spaces/{id}/epochs` | `{ head, wrapped_keys: [{ account_id, epoch, sealed }], admit: [invitation_id] }`. The epoch must be `current + 1` (`409` otherwise); the author is the caller; the head's members, roles and keys become the service's rows; one key per member for the new epoch, earlier epochs only for newcomers; every newcomer through a claimed invitation in `admit`, admitted once. The owner may change anything but the owner; another member only removes the members with a pending departure (`403` otherwise). |
+| `POST /api/v1/spaces/{id}/invitations` | Owner only. `{ id, token_hash, payload, expires_at }`: base64url SHA-256 of the token the link derives, the payload sealed under a key the link derives, one minute to seven days. At most 20 open. |
+| `DELETE /api/v1/spaces/{id}/invitations/{invitation}` | Owner only. Withdraws an invitation not yet admitted. |
+| `POST /api/v1/space-invitations/{id}/open` | `{ token_hash }`. `{ space_id, payload, expires_at }` for an open, unclaimed invitation; `404` for anything else. |
+| `POST /api/v1/space-invitations/{id}/accept` | `{ token_hash, acceptance: { member, proof } }`. Claims once: the bundle must be the caller's published one; a second claim is `409`. The service cannot check `proof`; the owner's device does. |
+| `POST /api/v1/spaces/{id}/leave` | A member other than the owner: `{ epoch, statement }` signed for the current epoch (`409` otherwise). Removes the membership and its keys at once and records the departure. |
+| `GET /api/v1/spaces/{id}/objects?after=&limit=` | Members. `{ objects: [{ sequence, object_id, revision, parent_revision, kind, epoch, author_account_id, ciphertext, signature, deleted, created_at }], cursor, has_more }`, limit 1 to 500, pages under eight MiB. |
+| `POST /api/v1/spaces/{id}/objects` | Members. `{ objects: [{ object_id, revision, parent_revision, kind, epoch, ciphertext, signature, deleted }] }`, 1 to 100, four MiB, one MiB each, kinds `project`, `note`, `file`, `conversation`, `message`, `profile`. Only under the current epoch (`409`), in the caller's name. A revision retried with the same bytes answers its first `{ revision, sequence }`; other bytes are `409`. At most 256 MiB per space. |
+
+Associated data added to the table of section "Vault and cryptographic
+envelope v1":
+
+| Context | Associated data |
+| --- | --- |
+| Identity private keys, under the vault key | `subrosa:identity:v1:{account_uuid}` |
+| Space object, under the epoch key | `subrosa:space-object:v1:{space_uuid}:{epoch}:{kind}:{object_uuid}:{revision_uuid}:{author_uuid}` |
+| Invitation payload, under a key the link derives | `subrosa:invite:v1:{invitation_uuid}` |
+
 ## Carpe Diem device keys (30 September 2026)
 
 The service can vouch to Carpe Diem for a device so that the device obtains its own `cdm_` key, and it asks Carpe Diem to revoke that key when the device goes. It never sees the key. The full wire contract, shared with Carpe Diem, is [`carpe-diem-partner-contract.md`](carpe-diem-partner-contract.md); the decision and its bound are [ADR-0069](adr/0069-the-account-gives-birth-to-a-carpe-diem-device-key.md).

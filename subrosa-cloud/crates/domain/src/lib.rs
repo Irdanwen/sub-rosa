@@ -68,6 +68,7 @@ pub enum Error {
 }
 pub type Result<T> = std::result::Result<T, Error>;
 pub mod publication;
+pub mod space;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
     pub id: Uuid,

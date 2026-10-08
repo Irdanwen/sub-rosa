@@ -13,6 +13,7 @@ use uuid::Uuid;
 mod browser_devices;
 mod publications;
 mod security_events;
+mod spaces;
 pub use browser_devices::{Admission, MAX_BROWSER_DEVICES, NewBrowserDevice};
 pub use publications::{
     ListingWrite, PageWrite, ProfileWrite, ReportSubject, SiteWrite, TakedownTarget,
@@ -21,6 +22,7 @@ use security_events::record_event;
 pub use security_events::{
     PAGE as SECURITY_EVENTS_PAGE, RETENTION_DAYS as SECURITY_EVENTS_RETENTION_DAYS,
 };
+pub use spaces::{EpochWrite, InvitationWrite};
 
 #[derive(Clone)]
 pub struct Repository {

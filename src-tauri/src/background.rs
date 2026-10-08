@@ -59,6 +59,8 @@ pub async fn sweep(app: &AppHandle) {
     crate::watch_relay::deliver_pending(app).await;
     // A chat whose first reply landed but whose title never came back.
     crate::chat_titles::resume_pending(app).await;
+    // A shared project's unsent writes and assistant replies (ADR-0098).
+    crate::account::spaces::resume(app).await;
     // A link the user pasted whose download never finished. Cross-platform:
     // the desktop gets killed mid-download too.
     crate::ingest::resume_unfinished(app).await;
