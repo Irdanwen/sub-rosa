@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 97
+Gaps: 93
 
 ## Matrix
 
@@ -78,10 +78,10 @@ Gaps: 97
 | Agent browser | no | n/a | n/a | n/a | | P8 |
 | Global chat bar | no | n/a | n/a | n/a | | P8 |
 | Screen and app awareness | no | n/a | n/a | n/a | | P8 |
-| Home screen widgets | n/a | no | no | n/a | | P8 |
-| Watch app | n/a | no | n/a | n/a | | P8 |
+| Home screen widgets | n/a | yes | yes | n/a | `src-tauri/gen/apple/Widgets` `src-tauri/android/src/main/java/xyz/carpediem/subrosa/nativebridge/AskWidgetProvider.kt` |  |
+| Watch app | n/a | yes | n/a | n/a | `src-tauri/gen/apple/Watch` `src-tauri/src/watch_relay.rs` |  |
 | Browser extension | no | n/a | n/a | n/a | | P8 |
-| Share into the app | n/a | yes | no | n/a | `src-tauri/gen/apple/ShareExtension` | P8 |
+| Share into the app | n/a | yes | yes | n/a | `src-tauri/gen/apple/ShareExtension` `src-tauri/android/src/main/java/xyz/carpediem/subrosa/nativebridge/ShareReceiverActivity.kt` `src-tauri/src/share_inbox.rs` |  |
 | Siri and Shortcuts | n/a | yes | n/a | n/a | `src-tauri/gen/apple/Sources/os-june/Intents` | |
 | Spotlight | yes | yes | n/a | n/a | `src-tauri/src/spotlight.rs` | |
 | Interface languages | partial | partial | partial | partial | `src/locales/fr.json` | P8 |
