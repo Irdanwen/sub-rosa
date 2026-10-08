@@ -219,6 +219,7 @@ describe("the research dialog", () => {
             depth: "deep",
             useNotes: true,
             chatId: "chat-1",
+            connectors: [],
           },
         },
       ]),

@@ -16,6 +16,8 @@ export type MobileTab = "notes" | "assistants" | "agent" | "studio" | "settings"
 export type SettingsSection =
   | "account"
   | "memory"
+  | "connectors"
+  | "skills"
   | "personalization"
   | "connection"
   | "usage"

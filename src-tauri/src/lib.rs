@@ -28,6 +28,7 @@ pub mod child_env;
 #[cfg(desktop)]
 pub mod code_review;
 pub mod commands;
+pub mod connectors;
 pub mod conversation_export;
 #[cfg(desktop)]
 pub mod council;
@@ -96,6 +97,7 @@ pub mod share_inbox;
 #[cfg(target_os = "ios")]
 pub mod share_ios;
 pub mod shareable;
+pub mod skill_packs;
 pub mod spotlight;
 pub mod sse_lines;
 pub mod storefront;
@@ -211,6 +213,8 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
     // The Studio gallery streams to media elements by byte range (both shells).
     builder = carpe_diem::media_protocol::register(builder);
+    // Connector views, served apart from the app's page (ADR-0092).
+    builder = connectors::apps::register(builder);
     #[cfg(target_os = "android")]
     {
         builder = builder
@@ -602,6 +606,27 @@ pub fn run() {
             saved_items::saved_item_save,
             saved_items::saved_item_remove,
             research::research_start,
+            connectors::connector_catalog,
+            connectors::connector_list,
+            connectors::connector_add,
+            connectors::connector_remove,
+            connectors::connector_set_enabled,
+            connectors::connector_set_tool_policy,
+            connectors::connector_sign_in,
+            connectors::connector_sign_out,
+            connectors::connector_set_token,
+            connectors::connector_refresh_tools,
+            connectors::calls::connector_call_get,
+            connectors::calls::connector_call_decide,
+            connectors::apps::connector_app_get,
+            connectors::apps::connector_app_call_tool,
+            connectors::triggers::connector_triggers,
+            connectors::triggers::connector_trigger_save,
+            connectors::triggers::connector_trigger_delete,
+            skill_packs::skill_pack_list,
+            skill_packs::skill_pack_import,
+            skill_packs::skill_pack_set_enabled,
+            skill_packs::skill_pack_delete,
             research::research_plan,
             research::research_approve,
             research::research_stop,
@@ -980,6 +1005,27 @@ pub fn run() {
         saved_items::saved_item_save,
         saved_items::saved_item_remove,
         research::research_start,
+        connectors::connector_catalog,
+        connectors::connector_list,
+        connectors::connector_add,
+        connectors::connector_remove,
+        connectors::connector_set_enabled,
+        connectors::connector_set_tool_policy,
+        connectors::connector_sign_in,
+        connectors::connector_sign_out,
+        connectors::connector_set_token,
+        connectors::connector_refresh_tools,
+        connectors::calls::connector_call_get,
+        connectors::calls::connector_call_decide,
+        connectors::apps::connector_app_get,
+        connectors::apps::connector_app_call_tool,
+        connectors::triggers::connector_triggers,
+        connectors::triggers::connector_trigger_save,
+        connectors::triggers::connector_trigger_delete,
+        skill_packs::skill_pack_list,
+        skill_packs::skill_pack_import,
+        skill_packs::skill_pack_set_enabled,
+        skill_packs::skill_pack_delete,
         research::research_plan,
         research::research_approve,
         research::research_stop,
@@ -1185,6 +1231,8 @@ pub fn run() {
             // Assignments, the daily brief and errands while the app is open,
             // the menu bar included (ADR-0091).
             assignments::start_clock(app.handle());
+            // Connector sign-ins coming back, and connector triggers (ADR-0092).
+            connectors::setup(app.handle());
             #[cfg(desktop)]
             {
                 hermes_bridge::start_on_app_start(app);

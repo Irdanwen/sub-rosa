@@ -47,6 +47,8 @@ import { NoteDetailScreen } from "../../components/mobile/screens/NoteDetailScre
 import { NotesScreen } from "../../components/mobile/screens/NotesScreen";
 import { ConnectionScreen } from "../../components/mobile/screens/ConnectionScreen";
 import { MemoryScreen } from "../../components/mobile/screens/MemoryScreen";
+import { ConnectorsScreen } from "../../components/mobile/screens/ConnectorsScreen";
+import { SkillsScreen } from "../../components/mobile/screens/SkillsScreen";
 import { PersonalizationScreen } from "../../components/mobile/screens/PersonalizationScreen";
 import {
   AboutScreen,
@@ -1149,6 +1151,10 @@ export function MobileApp() {
         <AccountScreen onBack={nav.pop} />
       ) : top.section === "memory" ? (
         <MemoryScreen onBack={nav.pop} />
+      ) : top.section === "connectors" ? (
+        <ConnectorsScreen onBack={nav.pop} />
+      ) : top.section === "skills" ? (
+        <SkillsScreen onBack={nav.pop} />
       ) : top.section === "personalization" ? (
         <PersonalizationScreen onBack={nav.pop} />
       ) : top.section === "usage" ? (

@@ -232,6 +232,16 @@ fn computed_host_is_accounted_for(path: &str, line: &str) -> bool {
     {
         return true;
     }
+    // A connector's own address, or one its sign-in metadata names (ADR-0092).
+    // The person chose the connector, and `connectors::mcp::validate_endpoint`
+    // admits only https, or plain http on this machine, before any of these
+    // origins is built; every request is also a row in the egress ledger.
+    if path.ends_with("connectors/oauth.rs")
+        && (line.contains("format!(\"https://{host}{port}\")")
+            || line.contains("format!(\"http://{host}{port}\")"))
+    {
+        return true;
+    }
     // A media file the backend told us to fetch, often a signed CDN URL on
     // another host. The key is attached only when the host matches the
     // backend's (`same_host`), so a redirect elsewhere carries no credential.

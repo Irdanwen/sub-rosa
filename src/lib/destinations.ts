@@ -249,6 +249,9 @@ export function subscribeToDestinations(handle: (destination: Destination) => vo
   let last = { url: "", at: 0 };
   const dispatchUrl = (raw: unknown, source: "launch" | "open") => {
     if (typeof raw !== "string") return;
+    // A connector sign-in coming back carries its code: Rust spends it, and
+    // the webview neither handles nor remembers it (ADR-0092).
+    if (raw.toLowerCase().startsWith(`${DESTINATION_SCHEME}connector/`)) return;
     if (source === "launch" && readHandled().includes(raw)) return;
     const now = Date.now();
     if (raw === last.url && now - last.at < 2_000) return;

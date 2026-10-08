@@ -359,6 +359,8 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
             value={memorySummary ?? undefined}
             onClick={() => onOpen("memory")}
           />
+          <SettingsLinkRow label={t("Connectors")} onClick={() => onOpen("connectors")} />
+          <SettingsLinkRow label={t("Skills")} onClick={() => onOpen("skills")} />
           <SettingsLinkRow label={t("Usage")} onClick={() => onOpen("usage")} />
           <SettingsLinkRow
             label={t("Connection")}

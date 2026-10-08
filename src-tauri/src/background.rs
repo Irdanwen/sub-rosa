@@ -47,6 +47,9 @@ pub async fn sweep(app: &AppHandle) {
     // tools rather than a chat's.
     crate::assignments::tick(app).await;
     crate::moments::daily::tick(app).await;
+    // Connector triggers get their first look at a launch or a resume
+    // (ADR-0092); the minute clock takes over while the app stays open.
+    crate::connectors::triggers::tick(app).await;
     // A chat turn cut off between the user's message and the reply.
     crate::agent_lite::resume_interrupted_turns(app).await;
     // A chat whose first reply landed but whose title never came back.

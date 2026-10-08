@@ -1322,6 +1322,7 @@ export function AgentSessionScreen({
         </button>
       ) : null}
       <ChatComposer
+        skills
         draft={draft}
         onDraftChange={setDraft}
         attachments={attachments}

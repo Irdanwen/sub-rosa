@@ -46,6 +46,7 @@ use tauri_plugin_notification::NotificationExt;
 mod budget;
 pub mod cancel;
 pub mod controls;
+mod extensions;
 mod project;
 pub mod python;
 mod tool_defs;
@@ -252,9 +253,11 @@ async fn persist_answer(
     answer: &str,
 ) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
+    // The cards of what connectors did this turn go under it (ADR-0092).
+    let answer = crate::connectors::agent::seal_answer(task_id, answer);
     let mut tx = repos.pool.begin().await?;
     sqlx::query::query("INSERT INTO agent_messages(id,task_id,role,content,created_at) VALUES(?,?,'assistant',?,?)")
-        .bind(uuid::Uuid::new_v4().to_string()).bind(task_id).bind(answer).bind(&now).execute(&mut *tx).await?;
+        .bind(uuid::Uuid::new_v4().to_string()).bind(task_id).bind(&answer).bind(&now).execute(&mut *tx).await?;
     sqlx::query::query("UPDATE agent_tasks SET status='completed',progress_summary='Completed.',last_error=NULL,updated_at=?,completed_at=? WHERE id=?")
         .bind(&now).bind(&now).bind(task_id).execute(&mut *tx).await?;
     // The title marker commits with the first reply, so a chat suspended
@@ -489,9 +492,8 @@ async fn run_turn(
         ),
     };
     let system_prompt = crate::study::prompted(&repos.pool, task_id, system_prompt).await;
-    // After the choice, so a custom assistant carries it too (ADR-0084).
-    let system_prompt = crate::protected_mode::guard_system_prompt(system_prompt);
     let mut offered_tools = tool_definitions(crate::memory::settings().enabled);
+    let mut extended = None;
     if let Some(tools) = offered_tools.as_array_mut() {
         tools.retain(|tool| {
             crate::assistants::runtime::allows_tool(
@@ -527,7 +529,25 @@ async fn run_turn(
                 }}));
             }
         }
+        // Connectors and skill packs (ADR-0092), after the assistant's own.
+        let last = task.messages.last().map(|message| message.content.as_str());
+        extended = Some(
+            extensions::prepare(
+                repos,
+                task_id,
+                last.unwrap_or_default(),
+                snapshot.is_some(),
+                tools,
+            )
+            .await,
+        );
     }
+    let system_prompt = match &extended {
+        Some(extended) => extended.system_prompt(system_prompt),
+        None => system_prompt,
+    };
+    // After the choice, so a custom assistant carries it too (ADR-0084).
+    let system_prompt = crate::protected_mode::guard_system_prompt(system_prompt);
     let mut messages = vec![serde_json::json!({
         "role": "system",
         "content": system_prompt,
@@ -885,6 +905,10 @@ async fn run_turn(
                     Ok(proposal) => proposal.to_string(),
                     Err(error) => error.message,
                 }
+            } else if let Some(content) =
+                extensions::dispatch(app, repos, task_id, &name, &args).await
+            {
+                content
             } else {
                 execute_tool(app, repos, task_id, &name, &args).await
             };

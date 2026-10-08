@@ -310,6 +310,8 @@ enum Slot {
     Now,
     Errand(String),
     Approved(Box<RunRow>),
+    /// A connector event (ADR-0092): its trigger and the item it saw.
+    Event(String),
 }
 
 /// Whether a run can start on this device right now.
@@ -364,6 +366,7 @@ async fn start_run(
             None,
         ),
         Slot::Errand(id) => (format!("errand:{id}"), false, None),
+        Slot::Event(key) => (format!("event:{key}"), false, None),
         Slot::Approved(run) => (format!("approved:{}", run.id), false, Some(*run)),
     };
     let run_id = store::run_id(&row.id, &key);
@@ -712,6 +715,41 @@ pub async fn run_for_errand(
     start_run(app, &pool, &row, Slot::Errand(errand_id.to_string()), &me)
         .await?
         .ok_or_else(|| error("assignment_not_found"))
+}
+
+/// Whether this device evaluates the connector triggers of an assignment:
+/// the device that runs it, under the same consent as its slots.
+pub async fn evaluates_here(app: &AppHandle, assignment_id: &str) -> bool {
+    let Ok(pool) = pool(app).await else {
+        return false;
+    };
+    let Ok(Some(row)) = store::get(&pool, assignment_id).await else {
+        return false;
+    };
+    let me = this_device(&pool).await;
+    let foreign = !row.origin_device_id.is_empty() && row.origin_device_id != me;
+    !row.paused && runs_here(&row, &me) && (!foreign || crate::errands::settings(app).enabled)
+}
+
+/// Run an assignment because a connector reported something (ADR-0092).
+/// Single use per event like any slot; the event's description joins the
+/// goal for this run only.
+pub async fn run_for_event(
+    app: &AppHandle,
+    assignment_id: &str,
+    event_key: &str,
+    summary: &str,
+) -> Result<Option<String>, AppError> {
+    if !evaluates_here(app, assignment_id).await || !can_run_now(app).await {
+        return Ok(None);
+    }
+    let pool = pool(app).await?;
+    let mut row = store::get(&pool, assignment_id)
+        .await?
+        .ok_or_else(|| error("assignment_not_found"))?;
+    row.goal = format!("{}\n\nWhat started this run: {summary}", row.goal);
+    let me = this_device(&pool).await;
+    start_run(app, &pool, &row, Slot::Event(event_key.to_string()), &me).await
 }
 
 /// Whether an errand-started run has landed: `None` while it runs, then its
