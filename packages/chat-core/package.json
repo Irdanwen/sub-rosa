@@ -10,6 +10,11 @@
     "./speakable-text": "./src/speakable-text.ts",
     "./chat-block-fence": "./src/chat-block-fence.ts",
     "./conversation-markdown": "./src/conversation-markdown.ts",
+    "./chat-blocks-data": "./src/chat-blocks-data.ts",
+    "./chart-geometry": "./src/chart-geometry.ts",
+    "./try-on": "./src/try-on.ts",
+    "./try-on-block": "./src/try-on-block.ts",
+    "./canvas-block": "./src/canvas-block.ts",
     "./agent-lite.json": "./agent-lite.json"
   },
   "files": ["src", "agent-lite.json"]

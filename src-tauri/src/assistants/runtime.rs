@@ -197,6 +197,14 @@ pub fn allows_tool(snapshot: Option<&AssistantSnapshot>, name: &str, memory_enab
     }
 }
 
+/// The tool every custom assistant's conversation is offered.
+pub fn search_references_definition() -> serde_json::Value {
+    serde_json::json!({"type":"function","function":{
+        "name":"search_references","description":"Search the reference documents explicitly attached to this assistant. Cite the returned reference name and passage.",
+        "parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}
+    }})
+}
+
 pub fn reference_context(snapshot: &AssistantSnapshot, query: &str) -> String {
     let words: Vec<String> = query
         .split_whitespace()

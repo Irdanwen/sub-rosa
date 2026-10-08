@@ -17,15 +17,8 @@ import {
   streamCompletion,
   webSearch,
 } from "./carpe-diem";
-import {
-  appendToNote,
-  createNote,
-  listMemories,
-  listNotes,
-  type Memory,
-  type Message,
-  remember,
-} from "./library";
+import { appendToNote, createNote, listNotes, type Memory, type Message } from "./library";
+import { addMemory, memoriesInScope } from "./memories";
 import { searchMemories, searchNotes } from "./search";
 import type { SyncClient } from "./sync";
 
@@ -70,12 +63,40 @@ export function memoryBlock(memories: Memory[]): string | null {
 }
 
 /** The system prompt: agent-lite's, then the blocks joined the way
- * `personalization::default_chat_context` joins them, then the browser's
- * note. */
-export function systemPrompt(personalization: string | null, memory: string | null): string {
-  const blocks = [personalization, memory].map((block) => block?.trimEnd() ?? "").filter(Boolean);
+ * `personalization::default_chat_context` joins them (personalization,
+ * memory, past chats), then any section a chat adds after them (a project's,
+ * as `agent_lite::project::with_section` adds it), then the browser's note. */
+export function systemPrompt(
+  personalization: string | null,
+  memory: string | null,
+  more: { pastChats?: string | null; sections?: string[] } = {},
+): string {
+  const blocks = [personalization, memory, more.pastChats ?? null]
+    .map((block) => block?.trimEnd() ?? "")
+    .filter(Boolean);
   const context = blocks.length ? `\n\n${blocks.join("\n\n")}` : "";
-  return `${AGENT_LITE.systemPrompt}${context}\n\n${BROWSER_SECTION}`;
+  const sections = (more.sections ?? []).filter(Boolean).map((section) => `\n\n${section}`);
+  return `${AGENT_LITE.systemPrompt}${context}${sections.join("")}\n\n${BROWSER_SECTION}`;
+}
+
+/**
+ * What a chat adds to a turn beyond agent-lite's defaults: its own prompt
+ * (a custom assistant, a project, past chats), tools and their answers, the
+ * memory scope it reads and writes, and this turn's attachments. Built by
+ * `turn-plan.ts`; a turn without one is the plain default chat.
+ */
+export interface TurnExtension {
+  systemPrompt?(blocks: { personalization: string | null; memory: string | null }): string;
+  tools?(offered: ToolDefinition[]): ToolDefinition[];
+  /** Answers a tool the defaults do not know, or returns undefined. */
+  run?(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<string | undefined> | string | undefined;
+  /** null for the person's own memory, a project's folder id otherwise. */
+  memoryScope?: string | null;
+  /** Folds this turn's attachments into the request. */
+  prepare?(messages: ChatMessage[]): void;
 }
 
 export interface TurnContext {
@@ -92,6 +113,7 @@ export interface TurnContext {
   signal?: AbortSignal;
   onText: (fragment: string) => void;
   onStatus?: (stage: string, detail?: string) => void;
+  extension?: TurnExtension;
 }
 export interface TurnResult {
   answer: string;
@@ -112,9 +134,14 @@ export function offeredTools(memory: boolean, temporary: boolean): ToolDefinitio
   });
 }
 
-/** The memories a turn carries: the most important, up to the app's limit. */
-export function memoriesForTurn(sync: SyncClient, enabled: boolean): Memory[] {
-  return enabled ? listMemories(sync).slice(0, AGENT_LITE.injectedMemoryLimit) : [];
+/** The memories a turn carries: the most important of its scope, up to the
+ * app's limit. */
+export function memoriesForTurn(
+  sync: SyncClient,
+  enabled: boolean,
+  scope: string | null = null,
+): Memory[] {
+  return enabled ? memoriesInScope(sync, scope).slice(0, AGENT_LITE.injectedMemoryLimit) : [];
 }
 
 function argument(args: Record<string, unknown>, name: string): string | undefined {
@@ -181,7 +208,8 @@ export async function executeTool(
       case "search_memories": {
         context.onStatus?.("searching-memory", query);
         if (!context.memory) return "Memory is disabled in the user's settings.";
-        const found = searchMemories(listMemories(sync), query, 8);
+        const scope = context.extension?.memoryScope ?? null;
+        const found = searchMemories(memoriesInScope(sync, scope), query, 8);
         return found.length
           ? JSON.stringify(
               found.map((memory) => ({
@@ -249,12 +277,14 @@ export async function executeTool(
         if (!context.memory) return "Memory is disabled in the user's settings.";
         if (context.temporary) return "A temporary chat remembers nothing.";
         context.onStatus?.("remembering", fact);
-        return (await remember(sync, fact)) === "known"
+        return (await addMemory(sync, fact, context.extension?.memoryScope ?? null)) === "known"
           ? "That fact is already remembered."
           : `Remembered: ${fact}`;
       }
-      default:
-        return `The tool ${name} is not available in the browser.`;
+      default: {
+        const answer = await context.extension?.run?.(name, args);
+        return answer ?? `The tool ${name} is not available in the browser.`;
+      }
     }
   } catch (error) {
     if (signal?.aborted) throw error;
@@ -270,13 +300,21 @@ export async function executeTool(
  * refused, then one without declarations.
  */
 export async function runTurn(context: TurnContext, history: Message[]): Promise<TurnResult> {
-  const memories = memoriesForTurn(context.sync, context.memory);
-  const prompt = systemPrompt(personalizationBlock(context.personalization), memoryBlock(memories));
+  const extension = context.extension;
+  const memories = memoriesForTurn(context.sync, context.memory, extension?.memoryScope ?? null);
+  const blocks = {
+    personalization: personalizationBlock(context.personalization),
+    memory: memoryBlock(memories),
+  };
+  const prompt =
+    extension?.systemPrompt?.(blocks) ?? systemPrompt(blocks.personalization, blocks.memory);
   const messages: ChatMessage[] = [
     { role: "system", content: prompt },
     ...history.map((message) => ({ role: message.role, content: message.content })),
   ];
-  const tools = offeredTools(context.memory, context.temporary);
+  extension?.prepare?.(messages);
+  const offered = offeredTools(context.memory, context.temporary);
+  const tools = extension?.tools?.(offered) ?? offered;
   const written: string[] = [];
   let rounds = 0;
   let answerTries = 0;

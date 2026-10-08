@@ -1,0 +1,248 @@
+/* WP20 in the web client: the views beside the chat, attachments, the
+   canvas and the cards with actions. The site's own tokens, no new colour. */
+.wc-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.wc-views button {
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.wc-views button[aria-pressed="true"] {
+  color: var(--foreground);
+  border-color: var(--border-hover);
+  background: var(--accent-faint);
+}
+.wc-views button:hover {
+  color: var(--foreground);
+}
+.wc-main-wrap,
+.wc-view {
+  min-width: 0;
+}
+.wc-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wc-view h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+.wc-view h2 {
+  font-size: 1.125rem;
+  margin: 12px 0 0;
+}
+.wc-with-canvas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space);
+  min-width: 0;
+}
+.wc-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-left: 1px solid var(--border);
+  padding-left: var(--space);
+  min-width: 0;
+}
+.wc-canvas-head h2 {
+  font-size: 1.125rem;
+  margin: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.wc-canvas-editor textarea,
+.wc-view input,
+.wc-view select,
+.wc-view textarea,
+.wc-dialog input,
+.wc-memory input,
+.wc-canvas input {
+  width: 100%;
+  font: inherit;
+  font-size: 16px;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.wc-canvas-editor textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-height: 40dvh;
+}
+.wc-canvas-preview {
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  overflow-wrap: anywhere;
+}
+.wc-grow {
+  flex: 1;
+  min-width: 0;
+}
+.wc-split {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: var(--space);
+}
+.wc-plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.wc-plain > li {
+  min-width: 0;
+}
+.wc-assistants > li,
+.wc-saved > li,
+.wc-memory-list > li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.wc-memory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 40dvh;
+  overflow-y: auto;
+}
+.wc-memory-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wc-paused > p:first-child {
+  color: var(--muted);
+}
+.wc-choices {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  display: grid;
+  gap: 6px;
+}
+.wc-attachments {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.wc-attach {
+  position: relative;
+  justify-self: start;
+  cursor: pointer;
+}
+.wc-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wc-chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 4px 2px 8px;
+}
+.wc-chips button {
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.wc-thumb {
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.wc-composer {
+  flex-wrap: wrap;
+}
+.wc-composer > .wc-attachments {
+  flex-basis: 100%;
+}
+.wc-composer > textarea {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.wc-card {
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.wc-gallery {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.wc-gallery img,
+.wc-preview {
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.wc-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wc-dialog-wide {
+  max-width: min(760px, calc(100vw - 32px));
+}
+.wc-paste {
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .wc-with-canvas,
+  .wc-split {
+    grid-template-columns: 1fr;
+  }
+  .wc-canvas {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: var(--space) 0 0;
+  }
+}
+@media print {
+  .wc-views,
+  .wc-canvas,
+  .wc-attachments {
+    display: none;
+  }
+}
+fieldset.wc-tabs {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}

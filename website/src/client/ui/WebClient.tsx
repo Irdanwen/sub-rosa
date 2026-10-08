@@ -10,9 +10,7 @@ import {
   addMessage,
   archiveChat,
   branchChat,
-  createChat,
   listChats,
-  listMemories,
   type Message,
   messagesOf,
   restoreChat,
@@ -27,6 +25,7 @@ import { availableClientStore, type ClientStore } from "../store";
 import { SyncClient, type SyncTransport, serviceTransport } from "../sync";
 import { ChatMessage } from "./ChatMessage";
 import { SettingsDialog } from "./SettingsDialog";
+import { useWorkspace } from "./useWorkspace";
 import "./web-client.css";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -91,6 +90,7 @@ export function WebClient({
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState<string>("");
   const [memoryOn, setMemoryOn] = useState(true);
+  const [pastChats, setPastChats] = useState(true);
   const [personalization, setPersonalization] = useState<Personalization>(DEFAULT_PERSONALIZATION);
   const [open, setOpen] = useState<Open>({ kind: "new" });
   const [temporaryMessages, setTemporaryMessages] = useState<Message[]>([]);
@@ -124,6 +124,7 @@ export function WebClient({
       setSync(client);
       setLocal(state);
       setMemoryOn(preferences.memory);
+      setPastChats(preferences.pastChats ?? true);
       if (preferences.model) setModel(preferences.model);
       if (preferences.effort) setEffort(preferences.effort);
       setPersonalization(chosen);
@@ -173,12 +174,43 @@ export function WebClient({
     return () => controller.abort();
   }, [operator]);
 
+  // A send can finish after the page is gone; it then says nothing.
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
   const flush = useCallback(() => {
     sync
       ?.flush()
-      .then(() => setOffline(false))
-      .catch(() => setOffline(true));
+      .then(() => mounted.current && setOffline(false))
+      .catch(() => mounted.current && setOffline(true));
   }, [sync]);
+
+  const openChat = useCallback((id: string | null) => {
+    setOpen(id ? { kind: "chat", id } : { kind: "new" });
+    setError("");
+  }, []);
+  // Projects, assistants, pictures, library, publishing, attachments, the
+  // canvas and sharing (WP20): plugged in here, built in `useWorkspace`.
+  const workspace = useWorkspace({
+    account,
+    vaultKey,
+    sync,
+    local,
+    operator,
+    openKey,
+    models,
+    live,
+    model,
+    memoryOn,
+    pastChats,
+    flush,
+    chatId: open.kind === "chat" ? open.id : open.kind === "temporary" ? "temporary" : null,
+    openChat,
+  });
 
   // ── What is on screen ─────────────────────────────────────────────────────
   const chats = sync ? (query.trim() ? searchChats(sync, query) : listChats(sync)) : [];
@@ -197,7 +229,6 @@ export function WebClient({
     contextTokens: selected?.contextTokens,
   });
   const offersEffort = !!selected?.supportsReasoningEffort;
-  const memories = sync ? listMemories(sync) : [];
   const messageIds = messages.map((message) => message.id).join(",");
 
   useEffect(() => {
@@ -222,14 +253,15 @@ export function WebClient({
   }, [local, messageIds]);
 
   const savePreferences = useCallback(
-    (next: { model?: string; effort?: string; memory?: boolean }) => {
+    (next: { model?: string; effort?: string; memory?: boolean; pastChats?: boolean }) => {
       void local?.setPreferences({
         model: next.model ?? model,
         effort: next.effort ?? effort,
         memory: next.memory ?? memoryOn,
+        pastChats: next.pastChats ?? pastChats,
       });
     },
-    [local, model, effort, memoryOn],
+    [local, model, effort, memoryOn, pastChats],
   );
 
   // ── A turn ────────────────────────────────────────────────────────────────
@@ -246,6 +278,11 @@ export function WebClient({
       );
       return;
     }
+    const routed = workspace.turnModel(workspace.attachments.some((item) => item.kind === "image"));
+    if ("error" in routed) {
+      setError(routed.error);
+      return;
+    }
     const controller = new AbortController();
     running.current = controller;
     let shown = "";
@@ -257,14 +294,15 @@ export function WebClient({
           sync,
           operator,
           key,
-          model,
+          model: routed.model,
           effort: effortForModel(
             { supportsReasoningEffort: offersEffort },
             REASONING_EFFORTS.find((value) => value === effort),
           ),
-          memory: memoryOn,
+          memory: workspace.memoryFor(memoryOn),
           personalization,
           temporary,
+          extension: workspace.plan(chatId, history),
           signal: controller.signal,
           onText: (fragment) => {
             shown += fragment;
@@ -274,11 +312,11 @@ export function WebClient({
         },
         history,
       );
-      await finishTurn(chatId, result.answer, result.memories);
+      await finishTurn(chatId, result.answer, result.memories, routed.model);
     } catch (failure) {
       if (controller.signal.aborted) {
         // Stopped: what was already shown is kept, as the app keeps it.
-        if (shown.trim()) await finishTurn(chatId, shown, []);
+        if (shown.trim()) await finishTurn(chatId, shown, [], routed.model);
       } else setError(failureText(failure));
     } finally {
       running.current = null;
@@ -292,6 +330,7 @@ export function WebClient({
     chatId: string | null,
     answer: string,
     used: { id: string; text: string }[],
+    replyModel = model,
   ) => {
     if (!sync) return;
     const sourcesUsed = used.map(({ id, text }) => ({ id, text }));
@@ -307,7 +346,7 @@ export function WebClient({
       setSources((value) => ({ ...value, [reply.id]: sourcesUsed }));
       return;
     }
-    const reply = await addMessage(sync, chatId, "assistant", answer, model || null);
+    const reply = await addMessage(sync, chatId, "assistant", answer, replyModel || null);
     if (sourcesUsed.length) {
       await local?.setSources(reply.id, sourcesUsed);
       setSources((value) => ({ ...value, [reply.id]: sourcesUsed }));
@@ -316,7 +355,7 @@ export function WebClient({
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
-    const text = draft.trim();
+    const text = workspace.stored(draft.trim());
     if (!text || !sync || running.current) return;
     setDraft("");
     if (open.kind === "temporary") {
@@ -333,11 +372,14 @@ export function WebClient({
       return;
     }
     let chatId = open.kind === "chat" ? open.id : null;
+    let written = false;
     if (!chatId) {
-      chatId = await createChat(sync, text, model || null);
+      const created = await workspace.createFor(text, model || null, draft.trim());
+      chatId = created.id;
+      written = created.written;
       setOpen({ kind: "chat", id: chatId });
     }
-    await addMessage(sync, chatId, "user", text, model || null);
+    if (!written) await addMessage(sync, chatId, "user", text, model || null);
     await run(messagesOf(sync, chatId), chatId);
   };
 
@@ -461,6 +503,7 @@ export function WebClient({
             onClick={() => {
               setOpen({ kind: "new" });
               setError("");
+              workspace.resetNewChat();
             }}
           >
             {t("New chat", "Nouvelle discussion")}
@@ -477,6 +520,7 @@ export function WebClient({
             {t("Temporary chat", "Discussion temporaire")}
           </button>
         </div>
+        {workspace.nav}
         <label className="wc-search">
           <span className="sr-only">
             {t("Search your chats", "Rechercher dans vos discussions")}
@@ -549,192 +593,214 @@ export function WebClient({
         </div>
       </aside>
 
-      <section className="wc-main" aria-label={t("Conversation", "Conversation")}>
-        <header className="wc-header">
-          <h1>
-            {open.kind === "temporary"
-              ? t("Temporary chat", "Discussion temporaire")
-              : (current?.title ?? t("New chat", "Nouvelle discussion"))}
-          </h1>
-          <div className="wc-row wc-controls">
-            <label>
-              <span className="sr-only">{t("Model", "Modèle")}</span>
-              <select
-                value={model}
-                onChange={(event) => {
-                  setModel(event.target.value);
-                  savePreferences({ model: event.target.value });
-                }}
-              >
-                {models.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {offersEffort && (
-              <label>
-                <span className="sr-only">{t("Reasoning effort", "Effort de réflexion")}</span>
-                <select
-                  value={effort}
-                  onChange={(event) => {
-                    setEffort(event.target.value);
-                    savePreferences({ effort: event.target.value });
-                  }}
-                >
-                  <option value="">{t("Default effort", "Effort par défaut")}</option>
-                  <option value="low">{t("Low effort", "Effort faible")}</option>
-                  <option value="medium">{t("Medium effort", "Effort moyen")}</option>
-                  <option value="high">{t("High effort", "Effort élevé")}</option>
-                </select>
-              </label>
-            )}
-            {gauge && (
-              <span
-                className={`wc-gauge ${gauge.tone === "warning" ? "warning" : ""}`}
-                role="img"
-                aria-label={t(
-                  `Context used: ${formatTokenCount(gauge.used)} of ${formatTokenCount(gauge.total)} tokens`,
-                  `Contexte utilisé : ${formatTokenCount(gauge.used)} sur ${formatTokenCount(gauge.total)} jetons`,
+      {workspace.mainView ?? (
+        <div className={workspace.canvasPane ? "wc-with-canvas" : "wc-main-wrap"}>
+          <section className="wc-main" aria-label={t("Conversation", "Conversation")}>
+            <header className="wc-header">
+              <h1>
+                {open.kind === "temporary"
+                  ? t("Temporary chat", "Discussion temporaire")
+                  : (current?.title ?? t("New chat", "Nouvelle discussion"))}
+              </h1>
+              <div className="wc-row wc-controls">
+                <label>
+                  <span className="sr-only">{t("Model", "Modèle")}</span>
+                  <select
+                    value={model}
+                    onChange={(event) => {
+                      setModel(event.target.value);
+                      savePreferences({ model: event.target.value });
+                    }}
+                  >
+                    {models.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {offersEffort && (
+                  <label>
+                    <span className="sr-only">{t("Reasoning effort", "Effort de réflexion")}</span>
+                    <select
+                      value={effort}
+                      onChange={(event) => {
+                        setEffort(event.target.value);
+                        savePreferences({ effort: event.target.value });
+                      }}
+                    >
+                      <option value="">{t("Default effort", "Effort par défaut")}</option>
+                      <option value="low">{t("Low effort", "Effort faible")}</option>
+                      <option value="medium">{t("Medium effort", "Effort moyen")}</option>
+                      <option value="high">{t("High effort", "Effort élevé")}</option>
+                    </select>
+                  </label>
                 )}
-              >
-                <meter min={0} max={1} value={gauge.ratio} />
-                {formatTokenCount(gauge.used)} / {formatTokenCount(gauge.total)}
-              </span>
+                {gauge && (
+                  <span
+                    className={`wc-gauge ${gauge.tone === "warning" ? "warning" : ""}`}
+                    role="img"
+                    aria-label={t(
+                      `Context used: ${formatTokenCount(gauge.used)} of ${formatTokenCount(gauge.total)} tokens`,
+                      `Contexte utilisé : ${formatTokenCount(gauge.used)} sur ${formatTokenCount(gauge.total)} jetons`,
+                    )}
+                  >
+                    <meter min={0} max={1} value={gauge.ratio} />
+                    {formatTokenCount(gauge.used)} / {formatTokenCount(gauge.total)}
+                  </span>
+                )}
+                {messages.length > 0 && (
+                  <>
+                    <button className="button" type="button" onClick={exportChat}>
+                      {t("Export Markdown", "Exporter en Markdown")}
+                    </button>
+                    <button className="button" type="button" onClick={() => window.print()}>
+                      {t("Print or save as PDF", "Imprimer ou enregistrer en PDF")}
+                    </button>
+                  </>
+                )}
+                {workspace.headerControls(current, messages)}
+                {current && (
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() =>
+                      void (
+                        current.archived
+                          ? restoreChat(sync, current.id)
+                          : archiveChat(sync, current.id)
+                      ).then(flush)
+                    }
+                  >
+                    {current.archived ? t("Restore", "Restaurer") : t("Archive", "Archiver")}
+                  </button>
+                )}
+              </div>
+            </header>
+            {open.kind === "temporary" && (
+              <p className="notice">
+                {t(
+                  "Temporary chat: nothing here is saved to your account, and the assistant writes no note and no memory.",
+                  "Discussion temporaire : rien n’est enregistré sur votre compte, et l’assistant n’écrit ni note ni souvenir.",
+                )}
+              </p>
             )}
-            {messages.length > 0 && (
-              <>
-                <button className="button" type="button" onClick={exportChat}>
-                  {t("Export Markdown", "Exporter en Markdown")}
-                </button>
-                <button className="button" type="button" onClick={() => window.print()}>
-                  {t("Print or save as PDF", "Imprimer ou enregistrer en PDF")}
-                </button>
-              </>
+            {gauge?.tone === "warning" && (
+              <p className="notice">
+                {t(
+                  "This chat is close to what the model can hold. Start a new chat to keep answers sharp.",
+                  "Cette discussion approche de ce que le modèle peut contenir. Ouvrez une nouvelle discussion pour garder des réponses nettes.",
+                )}
+              </p>
             )}
-            {current && (
-              <button
-                className="button"
-                type="button"
-                onClick={() =>
-                  void (
-                    current.archived ? restoreChat(sync, current.id) : archiveChat(sync, current.id)
-                  ).then(flush)
-                }
-              >
-                {current.archived ? t("Restore", "Restaurer") : t("Archive", "Archiver")}
-              </button>
+            {!workspace.continuable(current) && (
+              <p className="notice">
+                {t(
+                  "This chat belongs to a custom assistant. Read it here, continue it in the app.",
+                  "Cette discussion appartient à un assistant personnalisé. Lisez-la ici, poursuivez-la dans l’app.",
+                )}
+              </p>
             )}
-          </div>
-        </header>
-        {open.kind === "temporary" && (
-          <p className="notice">
-            {t(
-              "Temporary chat: nothing here is saved to your account, and the assistant writes no note and no memory.",
-              "Discussion temporaire : rien n’est enregistré sur votre compte, et l’assistant n’écrit ni note ni souvenir.",
-            )}
-          </p>
-        )}
-        {gauge?.tone === "warning" && (
-          <p className="notice">
-            {t(
-              "This chat is close to what the model can hold. Start a new chat to keep answers sharp.",
-              "Cette discussion approche de ce que le modèle peut contenir. Ouvrez une nouvelle discussion pour garder des réponses nettes.",
-            )}
-          </p>
-        )}
-        {current?.assistant && (
-          <p className="notice">
-            {t(
-              "This chat belongs to a custom assistant. Read it here, continue it in the app.",
-              "Cette discussion appartient à un assistant personnalisé. Lisez-la ici, poursuivez-la dans l’app.",
-            )}
-          </p>
-        )}
-        <div className="wc-messages" aria-live="polite">
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              message={message}
-              last={message.id === lastAssistant}
-              busy={busy}
-              temporary={open.kind === "temporary"}
-              reading={reading?.id === message.id}
-              rating={ratings[message.id] ?? null}
-              sources={sources[message.id]}
-              actions={{
-                onCopy: (item) => void copy(item),
-                onReadAloud: (item) => void toggleReading(item),
-                onRate: (item, value) => void rate(item, value),
-                onRegenerate: () => void regenerate(),
-                onBranch: (item) => void branch(item),
-                onEdit: (item, content) => void edit(item, content),
-              }}
-            />
-          ))}
-          {streaming !== null && (
-            <article className="wc-message wc-assistant" aria-busy="true">
-              {streaming ? (
-                <p className="wc-streaming">{streaming}</p>
-              ) : (
-                <p className="quiet">{t("Thinking…", "Réflexion…")}</p>
+            {workspace.startingNotice}
+            <div className="wc-messages" aria-live="polite">
+              {messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  last={message.id === lastAssistant}
+                  busy={busy}
+                  temporary={open.kind === "temporary"}
+                  reading={reading?.id === message.id}
+                  rating={ratings[message.id] ?? null}
+                  sources={sources[message.id]}
+                  renderBlock={workspace.renderBlock}
+                  extraActions={workspace.replyAction(message)}
+                  actions={{
+                    onCopy: (item) => void copy(item),
+                    onReadAloud: (item) => void toggleReading(item),
+                    onRate: (item, value) => void rate(item, value),
+                    onRegenerate: () => void regenerate(),
+                    onBranch: (item) => void branch(item),
+                    onEdit: (item, content) => void edit(item, content),
+                  }}
+                />
+              ))}
+              {streaming !== null && (
+                <article className="wc-message wc-assistant" aria-busy="true">
+                  {streaming ? (
+                    <p className="wc-streaming">{streaming}</p>
+                  ) : (
+                    <p className="quiet">{t("Thinking…", "Réflexion…")}</p>
+                  )}
+                  {status && status !== "thinking" && <p className="quiet">{stageLabel(status)}</p>}
+                </article>
               )}
-              {status && status !== "thinking" && <p className="quiet">{stageLabel(status)}</p>}
-            </article>
-          )}
-          {copied && (
-            <p className="sr-only" role="status">
-              {t("Copied", "Copié")}
-            </p>
-          )}
-        </div>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        {!current?.assistant && (
-          <form className="wc-composer" onSubmit={(event) => void send(event)}>
-            <label className="sr-only" htmlFor="wc-draft">
-              {t("Message", "Message")}
-            </label>
-            <textarea
-              id="wc-draft"
-              rows={3}
-              value={draft}
-              placeholder={t("Ask anything", "Demandez ce que vous voulez")}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  void send();
-                }
-              }}
-            />
-            {busy ? (
-              <button className="button" type="button" onClick={stop}>
-                {t("Stop", "Arrêter")}
-              </button>
-            ) : (
-              <button className="button primary" type="submit" disabled={!draft.trim() || !model}>
-                {t("Send", "Envoyer")}
-              </button>
+              {copied && (
+                <p className="sr-only" role="status">
+                  {t("Copied", "Copié")}
+                </p>
+              )}
+            </div>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
             )}
-          </form>
-        )}
-      </section>
+            {workspace.continuable(current) && (
+              <form className="wc-composer" onSubmit={(event) => void send(event)}>
+                {workspace.composer(busy)}
+                <label className="sr-only" htmlFor="wc-draft">
+                  {t("Message", "Message")}
+                </label>
+                <textarea
+                  id="wc-draft"
+                  rows={3}
+                  value={draft}
+                  placeholder={t("Ask anything", "Demandez ce que vous voulez")}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault();
+                      void send();
+                    }
+                  }}
+                />
+                {busy ? (
+                  <button className="button" type="button" onClick={stop}>
+                    {t("Stop", "Arrêter")}
+                  </button>
+                ) : (
+                  <button
+                    className="button primary"
+                    type="submit"
+                    disabled={(!draft.trim() && !workspace.attachments.length) || !model}
+                  >
+                    {t("Send", "Envoyer")}
+                  </button>
+                )}
+              </form>
+            )}
+          </section>
+          {workspace.canvasPane}
+        </div>
+      )}
       <SettingsDialog
         open={settingsOpen}
         personalization={personalization}
         memory={memoryOn}
-        memories={memories}
+        pastChats={pastChats}
+        manager={workspace.memoryManager}
         onClose={() => setSettingsOpen(false)}
-        onSave={(next, memory) => {
+        onSave={(next, memory, referencePastChats) => {
           setPersonalization(next);
           setMemoryOn(memory);
+          setPastChats(referencePastChats);
           void local?.setPersonalization(next);
-          savePreferences({ memory });
+          savePreferences({ memory, pastChats: referencePastChats });
           setSettingsOpen(false);
         }}
       />

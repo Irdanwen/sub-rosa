@@ -15,6 +15,8 @@ export interface ChatModel {
   contextTokens?: number;
   supportsReasoningEffort: boolean;
   privacy?: string;
+  /** Reads images (vision), so an image turn can run on it. */
+  supportsVision?: boolean;
 }
 
 interface SnapshotModel {
@@ -37,6 +39,7 @@ export function catalogChatModels(): ChatModel[] {
       contextTokens: model.context,
       supportsReasoningEffort: false,
       privacy: model.privacy,
+      supportsVision: model.traits?.some((trait) => trait.includes("vision")) ?? false,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -56,6 +59,7 @@ export function mergeLive(models: ChatModel[], live: LiveModel[]): ChatModel[] {
         supportsReasoningEffort: supportsReasoningEffort({
           supportsReasoningEffort: current.supportsReasoningEffort,
         }),
+        supportsVision: !!(current.supportsVision || model.supportsVision),
       };
     });
 }

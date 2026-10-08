@@ -33,3 +33,13 @@ this notice available with the distributed binaries. If a Symphonia source file
 is ever modified, that file's source must be published under the MPL as well —
 another reason to keep the fork's own decoding code in
 `src-tauri/src/audio/decode.rs` rather than patching the dependency.
+
+## PDF.js
+
+The website's web client (`/app`) bundles PDF.js (`pdfjs-dist`,
+<https://github.com/mozilla/pdf.js>) at the version pinned in
+`website/package.json`, to read the text of a PDF a person attaches in the
+browser. It is loaded only when a PDF is attached, and runs in the page.
+
+PDF.js is licensed under the Apache License 2.0. The built site serves it from
+its own origin; keep its license with any redistribution of the built site.

@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
+import { DataCard, parseDataBlock } from "./data-cards";
 import { t } from "./i18n";
 import { Markdown, webLink } from "./markdown";
 
@@ -10,7 +11,9 @@ import { Markdown, webLink } from "./markdown";
  * keeps them as that JSON, and this page shows each one as a plain list:
  * no map, no photo, no button, and nothing fetched. Every value is written as
  * text through React, and a link is only ever a web link (`webLink`), so a
- * block cannot carry markup or a script into the page.
+ * block cannot carry markup or a script into the page. Charts and tables are
+ * drawn (`data-cards.tsx`): they are numbers, and drawing them fetches
+ * nothing either.
  */
 export type MessagePart = { id: number } & (
   | { kind: "text"; text: string }
@@ -170,6 +173,8 @@ export function ChatBlockList({
   name: string;
   payload: Record<string, unknown> | null;
 }) {
+  const data = parseDataBlock(name, payload);
+  if (data) return <DataCard block={data} />;
   const rows = !payload
     ? []
     : name === "links"
@@ -200,15 +205,32 @@ export function ChatBlockList({
   );
 }
 
+/** A block the page around the message draws itself (the web client's
+ * canvas and try-on cards), or undefined to fall back to the list. */
+export type BlockRenderer = (
+  name: string,
+  payload: Record<string, unknown> | null,
+) => ReactNode | undefined;
+
 /** A message's prose as markdown and its blocks as lists. */
-export function MessageBody({ content }: { content: string }) {
+export function MessageBody({
+  content,
+  renderBlock,
+}: {
+  content: string;
+  renderBlock?: BlockRenderer;
+}) {
   return (
     <>
       {splitChatBlocks(content).map((part) =>
         part.kind === "text" ? (
           <Markdown key={part.id} text={part.text} />
         ) : (
-          <ChatBlockList key={part.id} name={part.name} payload={part.payload} />
+          <Fragment key={part.id}>
+            {renderBlock?.(part.name, part.payload) ?? (
+              <ChatBlockList name={part.name} payload={part.payload} />
+            )}
+          </Fragment>
         ),
       )}
     </>

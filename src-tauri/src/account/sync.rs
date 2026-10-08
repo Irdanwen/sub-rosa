@@ -1708,3 +1708,7 @@ async fn capture_balance(pool: &SqlitePool) -> Result<(), AppError> {
 #[cfg(test)]
 #[path = "sync_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "sync_web_tests.rs"]
+mod web_tests;

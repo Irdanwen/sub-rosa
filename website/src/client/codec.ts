@@ -22,6 +22,44 @@ export interface AgentLiteExport {
   limits: { maxToolRounds: number; webSearchResults: number; webPageChars: number };
   tools: ToolDefinition[];
   tables: Record<TableName, { kind: SyncKind; columns: string[] }>;
+  /** `data_cards::CARDS_PROMPT`: how to write chart and table blocks. */
+  cardsPrompt: string;
+  /** The project section, piece by piece, and its file search (ADR-0085). */
+  project: {
+    opening: string;
+    instructions: string;
+    files: string;
+    ownMemory: string;
+    memoryDefault: string;
+    memoryProject: string;
+    tool: ToolDefinition;
+  };
+  /** Past chats (ADR-0081): the block's words, its limits and the tool. */
+  pastChats: {
+    header: string;
+    excerptsIntro: string;
+    userLine: string;
+    assistantLine: string;
+    turnSnippets: number;
+    blockChars: number;
+    snippetChars: number;
+    titleChars: number;
+    toolResults: number;
+    tool: ToolDefinition;
+  };
+  /** A custom assistant's prompt and reference search (ADR-0058). */
+  assistant: { systemPrompt: string; searchReferences: ToolDefinition };
+  /** The canvas rewrite (ADR-0087) and the picture refine pass (ADR-0088). */
+  editing: {
+    canvas: {
+      system: string;
+      message: string;
+      temperature: number;
+      maxChars: number;
+      promptVersion: string;
+    };
+    refine: { critiqueSystem: string; editSuffix: string; maxPasses: number; editModels: string[] };
+  };
 }
 export interface ToolDefinition {
   type: "function";
@@ -31,8 +69,17 @@ export interface ToolDefinition {
 export const AGENT_LITE = exported as unknown as AgentLiteExport;
 
 /** The routing classes a browser device reads and writes. Bounded on purpose:
- * the page holds a decryption key, so what it may pull is a decision. */
-export const WEB_KINDS = ["conversation", "memory", "note", "folder"] as const;
+ * the page holds a decryption key, so what it may pull is a decision. Within a
+ * kind, only the tables below are decrypted into the page; any other table of
+ * that kind (a health day, a recording) is left unread and uncached. */
+export const WEB_KINDS = [
+  "conversation",
+  "memory",
+  "note",
+  "folder",
+  "artifact",
+  "settings",
+] as const;
 export type SyncKind = (typeof WEB_KINDS)[number];
 
 export type TableName =
@@ -41,14 +88,30 @@ export type TableName =
   | "memories"
   | "notes"
   | "folders"
-  | "account_session_folders";
+  | "account_session_folders"
+  | "project_settings"
+  | "project_files"
+  | "saved_items"
+  | "assistants"
+  | "assistant_references"
+  | "account_studio_files"
+  | "account_file_manifests";
 
 export type Cell = string | number | null;
 export type Row = Record<string, Cell>;
 
 /** The authenticated body table of a custom assistant's conversation. It is
- * read like `agent_tasks` and never written from a browser. */
-const ASSISTANT_CONVERSATIONS = "assistant_conversations";
+ * read like `agent_tasks`, and written from a browser only as a custom
+ * assistant's own conversation, its snapshot riding beside the row. */
+export const ASSISTANT_CONVERSATIONS = "assistant_conversations";
+
+/** Whether a received body names a table this page reads. */
+export function knownTable(name: unknown): boolean {
+  return (
+    typeof name === "string" &&
+    (name === ASSISTANT_CONVERSATIONS || Object.hasOwn(AGENT_LITE.tables, name))
+  );
+}
 
 export function tableOf(name: string): { name: TableName; kind: SyncKind; columns: string[] } {
   const resolved = name === ASSISTANT_CONVERSATIONS ? "agent_tasks" : name;

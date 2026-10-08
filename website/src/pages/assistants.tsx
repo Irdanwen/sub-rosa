@@ -37,7 +37,7 @@ export function categoryName(category: Category | string): string {
   }
 }
 
-function permissionName(key: string): string {
+export function permissionName(key: string): string {
   switch (key) {
     case "web":
       return t("Search the web", "Chercher sur le web");
