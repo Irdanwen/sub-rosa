@@ -8607,8 +8607,8 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
     ))
 }
 
-mod connectors_mcp;
 mod builtin_mcp;
+mod connectors_mcp;
 #[cfg(test)]
 use builtin_mcp::render_context_mcp_entry;
 use builtin_mcp::{
