@@ -40,7 +40,9 @@ export function collectRustSentences(root = "src-tauri/src") {
     for (const name of readdirSync(dir)) {
       const path = join(dir, name);
       if (statSync(path).isDirectory()) walk(path);
-      else if (name.endsWith(".rs")) files.push(path);
+      // A module's test file (`tests.rs`, `sync_tests.rs`) is compiled only
+      // under #[cfg(test)]: its errors are fixtures nobody reads.
+      else if (name.endsWith(".rs") && !name.endsWith("tests.rs")) files.push(path);
     }
   };
   walk(root);
