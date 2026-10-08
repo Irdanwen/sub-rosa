@@ -217,16 +217,19 @@ pub async fn prompt_block_for_app(app: &AppHandle) -> Option<String> {
     format_memory_block(&memories)
 }
 
+/// The line that opens the memory block. The web client reads it from the
+/// export in `agent_lite::web_client_export`, so both say the same.
+pub(crate) const MEMORY_BLOCK_HEADER: &str =
+    "User memory: durable facts remembered from the user's previous conversations \
+     (managed by the user in Settings). Use them so the user never has to repeat \
+     themselves. What the user says now always overrides a remembered fact, and you \
+     should not recite this list unprompted.\n";
+
 pub(crate) fn format_memory_block(memories: &[MemoryDto]) -> Option<String> {
     if memories.is_empty() {
         return None;
     }
-    let mut block = String::from(
-        "User memory: durable facts remembered from the user's previous conversations \
-         (managed by the user in Settings). Use them so the user never has to repeat \
-         themselves. What the user says now always overrides a remembered fact, and you \
-         should not recite this list unprompted.\n",
-    );
+    let mut block = String::from(MEMORY_BLOCK_HEADER);
     for memory in memories {
         block.push_str("- ");
         block.push_str(&memory.text);

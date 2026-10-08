@@ -1,4 +1,5 @@
 packages:
   - packages/design
+  - packages/chat-core
   - website
   - browser-extension

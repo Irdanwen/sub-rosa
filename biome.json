@@ -5,6 +5,7 @@
       "src/**",
       "scripts/**",
       "website/src/**",
+      "packages/chat-core/src/**",
       "website/scripts/**",
       "website/*.ts",
       "website/*.json",

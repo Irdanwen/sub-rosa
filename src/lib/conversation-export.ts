@@ -10,6 +10,11 @@
 // already makes of them; tool calls, thinking and process notices are left
 // out, as they are when a reply is copied.
 
+import {
+  type ConversationExportDocument,
+  type ConversationExportTurn,
+  conversationMarkdown as markdownWith,
+} from "@subrosa/chat-core/conversation-markdown";
 import { invoke } from "@tauri-apps/api/core";
 import { stripAgentCliAccessRequest } from "./agent-cli-access";
 import {
@@ -24,18 +29,12 @@ import { intlLocale, t } from "./i18n";
 import { readableModelName } from "./model-names";
 import type { AgentMessageDto } from "./tauri";
 
+export type {
+  ConversationExportDocument,
+  ConversationExportTurn,
+} from "@subrosa/chat-core/conversation-markdown";
+
 export type ConversationExportFormat = "markdown" | "pdf";
-
-export type ConversationExportTurn = { role: "user" | "assistant"; text: string };
-
-export type ConversationExportDocument = {
-  title: string;
-  /** When the conversation began. */
-  startedAt?: string;
-  /** The model it ran on, as a person reads its name. */
-  model?: string;
-  turns: ConversationExportTurn[];
-};
 
 export type ConversationExportResult = {
   path: string | null;
@@ -57,19 +56,18 @@ export function conversationMarkdown(
   doc: ConversationExportDocument,
   exportedAt: Date = new Date(),
 ): string {
-  const title = doc.title.trim() || t("Untitled chat");
-  const details = [
-    doc.startedAt ? formatDate(doc.startedAt) : undefined,
-    doc.model ? t("Model: {model}", { model: doc.model }) : undefined,
-    t("Exported {date}", { date: formatDate(exportedAt) ?? "" }),
-  ].filter(Boolean);
-  const lines = [`# ${title}`, "", `*${details.join(" · ")}*`];
-  for (const turn of doc.turns) {
-    const text = turn.text.trim();
-    if (!text) continue;
-    lines.push("", "---", "", `## ${turn.role === "user" ? t("You") : PRODUCT_NAME}`, "", text);
-  }
-  return `${lines.join("\n")}\n`;
+  return markdownWith(
+    doc,
+    {
+      untitled: t("Untitled chat"),
+      model: (model) => t("Model: {model}", { model }),
+      exported: (date) => t("Exported {date}", { date }),
+      you: t("You"),
+      assistant: PRODUCT_NAME,
+      formatDate,
+    },
+    exportedAt,
+  );
 }
 
 /** A reply's text as it reads in a file: cards as lists. */

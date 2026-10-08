@@ -44,6 +44,7 @@
     "ios:version": "node scripts/sync-ios-version.mjs"
   },
   "dependencies": {
+    "@subrosa/chat-core": "workspace:*",
     "@subrosa/design": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",

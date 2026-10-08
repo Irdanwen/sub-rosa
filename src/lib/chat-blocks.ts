@@ -15,6 +15,7 @@
  * call site (return null — never a half-valid card).
  */
 
+import { CHAT_BLOCK_FENCE_PREFIX, chatBlockKindOf } from "@subrosa/chat-core/chat-block-fence";
 import {
   type ChartChatBlock,
   dataBlockPlainText,
@@ -46,7 +47,7 @@ export type { FlashcardsChatBlock, QuizChatBlock } from "./study-blocks";
 export type { FileChatBlock } from "./file-block";
 export type { ConnectorAppChatBlock, ConnectorCallChatBlock } from "./connector-blocks";
 
-export const CHAT_BLOCK_FENCE_PREFIX = "subrosa:";
+export { CHAT_BLOCK_FENCE_PREFIX, chatBlockKindOf };
 
 export type ChatBlockLink = {
   title: string;
@@ -152,14 +153,6 @@ const MAX_PHOTO_REF = 512;
 const MAX_NOTES = 6;
 const MAX_NOTE_ID = 64;
 const MAX_ACTIONS = 5;
-
-/** The `<kind>` of a `subrosa:<kind>` fence info string, or null. */
-export function chatBlockKindOf(info: string): string | null {
-  const lang = info.trim().toLowerCase();
-  if (!lang.startsWith(CHAT_BLOCK_FENCE_PREFIX)) return null;
-  const kind = lang.slice(CHAT_BLOCK_FENCE_PREFIX.length).trim();
-  return kind || null;
-}
 
 function asObject(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)

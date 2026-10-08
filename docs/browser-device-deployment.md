@@ -75,8 +75,11 @@ The Vercel frontend proxies `/api/operator/*` to the operator, including
 
 ## Still open after deployment
 
-- The native app does not yet send an admission verifier when it creates or
-  replaces a recovery key, so vaults born in the app admit a browser only by
-  approval from the app. Follow-up in `src-tauri/src/account/`.
-- The web client itself (WP19) is what uses the key; this package only makes
-  the browser a device and keeps its key.
+- The native app sends an admission verifier when it creates a vault (since
+  WP19), so a vault born in an up-to-date app admits a browser with the
+  recovery key. Vaults created before that admit a browser only by approval
+  from the app; the app does not yet rewrite an existing vault to add one
+  (that needs a recent sign-in and a compare-and-swap of the envelope).
+- The web client (`/app`, ADR-0101) is what uses the key. Until the operator
+  ships the browser bound, a browser has no key and `/app` sends the person to
+  the devices page.

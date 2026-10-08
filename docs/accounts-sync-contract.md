@@ -8,7 +8,7 @@ JSON field names are snake_case. Successful JSON responses are `{ "data": T }`; 
 
 | Method and route | Contract |
 | --- | --- |
-| `GET /auth/login?intent=signin\|signup&return_to=/account` | Starts external OIDC. Allowed return paths: `/account`, `/account/`, `/account/devices`, `/account/library`, `/account/provider`, `/account/security`, `/account/top-up`, `/account/usage`, and `/account/devices/verify?code=XXXXXXXX` with a valid device code. No external return URLs. `signin` and `signup` share the configured identity provider; account creation/passkey UX belongs to it. |
+| `GET /auth/login?intent=signin\|signup&return_to=/account` | Starts external OIDC. Allowed return paths: `/account`, `/account/`, `/account/devices`, `/account/library`, `/account/provider`, `/account/security`, `/account/top-up`, `/account/usage`, `/app` (the web client), and `/account/devices/verify?code=XXXXXXXX` with a valid device code. No external return URLs. `signin` and `signup` share the configured identity provider; account creation/passkey UX belongs to it. |
 | `GET /auth/callback?state=...&code=...` | Consumes a ten-minute login attempt bound to its browser cookie; verifies code, S256 PKCE, signed ID token, exact issuer/audience, nonce, verified email and fresh `auth_time`. Maps `(issuer, subject)` to an internal UUID, never merges by email. Returns a 303 redirect with browser cookies. |
 | `POST /auth/logout` | Invalidates the current session. Native logout also revokes its refresh family. Clears browser cookies when present. |
 | `GET /api/v1/me` | `{ id, email, created_at }`. Dates are RFC3339. |

@@ -43,6 +43,8 @@ const RETURN_TO: &[&str] = &[
     "/account/security",
     "/account/top-up",
     "/account/usage",
+    // The web client (WP19) offers "sign in" from its own page.
+    "/app",
 ];
 
 /// How many issuance assertions one account may ask for per minute. A person
@@ -801,5 +803,11 @@ mod tests {
     #[test]
     fn the_top_up_page_can_be_returned_to_after_sign_in() {
         assert!(RETURN_TO.contains(&"/account/top-up"));
+    }
+
+    /// The web client offers "sign in" from `/app`, and lands back on it.
+    #[test]
+    fn the_web_client_can_be_returned_to_after_sign_in() {
+        assert!(RETURN_TO.contains(&"/app"));
     }
 }

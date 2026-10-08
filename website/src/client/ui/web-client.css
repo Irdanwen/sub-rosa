@@ -1,0 +1,249 @@
+/* The web client (/app). The site's own tokens (style.css), no new colour. */
+.wc-page {
+  padding: 16px;
+}
+.wc-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: var(--space);
+  min-height: calc(100dvh - 180px);
+}
+.wc-loading {
+  padding: var(--space);
+}
+.wc-sidebar,
+.wc-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.wc-sidebar {
+  border-right: 1px solid var(--border);
+  padding-right: var(--space);
+}
+.wc-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.wc-search input,
+.wc-controls select,
+.wc-composer textarea,
+.wc-edit textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 16px;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.wc-controls select {
+  width: auto;
+  max-width: 240px;
+}
+.wc-tabs {
+  display: flex;
+  gap: 4px;
+}
+.wc-tabs button,
+.wc-actions button {
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.wc-tabs button[aria-pressed="true"],
+.wc-actions button[aria-pressed="true"] {
+  color: var(--foreground);
+  border-color: var(--border-hover);
+  background: var(--accent-faint);
+}
+.wc-tabs button:hover,
+.wc-actions button:hover:not(:disabled) {
+  color: var(--foreground);
+}
+.wc-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.wc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  max-height: 60dvh;
+}
+.wc-chat-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  font: inherit;
+  color: var(--foreground);
+  background: none;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.wc-chat-row strong {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.wc-chat-row[aria-current="page"],
+.wc-chat-row:hover {
+  background: var(--surface);
+}
+.wc-sidebar-foot {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+}
+.wc-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.wc-header h1 {
+  font-size: 1.5rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wc-gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.wc-gauge meter {
+  width: 56px;
+}
+.wc-gauge.warning {
+  color: var(--danger);
+}
+.wc-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+.wc-message {
+  max-width: 72ch;
+}
+.wc-user {
+  align-self: flex-end;
+}
+.wc-question {
+  white-space: pre-wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin: 0;
+}
+.wc-reply,
+.wc-streaming {
+  overflow-wrap: anywhere;
+}
+.wc-streaming {
+  white-space: pre-wrap;
+  margin: 0;
+}
+.wc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 4px;
+}
+.wc-user .wc-actions {
+  justify-content: flex-end;
+}
+.wc-actions .wc-chip {
+  border-color: var(--accent-line);
+}
+.wc-sources {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+.wc-edit {
+  display: grid;
+  gap: 8px;
+  min-width: min(560px, 80vw);
+}
+.wc-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  position: sticky;
+  bottom: 0;
+  background: var(--background);
+  padding: 8px 0;
+}
+.wc-dialog {
+  max-width: min(560px, calc(100vw - 32px));
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space);
+}
+.wc-dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+.wc-dialog textarea {
+  font: inherit;
+  font-size: 16px;
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .wc-shell {
+    grid-template-columns: 1fr;
+  }
+  .wc-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 var(--space);
+  }
+  .wc-list {
+    max-height: 30dvh;
+  }
+}
+
+/* "Print or save as PDF": the conversation alone, the way it reads. */
+@media print {
+  .site-header,
+  .footer,
+  .skip,
+  .wc-sidebar,
+  .wc-controls,
+  .wc-actions,
+  .wc-composer,
+  .notice {
+    display: none;
+  }
+  .wc-shell {
+    display: block;
+  }
+  .wc-message {
+    max-width: none;
+    break-inside: avoid;
+  }
+}

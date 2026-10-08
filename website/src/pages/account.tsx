@@ -333,6 +333,18 @@ export function AccountPage({ path }: { path: string }) {
                   </p>
                   <div className="account-quick-grid">
                     <article className="card">
+                      <h2>{t("Your chats", "Vos discussions")}</h2>
+                      <p>
+                        {t(
+                          "Continue a conversation in this browser, once it is one of your devices.",
+                          "Poursuivez une discussion dans ce navigateur, une fois qu’il fait partie de vos appareils.",
+                        )}
+                      </p>
+                      <a className="text-link" href="/app">
+                        {t("Open your chats", "Ouvrir vos discussions")} →
+                      </a>
+                    </article>
+                    <article className="card">
                       <h2>{t("Your notes", "Vos notes")}</h2>
                       <p>
                         {t(
@@ -520,7 +532,7 @@ function CardTopUp() {
   );
 }
 
-function VaultGate({ account, onOpen }: { account: Account; onOpen: (key: Key) => void }) {
+export function VaultGate({ account, onOpen }: { account: Account; onOpen: (key: Key) => void }) {
   const lifetime = useLifetime();
   const [record, setRecord] = useState<VaultRecord | null | undefined>(undefined);
   const [prepared, setPrepared] = useState<Awaited<ReturnType<typeof prepareVault>> | null>(null);

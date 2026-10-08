@@ -45,8 +45,8 @@ function failure(error: unknown): string {
     );
   if (code === "admission_required")
     return t(
-      "This did not admit the browser. Approve it from the Sub Rosa app, or check your recovery key. A vault created in the app can only admit a browser through the app.",
-      "Cela n’a pas admis ce navigateur. Approuvez-le depuis l’app Sub Rosa, ou vérifiez votre clé de récupération. Un coffre créé dans l’app ne peut admettre un navigateur que par l’app.",
+      "This did not admit the browser. Approve it from the Sub Rosa app, or check your recovery key. A vault created by an earlier version of the app can only admit a browser through the app.",
+      "Cela n’a pas admis ce navigateur. Approuvez-le depuis l’app Sub Rosa, ou vérifiez votre clé de récupération. Un coffre créé par une version antérieure de l’app ne peut admettre un navigateur que par l’app.",
     );
   if (code === "forbidden")
     return t(

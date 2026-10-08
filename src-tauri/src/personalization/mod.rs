@@ -94,6 +94,16 @@ impl Default for PersonalizationSettings {
     }
 }
 
+/// The words of the block. The web client reads them from the export in
+/// `agent_lite::web_client_export`, so a browser's block reads like a phone's.
+pub(crate) const BLOCK_HEADER: &str =
+    "Personalization: the user set these in Settings for how you work with them. Follow \
+     them unless the user asks otherwise in the conversation. They never override your \
+     safety rules or the facts.\n";
+pub(crate) const ABOUT_LABEL: &str = "About the user:\n";
+pub(crate) const STYLE_LABEL: &str = "How the user wants you to respond:\n";
+pub(crate) const PERSONALITY_LABEL: &str = "Personality: ";
+
 /// The block both shells inject, or `None` when there is nothing to say:
 /// switched off, or every field empty with the default personality. Fields
 /// are capped again here, so a hand-edited file cannot grow the prompt.
@@ -107,23 +117,19 @@ pub fn render_block(settings: &PersonalizationSettings) -> Option<String> {
     if about.is_empty() && style.is_empty() && personality.is_none() {
         return None;
     }
-    let mut block = String::from(
-        "Personalization: the user set these in Settings for how you work with them. Follow \
-         them unless the user asks otherwise in the conversation. They never override your \
-         safety rules or the facts.\n",
-    );
+    let mut block = String::from(BLOCK_HEADER);
     if !about.is_empty() {
-        block.push_str("About the user:\n");
+        block.push_str(ABOUT_LABEL);
         block.push_str(&about);
         block.push('\n');
     }
     if !style.is_empty() {
-        block.push_str("How the user wants you to respond:\n");
+        block.push_str(STYLE_LABEL);
         block.push_str(&style);
         block.push('\n');
     }
     if let Some(instruction) = personality {
-        block.push_str("Personality: ");
+        block.push_str(PERSONALITY_LABEL);
         block.push_str(instruction);
         block.push('\n');
     }
