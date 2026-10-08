@@ -179,6 +179,12 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 [target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
 june-embed = { path = "../june-api/crates/embed" }
 
+# The voice conversation plays and records through one Voice-Processing I/O
+# unit on iOS so the system cancels the reply's echo; cpal only opens Remote
+# I/O. The same coreaudio-rs cpal links, so nothing new is fetched.
+[target.'cfg(target_os = "ios")'.dependencies]
+coreaudio-rs = { version = "0.11", default-features = false, features = ["audio_unit", "core_audio"] }
+
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-fs = "2"
 keyring = { version = "3", default-features = false }
@@ -186,6 +192,10 @@ cpal = { version = "0.15", features = ["oboe-shared-stdcxx"] }
 # cpal reads the JavaVM and Context from ndk-context; android.rs initializes it.
 ndk-context = "0.1"
 jni = "0.21"
+# The voice conversation opens its microphone with the VoiceCommunication
+# preset, the source Android attaches its echo canceller to; cpal cannot ask
+# for a preset. The same Oboe cpal links, so nothing new is fetched.
+oboe = { version = "0.6", features = ["java-interface", "shared-stdcxx"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = [

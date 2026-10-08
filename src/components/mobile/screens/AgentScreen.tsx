@@ -32,7 +32,7 @@ import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconLibrary } from "central-icons/IconLibrary";
 import { IconSunrise } from "central-icons/IconSunrise";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCarpeDiemCredits } from "../../../lib/carpe-diem-credits";
 import { readContextGauge } from "../../../lib/context-gauge";
 import { useDefaultChatModelId } from "../../../lib/default-chat-model";
@@ -49,6 +49,8 @@ import {
   supportsReasoningEffort,
 } from "../../../lib/reasoning-effort";
 import { resolveTurnModel } from "../../../lib/vision-routing";
+import { mobileReplySnapshot } from "../../../lib/voice/reply-snapshot";
+import { MobileVoiceButton } from "../../voice/MobileVoiceButton";
 import type { MediaModel } from "../../../lib/studio/types";
 import {
   AGENT_LITE_DELTA_EVENT,
@@ -833,14 +835,15 @@ export function AgentSessionScreen({
     [onOpenSession],
   );
 
+  // A voice conversation's turn (ADR-0093) is handed over here, words and
+  // camera frame, and sent without touching what is typed in the composer.
+  const spokenRef = useRef<{ content: string; attachments: AgentLiteAttachment[] } | null>(null);
   const send = useCallback(async () => {
-    const content = draft.trim();
-    if (
-      (!content && attachments.length === 0) ||
-      runningRef.current ||
-      loadingTask ||
-      taskLoadFailed
-    )
+    const spoken = spokenRef.current;
+    spokenRef.current = null;
+    const content = (spoken?.content ?? draft).trim();
+    const inputs = spoken?.attachments ?? attachments;
+    if ((!content && inputs.length === 0) || runningRef.current || loadingTask || taskLoadFailed)
       return;
     runningRef.current = true;
     taskRevisionRef.current += 1;
@@ -848,11 +851,13 @@ export function AgentSessionScreen({
     let persistedTaskId: string | undefined;
     // Persisted history keeps a readable marker per attachment; the payloads
     // ride along for this turn only.
-    const stored = withAttachmentMarkers(content, attachments);
-    const turnAttachments = attachments;
+    const stored = withAttachmentMarkers(content, inputs);
+    const turnAttachments = inputs;
     retryAttachmentsRef.current = turnAttachments;
-    setDraft("");
-    setAttachments([]);
+    if (!spoken) {
+      setDraft("");
+      setAttachments([]);
+    }
     setError(null);
     setCanRetry(false);
     setStreamed("");
@@ -926,11 +931,15 @@ export function AgentSessionScreen({
         retryAttachmentsRef.current = turnAttachments;
         setCanRetry(true);
         refreshAfterFailure(persistedTaskId);
-      } else {
+      } else if (!spoken) {
         // A failed write in an EXISTING chat is just as unsaved as a failed
         // new chat. Preserve any next draft entered while the write waited.
         setDraft((current) => (current ? `${submittedDraft}\n${current}` : submittedDraft));
         setAttachments((current) => [...turnAttachments, ...current]);
+      } else {
+        // A spoken turn is said again, not typed again: the voice
+        // conversation hears that it did not go.
+        throw err;
       }
     } finally {
       runningRef.current = false;
@@ -1043,6 +1052,23 @@ export function AgentSessionScreen({
     if (!taskId) return;
     void agentLiteCancel(taskId).catch((err: unknown) => setError(messageFromError(err)));
   }, []);
+
+  // A voice conversation's turn. Speaking over a reply stops it first, and
+  // its run takes a moment to settle: wait for it, briefly.
+  const sendVoice = useCallback(
+    async (content: string, image: AgentLiteAttachment | null) => {
+      for (let waited = 0; runningRef.current && waited < 3_000; waited += 100) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      spokenRef.current = { content, attachments: image ? [image] : [] };
+      await send();
+    },
+    [send],
+  );
+  const voiceReply = useMemo(
+    () => mobileReplySnapshot(task?.messages ?? [], streamed, running),
+    [task?.messages, streamed, running],
+  );
 
   // Ask the last question again, on the model (and effort) selected now: the
   // way to compare an answer with another model's is to switch, then this.
@@ -1331,6 +1357,7 @@ export function AgentSessionScreen({
         onSend={() => void (editing ? submitEdit() : send())}
         running={running}
         onStop={stopReply}
+        voice={<MobileVoiceButton reply={voiceReply} send={sendVoice} stop={stopReply} />}
         onError={setError}
         inputRef={chatInputRef}
         above={

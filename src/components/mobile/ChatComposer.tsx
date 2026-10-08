@@ -46,6 +46,7 @@ export function ChatComposer({
   inputRef,
   running = false,
   onStop,
+  voice,
 }: {
   draft: string;
   onDraftChange: Dispatch<SetStateAction<string>>;
@@ -64,6 +65,8 @@ export function ChatComposer({
   /** A reply is being written. With `onStop`, the round button stops it. */
   running?: boolean;
   onStop?: () => void;
+  /** The voice conversation's button, beside the round one. */
+  voice?: ReactNode;
 }) {
   const ownInput = useRef<HTMLTextAreaElement>(null);
   const field = inputRef ?? ownInput;
@@ -273,6 +276,7 @@ export function ChatComposer({
           ) : null}
           {chip}
           <span className="mobile-composer-spacer" />
+          {voice}
           {/* One round button that changes with the field: the microphone
               while there is nothing to send, the arrow once there is, and
               the stop square for as long as a reply is being written. */}
