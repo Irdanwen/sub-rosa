@@ -74,3 +74,42 @@ somebody edited one side.
   summaries, files and Python stay in the app until WP20.
 - Conflicts the browser keeps are reviewed in the app; the web client shows
   that some exist and resolves only identical ones.
+
+## Addendum 2026-10-08: what WP20a adds to the web client
+
+The second half of the web client's parity work (shares, memory management,
+past chats, projects, files and vision, chart and table cards, the canvas,
+pictures, the saved library, custom assistants and publishing) keeps the
+decision above and extends it in four places.
+
+1. **More of Rust's words are exported, never restated.** `agent-lite.json`
+   now also carries the project section of `agent_lite_section` and its
+   `search_project_files` tool, the past-chats block and its tool, a custom
+   assistant's system prompt and `search_references`, `CARDS_PROMPT`, the
+   canvas rewrite (`note_ai`, `note-rewrite-v2`) and the refine pass's
+   critique, edit suffix, pass limit and edit models. Sentences built with
+   `format!` are rendered by the export with placeholders (`{name}`,
+   `{instructions}`, `{files}`, `{title}`), so the template is Rust's own
+   output rather than a copy. The parsers both surfaces need (chart and table
+   blocks, chart geometry, the canvas and try-on blocks, the try-on prompt)
+   moved to `@subrosa/chat-core`, their words injected as before.
+2. **The browser reads two more kinds, and only the tables it uses within
+   them.** `artifact` and `settings` join the pulled kinds, for project files,
+   saved items, assistants, assistant references and gallery files. A revision
+   of any other table of those kinds (a health day, a recording, an
+   assignment) is left undecrypted into the page's state and uncached: the
+   allowlist is per table, not per kind.
+3. **A project's settings share their folder's object.** The app keys
+   `project_settings` by its folder's id (migration 048), so on the service
+   the folder and its settings are one object whose revisions alternate
+   between the two tables. The browser keeps the two rows apart under one
+   object (one head, one revision chain) and rewrites an unsent write in place
+   only when it is for the same table. `sync_web_tests.rs` applies a fixture
+   written by the browser (`web-client-objects-v2.json`) with the app's own
+   `verify` and `apply`.
+4. **What the browser cannot do durably, it says.** A queued picture is polled
+   while the tab is open and its queue id is kept, sealed, so a reload fetches
+   it rather than paying for it twice; there is no background runner. A
+   document is read in the tab (pdf.js on the page's thread, since a worker
+   URL would need a Trusted Types policy; Office files through the browser's
+   own `DecompressionStream`), and only its text travels.

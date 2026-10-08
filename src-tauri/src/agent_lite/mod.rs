@@ -507,10 +507,7 @@ async fn run_turn(
         project::offer_tool(tools, project.as_ref());
         python::offer_tool(tools);
         if snapshot.is_some() {
-            tools.push(serde_json::json!({"type":"function","function":{
-                "name":"search_references","description":"Search the reference documents explicitly attached to this assistant. Cite the returned reference name and passage.",
-                "parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}
-            }}));
+            tools.push(crate::assistants::runtime::search_references_definition());
             tools.push(serde_json::json!({"type":"function","function":{
                 "name":"read_reference_image","description":"Read one image reference with the selected vision-capable model. Obtain the id from search_references.",
                 "parameters":{"type":"object","properties":{"reference_id":{"type":"string"}},"required":["reference_id"]}

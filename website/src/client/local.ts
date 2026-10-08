@@ -12,6 +12,7 @@
  */
 import { decrypt, encrypt } from "../lib/vault";
 import { DEFAULT_PERSONALIZATION, type Personalization } from "./agent";
+import type { PendingJob } from "./images";
 import type { ClientStore } from "./store";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -24,6 +25,8 @@ export interface Preferences {
   model?: string;
   effort?: string;
   memory: boolean;
+  /** "Reference past chats" (ADR-0081): on by default, with memory. */
+  pastChats?: boolean;
 }
 
 export class LocalState {
@@ -76,6 +79,15 @@ export class LocalState {
   }
   setSources(messageId: string, sources: MemorySource[]) {
     return this.seal("sources", messageId, sources);
+  }
+
+  /** Picture jobs queued and not yet fetched, so a reload fetches them
+   * instead of paying for them again (`images.ts`). */
+  async pendingImages(): Promise<PendingJob[]> {
+    return (await this.sealed<PendingJob[]>("pending-images", "")) ?? [];
+  }
+  setPendingImages(jobs: PendingJob[]) {
+    return this.seal("pending-images", "", jobs);
   }
 
   async preferences(): Promise<Preferences> {

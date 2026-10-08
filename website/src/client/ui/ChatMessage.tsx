@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { MessageBody } from "../../lib/chat-blocks";
+import { type ReactNode, useState } from "react";
+import { type BlockRenderer, MessageBody } from "../../lib/chat-blocks";
 import { t } from "../../lib/i18n";
 import type { Message } from "../library";
 import type { MemorySource, Rating } from "../local";
@@ -25,6 +25,8 @@ export function ChatMessage({
   rating,
   sources,
   actions,
+  renderBlock,
+  extraActions,
 }: {
   message: Message;
   /** The last reply of the chat: the one Regenerate replaces. */
@@ -35,6 +37,10 @@ export function ChatMessage({
   rating: Rating | null;
   sources?: MemorySource[];
   actions: MessageActions;
+  /** Cards the page draws with actions (canvas, try-on, saving). */
+  renderBlock?: BlockRenderer;
+  /** Further controls for this message (saving a reply). */
+  extraActions?: ReactNode;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [showSources, setShowSources] = useState(false);
@@ -73,7 +79,7 @@ export function ChatMessage({
         <p className="wc-question">{message.content}</p>
       ) : (
         <div className="wc-reply">
-          <MessageBody content={message.content} />
+          <MessageBody content={message.content} renderBlock={renderBlock} />
         </div>
       )}
       {editing === null && (
@@ -121,6 +127,7 @@ export function ChatMessage({
                   {t("Regenerate", "Régénérer")}
                 </button>
               )}
+              {extraActions}
               {!temporary && (
                 <button type="button" disabled={busy} onClick={() => actions.onBranch(message)}>
                   {t("Branch", "Bifurquer")}

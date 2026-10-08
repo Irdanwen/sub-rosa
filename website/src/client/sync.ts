@@ -24,7 +24,15 @@
  */
 import { ApiError, type Change, readChangesFrom } from "../lib/api";
 import { decrypt, decryptObject, encrypt, type ProtectedObject, sendObject } from "../lib/vault";
-import { type Row, type SyncKind, type TableName, tableOf, validRow, WEB_KINDS } from "./codec";
+import {
+  knownTable,
+  type Row,
+  type SyncKind,
+  type TableName,
+  tableOf,
+  validRow,
+  WEB_KINDS,
+} from "./codec";
 import type { ClientStore } from "./store";
 
 type Key = Uint8Array<ArrayBuffer>;
@@ -84,6 +92,10 @@ interface OutboxEntry {
   operationId: string;
   objectId: string;
   kind: SyncKind;
+  /** The table the write is for. Two tables can share one object (a
+   * project's settings and its folder), and only a write of the same table
+   * may be rewritten in place. Absent on entries queued before WP20. */
+  table?: string;
   deleted: boolean;
   resolved: string[];
   /** The body, sealed under a local context while it may still change. */
@@ -101,6 +113,13 @@ interface Body {
 
 const ENVELOPE = ["v", "operation_id", "parent_revision", "deleted", "resolved_revisions"];
 
+/** Where an object's current row is kept in this tab. A project's settings
+ * share their folder's object id on purpose (ADR-0085): one object on the
+ * service, two rows here, each revision applied to the table it names. */
+function slot(table: TableName, id: string): string {
+  return table === "project_settings" ? `${id}#project_settings` : id;
+}
+
 export class SyncClient {
   readonly objects = new Map<string, SyncObject>();
   readonly conflicts = new Map<string, Conflict[]>();
@@ -111,6 +130,12 @@ export class SyncClient {
   private listeners = new Set<() => void>();
   private flushing: Promise<void> | null = null;
   private readonly prefix: string;
+
+  /** The current row of `table` with this id, deleted or not. */
+  object(table: TableName, id: string): SyncObject | undefined {
+    const object = this.objects.get(slot(table, id));
+    return object?.table === table ? object : undefined;
+  }
 
   constructor(
     private readonly accountId: string,
@@ -182,6 +207,9 @@ export class SyncClient {
     if (!(WEB_KINDS as readonly string[]).includes(change.kind)) return null;
     const value: ProtectedObject = await decryptObject(this.key, this.accountId, change);
     if ((value.resolved_revisions ?? []).length > 64) throw new Error("Too many resolutions");
+    // A table of a kind this page reads but not one it uses (a recording, a
+    // health day) is left unread: never applied, never cached.
+    if (!knownTable(value.table)) return null;
     const table = tableOf(value.table);
     if (table.kind !== change.kind) throw new Error("Table and kind disagree");
     if (!validRow(value.table, value.row) || value.row.id !== change.object_id)
@@ -281,7 +309,7 @@ export class SyncClient {
     // A head that names earlier conflicts retires them, like `preserve`.
     this.retire(change);
     if (!this.outbox.some((entry) => entry.objectId === change.object_id))
-      this.objects.set(change.object_id, object);
+      this.objects.set(slot(table.name, change.object_id), object);
     if (change.deleted && table.name === "agent_tasks")
       for (const message of this.objects.values())
         if (message.table === "agent_messages" && message.row.task_id === change.object_id)
@@ -314,7 +342,7 @@ export class SyncClient {
 
   private overlay(id: string, kind: SyncKind, body: Body, deleted: boolean) {
     const table = tableOf(body.table);
-    this.objects.set(id, {
+    this.objects.set(slot(table.name, id), {
       id,
       kind,
       table: table.name,
@@ -337,25 +365,32 @@ export class SyncClient {
   async write(
     table: TableName,
     row: Row,
-    options: { deleted?: boolean; extra?: Record<string, unknown> } = {},
+    options: { deleted?: boolean; extra?: Record<string, unknown>; bodyTable?: string } = {},
   ): Promise<void> {
     const id = row.id;
     if (typeof id !== "string" || !validRow(table, row)) throw new Error("Invalid row");
     const { kind } = tableOf(table);
-    const existing = this.objects.get(id);
-    const bodyTable = existing?.bodyTable ?? table;
+    const existing = this.object(table, id);
+    const bodyTable = existing?.bodyTable ?? options.bodyTable ?? table;
     const body: Body = { table: bodyTable, row, extra: options.extra ?? existing?.extra ?? {} };
     const deleted = options.deleted ?? false;
     const last = [...this.outbox].reverse().find((entry) => entry.objectId === id);
     let entry: OutboxEntry;
-    if (last && !last.sealed && !last.failed && last.resolved.length === 0) {
-      entry = { ...last, deleted };
+    if (
+      last &&
+      !last.sealed &&
+      !last.failed &&
+      last.resolved.length === 0 &&
+      (last.table ?? table) === table
+    ) {
+      entry = { ...last, deleted, table };
     } else {
       entry = {
         sequence: this.nextSequence++,
         operationId: crypto.randomUUID(),
         objectId: id,
         kind,
+        table,
         deleted,
         resolved: [],
         local: "",
@@ -486,9 +521,9 @@ export class SyncClient {
         disposition: "applied",
       } satisfies CachedChange);
     }
-    const object = this.objects.get(entry.objectId);
-    if (object && this.outbox.some((item) => item.objectId === entry.objectId))
-      this.objects.set(entry.objectId, { ...object, pending: true });
+    if (this.outbox.some((item) => item.objectId === entry.objectId))
+      for (const [where, object] of this.objects)
+        if (object.id === entry.objectId) this.objects.set(where, { ...object, pending: true });
     this.changed();
   }
 

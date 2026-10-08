@@ -13,31 +13,10 @@ import { saveArtifactFromBase64 } from "./artifacts";
 import { editCaps } from "./retouch/request";
 import type { ArtifactOrigin, MediaCatalog, MediaModel, StudioArtifact } from "./types";
 
-/** Edit models that dress a person well, best first. The first one the
- * catalog offers with room for two images wins; then any model with room. */
-export const TRY_ON_MODEL_PREFERENCE = [
-  "nano-banana-2-edit",
-  "seedream-v4-edit",
-  "seedream-v5-lite-edit",
-  "qwen-image-2-edit",
-  "ideogram-v4-5-edit",
-];
+import { TRY_ON_MODEL_PREFERENCE, tryOnPrompt } from "@subrosa/chat-core/try-on";
 
-/** The tuned prompt. `garment` is an optional few words that name it, which
- * helps when the garment photo shows more than the garment. */
-export function tryOnPrompt(garment?: string): string {
-  const named = garment?.trim() ? ` (${garment.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
-  return [
-    "Virtual try-on.",
-    "Image 1 is the person. Image 2 is the garment.",
-    `Dress the person from image 1 in the garment from image 2${named}.`,
-    "Keep the person exactly as they are: the same face, identity, skin tone, hair, body shape, pose, hands and expression.",
-    "Keep the background, the framing, the camera angle and the lighting of image 1.",
-    "Replace only the clothing the garment covers, and reproduce the garment faithfully: its cut, colour, pattern, fabric texture, print or logo and details.",
-    "Make it fit this body naturally, with realistic drape, folds, seams and shadows that match the light of image 1.",
-    "Photorealistic, no extra people, no text.",
-  ].join(" ");
-}
+// The prompt and the preference are shared with the web client.
+export { TRY_ON_MODEL_PREFERENCE, tryOnPrompt } from "@subrosa/chat-core/try-on";
 
 /** The model a try-on runs on, or undefined when no edit model can take two
  * images. */

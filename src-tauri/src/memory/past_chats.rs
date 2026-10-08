@@ -22,16 +22,18 @@ use sqlx_sqlite::SqlitePool;
 use std::time::Duration;
 
 /// Excerpts that ride along with a turn, at most.
-const TURN_SNIPPETS: usize = 5;
+pub(crate) const TURN_SNIPPETS: usize = 5;
 /// Candidates the relevance screen chooses between.
 const TURN_CANDIDATES: i64 = 15;
 /// What the excerpts may cost the prompt, all together and one by one.
-const TURN_BLOCK_CHARS: usize = 1_500;
-const SNIPPET_CHARS: usize = 300;
+pub(crate) const TURN_BLOCK_CHARS: usize = 1_500;
+pub(crate) const SNIPPET_CHARS: usize = 300;
+/// A chat's title in an excerpt line, at most.
+pub(crate) const TITLE_CHARS: usize = 80;
 /// A turn waits this long for its excerpts at most, screen included.
 const TURN_BUDGET: Duration = Duration::from_millis(1_500);
 /// Results of one `search_past_chats` call.
-const TOOL_RESULTS: i64 = 8;
+pub(crate) const TOOL_RESULTS: i64 = 8;
 
 /// Whether past chats are consulted at all.
 pub fn enabled() -> bool {
@@ -194,7 +196,7 @@ pub fn format_block(snippets: &[PastChatSnippet]) -> String {
         let excerpt = clip(&one_line(&snippet.excerpt), SNIPPET_CHARS);
         let line = format!(
             "- \"{}\" ({}, {speaker}): {excerpt}\n",
-            clip(&one_line(&snippet.title), 80),
+            clip(&one_line(&snippet.title), TITLE_CHARS),
             date_of(&snippet.created_at)
         );
         let cost = line.chars().count();
@@ -226,24 +228,27 @@ fn date_of(timestamp: &str) -> &str {
 
 /// The agent-lite tool, offered only while past chats are on.
 pub fn tool_definition() -> Option<serde_json::Value> {
-    enabled().then(|| {
-        serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": "search_past_chats",
-                "description": "Search what was said in the user's other conversations on this device. Use it when the user refers to an earlier chat (\"like we discussed\", \"what did you suggest last week\"). Returns excerpts with the conversation title and date.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "A few keywords, in the user's language."
-                        }
-                    },
-                    "required": ["query"]
-                }
+    enabled().then(declaration)
+}
+
+/// The declaration of `search_past_chats`, whether or not it is offered.
+pub(crate) fn declaration() -> serde_json::Value {
+    serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "search_past_chats",
+            "description": "Search what was said in the user's other conversations on this device. Use it when the user refers to an earlier chat (\"like we discussed\", \"what did you suggest last week\"). Returns excerpts with the conversation title and date.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "A few keywords, in the user's language."
+                    }
+                },
+                "required": ["query"]
             }
-        })
+        }
     })
 }
 

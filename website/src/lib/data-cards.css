@@ -1,0 +1,136 @@
+/* Chart and table cards (ADR-0086) on the website. The series palette is the
+   app's (`src/styles/tokens.css`, --chart-1 to --chart-8), restated here as
+   the site's own tokens; text never wears a series colour. */
+:root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}
+.data-card {
+  margin: 12px 0;
+  display: grid;
+  gap: 8px;
+}
+.data-title {
+  font-weight: 600;
+}
+.data-chart {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+}
+.data-pie {
+  max-width: 280px;
+}
+.data-grid {
+  stroke: var(--chart-grid);
+  stroke-width: 1;
+}
+.data-tick {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.series-1 {
+  --series: var(--series-1);
+}
+.series-2 {
+  --series: var(--series-2);
+}
+.series-3 {
+  --series: var(--series-3);
+}
+.series-4 {
+  --series: var(--series-4);
+}
+.series-5 {
+  --series: var(--series-5);
+}
+.series-6 {
+  --series: var(--series-6);
+}
+.series-7 {
+  --series: var(--series-7);
+}
+.series-8 {
+  --series: var(--series-8);
+}
+.data-mark,
+.data-dot {
+  fill: var(--series);
+}
+.data-line {
+  fill: none;
+  stroke: var(--series);
+  stroke-width: 2;
+}
+.data-area {
+  fill: var(--series);
+  fill-opacity: 0.15;
+}
+.data-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.data-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--series);
+}
+.data-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.data-table {
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  min-width: 100%;
+}
+.data-table th,
+.data-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.data-table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.data-table th button {
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.data-actions .button {
+  font-size: 0.875rem;
+}

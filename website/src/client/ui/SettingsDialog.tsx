@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { t } from "../../lib/i18n";
 import { AGENT_LITE } from "../codec";
 import type { Personalization } from "../agent";
-import type { Memory } from "../library";
 
 const PERSONALITIES: [string, () => string][] = [
   ["default", () => t("Default", "Par défaut")],
@@ -21,26 +20,33 @@ export function SettingsDialog({
   open,
   personalization,
   memory,
-  memories,
+  pastChats,
+  manager,
   onSave,
   onClose,
 }: {
   open: boolean;
   personalization: Personalization;
   memory: boolean;
-  memories: Memory[];
-  onSave: (personalization: Personalization, memory: boolean) => void;
+  /** "Reference past chats" (ADR-0081), kept in this browser like memory's
+   * own switch, as the app keeps it on each device. */
+  pastChats: boolean;
+  /** The list of memories, managed outside this form (`MemoryManager`). */
+  manager?: ReactNode;
+  onSave: (personalization: Personalization, memory: boolean, pastChats: boolean) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(personalization);
   const [memoryOn, setMemoryOn] = useState(memory);
+  const [pastChatsOn, setPastChatsOn] = useState(pastChats);
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
     if (open && !element.open) {
       setDraft(personalization);
       setMemoryOn(memory);
+      setPastChatsOn(pastChats);
       if (typeof element.showModal === "function") element.showModal();
       else element.setAttribute("open", "");
     }
@@ -48,7 +54,7 @@ export function SettingsDialog({
       if (typeof element.close === "function") element.close();
       else element.removeAttribute("open");
     }
-  }, [open, personalization, memory]);
+  }, [open, personalization, memory, pastChats]);
   const max = AGENT_LITE.personalization.maxFieldChars;
   return (
     <dialog
@@ -63,7 +69,7 @@ export function SettingsDialog({
         method="dialog"
         onSubmit={(event) => {
           event.preventDefault();
-          onSave(draft, memoryOn);
+          onSave(draft, memoryOn, pastChatsOn);
         }}
       >
         <h2 id="wc-settings-title">{t("Personalization", "Personnalisation")}</h2>
@@ -126,21 +132,23 @@ export function SettingsDialog({
           />
           {t("Use and add to your memories here", "Utiliser et enrichir vos souvenirs ici")}
         </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={pastChatsOn}
+            disabled={!memoryOn}
+            onChange={(event) => setPastChatsOn(event.target.checked)}
+          />
+          {t(
+            "Reference your other chats when it helps",
+            "S’appuyer sur vos autres discussions quand c’est utile",
+          )}
+        </label>
         <p className="quiet">
-          {memories.length === 0
-            ? t(
-                "No memory has synchronised to this account yet.",
-                "Aucun souvenir n’a encore été synchronisé sur ce compte.",
-              )
-            : memories.length === 1
-              ? t(
-                  "1 memory synchronised from your devices. Manage them in the app.",
-                  "1 souvenir synchronisé depuis vos appareils. Gérez-les dans l’app.",
-                )
-              : t(
-                  `${memories.length} memories synchronised from your devices. Manage them in the app.`,
-                  `${memories.length} souvenirs synchronisés depuis vos appareils. Gérez-les dans l’app.`,
-                )}
+          {t(
+            "Your chats are searched in this browser at the moment of use, never summarised or stored ahead of time. A custom assistant's chats are never quoted.",
+            "Vos discussions sont cherchées dans ce navigateur au moment voulu, jamais résumées ni stockées à l’avance. Les discussions d’un assistant personnalisé ne sont jamais citées.",
+          )}
         </p>
         <div className="wc-row">
           <button className="button primary" type="submit">
@@ -151,6 +159,7 @@ export function SettingsDialog({
           </button>
         </div>
       </form>
+      {manager}
     </dialog>
   );
 }

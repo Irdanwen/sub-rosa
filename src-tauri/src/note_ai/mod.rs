@@ -86,7 +86,7 @@ fn output_budget(chars: usize) -> u32 {
 /// Low, but not zero. The passage is fixed; the prose should not be
 /// mechanical. Below `longform`'s 0.3 because a rewrite is meant to be
 /// faithful to something that already exists.
-const TEMPERATURE: f32 = 0.2;
+pub(crate) const TEMPERATURE: f32 = 0.2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

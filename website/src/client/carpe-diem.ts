@@ -1,7 +1,7 @@
 /**
  * Carpe Diem, called from the browser with the browser device's bounded key
  * (ADR-0096). Only the routes a browser key may reach: chat completions, web
- * augmentation, speech and the public model list. The site's CSP names this
+ * augmentation, speech, images (`images.ts`) and the public model list. The site's CSP names this
  * origin and nothing else beyond its own.
  */
 import { CARPE_DIEM_OPERATOR } from "../lib/browser-device";
@@ -26,8 +26,13 @@ export interface Completion {
   toolCalls: ToolCall[];
   finishReason: string | null;
 }
+/** A user message with pictures: text and `image_url` parts (vision). */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
 export type ChatMessage =
-  | { role: "system" | "user"; content: string }
+  | { role: "system"; content: string }
+  | { role: "user"; content: string | ContentPart[] }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
