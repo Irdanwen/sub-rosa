@@ -1225,9 +1225,10 @@ not a store.
 _Avoid_: gallery (that is every Studio file), collection (a gallery folder).
 
 **Saved item**:
-A reply, a link or a place kept from a chat with "Save", a `saved_items` row on
-this device only, keyed by what it is so saving twice keeps one. Refused in a
-temporary chat.
+A reply, a link or a place kept from a chat with "Save", a `saved_items` row
+keyed by what it is, so saving twice keeps one, and under an id derived from
+that key, so the same thing saved on two devices is one item. It synchronises
+with an account (ADR-0088 addendum). Refused in a temporary chat.
 _Avoid_: bookmark, favourite (that is a gallery **mark**), pin (a pinned chat).
 
 **Scan**:

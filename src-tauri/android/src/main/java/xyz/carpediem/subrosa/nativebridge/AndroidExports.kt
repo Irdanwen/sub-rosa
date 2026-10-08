@@ -29,9 +29,27 @@ class SaveToPhotosArgs {
     lateinit var kind: String
 }
 
-/** The app reads only its own gallery; Android chooses every export destination. */
+/** The app reads only its own gallery and exports; Android chooses every export destination. */
 object AndroidExports {
     private val io = Executors.newSingleThreadExecutor()
+
+    // Tauri's app data directory on Android is `dataDir`, not `filesDir`: the
+    // gallery and the exports live directly under it. The same names as
+    // `shareable.rs`, whose test reads them from this file.
+    private const val GALLERY_DIR = "studio-media"
+    private const val EXPORTS_DIR = "exports"
+
+    /** [path], resolved, when it is an existing file under one of [dirs] of
+     * the app's data directory. Rust confined it already; this is the same
+     * check repeated at the Android boundary. */
+    private fun confined(activity: Activity, path: String, message: String, vararg dirs: String): File {
+        val file = File(path).canonicalFile
+        val inside = dirs.any { dir ->
+            file.toPath().startsWith(File(activity.dataDir, dir).canonicalFile.toPath())
+        }
+        require(inside && file.isFile) { message }
+        return file
+    }
 
     fun shareText(activity: Activity, invoke: Invoke) {
         try {
@@ -60,11 +78,7 @@ object AndroidExports {
         }
         io.execute {
             try {
-                val file = File(args.path).canonicalFile
-                val filesRoot = activity.filesDir.canonicalFile
-                require(file.toPath().startsWith(filesRoot.toPath()) && file.isFile) {
-                    "The file could not be found."
-                }
+                val file = confined(activity, args.path, "The file could not be found.", GALLERY_DIR, EXPORTS_DIR)
                 val outbox = File(activity.cacheDir, "share").apply { mkdirs() }
                 outbox.listFiles()?.forEach { stale -> stale.delete() }
                 val copy = File(outbox, file.name)
@@ -123,11 +137,7 @@ object AndroidExports {
             try {
                 // Rust canonicalizes against the actual Tauri gallery root before
                 // invoking us. Repeat the sandbox check at the Android boundary.
-                val file = File(args.path).canonicalFile
-                val filesRoot = activity.filesDir.canonicalFile
-                require(file.toPath().startsWith(filesRoot.toPath()) && file.isFile) {
-                    "The media file could not be found."
-                }
+                val file = confined(activity, args.path, "The media file could not be found.", GALLERY_DIR)
                 require(args.kind == "image" || args.kind == "video") { "photos_kind_invalid" }
                 val mime = MimeTypeMap.getSingleton()
                     .getMimeTypeFromExtension(file.extension.lowercase())

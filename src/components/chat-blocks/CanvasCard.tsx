@@ -6,6 +6,8 @@ import { useState } from "react";
 import { type CanvasChatBlock, openCanvasBlock } from "../../lib/canvas";
 import { friendlyErrorMessage } from "../../lib/errors";
 import { t } from "../../lib/i18n";
+import { SimpleMarkdown } from "../../lib/simple-markdown";
+import { HighlightedCode } from "../chat/HighlightedCode";
 
 /** Lines of the draft shown in the card: enough to recognise it. */
 const PREVIEW_LINES = 6;
@@ -40,13 +42,16 @@ export function CanvasCard({ block }: { block: CanvasChatBlock }) {
           <span className="chat-block-row-meta">{meta}</span>
         </span>
       </header>
-      <pre
-        className="canvas-card-preview"
-        data-code={code || undefined}
-        data-more={more || undefined}
-      >
-        {preview}
-      </pre>
+      {code ? (
+        <pre className="canvas-card-preview" data-code data-more={more || undefined}>
+          <HighlightedCode code={preview} language={block.language} />
+        </pre>
+      ) : (
+        // A document reads formatted, not as its markdown source.
+        <div className="canvas-card-preview" data-more={more || undefined}>
+          <SimpleMarkdown text={preview} />
+        </div>
+      )}
       <footer className="canvas-card-actions">
         {error ? (
           <span className="canvas-card-error" role="alert">

@@ -323,6 +323,23 @@ describe("chart card", () => {
     expect(scatter.container.querySelectorAll(".chat-chart-dot")).toHaveLength(2);
   });
 
+  it("marks each point of a line only while the points stand apart", () => {
+    const line = (length: number) =>
+      chart({
+        v: 1,
+        type: "line",
+        categories: Array.from({ length }, (_, index) => `W${index + 1}`),
+        series: [{ name: "Users", values: Array.from({ length }, (_, index) => index) }],
+      });
+    const sparse = render(<ChatBlockView block={line(6)} />);
+    expect(sparse.container.querySelectorAll(".chat-chart-dot")).toHaveLength(6);
+    sparse.unmount();
+    // Thirty weeks on a narrow card: the dots would overlap and hide the line.
+    const dense = render(<ChatBlockView block={line(30)} />);
+    expect(dense.container.querySelectorAll(".chat-chart-dot")).toHaveLength(0);
+    expect(dense.container.querySelector(".chat-chart-line")).not.toBeNull();
+  });
+
   it("shows its data as a table and saves it as CSV", async () => {
     render(<ChatBlockView block={chart(BAR)} />);
     fireEvent.click(screen.getByRole("button", { name: "Show data" }));

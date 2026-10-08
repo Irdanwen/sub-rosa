@@ -27,6 +27,14 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
+const events = vi.hoisted(() => ({ handlers: new Map<string, () => void>() }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (event: string, handler: () => void) => {
+    events.handlers.set(event, handler);
+    return () => events.handlers.delete(event);
+  }),
+}));
+
 const studio = vi.hoisted(() => ({ artifacts: [] as unknown[] }));
 vi.mock("../lib/studio/artifacts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/studio/artifacts")>();
@@ -180,6 +188,25 @@ describe("the Library view", () => {
     await userEvent.click(within(docs).getByRole("button", { name: "Remove from Library" }));
     await waitFor(() => expect(screen.queryByText("The docs")).not.toBeInTheDocument());
     expect(stored.map((item) => item.id)).toEqual(["s2"]);
+  });
+
+  it("shows an item saved on another device once a sync lands", async () => {
+    render(<LibraryView />);
+    expect(await screen.findByText("Nothing saved yet")).toBeInTheDocument();
+    stored = [
+      {
+        id: "s9",
+        kind: "link",
+        sourceKey: "link:https://example.com/elsewhere",
+        title: "Saved on the phone",
+        payload: { url: "https://example.com/elsewhere", domain: "example.com" },
+        createdAt: "2026-10-08T00:00:00Z",
+      },
+    ];
+    const synced = events.handlers.get("subrosa://sync-updated");
+    expect(synced).toBeDefined();
+    synced?.();
+    expect(await screen.findByText("Saved on the phone")).toBeInTheDocument();
   });
 
   it("says so when nothing is saved yet", async () => {

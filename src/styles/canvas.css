@@ -179,10 +179,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   background: var(--surface-subtle);
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1.55;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -240,6 +238,17 @@
 
 .canvas-card-preview[data-code] {
   font-family: var(--font-mono);
+}
+
+.canvas-card-preview:not([data-code]) {
+  white-space: normal;
+}
+
+/* The preview clips, so a list's markers have to sit inside it; the reply's
+ * own list rule around the card would hang them in the clipped margin. */
+.canvas-card-preview :is(ul, ol) {
+  margin: 0 0 var(--sp-2);
+  padding-inline-start: 1.4em;
 }
 
 .canvas-card-preview[data-more]::after {

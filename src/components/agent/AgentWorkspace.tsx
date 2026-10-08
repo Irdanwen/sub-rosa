@@ -90,6 +90,8 @@ import {
 } from "./ActivityParts";
 export { backgroundElapsedLabel, formatThinkingElapsed } from "./ActivityParts";
 import { ChatBlockSkeleton, ChatBlockView } from "../chat-blocks/ChatBlockView";
+import { HighlightedCode } from "../chat/HighlightedCode";
+import { highlightText } from "../../lib/highlight-text";
 import { chatBlocksToClipboardText, resolveChatBlockFence } from "../../lib/chat-blocks";
 import { safeExternalHref } from "../../lib/external-link";
 import {
@@ -12609,28 +12611,6 @@ const MarkdownContent = memo(function MarkdownContent({
   );
 });
 
-/** Wraps case-insensitive matches of `highlight` in <mark>, leaving the text
- * untouched when there's nothing to find. Every text emission point in the
- * markdown renderer funnels through here so find-in-file can light up
- * rendered documents, not just raw source. */
-function highlightText(text: string, highlight: string | undefined, keySeed: string): ReactNode[] {
-  const needle = highlight?.toLowerCase();
-  if (!needle) return [text];
-  const lower = text.toLowerCase();
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-  let count = 0;
-  for (;;) {
-    const at = lower.indexOf(needle, cursor);
-    if (at < 0) break;
-    if (at > cursor) nodes.push(text.slice(cursor, at));
-    nodes.push(<mark key={`hl-${keySeed}-${count++}`}>{text.slice(at, at + needle.length)}</mark>);
-    cursor = at + needle.length;
-  }
-  if (cursor < text.length) nodes.push(text.slice(cursor));
-  return nodes;
-}
-
 function renderMarkdownBlocks(
   markdown: string,
   highlight?: string,
@@ -12687,7 +12667,13 @@ function renderMarkdownBlocks(
       if (body.trim()) {
         blocks.push(
           <pre key={`code-${key++}`}>
-            <code>{highlightText(body, highlight, `code-${key}`)}</code>
+            <code>
+              {highlight ? (
+                highlightText(body, highlight, `code-${key}`)
+              ) : (
+                <HighlightedCode code={body} language={info} />
+              )}
+            </code>
           </pre>,
         );
       }

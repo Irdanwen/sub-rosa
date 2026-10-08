@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useSyncExternalStore } from "react";
 import { firstLineTitle } from "./canvas-block";
 import type { ChatBlockLink, ChatBlockPlace } from "./chat-blocks";
+import { ACCOUNT_SYNC_UPDATED_EVENT } from "./account-sync-events";
 import { chatBlocksToClipboardText } from "./chat-blocks";
 import { listArtifacts } from "./studio/artifacts";
 import type { StudioArtifact } from "./studio/types";
@@ -13,8 +15,8 @@ import type { StudioArtifact } from "./studio/types";
  * gallery file already, so the Library finds it by the `origin` its
  * generation metadata carries rather than copying it anywhere. A reply, a
  * link or a place is not a file, so "Save" writes a small row of its own
- * (`saved_items`, kept on this device). The views on both shells read this
- * module only.
+ * (`saved_items`, synchronised with an account). The views on both shells
+ * read this module only.
  */
 
 export type SavedItemKind = "reply" | "link" | "place";
@@ -120,7 +122,25 @@ function hashText(text: string): string {
 let items: SavedItem[] = [];
 let loaded = false;
 let loading: Promise<void> | null = null;
+let following = false;
 const listeners = new Set<() => void>();
+
+/** An item saved or removed on another device lands in the database while the
+ * Library is open, so the store reads again whenever a sync applies changes.
+ * One subscription for the store, whatever the number of Save buttons. */
+function followSync() {
+  if (following) return;
+  following = true;
+  void Promise.resolve()
+    .then(() =>
+      listen(ACCOUNT_SYNC_UPDATED_EVENT, () => {
+        if (loaded) void loadSavedItems().catch(() => undefined);
+      }),
+    )
+    .catch(() => {
+      following = false;
+    });
+}
 
 function emit() {
   for (const listener of listeners) listener();
@@ -133,6 +153,7 @@ function subscribe(listener: () => void) {
 
 /** Reads the Library from the device. Concurrent callers share one read. */
 export function loadSavedItems(): Promise<void> {
+  followSync();
   if (loading) return loading;
   loading = invoke<SavedItem[]>("saved_items_list")
     .then((rows) => {

@@ -6,10 +6,11 @@
 //! need no table. What is kept here is everything else a chat shows that is
 //! not a file: the text of a reply, a link card's row, a place.
 //!
-//! Kept on this device, like reply ratings (ADR-0082): no sync trigger is
-//! installed on the table, and it leaves the device only inside an archive the
-//! person writes on purpose. A temporary chat is refused (ADR-0083): saving is
-//! one more way out of it.
+//! Synchronised with an account like the gallery's marks (ADR-0088,
+//! addendum): the row codec carries it, and an item's id is derived from what
+//! was saved ([`item_id`]), so saving one link on two devices makes one
+//! object. A temporary chat is refused (ADR-0083): saving is one more way out
+//! of it, and the sync trigger refuses it again.
 //!
 //! Shared by both shells. On the phone a conversation is its task id; on the
 //! desktop it is the stored Hermes session id.
@@ -52,6 +53,17 @@ pub struct SaveItemRequest {
     pub payload: serde_json::Value,
     #[serde(default)]
     pub conversation_id: Option<String>,
+}
+
+/// The id a saved item travels under: a name-based UUID of its key, so every
+/// device that saves the same thing derives the same object.
+pub fn item_id(source_key: &str) -> String {
+    uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_URL,
+        format!("subrosa:saved-item:{source_key}").as_bytes(),
+    )
+    .hyphenated()
+    .to_string()
 }
 
 fn invalid() -> AppError {
@@ -111,7 +123,7 @@ pub async fn save(pool: &SqlitePool, request: &SaveItemRequest) -> Result<SavedI
         let title = if trimmed.is_empty() { kind } else { trimmed };
         title.chars().take(MAX_TITLE_CHARS).collect()
     };
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = item_id(source_key);
     let now = chrono::Utc::now().to_rfc3339();
     query(
         "INSERT INTO saved_items (id, kind, source_key, title, payload, conversation_id, created_at)
@@ -273,8 +285,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn saved_items_are_never_synchronised_and_ride_the_archive() {
+    async fn an_item_is_named_by_what_was_saved_and_rides_the_archive() {
         let pool = pool().await;
+        let saved = save(&pool, &link("https://example.com/a")).await.unwrap();
+        assert_eq!(saved.id, item_id("link:https://example.com/a"));
+        assert_ne!(saved.id, item_id("link:https://example.com/b"));
+        // Every save trigger is installed: an item travels with an account.
         let triggers: i64 = query(
             "SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'saved_items'",
         )
@@ -282,10 +298,7 @@ mod tests {
         .await
         .unwrap()
         .get("n");
-        assert_eq!(
-            triggers, 0,
-            "a sync trigger would carry the Library off the device"
-        );
+        assert_eq!(triggers, 3);
         assert!(crate::archive::ARCHIVED_TABLES.contains(&"saved_items"));
     }
 
