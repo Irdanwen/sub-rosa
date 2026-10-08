@@ -1416,6 +1416,28 @@ device). Each answer is Again, Hard, Good or Easy.
 _Avoid:_ "deck" for the review (a deck is one flashcards block), "quiz"
 (answered in the chat, never stored).
 
+### Work files and Code mode (fork)
+
+**Office file** — a Word document, Excel workbook or PowerPoint deck the
+assistant makes on request with `make_document`, on both shells, written by
+the app's own writers and kept in the gallery's `documents` folder
+(ADR-0090). The chat shows it as a `subrosa:file` card that opens, shares or
+saves it.
+_Avoid:_ "deliverable" in copy (the code's module name only), "export" (a
+note leaving the app), "attachment".
+
+**Code mode** — a desktop chat with a working folder whose file changes are
+reviewed: turned on from the session bar, it records where the folder
+starts (git's commit plus a copy of files already changed, or a copy of the
+folder), and the **change review** lists every file changed since, each
+one kept or reverted (ADR-0090). Not the study **review**.
+_Avoid:_ "coding agent", "IDE mode".
+
+**Keep / revert (a change)** — keeping makes a changed file's current state
+its new start, so it leaves the change review; reverting puts back the start (or
+removes a file that did not exist). Only a file listed as changed, inside
+the folder, can be reverted.
+
 ### Sharing in (fork)
 
 **Share inbox** — the folder in the app group container where the iOS

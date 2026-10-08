@@ -34,6 +34,8 @@ fn platform_specific(name: &str) -> bool {
         // A council issues a mandate for one agent to execute, and there is
         // no agent runtime on iOS to hand it to (ADR-0034).
         "council::",
+        // Code mode reviews a working folder the desktop agent edits (ADR-0090).
+        "code_review::",
         // The extractor rail runs a binary the user installed; iOS cannot
         // execute one at all (ADR-0028).
         "ingest::extractor::",

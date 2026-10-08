@@ -24,12 +24,15 @@ pub mod calendar;
 pub mod carpe_diem;
 pub mod chat_titles;
 pub mod child_env;
+#[cfg(desktop)]
+pub mod code_review;
 pub mod commands;
 pub mod conversation_export;
 #[cfg(desktop)]
 pub mod council;
 pub mod data_cards;
 pub mod db;
+pub mod deliverables;
 pub mod destinations;
 pub mod diagnostics;
 #[cfg(desktop)]
@@ -596,6 +599,14 @@ pub fn run() {
             study::study_card_review,
             study::study_cards_stats,
             study::study_card_delete,
+            deliverables::commands::deliverable_path,
+            deliverables::commands::deliverable_open,
+            code_review::code_review_start,
+            code_review::code_review_status,
+            code_review::code_review_changes,
+            code_review::code_review_keep,
+            code_review::code_review_revert,
+            code_review::code_review_stop,
             conversation_export::export_conversation,
             conversation_export::data::export_chat_data,
             temporary_chat::temporary_chat_create,
@@ -948,6 +959,8 @@ pub fn run() {
         study::study_card_review,
         study::study_cards_stats,
         study::study_card_delete,
+        deliverables::commands::deliverable_path,
+        deliverables::commands::deliverable_open,
         conversation_export::export_conversation,
         conversation_export::data::export_chat_data,
         temporary_chat::temporary_chat_create,

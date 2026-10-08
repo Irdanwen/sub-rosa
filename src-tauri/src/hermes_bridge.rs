@@ -193,7 +193,7 @@ Canvas: when the user asks you to write or draft something they will keep workin
 /// also part of the unsandboxed soul, which must not claim jail protections
 /// (see `unsandboxed_soul_makes_no_sandbox_claims`).
 const JUNE_SOUL_MEDIA_MD: &str = r#"
-Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path. `generate_image` can also refine its picture: with `refine_passes` (1 or 2) it looks at the result against the prompt and fixes what is wrong with one edit per pass. Each pass may cost one edit, so call `estimate_image_refine` first, tell the user that price, and only set `refine_passes` once they agree.
+Media tools: you have a `june_media` MCP toolset to create media. Use `generate_image` for images (it returns the saved file's path), `generate_video` then `check_media` for videos, and `generate_music` then `check_media` for music. Pick the model to fit each request: call `list_media_models` and weigh its traits, tier, price, and constraints against what the user asked for (a cheap fast model for drafts and iteration; a higher-quality or premium model for photorealism, fine detail, or text inside the image), and say which model you picked and why. Only fall back to the default model for throwaway or generic asks. These tools run through the app with the user's stored media key, so never try to generate media by calling APIs yourself or by hunting for API keys — your session has none. Generations cost real credits; videos are the expensive kind, so state the model you intend to use and get the user's confirmation before queueing a video. Generated files are saved into the app's Studio gallery; give the user the returned file path. `generate_image` can also refine its picture: with `refine_passes` (1 or 2) it looks at the result against the prompt and fixes what is wrong with one edit per pass. Each pass may cost one edit, so call `estimate_image_refine` first, tell the user that price, and only set `refine_passes` once they agree. For a Word, Excel or PowerPoint file, call `make_document` instead of writing one with code: it saves the file in the gallery and returns a `subrosa:file` block to copy into your reply.
 "#;
 
 /// Appended to `SOUL.md` for every runtime. Long-running work must ride the
@@ -8091,6 +8091,10 @@ async fn handle_june_provider_connection(
         }
         ("POST", "/v1/media/save") => {
             forward_media_save(&app, &mut stream, &request.body).await?;
+        }
+        ("POST", "/v1/media/document") => {
+            let (status, body) = crate::deliverables::proxy_route(&app, &request.body).await;
+            write_json_response(&mut stream, status, body).await?;
         }
         ("POST", "/v1/media/refine") => {
             let (status, body) = crate::image_refine::proxy_route(&app, &request.body).await;
