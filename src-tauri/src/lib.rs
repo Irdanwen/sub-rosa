@@ -17,6 +17,7 @@ pub mod app_paths;
 mod apple_passkey;
 pub mod archive;
 pub mod ask;
+pub mod assignments;
 pub mod assistants;
 pub mod audio;
 pub mod background;
@@ -418,6 +419,21 @@ pub fn run() {
             calendar::calendar_event,
             calendar::calendar_link_note,
             calendar::calendar_attach_note,
+            assignments::assignment_delete,
+            assignments::assignment_inbox,
+            assignments::assignment_list,
+            assignments::assignment_review,
+            assignments::assignment_run_now,
+            assignments::assignment_runs,
+            assignments::assignment_save,
+            assignments::assignment_set_paused,
+            moments::daily::daily_brief_get_settings,
+            moments::daily::daily_brief_prepare,
+            moments::daily::daily_brief_set_settings,
+            moments::daily::daily_brief_today,
+            moments::daily::follow_add,
+            moments::daily::follow_list,
+            moments::daily::follow_remove,
             moments::moments_get_settings,
             moments::moments_set_settings,
             actions::action_execute,
@@ -800,6 +816,21 @@ pub fn run() {
         calendar::calendar_event,
         calendar::calendar_link_note,
         calendar::calendar_attach_note,
+        assignments::assignment_delete,
+        assignments::assignment_inbox,
+        assignments::assignment_list,
+        assignments::assignment_review,
+        assignments::assignment_run_now,
+        assignments::assignment_runs,
+        assignments::assignment_save,
+        assignments::assignment_set_paused,
+        moments::daily::daily_brief_get_settings,
+        moments::daily::daily_brief_prepare,
+        moments::daily::daily_brief_set_settings,
+        moments::daily::daily_brief_today,
+        moments::daily::follow_add,
+        moments::daily::follow_list,
+        moments::daily::follow_remove,
         moments::moments_get_settings,
         moments::moments_set_settings,
         actions::action_execute,
@@ -1142,6 +1173,9 @@ pub fn run() {
             // previous session. `Resumed` doesn't fire on a cold launch, so
             // the sweep has to run here too.
             background::sweep_detached(app.handle());
+            // Assignments, the daily brief and errands while the app is open,
+            // the menu bar included (ADR-0091).
+            assignments::start_clock(app.handle());
             #[cfg(desktop)]
             {
                 hermes_bridge::start_on_app_start(app);

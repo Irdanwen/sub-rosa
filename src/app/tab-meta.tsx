@@ -6,6 +6,7 @@ import { IconProjects } from "central-icons/IconProjects";
 import { IconSettingsGear4 } from "central-icons/IconSettingsGear4";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconLibrary } from "central-icons/IconLibrary";
+import { IconSunrise } from "central-icons/IconSunrise";
 import { IconZap } from "central-icons/IconZap";
 import type { ReactNode } from "react";
 import type { TabItem } from "../components/tabs/TabBar";
@@ -86,6 +87,11 @@ export function tabMeta(
       return {
         title: t("Routines"),
         icon: <IconZap size={TAB_ICON_SIZE} />,
+      };
+    case "today":
+      return {
+        title: t("Today"),
+        icon: <IconSunrise size={TAB_ICON_SIZE} />,
       };
     case "studio":
       return {

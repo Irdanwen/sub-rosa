@@ -1,0 +1,450 @@
+/* Today, assignments and scheduled tasks (ADR-0091). Shared by both shells,
+ * so tokens only; the shell draws the header and the scroll container sizes
+ * to whatever it is given. */
+
+.today-surface {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.today-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.today-page-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-4) 0;
+}
+
+.today-page-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.today-scroll,
+.assignment-detail {
+  max-width: var(--content-max);
+}
+
+.assignment-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.assignment-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.assignment-section-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.assignment-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.assignment-card,
+.assignment-review,
+.daily-card,
+.assignment-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--card-foreground);
+}
+
+.assignment-notice {
+  background: var(--surface-subtle);
+}
+
+.assignment-notice p {
+  margin: 0;
+}
+
+.assignment-goal {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: var(--fs-md);
+}
+
+.assignment-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.assignment-facts dt {
+  color: var(--muted-foreground);
+}
+
+.assignment-facts dd {
+  margin: 0;
+}
+
+.assignment-meta {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.assignment-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+}
+
+.assignment-actions,
+.assignment-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.assignment-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-height: var(--control-md);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.assignment-button[data-tone="primary"] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.assignment-button[data-tone="danger"] {
+  color: var(--destructive);
+}
+
+.assignment-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.assignment-link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.assignment-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-1);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.assignment-button:focus-visible,
+.assignment-link-button:focus-visible,
+.assignment-icon-button:focus-visible,
+.assignment-list-row:focus-visible,
+.assignment-input:focus-visible,
+.assignment-textarea:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.assignment-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: var(--content-max);
+}
+
+.assignment-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.assignment-field-label {
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.assignment-input,
+.assignment-textarea {
+  min-height: var(--control-md);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--input);
+  border-radius: var(--r-md);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.assignment-textarea {
+  resize: vertical;
+}
+
+.assignment-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+
+.assignment-choice > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.assignment-choice-title {
+  font-size: var(--fs-sm);
+}
+
+.assignment-choice[data-blocked] .assignment-choice-title {
+  color: var(--muted-foreground);
+}
+
+.assignment-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.assignment-list li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.assignment-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: 0;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.assignment-list-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.assignment-list-title {
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignment-badge {
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.assignment-review-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-px);
+}
+
+.assignment-review-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.assignment-review-summary,
+.assignment-history-summary,
+.assignment-history-feedback {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.assignment-history-feedback {
+  color: var(--muted-foreground);
+}
+
+.assignment-result {
+  max-height: 320px;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  overflow: auto;
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+}
+
+.assignment-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assignment-history-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.assignment-history-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.assignment-state {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+}
+
+.assignment-state[data-state="failed"],
+.assignment-state[data-state="rejected"] {
+  color: var(--destructive);
+}
+
+.assignment-state[data-state="needs_review"] {
+  border-color: var(--accent);
+}
+
+.daily-card-agenda {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.daily-card-part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.daily-card-heading {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.daily-card-list,
+.daily-card-followups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding-left: var(--sp-4);
+  font-size: var(--fs-sm);
+}
+
+.daily-card-topic {
+  font-weight: var(--fw-medium);
+}
+
+.daily-follow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.daily-follow-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.daily-follow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 0 0 var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-sm);
+}
+
+/* The phone: inputs at 16px so focusing one never zooms the page. */
+@media (pointer: coarse) {
+  .assignment-input,
+  .assignment-textarea {
+    font-size: max(16px, var(--fs-sm));
+  }
+}
+
+.today-mobile .today-scroll {
+  padding: 0 var(--mobile-gutter) calc(var(--sp-12) + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}

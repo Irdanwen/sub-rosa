@@ -51,7 +51,10 @@ export type MobileRoute =
   /** A note opened as a canvas (ADR-0087), with a proposed version to review. */
   | { view: "canvas"; noteId: string; proposal?: string; seq?: number }
   /** What the chats made and what was kept from them (ADR-0088). */
-  | { view: "library" };
+  | { view: "library" }
+  /** The daily brief, results to review, assignments and scheduled tasks
+   * (ADR-0091). */
+  | { view: "today" };
 
 export type MobileNav = {
   tab: MobileTab;

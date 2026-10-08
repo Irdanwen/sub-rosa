@@ -44,6 +44,12 @@ pub fn retouch(root_id: &str, version_id: &str) -> String {
     format!("{SCHEME}studio?root={root_id}&retouch={version_id}")
 }
 
+/// The Today view: the daily brief and the results waiting for review
+/// (ADR-0091). What an assignment's notification opens.
+pub fn today() -> String {
+    format!("{SCHEME}today")
+}
+
 /// Start a recording. This is what a brief's tap does: the one thing you
 /// were about to do anyway.
 pub fn record() -> String {
@@ -68,5 +74,6 @@ mod tests {
             "subrosa://studio?root=a1.png&retouch=b2.jpg"
         );
         assert_eq!(record(), "subrosa://record");
+        assert_eq!(today(), "subrosa://today");
     }
 }

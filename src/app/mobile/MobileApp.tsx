@@ -22,6 +22,7 @@ import { ASK_ABOUT_SELECTION_EVENT } from "../../lib/ask-selection";
 import { OPEN_CANVAS_EVENT, type OpenCanvasDetail } from "../../lib/canvas";
 import { CanvasPane } from "../../components/canvas/CanvasPane";
 import { LibraryView } from "../../components/library/LibraryView";
+import { TodayScreen } from "../../components/mobile/screens/TodayScreen";
 import { MeetingAmbiguityPrompt } from "../../components/calendar/MeetingContext";
 import { linkRecordingToMeeting } from "../../lib/calendar-link";
 import type { CalendarEventDto } from "../../lib/tauri";
@@ -553,6 +554,11 @@ export function MobileApp() {
       case "record":
         recordFromOutside();
         break;
+      // A daily brief or an assignment's result: Today, over the chat tab.
+      case "today":
+        if (nav.tab !== "agent") nav.switchTab("agent");
+        if (nav.top?.view !== "today") nav.push({ view: "today" });
+        break;
       // Shared in from another app. The notes tab is where the download shows
       // itself, so land there rather than starting something invisible.
       case "import":
@@ -1035,6 +1041,7 @@ export function MobileApp() {
           nav.pop();
         }}
         onOpenLibrary={() => nav.push({ view: "library" })}
+        onOpenToday={() => nav.push({ view: "today" })}
         archiveFolderId={archiveFolderId}
         ensureArchiveFolder={async () => {
           if (archiveFolderId) return archiveFolderId;
@@ -1110,6 +1117,16 @@ export function MobileApp() {
           onClose={nav.pop}
         />
       </div>
+    );
+  } else if (top?.view === "today") {
+    screen = (
+      <TodayScreen
+        onBack={nav.pop}
+        onOpenChat={(taskId) => {
+          openChatSession(taskId);
+          nav.switchTab("agent");
+        }}
+      />
     );
   } else if (top?.view === "library") {
     screen = (

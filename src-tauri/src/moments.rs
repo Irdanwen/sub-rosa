@@ -21,6 +21,8 @@
 
 use crate::domain::types::AppError;
 use crate::{calendar, destinations, june_api};
+
+pub mod daily;
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
@@ -85,6 +87,7 @@ pub fn setup(app: &mut tauri::App) {
     use tauri::Manager;
     let path = settings_path(app.handle());
     replace_mirror(load_from_disk(path.as_ref()));
+    daily::load(app.handle());
     app.manage(MomentsState {
         config_path: path.unwrap_or_else(|| std::path::PathBuf::from(SETTINGS_FILE)),
     });
@@ -184,6 +187,15 @@ async fn schedule_upcoming(app: &AppHandle) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Meeting briefs delivered since `since`, for the daily brief's share of
+/// the cap.
+async fn briefs_spoken_since(app: &AppHandle, since: &str) -> i64 {
+    match crate::commands::repositories(app).await {
+        Ok(repos) => repos.briefs_delivered_since(since).await.unwrap_or(0),
+        Err(_) => 0,
+    }
+}
+
 /// The rule, pure so it is testable without a calendar.
 pub fn qualifies_for_brief(event: &calendar::CalendarEventDto, now: i64) -> bool {
     // All-day entries are not meetings anyone walks into.
@@ -211,10 +223,13 @@ async fn deliver_due(app: &AppHandle) -> Result<(), AppError> {
     if due.is_empty() {
         return Ok(());
     }
+    let since = (now - chrono::Duration::hours(24)).to_rfc3339();
+    // The daily brief speaks under the same cap (ADR-0091).
     let mut delivered_today = repos
-        .briefs_delivered_since(&(now - chrono::Duration::hours(24)).to_rfc3339())
+        .briefs_delivered_since(&since)
         .await
-        .map_err(AppError::from)?;
+        .map_err(AppError::from)?
+        + daily::delivered_since(&repos.pool, &since).await;
 
     for brief in due {
         // The meeting may have moved or been deleted since we scheduled it.
