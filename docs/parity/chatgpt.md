@@ -20,7 +20,7 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 93
+Gaps: 85
 
 ## Matrix
 
@@ -72,9 +72,9 @@ Gaps: 93
 | Connector event triggers | equiv | equiv | equiv | no | `src-tauri/src/connectors/triggers.rs` | P9 |
 | Developer mode (custom connectors in chat) | yes | yes | yes | no | `src/components/settings/McpServersSection.tsx` `src/components/settings/McpSecuritySection.tsx` `src-tauri/src/connectors/mcp.rs` | P9 |
 | Skills | yes | yes | yes | no | `src/components/settings/InstalledSkillsSection.tsx` `src-tauri/src/skill_packs/mod.rs` `src/components/mobile/SkillSlashMenu.tsx` | P9 |
-| Realtime voice conversation | no | no | no | no | | P7 |
-| Voice with camera or screen | no | no | no | no | | P7 |
-| Voice with connected apps | no | no | no | no | | P7 |
+| Realtime voice conversation | yes | yes | yes | no | `src-tauri/src/voice/engine.rs` `src-tauri/src/voice/machine.rs` `src/components/voice/VoiceConversation.tsx` | P9 |
+| Voice with camera or screen | partial | yes | yes | no | `src-tauri/src/voice/screen.rs` `src/components/voice/VoiceConversation.tsx` | P7 |
+| Voice with connected apps | yes | yes | yes | no | `src-tauri/src/voice/engine.rs` | P9 |
 | Agent browser | no | n/a | n/a | n/a | | P8 |
 | Global chat bar | no | n/a | n/a | n/a | | P8 |
 | Screen and app awareness | no | n/a | n/a | n/a | | P8 |
