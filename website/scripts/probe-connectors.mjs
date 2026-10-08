@@ -198,7 +198,7 @@ async function probe(entry) {
     const got = await step(metadata.token_endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: "grant_type=authorization_code&code=subrosa-probe-not-a-code&client_id=subrosa-probe&redirect_uri=https%3A%2F%2Fsubrosa.furetier.com%2Fapp&code_verifier=subrosa-probe-not-a-verifier-0000000000000000",
+      body: `grant_type=authorization_code&code=subrosa-probe-not-a-code&client_id=subrosa-probe&redirect_uri=${encodeURIComponent(`${ORIGIN}/app`)}&code_verifier=subrosa-probe-not-a-verifier-0000000000000000`,
     });
     result.token = { ok: got.ok, status: got.status ?? null, error: got.error ?? null };
   }
