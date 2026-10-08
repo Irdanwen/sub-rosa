@@ -12,12 +12,22 @@ import { describe, expect, it } from "vitest";
 // `?raw` (the pattern the CSS tests use) rather than fs: it resolves through
 // vite, so the paths stay correct wherever the runner is invoked from.
 import infoPlist from "../../src-tauri/gen/apple/os-june_iOS/Info.plist?raw";
+import xcodeProject from "../../src-tauri/gen/apple/os-june.xcodeproj/project.pbxproj?raw";
 import projectSpec from "../../src-tauri/gen/apple/project.yml?raw";
 import shareExtensionPlist from "../../src-tauri/gen/apple/ShareExtension/Info.plist?raw";
 import watchPlist from "../../src-tauri/gen/apple/Watch/Info.plist?raw";
 import watchWidgetsPlist from "../../src-tauri/gen/apple/WatchWidgets/Info.plist?raw";
 import widgetsPlist from "../../src-tauri/gen/apple/Widgets/Info.plist?raw";
+import macosInfoPlist from "../../src-tauri/Info.plist?raw";
 import tauriConfig from "../../src-tauri/tauri.conf.json";
+import macosConfig from "../../src-tauri/tauri.macos.conf.json";
+import { SUPPORTED_LOCALES } from "../lib/i18n";
+
+/** The usage descriptions per language, one `InfoPlist.strings` per `.lproj`. */
+const USAGE_STRINGS = import.meta.glob(
+  "../../src-tauri/gen/apple/os-june_iOS/*.lproj/InfoPlist.strings",
+  { query: "?raw", import: "default", eager: true },
+) as Record<string, string>;
 
 /** Every bundle inside the app, whose versions must match the app's. */
 const extensionPlists = [shareExtensionPlist, widgetsPlist, watchPlist, watchWidgetsPlist];
@@ -122,5 +132,79 @@ describe("iOS privacy usage descriptions", () => {
     ].map((match) => match[1]);
     expect(buildNumbers.length).toBeGreaterThanOrEqual(10);
     expect(new Set(buildNumbers).size).toBe(1);
+  });
+});
+
+/** `"key" = "value";` lines of a .strings table. */
+function stringsTable(source: string): Map<string, string> {
+  return new Map(
+    [...source.matchAll(/^"([^"]+)"\s*=\s*"((?:[^"\\]|\\.)*)";$/gm)].map((match) => [
+      match[1],
+      match[2],
+    ]),
+  );
+}
+
+/** Every usage description a plist declares, with its English text. */
+function usageDescriptions(plist: string): Map<string, string> {
+  return new Map(
+    [...plist.matchAll(/<key>(NS\w+UsageDescription)<\/key>\s*<string>([^<]*)<\/string>/g)].map(
+      (match) => [match[1], match[2]],
+    ),
+  );
+}
+
+// The prompt is the one sentence of the app a person reads before the app has
+// any say in its language: the system shows it in the system's language, and
+// until these tables existed that was English for everyone (ADR-0047).
+describe("usage descriptions in every language", () => {
+  const tables = new Map(
+    Object.entries(USAGE_STRINGS).map(([path, source]) => [
+      path.match(/([\w-]+)\.lproj\/InfoPlist\.strings$/)?.[1] ?? path,
+      stringsTable(source),
+    ]),
+  );
+  const english = usageDescriptions(infoPlist);
+
+  it("has one table per language of the app", () => {
+    expect([...tables.keys()].sort()).toEqual([...SUPPORTED_LOCALES].sort());
+  });
+
+  it("translates every usage key the iPhone and the Mac declare", () => {
+    const declared = new Set([...english.keys(), ...usageDescriptions(macosInfoPlist).keys()]);
+    for (const { key } of REQUIRED_USAGE_KEYS) expect(declared).toContain(key);
+    for (const [region, table] of tables) {
+      for (const key of declared) {
+        const value = table.get(key) ?? "";
+        expect(value.trim(), `${region} ${key}`).not.toBe("");
+        expect(value, `${region} ${key}`).not.toMatch(/[\u2013\u2014]/);
+        if (region !== "en") expect(value, `${region} ${key}`).not.toBe(english.get(key));
+      }
+    }
+  });
+
+  it("keeps the English table equal to the plist it falls back to", () => {
+    const table = tables.get("en");
+    for (const [key, value] of english) expect(table?.get(key), key).toBe(value);
+  });
+
+  it("ships the tables in the iPhone app", () => {
+    for (const region of SUPPORTED_LOCALES) {
+      const path = region.includes("-")
+        ? `path = "${region}.lproj/InfoPlist.strings"`
+        : `path = ${region}.lproj/InfoPlist.strings`;
+      expect(xcodeProject).toContain(path);
+    }
+    expect(xcodeProject).toContain("/* InfoPlist.strings in Resources */,");
+  });
+
+  it("ships the same tables in the Mac app", () => {
+    const files = (macosConfig.bundle.macOS as { files: Record<string, string> }).files;
+    for (const region of SUPPORTED_LOCALES) {
+      expect(files[`Resources/${region}.lproj/InfoPlist.strings`]).toBe(
+        `gen/apple/os-june_iOS/${region}.lproj/InfoPlist.strings`,
+      );
+    }
+    expect(macosInfoPlist).toContain("<key>CFBundleLocalizations</key>");
   });
 });

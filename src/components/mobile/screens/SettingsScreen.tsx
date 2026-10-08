@@ -291,7 +291,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
         </SettingsGroup>
 
         <SettingsGroup
-          title={t("Shortcuts")}
+          title={ios ? t("Shortcuts app") : t("Automation shortcuts")}
           footer={
             ios
               ? t(
@@ -369,7 +369,7 @@ export function SettingsScreen({ onOpen }: { onOpen: (section: SettingsSection) 
           <SettingsLinkRow label={t("Privacy")} onClick={() => onOpen("privacy")} />
           <SettingsLinkRow label={t("Models")} onClick={() => onOpen("models")} />
           <SettingsLinkRow label={t("Reports")} onClick={() => onOpen("reports")} />
-          <SettingsLinkRow label={t("Archive")} onClick={() => onOpen("archive")} />
+          <SettingsLinkRow label={t("Archive file")} onClick={() => onOpen("archive")} />
           <SettingsLinkRow label={t("About")} onClick={() => onOpen("about")} />
         </SettingsGroup>
 

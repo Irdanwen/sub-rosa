@@ -1,0 +1,9 @@
+/* Info.plist usage descriptions (es). Keys are the Info.plist keys. */
+"NSMicrophoneUsageDescription" = "Sub Rosa graba el micrófono en local para transcribir y generar tus notas, y te escucha durante una conversación de voz.";
+"NSAudioCaptureUsageDescription" = "Sub Rosa graba el audio del sistema en local cuando eliges micrófono más audio del sistema para una nota.";
+"NSCameraUsageDescription" = "Sub Rosa abre la cámara cuando tomas una foto para adjuntarla a un chat o a una generación del Studio, cuando escaneas un documento en una nota y cuando muestras algo durante una conversación de voz.";
+"NSPhotoLibraryAddUsageDescription" = "Sub Rosa guarda en tu fototeca las imágenes y los vídeos que generas en el Studio.";
+"NSCalendarsUsageDescription" = "Sub Rosa lee tu calendario en este dispositivo para que una grabación sepa a qué reunión pertenece. No se envía nada a ningún sitio.";
+"NSCalendarsFullAccessUsageDescription" = "Sub Rosa lee tu calendario en este dispositivo para que una grabación sepa a qué reunión pertenece. No se envía nada a ningún sitio.";
+"NSRemindersUsageDescription" = "Sub Rosa añade un recordatorio a tu lista cuando tocas para aceptar uno que te ha sugerido. Nunca lee ni cambia nada más.";
+"NSRemindersFullAccessUsageDescription" = "Sub Rosa añade un recordatorio a tu lista cuando tocas para aceptar uno que te ha sugerido. Nunca lee ni cambia nada más.";

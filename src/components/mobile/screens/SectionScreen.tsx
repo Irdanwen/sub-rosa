@@ -57,7 +57,7 @@ export function PrivacyScreen({ onBack }: { onBack: () => void }) {
 
 export function ArchiveScreen({ onBack }: { onBack: () => void }) {
   return (
-    <SectionScreen title={t("Archive")} onBack={onBack}>
+    <SectionScreen title={t("Archive file")} onBack={onBack}>
       <ArchiveSection />
     </SectionScreen>
   );

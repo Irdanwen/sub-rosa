@@ -150,3 +150,24 @@ person reaches them.
 Adding a seventh language is now: the catalog, its glossary, one entry in
 `SUPPORTED_LOCALES` and `TRANSLATED_LOCALES`, one arm in `Locale`, and the
 native tables.
+
+## Addendum (2026-10-08): one sentence per sense, and the permission prompts
+
+- **A word with two senses gets two sentences.** The key is the English, so
+  an English word that is both a verb and a noun shares one translation and
+  reads wrong in one place. "Archive" stays the action (Archiver,
+  Archivieren); the settings section that writes the archive of ADR-0042 is
+  "Archive file". "Shortcuts" stays the desktop's keyboard shortcuts; the
+  phone's group is "Shortcuts app" on the iPhone (Apple's app, whose name
+  differs per language: Kurzbefehle, Comandi Rapidi) and "Automation
+  shortcuts" on Android. The shared Archive folder is data, found by its
+  stored name, and is not copy. `src/test/i18n-ambiguous-words.test.ts`
+  pins the split. When a word reads differently in two places, split the
+  English rather than pick the less wrong translation.
+- **The permission prompts are translated too.** The usage descriptions
+  live in `os-june_iOS/<lang>.lproj/InfoPlist.strings`, a variant group of
+  the app target (XcodeGen finds it under the `os-june_iOS` source path),
+  and the Mac app ships the same files through `bundle.macOS.files` into
+  `Contents/Resources/<lang>.lproj`. The plists keep the English as the
+  fallback; `src/test/ios-privacy-usage.test.ts` holds every language to
+  every key either plist declares.

@@ -1,0 +1,14 @@
+/* The permission prompts the system shows for the app (Info.plist usage
+   descriptions), one file per language. Keys are the Info.plist keys, and the
+   plists keep the English as the fallback. The iPhone app ships these through
+   its .lproj groups, the Mac app through bundle.macOS.files in
+   tauri.macos.conf.json, and src/test/ios-privacy-usage.test.ts holds every
+   language to the full list of keys. */
+"NSMicrophoneUsageDescription" = "Sub Rosa records microphone audio locally so it can transcribe and generate your notes, and hears you during a voice conversation.";
+"NSAudioCaptureUsageDescription" = "Sub Rosa records system audio locally when you choose microphone plus system audio for a note.";
+"NSCameraUsageDescription" = "Sub Rosa opens the camera when you take a photo to attach to a chat or to a Studio generation, when you scan a document into a note, and when you show something during a voice conversation.";
+"NSPhotoLibraryAddUsageDescription" = "Sub Rosa saves images and videos you generate in Studio to your photo library.";
+"NSCalendarsUsageDescription" = "Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.";
+"NSCalendarsFullAccessUsageDescription" = "Sub Rosa reads your calendar on this device so a recording can know which meeting it belongs to. Nothing is sent anywhere.";
+"NSRemindersUsageDescription" = "Sub Rosa adds a reminder to your list when you tap to accept one it suggested. It never reads or changes anything else.";
+"NSRemindersFullAccessUsageDescription" = "Sub Rosa adds a reminder to your list when you tap to accept one it suggested. It never reads or changes anything else.";
