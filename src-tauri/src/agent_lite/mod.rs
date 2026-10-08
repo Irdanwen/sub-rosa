@@ -486,6 +486,7 @@ async fn run_turn(
             project.as_ref(),
         ),
     };
+    let system_prompt = crate::study::prompted(&repos.pool, task_id, system_prompt).await;
     // After the choice, so a custom assistant carries it too (ADR-0084).
     let system_prompt = crate::protected_mode::guard_system_prompt(system_prompt);
     let mut offered_tools = tool_definitions(crate::memory::settings().enabled);

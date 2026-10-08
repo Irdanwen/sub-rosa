@@ -253,6 +253,7 @@ import {
 import { SessionUsagePanel } from "./SessionUsagePanel";
 import { MemoryInChatIndicator } from "./MemoryInChatIndicator";
 import { TemporaryChatBanner, TemporaryChatToggle } from "./TemporaryChat";
+import { ComposerModes, withStudyContext } from "./ComposerModes";
 import { ConversationShareHost, ShareConversationMenuItem } from "./ConversationShare";
 import * as temporaryChat from "../../lib/temporary-chat";
 import { AgentActivityDrawer, AgentArtifactsSection } from "./AgentActivityDrawer";
@@ -2266,8 +2267,7 @@ export function AgentWorkspace({
   // never-touched store as "loading" so the very first paint shows a spinner
   // copy rather than the empty state flashing before any event lands.
   const activityStatus: "loading" | "ready" = activityStoreVersion === 0 ? "loading" : "ready";
-  // Open a session from a drawer row: clear new-session mode, switch panel +
-  // selection.
+  // Open a session from a drawer row: clear new-session mode, switch panel + selection.
   const openSessionFromDrawer = useCallback((sessionId: string) => {
     newSessionModeRef.current = false;
     setNewSessionMode(false);
@@ -4867,11 +4867,10 @@ export function AgentWorkspace({
       ? generationModelsRef.current.find((model) => model.id === targetSessionModelId)
       : undefined;
     const imageInputFallbackContent =
-      // Only downgrade to the text-only fallback when the model is KNOWN to lack
-      // image input. An unresolved model id (stale or not-yet-loaded catalog)
-      // must NOT be assumed non-vision, or a vision-capable session would
-      // silently drop the image and never call attachPendingImages. Mirrors the
-      // composer banner's `!!generationModel && !modelSupportsImageInput` guard.
+      // Only downgrade to the text-only fallback when the model is KNOWN to lack image input. An
+      // unresolved model id (stale or not-yet-loaded catalog) must NOT be assumed non-vision, or a
+      // vision-capable session would silently drop the image and never call attachPendingImages.
+      // Mirrors the composer banner's `!!generationModel && !modelSupportsImageInput` guard.
       pendingImages.length &&
       targetGenerationModel &&
       !modelSupportsImageInput(targetGenerationModel)
@@ -4886,9 +4885,9 @@ export function AgentWorkspace({
     const projectContext = options?.issueReport
       ? null
       : await projects.projectContextForSend(targetSessionId, origin?.projectFolderId);
-    const promptSubmitContent = projects.withProjectContext(
-      imageInputFallbackContent ?? content,
-      projectContext,
+    const promptSubmitContent = await withStudyContext(
+      projects.withProjectContext(imageInputFallbackContent ?? content, projectContext),
+      targetSessionId,
     );
     // Issue reports skip title suggestion: the content is the wrapped
     // investigation prompt, which would title the session after the wrapper.
@@ -7603,6 +7602,7 @@ export function AgentWorkspace({
               </button>
             ) : null}
             <div className="agent-composer-actions">
+              <ComposerModes chatId={selectedHermesSessionId} draft={draft} />
               <ComposerModelPicker
                 open={composerModelOpen}
                 model={generationModel}

@@ -57,6 +57,8 @@ pub async fn sweep(app: &AppHandle) {
     // purpose: the desktop gets killed too.
     crate::longform::resume_unfinished(app).await;
     crate::shotlist::resume_unfinished(app).await;
+    // A deep research run is minutes of searches and reads: a row per step.
+    crate::research::resume_unfinished(app).await;
     // A sitting spans several model calls and a cycle spans an agent run that
     // can last an hour. Desktop-only, because a mandate has nothing to be
     // handed to on iOS (ADR-0034).

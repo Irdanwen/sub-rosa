@@ -1,0 +1,625 @@
+/* Study mode and deep research (ADR-0089): the composer's mode chips, the
+ * quiz and flashcard cards in a reply, the review and the research dialog.
+ * Shared by both shells, so tokens only and no layout beyond the card's. */
+
+.composer-modes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+
+.composer-mode,
+.composer-modes-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.composer-mode:hover {
+  color: var(--foreground);
+}
+
+.composer-mode[aria-pressed="true"],
+.composer-modes-compact[data-on] {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  color: var(--foreground);
+}
+
+.composer-mode:focus-visible,
+.composer-modes-compact:focus-visible,
+.study-button:focus-visible,
+.study-icon-button:focus-visible,
+.study-quiz-option:focus-visible,
+.study-flashcard:focus-visible,
+.study-grade:focus-visible,
+.research-depth:focus-visible,
+.research-recent-row:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.composer-modes-compact {
+  min-height: 32px;
+  font-size: var(--fs-sm);
+  touch-action: manipulation;
+}
+
+.composer-modes-badge {
+  min-width: 18px;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Buttons and fields the cards and dialogs share. */
+
+.study-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-height: 32px;
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.study-button:disabled,
+.study-icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.study-button-primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.study-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.study-icon-button:hover:not(:disabled) {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+.study-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--input);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  /* 16px keeps the phone from zooming into a focused field. */
+  font-size: max(16px, var(--fs-sm));
+}
+
+.study-muted {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.study-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: var(--fs-sm);
+}
+
+.study-status {
+  margin: 0;
+  padding: 0 var(--sp-5) var(--sp-4);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.study-spacer {
+  flex: 1;
+}
+
+.study-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Quiz */
+
+.study-quiz,
+.study-flashcards {
+  background: var(--card);
+}
+
+.study-quiz-questions {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-3) var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.study-quiz-prompt {
+  margin: 0 0 var(--sp-2);
+  color: var(--foreground);
+}
+
+.study-quiz-number {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.study-quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.study-quiz-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--body-copy);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.study-quiz-option:hover:not(:disabled) {
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.study-quiz-option:disabled {
+  cursor: default;
+}
+
+.study-quiz-option[data-state="right"] {
+  border-color: var(--success);
+  background: color-mix(in oklch, var(--success) 12%, transparent);
+  color: var(--foreground);
+}
+
+.study-quiz-option[data-state="wrong"] {
+  border-color: var(--destructive);
+  background: color-mix(in oklch, var(--destructive) 10%, transparent);
+  color: var(--foreground);
+}
+
+.study-quiz-short {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.study-quiz-feedback {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 2px solid var(--destructive);
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.study-quiz-feedback[data-right] {
+  border-left-color: var(--success);
+}
+
+.study-quiz-feedback p {
+  margin: 0;
+}
+
+.study-quiz-feedback p + p {
+  margin-top: var(--sp-1);
+}
+
+.study-quiz-footer,
+.study-flashcards-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-5) var(--sp-4);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.study-quiz-footer {
+  justify-content: space-between;
+}
+
+/* Flashcards */
+
+.study-flashcard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  width: calc(100% - 2 * var(--sp-5));
+  min-height: 140px;
+  margin: var(--sp-3) var(--sp-5);
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-subtle);
+  color: var(--foreground);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.study-flashcard[data-flipped] {
+  border-color: var(--accent);
+}
+
+.study-flashcard-side {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.study-flashcard-text {
+  font-size: var(--fs-md);
+}
+
+.study-flashcards-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Review */
+
+.study-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.study-review-deck {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.study-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-height: 120px;
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-subtle);
+}
+
+.study-review-front {
+  margin: 0;
+  font-size: var(--fs-lg);
+  color: var(--foreground);
+}
+
+.study-review-back {
+  margin: 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--body-copy);
+}
+
+.study-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.study-review-grades {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.study-grade {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 48px;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.study-grade[data-grade="again"] {
+  border-color: color-mix(in oklch, var(--destructive) 50%, var(--border));
+}
+
+.study-grade[data-grade="easy"] {
+  border-color: color-mix(in oklch, var(--success) 50%, var(--border));
+}
+
+.study-grade-hint {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.study-review-done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.study-review-done p {
+  margin: 0;
+}
+
+/* Research */
+
+.dialog-card.research-dialog {
+  width: 640px;
+  overflow-y: auto;
+}
+
+.dialog-card.study-dialog {
+  width: 520px;
+  overflow-y: auto;
+}
+
+.research-start,
+.research-clarify,
+.research-plan,
+.research-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.research-question {
+  resize: vertical;
+}
+
+.research-depths {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.research-depths legend {
+  margin-bottom: var(--sp-2);
+}
+
+.research-depth {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.research-depth[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+}
+
+.research-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--body-copy);
+  font-size: var(--fs-sm);
+}
+
+.research-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.research-heading {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.research-recent ul,
+.research-sections,
+.research-sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.research-recent li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.research-recent-row {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.research-recent-row:hover {
+  background: var(--muted);
+}
+
+.research-recent-title,
+.research-source-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-clarify-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--body-copy);
+}
+
+.research-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.research-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.research-estimate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.research-estimate p {
+  margin: 0;
+}
+
+.research-bar {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+
+.research-source {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  font-size: var(--fs-sm);
+  color: var(--body-copy);
+}
+
+.research-source[data-status="failed"],
+.research-source[data-status="skipped"] {
+  color: var(--muted-foreground);
+}
+
+.research-source-icon,
+.research-source-state {
+  display: inline-flex;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.research-export {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.research-footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* On a phone the dialogs take the screen: a plan and a source list need
+ * the room, and a floating card over a keyboard has none. */
+@media (max-width: 600px) {
+  .dialog-card.research-dialog,
+  .dialog-card.study-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    padding: calc(env(safe-area-inset-top) + var(--sp-4)) var(--sp-4)
+      calc(env(safe-area-inset-bottom) + var(--sp-4));
+  }
+
+  .research-depths {
+    grid-template-columns: 1fr;
+  }
+
+  .study-review-grades {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
