@@ -162,12 +162,27 @@ fn numbered_item(line: &str) -> Option<&str> {
         .map(str::trim)
 }
 
+/// A table row's cells. `\|` is a pipe inside a cell, not a border: the
+/// backslash stays for the inline parser, which reads it as the character.
 fn table_cells(line: &str) -> Vec<String> {
-    let inner = line.trim().trim_start_matches('|').trim_end_matches('|');
-    inner
-        .split('|')
-        .map(|cell| cell.trim().to_string())
-        .collect()
+    let mut inner = line.trim().trim_start_matches('|');
+    if inner.ends_with('|') && !inner.ends_with("\\|") {
+        inner = &inner[..inner.len() - 1];
+    }
+    let mut cells = Vec::new();
+    let mut current = String::new();
+    let mut escaped = false;
+    for c in inner.chars() {
+        if c == '|' && !escaped {
+            cells.push(current.trim().to_string());
+            current.clear();
+        } else {
+            current.push(c);
+        }
+        escaped = c == '\\' && !escaped;
+    }
+    cells.push(current.trim().to_string());
+    cells
 }
 
 /// The marks of a line: `**bold**`, `*italic*` or `_italic_`, `` `code` ``
@@ -497,7 +512,7 @@ fn document_rels_xml(links: &[String]) -> String {
     xml
 }
 
-fn core_xml(title: &str) -> String {
+pub(crate) fn core_xml(title: &str) -> String {
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:dcterms=\"http://purl.org/dc/terms/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><dc:title>{}</dc:title><dc:creator>Sub Rosa</dc:creator><dcterms:created xsi:type=\"dcterms:W3CDTF\">{now}</dcterms:created></cp:coreProperties>",
@@ -606,6 +621,16 @@ mod tests {
         assert!(document.contains("snake_case_name"));
         assert!(!document.contains("javascript:") || !document.contains("w:hyperlink"));
         assert!(part(&bytes, "docProps/core.xml").contains("<dc:title>Title</dc:title>"));
+    }
+
+    #[test]
+    fn an_escaped_pipe_stays_inside_its_cell() {
+        assert_eq!(table_cells("| a \\| b | c |"), vec!["a \\| b", "c"]);
+        assert_eq!(table_cells("|x|y"), vec!["x", "y"]);
+        let bytes = markdown_to_docx("T", "| Plan | Cost |\n|---|---|\n| A \\| B | 3 |\n").unwrap();
+        let document = part(&bytes, "word/document.xml");
+        assert!(document.contains(">A | B</w:t>"));
+        assert_eq!(document.matches("<w:tc>").count(), 4);
     }
 
     #[test]

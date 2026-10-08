@@ -4,12 +4,27 @@ import { IconFlashcards } from "central-icons/IconFlashcards";
 import { IconGraduateCap } from "central-icons/IconGraduateCap";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../lib/i18n";
-import { STUDY_CARDS_CHANGED_EVENT, setStudyMode, studyStats, useStudyMode } from "../../lib/study";
+import { withCodeContext } from "../../lib/code-mode";
+import { sessionWorkingDir } from "../../lib/agent-session-working-dir";
+import {
+  STUDY_CARDS_CHANGED_EVENT,
+  setStudyMode,
+  studyStats,
+  useStudyMode,
+  withStudyContext,
+} from "../../lib/study";
 import { ActionSheet } from "../mobile/ActionSheet";
 import { ResearchDialog } from "../research/ResearchDialog";
 import { StudyReview } from "../study/StudyReview";
 
 export { studyChatStarted, withStudyContext } from "../../lib/study";
+
+/** Desktop sends: study mode's block, then Code mode's (ADR-0090) when the
+ * chat is in Code mode on its working folder. */
+export async function withModeContext(text: string, chatId?: string | null): Promise<string> {
+  const studied = await withStudyContext(text, chatId);
+  return withCodeContext(studied, chatId, chatId ? sessionWorkingDir(chatId) : null);
+}
 
 /**
  * The composer's two modes (ADR-0089), shared by both shells: "Study"

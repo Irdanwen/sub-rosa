@@ -255,7 +255,8 @@ import {
 import { SessionUsagePanel } from "./SessionUsagePanel";
 import { MemoryInChatIndicator } from "./MemoryInChatIndicator";
 import { TemporaryChatBanner, TemporaryChatToggle } from "./TemporaryChat";
-import { ComposerModes, withStudyContext } from "./ComposerModes";
+import { CodeModeControls } from "./CodeModeControls";
+import { ComposerModes, withModeContext } from "./ComposerModes";
 import { ConversationShareHost, ShareConversationMenuItem } from "./ConversationShare";
 import * as temporaryChat from "../../lib/temporary-chat";
 import { AgentActivityDrawer, AgentArtifactsSection } from "./AgentActivityDrawer";
@@ -4887,7 +4888,7 @@ export function AgentWorkspace({
     const projectContext = options?.issueReport
       ? null
       : await projects.projectContextForSend(targetSessionId, origin?.projectFolderId);
-    const promptSubmitContent = await withStudyContext(
+    const promptSubmitContent = await withModeContext(
       projects.withProjectContext(imageInputFallbackContent ?? content, projectContext),
       targetSessionId,
     );
@@ -9218,6 +9219,9 @@ function AgentSessionBar({
             <IconFolder1 size={13} aria-hidden />
             <span className="agent-session-workdir-label">{workingDirDisplayName(workingDir)}</span>
           </button>
+        ) : null}
+        {workingDir && shareSessionId ? (
+          <CodeModeControls sessionId={shareSessionId} workingDir={workingDir} />
         ) : null}
         {fullMode ? <UnrestrictedBadge /> : null}
         {onToggleArtifacts && artifactCount > 0 ? (

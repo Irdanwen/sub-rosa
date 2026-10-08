@@ -16,6 +16,8 @@
  * check against the connection's recorded folder is a plain string equality.
  */
 
+import { invoke } from "@tauri-apps/api/core";
+
 const STORAGE_KEY = "june.agent.sessionWorkingDirs";
 const RECENTS_KEY = "june.agent.recentWorkingDirs";
 const RECENTS_MAX = 5;
@@ -69,6 +71,12 @@ export function rememberSessionWorkingDir(sessionId: string, workingDir: string 
 
 export function forgetSessionWorkingDir(sessionId: string) {
   rememberSessionWorkingDir(sessionId, null);
+  // A deleted chat's Code mode record goes with it (ADR-0090); the folder
+  // itself is never touched. Best effort: a shell without the command, or a
+  // chat that never had the mode, has nothing to remove.
+  void Promise.resolve()
+    .then(() => invoke("code_review_stop", { request: { sessionId } }))
+    .catch(() => undefined);
 }
 
 /** Recently used working folders, most recent first, for the picker menu. */

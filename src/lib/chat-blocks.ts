@@ -33,9 +33,11 @@ import {
   quizPlainText,
 } from "./study-blocks";
 import { type TryOnChatBlock, parseTryOnPayload, tryOnPlainText } from "./try-on-block";
+import { type FileChatBlock, filePlainText, parseFilePayload } from "./file-block";
 
 export type { ChartChatBlock, TableChatBlock } from "./chat-blocks-data";
 export type { FlashcardsChatBlock, QuizChatBlock } from "./study-blocks";
+export type { FileChatBlock } from "./file-block";
 
 export const CHAT_BLOCK_FENCE_PREFIX = "subrosa:";
 
@@ -122,7 +124,8 @@ export type ChatBlock =
   | CanvasChatBlock
   | TryOnChatBlock
   | QuizChatBlock
-  | FlashcardsChatBlock;
+  | FlashcardsChatBlock
+  | FileChatBlock;
 
 /** Display caps. Clamping (not rejecting) keeps a slightly-over payload
  * useful; a payload with nothing valid inside still returns null. */
@@ -417,6 +420,8 @@ function chatBlockPlainText(block: ChatBlock): string[] {
       return quizPlainText(block);
     case "flashcards":
       return flashcardsPlainText(block);
+    case "file":
+      return filePlainText(block);
     default:
       return [];
   }
@@ -463,6 +468,8 @@ export function parseChatBlock(info: string, body: string): ChatBlock | null {
       return parseQuizPayload(payload);
     case "flashcards":
       return parseFlashcardsPayload(payload);
+    case "file":
+      return parseFilePayload(payload);
     default:
       return null;
   }

@@ -382,6 +382,29 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        # Word, Excel and PowerPoint files (ADR-0090). The app's own writers
+        # make them, the same ones the phone's assistant uses, so a request
+        # makes the same file on both. Both descriptions are the Rust ones,
+        # verbatim (a Rust test reads this file to keep them so).
+        "name": "make_document",
+        "description": "Make a Word document (docx), an Excel workbook (xlsx) or a PowerPoint deck (pptx) the user can open, share and save. Use it when the user asks for a file, a spreadsheet, slides or a document to send, not for an answer that belongs in the chat. The file is saved in the user's gallery; copy the subrosa:file block the tool returns into your reply.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["docx", "xlsx", "pptx"]},
+                "title": {
+                    "type": "string",
+                    "description": "The file's title, in the user's language.",
+                },
+                "content": {
+                    "type": "object",
+                    "description": "docx: {markdown} (headings, lists, tables, bold, links) or {sections: [{heading, level, paragraphs, bullets, numbered, table: {header, rows}, quote}]}. xlsx: {sheets: [{name, columns: [{width, format}], rows: [[cell]], header, freezeHeader}]}; a cell is a number, text, true/false, null, an ISO date, a formula starting with = (like =SUM(B2:B9)), or {value or formula, format, bold}; formats like #,##0.00, 0.0%, yyyy-mm-dd. pptx: {slides: [{layout: title|bullets|two_column|image, title, subtitle, bullets: [text or {text, level}], left: {heading, bullets}, right: {heading, bullets}, image: a gallery picture's file name, caption, notes}]}; notes are the speaker notes.",
+                },
+            },
+            "required": ["kind", "title", "content"],
+        },
+    },
 ]
 
 
@@ -497,6 +520,7 @@ def call_tool(target: str, request_id: Any, params: dict[str, Any]) -> dict[str,
         "check_media": check_media,
         "estimate_image_refine": estimate_image_refine,
         "list_media_models": list_media_models,
+        "make_document": make_document,
     }
     try:
         handler = handlers.get(str(name))
@@ -522,13 +546,18 @@ def call_tool(target: str, request_id: Any, params: dict[str, Any]) -> dict[str,
             },
         )
 
+    # A tool whose answer is prose for the agent to act on (a block to copy
+    # verbatim) says so with `_text`; JSON would escape its newlines.
+    text = result.pop("_text", None)
     return response(
         request_id,
         {
             "content": [
                 {
                     "type": "text",
-                    "text": json.dumps(result, ensure_ascii=False, indent=2),
+                    "text": text
+                    if isinstance(text, str)
+                    else json.dumps(result, ensure_ascii=False, indent=2),
                 }
             ],
             "structuredContent": result,
@@ -992,6 +1021,17 @@ def call_proxy(
         return json.loads(body) if body else {}
     except json.JSONDecodeError:
         raise RuntimeError("The June media proxy returned an unreadable response.")
+
+
+def make_document(base_url: str, token: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Asks the app to write the file into the gallery; the app answers with
+    the file's path and the text to give the agent, block included."""
+    result = call_proxy(base_url, token, "/media/document", arguments, REQUEST_TIMEOUT_SECONDS)
+    reply = result.pop("reply", None)
+    if isinstance(reply, str) and reply:
+        path = result.get("path")
+        result["_text"] = f"{reply}\n\nThe file is at {path}." if path else reply
+    return result
 
 
 # --- helpers ------------------------------------------------------------------

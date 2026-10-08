@@ -16,6 +16,7 @@ import { linkSaveRequest } from "../../lib/chat-library";
 import { TryOnCard } from "./TryOnCard";
 import { QuizCard } from "./QuizCard";
 import { FlashcardsCard } from "./FlashcardsCard";
+import { FileCard } from "./FileCard";
 
 /**
  * Renders one parsed chat block (see src/lib/chat-blocks.ts). Shared by the
@@ -46,6 +47,8 @@ export function ChatBlockView({ block }: { block: ChatBlock }) {
       return <QuizCard block={block} />;
     case "flashcards":
       return <FlashcardsCard block={block} />;
+    case "file":
+      return <FileCard block={block} />;
     default:
       return null;
   }

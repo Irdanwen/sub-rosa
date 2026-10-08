@@ -1,0 +1,57 @@
+/* The `subrosa:file` card (ADR-0090): a document the assistant made. */
+.file-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5) var(--sp-2);
+}
+
+.file-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5) var(--sp-4);
+}
+
+.file-card-notice {
+  margin-inline-end: auto;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.file-card-notice[role="alert"] {
+  color: var(--destructive);
+}
+
+.file-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 36px;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.file-card-action[data-primary] {
+  border-color: var(--foreground);
+}
+
+@media (hover: hover) {
+  .file-card-action:hover:not(:disabled) {
+    background: var(--muted);
+  }
+}
+
+.file-card-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
