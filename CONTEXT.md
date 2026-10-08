@@ -1521,6 +1521,14 @@ to act on once, through `subrosa://share/<id>` (ADR-0048). Not a queue the
 app polls, not storage: consumed on open, deleted after.
 _Avoid:_ "shared folder" (nothing is shared with anyone), "import queue".
 
+**Browser pairing** — the consent that lets one browser extension ask the
+desktop app anything: a six-digit code shown in Settings › Browser extension,
+typed into the extension, traded for a token bound to that extension
+(ADR-0100). Registering the host only lets the browser start the relay;
+pairing is what the app checks.
+_Avoid:_ "login" (no account is involved), "connection" for the pairing
+itself (the port connects and disconnects all the time).
+
 ### The app in your language (fork)
 
 **Sentence (copy)** — a thing a person can read on screen, written in

@@ -156,6 +156,8 @@ importers:
         specifier: ^3.2.7
         version: 3.2.7(jsdom@25.0.1)
 
+  browser-extension: {}
+
   packages/design: {}
 
   website:

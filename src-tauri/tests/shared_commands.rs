@@ -36,6 +36,9 @@ fn platform_specific(name: &str) -> bool {
         "council::",
         // Code mode reviews a working folder the desktop agent edits (ADR-0090).
         "code_review::",
+        // A browser extension reaches the desktop app through native
+        // messaging; no phone browser loads one that way (ADR-0100).
+        "browser_extension::",
         // The extractor rail runs a binary the user installed; iOS cannot
         // execute one at all (ADR-0028).
         "ingest::extractor::",

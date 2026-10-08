@@ -1,0 +1,146 @@
+{
+  "extName": {
+    "message": "Sub Rosa"
+  },
+  "extDescription": {
+    "message": "Posez vos questions à Sub Rosa sur la page que vous lisez. Fonctionne avec l'application Sub Rosa de votre ordinateur."
+  },
+  "actionTitle": {
+    "message": "Demander à Sub Rosa"
+  },
+  "menuAskSelection": {
+    "message": "Demander à Sub Rosa"
+  },
+  "pairTitle": {
+    "message": "Connecter ce navigateur"
+  },
+  "pairBody": {
+    "message": "Dans Sub Rosa sur cet ordinateur, ouvrez Réglages, puis Extension de navigateur, et choisissez Connecter un navigateur. Saisissez le code affiché."
+  },
+  "pairCodeLabel": {
+    "message": "Code"
+  },
+  "pairButton": {
+    "message": "Connecter"
+  },
+  "paired": {
+    "message": "Ce navigateur est connecté à Sub Rosa."
+  },
+  "summarize": {
+    "message": "Résumer"
+  },
+  "summarizePrompt": {
+    "message": "Résume cette page."
+  },
+  "addToNote": {
+    "message": "Ajouter à une note"
+  },
+  "saveLink": {
+    "message": "Enregistrer le lien dans la bibliothèque"
+  },
+  "openSidePanel": {
+    "message": "Ouvrir dans le panneau latéral"
+  },
+  "askPlaceholder": {
+    "message": "Posez une question sur cette page"
+  },
+  "includePage": {
+    "message": "Inclure cette page"
+  },
+  "send": {
+    "message": "Envoyer"
+  },
+  "stop": {
+    "message": "Arrêter"
+  },
+  "newChat": {
+    "message": "Nouvelle discussion"
+  },
+  "forget": {
+    "message": "Déconnecter ce navigateur"
+  },
+  "you": {
+    "message": "Vous"
+  },
+  "assistant": {
+    "message": "Sub Rosa"
+  },
+  "selectionLabel": {
+    "message": "Texte sélectionné"
+  },
+  "noteSaved": {
+    "message": "Ajouté à une nouvelle note : $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "linkSaved": {
+    "message": "Enregistré dans votre bibliothèque : $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "Example Domain"
+      }
+    }
+  },
+  "continuesInApp": {
+    "message": "Cette discussion se trouve aussi dans Sub Rosa, parmi vos discussions."
+  },
+  "stageThinking": {
+    "message": "Réflexion"
+  },
+  "stageSearchingWeb": {
+    "message": "Recherche sur le web"
+  },
+  "stageReadingPage": {
+    "message": "Lecture d'une page"
+  },
+  "stageSearchingNotes": {
+    "message": "Recherche dans vos notes"
+  },
+  "stageSearchingMemory": {
+    "message": "Vérification de ce que Sub Rosa a retenu"
+  },
+  "errorAppNotRunning": {
+    "message": "Sub Rosa n'est pas ouvert sur cet ordinateur. Ouvrez l'application, puis réessayez."
+  },
+  "errorHostNotFound": {
+    "message": "Ce navigateur n'est pas encore configuré pour Sub Rosa. Dans Sub Rosa, ouvrez Réglages, puis Extension de navigateur, et choisissez Connecter un navigateur."
+  },
+  "errorNotPaired": {
+    "message": "Ce navigateur n'est plus connecté à Sub Rosa. Saisissez un nouveau code pour le reconnecter."
+  },
+  "errorPairingNotStarted": {
+    "message": "Sub Rosa n'affiche aucun code. Dans Réglages, Extension de navigateur, choisissez d'abord Connecter un navigateur."
+  },
+  "errorPairingWrong": {
+    "message": "Ce code n'est pas celui qu'affiche Sub Rosa. Vérifiez-le et réessayez."
+  },
+  "errorPairingExpired": {
+    "message": "Ce code a expiré. Affichez-en un nouveau dans Sub Rosa."
+  },
+  "errorPairingExhausted": {
+    "message": "Trop de codes erronés. Affichez-en un nouveau dans Sub Rosa."
+  },
+  "errorNotAPage": {
+    "message": "Sub Rosa ne peut lire que des pages web."
+  },
+  "errorNoAccess": {
+    "message": "Cliquez sur le bouton Sub Rosa de la barre d'outils pour lui permettre de lire cette page."
+  },
+  "errorUpdateApp": {
+    "message": "Mettez Sub Rosa à jour pour utiliser cette version de l'extension."
+  },
+  "errorBusy": {
+    "message": "Cette discussion est encore en train de répondre. Attendez la fin, puis reposez votre question."
+  },
+  "errorEmptyQuestion": {
+    "message": "Saisissez d'abord une question."
+  },
+  "errorGeneric": {
+    "message": "Une erreur s'est produite. Réessayez."
+  }
+}
