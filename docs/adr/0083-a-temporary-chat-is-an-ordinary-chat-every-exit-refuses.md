@@ -118,3 +118,38 @@ loads from a `config.yaml` like the app's, and `resolve_pre_tool_block`
 returns the refusal for a temporary session and nothing for another), and in
 `hermes_bridge::guard::tests`, which run the installed plugin in Python
 against a ledger and a `state.db`.
+
+## Addendum 2026-10-10: the exits the audit found
+
+The post-release audit of 1.89.0 found four more ways out, now closed:
+
+- **Deep research and study mode** refuse in Rust when the chat they are
+  started from is temporary, by task id or by desktop session id
+  (`temporary_chat::refuse_in_temporary`, called by `research::chat_of` and
+  by `study::set_mode` and `study::add_cards`). A report and a deck are kept,
+  listed and synchronised on their own. Both composers stop offering them in
+  a temporary chat (`ComposerModes`, shared by the two shells); Review stays,
+  since it is about cards already kept. Tests:
+  `temporary_chat::tests::deep_research_is_refused_from_a_temporary_chat`,
+  `study_mode_and_its_cards_are_refused_in_a_temporary_chat`,
+  `src/test/study-mode.test.tsx`.
+- **The gallery.** The desktop agent's media tools save every generation
+  into the Studio gallery (`/v1/media/save`) and `make_document` writes a
+  file there (`/v1/media/document`); the gallery is synchronised. These
+  requests come from the `june_media` MCP server, which serves every session
+  of the runtime and is never told which one called it, so the provider
+  proxy cannot tell a temporary chat's request from another's. The refusal
+  is made where the session is known: the `subrosa_guard` plugin now refuses
+  `generate_image`, `generate_video`, `generate_music`, `check_media` and
+  `make_document` in a temporary session and its descendants (and while a
+  temporary chat is open, in a call that names no session), from the same
+  ledger Rust writes. A Rust check in the proxy was considered and rejected:
+  without a session it could only refuse every chat's media while any
+  temporary chat is open. Test: `hermes_bridge::guard::tests`.
+- **The runtime's files.** Hermes' `DELETE /api/sessions/{id}` removes the
+  session from `state.db` but leaves `sessions/request_dump_{id}_*.json`,
+  `{id}.json`, `{id}.jsonl` and `session_{id}.json`, which hold the
+  conversation. Rust deletes them once the runtime has answered
+  (`temporary_chat::remove_session_files`, an id that is not the runtime's
+  own shape never becomes a path). Test:
+  `temporary_chat::tests::the_runtimes_files_for_a_session_go_with_it`.

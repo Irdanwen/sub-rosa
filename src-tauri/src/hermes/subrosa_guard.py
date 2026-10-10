@@ -13,6 +13,11 @@ whenever it changes (`subrosa-guard.json` next to `config.yaml`):
   sessions may read memory but never write it: the runtime's memory tool and
   its skill writer are refused there. A session descended from one (a branch,
   or a continuation the runtime forks when it compacts a long chat) counts.
+  So are the media tools that file what they make in the Studio gallery
+  (every generation, and `make_document`'s file), which is kept and
+  synchronised: the media server serves every session, so the app cannot
+  tell which chat asked, and the refusal is made here, where the session is
+  known.
 - `memoryOff`: protected mode switched memory off. The memory tool and the
   recall of the app's own memory are refused in every session.
 - `pastChatsOff`: protected mode switched past chats off. The runtime's
@@ -33,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Optional
@@ -42,6 +48,11 @@ STATE_DB_NAME = "state.db"
 
 # Tools that would keep something from a conversation beyond it.
 WRITE_TOOLS = frozenset({"memory", "skill_manage"})
+# The media tools that save into the gallery, under the name the runtime
+# gives an MCP tool (`mcp_<server>_<tool>`, or `mcp__<server>__<tool>`).
+GALLERY_TOOLS = re.compile(
+    r"mcp_{1,2}june_media_{1,2}(generate_image|generate_video|generate_music|check_media|make_document)"
+)
 # Tools that read the person's memory, or their other conversations.
 MEMORY_READ_SUFFIXES = ("search_user_memories",)
 PAST_CHAT_TOOLS = frozenset({"session_search"})
@@ -70,6 +81,11 @@ CONNECTOR_OFF_MESSAGE = (
     "it is off, and that they can allow it in Settings, Connectors."
 )
 CONNECTOR_ASK_MESSAGE = "Sub Rosa asks you before a connector changes something."
+TEMPORARY_GALLERY_MESSAGE = (
+    "This is a temporary chat: nothing from it may be saved, and this tool "
+    "saves what it makes into the gallery. Tell the user to start a regular "
+    "chat to make it."
+)
 UNREADABLE_MESSAGE = (
     "Sub Rosa could not confirm that this chat may use memory, so nothing is "
     "saved or recalled. Answer without it."
@@ -143,7 +159,8 @@ def _matches(tool_name: str, names: frozenset, suffixes: tuple) -> bool:
 
 def decide(tool_name: str, session_id: str, home: Optional[Path] = None) -> Optional[str]:
     """The message that refuses this call, or None to let it run."""
-    guarded_write = tool_name in WRITE_TOOLS
+    gallery = GALLERY_TOOLS.fullmatch(tool_name) is not None
+    guarded_write = tool_name in WRITE_TOOLS or gallery
     memory_read = _matches(tool_name, frozenset(), MEMORY_READ_SUFFIXES)
     past_chats = _matches(tool_name, PAST_CHAT_TOOLS, PAST_CHAT_SUFFIXES)
     if not (guarded_write or memory_read or past_chats):
@@ -163,12 +180,13 @@ def decide(tool_name: str, session_id: str, home: Optional[Path] = None) -> Opti
             for value in ledger.get("temporarySessions") or []
             if isinstance(value, str) and value
         }
+        message = TEMPORARY_GALLERY_MESSAGE if gallery else TEMPORARY_MESSAGE
         if temporary and not session_id:
             # A call that cannot say which chat it belongs to, while a
             # temporary chat is open, is refused rather than guessed at.
-            return TEMPORARY_MESSAGE
+            return message
         if temporary and is_temporary(session_id, temporary, home):
-            return TEMPORARY_MESSAGE
+            return message
     return None
 
 
@@ -213,7 +231,7 @@ def _pre_tool_call(tool_name: str = "", session_id: str = "", args: Any = None, 
         message = decide(str(tool_name or ""), str(session_id or ""))
     except Exception:
         # The hook must never let a guarded call through on its own failure.
-        if str(tool_name or "") in WRITE_TOOLS:
+        if str(tool_name or "") in WRITE_TOOLS or GALLERY_TOOLS.fullmatch(str(tool_name or "")):
             return {"action": "block", "message": UNREADABLE_MESSAGE}
         return None
     if message is None:

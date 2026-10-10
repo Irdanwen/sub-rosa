@@ -413,3 +413,111 @@ async fn leaving_a_temporary_chat_deletes_its_reply_ratings() {
 
     assert_eq!(count(&pool, "SELECT count(*) FROM reply_ratings").await, 0);
 }
+
+/// A temporary desktop session and a temporary phone task, next to an
+/// ordinary chat, for the refusals below.
+async fn chats(pool: &SqlitePool) -> (String, String, String) {
+    let task = create(pool, "a temporary chat", None).await.unwrap();
+    register_session(pool, "20261010_101010_abcdef")
+        .await
+        .unwrap();
+    let repos = Repositories::new(pool.clone());
+    let ordinary = repos
+        .create_agent_task("an ordinary chat", None, Default::default(), None)
+        .await
+        .unwrap();
+    (task, "20261010_101010_abcdef".to_string(), ordinary.id)
+}
+
+#[tokio::test]
+async fn deep_research_is_refused_from_a_temporary_chat() {
+    let pool = database().await;
+    let (task, session, ordinary) = chats(&pool).await;
+    let request = |chat: &str| -> crate::research::ResearchStartRequest {
+        serde_json::from_value(serde_json::json!({
+            "question": "Heat pumps", "depth": "quick", "chatId": chat,
+        }))
+        .unwrap()
+    };
+    for chat in [&task, &session] {
+        let refused = crate::research::chat_of(&pool, &request(chat))
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, "temporary_chat_refused", "{chat}");
+    }
+    let ordinary_request = request(&ordinary);
+    assert_eq!(
+        crate::research::chat_of(&pool, &ordinary_request)
+            .await
+            .unwrap(),
+        Some(ordinary.as_str())
+    );
+    let unattached = request("  ");
+    assert_eq!(
+        crate::research::chat_of(&pool, &unattached).await.unwrap(),
+        None
+    );
+}
+
+#[tokio::test]
+async fn study_mode_and_its_cards_are_refused_in_a_temporary_chat() {
+    let pool = database().await;
+    let (task, session, ordinary) = chats(&pool).await;
+    for chat in [&task, &session] {
+        let refused = crate::study::set_mode(&pool, chat, true).await.unwrap_err();
+        assert_eq!(refused.code, "temporary_chat_refused");
+        // Switching it off is never refused: it keeps nothing.
+        assert!(!crate::study::set_mode(&pool, chat, false).await.unwrap());
+        let request: crate::study::AddCardsRequest = serde_json::from_value(serde_json::json!({
+            "cards": [{ "front": "Capital of Peru?", "back": "Lima" }],
+            "chatId": chat,
+        }))
+        .unwrap();
+        let refused = crate::study::add_cards(&pool, &request, chrono::Utc::now())
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, "temporary_chat_refused");
+    }
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM study_chats").await, 0);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM study_cards").await, 0);
+    assert!(crate::study::set_mode(&pool, &ordinary, true)
+        .await
+        .unwrap());
+}
+
+#[test]
+fn the_runtimes_files_for_a_session_go_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = "20261010_101010_abcdef";
+    let other = "20261010_101011_fedcba";
+    for name in [
+        format!("{id}.json"),
+        format!("{id}.jsonl"),
+        format!("session_{id}.json"),
+        format!("request_dump_{id}_20261010_101012_123456.json"),
+        format!("request_dump_{id}_20261010_101013_654321.json"),
+        format!("{other}.json"),
+        format!("request_dump_{other}_20261010_101012_123456.json"),
+        format!("request_dump_{id}_notes.txt"),
+    ] {
+        std::fs::write(dir.path().join(name), "{}").unwrap();
+    }
+    assert_eq!(remove_session_files(dir.path(), id), 5);
+    let mut left: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        vec![
+            format!("{other}.json"),
+            format!("request_dump_{id}_notes.txt"),
+            format!("request_dump_{other}_20261010_101012_123456.json"),
+        ]
+    );
+    // An id that is not the runtime's own shape never becomes a path.
+    for hostile in ["../x", "*", "a/b", ""] {
+        assert_eq!(remove_session_files(dir.path(), hostile), 0);
+    }
+}

@@ -229,11 +229,22 @@ mod tests {
                 ("session_search", "temp-1"),
                 ("web_search", "temp-1"),
                 ("memory", ""),
+                // What would land in the synchronised gallery, under either
+                // spelling the runtime gives an MCP tool.
+                ("mcp_june_media_generate_image", "temp-1"),
+                ("mcp__june_media__make_document", "temp-1-child"),
+                ("mcp_june_media_check_media", "temp-1"),
+                ("mcp_june_media_generate_image", "ordinary"),
+                ("mcp_june_media_list_media_models", "temp-1"),
+                ("mcp_june_media_generate_video", ""),
             ],
         );
         assert_eq!(
             verdicts,
-            ["block", "block", "block", "allow", "allow", "allow", "block"]
+            [
+                "block", "block", "block", "allow", "allow", "allow", "block", "block", "block",
+                "block", "allow", "allow", "block"
+            ]
         );
 
         // Protected mode: memory and past chats off everywhere.
