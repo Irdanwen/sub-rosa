@@ -98,7 +98,7 @@ reaching.**
   means no chat bar from the keyboard (and no screen awareness), the same way
   it means no dictation.
 
-## Addendum (2026-10-08): Arc is not offered, and Screen Recording belongs to the helper
+## Addendum 2026-10-08: Arc is not offered, and Screen Recording belongs to the helper
 
 - **Arc is left out of detection.** The decision above listed Arc among the
   browsers the app may drive, with its profile handling unverified. Checked

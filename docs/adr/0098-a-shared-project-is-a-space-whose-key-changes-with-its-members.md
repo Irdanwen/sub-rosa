@@ -123,7 +123,7 @@ member is removed, and in the protocol document.
   shown where trust is decided, and the link itself carries the inviter's keys
   outside the service.
 
-## Addendum (2026-10-08): the owner's side runs in a tab too
+## Addendum 2026-10-08: the owner's side runs in a tab too
 
 The decision's last bullet of Consequences said inviting, admitting and
 removing stay in the app. The web client now does all three, with the same
@@ -150,7 +150,7 @@ protocol and nothing new on the service
   reviewed. Creating a space still starts from a project in the app.
 
 
-## Addendum (2026-10-08, later): a tab creates a space too
+## Addendum 2026-10-08: a tab creates a space too
 
 The last sentence above no longer holds. Behind the same Preview switch, the
 web client shares one of the account's projects as a new space

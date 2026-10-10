@@ -128,7 +128,7 @@ Three facts shaped the rest:
 - **Applying model categories directly.** A wrong category silently changes
   every total; a proposal costs one tap.
 
-## Addendum (2026-10-08): a scheduled run reads them only when it says so
+## Addendum 2026-10-08: a scheduled run reads them only when it says so
 
 Point 7 held on the phone, where a run's scope is a list of agent-lite tool
 names and the "notes" group never named these three. On the desktop it did

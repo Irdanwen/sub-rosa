@@ -120,6 +120,27 @@ Named, because a threat model that claims everything protects nothing.
   script sinks, and Subresource Integrity pins the entry files. Revoking the
   browser from any device stops its key and its renewals. See
   [ADR-0096](adr/0096-a-browser-is-a-device.md).
+
+  *Addendum 2026-10-10: the web client's own policy.* The sentence above is
+  the account site's policy. The web client at `/app` (ADR-0101, ADR-0104)
+  is served under a wider one, kept identical in `website/public/_headers`
+  and `subrosa-cloud/deploy/nginx-account.conf.example` by
+  `src/test/website-csp.test.ts`. On top of the site's policy it allows:
+  WebAssembly (`'wasm-unsafe-eval'`) and `blob:` workers, for Pyodide
+  (ADR-0086), whose files it loads from its own `/pyodide/`; `connect-src`
+  to the six catalog connector servers that accept a browser origin
+  (`huggingface.co`, `mcp.intercom.com`, `mcp.linear.app`, `mcp.notion.com`,
+  `mcp.squareup.com`, `mcp.webflow.com`, the list of
+  `website/src/client/connectors/web-availability.json`); `frame-src 'self'`
+  for the sandboxed connector view; and camera, microphone and screen
+  capture (`Permissions-Policy`) for voice. Still refused: any other host,
+  inline and `eval`'d script, plugins, being framed, form posts elsewhere,
+  and string script sinks (Trusted Types, one narrow `subrosa` policy, see
+  the ADR-0096 addendum of the same date). So on `/app`, script injected into
+  the page, or code that reaches the page's globals from a Python run, can
+  send what it reads to those six hosts as well as to Carpe Diem. The Python
+  worker's isolation from the page's storage and network is the subject of
+  its own hardening (ADR-0086 and ADR-0104 addenda).
 - **Cryptographic isolation after device revocation.** Revocation blocks the
   device's sessions immediately at the service. It does not rotate the vault
   root or erase past copies. A revoked device obtaining ciphertext through

@@ -71,6 +71,11 @@ ids, and can open none of it.**
   from a browser would put a second author on the journal with none of the
   app's conflict handling, on the surface `docs/threat-model.md` already names
   as outside its boundary.
+
+  *Superseded in part by [ADR-0096](0096-a-browser-is-a-device.md)
+  (2026-10-08): the web reader stays read only, but a browser admitted as a
+  device may write, through the same encrypted journal and revision rules as
+  an app.*
 - Sharing needs an account but not synchronisation and not an unlocked vault:
   you can show one note without having agreed to synchronise anything.
 - A file share (a recording, a film) is the same shape with more positions, and

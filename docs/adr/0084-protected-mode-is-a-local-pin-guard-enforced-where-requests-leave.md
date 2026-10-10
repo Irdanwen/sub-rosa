@@ -146,3 +146,16 @@ clear, immediate refusal at the switch.
 **Still not covered**: quiet hours and the media switch rely on the clock and
 files of the device, like the rest of protected mode. Someone who changes the
 device time or edits the file removes them.
+
+## Addendum 2026-10-10: voice off is enforced
+
+The addendum of 2026-10-08 listed **Voice off** as stored and shown, with
+nothing enforcing it. The voice conversation shipped since (ADR-0093) and the
+switch is now enforced where voice starts and while it runs: `voice::start`
+refuses with `protected_mode_voice_off` before anything is captured, and the
+session asks `protected_mode::check_voice` again before each utterance is
+transcribed (`src-tauri/src/voice/mod.rs`, `src-tauri/src/voice/session.rs`),
+so switching it on mid-conversation ends the conversation at the next turn.
+The web client applies the same refusal from its per-browser lock
+(`website/src/client/voice/session.ts`, ADR-0104). The decision is unchanged;
+only the sentence "nothing enforces it yet" is out of date.
