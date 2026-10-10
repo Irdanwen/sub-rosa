@@ -71,7 +71,7 @@ Le realm active vérification e-mail, protection contre essais répétés et pas
 
 Le site du compte propose désormais aussi une passkey Sub Rosa sous `subrosa.furetier.com`, distincte de celle du realm. Une connexion OIDC récente est nécessaire pour l’ajouter au même UUID interne. Publier les deux fichiers `/.well-known` depuis le build du site avant d’essayer la connexion native ; vérifier les empreintes de signature Android et la capacité Associated Domains de l’app iOS. Le déploiement actuel doit remplacer la réponse HTML de `/.well-known/assetlinks.json` par le JSON exact.
 
-L’administrateur bootstrap est temporaire et appartient au realm maître. L’opérateur doit créer son compte administratif permanent avec passkey ou OTP, supprimer le compte temporaire, retirer `private/keycloak-admin-password`, puis relancer la préparation des secrets. Ne pas exposer la console maître sur Internet.
+L’administrateur bootstrap (`subrosa-bootstrap`) est temporaire et appartient au realm maître. `stack.py admin-rotate` le remplace par l’administrateur permanent `subrosa-admin` (voir « Administrateur Keycloak permanent » plus bas) : mot de passe généré de 32 caractères dans `private/keycloak-admin.password` (0600, jamais affiché, jamais copié dans le volume partagé), puis suppression du compte temporaire et de `private/keycloak-admin-password`, puis préparation des secrets relancée. Ajouter un OTP à `subrosa-admin` reste possible depuis la console, par tunnel. Ne pas exposer la console maître sur Internet.
 
 SMTP n’étant pas fourni, `registrationAllowed=false` et `resetPasswordAllowed=false` sont conservés **même si des paramètres SMTP sont ajoutés**. Pour ouvrir : configurer SMTP TLS, tester réellement réception de vérification et récupération, tester SPF/DKIM/DMARC auprès du fournisseur, puis activer explicitement inscription et récupération dans le realm existant via console administrative privée. Ne pas définir `emailVerified=true` à la main pour contourner l’absence de mail. `--import-realm` ignore un realm déjà présent ; une régénération JSON ne prétend pas le mettre à jour.
 
@@ -124,13 +124,73 @@ subrosa-cloud/deploy/vps/backup.sh /chemin/prive/subrosa-accounts \
 
 La clé privée de déchiffrement ne doit pas être sur le VPS. Cette aide **ne configure ni transfert hors site, ni planification, ni PITR**. Les mots de passe de rôles ne sont pas inclus : leur restauration/rotation utilise le gestionnaire de secrets indépendant. Configurer une sauvegarde PostgreSQL cohérente, son transfert protégé hors hôte, sa rétention et un exercice de restauration privé avant de déclarer les champs `backup_*` validés. Après restauration, avant trafic, exécuter `stack.py restore-sanitize` ; le service invalide les anciennes sessions puis réapplique le registre indépendant. Ne jamais restaurer par-dessus les seules clés ou le seul registre de suppressions.
 
+## Administrateur Keycloak permanent (2026-10-10)
+
+Sur le VPS, depuis le répertoire `deploy` à jour (il contient `admin_rotate.py` à côté de `stack.py`) :
+
+```sh
+cd /opt/subrosa-accounts/deploy
+python3 stack.py admin-rotate --dry-run --directory /opt/subrosa-accounts/prod   # le plan, rien n'est lu ni envoyé
+python3 stack.py admin-rotate --directory /opt/subrosa-accounts/prod
+```
+
+Le script parle à Keycloak par le port de boucle locale (`http://127.0.0.1:18080` + `IDENTITY_PATH`), jamais par l’origine publique, qui bloque le realm maître. Dans l’ordre : connexion `admin-cli` de `subrosa-bootstrap` avec `private/keycloak-admin-password` ; mot de passe de `subrosa-admin` généré et écrit en 0600 **avant** d’être envoyé (une reprise réutilise le même) ; création de `subrosa-admin` si absent, mot de passe définitif, rôle `admin` du realm maître ; connexion de `subrosa-admin` et liste des utilisateurs avec son propre jeton (la preuve qu’il a les droits) ; suppression de `subrosa-bootstrap` avec ce jeton ; suppression de `private/keycloak-admin-password` ; `docker compose run --rm prepare-secrets`, qui retire la copie du volume. Chaque étape est idempotente : relancer après une interruption termine le travail. En cas d’échec avant la preuve, `subrosa-bootstrap` est conservé. Les sorties nomment des utilisateurs, des fichiers et des statuts HTTP, jamais une valeur. Le `--dry-run` rejoue les mêmes étapes contre un Keycloak en mémoire construit d’après les fichiers présents (il suppose que chaque fichier présent ouvre encore une session).
+
+Contrôle après coup (lecture seule) :
+
+```sh
+docker exec subrosa-accounts-postgres-1 psql -U postgres -d keycloak -Atc \
+  "SELECT u.username FROM user_entity u JOIN realm r ON r.id=u.realm_id WHERE r.name='master'"
+# attendu : subrosa-admin seul
+ls /opt/subrosa-accounts/prod/private/keycloak-admin*   # attendu : keycloak-admin.password seul
+```
+
+### Sortir de l’hôte les deux restes de `private/`
+
+`private/ledger-signing-key.compromis-1789767921` (clé de registre remplacée le 18 septembre, que `runtime.toml` ne nomme plus : seule `v1` y figure) et `private/runtime.toml.bak-1789767681` (configuration d’avant la rotation, avec des secrets) n’ont rien à faire sur le VPS. Les chiffrer pour les destinataires `age` des sauvegardes, les déposer dans le bucket de sauvegarde verrouillé avec le client `s3put_lib.py` de la sauvegarde nocturne (`/opt/subrosa-accounts/deploy/`), relire et comparer, puis effacer :
+
+```sh
+cd /opt/subrosa-accounts/prod/private
+archive=/opt/subrosa-accounts/backups/restes-private-$(date -u +%Y%m%dT%H%M%SZ).tar.age
+tar -cf - ledger-signing-key.compromis-1789767921 runtime.toml.bak-1789767681 \
+  | age -R /opt/subrosa-accounts/backup-recipients.txt > "$archive"
+chmod 0600 "$archive"
+python3 - "$archive" <<'EOF'
+import base64, datetime, hashlib, pathlib, sys
+sys.path.insert(0, "/opt/subrosa-accounts/deploy")
+from s3put_lib import request
+src = pathlib.Path(sys.argv[1]); body = src.read_bytes()
+env = dict(l.split("=", 1) for l in pathlib.Path("/opt/subrosa-accounts/backups-s3.env").read_text().splitlines() if "=" in l and not l.startswith("#"))
+B = dict(endpoint=env["ENDPOINT"], region=env["REGION"], access_key=env["ACCESS_KEY"], secret_key=env["SECRET_KEY"], bucket=env["BUCKET"])
+until = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
+key = "restes-private/" + src.name
+s, _ = request("PUT", key=key, body=body, headers={"Content-MD5": base64.b64encode(hashlib.md5(body).digest()).decode(), "x-amz-object-lock-mode": "COMPLIANCE", "x-amz-object-lock-retain-until-date": until}, **B)
+if s != 200: sys.exit("upload failed: %s" % s)
+s, back = request("GET", key=key, **B)
+if s != 200 or hashlib.sha256(back).digest() != hashlib.sha256(body).digest(): sys.exit("read-back differs: %s" % s)
+print("offsite:", key, len(body), "bytes, verified, locked until", until)
+EOF
+```
+
+Seulement si la dernière ligne affiche `verified` : `shred -u ledger-signing-key.compromis-1789767921 runtime.toml.bak-1789767681 "$archive"`. Le déchiffrement exige la clé privée `age`, qui n’est pas sur le VPS. Les autres `*.bak-*` de `prod/` (hors `private/`) relèvent du même traitement s’ils contiennent des secrets.
+
+## Santé de l’API et révocations Carpe Diem (2026-10-10)
+
+Le conteneur `api` a un `healthcheck` Compose : `GET /readyz` toutes les 30 s par `/dev/tcp` de bash (l’image n’a pas de client HTTP), trois échecs avant `unhealthy`. `/readyz` répond 200 dès que PostgreSQL répond et ajoute `partner_revocations: {pending, stuck}` : les révocations Carpe Diem pas encore livrées, et celles qui échouent depuis environ un jour (douze tentatives). Un arriéré ne rend jamais le service indisponible. Chaque échec écrit son statut dans `partner_revocations.last_error` (`http 404`, `unreachable`, `signing`), et une révocation coincée produit une ligne `ERROR` au plus une fois par jour. Un `http 404` signifie que l’opérateur Carpe Diem n’a pas de partenaire configuré (`PARTNERS_JSON`) : voir la section 4 de [carpe-diem-partner-contract.md](carpe-diem-partner-contract.md).
+
+```sh
+curl -s http://127.0.0.1:18088/readyz
+docker inspect --format '{{.State.Health.Status}}' subrosa-accounts-api-1
+docker logs --since 48h subrosa-accounts-api-1 2>&1 | grep '"level":"ERROR"' | grep revocations
+```
+
 ## Preuves locales et limites
 
 ```sh
 python3 -m unittest discover -s subrosa-cloud/deploy/vps -p 'test_*.py' -v
 ```
 
-Huit tests réussis : permissions, refus de remplacement de clés, absence de secrets stdout, prérequis manquants bloquants, configuration OIDC fermée, séparation credentials, validation SAN TLS. Le test PostgreSQL lance un cluster temporaire sans écoute réseau et vérifie réellement DML permis, DDL interdit et accès à la base Keycloak refusé. Il est explicitement marqué ignoré si les binaires locaux PostgreSQL manquent. Syntaxe shell et parsing YAML/JSON vérifiés aussi. Compose a été validé avec `docker compose config --quiet` avec les profils `application` et `operations` sur Docker Compose 2.37.1 du VPS : code de sortie 0, environnement factice sans secrets, aucun container démarré.
+`test_admin_rotate.py` couvre la rotation de l’administrateur contre un realm maître en mémoire : remplacement, idempotence, reprise après interruption, refus de supprimer sans preuve des droits, plan `--dry-run` sans secret, mot de passe permanent hors du volume partagé. `test_bootstrap.py` couvre : permissions, refus de remplacement de clés, absence de secrets stdout, prérequis manquants bloquants, configuration OIDC fermée, séparation credentials, validation SAN TLS. Le test PostgreSQL lance un cluster temporaire sans écoute réseau et vérifie réellement DML permis, DDL interdit et accès à la base Keycloak refusé. Il est explicitement marqué ignoré si les binaires locaux PostgreSQL manquent. Syntaxe shell et parsing YAML/JSON vérifiés aussi. Compose a été validé avec `docker compose config --quiet` avec les profils `application` et `operations` sur Docker Compose 2.37.1 du VPS : code de sortie 0, environnement factice sans secrets, aucun container démarré.
 
 Limites : pas de Docker local disponible pour construire ou exécuter ces images ; pas d’essai Keycloak déployé, SMTP réel, S3 réel, sauvegarde externe ou charge réelle. Les UID des images, le readiness Keycloak, les parcours passkey/e-mail et la restauration externe restent des critères d’ouverture. La pile est une préparation reproductible, pas une preuve de mise en service.
 

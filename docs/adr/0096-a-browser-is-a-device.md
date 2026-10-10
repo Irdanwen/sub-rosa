@@ -187,23 +187,34 @@ What bounds it:
 - A browser device is per browser profile: clearing site data deletes its keys,
   and the person admits it again; the old row stays in the list until revoked.
 
-## Addendum 2026-10-10: the `subrosa` Trusted Types policy now exists
+## Addendum 2026-10-10: Trusted Types policies, as they stand
 
 The decision said the site's CSP admits one Trusted Types policy, `subrosa`,
-and that none was created. The web client's data analysis (ADR-0104) now
-creates it, in one place: `website/src/client/analysis/worker-url.ts` makes
-the Python worker start from a blob URL, and a blob URL is a script URL the
-page's `require-trusted-types-for 'script'` refuses as a string. The policy is
-narrow on purpose: it implements only `createScriptURL`, and that accepts
-only the blob URLs the same module made (a set it fills when it creates the
-blob); anything else throws. It implements no `createHTML` and no
-`createScript`, so the guarantee above still holds for HTML and script sinks:
-a string cannot reach them. The CSP names `subrosa` without
-`'allow-duplicates'`, so the name can be claimed once per page: after the
-module has created it, a second `createPolicy("subrosa")` throws. Claiming it
-first, before any worker starts, takes script already running on the page,
-which is the case Trusted Types never protected against (see "Script
-injected into the account site" in `docs/threat-model.md`); the worker then
-refuses to start rather than run under a policy it did not make. A new use of
-a script URL sink goes through this module or names a policy of its own in the
-CSP.
+and that none was created. That is still true of every page of the account
+origin: no module calls `createPolicy("subrosa")`, so a string cannot reach an
+HTML, script or script URL sink anywhere on the site, and the name stays
+claimable by nothing. The one policy that exists lives outside the site's
+origin: the Python sandbox frame (`/python-sandbox.html`, an opaque origin
+framed with `sandbox="allow-scripts"`, ADR-0104 addendum of the same date)
+creates `subrosa-python` in `website/src/client/analysis/sandbox-frame.ts`,
+implementing only `createScriptURL`, accepting only the one `data:` module
+URL that module built for the Python worker, and nothing else. Its CSP names
+`subrosa-python` without `'allow-duplicates'`, so the name is claimed once per
+frame. A new use of a script URL sink on the account origin names a policy of
+its own in the CSP and documents it here.
+
+## Addendum 2026-10-10: every proof binds its body
+
+The proof's `ath` was the hash of one value, and only on the assertion route
+(the `jkt`). The admission and renounce proofs bound the method, the URL and a
+single-use identifier, but not what they carried: a script that obtained one
+admission proof could not replay it (single use), yet nothing tied it to the
+`name` and `admission` it was sent with, so it could have been spent on a body
+it chose. Every device proof now carries `ath` = base64url(SHA-256(the exact
+request body bytes)), required on every route and checked against the raw
+bytes before they are parsed (`DeviceProof` in `subrosa-services`, the routes
+take `Bytes`). The client builds the body string once and sends that string.
+On the assertion route this is strictly stronger than the old binding, since
+the body holds the `jkt`. A page served before this change sends the old proof
+and is refused with `401 device_proof_invalid` until it reloads; the website
+and the service ship together.

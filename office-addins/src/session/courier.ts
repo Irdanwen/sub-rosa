@@ -10,7 +10,8 @@
  * that session, so it carries those calls for the pane, and only those:
  *
  * - the pane signs every device proof itself, single-use and bound to the
- *   exact URL; the window adds the cookie and the CSRF token, nothing else;
+ *   exact URL and body; the window adds the cookie and the CSRF token, and
+ *   passes the body on byte for byte, nothing else;
  * - what crosses Office's channel is proofs, a pairing code's request id, an
  *   assertion bound to a key that never leaves the pane, and the service's
  *   answers: nothing that spends;

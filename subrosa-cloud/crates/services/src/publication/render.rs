@@ -63,6 +63,27 @@ pub fn markdown_to_html(markdown: &str) -> String {
     sanitize(&rendered)
 }
 
+/// A character a reader cannot see: a control, or a format character such as
+/// a bidirectional override, a zero-width space or a byte order mark. In text
+/// they are harmless; in an address or a tooltip they are how a link is made
+/// to read as another (`https://ok.example/\u{202E}gpj.exe` shows as `exe.jpg`).
+pub fn invisible(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{AD}'
+                | '\u{61C}'
+                | '\u{180E}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{206F}'
+                | '\u{FEFF}'
+                | '\u{FFF9}'..='\u{FFFB}'
+                | '\u{E0000}'..='\u{E007F}'
+        )
+}
+
 /// The allowlist itself, separate so tests can feed it hostile HTML directly.
 pub fn sanitize(fragment: &str) -> String {
     let schemes: HashSet<&str> = ["http", "https", "mailto"].into_iter().collect();
@@ -70,6 +91,15 @@ pub fn sanitize(fragment: &str) -> String {
         .add_tags(TAGS)
         .add_tag_attributes("a", ["href", "title"])
         .add_tag_attributes("ol", ["start"])
+        // A link whose address or title hides a character loses that
+        // attribute: the text stays, the deception does not.
+        .attribute_filter(|_, _, value| {
+            if value.chars().any(invisible) {
+                None
+            } else {
+                Some(value.into())
+            }
+        })
         .url_schemes(schemes)
         .url_relative(ammonia::UrlRelative::Deny)
         .link_rel(Some("nofollow noopener noreferrer ugc"))
@@ -134,6 +164,11 @@ mod tests {
         "<details open ontoggle=alert(1)>",
         "<video><source onerror=alert(1)></video>",
         "<marquee onstart=alert(1)>",
+        "<a href=\"https://ok.example/\u{202E}gpj.exe\">x</a>",
+        "<a href=\"https://ok.example\" title=\"\u{200B}\">x</a>",
+        "<a href=\"&#x6A;avascript:alert(1)\">x</a>",
+        "<a href=\"&#106&#97&#118&#97&#115&#99&#114&#105&#112&#116&#58alert(1)\">x</a>",
+        "<a href=\"jav&NewLine;ascript:alert(1)\">x</a>",
     ];
     const MARKDOWN_XSS: &[&str] = &[
         "[x](javascript:alert(1))",
@@ -149,6 +184,57 @@ mod tests {
         "<div>\n\n<script>alert(1)</script>\n\n</div>",
         "[x]: javascript:alert(1)\n\n[link][x]",
         "<a href=\"javascript:alert(1)\">inline</a> after",
+        // Link titles that try to close their attribute.
+        "[x](https://ok.example \"t\\\" onmouseover=\\\"alert(1)\")",
+        "[x](https://ok.example 't\" onmouseover=\"alert(1)')",
+        "[x](https://ok.example (t\" onmouseover=\"alert(1)))",
+        "[x](https://ok.example \"<script>alert(1)</script>\")",
+        "[x]: https://ok.example \"t\\\" onclick=\\\"alert(1)\"\n\n[x]",
+        // Angle-bracket destinations and autolinks.
+        "[x](<javascript:alert(1)>)",
+        "[x](<JavaScript:alert(1)>)",
+        "[x](< javascript:alert(1)>)",
+        "<javascript:alert(1)>",
+        "<JAVASCRIPT:alert(1)>",
+        "<vbscript:msgbox(1)>",
+        "<data:text/html,<script>alert(1)</script>>",
+        "<javascript:alert(1)//https://ok.example>",
+        // Unicode controls, invisible and bidi characters.
+        "[x](java\u{0}script:alert(1))",
+        "[x](\u{1}javascript:alert(1))",
+        "[x](java\u{200B}script:alert(1))",
+        "[x](\u{FEFF}javascript:alert(1))",
+        "[x](\u{202E}javascript:alert(1))",
+        "[x](https://ok.example/\u{202E}gpj.exe)",
+        "[x](https://ok.example/\u{2066}a\u{2069})",
+        "[x](https://ok.example/\u{200B})",
+        "<https://ok.example/\u{202E}gpj.exe>",
+        "[x](https://ok.example \"\u{202E}title\")",
+        "[x](java&#x0A;script:alert(1))",
+        "[x](java&#9;script:alert(1))",
+        // Fullwidth and other look-alike scheme letters.
+        "[x](\u{FF4A}\u{FF41}\u{FF56}\u{FF41}\u{FF53}\u{FF43}\u{FF52}\u{FF49}\u{FF50}\u{FF54}:alert(1))",
+        "<\u{FF4A}\u{FF41}\u{FF56}\u{FF41}\u{FF53}\u{FF43}\u{FF52}\u{FF49}\u{FF50}\u{FF54}:alert(1)>",
+        "[x](javascript\u{FF1A}alert(1))",
+        "[x](https\u{FF1A}//evil.example)",
+        // data: and vbscript: in images and links.
+        "![x](data:image/svg+xml,<svg onload=alert(1)>)",
+        "![x](data:image/png;base64,iVBORw0KGgo=)",
+        "![x](vbscript:msgbox(1))",
+        "[x](vbscript:msgbox(1))",
+        "[x](VBScript:msgbox(1))",
+        "[x](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)",
+        "[![x](https://evil.example/p.gif)](javascript:alert(1))",
+        // Markdown nested inside HTML attributes, and HTML inside markdown.
+        "<a href=\"[x](javascript:alert(1))\">y</a>",
+        "<img alt=\"[x](javascript:alert(1))\" src=x onerror=alert(1)>",
+        "<a title=\"*x*\" href=\"javascript:alert(1)\">y</a>",
+        "[<img src=x onerror=alert(1)>](https://ok.example)",
+        "[x](https://ok.example)<img src=x onerror=alert(1)>",
+        "**<a href=\"javascript:alert(1)\">bold</a>**",
+        "| a |\n|---|\n| <a href=\"javascript:alert(1)\">x</a> |",
+        "> <script>alert(1)</script>",
+        "- [x] <img src=x onerror=alert(1)>",
     ];
 
     /// Reads the output as a browser would and checks every element and
@@ -190,6 +276,12 @@ mod tests {
                     );
                     assert!(!value.contains('"') && !value.contains('<'));
                 }
+                // An address or a tooltip never carries a character a reader
+                // cannot see, which is how a link is made to read as another.
+                assert!(
+                    !value.chars().any(invisible),
+                    "an invisible character survived in {attribute}={value:?} (from {input:?})"
+                );
                 attributes = &attributes[value_end + 1..];
             }
             rest = &rest[tag_end + 1..];

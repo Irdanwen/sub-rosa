@@ -4008,6 +4008,7 @@
     "/readyz": {
       "get": {
         "summary": "Health probe",
+        "description": "Ready when the database answers. partner_revocations counts the Carpe Diem revocations not yet delivered and those failing for about a day (12 attempts); it never makes the service unready.",
         "responses": {
           "200": {
             "description": "Success",
@@ -4021,6 +4022,21 @@
                       "properties": {
                         "status": {
                           "type": "string"
+                        },
+                        "partner_revocations": {
+                          "type": "object",
+                          "properties": {
+                            "pending": {
+                              "type": "integer"
+                            },
+                            "stuck": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "pending",
+                            "stuck"
+                          ]
                         }
                       },
                       "required": [
@@ -4970,7 +4986,7 @@
     "/api/v1/carpe-diem/assertion": {
       "post": {
         "summary": "Vouch to Carpe Diem that this device may obtain its own key bound to jkt (ADR 0069, ADR 0096). The Carpe Diem key is never returned here",
-        "description": "See docs/carpe-diem-partner-contract.md section 1. The assertion is an ES256 JWS, typ partner-assertion+jwt, valid 120 seconds, carried by the app to the Carpe Diem operator with a DPoP proof from the same ephemeral key. A browser device asks with its browser session and a subrosa-device-proof header bound to jkt; it need not be recent, and its assertion carries kind browser and bound {daily_cap_credits, valid_seconds}. A browser session without a proof answers 403 device_required.",
+        "description": "See docs/carpe-diem-partner-contract.md section 1. The assertion is an ES256 JWS, typ partner-assertion+jwt, valid 120 seconds, carried by the app to the Carpe Diem operator with a DPoP proof from the same ephemeral key. A browser device asks with its browser session and a subrosa-device-proof header bound to the request body, which holds jkt; it need not be recent, and its assertion carries kind browser and bound {daily_cap_credits, valid_seconds}. A browser session without a proof answers 403 device_required.",
         "security": [
           {
             "nativeSession": []
@@ -5089,7 +5105,7 @@
             "name": "subrosa-device-proof",
             "in": "header",
             "required": false,
-            "description": "Browser devices only. ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and, for the assertion, ath = base64url(SHA-256(jkt)). The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
+            "description": "Browser devices only. ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and ath = base64url(SHA-256(the exact request body bytes)), on every route. The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
             "schema": {
               "type": "string"
             }
@@ -5111,7 +5127,7 @@
             "name": "subrosa-device-proof",
             "in": "header",
             "required": true,
-            "description": "ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and, for the assertion, ath = base64url(SHA-256(jkt)). The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
+            "description": "ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and ath = base64url(SHA-256(the exact request body bytes)), on every route. The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
             "schema": {
               "type": "string"
             }
@@ -5238,7 +5254,7 @@
             "name": "subrosa-device-proof",
             "in": "header",
             "required": true,
-            "description": "ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and, for the assertion, ath = base64url(SHA-256(jkt)). The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
+            "description": "ES256 JWS, typ subrosa-device+jwt, signed by the browser's non-extractable P-256 device key. Claims htm, htu (public URL + path, exact), iat (within 60 s), jti (single use) and ath = base64url(SHA-256(the exact request body bytes)), on every route. The header carries kid = device id, or jwk = the public key when the device does not exist yet (ADR 0096).",
             "schema": {
               "type": "string"
             }
@@ -6665,7 +6681,7 @@
     },
     "/api/v1/catalog/assistants/{id}/import": {
       "post": {
-        "summary": "The listing for Add to Sub Rosa, counted as one import. The import count is the only figure kept about readers",
+        "summary": "The listing for Add to Sub Rosa, counted as one import. The import count is the only figure kept about readers. At most 10 a minute per address (429 slow_down), on top of the service-wide budget",
         "parameters": [
           {
             "name": "id",
