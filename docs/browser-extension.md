@@ -85,6 +85,19 @@ default profile's folder (`~/Library/Application Support/Google/Chrome/...`).
 Copy the manifest into the throwaway profile's `NativeMessagingHosts`, or
 test in the browser's normal profile.
 
+Two traps seen on 2026-10-10 (`docs/qa/parity-1.89.1.md`), with Brave on
+macOS. A Brave started with `--user-data-dir` read neither that folder nor
+Brave's own `NativeMessagingHosts`, but Chrome's
+(`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`); the
+app writes that one too, so the normal flow works, but an edit to Brave's
+copy changes nothing. And a debug build run from a checkout under
+`~/Documents`: the browser starts the host from there, macOS holds it in
+`dyld` behind the folder's privacy prompt ("june" would like to access
+files in your Documents folder), and the panel waits with no message.
+Point the manifest's `path` at a copy of the binary outside `~/Documents`,
+or keep the checkout elsewhere. A release build in `/Applications` is not
+affected.
+
 ## Publishing (not automated)
 
 The stores assign their own extension ids. Each one must be added to
