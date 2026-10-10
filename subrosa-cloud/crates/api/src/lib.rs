@@ -722,9 +722,18 @@ async fn share_blob(
     )
         .into_response())
 }
+/// Ready when the database answers. The revocation backlog rides along so it
+/// is visible from outside the host, but never makes the service unready: a
+/// Carpe Diem that refuses revocations is not a reason to stop serving.
+/// Counts only, which say nothing about any account.
 async fn ready(State(s): State<Arc<Service>>) -> Result<Response> {
     s.repository.healthy().await?;
-    Ok(ok(json!({"status":"ready"})).into_response())
+    let backlog = s.revocation_backlog().await?;
+    Ok(ok(json!({
+        "status": "ready",
+        "partner_revocations": {"pending": backlog.pending, "stuck": backlog.stuck},
+    }))
+    .into_response())
 }
 
 #[derive(Deserialize)]

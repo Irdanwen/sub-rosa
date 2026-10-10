@@ -380,6 +380,35 @@ pub struct PendingRevocation {
     pub reason: RevocationReason,
     pub attempts: i32,
 }
+/// Why one revocation did not reach Carpe Diem. Kept on the outbox row and in
+/// the log, so an operator reads "http 404" rather than a generic outage: the
+/// status alone tells a route Carpe Diem has not armed (404, no partner
+/// configured) apart from a refused signature (401) or an outage (5xx). Never
+/// a response body, which this service does not read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum RevocationFailure {
+    /// Carpe Diem answered, with anything but a success.
+    #[error("http {0}")]
+    Status(u16),
+    /// No answer: DNS, TLS, connection or timeout.
+    #[error("unreachable")]
+    Unreachable,
+    /// The assertion could not be signed here.
+    #[error("signing")]
+    Signing,
+}
+/// What the outbox holds that Carpe Diem has not yet confirmed.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct RevocationBacklog {
+    /// Every undelivered revocation.
+    pub pending: i64,
+    /// Those that failed often enough to have been failing for about a day.
+    pub stuck: i64,
+    /// When the oldest undelivered one was written.
+    pub oldest: Option<DateTime<Utc>>,
+    /// What the most recent failure said, as a `RevocationFailure` renders it.
+    pub last_error: Option<String>,
+}
 /// The only two things the service may ask of Carpe Diem: vouch for an
 /// identity so a device can obtain its own key, and ask for keys to be
 /// revoked. There is deliberately no way to read a key, a balance or to spend.
@@ -389,7 +418,10 @@ pub trait CarpeDiemPartner: Send + Sync {
     /// The bound this deployment asks Carpe Diem to put on a browser device's
     /// key. An app's key carries none.
     fn browser_bound(&self) -> BrowserBound;
-    async fn revoke(&self, revocation: &PendingRevocation) -> Result<()>;
+    async fn revoke(
+        &self,
+        revocation: &PendingRevocation,
+    ) -> std::result::Result<(), RevocationFailure>;
 }
 
 /// One line of the account's security history. The wire names are the

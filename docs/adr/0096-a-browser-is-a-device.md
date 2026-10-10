@@ -186,3 +186,19 @@ What bounds it:
   what protects against script on the page.
 - A browser device is per browser profile: clearing site data deletes its keys,
   and the person admits it again; the old row stays in the list until revoked.
+
+## Addendum, 10 October 2026: every proof binds its body
+
+The proof's `ath` was the hash of one value, and only on the assertion route
+(the `jkt`). The admission and renounce proofs bound the method, the URL and a
+single-use identifier, but not what they carried: a script that obtained one
+admission proof could not replay it (single use), yet nothing tied it to the
+`name` and `admission` it was sent with, so it could have been spent on a body
+it chose. Every device proof now carries `ath` = base64url(SHA-256(the exact
+request body bytes)), required on every route and checked against the raw
+bytes before they are parsed (`DeviceProof` in `subrosa-services`, the routes
+take `Bytes`). The client builds the body string once and sends that string.
+On the assertion route this is strictly stronger than the old binding, since
+the body holds the `jkt`. A page served before this change sends the old proof
+and is refused with `401 device_proof_invalid` until it reloads; the website
+and the service ship together.

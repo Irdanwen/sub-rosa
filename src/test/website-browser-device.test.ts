@@ -127,6 +127,8 @@ describe("the browser device key", () => {
       expect(part(proof, 1)).toMatchObject({
         htm: "POST",
         htu: `${location.origin}/api/v1/browser-devices`,
+        // Bound to the body exactly as sent, so it cannot carry another admission.
+        ath: await sha(String(init.body)),
       });
       expect(JSON.parse(String(init.body))).toEqual({
         name: "Browser - Firefox",
@@ -143,9 +145,13 @@ describe("the browser device key", () => {
     expect(record.wrapping.extractable).toBe(false);
     expect(store.rows.get(ACCOUNT)?.deviceId).toBe(DEVICE);
     // Once admitted, proofs name the device instead of carrying the key.
-    const later = await deviceProof(record, "/api/v1/browser-devices/renounce");
+    const later = await deviceProof(record, "/api/v1/browser-devices/renounce", "{}");
     expect(part(later, 0)).toEqual({ alg: "ES256", typ: "subrosa-device+jwt", kid: DEVICE });
+    expect(part(later, 1).ath).toBe(await sha("{}"));
     expect(await verifies(later, record)).toBe(true);
+    // The vector the service's browser.rs test pins: SHA-256 of no bytes.
+    const empty = await deviceProof(record, "/api/v1/browser-devices/renounce", "");
+    expect(part(empty, 1).ath).toBe("47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU");
     expect(storage).not.toHaveBeenCalled();
   });
 
@@ -182,7 +188,9 @@ describe("key birth for a browser device", () => {
         jkt = JSON.parse(String(init.body)).jkt;
         const proof = headers.get(DEVICE_PROOF_HEADER) ?? "";
         expect(part(proof, 0).kid).toBe(DEVICE);
-        expect(part(proof, 1).ath).toBe(await sha(jkt));
+        // The body, not the thumbprint alone: the service hashes the bytes.
+        expect(String(init.body)).toBe(JSON.stringify({ jkt }));
+        expect(part(proof, 1).ath).toBe(await sha(String(init.body)));
         return json(200, { data: { assertion: "header.claims.signature", expires_at: "x" } });
       }
       expect(url).toBe(`${CARPE_DIEM_OPERATOR}/partner/keys`);
@@ -312,14 +320,19 @@ describe("key birth for a browser device", () => {
     const birth = await birthKey(store, record);
     if (birth.status !== "issued") throw new Error("expected a key");
     const calls: string[] = [];
+    const proofs: string[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit) => {
-        calls.push(`${url} ${new Headers(init.headers).get("Authorization") ?? ""}`);
+        const headers = new Headers(init.headers);
+        calls.push(`${url} ${headers.get("Authorization") ?? ""}`);
+        const proof = headers.get(DEVICE_PROOF_HEADER);
+        if (proof) proofs.push(`${part(proof, 1).ath} ${await sha(String(init.body))}`);
         throw new TypeError("offline");
       }),
     );
     await forgetBrowser(store, birth.record);
+    expect(proofs).toEqual([`${await sha("{}")} ${await sha("{}")}`]);
     expect(calls).toContain("/api/v1/browser-devices/renounce ");
     expect(calls).toContain(
       `${CARPE_DIEM_OPERATOR}/v1/keys/self/revoke Bearer cdm_${"c".repeat(64)}`,

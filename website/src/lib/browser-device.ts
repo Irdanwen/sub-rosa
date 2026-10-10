@@ -151,11 +151,16 @@ async function newSigningPair() {
   return { privateKey: pair.privateKey, x: jwk.x, y: jwk.y };
 }
 
-/** A proof that this browser acts as its device, for one call to `path`. */
+/**
+ * A proof that this browser acts as its device, for one call to `path` with
+ * exactly `body`: `ath` is the SHA-256 of the body as sent, so the service
+ * refuses the proof on any other body. Build the body string once and send
+ * that same string.
+ */
 export async function deviceProof(
   record: DeviceRecord,
   path: string,
-  bound?: string,
+  body: string,
   origin = location.origin,
 ): Promise<string> {
   const header = record.deviceId
@@ -165,7 +170,7 @@ export async function deviceProof(
         typ: DEVICE_PROOF_TYPE,
         jwk: { kty: "EC", crv: "P-256", x: record.x, y: record.y },
       };
-  return signJws(record.signing, header, await proofClaims(`${origin}${path}`, bound));
+  return signJws(record.signing, header, await proofClaims(`${origin}${path}`, body));
 }
 
 // ── Naming ──────────────────────────────────────────────────────────────────
@@ -212,10 +217,13 @@ export async function admitBrowser(
   };
   await store.put(record);
   try {
+    const body = JSON.stringify({ name, admission });
     const device = await api<{ id: string; name: string }>("/api/v1/browser-devices", {
       method: "POST",
-      headers: { [DEVICE_PROOF_HEADER]: await deviceProof(record, "/api/v1/browser-devices") },
-      body: JSON.stringify({ name, admission }),
+      headers: {
+        [DEVICE_PROOF_HEADER]: await deviceProof(record, "/api/v1/browser-devices", body),
+      },
+      body,
     });
     const admitted = { ...record, deviceId: device.id, name: device.name };
     await store.put(admitted);
@@ -369,12 +377,13 @@ export async function birthKey(store: DeviceStore, record: DeviceRecord): Promis
   const ephemeral = await newSigningPair();
   const jwk = { kty: "EC", crv: "P-256", x: ephemeral.x, y: ephemeral.y };
   const jkt = await thumbprint(ephemeral.x, ephemeral.y);
+  const request = JSON.stringify({ jkt });
   const { assertion } = await api<{ assertion: string }>("/api/v1/carpe-diem/assertion", {
     method: "POST",
     headers: {
-      [DEVICE_PROOF_HEADER]: await deviceProof(record, "/api/v1/carpe-diem/assertion", jkt),
+      [DEVICE_PROOF_HEADER]: await deviceProof(record, "/api/v1/carpe-diem/assertion", request),
     },
-    body: JSON.stringify({ jkt }),
+    body: request,
   });
   const dpop = async (path: string, bound: string) =>
     signJws(
@@ -429,7 +438,7 @@ export async function forgetBrowser(store: DeviceStore, record: DeviceRecord): P
   const attempts: Promise<unknown>[] = [];
   if (record.deviceId)
     attempts.push(
-      deviceProof(record, "/api/v1/browser-devices/renounce").then((proof) =>
+      deviceProof(record, "/api/v1/browser-devices/renounce", "{}").then((proof) =>
         api("/api/v1/browser-devices/renounce", {
           method: "POST",
           headers: { [DEVICE_PROOF_HEADER]: proof },

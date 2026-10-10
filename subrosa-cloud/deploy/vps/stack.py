@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import admin_rotate
 import bootstrap
 
 
@@ -44,11 +45,17 @@ def check_resources(env, application, running=()):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["validate", "identity", "migrate", "start", "maintenance", "restore-sanitize"])
+    parser.add_argument("action", choices=["validate", "identity", "migrate", "start", "maintenance", "restore-sanitize", "admin-rotate"])
     parser.add_argument("--directory", type=Path, required=True)
+    parser.add_argument("--dry-run", action="store_true", help="admin-rotate only: print the plan, send nothing")
     args = parser.parse_args()
     directory = args.directory.resolve()
     application = args.action not in ("validate", "identity")
+    if args.action == "admin-rotate":
+        return rotate_admin(directory, args.dry_run)
+    if args.dry_run:
+        print("--dry-run applies to admin-rotate only.", file=sys.stderr)
+        return 2
     try:
         bootstrap.check(directory, application, require_rehearsal=args.action == "start")
         bootstrap.render(directory)
@@ -84,6 +91,27 @@ def main():
         print("Deployment action failed; inspect redacted service diagnostics.", file=sys.stderr)
         return 1
     return 0
+
+def rotate_admin(directory, dry_run):
+    """Keycloak's permanent administrator (admin_rotate.py), then the private
+    volume refreshed so the copied bootstrap password goes with its source."""
+    compose = ["docker", "compose", "--env-file", str(directory / "stack.env"), "-f", str(Path(__file__).with_name("compose.yaml"))]
+    try:
+        if dry_run:
+            admin_rotate.dry_run(directory / "private", admin_rotate.base_url(bootstrap.read_private(directory / "stack.env")), print)
+            print("  then: docker compose run --rm prepare-secrets (drops the volume's copy of the bootstrap password)")
+            return 0
+        admin_rotate.run(directory)
+        subprocess.run(compose + ["run", "--rm", "prepare-secrets"], check=True)
+        print("Private volume refreshed; the bootstrap password is gone from it too.")
+    except ValueError as error:
+        print(str(error), file=sys.stderr)  # Locally authored; names users and files, never values.
+        return 1
+    except (OSError, subprocess.CalledProcessError, KeyError):
+        print("Administrator rotation failed; nothing was printed. Run it again: every step is idempotent.", file=sys.stderr)
+        return 1
+    return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

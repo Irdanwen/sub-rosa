@@ -4,8 +4,8 @@ use futures_util::TryStreamExt;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use subrosa_domain::{
     Account, Change, Device, DeviceKind, DeviceRequest, Error, Identity, JournalPage, LoginAttempt,
-    Operation, OperationResult, PendingRevocation, Result, RevocationReason, Secret,
-    SecurityEventKind, Session, Share, SharePreview, Vault,
+    Operation, OperationResult, PendingRevocation, Result, RevocationBacklog, RevocationReason,
+    Secret, SecurityEventKind, Session, Share, SharePreview, Vault,
 };
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -23,6 +23,12 @@ pub use security_events::{
     PAGE as SECURITY_EVENTS_PAGE, RETENTION_DAYS as SECURITY_EVENTS_RETENTION_DAYS,
 };
 pub use spaces::{EpochWrite, InvitationWrite};
+
+/// Failures after which an undelivered revocation counts as stuck. The backoff
+/// below waits 1, 2, 4 … 256 minutes, then six hours a time, so twelve failures
+/// are about 26 hours of Carpe Diem refusing: long enough that it is not a
+/// blip, short enough that a live key is not left unremarked for a week.
+pub const REVOCATION_STUCK_AFTER_ATTEMPTS: i32 = 12;
 
 #[derive(Clone)]
 pub struct Repository {
@@ -1283,8 +1289,9 @@ impl Repository {
             .map_err(db)?;
         tx.commit().await.map_err(db)
     }
-    /// Backs off exponentially from one minute to six hours and never gives
-    /// up: a key that should be dead is worth asking about forever.
+    /// Backs off exponentially from one minute to a ceiling of six hours and
+    /// never gives up: a key that should be dead is worth asking about forever.
+    /// What stops being quiet is the log (`Service::deliver_revocations`).
     pub async fn revocation_failed(&self, id: Uuid, error: &str) -> Result<()> {
         sqlx::query("UPDATE partner_revocations SET attempts=attempts+1, next_attempt_at=now()+make_interval(mins => LEAST(360, power(2, LEAST(attempts, 9))::int)), last_error=$2 WHERE id=$1")
             .bind(id)
@@ -1293,6 +1300,20 @@ impl Repository {
             .await
             .map_err(db)?;
         Ok(())
+    }
+    /// The undelivered part of the outbox, for readiness and for the alarm.
+    pub async fn revocation_backlog(&self) -> Result<RevocationBacklog> {
+        let row = sqlx::query("SELECT count(*) AS pending, count(*) FILTER (WHERE attempts>=$1) AS stuck, min(created_at) AS oldest, (SELECT last_error FROM partner_revocations WHERE done_at IS NULL AND last_error IS NOT NULL ORDER BY next_attempt_at DESC LIMIT 1) AS last_error FROM partner_revocations WHERE done_at IS NULL")
+            .bind(REVOCATION_STUCK_AFTER_ATTEMPTS)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(RevocationBacklog {
+            pending: row.get("pending"),
+            stuck: row.get("stuck"),
+            oldest: row.get("oldest"),
+            last_error: row.get("last_error"),
+        })
     }
     pub async fn prune_auth(&self) -> Result<()> {
         for q in [
