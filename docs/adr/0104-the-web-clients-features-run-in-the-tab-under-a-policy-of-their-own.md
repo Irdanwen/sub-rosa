@@ -219,3 +219,30 @@ with the site's own origin in the sandbox's policy. Python on the web costs one
 hidden frame more, a few kilobytes. The `/pyodide/` path stays reachable from
 the worker, so a run could still request a file there; the vhost keeps no
 access log, and nothing under it is secret.
+
+## Addendum 2026-10-10: the Excel pane frames its own origin's sandbox
+
+The addendum above put the Excel pane's Python in the site's
+`/python-sandbox.html`, because the panes were served by the account origin.
+The same day they moved to an origin of their own (ADR-0102, addendum of
+2026-10-10), and a pane frames the sandbox of the origin it runs on, so:
+
+- The office build has its own entry, `office-addins/python-sandbox.html`
+  (its script, `office-addins/src/python-sandbox.ts`, imports the site's
+  `client/analysis/python-sandbox.ts`), emitted as `/python-sandbox.html` with
+  its scripts under `/office/assets/python-sandbox*`. The module preload
+  polyfill is off there too. The development server serves it like any page,
+  so the Office dev server's copy of the site's page is gone.
+- The office origin serves it with the same policy written for that origin:
+  `script-src` and `worker-src` name `<office origin>/office/assets/`,
+  `connect-src` and `script-src` its `/pyodide/`, and `frame-ancestors` the
+  office origin and Office's hosts; `/office/assets/python-sandbox*` and
+  `/pyodide/` answer with CORS (`office-addins/public/_headers`,
+  `nginx-office.conf.example`, the office block of `Caddyfile.example`). The
+  panes' `frame-src` keeps `'self'`, on the one line that also names
+  Microsoft's frame and the account's courier.
+- The account origin's copy is framed by `/app` alone, so its
+  `frame-ancestors` is the account origin only: Office's hosts are no longer
+  named there.
+
+`src/test/website-csp.test.ts` holds both origins' copies to these values.

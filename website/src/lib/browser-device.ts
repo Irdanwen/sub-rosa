@@ -17,6 +17,7 @@
  * over TLS. The key is short lived and renewed while the device is live.
  */
 import { ApiError, api, boundedJson } from "./api";
+import { accountOrigin } from "./office-origins";
 import { decode, encode } from "./vault";
 
 /** Where key birth and inference happen. The site's CSP `connect-src` names
@@ -152,16 +153,18 @@ async function newSigningPair() {
 }
 
 /**
- * A proof that this browser acts as its device, for one call to `path` with
- * exactly `body`: `ath` is the SHA-256 of the body as sent, so the service
- * refuses the proof on any other body. Build the body string once and send
- * that same string.
+ * A proof that this browser acts as its device, for one call to `path` on the
+ * account service with exactly `body`: `ath` is the SHA-256 of the body as
+ * sent, so the service refuses the proof on any other body. Build the body
+ * string once and send that same string. An Office pane runs on an origin of
+ * its own, so the URL it signs is the account origin's, which the service
+ * checks, not the page's.
  */
 export async function deviceProof(
   record: DeviceRecord,
   path: string,
   body: string,
-  origin = location.origin,
+  origin = accountOrigin(),
 ): Promise<string> {
   const header = record.deviceId
     ? { alg: "ES256", typ: DEVICE_PROOF_TYPE, kid: record.deviceId }

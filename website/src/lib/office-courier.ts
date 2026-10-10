@@ -1,26 +1,36 @@
 /**
- * The session courier (ADR-0102).
+ * The session courier (ADR-0102 and its addendum of 2026-10-10).
  *
- * In Office on the web the task pane is a frame on Microsoft's site: the
- * account's `SameSite=Lax` cookie never reaches it, and its storage is
- * partitioned. The pane still holds its own device key and its own Carpe
- * Diem key; what it lacks is the signed-in session a few device calls need
- * (admission, the key's assertion, renouncing). A sign-in window on the
- * account origin (`/office/session.html`, opened with Office's dialog API) has
- * that session, so it carries those calls for the pane, and only those:
+ * The Office task panes live on an origin of their own
+ * (`office.subrosa.furetier.com`), because Office.js, Microsoft's script that
+ * cannot be pinned, runs in them. The account's cookie is host-only, so it
+ * never reaches that origin, and in Office on the web the pane is moreover a
+ * frame on Microsoft's site. The pane still holds its own device key and its
+ * own Carpe Diem key; what it lacks is the signed-in session a few device
+ * calls need (admission, the key's assertion, renouncing).
+ *
+ * The sign-in window (`/office/session.html` on the office origin, opened
+ * with Office's dialog API) embeds the account origin's
+ * `/office/courier.html`, a page with no Office.js. The two are the same
+ * site, so the account's `SameSite=Lax` cookie reaches that frame, which
+ * carries the pane's calls, and only those:
+ *
+ *   pane --messageChild--> window --postMessage--> courier frame --fetch--> service
  *
  * - the pane signs every device proof itself, single-use and bound to the
- *   exact URL and body; the window adds the cookie and the CSRF token, and
+ *   exact URL and body; the frame adds the cookie and the CSRF token, and
  *   passes the body on byte for byte, nothing else;
  * - what crosses Office's channel is proofs, a pairing code's request id, an
  *   assertion bound to a key that never leaves the pane, and the service's
  *   answers: nothing that spends;
  * - a recovery key's admission proof is refused, because the channel runs
- *   through Microsoft's host page: in the frame, a browser is admitted only by
- *   the app's approval.
+ *   through Office: a pane is admitted only by the app's approval.
+ *
+ * This file is the protocol and both ends of it; `website/src/office/` runs
+ * the frame, `office-addins/src/session/relay.ts` the window between.
  */
 
-/** The calls the window carries, and no other. */
+/** The calls the courier carries, and no other. */
 const ROUTES: [string, RegExp][] = [
   ["GET", /^\/api\/v1\/me$/],
   ["GET", /^\/api\/v1\/devices$/],
@@ -30,7 +40,7 @@ const ROUTES: [string, RegExp][] = [
   ["POST", /^\/api\/v1\/browser-devices\/renounce$/],
   ["POST", /^\/api\/v1\/carpe-diem\/assertion$/],
 ];
-/** The request headers the pane may set; the window sets the rest. */
+/** The request headers the pane may set; the courier frame sets the rest. */
 const FORWARDED = ["subrosa-device-proof", "x-subrosa-account-id"];
 const MAX_BODY = 64 * 1024;
 const MAX_ANSWER = 512 * 1024;
@@ -45,6 +55,12 @@ export interface CourierRequest {
   headers: Record<string, string>;
   body?: string;
 }
+/** The window asks the frame who is signed in; the frame answers with
+ * `ready` or `signed-out`. */
+export interface CourierHello {
+  v: 1;
+  type: "hello";
+}
 export type CourierMessage =
   | { v: 1; type: "ready"; account: { id: string; email: string } }
   | { v: 1; type: "signed-out" }
@@ -55,7 +71,7 @@ export function carried(method: string, path: string): boolean {
 }
 
 /** A message from the other side, or null when it is not one of ours. */
-export function parseMessage(raw: unknown): CourierMessage | CourierRequest | null {
+export function parseMessage(raw: unknown): CourierMessage | CourierRequest | CourierHello | null {
   if (typeof raw !== "string" || raw.length > MAX_ANSWER + 4096) return null;
   let value: unknown;
   try {
@@ -75,6 +91,8 @@ export function parseMessage(raw: unknown): CourierMessage | CourierRequest | nu
     }
     case "signed-out":
       return { v: 1, type: "signed-out" };
+    case "hello":
+      return { v: 1, type: "hello" };
     case "response":
       return typeof message.id === "string" &&
         Number.isInteger(message.status) &&
@@ -182,11 +200,11 @@ function answer(status: number, body: string): Response {
   return new Response(body, { status, headers: { "content-type": "application/json" } });
 }
 
-// ── The window's side ──────────────────────────────────────────────────────
+// ── The courier frame's side (account origin) ─────────────────────────────
 
 export interface WindowDeps {
   fetch: typeof fetch;
-  /** The CSRF token from this window's cookie. */
+  /** The CSRF token from the frame's cookie. */
   csrf(): string | undefined;
   reply(message: CourierMessage): void;
 }
@@ -202,7 +220,7 @@ function asksRecovery(body: string | undefined): boolean {
   }
 }
 
-/** Carries one request for the pane, if it is one the window carries. */
+/** Carries one request for the pane, if it is one the frame carries. */
 export async function carry(deps: WindowDeps, request: CourierRequest): Promise<void> {
   const respond = (status: number, body: string) =>
     deps.reply({ v: 1, type: "response", id: request.id, status, body });

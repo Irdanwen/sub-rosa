@@ -18,6 +18,9 @@ CVM by the operator's owner. What it changes, all inside the operator:
   and `https://furetier.com` are allowed on `/partner/keys`,
   `/partner/keys/poll`, `/partner/capabilities` and the inference routes listed
   in the contract (section 7); every other origin rule is unchanged.
+  The Office add-ins' origin, `https://office.subrosa.furetier.com`, has to
+  join that list (`SUBROSA_SITE_ORIGINS`) before a pane can obtain or use a
+  key ([office-addins.md](office-addins.md#deployment), step 0).
 - `operator/src/services/partners.ts`, `operator/src/routes/partnerRoute.ts`,
   `operator/src/services/db.ts`: the `kind`/`bound` assertion claims, the
   bounded key columns (`api_keys.bound_*`, added at boot by `ensureColumn`),
@@ -75,7 +78,8 @@ The Vercel frontend proxies `/api/operator/*` to the operator, including
   connector origins, and the microphone, camera and screen),
   `/connector-view.html` (its own policy, framed only by the site),
   `/python-sandbox.html` (its own policy, with the site's origin written in
-  place of `https://account.example.invalid`, and no `X-Frame-Options`), and
+  place of `https://account.example.invalid`, framed by the site alone, and no
+  `X-Frame-Options`; the Office panes frame their own origin's copy), and
   `/assets/python-sandbox*` and `/pyodide/` with
   `Access-Control-Allow-Origin: *` (the sandbox fetches them from an opaque
   origin; `/pyodide/` also needs module types for `.mjs` and

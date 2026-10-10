@@ -109,6 +109,26 @@ Publier rend un texte **public et en clair** : le service rend le markdown en HT
 
 Modération : `subrosa-cloud/scripts/takedown.sh --directory <dossier privé> reports` liste les signalements ouverts, `… page <slug> "<motif>"` (ou `site`, `profile`, `assistant`) retire un contenu. Règles et détails : [`public-content-rules.md`](public-content-rules.md). Le texte publié vit en clair dans PostgreSQL et dans ses sauvegardes : une restauration peut faire revenir une page dépubliée depuis la sauvegarde.
 
+## Origine des compléments Office (ADR 0102, addendum du 2026-10-10)
+
+Les volets Word, Excel et PowerPoint exécutent `office.js`, le script de Microsoft qu’on ne peut pas épingler. Ils sont donc servis par leur **propre origine**, `office.subrosa.furetier.com`, et plus jamais par celle du compte : rien de ce qui s’y exécute n’atteint le cookie du compte (sans attribut `Domain`), son stockage, son coffre ni son jeton CSRF. L’origine du compte garde deux pages sans `office.js` : `/office/courier.html` (encadrée par la seule fenêtre de connexion de l’origine Office, elle porte les sept appels d’appareil avec le cookie) et `/office/signed-in.html` (où la connexion revient, qui renvoie la fenêtre vers l’origine Office). Les anciennes adresses `/office/*.html` redirigent vers `/office/moved.html`, sans script.
+
+Ordre exact, détaillé avec ses vérifications dans [`office-addins.md`](office-addins.md#deployment) :
+
+0. **Carpe Diem (porte externe)** : ajouter `https://office.subrosa.furetier.com` à `SUBROSA_SITE_ORIGINS` (`operator/src/services/browserKeys.ts`) et déployer l’opérateur, sinon CORS refuse tous les appels des volets.
+1. **DNS** : enregistrement `A` (et `AAAA` le cas échéant) `office.subrosa.furetier.com` vers le VPS, non proxifié.
+2. **Vhost port 80 + ACME** : `nginx-office-bootstrap.conf.example` (hôte substitué) dans `sites-available/subrosa-office`, lien dans `sites-enabled`, `nginx -t && systemctl reload nginx`.
+3. **Certificat par webroot** : `certbot certonly --webroot -w /var/www/certbot -d office.subrosa.furetier.com`.
+4. **Build avec les deux origines** : le site avec `VITE_OFFICE_ORIGIN=https://office.subrosa.furetier.com` seul (jamais `VITE_ACCOUNT_ORIGIN` sur le site du compte), les compléments avec `VITE_ACCOUNT_ORIGIN=https://subrosa.furetier.com` et `VITE_OFFICE_ORIGIN=https://office.subrosa.furetier.com` (`pnpm --filter @subrosa/office-addins build`, sortie `office-addins/dist`, Pyodide compris).
+5. **Publication** de `office-addins/dist` dans `/srv/subrosa-office/www/releases/<id>`, puis bascule du lien `/srv/subrosa-office/www/current`.
+6. **Vhost HTTPS** : `nginx-office.conf.example` avec les deux hôtes substitués, à la place du fichier d’amorçage ; aucun service proxifié, aucun cookie, `X-Frame-Options` absent sur `/office/`.
+7. **Version du service** dont `RETURN_TO` contient `/office/signed-in.html` et plus `/office/session.html`.
+8. **Version du site du compte**, aussitôt après, avec le vhost du compte réinstallé depuis `nginx-account.conf.example` (blocs courrier, retour de connexion et page « déménagé » ; le bloc `/office/` avec `office.js` disparaît ; substituer les deux hôtes).
+9. **Validation des manifestes** : `node office-addins/scripts/manifests.mjs --check`, puis `npx office-addin-manifest validate` sur chacun (service en ligne de Microsoft).
+10. **Re-chargement latéral** des manifestes 1.0.1.0 dans Word, Excel et PowerPoint (web, Windows, Mac), après retrait de l’ancien complément ; révoquer les anciens appareils « Complément Office ».
+
+Effet visible : un complément chargé avant la bascule affiche « Sub Rosa for Office has moved » ; le nouveau demande une connexion et une approbation depuis l’app, une fois par volet, y compris sur le bureau (plus de connexion sur place ni de clé de récupération dans un volet). Le site et `/app` ne changent pas.
+
 ## Stockage et sauvegardes : portes encore fermées
 
 Le fichier [`storage-policies.example.json`](../subrosa-cloud/deploy/vps/storage-policies.example.json) fournit deux politiques de rôle à adapter chez le fournisseur. Ciphertexts : get/put/delete, bucket privé. Registre : list/get/create conditionnel, **aucun delete**, pas de changement de lifecycle/versioning/rétention par le runtime. Les [conditions S3 de création](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes-enforce.html) doivent être testées chez le fournisseur compatible. Ce n’est pas une configuration universelle interchangeable entre prestataires.

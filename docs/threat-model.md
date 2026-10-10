@@ -160,6 +160,16 @@ Named, because a threat model that claims everything protects nothing.
   addendum of 2026-10-10. A hidden instruction in an attached file can still
   make the model compute something wrong; it can no longer make Python read
   the browser's key or tokens or send anything anywhere.
+- **Microsoft's Office.js in the Office add-ins.** Office requires it from
+  Microsoft's CDN, updated in place, so it cannot be pinned. It runs on the
+  add-ins' own origin, never the account's (ADR-0102, addendum of
+  2026-10-10): it can do whatever a pane can (sign as the pane's browser
+  device, spend the pane's bounded key, ask the account origin's courier for
+  its seven device calls, none of which spends), and it cannot reach the
+  account's cookie, its storage, the vault or another browser device's keys.
+  The Excel pane's Python runs there as on `/app`, in that origin's own copy
+  of the opaque-origin `/python-sandbox.html` frame (previous point).
+  See [ADR-0102](adr/0102-an-office-task-pane-is-a-browser-device-whose-session-a-sign-in-window-carries.md).
 - **Cryptographic isolation after device revocation.** Revocation blocks the
   device's sessions immediately at the service. It does not rotate the vault
   root or erase past copies. A revoked device obtaining ciphertext through

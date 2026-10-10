@@ -1,6 +1,8 @@
-# Account origin. Like Caddyfile.example, this file names a placeholder host:
-# substitute the real account hostname when installing, for example
-#   sed 's/account.example.invalid/<account host>/g' nginx-account.conf.example \
+# Account origin. Like Caddyfile.example, this file names placeholder hosts:
+# substitute the real account hostname, and the Office add-ins' host
+# (nginx-office.conf.example), when installing, for example
+#   sed -e 's/account.example.invalid/<account host>/g' \
+#       -e 's/office.example.invalid/<office host>/g' nginx-account.conf.example \
 #     > /etc/nginx/sites-available/subrosa-account
 # The account website at the root, the account service under
 # /api, /auth, /livez and /readyz, and Keycloak's consumer endpoints under /id.
@@ -143,28 +145,59 @@ server {
         try_files $uri =404;
     }
 
-    # The Office task panes (ADR-0102). Office on the web frames them, so no
-    # X-Frame-Options and a frame-ancestors naming Office's hosts; Office.js
-    # comes from Microsoft's CDN and loads its files through its own "officejs"
-    # Trusted Types policy; the Excel pane runs Python like /app.
-    location ^~ /office/ {
+    # The Office add-ins run on their own origin (ADR-0102, addendum of
+    # 2026-10-10; nginx-office.conf.example): Office.js never runs here. This
+    # origin keeps two pages for them, neither with Office.js, and answers the
+    # add-ins' old addresses with a page saying where they went.
+    # The courier: framed only by the office origin's sign-in window, it
+    # carries the panes' few device calls with this origin's cookie.
+    location = /office/courier.html {
         add_header Strict-Transport-Security "max-age=31536000" always;
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy no-referrer always;
         add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src 'self' https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; connect-src 'self'; frame-ancestors https://office.example.invalid; require-trusted-types-for 'script'; trusted-types 'none'" always;
+        add_header Cache-Control no-store always;
         try_files $uri =404;
     }
+    # Where sign-in returns the window (the service's return_to), which this
+    # page sends back to the office origin. The site's own policy.
+    location = /office/signed-in.html {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa" always;
+        add_header Cache-Control no-store always;
+        try_files $uri =404;
+    }
+    # The add-ins moved: no script at all, and Office's hosts may frame it so
+    # Office on the web shows it in an old pane.
+    location = /office/moved.html {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com" always;
+        try_files $uri =404;
+    }
+    location ^~ /office/ {
+        location ~ ^/office/(word|excel|powerpoint|session|commands)\.html$ {
+            return 308 /office/moved.html;
+        }
+        return 404;
+    }
     # The Python sandbox (ADR-0104 addendum of 2026-10-10), framed with
-    # sandbox="allow-scripts" by /app and the Excel pane: an opaque origin
-    # whose policy reaches the site's scripts and Pyodide, nothing else, and
-    # which only the site and Office's hosts may frame.
+    # sandbox="allow-scripts" by /app: an opaque origin whose policy reaches
+    # the site's scripts and Pyodide, nothing else, and which only the site
+    # may frame. The Excel pane frames the office origin's own copy.
     location = /python-sandbox.html {
         add_header Strict-Transport-Security "max-age=31536000" always;
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy no-referrer always;
         add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
-        add_header Content-Security-Policy "default-src 'none'; script-src https://account.example.invalid/assets/ https://account.example.invalid/pyodide/ 'wasm-unsafe-eval'; worker-src data: https://account.example.invalid/assets/; connect-src https://account.example.invalid/pyodide/; frame-ancestors https://account.example.invalid https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types subrosa-python" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src https://account.example.invalid/assets/ https://account.example.invalid/pyodide/ 'wasm-unsafe-eval'; worker-src data: https://account.example.invalid/assets/; connect-src https://account.example.invalid/pyodide/; frame-ancestors https://account.example.invalid; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types subrosa-python" always;
         add_header Cache-Control no-store always;
         try_files $uri =404;
     }

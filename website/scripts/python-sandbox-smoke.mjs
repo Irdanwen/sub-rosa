@@ -6,6 +6,8 @@
 //     node website/scripts/python-sandbox-smoke.mjs chromium
 //   PLAYWRIGHT_CORE=<path to playwright-core> node website/scripts/python-sandbox-smoke.mjs webkit
 //   node website/scripts/python-sandbox-smoke.mjs serve [--simulator]
+//   pnpm --filter @subrosa/office-addins build  # then, the Excel pane's copy:
+//   PLAYWRIGHT_CORE=… node website/scripts/python-sandbox-smoke.mjs chromium --office
 //
 // Serves website/dist on a loopback origin with the policies of
 // website/public/_headers (the sandbox page's, with the example origin
@@ -20,7 +22,10 @@
 // post its results (`--simulator` opens it in the booted iOS simulator's
 // Safari with `xcrun simctl openurl`). Playwright is not a dependency of the
 // repository; it launches the browsers its own version installed, or
-// BROWSER_PATH (a cached headless shell, say).
+// BROWSER_PATH (a cached headless shell, say). With `--office` it does the
+// same against office-addins/dist under office-addins/public/_headers: the
+// office origin's own sandbox, which the Excel pane frames, its scripts under
+// /office/assets/, and the panes' policy for the harness page.
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
@@ -30,25 +35,40 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
-const dist = join(root, "website", "dist");
 const mode = process.argv[2] ?? "chromium";
-const EXAMPLE_ORIGIN = "https://account.example.invalid";
+const office = process.argv.includes("--office");
+const dist = join(root, office ? "office-addins" : "website", "dist");
+const headersFile = office ? "office-addins/public/_headers" : "website/public/_headers";
+/** The origin the sandbox's policy names in that file. */
+const EXAMPLE_ORIGIN = office
+  ? "https://office.subrosa.furetier.com"
+  : "https://account.example.invalid";
+/** Where that build puts the sandbox's scripts. */
+const ASSETS = office ? "/office/assets/" : "/assets/";
 
-const headers = readFileSync(join(root, "website/public/_headers"), "utf8");
+const headers = readFileSync(join(root, headersFile), "utf8");
 const policyOf = (pattern) => {
   const line = pattern.exec(headers)?.[1];
-  if (!line) throw new Error(`No policy matching ${pattern} in website/public/_headers.`);
+  if (!line) throw new Error(`No policy matching ${pattern} in ${headersFile}.`);
   return line;
 };
-const appPolicy = policyOf(/^\/app\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m);
+const appPolicy = policyOf(
+  office
+    ? /^\/\*\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m
+    : /^\/app\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m,
+);
 const sandboxPolicy = policyOf(
   /^\/python-sandbox\.html\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m,
 );
-const workerAsset = readdirSync(join(dist, "assets")).find((name) =>
+const workerAsset = readdirSync(join(dist, ASSETS)).find((name) =>
   /^python-sandbox\.worker-.*\.js$/.test(name),
 );
 if (!workerAsset || !statSync(join(dist, "pyodide", "pyodide.mjs"), { throwIfNoEntry: false }))
-  throw new Error("Build the site with Pyodide first (pnpm --filter @subrosa/website build).");
+  throw new Error(
+    office
+      ? "Build the panes with Pyodide first (pnpm --filter @subrosa/office-addins build)."
+      : "Build the site with Pyodide first (pnpm --filter @subrosa/website build).",
+  );
 
 const TYPES = {
   ".html": "text/html",
@@ -291,7 +311,7 @@ function startServer() {
     }
     if (path === "/__smoke/harness.js") {
       response.writeHead(200, { "content-type": "text/javascript" });
-      response.end(harness(`/assets/${workerAsset}`));
+      response.end(harness(`${ASSETS}${workerAsset}`));
       return;
     }
     if (path.startsWith("/exfil")) {
@@ -308,7 +328,7 @@ function startServer() {
     const head = { "content-type": TYPES[extname(file)] ?? "application/octet-stream" };
     if (path === "/python-sandbox.html")
       head["content-security-policy"] = sandboxPolicy.replaceAll(EXAMPLE_ORIGIN, origin);
-    if (path.startsWith("/assets/python-sandbox") || path.startsWith("/pyodide/"))
+    if (path.startsWith(`${ASSETS}python-sandbox`) || path.startsWith("/pyodide/"))
       head["access-control-allow-origin"] = "*";
     response.writeHead(200, head);
     response.end(readFileSync(file));
@@ -321,7 +341,7 @@ function startServer() {
 const ALLOWED = [
   /^\/__smoke\//,
   /^\/python-sandbox\.html$/,
-  /^\/assets\/python-sandbox/,
+  new RegExp(`^${ASSETS.replaceAll("/", "\\/")}python-sandbox`),
   /^\/pyodide\//,
   /^\/favicon\.ico$/,
 ];
@@ -432,7 +452,7 @@ try {
     ];
     const problems = judge(reported, [...new Set(outside)]);
     if (problems.length) failures++;
-    print(`${mode} ${run}`, reported, problems);
+    print(`${mode} ${run}${office ? " (office origin)" : ""}`, reported, problems);
   }
 } finally {
   server.close();

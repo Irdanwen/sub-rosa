@@ -1,0 +1,16 @@
+# First install for the Office add-ins' origin (ADR-0102, addendum of
+# 2026-10-10), once its DNS record exists. Substitute office.example.invalid
+# with the real office hostname (see nginx-office.conf.example).
+# Obtain the certificate with
+#   certbot certonly --webroot -w /var/www/certbot -d office.example.invalid
+# then replace this file with nginx-office.conf. Never replace another vhost.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name office.example.invalid;
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+    location / { return 404; }
+}
