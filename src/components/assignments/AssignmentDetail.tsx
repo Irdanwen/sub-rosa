@@ -77,6 +77,7 @@ export function AssignmentDetail({
     .map((choice) => choice.label);
   const waiting = runs.filter((run) => run.state === "needs_review");
   const history = runs.filter((run) => run.state !== "needs_review");
+  const running = runs.some((run) => run.state === "running");
   const isTask = assignment.kind === "task";
 
   return (
@@ -128,12 +129,14 @@ export function AssignmentDetail({
             onClick={() =>
               void act(async () => {
                 const outcome = await assignmentRunNow(assignment.id);
+                // A run started here says "running" from its row (below), so
+                // the line goes when the result lands instead of staying on.
                 setNotice(
                   outcome.outcome === "sent"
                     ? t("Sent to {device}. It runs there as soon as Sub Rosa is open.", {
                         device: outcome.deviceName || t("your other device"),
                       })
-                    : t("Running now. The result lands here."),
+                    : null,
                 );
                 await load();
               })
@@ -174,6 +177,9 @@ export function AssignmentDetail({
           </button>
         </div>
         {notice ? <p className="assignment-meta">{notice}</p> : null}
+        {running && !notice ? (
+          <p className="assignment-meta">{t("Running now. The result lands here.")}</p>
+        ) : null}
         {error ? (
           <p className="assignment-error" role="alert">
             {error}
@@ -197,20 +203,25 @@ export function AssignmentDetail({
         </section>
       ) : null}
 
-      <section className="assignment-section" aria-label={t("History")}>
-        <h2 className="assignment-section-title">{t("History")}</h2>
-        {history.length ? (
-          <ul className="assignment-history">
-            {history.map((run) => (
-              <RunHistoryRow key={run.id} run={run} />
-            ))}
-          </ul>
-        ) : (
-          <p className="assignment-meta">
-            {isTask ? t("This task has not run yet.") : t("This assignment has not run yet.")}
-          </p>
-        )}
-      </section>
+      {/* A run waiting for review has run: the history says "not run yet"
+       * only when there is no run at all, and stays away while the only
+       * runs are the ones above. */}
+      {history.length || !waiting.length ? (
+        <section className="assignment-section" aria-label={t("History")}>
+          <h2 className="assignment-section-title">{t("History")}</h2>
+          {history.length ? (
+            <ul className="assignment-history">
+              {history.map((run) => (
+                <RunHistoryRow key={run.id} run={run} />
+              ))}
+            </ul>
+          ) : (
+            <p className="assignment-meta">
+              {isTask ? t("This task has not run yet.") : t("This assignment has not run yet.")}
+            </p>
+          )}
+        </section>
+      ) : null}
 
       <ConfirmDialog
         open={confirmDelete}

@@ -25,7 +25,7 @@ const PLUGIN_NAME: &str = "subrosa_guard";
 const PLUGIN_SOURCE: &str = include_str!("../hermes/subrosa_guard.py");
 const PLUGIN_MANIFEST: &str = "name: subrosa_guard\n\
 version: \"1\"\n\
-description: \"Sub Rosa: no memory or skill writes from a temporary chat, the protected mode switches, and connector rules.\"\n\
+description: \"Sub Rosa: no memory or skill writes from a temporary chat, none of its words in the runtime log, the protected mode switches, and connector rules.\"\n\
 author: Sub Rosa\n\
 hooks:\n  - pre_tool_call\n";
 const LEDGER_NAME: &str = "subrosa-guard.json";
@@ -283,6 +283,98 @@ mod tests {
             run_plugin(home.path(), &[("memory", "x"), ("web_search", "x")]),
             ["block", "allow"]
         );
+    }
+
+    /// The runtime's turn log line (`agent/turn_context.py`, at INFO into
+    /// `agent.log`) keeps the first words of every message. Through the
+    /// installed plugin's `register`, the way the runtime loads it, a
+    /// temporary chat's words are replaced and every other chat's are kept.
+    #[test]
+    fn the_plugin_keeps_a_temporary_chats_words_out_of_the_turn_log() {
+        if !crate::test_python::python3_available("the plugin's own test") {
+            return;
+        }
+        let home = tempfile::tempdir().unwrap();
+        install_plugin(home.path()).unwrap();
+        assert!(write_state_db(home.path()), "state.db fixture");
+        write_ledger(
+            home.path(),
+            &render_ledger(&["temp-1".to_string()], &Restrictions::default()),
+        )
+        .unwrap();
+        let lines = run_turn_log(home.path(), &["temp-1", "temp-1-child", "ordinary", "none"]);
+        assert_eq!(lines.len(), 5, "{lines:?}");
+        assert!(
+            lines[0].contains("session=temp-1 ") && lines[0].ends_with("msg='[temporary chat]'")
+        );
+        assert!(
+            lines[1].ends_with("msg='[temporary chat]'"),
+            "a fork counts"
+        );
+        assert!(
+            lines[2].ends_with("msg='Secret words TMPW9'"),
+            "an ordinary chat keeps its line"
+        );
+        assert!(
+            lines[3].ends_with("msg='[temporary chat]'"),
+            "no session while one is open"
+        );
+        assert_eq!(
+            lines[4], "other line Secret words TMPW9",
+            "other records are untouched"
+        );
+
+        // No temporary chat open: every line as the runtime wrote it. The
+        // filter is installed once even when the plugin registers twice.
+        write_ledger(home.path(), &render_ledger(&[], &Restrictions::default())).unwrap();
+        let lines = run_turn_log(home.path(), &["temp-1"]);
+        assert!(lines[0].ends_with("msg='Secret words TMPW9'"));
+        // A damaged ledger keeps the words out.
+        std::fs::write(home.path().join(LEDGER_NAME), "{not json").unwrap();
+        let lines = run_turn_log(home.path(), &["ordinary"]);
+        assert!(lines[0].ends_with("msg='[temporary chat]'"));
+    }
+
+    /// Registers the plugin twice with a stand-in context, then logs one turn
+    /// line per session in the runtime's own format, and one other record.
+    fn run_turn_log(home: &Path, sessions: &[&str]) -> Vec<String> {
+        let output = Command::new("python3")
+            .arg("-c")
+            .arg(
+                "import json, sys, io, logging, importlib.util\n\
+                 spec = importlib.util.spec_from_file_location('guard', sys.argv[1])\n\
+                 guard = importlib.util.module_from_spec(spec)\n\
+                 spec.loader.exec_module(guard)\n\
+                 class Ctx:\n\
+                 \x20   def register_hook(self, name, hook): pass\n\
+                 guard.register(Ctx())\n\
+                 guard.register(Ctx())\n\
+                 assert len(logging.getLogger('agent.turn_context').filters) == 1\n\
+                 out = io.StringIO()\n\
+                 handler = logging.StreamHandler(out)\n\
+                 handler.setFormatter(logging.Formatter('%(message)s'))\n\
+                 logging.getLogger().addHandler(handler)\n\
+                 logging.getLogger().setLevel(logging.INFO)\n\
+                 logger = logging.getLogger('agent.turn_context')\n\
+                 for session in json.loads(sys.argv[2]):\n\
+                 \x20   logger.info('conversation turn: session=%s model=%s provider=%s platform=%s history=%d msg=%r', session, 'glm', 'custom', 'tui', 0, 'Secret words TMPW9')\n\
+                 logger.info('other line %s', 'Secret words TMPW9')\n\
+                 sys.stdout.write(out.getvalue())\n",
+            )
+            .arg(home.join("plugins").join(PLUGIN_NAME).join("__init__.py"))
+            .arg(serde_json::to_string(sessions).unwrap())
+            .env("HERMES_HOME", home)
+            .output()
+            .expect("run python3");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::to_string)
+            .collect()
     }
 
     /// A connector tool runs, is refused or goes to the runtime's approval

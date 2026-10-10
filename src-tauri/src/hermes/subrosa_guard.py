@@ -32,11 +32,19 @@ server, `subrosa_connectors`. Their rules are in the ledger too, under
 refused, and `ask`, or a connector tool the ledger does not name, goes to the
 runtime's own approval with the sentence the app wrote. What the plugin
 cannot read it asks about: the safe direction for a connector is a question.
+
+The runtime also logs the start of every turn at INFO into `logs/agent.log`
+("conversation turn: session=... msg=..."), with the first 80 characters of
+the message (`agent/turn_context.py`). A temporary chat is not saved, so
+that line must not keep its words: a filter on that logger replaces the
+message with a placeholder when the session, or one it descends from, is
+temporary, and when the record names no session while one is open.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -86,6 +94,12 @@ TEMPORARY_GALLERY_MESSAGE = (
     "saves what it makes into the gallery. Tell the user to start a regular "
     "chat to make it."
 )
+# The runtime's per-turn log line (`agent/turn_context.py`): its logger, the
+# start of its format, and what replaces a temporary chat's words in it.
+TURN_LOGGER = "agent.turn_context"
+TURN_RECORD = "conversation turn:"
+REDACTED_TURN = "[temporary chat]"
+
 UNREADABLE_MESSAGE = (
     "Sub Rosa could not confirm that this chat may use memory, so nothing is "
     "saved or recalled. Answer without it."
@@ -219,6 +233,60 @@ def connector_directive(
     return {"action": "approve", "message": message, "rule_key": f"subrosa_connector:{tool_name}"}
 
 
+def turn_log_is_temporary(session_id: str, home: Optional[Path] = None) -> bool:
+    """Whether a turn's log line belongs to a temporary chat (or may)."""
+    home = home or _home()
+    try:
+        ledger = _ledger(home)
+    except _Unreadable:
+        return True
+    temporary = {
+        value
+        for value in ledger.get("temporarySessions") or []
+        if isinstance(value, str) and value
+    }
+    if not temporary:
+        return False
+    if not session_id or session_id == "none":
+        return True
+    return is_temporary(session_id, temporary, home)
+
+
+class TemporaryTurnFilter(logging.Filter):
+    """Keeps a temporary chat's words out of the runtime's turn log line.
+
+    The record stays (the turn still happened, and the line is what tells a
+    reader a turn started), only its `msg=` argument is replaced. The
+    message is the format's last argument and the session its first.
+    """
+
+    subrosa_guard = True
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if not str(record.msg).startswith(TURN_RECORD):
+                return True
+            args = record.args
+            if not isinstance(args, tuple) or not args:
+                return True
+            if turn_log_is_temporary(str(args[0] or "")):
+                record.args = args[:-1] + (REDACTED_TURN,)
+        except Exception:
+            # Never break a turn over its log line, and never keep the words
+            # when the check itself failed.
+            if isinstance(record.args, tuple) and record.args:
+                record.args = record.args[:-1] + (REDACTED_TURN,)
+        return True
+
+
+def install_log_filter() -> None:
+    """Adds the filter once, even when the runtime discovers plugins again."""
+    turn_logger = logging.getLogger(TURN_LOGGER)
+    if any(getattr(existing, "subrosa_guard", False) for existing in turn_logger.filters):
+        return
+    turn_logger.addFilter(TemporaryTurnFilter())
+
+
 def _pre_tool_call(tool_name: str = "", session_id: str = "", args: Any = None, **_: Any):
     name = str(tool_name or "")
     if name.startswith(CONNECTOR_PREFIX):
@@ -241,3 +309,4 @@ def _pre_tool_call(tool_name: str = "", session_id: str = "", args: Any = None, 
 
 def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    install_log_filter()

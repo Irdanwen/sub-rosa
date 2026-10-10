@@ -153,3 +153,37 @@ The post-release audit of 1.89.0 found four more ways out, now closed:
   (`temporary_chat::remove_session_files`, an id that is not the runtime's
   own shape never becomes a path). Test:
   `temporary_chat::tests::the_runtimes_files_for_a_session_go_with_it`.
+
+## Addendum 2026-10-10: the runtime's log
+
+The parity run of 1.89.1 found one more trace: the pinned runtime logs the
+start of every turn at INFO into `hermes/logs/agent.log`, with the first 80
+characters of the message (`agent/turn_context.py`, "conversation turn:
+session=... msg=..."). After a temporary chat was left, its rows and its
+session were gone, and that line stayed.
+
+**Decision.** The `subrosa_guard` plugin, which the runtime loads before any
+turn (plugin discovery runs when `model_tools` is imported), adds a
+`logging.Filter` to the runtime's `agent.turn_context` logger. The record
+carries the session id as its first argument, so the plugin checks it
+against the same ledger and lineage as the tool hook, and replaces the
+message argument with `[temporary chat]` for a temporary session or one
+descended from it, for a record that names no session while a temporary
+chat is open, and when the ledger cannot be read. The line itself stays: it
+says a turn started, not what was said. Every other chat's line is left as
+the runtime wrote it, since it is the runtime's only per-turn diagnostic.
+
+**Rejected.** Changing the runtime (it is pinned, and the fix would be
+re-merged at every bump); redacting every turn's message (the session is
+known at log time, so there is no need to blind the diagnostic for every
+chat); scrubbing `agent.log` when a temporary chat ends (a rewrite of a file
+the runtime holds open, after the words were already on disk).
+
+**Not covered.** Lines written before this change stay in `agent.log` and
+its rotated copies until the runtime rotates them away.
+
+**Verified** in `hermes_bridge::guard::tests::the_plugin_keeps_a_temporary_chats_words_out_of_the_turn_log`
+(the installed plugin, registered as the runtime registers it, in Python),
+and against the pinned runtime's own plugin discovery and `setup_logging`:
+`agent.log` received `msg='[temporary chat]'` for the temporary session and
+the words for an ordinary one.

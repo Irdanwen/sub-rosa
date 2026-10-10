@@ -175,3 +175,21 @@ pipe against Brave on macOS on 2026-10-10 (`connected to Brave over Pipe`;
 the link to a refused site never reached the test server and the tab showed
 `chrome-error://chromewebdata/`). The main-frame test assumes a page target's
 id is its main frame's id, which that run confirmed.
+
+## Addendum (2026-10-10): the runtime's own browser is switched off
+
+The alternative rejected above was still switched on: the pinned runtime
+offers its `browser` toolset (`browser_navigate` and the rest) by default,
+and in the parity run of 1.89.1 the agent called it first. It starts a
+browser of its own, which fails inside the jail, and only then did the agent
+turn to `june_browser`. The `config.yaml` the app writes now carries
+`agent.disabled_toolsets: [browser]` (`builtin_mcp::RUNTIME_DISABLED_TOOLSETS`,
+rendered by `render_hermes_config`), which the runtime applies last when it
+resolves a platform's toolsets, so the model is never offered those tools and
+the app's browser is the only one. `web_search`, which the `browser` toolset
+also lists, stays reachable through the `web` toolset. Checked against the
+pinned runtime's `_get_platform_tools`: `browser` is in the default set and
+gone with the key, `web` is kept. Not covered: the runtime's opt-in "focus"
+coding posture returns its own `coding` toolset, which lists the browser
+tools, before that resolution; the app does not turn that posture on. Test:
+`hermes_bridge::config_tests::render_hermes_config_switches_the_runtime_browser_off`.

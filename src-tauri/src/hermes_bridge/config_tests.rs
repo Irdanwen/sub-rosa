@@ -89,3 +89,42 @@ fn render_hermes_config_roundtrips_windows_paths() {
         }
     }
 }
+
+/// The runtime's own browser tools fail inside the jail and the agent tried
+/// them before the app's browser (QA 1.89.1 row 10): the config switches
+/// the `browser` toolset off for every chat, whatever the vision lines say,
+/// keeps the rest of the `agent:` block, and keeps the app's browser server.
+#[test]
+fn render_hermes_config_switches_the_runtime_browser_off() {
+    let studio = JuneStudioMcpConfig {
+        command: "/venv/bin/python3".to_string(),
+        script_path: PathBuf::from("/data/hermes-mcp/june_studio_mcp.py"),
+        coordinates_path: PathBuf::from("/data/hermes-mcp/june_web_proxy.json"),
+    };
+    for vision in [Some(true), Some(false), None] {
+        let rendered = render_hermes_config(
+            "glm",
+            "http://127.0.0.1:9/v1",
+            "tok",
+            &CRON_SANDBOXED_TOOLSETS.join(", "),
+            &[],
+            vision,
+            None,
+            None,
+            None,
+            Some(&studio),
+        );
+        let parsed: serde_json::Value =
+            serde_yaml::from_str(&rendered).expect("generated config must be valid YAML");
+        assert_eq!(
+            parsed["agent"]["disabled_toolsets"],
+            serde_json::json!(["browser"])
+        );
+        assert_eq!(parsed["agent"]["max_turns"], 200);
+        assert_eq!(
+            parsed["agent"]["image_input_mode"].as_str(),
+            (vision == Some(true)).then_some("native")
+        );
+        assert!(parsed["mcp_servers"]["june_browser"]["command"].is_string());
+    }
+}
