@@ -37,6 +37,9 @@ use crate::{domain::types::AppError, redacted::Redacted};
 
 const TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+/// Carpe Diem's revocation cutoff counts whole seconds: an assertion signed
+/// after this wait is past it.
+const REVOKED_RETRY_AFTER: Duration = Duration::from_millis(1_100);
 
 // --- The ephemeral key ------------------------------------------------------
 
@@ -211,6 +214,10 @@ pub(crate) enum Answer {
     },
     Pending,
     Replayed,
+    /// The assertion was signed in the very second Carpe Diem cut the
+    /// account's keys off (its cutoff counts whole seconds). Carpe Diem asks
+    /// for a fresh one, signed after that second.
+    Revoked,
 }
 
 pub(crate) fn interpret(status: u16, body: &Value) -> Result<Answer, AppError> {
@@ -256,6 +263,7 @@ pub(crate) fn interpret(status: u16, body: &Value) -> Result<Answer, AppError> {
         }
         404 => Err(unavailable_error()),
         409 if code == "ASSERTION_REPLAYED" => Ok(Answer::Replayed),
+        403 if code == "ASSERTION_REVOKED" => Ok(Answer::Revoked),
         429 => Err(AppError::new(
             "carpe_diem_issue_limited",
             "Your account created several keys recently. Try again tomorrow, or revoke a device you no longer use.",
@@ -497,7 +505,8 @@ async fn activate(
 pub async fn carpe_diem_issue_key(app: AppHandle) -> Result<IssueOutcome, AppError> {
     let base = settings::base_url();
     // Two tries at most: a replayed assertion (a retried request that already
-    // landed) is answered with a fresh one, never looped on.
+    // landed), or one signed in the second Carpe Diem revoked the account's
+    // keys, is answered with a fresh one, never looped on.
     for _ in 0..2 {
         let ephemeral = Ephemeral::generate();
         let assertion = crate::account::carpe_diem_link::assertion(&app, &ephemeral.jkt()).await?;
@@ -527,6 +536,10 @@ pub async fn carpe_diem_issue_key(app: AppHandle) -> Result<IssueOutcome, AppErr
             }
             Answer::Pending => return Err(rejected_error()),
             Answer::Replayed => continue,
+            Answer::Revoked => {
+                tokio::time::sleep(REVOKED_RETRY_AFTER).await;
+                continue;
+            }
         }
     }
     Err(rejected_error())
@@ -563,7 +576,7 @@ pub async fn carpe_diem_issue_poll(app: AppHandle) -> Result<IssueOutcome, AppEr
             *pending_lock() = Some(pending);
             Err(failure)
         }
-        Ok(Answer::Replayed) => Err(rejected_error()),
+        Ok(Answer::Replayed) | Ok(Answer::Revoked) => Err(rejected_error()),
         Err(failure) => Err(failure),
     }
 }
@@ -769,6 +782,15 @@ mod tests {
         assert_eq!(
             interpret(409, &json!({"code":"ASSERTION_REPLAYED"})).unwrap(),
             Answer::Replayed
+        );
+        assert_eq!(
+            interpret(403, &json!({"code":"ASSERTION_REVOKED"})).unwrap(),
+            Answer::Revoked
+        );
+        // A revoked device is not one more try away from a key.
+        assert_eq!(
+            code(403, json!({"code":"DEVICE_REVOKED"})),
+            "carpe_diem_issue_rejected"
         );
     }
 
