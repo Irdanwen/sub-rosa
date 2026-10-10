@@ -5,7 +5,11 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Device, setAccountScope } from "../../website/src/lib/api";
-import type { DeviceRecord, DeviceStore } from "../../website/src/lib/browser-device";
+import {
+  type DeviceRecord,
+  type DeviceStore,
+  admitBrowser,
+} from "../../website/src/lib/browser-device";
 import { BrowserDeviceCard, deviceKindLabel } from "../../website/src/pages/browser-device";
 
 const ACCOUNT = "0191d1a4-0000-7000-8000-000000000000";
@@ -149,5 +153,61 @@ describe("this browser as a device", () => {
     expect(deviceKindLabel(device(), "other")).toBe("Browser");
     expect(deviceKindLabel(device({ kind: "native" }), DEVICE.replace("1111", "2222"))).toBe("App");
     expect(deviceKindLabel(device({ kind: undefined, id: "x" }), null)).toBe("App");
+  });
+
+  it("says the Carpe Diem account was deleted, drops the dead key, and asks before a new one", async () => {
+    const store = memoryStore();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => json(200, { data: { id: DEVICE, name: "Browser - Firefox" } })),
+    );
+    const admitted = await admitBrowser(store, ACCOUNT, "Browser - Firefox", {
+      recovery_proof: "abc",
+    });
+    // A key that runs out tomorrow: the page renews it, and learns of the deletion.
+    const record = {
+      ...admitted,
+      key: {
+        iv: "",
+        ciphertext: "",
+        keyId: "old",
+        prefix: "cdm_old...",
+        expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        dailyCapCredits: 200,
+      },
+    };
+    await store.put(record);
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (url === "/api/v1/carpe-diem/assertion")
+          return json(200, { data: { assertion: "a.b.c" } });
+        bodies.push(String(init.body));
+        return bodies.length === 1
+          ? json(410, { code: "ACCOUNT_CLOSED", closedAt: "2026-10-10T12:30:00.000Z" })
+          : json(201, {
+              status: "issued",
+              key: `cdm_${"9".repeat(64)}`,
+              keyId: "k",
+              prefix: "cdm_99999999...",
+              expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+              bound: { kind: "browser", dailyCapCredits: 200 },
+            });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<Harness store={store} devices={[device()]} initial={record} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Your Carpe Diem account was deleted on .*2026.*Its credits are gone and cannot be refunded\./,
+    );
+    expect(store.rows.get(ACCOUNT)?.key).toBeNull();
+    expect(screen.queryByText(/cdm_old/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Get a Carpe Diem key" })).toBeNull();
+    expect(bodies).toEqual(["{}"]);
+
+    await user.click(screen.getByRole("button", { name: "Open a new, empty account" }));
+    await waitFor(() => expect(screen.getByText(/cdm_99999999\.\.\./)).toBeTruthy());
+    expect(bodies).toEqual(["{}", '{"reactivate":true}']);
   });
 });

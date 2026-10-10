@@ -1835,6 +1835,11 @@ le **tri de pertinence** des recherches.
 - **Contrat** : `docs/carpe-diem-partner-contract.md` (copie de
   `docs/partner-integration.md` chez Carpe Diem : modifier les deux ou aucun).
   Tests live croisés : `carpe_diem/issued_live_tests.rs`.
+- **Compte Carpe Diem supprimé** (Carpe Diem #461, 2026-10-10) : `410 ACCOUNT_CLOSED`
+  devient `carpe_diem_account_closed` (app) ou `AccountClosedError` (site). L'écran
+  dit que les crédits sont perdus, ne réessaie jamais seul, et seul le bouton
+  « Open a new, empty account » envoie `{"reactivate": true}`. `403 ASSERTION_REVOKED`
+  reçoit une seule nouvelle assertion, après la seconde de coupure.
 - **Recharge par carte** (`carpe_diem/billing.rs`, `AddCreditsDialog.tsx`) : Carpe
   Diem est le marchand ; ticket, page `/pay` dans le navigateur, sondage du solde.
   Le lien n'apparaît que via `lib/store-policy.ts` (boutique × `blockedCountries`) :

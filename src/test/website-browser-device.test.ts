@@ -4,6 +4,7 @@ import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAccountScope } from "../../website/src/lib/api";
 import {
+  AccountClosedError,
   CARPE_DIEM_OPERATOR,
   DEVICE_PROOF_HEADER,
   type DeviceRecord,
@@ -262,6 +263,67 @@ describe("key birth for a browser device", () => {
     expect(done.status).toBe("issued");
     expect(new Set(keys).size).toBe(1);
     expect(store.rows.get(ACCOUNT)?.key?.dailyCapCredits).toBe(200);
+  });
+
+  it("says a deleted Carpe Diem account, and asks for a new one only when told to", async () => {
+    const store = memoryStore();
+    const record = await admitted(store);
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (url === "/api/v1/carpe-diem/assertion")
+          return json(200, { data: { assertion: "a.b.c" } });
+        bodies.push(String(init.body));
+        return bodies.length === 1
+          ? json(410, {
+              error: "The Carpe Diem account linked to this user was deleted.",
+              code: "ACCOUNT_CLOSED",
+              closedAt: "2026-10-10T12:30:00.000Z",
+            })
+          : json(201, {
+              status: "issued",
+              key: `cdm_${"f".repeat(64)}`,
+              keyId: "k",
+              prefix: "p",
+              expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+              bound: { kind: "browser", dailyCapCredits: 200 },
+            });
+      }),
+    );
+    const refusal = await birthKey(store, record).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(AccountClosedError);
+    expect(refusal).toMatchObject({ code: "ACCOUNT_CLOSED", closedAt: "2026-10-10T12:30:00.000Z" });
+    expect(bodies).toEqual(["{}"]);
+
+    const birth = await birthKey(store, record, { reactivate: true });
+    expect(birth.status).toBe("issued");
+    expect(bodies).toEqual(["{}", '{"reactivate":true}']);
+  });
+
+  it("signs a fresh assertion once when the first one fell in the revocation second", async () => {
+    const store = memoryStore();
+    const record = await admitted(store);
+    const assertions: string[] = [];
+    let attempts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (url === "/api/v1/carpe-diem/assertion") {
+          assertions.push(JSON.parse(String(init.body)).jkt);
+          return json(200, { data: { assertion: `a.b.${assertions.length}` } });
+        }
+        attempts += 1;
+        return json(403, {
+          error: "This device or request was revoked",
+          code: "ASSERTION_REVOKED",
+        });
+      }),
+    );
+    await expect(birthKey(store, record)).rejects.toMatchObject({ code: "ASSERTION_REVOKED" });
+    // Two assertions, two ephemeral keys, and no third try.
+    expect(attempts).toBe(2);
+    expect(new Set(assertions).size).toBe(2);
   });
 
   it("revokes and refuses a key Carpe Diem minted without the browser bound", async () => {

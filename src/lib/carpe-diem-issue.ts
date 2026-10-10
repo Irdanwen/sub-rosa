@@ -33,10 +33,24 @@ export type IssuanceStatus = {
 };
 
 export const carpeDiemIssuanceStatus = () => invoke<IssuanceStatus>("carpe_diem_issuance_status");
-export const carpeDiemIssueKey = () => invoke<IssueOutcome>("carpe_diem_issue_key");
+/** `reactivate` only after the person chose a new, empty Carpe Diem account
+ * on the screen that said theirs was deleted (`carpe_diem_account_closed`). */
+export const carpeDiemIssueKey = ({ reactivate = false }: { reactivate?: boolean } = {}) =>
+  reactivate
+    ? invoke<IssueOutcome>("carpe_diem_issue_key", { reactivate: true })
+    : invoke<IssueOutcome>("carpe_diem_issue_key");
 export const carpeDiemIssuePoll = () => invoke<IssueOutcome>("carpe_diem_issue_poll");
 export const carpeDiemIssueCancel = () => invoke<void>("carpe_diem_issue_cancel");
 export const carpeDiemRevokeIssuedKey = () => invoke<void>("carpe_diem_revoke_issued_key");
+
+/** When Carpe Diem says the linked account was deleted, from a
+ * `carpe_diem_account_closed` error; null when it gave no readable date. */
+export function accountClosedAt(cause: unknown): Date | null {
+  const details = (cause as { details?: { closedAt?: unknown } } | null | undefined)?.details;
+  if (typeof details?.closedAt !== "string") return null;
+  const at = new Date(details.closedAt);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
 
 /** Where the stored key came from. Only issued keys say so. */
 export function keyOrigin(settings: CarpeDiemSettingsDto | null | undefined): "issued" | null {

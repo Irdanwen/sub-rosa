@@ -97,7 +97,8 @@ Header: `{"alg":"ES256","typ":"dpop+jwt","jwk":{"kty":"EC","crv":"P-256","x":"�
 
 `POST {operator root}/partner/keys`
 
-Headers: `Authorization: PartnerAssertion <assertion>`, `DPoP: <proof>`. Body `{}`.
+Headers: `Authorization: PartnerAssertion <assertion>`, `DPoP: <proof>`. Body `{}`,
+or `{"reactivate": true}` after a `410 ACCOUNT_CLOSED` (see below).
 
 Assertion checks: header `alg` exactly `ES256`, `typ` exactly
 `partner-assertion+jwt`, `kid` in the pinned key set of a configured partner whose
@@ -108,6 +109,12 @@ UUIDs, `jti` single use (stored until `exp`).
 
 Account resolution:
 
+0. The person deleted the Carpe Diem account this subject was linked to (from
+   the Carpe Diem dashboard, or as an inactive email account): the operator
+   keeps `(partner, sub, closed_at)`, without the email, for 10 years, and
+   answers `410 {"code":"ACCOUNT_CLOSED","closedAt":"<ISO>"}` instead of
+   recreating the account (it would bring back the email address the deletion
+   erased). See "Deleted Carpe Diem account" below.
 1. A link `(partner, sub)` exists → its wallet. Update `last_asserted_email`.
 2. No link and no Carpe Diem email account for `email` → create the email account
    (derived wallet, as `/auth/email/verify` would), create the link
@@ -127,7 +134,7 @@ Issuing (cases 1, 2 and a confirmed 3):
 - If an active key already exists for `(partner, sub, device_id)`, revoke it first
   (re-issue = rotation).
 - Limits per link: at most 3 issuances per rolling 24 h and 5 active partner keys
-  → `429 {"code":"ISSUANCE_LIMITED"}`. Per partner: more than
+  (neither revoked nor expired) → `429 {"code":"ISSUANCE_LIMITED"}`. Per partner: more than
   `maxIssuancePerHour` (default 60) issuances in the last hour suspends the
   partner (alert, `503 {"code":"PARTNER_SUSPENDED"}`) until an admin clears it.
 - Key name `Sub Rosa - <device name sanitized to [A-Za-z0-9 -], at most 48 chars, or "device">`.
@@ -148,7 +155,40 @@ A browser key's body also carries `expiresAt` and `bound` (section 7).
 
 Errors (body `{"error": "...", "code": "..."}`): `404 NOT_FOUND` when no partner
 is configured; `401 ASSERTION_INVALID`; `401 PROOF_INVALID`; `409 ASSERTION_REPLAYED`;
+`403 DEVICE_REVOKED`; `403 ASSERTION_REVOKED`; `410 ACCOUNT_CLOSED`;
 `429 ISSUANCE_LIMITED`; `503 PARTNER_SUSPENDED`.
+
+`403 ASSERTION_REVOKED`: the assertion was signed at or before the subject's
+revocation cutoff (a deleted Carpe Diem account, or "revoke all"). The cutoff
+counts whole seconds, so an assertion signed in that very second is refused
+too; the partner signs a fresh one. `403 DEVICE_REVOKED`: this `device_id` was
+revoked and never receives a key again.
+
+### Deleted Carpe Diem account
+
+A Carpe Diem account can be deleted by its owner at any time, outside the
+partner app. Its device keys are revoked at once (the subject gets a cutoff, so
+an assertion signed before the deletion answers `403 ASSERTION_REVOKED`), and
+the next fresh assertion answers `410 ACCOUNT_CLOSED`. The app must then:
+
+1. Tell the user that their Carpe Diem account was deleted, and that its
+   credits are gone (they are not refundable). Do not retry on its own.
+2. Offer a new account only as an explicit choice of the user (a button, not a
+   default). Only after that choice, request a key again with a fresh assertion
+   and body `{"reactivate": true}`. The operator then forgets the deletion and
+   resolves the account as usual: a new, empty account (`linked: "created"`), or
+   the consent flow if the user has meanwhile opened a Carpe Diem account with
+   that email.
+
+`reactivate` is ignored unless the subject's account was deleted, and only the
+literal `true` counts. Never send it automatically.
+
+In Sub Rosa: the app maps the refusal to `carpe_diem_account_closed`
+(`src-tauri/src/carpe_diem/issued.rs`, `DeviceKeyIssue.tsx`), the site to
+`AccountClosedError` (`website/src/lib/browser-device.ts`, the device card in
+`website/src/pages/browser-device.tsx`). Both offer "Open a new, empty
+account", the only path that sends `reactivate`, and both answer
+`ASSERTION_REVOKED` once with a fresh assertion.
 
 ### Poll a link request
 
@@ -403,13 +443,23 @@ validation), in this order:
    `POST /v1/keys/self/revoke`, which always works.
 2. `/router/*` or any `x402` path → `403 {"code":"BROWSER_KEY_RAIL_REFUSED"}`.
 3. Anything other than `/v1/chat/completions`, `/v1/embeddings`,
-   `/v1/audio/*`, `/v1/image/*`, `/v1/augment/*`, `/v1/models`, `/v1/pricing`,
+   `/v1/audio/*`, `/v1/image/*`, `/v1/augment/*`, `/v1/models`,
    `/v1/credits` and `/v1/keys/self/revoke` → `403 {"code":"BROWSER_KEY_ROUTE"}`.
-4. A non-`GET` request when the key's spend over the last 24 hours (the usage
-   ledger, `usage_events.cost_usdc`) is at or above its cap →
-   `429 {"code":"KEY_DAILY_CAP"}` with `Retry-After: 3600`. The check runs
-   before serving, so one request in flight can overshoot by at most its own
-   cost.
+4. A non-`GET` request when the **account's** browser spend over the last 24
+   hours, plus the account's reservations still pending, is at or above the
+   cap of the key making the request → `429 {"code":"KEY_DAILY_CAP"}` with
+   `Retry-After` (the seconds until enough settled spend leaves the window, at
+   least 1; 10 when pending reservations are what reach the cap). The last
+   request admitted can overshoot by at most its own cost.
+
+The cap is per partner account, not per key: the spend is the sum of every
+browser key of the same `(partner, sub)`, revoked and expired keys included, so
+neither a renewal nor a new `device_id` starts the 24 hours over. App keys'
+spend is not counted.
+
+The bound holds whichever header carries the key (`Authorization` or
+`x-api-key`), and an expired browser key authenticates nowhere, except
+`POST /v1/keys/self/revoke`.
 
 The rail stays pinned to `credits`, as for every partner key.
 
