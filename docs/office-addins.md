@@ -87,7 +87,11 @@ admin center; the panes have not been checked there.
    paths (`subrosa-cloud/crates/services/src/lib.rs`).
 2. The `/office/` block of `subrosa-cloud/deploy/nginx-account.conf.example`
    (or the Caddy example, or `website/public/_headers`): its own
-   Content-Security-Policy, and no `X-Frame-Options`.
+   Content-Security-Policy, and no `X-Frame-Options`. The Excel pane's Python
+   runs in the site's `/python-sandbox.html` frame (ADR-0104 addendum of
+   2026-10-10), so that page's block, whose `frame-ancestors` names Office's
+   hosts, and the CORS headers on `/assets/python-sandbox*` and `/pyodide/`
+   are needed too.
 3. `pnpm build:website` and the usual release switch of the account site.
 4. ADR-0096's deployment gates still apply: Carpe Diem must hold the browser
    bound before any pane can obtain a key

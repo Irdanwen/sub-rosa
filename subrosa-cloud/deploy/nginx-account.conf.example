@@ -109,9 +109,9 @@ server {
     }
 
     # The web client (ADR-0101, WP20b) has its own policy: the site's plus
-    # WebAssembly and a blob worker for Python (ADR-0086), the catalog's
-    # connector origins a tab may call, the connector view host as a frame,
-    # and the microphone, camera and screen for voice. `rewrite ... break`
+    # WebAssembly, the catalog's connector origins a tab may call, the
+    # connector view host and the Python sandbox as frames, and the
+    # microphone, camera and screen for voice. `rewrite ... break`
     # serves the page from this location, so these headers are the ones sent.
     location = /app {
         add_header Strict-Transport-Security "max-age=31536000" always;
@@ -119,7 +119,7 @@ server {
         add_header Referrer-Policy no-referrer always;
         add_header X-Frame-Options DENY always;
         add_header Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa" always;
         rewrite ^ /index.html break;
     }
     location ^~ /app/ {
@@ -128,7 +128,7 @@ server {
         add_header Referrer-Policy no-referrer always;
         add_header X-Frame-Options DENY always;
         add_header Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa" always;
         rewrite ^ /index.html break;
     }
     # A connector's interactive view (ADR-0092), framed sandboxed by /app.
@@ -152,16 +152,40 @@ server {
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy no-referrer always;
         add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src 'self' https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs" always;
         try_files $uri =404;
     }
-    # Pyodide's files (ADR-0086), with types a module worker accepts.
+    # The Python sandbox (ADR-0104 addendum of 2026-10-10), framed with
+    # sandbox="allow-scripts" by /app and the Excel pane: an opaque origin
+    # whose policy reaches the site's scripts and Pyodide, nothing else, and
+    # which only the site and Office's hosts may frame.
+    location = /python-sandbox.html {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src https://account.example.invalid/assets/ https://account.example.invalid/pyodide/ 'wasm-unsafe-eval'; worker-src data: https://account.example.invalid/assets/; connect-src https://account.example.invalid/pyodide/; frame-ancestors https://account.example.invalid https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types subrosa-python" always;
+        add_header Cache-Control no-store always;
+        try_files $uri =404;
+    }
+    # Its scripts, fetched from that opaque origin, so answered with CORS.
+    location ^~ /assets/python-sandbox {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+        add_header Access-Control-Allow-Origin "*" always;
+        try_files $uri =404;
+    }
+    # Pyodide's files (ADR-0086), with types a module worker accepts, and
+    # CORS for the sandbox's opaque origin.
     location ^~ /pyodide/ {
         add_header Strict-Transport-Security "max-age=31536000" always;
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy no-referrer always;
         add_header X-Frame-Options DENY always;
         add_header Cache-Control "public, max-age=604800" always;
+        add_header Access-Control-Allow-Origin "*" always;
         types {
             text/javascript mjs js;
             application/wasm wasm;

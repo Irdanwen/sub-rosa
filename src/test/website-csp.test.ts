@@ -99,11 +99,12 @@ describe("the web client's own policy on /app", () => {
     return [file, directives(line)] as const;
   });
 
-  it("adds only WebAssembly, a blob worker, the view frame and the catalog's connectors", () => {
+  it("adds only WebAssembly, the frames and the catalog's connectors", () => {
     const connectors = webConnectOrigins().join(" ");
     for (const [file, csp] of app) {
       expect(csp.get("script-src"), file).toBe("'self' 'wasm-unsafe-eval'");
-      expect(csp.get("worker-src"), file).toBe("'self' blob:");
+      // Python's worker lives in the sandbox frame now, never on the page.
+      expect(csp.get("worker-src"), file).toBe("'self'");
       expect(csp.get("frame-src"), file).toBe("'self'");
       // Named origins, never a scheme: what the page may post to is a list.
       expect(csp.get("connect-src"), file).toBe(`'self' ${operator} ${connectors}`);
@@ -186,7 +187,8 @@ describe("the Office task panes' own policy on /office/", () => {
       expect(csp.get("trusted-types"), file).toBe("subrosa officejs");
       expect(csp.get("require-trusted-types-for"), file).toBe("'script'");
       expect(csp.get("worker-src"), file).toBe("'self' blob:");
-      expect(csp.get("frame-src"), file).toBe("https://appsforoffice.microsoft.com");
+      // The site itself, for the Excel pane's Python sandbox.
+      expect(csp.get("frame-src"), file).toBe("'self' https://appsforoffice.microsoft.com");
       expect([...csp.values()].join(" "), file).not.toContain("'unsafe-eval'");
       expect([...csp.values()].join(" "), file).not.toContain("'unsafe-inline'");
     }
@@ -222,7 +224,88 @@ describe("the Office task panes' own policy on /office/", () => {
     const headers = readFileSync("website/public/_headers", "utf8") as string;
     expect(headers).toMatch(/\/office\/\*\n(?:\s+!.*\n)*\s+! X-Frame-Options/);
     const caddy = readFileSync("subrosa-cloud/deploy/Caddyfile.example", "utf8") as string;
-    expect(caddy).toContain("@site not path /app /app/* /connector-view.html /office/*");
+    expect(caddy).toContain(
+      "@site not path /app /app/* /connector-view.html /office/* /python-sandbox.html",
+    );
+  });
+});
+
+/** The places that serve the Python sandbox page (ADR-0104 addendum of
+ * 2026-10-10), each with its policy. */
+const SANDBOX_SOURCES: [string, RegExp][] = [
+  [
+    "website/public/_headers",
+    /^\/python-sandbox\.html\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m,
+  ],
+  [
+    "subrosa-cloud/deploy/nginx-account.conf.example",
+    /location = \/python-sandbox\.html \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+  [
+    "subrosa-cloud/deploy/Caddyfile.example",
+    /header @sandbox \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  ],
+];
+
+describe("the Python sandbox's own policy", () => {
+  const nginx = readFileSync("subrosa-cloud/deploy/nginx-account.conf.example", "utf8") as string;
+  const origin = `https://${/server_name ([^;]+);/.exec(nginx)?.[1]}`;
+  const sandbox = SANDBOX_SOURCES.map(([file, pattern]) => {
+    const line = pattern.exec(readFileSync(file, "utf8") as string)?.[1] ?? "";
+    return [file, directives(line)] as const;
+  });
+  const office = (
+    OFFICE_SOURCES[0][1].exec(readFileSync(OFFICE_SOURCES[0][0], "utf8") as string)?.[1] ?? ""
+  )
+    .split(";")
+    .map((directive) => directive.trim())
+    .find((directive) => directive.startsWith("frame-ancestors "))
+    ?.slice("frame-ancestors ".length);
+
+  it("loads the site's scripts and Pyodide, and posts to Pyodide alone", () => {
+    for (const [file, csp] of sandbox) {
+      expect(csp.get("default-src"), file).toBe("'none'");
+      expect(csp.get("script-src"), file).toBe(
+        `${origin}/assets/ ${origin}/pyodide/ 'wasm-unsafe-eval'`,
+      );
+      // A module worker's imports are worker requests: its own chunk is one.
+      expect(csp.get("worker-src"), file).toBe(`data: ${origin}/assets/`);
+      expect(csp.get("connect-src"), file).toBe(`${origin}/pyodide/`);
+      expect(csp.get("base-uri"), file).toBe("'none'");
+      expect(csp.get("form-action"), file).toBe("'none'");
+      expect(csp.get("require-trusted-types-for"), file).toBe("'script'");
+      expect(csp.get("trusted-types"), file).toBe("subrosa-python");
+      expect([...csp.values()].join(" "), file).not.toMatch(/'unsafe-|'self'|https:(\s|$)/);
+    }
+  });
+
+  it("lets only the site and Office's hosts frame it", () => {
+    for (const [file, csp] of sandbox)
+      expect(csp.get("frame-ancestors"), file).toBe(`${origin} ${office}`);
+  });
+
+  it("is the same policy in every place that serves it", () => {
+    const [first, ...rest] = sandbox.map(([, csp]) => [...csp.entries()].sort());
+    for (const other of rest) expect(other).toEqual(first);
+  });
+
+  it("answers the sandbox's opaque origin with CORS on its scripts and Pyodide only", () => {
+    const headers = readFileSync("website/public/_headers", "utf8") as string;
+    expect(headers).toMatch(/\n\/assets\/python-sandbox\*\n\s+Access-Control-Allow-Origin: \*\n/);
+    expect(headers).toMatch(/\n\/pyodide\/\*\n(?:\s+.*\n)*?\s+Access-Control-Allow-Origin: \*\n/);
+    expect(headers.match(/Access-Control-Allow-Origin/g)).toHaveLength(2);
+    expect(headers).toMatch(/\/python-sandbox\.html\n(?:\s+!.*\n)*\s+! X-Frame-Options/);
+    const blocks = nginx.split(/\n {4}location /);
+    const cors = blocks.filter((block) => block.includes("Access-Control-Allow-Origin"));
+    expect(cors.map((block) => block.split(" {")[0]).sort()).toEqual([
+      "^~ /assets/python-sandbox",
+      "^~ /pyodide/",
+    ]);
+    const page = blocks.find((block) => block.startsWith("= /python-sandbox.html")) ?? "";
+    expect(page).not.toContain("X-Frame-Options");
+    const caddy = readFileSync("subrosa-cloud/deploy/Caddyfile.example", "utf8") as string;
+    expect(caddy).toContain("@sandboxed path /assets/python-sandbox* /pyodide/*");
+    expect(caddy.match(/Access-Control-Allow-Origin/g)).toHaveLength(1);
   });
 });
 

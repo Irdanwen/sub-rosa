@@ -9,7 +9,7 @@ account.example.invalid {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
     }
-    @site not path /app /app/* /connector-view.html /office/*
+    @site not path /app /app/* /connector-view.html /office/* /python-sandbox.html
     header @site {
         X-Frame-Options "DENY"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"
@@ -20,13 +20,13 @@ account.example.invalid {
     header @app {
         X-Frame-Options "DENY"
         Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()"
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa"
     }
     # The Office task panes (ADR-0102): see nginx-account.conf.example.
     @office path /office/*
     header @office {
         Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src 'self' https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs"
     }
     @view path /connector-view.html
     header @view {
@@ -35,6 +35,17 @@ account.example.invalid {
         Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src https:; frame-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'"
         Cache-Control "no-store"
     }
+
+    # The Python sandbox (ADR-0104 addendum of 2026-10-10): see
+    # nginx-account.conf.example. Replace the origin with the site's own.
+    @sandbox path /python-sandbox.html
+    header @sandbox {
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        Content-Security-Policy "default-src 'none'; script-src https://account.example.invalid/assets/ https://account.example.invalid/pyodide/ 'wasm-unsafe-eval'; worker-src data: https://account.example.invalid/assets/; connect-src https://account.example.invalid/pyodide/; frame-ancestors https://account.example.invalid https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types subrosa-python"
+        Cache-Control "no-store"
+    }
+    @sandboxed path /assets/python-sandbox* /pyodide/*
+    header @sandboxed Access-Control-Allow-Origin "*"
     @service path /api/* /auth/* /livez /readyz
     handle @service {
         reverse_proxy subrosa-cloud:8088

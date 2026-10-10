@@ -115,10 +115,10 @@ Named, because a threat model that claims everything protects nothing.
   open.** It can use the browser's non-extractable keys (it cannot copy them)
   and open its Carpe Diem key, so it can spend and exfiltrate that key. Carpe
   Diem bounds the key in its TEE: a daily cap, a life of at most seven days,
-  no router or x402, inference routes only; the CSP lets the page reach only
-  its own origin and the Carpe Diem operator, Trusted Types refuse string
-  script sinks, and Subresource Integrity pins the entry files. Revoking the
-  browser from any device stops its key and its renewals. See
+  no router or x402, inference routes only; the account pages' CSP lets them
+  reach only their own origin and the Carpe Diem operator, Trusted Types
+  refuse string script sinks, and Subresource Integrity pins the entry files.
+  Revoking the browser from any device stops its key and its renewals. See
   [ADR-0096](adr/0096-a-browser-is-a-device.md).
 
   *Addendum 2026-10-10: the web client's own policy.* The sentence above is
@@ -126,8 +126,8 @@ Named, because a threat model that claims everything protects nothing.
   is served under a wider one, kept identical in `website/public/_headers`
   and `subrosa-cloud/deploy/nginx-account.conf.example` by
   `src/test/website-csp.test.ts`. On top of the site's policy it allows:
-  WebAssembly (`'wasm-unsafe-eval'`) and `blob:` workers, for Pyodide
-  (ADR-0086), whose files it loads from its own `/pyodide/`; `connect-src`
+  WebAssembly (`'wasm-unsafe-eval'`) for Pyodide (ADR-0086), whose files it
+  loads from its own `/pyodide/` inside a sandboxed frame (next point); `connect-src`
   to the six catalog connector servers that accept a browser origin
   (`huggingface.co`, `mcp.intercom.com`, `mcp.linear.app`, `mcp.notion.com`,
   `mcp.squareup.com`, `mcp.webflow.com`, the list of
@@ -141,6 +141,25 @@ Named, because a threat model that claims everything protects nothing.
   send what it reads to those six hosts as well as to Carpe Diem. The Python
   worker's isolation from the page's storage and network is the subject of
   its own hardening (ADR-0086 and ADR-0104 addenda).
+
+- **The web client's page is wider than that.** `/app` holds the same device
+  record and also connectors' sealed tokens, and its policy names more:
+  `'wasm-unsafe-eval'`, the connector view host as a frame, the microphone,
+  camera and screen, and in `connect-src`, besides its origin and Carpe Diem,
+  the six connector servers a tab was found to reach (`huggingface.co` and
+  five `mcp.*` hosts, ADR-0104). Script on that page could post what it
+  stole to any of them. The one thing on `/app` that runs code the model
+  wrote, the Python worker, therefore does not live on the page: it runs in a
+  frame of `/python-sandbox.html` framed with `sandbox="allow-scripts"`, an
+  opaque origin whose own policy loads the site's `/assets/` and `/pyodide/`
+  and posts to `/pyodide/` alone, and the worker itself deletes IndexedDB,
+  the Cache API, XMLHttpRequest, WebSocket, EventSource and the other ways
+  out and gives Python's `js` module three timers instead of its global, or
+  refuses to start. Measured in Chromium, WebKit and the iOS simulator's
+  Safari (`website/scripts/python-sandbox-smoke.mjs`); see the ADR-0104
+  addendum of 2026-10-10. A hidden instruction in an attached file can still
+  make the model compute something wrong; it can no longer make Python read
+  the browser's key or tokens or send anything anywhere.
 - **Cryptographic isolation after device revocation.** Revocation blocks the
   device's sessions immediately at the service. It does not rotate the vault
   root or erase past copies. A revoked device obtaining ciphertext through
