@@ -82,7 +82,7 @@ jobs:
           docker run --detach --name subrosa-test-postgres \
             --env POSTGRES_USER=postgres --env POSTGRES_PASSWORD=local-ci-only \
             --publish 127.0.0.1:55439:5432 postgres:17.6 -c max_connections=200
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if docker exec subrosa-test-postgres pg_isready -U postgres >/dev/null 2>&1; then
               break
             fi

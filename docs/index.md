@@ -170,6 +170,7 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 - [threat-model.md](threat-model.md) — what the app protects, from whom, and what it deliberately does not:
   the five boundaries, what is in scope, what is out of it, and the commands that check each claim
 - [github-security-readiness.md](github-security-readiness.md) — pre-public repo hardening checklist
+- [reports/2026-10-10-dependabot-triage.md](reports/2026-10-10-dependabot-triage.md) — open Dependabot PRs and stale branches after audit W7: what was merged or closed, which majors wait and on what code, why the tinypool and source-map-js security updates could not open
 
 ## Upstream reports (defects filed with Carpe Diem)
 
@@ -185,7 +186,7 @@ not the upstream fix lands.
 
 - [qa/2026-09-05-public-readiness.md](qa/2026-09-05-public-readiness.md) — Studio discovery, model choice, recovery, localization, paid multimodal trials, artifact format fixes and remaining release checks
 
-- [qa/agent-driven-integration.md](qa/agent-driven-integration.md) — QA strategy (3 layers, skill-first agent-driven)
+- [qa/agent-driven-integration.md](qa/agent-driven-integration.md) — QA strategy (3 layers, skill-first agent-driven), and when to dispatch the opt-in `#[ignore]` Rust tests lane
 - `qa/feature-user-stories.tsv` — story → code → test traceability matrix
 - `qa/agent-e2e-qa-runs/` — dated end-to-end QA run logs
 

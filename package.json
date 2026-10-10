@@ -102,6 +102,9 @@
     ],
     "patchedDependencies": {
       "signalsmith-stretch@1.3.2": "patches/signalsmith-stretch@1.3.2.patch"
+    },
+    "overrides": {
+      "tinypool": "^2.1.2"
     }
   }
 }

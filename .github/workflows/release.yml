@@ -36,7 +36,7 @@ env:
 
 jobs:
   resolve:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
@@ -83,7 +83,7 @@ jobs:
             updater_target: windows-x86_64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
@@ -234,6 +234,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
           # Single keychain, made default + first in the search list, so both
           # build.rs's helper codesign and Tauri's app codesign find one identity.
+          # shellcheck disable=SC2046 # each existing keychain is its own argument
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
           security default-keychain -s "$KC"
           HERMES=.tauri-hermes/hermes
@@ -395,11 +396,11 @@ jobs:
 
   publish:
     needs: [resolve, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Needed for scripts/build-updater-manifest.py (this job runs the manifest
       # assembler, so it must have the repo checked out).
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.tag }}
           # The release notes are the commit subjects since the previous
@@ -415,7 +416,9 @@ jobs:
       # and the updater dialog showed exactly that. The commit subjects on
       # this repository are written as sentences, so they are the notes: the
       # same text goes on the GitHub release and into latest.json, which the
-      # updater shows before the user accepts an update.
+      # updater shows before the user accepts an update. A merge commit
+      # contributes its PR title and number. Dry run from any checkout:
+      # `node scripts/generate-release-changelog.mjs 1.89.0 - --to v1.89.0`.
       - name: Write the release notes
         env:
           VERSION: ${{ needs.resolve.outputs.version }}

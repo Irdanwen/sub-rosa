@@ -52,7 +52,9 @@ describe("the copy guard", () => {
         .map((entry) => ({ file, ...entry })),
     );
     expect(untranslated).toEqual([]);
-  });
+    // It parses every shipped TSX file: under coverage instrumentation on a
+    // CI runner that took past the default five seconds.
+  }, 30_000);
 });
 
 describe("the rendered-copy scanner", () => {
