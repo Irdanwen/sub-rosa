@@ -717,6 +717,28 @@ fn a_callback_needs_a_state_and_a_code_or_an_error() {
 }
 
 #[test]
+fn google_comes_back_through_its_reversed_client_id() {
+    // Google sends an iOS-type client back only to its reversed client id, so
+    // that address is a callback whenever the build carries Google.
+    let redirect = "com.googleusercontent.apps.42-x:/oauth2redirect";
+    assert!(oauth::redirect_matches(
+        &format!("{redirect}?state=s&code=c"),
+        redirect
+    ));
+    assert!(matches!(
+        oauth::parse_callback(&format!("{redirect}?state=s&code=c")),
+        Some((_, oauth::CallbackOutcome::Code(_)))
+    ));
+    if let Some(id) = builtin::provider("google").unwrap().client_id() {
+        let derived = build_clients::google_redirect_for(id).unwrap();
+        assert_eq!(builtin::extra_redirects(), vec![derived.clone()]);
+        assert!(oauth::is_callback(&format!("{derived}?state=s&code=c")));
+    } else {
+        assert!(builtin::extra_redirects().is_empty());
+    }
+}
+
+#[test]
 fn a_sign_in_left_too_long_is_refused() {
     let verifier = crate::redacted::Redacted::new("v".to_string());
     let mut flow = oauth::PendingFlow::new(

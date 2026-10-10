@@ -246,3 +246,42 @@ so a connector added anywhere stayed there (recorded in ADR-0107).
   skill pack, an assistant or an assignment names. Skill packs, connector
   relays, connector errands and daily brief cards already travel under UUIDs
   and are unchanged.
+
+## Addendum (2026-10-10): the app's own clients, per platform and per build
+
+1.89.0 shipped without Google, Microsoft and GitHub on every platform: the
+client ids are read with `option_env!`, no workflow set them, and nothing
+said so. Checking the providers' documentation while wiring them showed that
+"one Google client id with `SUBROSA_GOOGLE_REDIRECT_URI`" cannot serve every
+platform.
+
+- **Google is offered on the Mac and the iPhone only.** Google sends the
+  browser back to an app's own scheme for no client type: its iOS type
+  accepts only the reversed client id
+  (`com.googleusercontent.apps.<id>:/oauth2redirect`), its Desktop type only
+  a loopback address (and expects its client secret at the token exchange),
+  its Android type no custom scheme at all. Google documents that macOS apps
+  use the iOS type, and the Mac and the iPhone share the bundle id
+  `xyz.carpediem.subrosa`, so one iOS-type client serves both. The Google id
+  is compiled only for `macos` and `ios` (`builtin::GOOGLE_CLIENT_ID`); the
+  redirect is derived from the id (`build_clients::google_redirect_for`,
+  `SUBROSA_GOOGLE_REDIRECT_URI` still overrides it), and the release
+  workflows register the reversed scheme in the bundle through a Tauri config
+  overlay written by `scripts/connector-clients.mjs`.
+- **Rejected: the iOS client on Windows and Android.** Google would accept
+  the redirect, since nothing checks which app opened the scheme, but that is
+  exactly the impersonation Google disabled custom schemes on Android for,
+  and it uses a client against the type it was registered as. **Deferred: a
+  loopback listener on Windows** (a Desktop client, whose shipped "secret" is
+  no secret) and Google's own sign-in on Android; each is a code change, not
+  a registration.
+- **Microsoft and GitHub keep one id for every platform**: an Entra "mobile
+  and desktop" redirect accepts `subrosa://connector/callback`, and the
+  device flow needs no redirect.
+- **A build says what it leaves out.** `connectors/build_clients.rs` is
+  compiled into the app and, through `#[path]`, into `build.rs`, which emits a
+  `cargo:warning` per missing id for the target platform; the release
+  workflows annotate the run the same way; and the Connectors screen lists a
+  provider whose id the build lacks as "Not available in this build"
+  (GitHub was hidden instead). `connectors-check.yml` asserts the three
+  repository secrets are present and well formed without building anything.

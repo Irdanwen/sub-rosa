@@ -107,11 +107,23 @@ jobs:
           test -s "$RUNNER_TEMP/subrosa-android.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/subrosa-android.jks" >> "$GITHUB_ENV"
 
+      # Microsoft and GitHub sign in with client ids compiled into the app; a
+      # build without one ships without that connector, so the run says so.
+      # Google is not offered on Android: Google no longer returns an Android
+      # client to a custom scheme (HANDOFF.md, OAuth clients).
+      - name: Connector clients
+        env:
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
+        run: node scripts/connector-clients.mjs build --platform android
+
       - name: Build signed APK and AAB
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
         run: pnpm tauri android build --ci --target aarch64 --apk --aab --config "$RUNNER_TEMP/android-version.json"
 
       - name: Verify and collect packages

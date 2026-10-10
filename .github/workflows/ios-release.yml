@@ -209,14 +209,29 @@ jobs:
           node scripts/sync-ios-version.mjs
           git --no-pager diff --stat -- src-tauri/gen/apple || true
 
+      # Google, Microsoft and GitHub sign in with client ids compiled into the
+      # app; a build without one ships without that connector. Annotate the
+      # run with each one left out, and register Google's redirect scheme (its
+      # reversed client id) in the Info.plist through a config overlay, which
+      # `tauri ios xcode-script` forwards to the deep-link plugin's build.
+      - name: Connector clients
+        env:
+          SUBROSA_GOOGLE_CLIENT_ID: ${{ secrets.SUBROSA_GOOGLE_CLIENT_ID }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
+        run: node scripts/connector-clients.mjs build --platform ios --overlay connector-clients.conf.json
+
       - name: Archive via Tauri (Rust build + xcarchive)
         env:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_KEY_PATH: /Users/runner/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          SUBROSA_GOOGLE_CLIENT_ID: ${{ secrets.SUBROSA_GOOGLE_CLIENT_ID }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
         run: |
-          pnpm tauri ios build --export-method app-store-connect --verbose || \
+          pnpm tauri ios build --export-method app-store-connect --verbose --config connector-clients.conf.json || \
             echo "Tauri's own export failed (expected); exporting the xcarchive manually."
 
       # The watch app is not part of Tauri's build: Tauri passes `-sdk

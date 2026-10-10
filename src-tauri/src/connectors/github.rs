@@ -12,9 +12,10 @@
 //! usual rules.
 //!
 //! The client id comes from the build (`SUBROSA_GITHUB_CLIENT_ID`); a build
-//! without one does not offer GitHub. Waiting for the code is in-process and
-//! bounded by the code's own lifetime (fifteen minutes): a sign-in the phone
-//! froze in the middle of is started again, never resumed from a row.
+//! without one lists GitHub as not available in this build. Waiting for the
+//! code is in-process and bounded by the code's own lifetime (fifteen
+//! minutes): a sign-in the phone froze in the middle of is started again,
+//! never resumed from a row.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -52,9 +53,7 @@ pub const GITHUB: Endpoints<'static> = Endpoints {
 };
 
 pub fn client_id() -> Option<&'static str> {
-    option_env!("SUBROSA_GITHUB_CLIENT_ID")
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
+    super::build_clients::configured(option_env!("SUBROSA_GITHUB_CLIENT_ID"))
 }
 
 pub fn available() -> bool {
