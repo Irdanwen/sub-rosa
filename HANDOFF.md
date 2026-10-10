@@ -1,14 +1,69 @@
 # HANDOFF — Ce que le fork Sub Rosa attend de l'humain
 
+## Mise à jour du 10 octobre 2026 : ce qui reste aux portes externes après 1.89.0
+
+L'audit de 1.89.0 a repassé la matrice de parité (`docs/parity/chatgpt.md`) :
+tout ce qui suit y est marqué `gated` ou `unverified` tant que l'action n'est
+pas faite. Quand une porte s'ouvre, repasser les cellules à `yes` puis lancer
+`node scripts/parity-gaps.mjs`.
+
+1. **Carpe Diem #464 à déployer (Geolours)** : fusionnée le 2026-10-10, pas
+   déployée. Sans elle, l'opérateur n'émet pas de clé navigateur et ne répond
+   pas au CORS du site : toute la colonne Web (`/app`) et les extensions Office
+   s'arrêtent à l'écran « Ce navigateur a besoin d'une nouvelle clé ». Ordre
+   **obligatoire** : opérateur Carpe Diem (CVM Phala), puis service de comptes
+   (migration `0011` et ses routes), puis site (rebuild SRI et CSP des vhosts).
+   Le service et le site sont déjà en ligne : l'ordre a été inversé en 1.89.0,
+   il faut donc déployer l'opérateur sans attendre et vérifier ensuite par
+   `curl` le CORS et la naissance d'une clé (voir
+   [docs/browser-device-deployment.md](docs/browser-device-deployment.md)).
+   **Carpe Diem #465** (synthèse vocale en flux) est facultative : la voix
+   marche sans, avec plus de latence.
+2. **Clients OAuth Google, Microsoft et GitHub** : à créer, puis poser les
+   trois secrets CI `SUBROSA_GOOGLE_CLIENT_ID`, `SUBROSA_MS_CLIENT_ID` et
+   `SUBROSA_GITHUB_CLIENT_ID` (et `SUBROSA_GOOGLE_REDIRECT_URI` pour le client
+   iOS de Google). Sans eux, aucune build n'offre ces connecteurs. Étapes
+   exactes : section du paquet W8 (création dans Google Cloud, Entra, GitHub
+   OAuth app en device flow, schéma `subrosa://`).
+3. **Listings de l'extension navigateur** : Chrome Web Store, Edge Add-ons et
+   Firefox Add-ons (AMO). Aujourd'hui l'extension ne s'installe qu'en mode
+   développeur. Une fois listée, reporter l'id attribué par chaque store dans
+   `CHROMIUM_EXTENSION_IDS` / `GECKO_EXTENSION_ID`
+   (`src-tauri/src/browser_extension/host_manifest.rs`), sinon l'hôte natif
+   refuse l'extension installée depuis le store.
+4. **Office, AppSource** : soumettre les trois manifestes
+   (`office-addins/manifests/*.xml`) à la validation AppSource de Microsoft,
+   **après** la bascule vers l'origine Office dédiée (point 8). Jusque-là, les
+   compléments ne s'installent que par chargement latéral, et ils n'ont jamais
+   été lancés dans un vrai Excel, Word ou PowerPoint.
+5. **CASA pour Gmail** : l'accès complet à Gmail est un scope restreint ;
+   Google exige l'évaluation de sécurité indépendante CASA avant de l'ouvrir.
+   Le code est là derrière `GMAIL_VERIFIED` (`src-tauri/src/connectors/builtin.rs`),
+   qui passe à `true` par un changement de build après l'évaluation.
+6. **Revue indépendante du protocole des espaces** (projets partagés,
+   discussions de groupe, ADR-0098, `docs/security/spaces-protocol.md`) : à
+   commander. L'interrupteur « Aperçu » reste éteint par défaut jusque-là.
+7. **Essais sur matériel** : montre, widgets, Santé (iPhone et Android),
+   numérisation de documents, voix sur haut-parleur de téléphone (annulation
+   d'écho). Rien de cela n'a tourné sur un appareil réel ; la section
+   « Unverified » de la matrice dit quoi essayer.
+8. **Bascule de l'origine Office** vers `office.subrosa.furetier.com` (DNS
+   Cloudflare, vhost 80, certificat certbot en webroot, vhost 443, publication),
+   pour que `office.js` ne s'exécute plus sur l'origine du compte.
+9. **Admin Keycloak** : remplacer l'admin temporaire `subrosa-bootstrap` par un
+   admin permanent à mot de passe généré, gardé dans `private/` du VPS et
+   jamais affiché, puis supprimer `subrosa-bootstrap` et faire tourner le mot
+   de passe de l'ancien compte.
+
 ## Mise à jour du 8 octobre 2026 : un navigateur devient un appareil (ADR-0096)
 
 Le client web pourra obtenir sa propre clé Carpe Diem, bornée (2 $ par jour,
 7 jours, ni routeur ni x402). Trois déploiements, **dans cet ordre** :
 
-1. **Carpe Diem (porte externe, Geolours)** : la branche locale
-   `feat/subrosa-browser-devices` du dépôt Carpe Diem (non poussée) porte la
-   borne dans l'opérateur et le CORS du site Sub Rosa. À relire, fusionner et
-   déployer sur le CVM Phala.
+1. **Carpe Diem (porte externe, Geolours)** : la borne dans l'opérateur et le
+   CORS du site Sub Rosa, d'abord sur la branche `feat/subrosa-browser-devices`,
+   sont devenus la PR Carpe Diem #464, fusionnée le 2026-10-10 et pas encore
+   déployée sur le CVM Phala (voir la mise à jour du 10 octobre).
 2. **Service de comptes** : migration `0011` et deux routes, seulement après
    l'opérateur (sinon l'ancien opérateur émettrait une clé sans borne).
 3. **Site** : rebuild (intégrité SRI) et nouvelle CSP dans les vhosts nginx du

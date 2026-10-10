@@ -146,7 +146,7 @@ through one rule per tool, and every "ask" is a row.**
 - Desktop custom assistants and Hermes runs do not use the native
   connectors; Hermes has its own MCP servers, and the catalog fills both.
 
-## Addendum (2026-10-08): one runtime for every shell, GitHub by device flow
+## Addendum 2026-10-08: one runtime for every shell, GitHub by device flow
 
 The first cut left the computer with two connector systems. Connecting from
 the catalog wrote the server into Hermes's own MCP list and signed in there,
@@ -214,7 +214,7 @@ Release gates added: registering the GitHub OAuth app with the device flow
 enabled, and a check on real hardware that Hermes's approval card shows the
 connector sentence.
 
-## Addendum (2026-10-08): a connector travels under a UUID derived from its id
+## Addendum 2026-10-08: a connector travels under a UUID derived from its id
 
 The definition row never travelled. A catalog connector's id is its catalog
 name (`sentry`, `google`) and a custom one's is a slug with a short suffix,

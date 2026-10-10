@@ -140,6 +140,11 @@ honor the prefix. Configure the web server's response headers explicitly; the
 root-oriented `_headers` and `_redirects` files are examples for root hosting,
 not configuration consumed by a VPS web server.
 
+The prerender writes absolute `hreflang` alternates, so it needs the origin the
+pages are served from: `https://furetier.com` for a `/subrosa/` build and
+`https://subrosa.furetier.com` for a root build. Set
+`VITE_SITE_ORIGIN=https://your-domain` for any other deployment.
+
 Once the dedicated HTTPS account website and its service are ready, build the
 marketing site with `VITE_SITE_BASE=/subrosa/` and
 `VITE_ACCOUNT_ORIGIN=https://your-account-domain` instead. This origin accepts

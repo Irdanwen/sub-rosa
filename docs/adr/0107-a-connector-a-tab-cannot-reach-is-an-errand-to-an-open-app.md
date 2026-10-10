@@ -112,7 +112,7 @@ ids (`docs/accounts-sync-contract.md`), so a tab cannot count on the
   synchronisation; this design does not depend on it, and fixing it is
   separate work.
 
-## Addendum (2026-10-08)
+## Addendum 2026-10-08: the definition row travels under a UUID
 
 The definition row's non-UUID object id is fixed by the ADR-0092 addendum of
 the same date: a connector now travels under a UUID derived from its id. The

@@ -109,7 +109,7 @@ off. And ADR-0101: the prose stays in Rust.
 - Calendar, places, imports and long-form summaries remain app-only, and the
   page tells the model so.
 
-## Addendum, 2026-10-08: one web client with the shares, projects and pictures
+## Addendum 2026-10-08: one web client with the shares, projects and pictures
 
 The web client's other half (shares, memory, projects, files and vision,
 cards, the canvas, pictures, the library, assistants and publishing, ADR-0101
@@ -143,7 +143,7 @@ implementation:
   already granted), pictures are `data:` URLs (`img-src 'self' data:`), and
   pictures are fetched only from Carpe Diem's origin.
 
-## Addendum, 2026-10-08: connectors a tab cannot reach
+## Addendum 2026-10-08: connectors a tab cannot reach
 
 Decision 6 stands for what a tab reaches itself. A connector it cannot reach
 is no longer only "use it in the app": one of the person's own open apps can

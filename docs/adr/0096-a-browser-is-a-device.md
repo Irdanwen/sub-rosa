@@ -186,3 +186,24 @@ What bounds it:
   what protects against script on the page.
 - A browser device is per browser profile: clearing site data deletes its keys,
   and the person admits it again; the old row stays in the list until revoked.
+
+## Addendum 2026-10-10: the `subrosa` Trusted Types policy now exists
+
+The decision said the site's CSP admits one Trusted Types policy, `subrosa`,
+and that none was created. The web client's data analysis (ADR-0104) now
+creates it, in one place: `website/src/client/analysis/worker-url.ts` makes
+the Python worker start from a blob URL, and a blob URL is a script URL the
+page's `require-trusted-types-for 'script'` refuses as a string. The policy is
+narrow on purpose: it implements only `createScriptURL`, and that accepts
+only the blob URLs the same module made (a set it fills when it creates the
+blob); anything else throws. It implements no `createHTML` and no
+`createScript`, so the guarantee above still holds for HTML and script sinks:
+a string cannot reach them. The CSP names `subrosa` without
+`'allow-duplicates'`, so the name can be claimed once per page: after the
+module has created it, a second `createPolicy("subrosa")` throws. Claiming it
+first, before any worker starts, takes script already running on the page,
+which is the case Trusted Types never protected against (see "Script
+injected into the account site" in `docs/threat-model.md`); the worker then
+refuses to start rather than run under a policy it did not make. A new use of
+a script URL sink goes through this module or names a policy of its own in the
+CSP.

@@ -126,7 +126,7 @@ differently, with echo cancellation in three different places.
 - A voice turn is billed like a typed one plus its transcription and its
   speech; nothing is billed while the person is silent.
 
-## Addendum (2026-10-08): the Mac cancels echo, Windows shares its screen, the chain was measured
+## Addendum 2026-10-08: the Mac cancels echo, Windows shares its screen, the chain was measured
 
 - **macOS uses the voice-processing unit too.** The Mac has the same
   Voice-Processing I/O audio unit as the iPhone, and `coreaudio-rs` was

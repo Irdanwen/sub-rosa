@@ -475,6 +475,17 @@ person leaves it or at the next launch (ADR-0083). In code, `ephemeral`.
 _Avoid_: incognito, private chat (every chat here is private), ephemeral chat
 in copy.
 
+**Protected mode**:
+One switch behind a 4 to 6 digit PIN, kept on the device, that applies the
+protected mode **limits** (adult models and Studio safe mode, quiet hours,
+memory, image and video generation, voice, past chats) and is enforced in Rust
+where each request leaves, not in the interface (ADR-0084). On the web it is a
+per-browser PIN lock (ADR-0104). It is Sub Rosa's equivalent of parental
+controls: there is no parent account and nothing is enforced on a server.
+_Avoid_: parental controls (the vendor's linked-account feature, which this is
+not), kid mode, safe mode (that is Studio's own content filter, one of the
+limits), lock (the vault has its own lock).
+
 **Quiet hours**:
 A daily window, set behind the protected mode PIN, when chat and Studio
 refuse new work (ADR-0084 addendum). One of the protected mode **limits**,
@@ -1263,7 +1274,7 @@ stays on the device.
 _Avoid_: import (that is media fetched or dropped), attachment (notes have
 none).
 
-**Report**:
+**Report (bug report)**:
 A bug, feedback or feature request filed as a GitHub Issue with the user's own
 credential, or opened pre-filled in the browser (ADR-0036). Never sent to a
 Sub Rosa server; there is none.
@@ -1424,7 +1435,7 @@ copy, "source" only inside the research surfaces.
 _Avoid:_ "source" alone in code (an audio lane), "reference" (an
 assistant's file), "link" (a chat card).
 
-**Report** — the note a run writes: a summary, sections, citations the app
+**Report (research report)** — the note a run writes: a summary, sections, citations the app
 resolved and a sources list the app wrote (the ADR-0044 discipline). It is
 an ordinary note and exports as Markdown, PDF or Word.
 _Avoid:_ "research note", "document".
@@ -1545,6 +1556,17 @@ question as a removable chip, read only on a click (ADR-0094).
 _Avoid:_ "screen capture" for the whole feature (a picture is the optional
 part), "context" alone (overloaded).
 
+**Browser extension** — the Chromium and Firefox extension that asks the
+desktop app about the page the person is reading, adds a passage or an answer
+to a note, and saves the page's link to the Library. It talks only to the app
+on the same computer, through the native messaging host the app registers,
+never to a server (ADR-0100), and only once paired. It holds no Carpe Diem key
+and no account session; the desktop app answers.
+Installed today by loading it unpacked; store listings are an external gate.
+_Avoid:_ "plugin", "add-on" in copy (Firefox's word, but one name across
+browsers), "Office add-in" (another thing), "agent browser" (the browser the
+desktop agent drives).
+
 **Browser pairing** — the consent that lets one browser extension ask the
 desktop app anything: a six-digit code shown in Settings › Browser extension,
 typed into the extension, traded for a token bound to that extension
@@ -1565,8 +1587,10 @@ _Avoid:_ "string" for copy (a string is data; a sentence is read),
 keyed by the English sentence. Complete or the test is red.
 _Avoid:_ "translation file" (it is a catalog: the whole set, gated).
 
-**Language choice** — "System", English or French, chosen per device in
-Settings and applied before the first render. Distinct from the
+**Language choice** — "System" or one of the six interface languages
+(English, French, German, Italian, Spanish, Brazilian Portuguese), chosen per
+device in Settings and applied before the first render (ADR-0047 and its
+addenda). Distinct from the
 transcription language (what the model should expect to hear).
 _Avoid:_ "locale" in copy (the person picks a language, not a locale).
 
@@ -1669,7 +1693,7 @@ _Avoid_: "share" for it; a share is sealed and dated, a publication is neither.
 last publish, at `/p/<slug>` on the publication origin. "Publish changes"
 replaces it; unpublishing deletes it.
 
-**Site**: an ordered set of one account's pages with a home page and
+**Site (published site)**: an ordered set of one account's pages with a home page and
 navigation. Its address is its home page's.
 
 **Public profile**: the opt-in page `/u/<handle>` listing what one account
@@ -1895,6 +1919,16 @@ _Avoid:_ "splash" (it is not a loading screen; it is the chat), "hero" in UI cop
   ([ADR-0032](docs/adr/0032-the-bible-is-local-rows-over-gallery-artifacts.md)).
   The remote studio had a server-side "bible" of its own, and it is gone: if a
   sentence needs to say which, the sentence is out of date.
+
+- **"report"** is overloaded: a **bug report** (an issue filed with the
+  user's own credential, ADR-0036), a **research report** (the note a deep
+  research run writes, ADR-0089), an **import report** (what an import could
+  not bring in), and a report of a published page (public content rules).
+  Qualify every time.
+- **"site"** is overloaded: a **site (agent browser)** is a registrable
+  domain the person allows the agent browser to visit, a **site (published
+  site)** is a set of published pages, and "the site" in docs and ops means
+  the account website or the public website. Qualify which.
 
 ## Example dialogue
 
