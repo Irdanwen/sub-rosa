@@ -54,6 +54,15 @@ server {
     # Cookies never travel to or from this origin.
     proxy_set_header Cookie "";
     proxy_hide_header Set-Cookie;
+    # One source per header. The generic headers above are this proxy's, on
+    # every answer including its own 404 and robots.txt; the service's copies
+    # of them are dropped so a browser never receives a header twice. The
+    # service keeps what only it can decide: each page's
+    # Content-Security-Policy, Cache-Control and Content-Language.
+    proxy_hide_header Strict-Transport-Security;
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header Referrer-Policy;
+    proxy_hide_header X-Frame-Options;
 
     location ^~ /p/ {
         limit_req zone=subrosa_pages burst=40 nodelay;

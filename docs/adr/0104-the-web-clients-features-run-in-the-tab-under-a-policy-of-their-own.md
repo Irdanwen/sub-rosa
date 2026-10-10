@@ -109,7 +109,7 @@ off. And ADR-0101: the prose stays in Rust.
 - Calendar, places, imports and long-form summaries remain app-only, and the
   page tells the model so.
 
-## Addendum, 2026-10-08: one web client with the shares, projects and pictures
+## Addendum 2026-10-08: one web client with the shares, projects and pictures
 
 The web client's other half (shares, memory, projects, files and vision,
 cards, the canvas, pictures, the library, assistants and publishing, ADR-0101
@@ -143,7 +143,7 @@ implementation:
   already granted), pictures are `data:` URLs (`img-src 'self' data:`), and
   pictures are fetched only from Carpe Diem's origin.
 
-## Addendum, 2026-10-08: connectors a tab cannot reach
+## Addendum 2026-10-08: connectors a tab cannot reach
 
 Decision 6 stands for what a tab reaches itself. A connector it cannot reach
 is no longer only "use it in the app": one of the person's own open apps can
@@ -151,3 +151,98 @@ make the call for the tab, as an errand, under that device's rules
 ([ADR-0107](0107-a-connector-a-tab-cannot-reach-is-an-errand-to-an-open-app.md)).
 Nothing is proxied through the account service, and the page's policy is
 unchanged.
+
+## Addendum, 2026-10-10: Python runs in an opaque-origin frame
+
+Decision 5 put Python's worker on `/app` itself, held by the page's policy and
+a `fetch` guard. A post-release audit (finding S1) showed what that left: a
+blob worker shares the page's origin, so the model's code could open the
+origin's IndexedDB (the browser device record of ADR-0096, the connectors'
+sealed tokens of decision 6) and post through `XMLHttpRequest` or `WebSocket`
+to any of the seven outside hosts `/app`'s `connect-src` names. A hidden
+instruction in an attached file was enough.
+
+**Decision.** The worker now hardens itself (ADR-0086 addendum of the same
+day), and on the web, in the Excel pane too, it is started inside a frame:
+
+- `website/python-sandbox.html`, its own build entry, is framed by
+  `createSandboxedWorker()` (`client/analysis/worker-url.ts`) with
+  `sandbox="allow-scripts"` and nothing else, so the frame and its worker have
+  an opaque origin: no IndexedDB, storage or cookies of the account origin are
+  theirs to open, whatever Python finds.
+- The page and the frame speak once by `postMessage` (the frame says it is
+  ready; the page, checking `event.source === frame.contentWindow`, hands it a
+  MessagePort), then only on that port. To the bridge the frame is a
+  `WorkerLike`: runs go in, answers come out, `terminate()` removes the frame
+  and the worker with it; a frame that is not ready within 15 seconds or whose
+  worker fails is reported as "unavailable". `bridge.ts` is unchanged.
+- The frame starts the worker from a one-line `data:` module through its own
+  Trusted Types policy, `subrosa-python`. Not a blob: Chromium refuses a blob
+  URL minted by an opaque origin as a worker script. A worker from a local URL
+  inherits the frame's policy, measured in Chromium and WebKit.
+- The frame's policy, in `public/_headers`, `nginx-account.conf.example` and
+  `Caddyfile.example` (held equal by `src/test/website-csp.test.ts`):
+  `default-src 'none'; script-src <origin>/assets/ <origin>/pyodide/
+  'wasm-unsafe-eval'; worker-src data: <origin>/assets/; connect-src
+  <origin>/pyodide/; frame-ancestors <origin>` plus Office's hosts; `base-uri
+  'none'; form-action 'none'; require-trusted-types-for 'script';
+  trusted-types subrosa-python`. `worker-src` names `/assets/` because a module
+  worker's static imports are worker requests. The origin is written out, not
+  `'self'`, which an opaque document cannot be trusted to resolve: the examples
+  carry `https://account.example.invalid`, replaced at deployment like the
+  vhost's name. No `X-Frame-Options`, which `frame-ancestors` supersedes and
+  which would keep Office on the web out.
+- The frame fetches from an opaque origin, so `/assets/python-sandbox*` (the
+  frame's entry and the worker chunk, the only names the build gives them) and
+  `/pyodide/` answer with `Access-Control-Allow-Origin: *`; nothing else does.
+  The site build turns Vite's module preload polyfill off, which would
+  otherwise become a chunk both pages share under another name; every browser
+  the site supports preloads modules natively.
+- `/app` no longer starts a worker, so its `worker-src` loses `blob:`. The
+  Office panes' `frame-src` gains `'self'` for the frame; their `worker-src` is
+  left as it was, since Office.js's needs were not measured here.
+- On the development server, which answers no CORS request from an opaque
+  origin, the frame is not sandboxed; every build is. The Office dev server
+  serves the site's sandbox page itself.
+
+**Measured** by `website/scripts/python-sandbox-smoke.mjs` against the built
+site under these policies, in headless Chromium 151, Playwright's WebKit 26.4
+and Safari on the iOS 26.3 simulator: every probe for a way out raised, the
+chart, table, `asyncio.sleep` and pandas runs answered, the page's
+`subrosa-browser-device` IndexedDB kept its version, stores and record,
+and the server saw no request outside the harness, the sandbox page, its
+scripts and `/pyodide/`. Nothing was refused by Safari that Chromium allowed.
+
+**Consequences.** Deploying the web client now also means the
+`/python-sandbox.html`, `/assets/python-sandbox` and `/pyodide/` (CORS) blocks,
+with the site's own origin in the sandbox's policy. Python on the web costs one
+hidden frame more, a few kilobytes. The `/pyodide/` path stays reachable from
+the worker, so a run could still request a file there; the vhost keeps no
+access log, and nothing under it is secret.
+
+## Addendum 2026-10-10: the Excel pane frames its own origin's sandbox
+
+The addendum above put the Excel pane's Python in the site's
+`/python-sandbox.html`, because the panes were served by the account origin.
+The same day they moved to an origin of their own (ADR-0102, addendum of
+2026-10-10), and a pane frames the sandbox of the origin it runs on, so:
+
+- The office build has its own entry, `office-addins/python-sandbox.html`
+  (its script, `office-addins/src/python-sandbox.ts`, imports the site's
+  `client/analysis/python-sandbox.ts`), emitted as `/python-sandbox.html` with
+  its scripts under `/office/assets/python-sandbox*`. The module preload
+  polyfill is off there too. The development server serves it like any page,
+  so the Office dev server's copy of the site's page is gone.
+- The office origin serves it with the same policy written for that origin:
+  `script-src` and `worker-src` name `<office origin>/office/assets/`,
+  `connect-src` and `script-src` its `/pyodide/`, and `frame-ancestors` the
+  office origin and Office's hosts; `/office/assets/python-sandbox*` and
+  `/pyodide/` answer with CORS (`office-addins/public/_headers`,
+  `nginx-office.conf.example`, the office block of `Caddyfile.example`). The
+  panes' `frame-src` keeps `'self'`, on the one line that also names
+  Microsoft's frame and the account's courier.
+- The account origin's copy is framed by `/app` alone, so its
+  `frame-ancestors` is the account origin only: Office's hosts are no longer
+  named there.
+
+`src/test/website-csp.test.ts` holds both origins' copies to these values.

@@ -1,7 +1,9 @@
 import { t } from "../../lib/i18n";
 import { useRef } from "react";
+import { createPortal } from "react-dom";
 import { useModalFocus } from "../../lib/modal-focus";
 import { hapticSelection } from "../../lib/haptics";
+import { sheetHost } from "./sheet-host";
 
 /**
  * A list of things you can do to one row.
@@ -44,7 +46,12 @@ export function ActionSheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   useModalFocus(sheetRef, { onClose });
 
-  return (
+  // Rendered at the shell, not where it was opened (see sheet-host.ts). The
+  // chat composer's study menu opens from inside the composer's glass, whose
+  // backdrop filter makes it the box a fixed layer is placed in: the sheet's
+  // height cap became the composer's height and the list shrank to nothing,
+  // leaving a title and Cancel.
+  return createPortal(
     <div className="mobile-sheet-backdrop">
       {/* Tapping the dimmed area dismisses, which is the gesture people try
           first. A real button rather than a handler on the backdrop div: it is
@@ -88,6 +95,7 @@ export function ActionSheet({
           {closeLabel ?? t("Cancel")}
         </button>
       </div>
-    </div>
+    </div>,
+    sheetHost(),
   );
 }

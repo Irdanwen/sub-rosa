@@ -118,3 +118,72 @@ loads from a `config.yaml` like the app's, and `resolve_pre_tool_block`
 returns the refusal for a temporary session and nothing for another), and in
 `hermes_bridge::guard::tests`, which run the installed plugin in Python
 against a ledger and a `state.db`.
+
+## Addendum 2026-10-10: the exits the audit found
+
+The post-release audit of 1.89.0 found four more ways out, now closed:
+
+- **Deep research and study mode** refuse in Rust when the chat they are
+  started from is temporary, by task id or by desktop session id
+  (`temporary_chat::refuse_in_temporary`, called by `research::chat_of` and
+  by `study::set_mode` and `study::add_cards`). A report and a deck are kept,
+  listed and synchronised on their own. Both composers stop offering them in
+  a temporary chat (`ComposerModes`, shared by the two shells); Review stays,
+  since it is about cards already kept. Tests:
+  `temporary_chat::tests::deep_research_is_refused_from_a_temporary_chat`,
+  `study_mode_and_its_cards_are_refused_in_a_temporary_chat`,
+  `src/test/study-mode.test.tsx`.
+- **The gallery.** The desktop agent's media tools save every generation
+  into the Studio gallery (`/v1/media/save`) and `make_document` writes a
+  file there (`/v1/media/document`); the gallery is synchronised. These
+  requests come from the `june_media` MCP server, which serves every session
+  of the runtime and is never told which one called it, so the provider
+  proxy cannot tell a temporary chat's request from another's. The refusal
+  is made where the session is known: the `subrosa_guard` plugin now refuses
+  `generate_image`, `generate_video`, `generate_music`, `check_media` and
+  `make_document` in a temporary session and its descendants (and while a
+  temporary chat is open, in a call that names no session), from the same
+  ledger Rust writes. A Rust check in the proxy was considered and rejected:
+  without a session it could only refuse every chat's media while any
+  temporary chat is open. Test: `hermes_bridge::guard::tests`.
+- **The runtime's files.** Hermes' `DELETE /api/sessions/{id}` removes the
+  session from `state.db` but leaves `sessions/request_dump_{id}_*.json`,
+  `{id}.json`, `{id}.jsonl` and `session_{id}.json`, which hold the
+  conversation. Rust deletes them once the runtime has answered
+  (`temporary_chat::remove_session_files`, an id that is not the runtime's
+  own shape never becomes a path). Test:
+  `temporary_chat::tests::the_runtimes_files_for_a_session_go_with_it`.
+
+## Addendum 2026-10-10: the runtime's log
+
+The parity run of 1.89.1 found one more trace: the pinned runtime logs the
+start of every turn at INFO into `hermes/logs/agent.log`, with the first 80
+characters of the message (`agent/turn_context.py`, "conversation turn:
+session=... msg=..."). After a temporary chat was left, its rows and its
+session were gone, and that line stayed.
+
+**Decision.** The `subrosa_guard` plugin, which the runtime loads before any
+turn (plugin discovery runs when `model_tools` is imported), adds a
+`logging.Filter` to the runtime's `agent.turn_context` logger. The record
+carries the session id as its first argument, so the plugin checks it
+against the same ledger and lineage as the tool hook, and replaces the
+message argument with `[temporary chat]` for a temporary session or one
+descended from it, for a record that names no session while a temporary
+chat is open, and when the ledger cannot be read. The line itself stays: it
+says a turn started, not what was said. Every other chat's line is left as
+the runtime wrote it, since it is the runtime's only per-turn diagnostic.
+
+**Rejected.** Changing the runtime (it is pinned, and the fix would be
+re-merged at every bump); redacting every turn's message (the session is
+known at log time, so there is no need to blind the diagnostic for every
+chat); scrubbing `agent.log` when a temporary chat ends (a rewrite of a file
+the runtime holds open, after the words were already on disk).
+
+**Not covered.** Lines written before this change stay in `agent.log` and
+its rotated copies until the runtime rotates them away.
+
+**Verified** in `hermes_bridge::guard::tests::the_plugin_keeps_a_temporary_chats_words_out_of_the_turn_log`
+(the installed plugin, registered as the runtime registers it, in Python),
+and against the pinned runtime's own plugin discovery and `setup_logging`:
+`agent.log` received `msg='[temporary chat]'` for the temporary session and
+the words for an ordinary one.

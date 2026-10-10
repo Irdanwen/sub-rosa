@@ -417,9 +417,9 @@ pub async fn list_models(model_type: &str) -> Result<Vec<ModelDto>, AppError> {
     parse_response("/v1/models", response).await
 }
 
-/// One generated image from the June API `/v1/image/generate` endpoint. The
-/// bytes arrive base64-encoded so the frontend can wrap them in a data URL for
-/// the existing inline image display path.
+/// One generated image for the chat (`providers::chat_image`). The bytes
+/// arrive base64-encoded so the frontend can wrap them in a data URL for the
+/// existing inline image display path.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeneratedImageDto {
@@ -427,25 +427,6 @@ pub struct GeneratedImageDto {
     pub mime_type: String,
     pub model: String,
     pub provider: String,
-}
-
-#[derive(Serialize)]
-struct ImageGenerateBody {
-    prompt: String,
-    model: String,
-}
-
-/// Forwards a prompt to June API image generation with the user's access token.
-/// Image generation is not metered yet, but the endpoint is still authenticated
-/// like every other call, so the token attaches the same way.
-pub async fn generate_image(prompt: String, model: String) -> Result<GeneratedImageDto, AppError> {
-    let send_venice_api_key = model_accepts_venice_api_key(&model);
-    post_json(
-        "/v1/image/generate",
-        &ImageGenerateBody { prompt, model },
-        send_venice_api_key,
-    )
-    .await
 }
 
 pub async fn proxy_agent_chat_completions(

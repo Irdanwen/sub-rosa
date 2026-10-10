@@ -1,0 +1,28 @@
+name: Connector clients check
+
+# Builds nothing. Asserts that the three OAuth client ids the connectors are
+# compiled with (SUBROSA_GOOGLE_CLIENT_ID, SUBROSA_MS_CLIENT_ID,
+# SUBROSA_GITHUB_CLIENT_ID) are set as repository secrets and well formed, so
+# the next release carries Google, Microsoft and GitHub. Run it by hand once
+# after setting them (HANDOFF.md, OAuth clients). Values are never printed.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+
+      - name: Client ids present and well formed
+        env:
+          SUBROSA_GOOGLE_CLIENT_ID: ${{ secrets.SUBROSA_GOOGLE_CLIENT_ID }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
+        run: node scripts/connector-clients.mjs check

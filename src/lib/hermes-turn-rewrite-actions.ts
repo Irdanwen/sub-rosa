@@ -8,6 +8,7 @@
 import { messageFromError } from "./errors";
 import { createHermesMethods } from "./hermes-control-plane";
 import type { HermesGatewayClient } from "./hermes-gateway";
+import { isModelSwitchMarker } from "./hermes-adapter";
 import { parseBranchSessionResult } from "./hermes-session-branch";
 import { attachmentStateFrom, type HermesAttachmentState } from "./hermes-image-attach";
 import {
@@ -177,7 +178,15 @@ async function imagesStillReadable(images: QuestionImage[]): Promise<boolean> {
 export async function regenerateLastReply(deps: TurnRewriteDeps, sessionId: string) {
   ensureIdle(deps, sessionId);
   const messages = deps.storedMessages(sessionId);
-  const lastQuestion = [...messages].reverse().find((message) => message.role === "user");
+  // A model-switch note is a user row nobody typed: skip it, and back up
+  // through it, or Regenerate would ask the note again.
+  const lastQuestion = [...messages]
+    .reverse()
+    .find(
+      (message) =>
+        message.role === "user" &&
+        !(typeof message.content === "string" && isModelSwitchMarker(message.content)),
+    );
   const stored = typeof lastQuestion?.content === "string" ? lastQuestion.content : "";
   // Checked before the rewind: `/undo` hands back the text alone, so the
   // pictures are found again from it, and must still be there to attach.
@@ -190,7 +199,9 @@ export async function regenerateLastReply(deps: TurnRewriteDeps, sessionId: stri
       t("The images of this question are no longer in the workspace. Send it anew."),
     );
   }
-  const text = await undoTurns(deps, sessionId, 1);
+  // `/undo` answers the earliest user row it removed: the question.
+  const back = lastQuestion ? (undoTurnsFor(messages, String(lastQuestion.id), "replace") ?? 1) : 1;
+  const text = await undoTurns(deps, sessionId, back);
   const question = text ?? stored;
   if (!question.trim()) throw new TurnRewriteError(t("There is no question to ask again."));
   await sendAfterRewind(deps, sessionId, question, undefined, images);

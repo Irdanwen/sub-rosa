@@ -24,6 +24,11 @@ use policy::{check_text, required};
 const WRITES_PER_MINUTE: i32 = 30;
 /// Reports per address per minute, on top of the service-wide budget.
 const REPORTS_PER_MINUTE: i32 = 5;
+/// Imports one address may count per minute. The route answers anybody, and
+/// each call adds one to a public count, so without a bound a script could
+/// make any assistant look popular. Ten is far above what a person clicking
+/// "Add to Sub Rosa" does.
+const IMPORTS_PER_MINUTE: i32 = 10;
 pub const CATALOG_PAGE: i64 = 24;
 
 pub struct PageInput {
@@ -364,6 +369,15 @@ impl Service {
         self.repository
             .catalog(query, category, page * CATALOG_PAGE, CATALOG_PAGE)
             .await
+    }
+    /// The definition for "Add to Sub Rosa", counted as one import. Limited
+    /// per address before anything is counted.
+    pub async fn import_listing(&self, id: Uuid, client: &str) -> Result<AssistantListing> {
+        self.publication()?;
+        self.repository
+            .rate_limit(&hash(format!("{client}:import")), IMPORTS_PER_MINUTE)
+            .await?;
+        self.listing(id, true).await
     }
     pub async fn listing(&self, id: Uuid, imported: bool) -> Result<AssistantListing> {
         self.publication()?;

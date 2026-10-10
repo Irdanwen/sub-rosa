@@ -1037,6 +1037,17 @@ liste exacte des passages envoyés sous la réponse
 - Limite documentée : un message Rust construit par `format!` reste en
   anglais.
 
+### Quatre langues de plus (2026-10-08, addendum ADR-0047)
+
+Commit `92e87e03` : allemand, italien, espagnol et portugais du Brésil
+(`src/locales/{de,it,es,pt-BR}.json`, glossaires `scripts/i18n/glossary.*.json`,
+`scripts/i18n/verify-catalogs.mjs`).
+
+| Fichier upstream | Changement | Re-merge |
+|---|---|---|
+| `src/components/settings/AppSettings.tsx` | Réglage Langue : le `SegmentedControl` devient un `Select` (Système et six langues) | Réappliquer |
+| `src/test/app-settings.test.tsx` | Test : chaque langue sous son propre nom, le choix bascule | Réappliquer |
+
 ## Extension de partage iOS (2026-09-05, ADR-0048)
 
 - `src-tauri/gen/apple/ShareExtension/` (`ShareViewController.swift`,
@@ -2146,6 +2157,78 @@ Lot P1-WP4 de la parité (ADR-0078), desktop et téléphones :
 - `AndroidExports.shareFile` donnait `image/*` à toute extension inconnue : un
   `.md` est maintenant `text/markdown`.
 
+## Le chat du téléphone : Arrêter, Régénérer, Modifier, Brancher (2026-10-07, ADR-0079)
+
+Commit `7c52cab1`. Agent-lite arrête un tour (`agent_lite/cancel.rs`),
+régénère, modifie la dernière question ou branche à un message
+(`agent_lite/controls.rs`), porte l'effort de réflexion et une jauge de
+contexte ; une branche copie la conversation jusqu'au message choisi
+(`ForkCut::Through`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | `agent_lite_cancel`, `agent_lite_regenerate`, `agent_lite_edit_last`, `agent_lite_edit_branch` dans les deux listes | Réappliquer |
+| `src-tauri/src/commands.rs` | `fork_agent_task` passe par `fork_agent_task_until` avec `ForkCut::Through(up_to_message_id)` | Réappliquer |
+| `src-tauri/src/domain/types.rs` | `ForkAgentTaskRequest.up_to_message_id` (optionnel, `serde(default)`) | Réappliquer |
+| `src-tauri/src/db/repositories.rs` | `mod conversations` devient `pub mod` (pour `ForkCut`) | Réappliquer |
+| `src/lib/tauri.ts` | `forkAgentTask` prend `upToMessageId` ; `agentLiteRun` réexporté depuis `agent-lite-controls.ts` | Réappliquer |
+| `src-tauri/src/agent_lite/mod.rs` (fork, fichier chaud) | `pub mod cancel`, `pub mod controls`, `reasoning_effort` sur la requête, sortie `cancel::STOPPED`, signal d'arrêt enregistré avec la revendication du tour | Réappliquer |
+
+## Discussions temporaires, partage de conversation, mode protégé (2026-10-07, ADR-0083, ADR-0084)
+
+Commits `adaf5df3` et `ee579566`. `src-tauri/src/temporary_chat.rs` (une
+discussion temporaire est une discussion ordinaire que chaque sortie refuse),
+`src-tauri/src/protected_mode.rs` (PIN local, garde posée là où les requêtes
+sortent), lien de partage d'une conversation et historique de sécurité du
+compte (`account::security_events`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | Modules `protected_mode`, `temporary_chat` ; 5 `temporary_chat_*`, `account_share_conversation`, 6 `protected_mode_*`, `account_security_events` dans les deux listes ; `protected_mode::setup` | Réappliquer |
+| `src-tauri/src/commands.rs` | `temporary_chat::sweep_on_open` juste après `run_migrations` dans `repositories()` | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | `046_temporary_chats.sql` | Réappliquer |
+| `src-tauri/src/db/repositories.rs` | Recherche plein texte des messages et liste des tâches filtrées sur `ephemeral = 0` | Réappliquer |
+| `src-tauri/Cargo.toml` | `scrypt` (sans fonctions par défaut) et `subtle` pour le PIN, déjà dans le lockfile | Réappliquer |
+| `src-tauri/src/providers/mod.rs` | `generation_model` retombe sur le défaut pour un modèle adulte, `drop_adult_generation_model`, `check_model` dans `set_venice_model`, `filter_chat_models` dans `list_venice_models` | Réappliquer |
+| `src-tauri/src/june_api.rs` | `protected_mode::check_chat` (modèle et heures calmes) en tête de `proxy_agent_chat_completions` | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | `guard::install` au démarrage, `guard::config_block` ajouté à `config.yaml`, refus du mode protégé rendu en 403 (pas 502) par le proxy fournisseur, `pub mod guard` | Réappliquer |
+| `src/components/agent/AgentWorkspace.tsx` | `TemporaryChatToggle` et `TemporaryChatBanner`, `useTemporaryChatHold`, pas de titre suggéré, `registerIfTemporary` après l'envoi ; `ConversationShareHost` et `ShareConversationMenuItem` dans `AgentSessionBar` | Réappliquer |
+| `src/lib/agent-events.ts` | `dispatchAgentSessionsChanged` retire les discussions temporaires | Réappliquer |
+| `src/lib/hermes-adapter.ts` | `listHermesSessions` charge puis balaie les sessions temporaires et les retire des résultats | Réappliquer |
+| `src/lib/hermes-control-plane/methods.ts` | `switchActiveSessionModel` devient async et passe d'abord par `guardSessionModel` | Réappliquer |
+| `src/components/settings/PrivacySettingsSection.tsx` | Monte `ProtectedModeSection` | Réappliquer ; chemin aussi créé par upstream (`fd54901e`) : add/add |
+| `src/components/settings/MemorySettingsSection.tsx` | Interrupteurs désactivés et phrase d'état quand `heldByProtectedMode` | Réappliquer ; chemin aussi créé par upstream (`892fabd5`) : add/add |
+| `src-tauri/src/agent_lite/mod.rs` (fork, fichier chaud) | `protected_mode::guard_system_prompt` après le choix du prompt | Réappliquer |
+
+## Les projets : instructions, fichiers, mémoire (2026-10-07, ADR-0085)
+
+Commits `a6291de7` et `ef25f8db`. `src-tauri/src/projects.rs` et
+`documents.rs` (texte extrait à côté d'un document joint) ; un projet est un
+dossier que ses discussions lisent aux coutures de la mémoire, avec un mode
+« mémoire du projet seulement » (`hermes_bridge/project_memory.rs`,
+`agent_lite/project.rs`, migration 048).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | Modules `documents`, `projects` ; `document_extract` et 5 `project_*` dans les deux listes | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | `048_projects.sql` | Réappliquer |
+| `src-tauri/src/db/repositories.rs` | Requêtes des souvenirs déplacées dans `repositories/memories.rs` ; champ `memory_scope`, colonne `scope` lue | Réappliquer |
+| `src-tauri/src/domain/types.rs` | `MemoryDto.scope` (optionnel) | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | `ImportedHermesFile.text_path` (`documents::extract_beside`) ; `project_memory::apply` avant le proxy des complétions | Réappliquer |
+| `src-tauri/src/hermes/june_context_mcp.py` | Outil `search_project_files` ; `memory_scope` : la recherche de souvenirs suit la portée du projet | Réappliquer |
+| `src/app/App.tsx` | `projectFolderId` dans l'origine d'une discussion ouverte depuis un dossier | Réappliquer |
+| `src/components/agent/AgentWorkspace.tsx` | `AgentWorkspaceOrigin.projectFolderId`, contexte du projet joint au premier message (`projectContextForSend`, `withProjectContext`, `projectContextSent`), note de texte extrait sur les pièces jointes | Réappliquer |
+| `src/components/folders/FoldersWorkspace.tsx` | Entrée « Project settings » du menu et montage de `ProjectSettingsDialog` | Réappliquer |
+| `src/components/folders/ProjectSettingsDialog.tsx` | Créé par le fork (instructions, fichiers, mode mémoire), puis états de chargement, d'échec et de suppression | Garder la version fork ; chemin aussi créé par upstream (`6dfca0b0`, JUN-256, autre dialogue de projet) : add/add à trancher à la main |
+| `src/lib/tauri.ts` | `ImportedHermesFile.textPath` | Réappliquer |
+| `src-tauri/src/agent_lite/mod.rs` (fork, fichier chaud) | `mod project` : portée mémoire du tour, section du prompt, outil du projet | Réappliquer |
+
 ## Canevas, bibliothèque, numérisation, essayage, image affinée (2026-10-08, ADR-0087, ADR-0088)
 
 Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
@@ -2218,6 +2301,102 @@ Lot P4-WP8 de la parité (ADR-0078), desktop et téléphones :
 | `src/components/agent/AgentWorkspace.tsx` | `highlightText` déplacé dans `src/lib/highlight-text.tsx` ; bloc de code via `HighlightedCode` | Réappliquer |
 | `src/components/note-editor/extensions.ts` | `codeBlock: false` dans StarterKit, `NoteCodeBlock` à la place | Réappliquer |
 | `src/lib/simple-markdown.tsx` | Bloc de code via `HighlightedCode`, l'ancien colorieur en repli | Réappliquer |
+
+## Recherche approfondie et mode étude (2026-10-08, ADR-0089)
+
+Commit `b14fe253` (P5-WP9). `src-tauri/src/research/` (un seul moteur Rust
+d'étapes durables, export en document), `src-tauri/src/study.rs` (le mode
+étude passe par les coutures du prompt, fiches de révision), `docx.rs`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | Modules `docx`, `research`, `study` ; 8 `research_*`, `note_export_document` et 7 `study_*` dans les deux listes | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | `057_research.sql`, `058_study.sql` | Réappliquer |
+| `src/components/agent/AgentWorkspace.tsx` | `ComposerModes` dans les actions du composer, `withStudyContext` autour du contenu envoyé (plus deux commentaires reformatés) | Réappliquer |
+| `src-tauri/src/agent_lite/mod.rs` (fork, fichier chaud) | `study::prompted` sur le prompt système | Réappliquer |
+
+## Fichiers bureautiques et mode Code (2026-10-08, ADR-0090)
+
+Commit `16019acf` (P5-WP10). `src-tauri/src/deliverables/` (Word, Excel,
+PowerPoint écrits par l'app, sur les deux shells) et
+`src-tauri/src/code_review.rs` (desktop : relecture des changements depuis un
+point de départ enregistré).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | Modules `deliverables`, `code_review` (desktop) ; `deliverable_path` et `deliverable_open` dans les deux listes, 6 `code_review_*` dans la liste desktop seulement | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | Phrase `make_document` en fin de `JUNE_SOUL_MEDIA_MD`, route `/v1/media/document` vers `deliverables::proxy_route` | Réappliquer |
+| `src/components/agent/AgentWorkspace.tsx` | `withStudyContext` devient `withModeContext` ; `CodeModeControls` dans `AgentSessionBar` quand la session a un dossier de travail | Réappliquer |
+| `src-tauri/src/agent_lite/mod.rs` (fork, fichier chaud) | `tool_definitions` déplacé dans `agent_lite/tool_defs.rs` ; outil `deliverables::TOOL` | Réappliquer |
+
+## Missions, tâches programmées et brief du jour (2026-10-08, ADR-0091)
+
+Commits `18ead87b` (P5-WP11) et `ec7e4061`. `src-tauri/src/assignments/`
+(les missions tournent là où une app est ouverte, sur l'horloge de l'app),
+`moments::daily` (brief du jour, suivis), vue « Today » ; le correctif sort les
+exécutions de mission des Routines et poste les notifications dans la langue
+de l'app (`src-tauri/src/i18n.rs`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | Modules `assignments`, `i18n` ; 8 `assignment_*`, 7 commandes `moments::daily` (`daily_brief_*`, `follow_*`) et `i18n_set_locale` dans les deux listes ; `assignments::start_clock` et `i18n::setup` au démarrage | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | `060_assignments.sql` | Réappliquer |
+| `src/app/App.tsx` | Vue `today` (`TodayView`) et destination `today` | Réappliquer |
+| `src/components/sidebar/Sidebar.tsx` | `SidebarView` gagne `today`, entrée « Today » | Réappliquer |
+| `src/components/routines/RoutinesView.tsx` | Tâches cron des missions et leurs exécutions retirées (`routinesOnly`, `withoutAssignmentRuns`) | Réappliquer |
+| `src/lib/hermes-routines.ts` | `assignmentJobIds`, `listAssignmentJobIds`, `routinesOnly`, `withoutAssignmentRuns` | Réappliquer |
+| `src/lib/hermes-adapter.ts` | Une session titrée avec l'étiquette de mission prend la source `assignment` et son titre sans l'étiquette | Réappliquer |
+| `src/test/routines-view.test.tsx` | Test : les exécutions de mission restent hors des Routines | Réappliquer |
+
+## Connecteurs et skill packs (2026-10-08, ADR-0092)
+
+Commits `279148ac` et `98a8a7c1`. MCP sur les téléphones, catalogue en un
+geste, Google et Microsoft, GitHub par device flow, déclencheurs, vues
+interactives, skill packs ; un seul runtime de connecteurs sur l'ordinateur
+(`hermes_bridge/connectors_mcp.rs`), les outils côté agent-lite dans
+`agent_lite/extensions.rs`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | Modules `connectors`, `skill_packs` ; 14 commandes `connectors::*` (dont `apps` et `calls`), 3 `connector_trigger*`, 4 `skill_pack_*` dans les deux listes ; `connectors::setup` | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | `063_connectors.sql`, `064_skill_packs.sql` | Réappliquer |
+| `src-tauri/tauri.conf.json` | CSP : `frame-src subrosa-app: http://subrosa-app.localhost` (vues interactives) | Garder la valeur fork |
+| `src/components/settings/AppSettings.tsx` | Onglet `connectors` (`ConnectorsSection`) | Réappliquer |
+| `src/components/sidebar/Sidebar.tsx` | Entrée « Connectors » dans `SETTINGS_SIDEBAR_GROUPS` et alias de recherche | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | `connectors_mcp::entry` dans `render_mcp_servers_config`, route `/v1/connectors`, `mod connectors_mcp` | Réappliquer |
+| `src/lib/agent-chat-runtime.ts` | `isConnectorApproval` : pas de « Always » pour un outil de connecteur | Réappliquer |
+| `src-tauri/src/connectors/{mod,oauth,policy,triggers,github}.rs`, `src/components/settings/ConnectorsSection.tsx`, `src/lib/connectors.ts` | Créés par le fork (catalogue, OAuth, règles par outil, déclencheurs, GitHub) | Garder la version fork ; chemins aussi créés par upstream (`9f5b2b9d` puis Linear, Notion, `approvals`, `store`) : add/add à trancher à la main |
+| `src-tauri/src/agent_lite/mod.rs` (fork, fichier chaud) | `mod extensions` (outils, prompt et dispatch des connecteurs et skill packs), `connectors::agent::seal_answer` sur la réponse, `Grant::of` | Réappliquer |
+
+## Navigateur de l'agent, barre de chat, ce que je regarde (2026-10-08, ADR-0094)
+
+Commit `604f7501` (P8-WP14), desktop seulement. `src-tauri/src/agent_browser/`,
+`chat_bar.rs` (panneau flottant au raccourci), `screen_awareness.rs` (l'app au
+premier plan, sa sélection, une image de sa fenêtre, seulement sur un clic).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | Modules desktop `agent_browser`, `chat_bar`, `screen_awareness` ; 15 commandes dans la liste desktop ; `chat_bar::setup` et `screen_awareness::setup` après la dictée | Réappliquer |
+| `src-tauri/tauri.conf.json` | Fenêtre `chat-bar` (transparente, toujours devant, cachée) et capacité `chat-bar` | Réappliquer |
+| `vite.config.ts` | Entrée `chat-bar.html` ; `src/chat-bar.tsx` exclu de la couverture | Réappliquer |
+| `src-tauri/build.rs` | `ScreenCaptureKit` lié au helper de dictée | Réappliquer |
+| `src-tauri/native/mac-dictation-helper/main.swift` | Raccourci de la barre de chat (`setChatBarShortcut`) et capture « ce que je regarde » | Réappliquer |
+| `src-tauri/src/agent_hud.rs` | `make_key_panel`, `order_front_as_key` pour la barre de chat | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | Rendu de la config MCP (`render_mcp_servers_config`, structs `June*McpConfig`) déplacé dans `hermes_bridge/builtin_mcp.rs` ; script du navigateur écrit avec le MCP Studio ; route `/v1/browser/request` | Réappliquer |
+| `src/app/App.tsx` | `AgentBrowserIndicator` | Réappliquer |
+| `src/components/agent/AgentWorkspace.tsx` | `LookingAtMenuItem` dans le menu des pièces jointes | Réappliquer |
+| `src/components/settings/AppSettings.tsx` | `ChatBarShortcutCard` après les raccourcis de dictée, `AgentBrowserSettingsSection` dans l'onglet Agent | Réappliquer |
+| `src/components/settings/PrivacySettingsSection.tsx` | `ScreenAwarenessCard` | Réappliquer ; chemin aussi créé par upstream (`fd54901e`) : add/add |
 
 ## Widgets, Apple Watch et partage Android (2026-10-08, ADR-0095)
 
@@ -2391,3 +2570,62 @@ et l'entendre répondre, mains libres.
   lane iOS le retire alors (avertissement) au lieu d'échouer.
 - La bibliothèque Health Connect exige minSdk 26 : le module du plugin passe
   de 24 à 26 (l'app est à 29).
+
+## Publier : pages, sites, profils, catalogue d'assistants (2026-10-08, ADR-0097)
+
+Commit `95064c54`. `src-tauri/src/account/publications.rs` : une publication
+est du texte clair que le service rend sur une origine à lui.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | 13 commandes `account::publications::*` (pages, sites, profil public, assistants, catalogue) dans les deux listes | Réappliquer |
+| `src/app/App.tsx` | `AssistantImportHost` et destination `assistantImport` | Réappliquer |
+
+## Les espaces : projets partagés et discussions de groupe (2026-10-08, ADR-0098)
+
+Commit `09c45b63` (P9-WP23). `src-tauri/src/account/spaces/` (chiffré de bout
+en bout, la clé change avec les membres ; protocole dans
+`docs/security/spaces-protocol.md`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | 24 commandes `account::spaces::commands::spaces_*` dans les deux listes | Réappliquer |
+| `src-tauri/Cargo.toml` | `x25519-dalek`, `ed25519-dalek` (déjà dans le lockfile) ; `hpke` en dev-dependency | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | `071_spaces.sql` | Réappliquer |
+| `src/components/folders/ProjectSettingsDialog.tsx` | `ShareProjectButton` | Réappliquer ; chemin aussi créé par upstream (`6dfca0b0`) : add/add |
+
+## Le client web (2026-10-08, ADR-0101, ADR-0104)
+
+Commits `8c5e83b6` (WP19), `1cd5582f` (WP20a) et `45453cab` (WP20b). Le client
+web vit dans `website/` (`/app`) et partage `packages/chat-core/` ; il fait
+tourner agent-lite à partir des mots de Rust (exports de test
+`agent_lite/web_client_export.rs`, `agent_lite/web_features/`).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `package.json` | Dépendance `@subrosa/chat-core: workspace:*` | Réappliquer |
+| `pnpm-workspace.yaml` | Paquet `packages/chat-core` | Réappliquer ; chemin aussi créé par upstream (`3dac8359`) : add/add |
+| `biome.json` | `packages/chat-core/src/**` inclus | Réappliquer |
+| `THIRD_PARTY_NOTICES.md` | PDF.js (Apache-2.0), chargé par le client web pour un PDF joint | Obligatoire |
+| `src-tauri/src/connectors/oauth.rs`, `connectors/triggers.rs` | `PENDING_TTL_SECS`, `MAX_SEEN`, `MAX_FIRES_PER_CHECK` passent en `pub(crate)` pour les tests du web | Réappliquer ; add/add (voir Connecteurs) |
+| `src-tauri/src/agent_lite/mod.rs` (fork, fichier chaud) | `mod web_client_export` et `mod web_features` (tests), `search_references_definition` partagé | Réappliquer |
+
+## Le relais des connecteurs par une app ouverte (2026-10-08, ADR-0107)
+
+Commit `d794c5d0`. `src-tauri/src/connectors/relay.rs` : un connecteur qu'un
+onglet ne peut pas joindre devient une course confiée à une app ouverte ;
+agenda dans le brief web, adhésion à un espace depuis l'onglet.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | `connector_relay_settings`, `connector_relay_set_enabled` dans les deux listes | Réappliquer |
+| `src-tauri/src/db/migrations.rs` | `074_connector_relays.sql` | Réappliquer |
+| `src-tauri/src/connectors/mod.rs` | `pub mod relay` | Réappliquer ; add/add (voir Connecteurs) |

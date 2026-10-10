@@ -29,14 +29,14 @@ permissions:
 
 jobs:
   tag:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # persist-credentials MUST be false: checkout otherwise leaves a
       # http.<github>.extraheader with GITHUB_TOKEN in the local git config,
       # and that header overrides any PAT embedded in a push URL — the tag
       # then authenticates as GITHUB_TOKEN and never triggers release.yml
       # (exactly the silent failure this workflow exists to avoid).
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Resolve tag

@@ -44,7 +44,10 @@ store submission, independently of the app.
    browser it finds and shows a six-digit code.
 2. Chrome, Edge, Brave: `chrome://extensions`, Developer mode, **Load
    unpacked**, pick `browser-extension/dist/chrome`. The pinned `key` gives it
-   the id `aphalahbhpimjbfdkjkdfgfbohboceig`, the one the host manifest allows.
+   the id `aphalahbhpimjbfdkjkdfgfbohboceig`, which only a development build
+   allows (or a release built with `SUBROSA_ALLOW_UNPACKED_EXTENSION=1`): the
+   key that fixes that id is public, so anyone could load an extension under
+   it. Firefox's add-on id is allowed in every build.
    Firefox: `about:debugging`, This Firefox, **Load Temporary Add-on**, pick
    `browser-extension/dist/firefox/manifest.json`.
 3. Click the toolbar button, type the code. The panel shows the actions.
@@ -82,19 +85,40 @@ default profile's folder (`~/Library/Application Support/Google/Chrome/...`).
 Copy the manifest into the throwaway profile's `NativeMessagingHosts`, or
 test in the browser's normal profile.
 
+Two traps seen on 2026-10-10 (`docs/qa/parity-1.89.1.md`), with Brave on
+macOS. A Brave started with `--user-data-dir` read neither that folder nor
+Brave's own `NativeMessagingHosts`, but Chrome's
+(`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`); the
+app writes that one too, so the normal flow works, but an edit to Brave's
+copy changes nothing. And a debug build run from a checkout under
+`~/Documents`: the browser starts the host from there, macOS holds it in
+`dyld` behind the folder's privacy prompt ("june" would like to access
+files in your Documents folder), and the panel waits with no message.
+Point the manifest's `path` at a copy of the binary outside `~/Documents`,
+or keep the checkout elsewhere. A release build in `/Applications` is not
+affected.
+
 ## Publishing (not automated)
 
 The stores assign their own extension ids. Each one must be added to
-`CHROMIUM_EXTENSION_IDS` in `src-tauri/src/browser_extension/host_manifest.rs`
+`STORE_CHROMIUM_EXTENSION_IDS` in `src-tauri/src/browser_extension/host_manifest.rs`
 and shipped in an app release **before** the store listing goes live, or the
 browser will refuse to start the host for the store copy.
+
+**That list is empty today (2026-10-10):** the extension is not published in
+any Chromium store yet, so a release build answers no Chromium extension at
+all, and the unpacked id works only with a development build. Firefox works
+in every build (its id is fixed by the manifest). The app also checks the
+origin the relay reports against the same list when a connection names it
+(`session.rs`), and on Windows its pipe carries a DACL that admits only the
+user the app runs as (`pipe_security.rs`).
 
 - **Chrome Web Store** (also what Brave installs from): create the item with
   the developer account, upload `subrosa-chromium-<version>.zip`, fill the
   privacy practices (no data collected; the page is sent to the app on this
   computer only, on the user's click; `nativeMessaging` justification: talks
   to the Sub Rosa desktop app; `activeTab`/`scripting`: reads the current page
-  when asked), and submit. Copy the assigned id into `CHROMIUM_EXTENSION_IDS`.
+  when asked), and submit. Copy the assigned id into `STORE_CHROMIUM_EXTENSION_IDS`.
 - **Microsoft Edge Add-ons** (Partner Center): upload the same zip; Edge
   assigns a different id, which is added to the list too.
 - **Firefox Add-ons (AMO)**: upload `subrosa-firefox-<version>.zip`. The id is

@@ -17,6 +17,7 @@
  * over TLS. The key is short lived and renewed while the device is live.
  */
 import { ApiError, api, boundedJson } from "./api";
+import { accountOrigin } from "./office-origins";
 import { decode, encode } from "./vault";
 
 /** Where key birth and inference happen. The site's CSP `connect-src` names
@@ -151,12 +152,19 @@ async function newSigningPair() {
   return { privateKey: pair.privateKey, x: jwk.x, y: jwk.y };
 }
 
-/** A proof that this browser acts as its device, for one call to `path`. */
+/**
+ * A proof that this browser acts as its device, for one call to `path` on the
+ * account service with exactly `body`: `ath` is the SHA-256 of the body as
+ * sent, so the service refuses the proof on any other body. Build the body
+ * string once and send that same string. An Office pane runs on an origin of
+ * its own, so the URL it signs is the account origin's, which the service
+ * checks, not the page's.
+ */
 export async function deviceProof(
   record: DeviceRecord,
   path: string,
-  bound?: string,
-  origin = location.origin,
+  body: string,
+  origin = accountOrigin(),
 ): Promise<string> {
   const header = record.deviceId
     ? { alg: "ES256", typ: DEVICE_PROOF_TYPE, kid: record.deviceId }
@@ -165,7 +173,23 @@ export async function deviceProof(
         typ: DEVICE_PROOF_TYPE,
         jwk: { kty: "EC", crv: "P-256", x: record.x, y: record.y },
       };
-  return signJws(record.signing, header, await proofClaims(`${origin}${path}`, bound));
+  return signJws(record.signing, header, await proofClaims(`${origin}${path}`, body));
+}
+
+/** The type of a tab's approval of one relayed connector call (ADR-0107
+ * addendum): checked by the app that runs the call against the public key
+ * the service lists for this device. */
+export const APPROVAL_TYPE = "subrosa-approval+jwt";
+
+/** This device's signature over an approval's claims, or null while the
+ * browser is not a device yet. */
+export async function signApproval(record: DeviceRecord, claims: object): Promise<string | null> {
+  if (!record.deviceId) return null;
+  return signJws(
+    record.signing,
+    { alg: "ES256", typ: APPROVAL_TYPE, kid: record.deviceId },
+    claims,
+  );
 }
 
 // ── Naming ──────────────────────────────────────────────────────────────────
@@ -212,10 +236,13 @@ export async function admitBrowser(
   };
   await store.put(record);
   try {
+    const body = JSON.stringify({ name, admission });
     const device = await api<{ id: string; name: string }>("/api/v1/browser-devices", {
       method: "POST",
-      headers: { [DEVICE_PROOF_HEADER]: await deviceProof(record, "/api/v1/browser-devices") },
-      body: JSON.stringify({ name, admission }),
+      headers: {
+        [DEVICE_PROOF_HEADER]: await deviceProof(record, "/api/v1/browser-devices", body),
+      },
+      body,
     });
     const admitted = { ...record, deviceId: device.id, name: device.name };
     await store.put(admitted);
@@ -369,12 +396,13 @@ export async function birthKey(store: DeviceStore, record: DeviceRecord): Promis
   const ephemeral = await newSigningPair();
   const jwk = { kty: "EC", crv: "P-256", x: ephemeral.x, y: ephemeral.y };
   const jkt = await thumbprint(ephemeral.x, ephemeral.y);
+  const request = JSON.stringify({ jkt });
   const { assertion } = await api<{ assertion: string }>("/api/v1/carpe-diem/assertion", {
     method: "POST",
     headers: {
-      [DEVICE_PROOF_HEADER]: await deviceProof(record, "/api/v1/carpe-diem/assertion", jkt),
+      [DEVICE_PROOF_HEADER]: await deviceProof(record, "/api/v1/carpe-diem/assertion", request),
     },
-    body: JSON.stringify({ jkt }),
+    body: request,
   });
   const dpop = async (path: string, bound: string) =>
     signJws(
@@ -429,7 +457,7 @@ export async function forgetBrowser(store: DeviceStore, record: DeviceRecord): P
   const attempts: Promise<unknown>[] = [];
   if (record.deviceId)
     attempts.push(
-      deviceProof(record, "/api/v1/browser-devices/renounce").then((proof) =>
+      deviceProof(record, "/api/v1/browser-devices/renounce", "{}").then((proof) =>
         api("/api/v1/browser-devices/renounce", {
           method: "POST",
           headers: { [DEVICE_PROOF_HEADER]: proof },

@@ -123,3 +123,21 @@ permissions and trial flow with Chrome plus Computer Use, and record pass/fail
 evidence plus gaps. The run intentionally stayed in local stubbed data mode:
 no live account, checkout, native app, audio hardware, or macOS permission
 prompt was exercised.
+
+## Opt-in Rust tests (`#[ignore]`)
+
+A few `src-tauri` tests reach the real world and are `#[ignore]`d so the push
+lanes stay hermetic: the connector client against real MCP servers and OAuth
+metadata (`connectors::tests::real_server_tests`, filter `real_server`) and
+the agent browser driving the Chromium-family browser on the machine
+(`agent_browser::tests::real_browser_end_to_end`, filter `real_browser`).
+The manual lane `.github/workflows/ignored-tests.yml` runs them on a macOS
+runner and keeps the output as the `ignored-tests-log` artifact; dispatch it
+with `gh workflow run ignored-tests.yml` (the `filter` input narrows it).
+Run it before a release that touches `src-tauri/src/connectors/` or
+`src-tauri/src/agent_browser/`, after bumping the MCP protocol version or the
+DevTools handshake, and when a connector or the browser agent misbehaves for
+users while CI stays green: a server that changed under us shows up here
+first. The voice tests (a real microphone, paid services) and the account,
+Carpe Diem and issue-filing live tests (private fixtures or tokens) stay
+local; their `#[ignore]` reasons say what each one needs.

@@ -16,13 +16,14 @@ concurrency:
 jobs:
   hygiene:
     name: Repository hygiene
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Require pinned external actions
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016 # the single quotes hold a perl program
           if ! find .github/actions .github/workflows \( -name '*.yml' -o -name '*.yaml' \) -print0 |
             xargs -0 perl -ne 'next if /^\s*#/; if (/uses:\s+[^.\/\s][^@\s]+@(?![0-9a-f]{40}(?:\s|$))/) { print "$ARGV:$.:$_"; $bad = 1 } END { exit($bad ? 1 : 0) }'; then
             echo "External GitHub Actions must be pinned to full-length commit SHAs." >&2

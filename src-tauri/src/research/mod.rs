@@ -462,6 +462,21 @@ async fn load(pool: &sqlx_sqlite::SqlitePool, id: &str) -> Result<store::RunRow,
     store::run_row(pool, id).await?.ok_or_else(missing)
 }
 
+/// The chat a run is started from, when it may be: a report is kept, listed
+/// and synchronised, so a temporary chat (ADR-0083) cannot start one.
+pub(crate) async fn chat_of<'a>(
+    pool: &sqlx_sqlite::SqlitePool,
+    request: &'a ResearchStartRequest,
+) -> Result<Option<&'a str>, AppError> {
+    let chat_id = request
+        .chat_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    crate::temporary_chat::refuse_in_temporary(pool, chat_id).await?;
+    Ok(chat_id)
+}
+
 /// Files a run and asks whether anything needs clarifying first.
 #[tauri::command]
 pub async fn research_start(
@@ -477,11 +492,7 @@ pub async fn research_start(
     }
     let question: String = question.chars().take(MAX_QUESTION_CHARS).collect();
     let repos = crate::commands::repositories(&app).await?;
-    let chat_id = request
-        .chat_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|id| !id.is_empty());
+    let chat_id = chat_of(&repos.pool, &request).await?;
     let project_id = match request.project_id.as_deref().map(str::trim) {
         Some(id) if !id.is_empty() => Some(id.to_string()),
         _ => match chat_id {

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, setAccountScope, setApiTransport } from "../../website/src/lib/api";
 import type { OfficeDialog, OfficeGlobal } from "../../office-addins/src/office";
-import { openSignInWindow, SignInWindowError } from "../../office-addins/src/pane/sign-in-window";
+import {
+  noSession,
+  openSignInWindow,
+  SignInWindowError,
+} from "../../office-addins/src/pane/sign-in-window";
 import {
   carried,
   carry,
@@ -10,7 +14,7 @@ import {
   courierTransport,
   csrfFromCookie,
   parseMessage,
-} from "../../office-addins/src/session/courier";
+} from "../../website/src/lib/office-courier";
 
 const ACCOUNT = "0191d1a4-0000-7000-8000-000000000000";
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
@@ -34,6 +38,11 @@ describe("what the sign-in window carries", () => {
 
   it("reads only well formed messages, and drops headers it does not forward", () => {
     expect(parseMessage("not json")).toBeNull();
+    expect(parseMessage({ v: 1, type: "hello" })).toBeNull();
+    expect(parseMessage(JSON.stringify({ v: 1, type: "hello", extra: 1 }))).toEqual({
+      v: 1,
+      type: "hello",
+    });
     expect(parseMessage(JSON.stringify({ v: 2, type: "signed-out" }))).toBeNull();
     const request = parseMessage(
       JSON.stringify({
@@ -93,6 +102,28 @@ describe("what the sign-in window carries", () => {
     expect(headers.get("x-csrf-token")).toBe("token");
     expect(headers.get("subrosa-device-proof")).toBe("proof");
     expect(replies[0]).toMatchObject({ status: 200, body: JSON.stringify({ data: { id: "d" } }) });
+  });
+
+  it("passes the pane's body on byte for byte, so its proof's ath still matches", async () => {
+    // A device proof binds the exact body (ADR-0096 addendum of 2026-10-10):
+    // pane, window and frame must hand the service the very string signed.
+    const body = '{ "name":"Excel  \u00e9t\u00e9",\n"admission":{"pairing":"p"} }';
+    const sent: string[] = [];
+    const { transport } = courierTransport((message) => sent.push(message), 1000);
+    void transport("/api/v1/browser-devices", {
+      method: "POST",
+      headers: { "subrosa-device-proof": "proof" },
+      body,
+    });
+    // The window re-reads and re-writes what crosses it, never forwards it raw.
+    const relayed = JSON.stringify(parseMessage(sent[0]));
+    const fetch = vi.fn(async () => json(201, { data: { id: "d" } }));
+    await carry(
+      { fetch, csrf: () => "token", reply: () => undefined },
+      parseMessage(relayed) as CourierRequest,
+    );
+    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBe(body);
   });
 
   it("reads the CSRF cookie like the site does", () => {
@@ -169,12 +200,13 @@ describe("the pane's calls through the sign-in window", () => {
     expect(devices).toEqual([{ id: "dev" }]);
     const [, init] = windowFetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(new Headers(init.headers).get("x-subrosa-account-id")).toBe(ACCOUNT);
-    // Closing the window puts the page's own fetch back.
+    // Closing the window puts back the pane's own transport, which reaches
+    // nothing: the office origin has no session and serves no API.
     opened.close();
     expect(dialog.close).toHaveBeenCalled();
-    const pageFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(json(401, {}));
-    await expect(api("/api/v1/devices")).rejects.toBeTruthy();
-    expect(pageFetch).toHaveBeenCalled();
+    const pageFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(json(200, { data: [] }));
+    await expect(api("/api/v1/devices")).rejects.toMatchObject({ status: 401 });
+    expect(pageFetch).not.toHaveBeenCalled();
     pageFetch.mockRestore();
     expect(handlers.size).toBe(2);
   });
@@ -185,6 +217,14 @@ describe("the pane's calls through the sign-in window", () => {
     ready("https://evil.test");
     handlers.get("event")?.({});
     await expect(opening).rejects.toBeInstanceOf(SignInWindowError);
+  });
+
+  it("answers no session without a request while no window is open", async () => {
+    setApiTransport(noSession);
+    const pageFetch = vi.spyOn(globalThis, "fetch");
+    await expect(api("/api/v1/me")).rejects.toMatchObject({ status: 401, code: "unauthorized" });
+    expect(pageFetch).not.toHaveBeenCalled();
+    pageFetch.mockRestore();
   });
 
   it("says when Office cannot message a window", async () => {

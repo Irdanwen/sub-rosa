@@ -219,6 +219,18 @@ otherwise backs off `2^attempts` minutes, capped at six hours, forever. Carpe
 Diem must therefore treat a revocation as idempotent: the same `(sub,
 device_id, reason)` may arrive more than once, each time with a new `jti`.
 
+What the account service keeps about a failure (10 October 2026): the row's
+`last_error` is the HTTP status (`http 404`), `unreachable` or `signing`,
+never a body. A `404` here means the operator has no partner configured:
+`partnersEnabled()` is false (no valid `subrosa` entry in `PARTNERS_JSON`), and
+the route answers before it reads the assertion. That is what every
+revocation met from 4 to 10 October 2026, while `/partner/capabilities`
+reported `keyIssuance: false` for the same reason. A row that failed twelve
+times (about 26 hours of refusals) counts as stuck: the service logs one
+`ERROR` naming the count, the oldest row and the last status, then at most
+once a day while any row stays stuck, and `GET /readyz` reports
+`partner_revocations: {pending, stuck}` without ever turning unready.
+
 ### Self revocation (app → operator)
 
 `POST {operator root}/v1/keys/self/revoke` with `Authorization: Bearer cdm_…` →
@@ -349,7 +361,9 @@ ask, what the assertion says, and what Carpe Diem holds the key to.
   session, a browser session with a `subrosa-device-proof` header: an ES256 JWS,
   `typ` `subrosa-device+jwt`, `kid` = the device id, claims `htm`, `htu`
   (exact), `iat` (±60 s), `jti` (single use) and `ath` =
-  base64url(SHA-256(`jkt`)). It need not be recent, so the key can be renewed
+  base64url(SHA-256(the exact request body bytes)), here `{"jkt":"…"}` as
+  sent (10 October 2026; previously the hash of `jkt` alone). It need not be
+  recent, so the key can be renewed
   while the device is live. A browser session without a proof still answers
   `403 device_required`.
 - Revoking the browser device, or the browser signing itself out

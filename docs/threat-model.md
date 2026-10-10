@@ -115,11 +115,74 @@ Named, because a threat model that claims everything protects nothing.
   open.** It can use the browser's non-extractable keys (it cannot copy them)
   and open its Carpe Diem key, so it can spend and exfiltrate that key. Carpe
   Diem bounds the key in its TEE: a daily cap, a life of at most seven days,
-  no router or x402, inference routes only; the CSP lets the page reach only
-  its own origin and the Carpe Diem operator, Trusted Types refuse string
-  script sinks, and Subresource Integrity pins the entry files. Revoking the
-  browser from any device stops its key and its renewals. See
+  no router or x402, inference routes only; the account pages' CSP lets them
+  reach only their own origin and the Carpe Diem operator, Trusted Types
+  refuse string script sinks, and Subresource Integrity pins the entry files.
+  Revoking the browser from any device stops its key and its renewals. See
   [ADR-0096](adr/0096-a-browser-is-a-device.md).
+
+  *Addendum 2026-10-10: the web client's own policy.* The sentence above is
+  the account site's policy. The web client at `/app` (ADR-0101, ADR-0104)
+  is served under a wider one, kept identical in `website/public/_headers`
+  and `subrosa-cloud/deploy/nginx-account.conf.example` by
+  `src/test/website-csp.test.ts`. On top of the site's policy it allows:
+  WebAssembly (`'wasm-unsafe-eval'`) for Pyodide (ADR-0086), whose files it
+  loads from its own `/pyodide/` inside a sandboxed frame (next point); `connect-src`
+  to the six catalog connector servers that accept a browser origin
+  (`huggingface.co`, `mcp.intercom.com`, `mcp.linear.app`, `mcp.notion.com`,
+  `mcp.squareup.com`, `mcp.webflow.com`, the list of
+  `website/src/client/connectors/web-availability.json`); `frame-src 'self'`
+  for the sandboxed connector view; and camera, microphone and screen
+  capture (`Permissions-Policy`) for voice. Still refused: any other host,
+  inline and `eval`'d script, plugins, being framed, form posts elsewhere,
+  and string script sinks (Trusted Types, one narrow `subrosa` policy, see
+  the ADR-0096 addendum of the same date). So on `/app`, script injected into
+  the page, or code that reaches the page's globals from a Python run, can
+  send what it reads to those six hosts as well as to Carpe Diem. The Python
+  worker's isolation from the page's storage and network is the subject of
+  its own hardening (ADR-0086 and ADR-0104 addenda).
+
+- **The web client's page is wider than that.** `/app` holds the same device
+  record and also connectors' sealed tokens, and its policy names more:
+  `'wasm-unsafe-eval'`, the connector view host as a frame, the microphone,
+  camera and screen, and in `connect-src`, besides its origin and Carpe Diem,
+  the six connector servers a tab was found to reach (`huggingface.co` and
+  five `mcp.*` hosts, ADR-0104). Script on that page could post what it
+  stole to any of them. The one thing on `/app` that runs code the model
+  wrote, the Python worker, therefore does not live on the page: it runs in a
+  frame of `/python-sandbox.html` framed with `sandbox="allow-scripts"`, an
+  opaque origin whose own policy loads the site's `/assets/` and `/pyodide/`
+  and posts to `/pyodide/` alone, and the worker itself deletes IndexedDB,
+  the Cache API, XMLHttpRequest, WebSocket, EventSource and the other ways
+  out and gives Python's `js` module three timers instead of its global, or
+  refuses to start. Measured in Chromium, WebKit and the iOS simulator's
+  Safari (`website/scripts/python-sandbox-smoke.mjs`); see the ADR-0104
+  addendum of 2026-10-10. A hidden instruction in an attached file can still
+  make the model compute something wrong; it can no longer make Python read
+  the browser's key or tokens or send anything anywhere.
+- **Microsoft's Office.js in the Office add-ins.** Office requires it from
+  Microsoft's CDN, updated in place, so it cannot be pinned. It runs on the
+  add-ins' own origin, never the account's (ADR-0102, addendum of
+  2026-10-10): it can do whatever a pane can (sign as the pane's browser
+  device, spend the pane's bounded key, ask the account origin's courier for
+  its seven device calls, none of which spends), and it cannot reach the
+  account's cookie, its storage, the vault or another browser device's keys.
+  The Excel pane's Python runs there as on `/app`, in that origin's own copy
+  of the opaque-origin `/python-sandbox.html` frame (previous point).
+  See [ADR-0102](adr/0102-an-office-task-pane-is-a-browser-device-whose-session-a-sign-in-window-carries.md).
+
+- **Script injected into the account site, and your connector sign-ins.**
+  When "Run connectors for my browser" is on, a computer or phone of yours
+  runs connector calls a tab addresses to it (ADR-0107). A tool you set to
+  "allow" runs on a call any open tab of the account can file, so a
+  compromised tab can use your connector sign-ins for those tools while that
+  app is open. A tool set to "ask" runs only with an approval the asking
+  browser signed with its device key over that exact call, checked against
+  the key the account service lists for that live browser device (ADR-0107
+  addendum, 2026-10-10): that closes the row to anyone else who can write it,
+  and to a revoked browser, but a compromised tab can still ask its own
+  device key to sign. "Deny", or leaving the switch off, is the only rule a
+  compromised tab cannot get past.
 - **Cryptographic isolation after device revocation.** Revocation blocks the
   device's sessions immediately at the service. It does not rotate the vault
   root or erase past copies. A revoked device obtaining ciphertext through

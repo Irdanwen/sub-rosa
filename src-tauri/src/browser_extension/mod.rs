@@ -21,6 +21,7 @@
 pub mod endpoint;
 pub mod host_manifest;
 pub mod pairing;
+pub mod pipe_security;
 pub mod protocol;
 pub mod relay;
 mod server;

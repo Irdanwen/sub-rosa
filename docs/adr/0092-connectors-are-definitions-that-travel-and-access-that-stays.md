@@ -146,7 +146,7 @@ through one rule per tool, and every "ask" is a row.**
 - Desktop custom assistants and Hermes runs do not use the native
   connectors; Hermes has its own MCP servers, and the catalog fills both.
 
-## Addendum (2026-10-08): one runtime for every shell, GitHub by device flow
+## Addendum 2026-10-08: one runtime for every shell, GitHub by device flow
 
 The first cut left the computer with two connector systems. Connecting from
 the catalog wrote the server into Hermes's own MCP list and signed in there,
@@ -214,7 +214,7 @@ Release gates added: registering the GitHub OAuth app with the device flow
 enabled, and a check on real hardware that Hermes's approval card shows the
 connector sentence.
 
-## Addendum (2026-10-08): a connector travels under a UUID derived from its id
+## Addendum 2026-10-08: a connector travels under a UUID derived from its id
 
 The definition row never travelled. A catalog connector's id is its catalog
 name (`sentry`, `google`) and a custom one's is a slug with a short suffix,
@@ -246,3 +246,63 @@ so a connector added anywhere stayed there (recorded in ADR-0107).
   skill pack, an assistant or an assignment names. Skill packs, connector
   relays, connector errands and daily brief cards already travel under UUIDs
   and are unchanged.
+
+## Addendum (2026-10-10): the app's own clients, per platform and per build
+
+1.89.0 shipped without Google, Microsoft and GitHub on every platform: the
+client ids are read with `option_env!`, no workflow set them, and nothing
+said so. Checking the providers' documentation while wiring them showed that
+"one Google client id with `SUBROSA_GOOGLE_REDIRECT_URI`" cannot serve every
+platform.
+
+- **Google is offered on the Mac and the iPhone only.** Google sends the
+  browser back to an app's own scheme for no client type: its iOS type
+  accepts only the reversed client id
+  (`com.googleusercontent.apps.<id>:/oauth2redirect`), its Desktop type only
+  a loopback address (and expects its client secret at the token exchange),
+  its Android type no custom scheme at all. Google documents that macOS apps
+  use the iOS type, and the Mac and the iPhone share the bundle id
+  `xyz.carpediem.subrosa`, so one iOS-type client serves both. The Google id
+  is compiled only for `macos` and `ios` (`builtin::GOOGLE_CLIENT_ID`); the
+  redirect is derived from the id (`build_clients::google_redirect_for`,
+  `SUBROSA_GOOGLE_REDIRECT_URI` still overrides it), and the release
+  workflows register the reversed scheme in the bundle through a Tauri config
+  overlay written by `scripts/connector-clients.mjs`.
+- **Rejected: the iOS client on Windows and Android.** Google would accept
+  the redirect, since nothing checks which app opened the scheme, but that is
+  exactly the impersonation Google disabled custom schemes on Android for,
+  and it uses a client against the type it was registered as. **Deferred: a
+  loopback listener on Windows** (a Desktop client, whose shipped "secret" is
+  no secret) and Google's own sign-in on Android; each is a code change, not
+  a registration.
+- **Microsoft and GitHub keep one id for every platform**: an Entra "mobile
+  and desktop" redirect accepts `subrosa://connector/callback`, and the
+  device flow needs no redirect.
+- **A build says what it leaves out.** `connectors/build_clients.rs` is
+  compiled into the app and, through `#[path]`, into `build.rs`, which emits a
+  `cargo:warning` per missing id for the target platform; the release
+  workflows annotate the run the same way; and the Connectors screen lists a
+  provider whose id the build lacks as "Not available in this build"
+  (GitHub was hidden instead). `connectors-check.yml` asserts the three
+  repository secrets are present and well formed without building anything.
+
+## Addendum (2026-10-10): the sign-in server must name itself
+
+The post-release audit of 1.89.0 found that an authorization server's
+metadata was trusted whatever issuer it named, and that the browser's answer
+was not checked against the server it was sent to. Two checks in
+`connectors/oauth.rs`:
+
+- **RFC 8414 §3.3.** The metadata's `issuer` must be the issuer it was
+  fetched for (one trailing slash is let go, as resource metadata and server
+  metadata often differ by it and nothing else); a missing or different one
+  refuses the sign-in (`connector_oauth_issuer`) before anything is
+  registered.
+- **RFC 9207.** When the metadata says
+  `authorization_response_iss_parameter_supported`, the flow kept in the
+  keychain records the issuer, and a callback without `iss`, or naming
+  another server, is refused. A server that does not say so is not asked for
+  `iss`, but a wrong one is still refused; the built-in Google, Microsoft and
+  GitHub sign-ins have fixed endpoints and no metadata to agree with. Tests
+  against the mock server: `connectors::tests::a_server_must_name_the_issuer_it_was_fetched_for`
+  and `the_sign_in_server_is_the_one_its_metadata_and_callback_name`.

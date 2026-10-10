@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { type Account, type Device, api, setAccountScope } from "../../../website/src/lib/api";
+import { type Account, type Device, api } from "../../../website/src/lib/api";
 import {
   type DeviceRecord,
   type DeviceStore,
@@ -45,15 +45,16 @@ export interface Ready {
   openKey(): Promise<string | null>;
 }
 
-type Session = { mode: "direct" } | { mode: "window"; window: SignInWindow } | null;
+type Session = { window: SignInWindow } | null;
 
 /**
  * Who the pane is and whether it may spend (ADR-0102). The pane is a browser
  * device of its own (ADR-0096): it keeps its device key and its bounded Carpe
- * Diem key in this frame's storage, and asks a session only to become a
- * device or renew the key. That session is this frame's own when Office lets
- * the account cookie reach it (the desktop apps' task panes are top-level
- * pages), and otherwise the sign-in window's.
+ * Diem key in its origin's storage, and asks a session only to become a
+ * device or renew the key. The pane runs on the office origin, which the
+ * account's cookie never reaches (ADR-0102, addendum of 2026-10-10), so that
+ * session is always the sign-in window's, on every platform; the account it
+ * last worked for, remembered here, names which device record to read.
  */
 export function OfficeAccess({
   office,
@@ -66,7 +67,8 @@ export function OfficeAccess({
   store?: DeviceStore;
   children: (ready: Ready) => ReactNode;
 }) {
-  const [account, setAccount] = useState<Account | null | undefined>(undefined);
+  // The account it last worked for: the office origin has no session to ask.
+  const [account, setAccount] = useState<Account | null | undefined>(lastAccount);
   const [session, setSession] = useState<Session>(null);
   const [record, setRecord] = useState<DeviceRecord | null | undefined>(undefined);
   const [devices, setDevices] = useState<Device[] | null>(null);
@@ -75,23 +77,6 @@ export function OfficeAccess({
   const [opening, setOpening] = useState(false);
   const sessionRef = useRef<Session>(null);
   sessionRef.current = session;
-
-  // This frame's own session first, then the account it last worked for.
-  useEffect(() => {
-    let live = true;
-    api<Account>("/api/v1/me")
-      .then((me) => {
-        if (!live) return;
-        setAccountScope(me.id);
-        rememberAccount(me);
-        setAccount(me);
-        setSession({ mode: "direct" });
-      })
-      .catch(() => live && setAccount(lastAccount()));
-    return () => {
-      live = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (account === undefined) return;
@@ -123,7 +108,7 @@ export function OfficeAccess({
   const openedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
     const current = sessionRef.current;
-    if (current?.mode !== "window" || !hasLiveKey(record) || needsRenewal(record ?? null)) return;
+    if (!current || !hasLiveKey(record) || needsRenewal(record ?? null)) return;
     if (keyId === openedFor.current) return;
     current.window.close();
     setSession(null);
@@ -132,8 +117,7 @@ export function OfficeAccess({
 
   useEffect(
     () => () => {
-      const current = sessionRef.current;
-      if (current?.mode === "window") current.window.close();
+      sessionRef.current?.window.close();
     },
     [],
   );
@@ -143,18 +127,17 @@ export function OfficeAccess({
       if (!office) return;
       setError("");
       setOpening(true);
-      const previous = sessionRef.current;
-      if (previous?.mode === "window") previous.window.close();
+      sessionRef.current?.window.close();
       try {
         openedFor.current = record?.key?.keyId;
         const opened = await openSignInWindow(office, {
           fresh,
-          onClosed: () => setSession((now) => (now?.mode === "window" ? null : now)),
+          onClosed: () => setSession(null),
         });
         if (account && account.id !== opened.account.id) setRecord(undefined);
         rememberAccount(opened.account);
         setAccount(opened.account);
-        setSession({ mode: "window", window: opened });
+        setSession({ window: opened });
       } catch (err) {
         const code = err instanceof SignInWindowError ? err.code : "blocked";
         if (code === "unsupported")
@@ -194,9 +177,9 @@ export function OfficeAccess({
         office={{
           heading: t("This add-in", "Ce complément"),
           deviceName: t(`Office add-in - ${host}`, `Complément Office - ${host}`),
-          // A recovery proof typed here would cross Office's channel when
-          // the window carries the call: the app's approval only, then.
-          allowRecovery: session.mode === "direct",
+          // A recovery proof typed here would cross Office's channel, which
+          // every call of the pane takes: the app's approval only.
+          allowRecovery: false,
           signInAgain: () => void signIn(true),
         }}
       />

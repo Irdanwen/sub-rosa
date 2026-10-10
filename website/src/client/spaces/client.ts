@@ -49,6 +49,41 @@ export const serviceSpaces: SpacesTransport = {
     api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) }),
 };
 
+/** Where a browser keeps the Preview switch, off unless the person turned
+ * it on. */
+export const SPACES_ENABLED = "spaces-enabled";
+export class SpacesDisabledError extends Error {
+  code = "spaces_disabled" as const;
+  constructor() {
+    super("spaces_disabled");
+  }
+}
+export async function spacesEnabled(store: ClientStore | null): Promise<boolean> {
+  return store !== null && (await store.get<boolean>("local", SPACES_ENABLED)) === true;
+}
+/** The transport behind the Preview switch. The client holds the switch, as
+ * the app's commands do (`enabled_pool`), rather than trusting every panel
+ * to: with it off, no call reaches the service, whatever asks. Each call
+ * reads the switch again, so turning it off takes effect at once. */
+export function behindPreview(
+  store: ClientStore | null,
+  inner: SpacesTransport = serviceSpaces,
+): SpacesTransport {
+  const check = async () => {
+    if (!(await spacesEnabled(store))) throw new SpacesDisabledError();
+  };
+  return {
+    get: async (path) => {
+      await check();
+      return inner.get(path);
+    },
+    send: async (method, path, body) => {
+      await check();
+      return inner.send(method, path, body);
+    },
+  };
+}
+
 export interface Me {
   accountId: string;
   identity: IdentitySecret;
@@ -163,8 +198,8 @@ export interface SpaceView {
   members: SpaceMember[];
   items: Map<string, SpaceItem>;
   sequenceOf: Map<string, number>;
-  /** Every head of the chain, by epoch: an admission seals the earlier keys
-   * against the heads that committed to them. */
+  /** Every verified head of the chain, by epoch: an admission seals the
+   * earlier keys against the heads that committed to them. */
   heads: Map<number, EpochHead>;
   /** What the service said beside the heads: the accounts it still lists
    * as members, the owner's invitations, the signed departures. */
@@ -193,12 +228,12 @@ export async function openSpace(
     (await store.get<IdentityBundle>("meta", anchorKey(spaceId))) ??
     (heads[0]?.owner === me.accountId ? me.bundle : null);
   if (!trusted && !anchor) throw new Error("This browser has no anchor for this space.");
-  const latest = await verifyChain(trusted, heads, trusted ? null : anchor);
+  const { latest, heads: byEpoch } = await verifyChain(trusted, heads, trusted ? null : anchor);
   if (latest.space_id !== spaceId || detail.current_epoch !== latest.epoch)
     throw new Error("The space does not match its heads.");
   if (!headMember(latest, me.accountId)) throw new Error("This account is not in the space.");
   await store.put("meta", headKey(spaceId), latest);
-  const byEpoch = new Map(heads.map((head) => [head.epoch, head]));
+  // Only the verified heads name a key's commitment, a member or an author.
   const keys = new Map<number, Bytes>();
   for (const wrapped of detail.keys) {
     const head = byEpoch.get(wrapped.epoch);
