@@ -15,10 +15,18 @@ use super::protocol::{
 
 const MAX_CONVERSATION_ID_CHARS: usize = 64;
 
-/// One connection's state: the origin the relay reported, once.
-#[derive(Debug, Default)]
+/// One connection's state: the origin the relay reported, once, and the
+/// origins this build answers (`host_manifest::allowed_origins`).
+#[derive(Debug)]
 pub struct Session {
     origin: Option<String>,
+    allowed: Vec<String>,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self::with_allowed(super::host_manifest::allowed_origins())
+    }
 }
 
 /// A question to run as a chat turn.
@@ -82,6 +90,13 @@ const NOT_PAIRED: &str = "This browser is not connected to Sub Rosa any more. Pa
 const NOT_A_PAGE: &str = "Sub Rosa can only read web pages (http or https).";
 
 impl Session {
+    pub fn with_allowed(allowed: Vec<String>) -> Self {
+        Self {
+            origin: None,
+            allowed,
+        }
+    }
+
     pub fn decide(
         &mut self,
         book: &mut PairingBook,
@@ -108,6 +123,16 @@ impl Session {
         if let Request::Origin { origin } = &request {
             if self.origin.is_some() || origin.trim().is_empty() {
                 return Decision::reply(Response::error(None, "malformed", "Unexpected origin."));
+            }
+            // Checked again here, not only by the browser's manifest: an
+            // origin this build does not answer is never remembered, so
+            // nothing after it is either.
+            if !self.allowed.iter().any(|allowed| allowed == origin.trim()) {
+                return Decision::reply(Response::error(
+                    None,
+                    "origin_not_allowed",
+                    "This extension is not one Sub Rosa works with.",
+                ));
             }
             self.origin = Some(origin.trim().to_string());
             return Decision::act(Action::Accept);
@@ -318,6 +343,7 @@ mod tests {
     use super::*;
 
     const ORIGIN: &str = "chrome-extension://aphalahbhpimjbfdkjkdfgfbohboceig/";
+    const OTHER: &str = "chrome-extension://other/";
 
     fn now() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2026-10-08T10:00:00Z")
@@ -338,8 +364,12 @@ mod tests {
     }
 
     /// A session already told its origin, and a book with "tok" paired to it.
+    fn session() -> Session {
+        Session::with_allowed(vec![ORIGIN.to_string(), OTHER.to_string()])
+    }
+
     fn paired() -> (Session, PairingBook) {
-        let mut session = Session::default();
+        let mut session = session();
         let mut book = PairingBook::default();
         session.decide(&mut book, &origin_frame(ORIGIN), now(), "1", String::new);
         book.begin("123456".into(), now());
@@ -356,7 +386,7 @@ mod tests {
 
     #[test]
     fn nothing_is_answered_before_the_relay_names_the_origin() {
-        let mut session = Session::default();
+        let mut session = session();
         let mut book = PairingBook::default();
         let decision = decide(
             &mut session,
@@ -378,7 +408,7 @@ mod tests {
 
     #[test]
     fn pairing_hands_out_a_token_and_hello_recognises_it() {
-        let mut session = Session::default();
+        let mut session = session();
         let mut book = PairingBook::default();
         session.decide(&mut book, &origin_frame(ORIGIN), now(), "1", String::new);
         let hello = decide(
@@ -417,7 +447,7 @@ mod tests {
 
     #[test]
     fn a_wrong_code_is_named() {
-        let mut session = Session::default();
+        let mut session = session();
         let mut book = PairingBook::default();
         session.decide(&mut book, &origin_frame(ORIGIN), now(), "1", String::new);
         let pair = decide(
@@ -455,14 +485,8 @@ mod tests {
     #[test]
     fn a_token_from_another_extension_is_refused() {
         let (_, mut book) = paired();
-        let mut other = Session::default();
-        other.decide(
-            &mut book,
-            &origin_frame("chrome-extension://other/"),
-            now(),
-            "1",
-            String::new,
-        );
+        let mut other = session();
+        other.decide(&mut book, &origin_frame(OTHER), now(), "1", String::new);
         let decision = decide(
             &mut other,
             &mut book,
@@ -579,6 +603,41 @@ mod tests {
         assert_eq!(
             again.action,
             Action::Reply(Response::Unpaired { id: "6".into() })
+        );
+    }
+
+    /// An origin this build does not answer is refused when it is named,
+    /// and nothing after it is answered: a process that reached the socket
+    /// without the browser cannot claim to be the extension.
+    #[test]
+    fn an_origin_outside_the_allowlist_is_refused_at_the_door() {
+        let mut book = PairingBook::default();
+        book.begin("123456".into(), now());
+        let mut session = Session::with_allowed(vec![ORIGIN.to_string()]);
+        let decision = session.decide(
+            &mut book,
+            &origin_frame("chrome-extension://evil/"),
+            now(),
+            "1",
+            String::new,
+        );
+        assert_eq!(error_code(&decision), Some("origin_not_allowed"));
+        let pair = decide(
+            &mut session,
+            &mut book,
+            serde_json::json!({"type":"pair","id":"2","code":"123456"}),
+        );
+        assert_eq!(error_code(&pair), Some("no_origin"));
+        // This build's own list is the manifest's: Firefox's add-on, and the
+        // unpacked id only where a development build answers it.
+        let allowed = super::super::host_manifest::allowed_origins();
+        assert!(allowed.contains(&format!(
+            "moz-extension:{}",
+            super::super::host_manifest::GECKO_EXTENSION_ID
+        )));
+        assert_eq!(
+            allowed.contains(&ORIGIN.to_string()),
+            super::super::host_manifest::unpacked_allowed()
         );
     }
 

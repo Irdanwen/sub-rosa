@@ -44,6 +44,7 @@ pub mod mcp;
 pub mod oauth;
 pub mod policy;
 pub mod relay;
+pub mod relay_approval;
 pub mod research;
 pub mod runtime;
 pub mod tokens;
@@ -768,6 +769,13 @@ pub fn on_deep_link(app: &AppHandle, url: &str) {
         };
         if !oauth::redirect_matches(&url, &flow.redirect_uri) {
             tracing::warn!("connector callback came back to the wrong address");
+            return;
+        }
+        if !oauth::issuer_accepted(&flow, oauth::callback_issuer(&url).as_deref()) {
+            tracing::warn!("connector callback did not name the server it was sent to");
+            let refused = oauth::issuer_refused();
+            set_status(&pool, &flow.connector_id, "error", Some(&refused.message)).await;
+            emit_changed(&app);
             return;
         }
         let code = match outcome {

@@ -176,6 +176,22 @@ export async function deviceProof(
   return signJws(record.signing, header, await proofClaims(`${origin}${path}`, body));
 }
 
+/** The type of a tab's approval of one relayed connector call (ADR-0107
+ * addendum): checked by the app that runs the call against the public key
+ * the service lists for this device. */
+export const APPROVAL_TYPE = "subrosa-approval+jwt";
+
+/** This device's signature over an approval's claims, or null while the
+ * browser is not a device yet. */
+export async function signApproval(record: DeviceRecord, claims: object): Promise<string | null> {
+  if (!record.deviceId) return null;
+  return signJws(
+    record.signing,
+    { alg: "ES256", typ: APPROVAL_TYPE, kid: record.deviceId },
+    claims,
+  );
+}
+
 // ── Naming ──────────────────────────────────────────────────────────────────
 
 /** The family a person recognises, never the version or the platform. */

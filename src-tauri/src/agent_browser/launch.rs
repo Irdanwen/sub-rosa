@@ -8,17 +8,24 @@
 //! agent should be signed in to is one the person signs in to inside that
 //! window, once.
 //!
-//! The DevTools port is chosen by the browser (`--remote-debugging-port=0`):
-//! a free port picked at random, bound to loopback, and written with the
-//! endpoint's path into `DevToolsActivePort` in the profile, where this reads
-//! it. Nothing guesses a port, and no fixed port is ever open.
+//! On macOS and Linux the app talks to the browser over a pipe
+//! (`--remote-debugging-pipe`, fds 3 and 4 of the child): nothing listens on
+//! any port, so no other process on the machine can drive the browser the
+//! agent uses. Windows keeps a port, chosen by the browser
+//! (`--remote-debugging-port=0`): a free port picked at random, bound to
+//! loopback, and written with the endpoint's path into `DevToolsActivePort`
+//! in the profile, where this reads it. Nothing guesses a port, no fixed
+//! port is ever open, and `--remote-allow-origins` is never passed, so no web
+//! page can open that socket either.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
 
-use super::cdp::agent_error;
+use super::cdp::{agent_error, CdpClient};
+#[cfg(unix)]
+use super::pipe;
 use crate::domain::types::AppError;
 
 /// A browser this machine has.
@@ -161,15 +168,28 @@ pub fn parse_devtools_active_port(contents: &str) -> Option<(u16, String)> {
         .then_some((port, path))
 }
 
+/// How the app reaches a started browser.
+pub enum Connection {
+    /// The browser's debugging pipe: read its fd 4, write its fd 3.
+    #[cfg(unix)]
+    Pipe {
+        reader: tokio::net::unix::pipe::Receiver,
+        writer: tokio::net::unix::pipe::Sender,
+    },
+    /// A loopback WebSocket endpoint.
+    #[cfg(not(unix))]
+    Port { port: u16, path: String },
+}
+
 /// A started browser.
 pub struct Launched {
     /// None when the browser handed off to an instance of the same profile
     /// that was already running (left over from an earlier session).
     pub child: Option<tokio::process::Child>,
-    pub port: u16,
-    pub path: String,
+    pub connection: Connection,
 }
 
+#[cfg(not(unix))]
 const PORT_FILE: &str = "DevToolsActivePort";
 const START_WAIT: Duration = Duration::from_secs(20);
 
@@ -177,8 +197,105 @@ pub async fn launch(executable: &Path, profile_dir: &Path) -> Result<Launched, A
     launch_with(executable, profile_dir, &[]).await
 }
 
+/// The flags every launch shares, whatever the connection.
+fn base_command(executable: &Path, profile_dir: &Path, extra: &[&str]) -> std::process::Command {
+    let mut command = std::process::Command::new(executable);
+    command
+        .arg(format!("--user-data-dir={}", profile_dir.display()))
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg("--disable-features=Translate,MediaRouter")
+        .args(extra)
+        .arg("--new-window")
+        .arg("about:blank")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    crate::child_env::scrub(&mut command);
+    command
+}
+
+fn spawn(command: std::process::Command) -> Result<tokio::process::Child, AppError> {
+    let mut command = tokio::process::Command::from(command);
+    command.kill_on_drop(true);
+    command
+        .spawn()
+        .map_err(|error| agent_error("browser_launch_failed", error.to_string()))
+}
+
+/// Connects to what [`launch_with`] started, and waits until the browser
+/// answers: over the pipe, its reply to `Browser.getVersion` is the sign it
+/// is ready.
+pub async fn connect(
+    launched: Launched,
+) -> Result<(CdpClient, Option<tokio::process::Child>), AppError> {
+    let Launched { child, connection } = launched;
+    let client = match connection {
+        #[cfg(unix)]
+        Connection::Pipe { reader, writer } => {
+            CdpClient::over_pipe(tokio::io::BufReader::new(reader), writer)
+        }
+        #[cfg(not(unix))]
+        Connection::Port { port, path } => CdpClient::connect(port, &path).await?,
+    };
+    match tokio::time::timeout(
+        START_WAIT,
+        client.call("Browser.getVersion", serde_json::json!({}), None),
+    )
+    .await
+    {
+        Ok(Ok(_)) => Ok((client, child)),
+        Ok(Err(_)) => Err(agent_error(
+            "browser_launch_failed",
+            "The browser closed as soon as it started. Close any window of the agent browser and try again.",
+        )),
+        Err(_) => Err(agent_error(
+            "browser_launch_failed",
+            "The browser did not answer in time.",
+        )),
+    }
+}
+
 /// `extra` is for the opt-in test that drives a real browser headless; the
 /// app's browser is always a window the person can see.
+#[cfg(unix)]
+pub async fn launch_with(
+    executable: &Path,
+    profile_dir: &Path,
+    extra: &[&str],
+) -> Result<Launched, AppError> {
+    use std::os::unix::process::CommandExt as _;
+
+    std::fs::create_dir_all(profile_dir)
+        .map_err(|error| agent_error("browser_profile_failed", error.to_string()))?;
+    // A port file left by an older version describes a port nothing uses.
+    let _ = std::fs::remove_file(profile_dir.join("DevToolsActivePort"));
+    let failed = |error: std::io::Error| agent_error("browser_launch_failed", error.to_string());
+    // The browser reads commands on fd 3 and writes on fd 4.
+    let (child_reads, app_writes) = pipe::pair().map_err(failed)?;
+    let (app_reads, child_writes) = pipe::pair().map_err(failed)?;
+    let mut command = base_command(executable, profile_dir, extra);
+    command.arg("--remote-debugging-pipe");
+    let ends = pipe::ChildEnds::new(&child_reads, &child_writes);
+    // SAFETY: the hook runs in the forked child before exec and calls only
+    // `fcntl`, `dup2` and `close`, which are async-signal-safe.
+    unsafe {
+        command.pre_exec(move || ends.install());
+    }
+    let child = spawn(command)?;
+    // The child holds its own copies now; the app keeps only its ends.
+    drop((child_reads, child_writes));
+    let reader = tokio::net::unix::pipe::Receiver::from_owned_fd(app_reads).map_err(failed)?;
+    let writer = tokio::net::unix::pipe::Sender::from_owned_fd(app_writes).map_err(failed)?;
+    Ok(Launched {
+        child: Some(child),
+        connection: Connection::Pipe { reader, writer },
+    })
+}
+
+/// `extra` is for the opt-in test that drives a real browser headless; the
+/// app's browser is always a window the person can see.
+#[cfg(not(unix))]
 pub async fn launch_with(
     executable: &Path,
     profile_dir: &Path,
@@ -191,26 +308,11 @@ pub async fn launch_with(
     let previous = std::fs::read_to_string(&port_file).ok();
     let _ = std::fs::remove_file(&port_file);
 
-    let mut command = std::process::Command::new(executable);
+    let mut command = base_command(executable, profile_dir, extra);
     command
         .arg("--remote-debugging-port=0")
-        .arg("--remote-debugging-address=127.0.0.1")
-        .arg(format!("--user-data-dir={}", profile_dir.display()))
-        .arg("--no-first-run")
-        .arg("--no-default-browser-check")
-        .arg("--disable-features=Translate,MediaRouter")
-        .args(extra)
-        .arg("--new-window")
-        .arg("about:blank")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    crate::child_env::scrub(&mut command);
-    let mut command = tokio::process::Command::from(command);
-    command.kill_on_drop(true);
-    let mut child = command
-        .spawn()
-        .map_err(|error| agent_error("browser_launch_failed", error.to_string()))?;
+        .arg("--remote-debugging-address=127.0.0.1");
+    let mut child = spawn(command)?;
 
     let deadline = tokio::time::Instant::now() + START_WAIT;
     loop {
@@ -221,8 +323,7 @@ pub async fn launch_with(
         {
             return Ok(Launched {
                 child: Some(child),
-                port,
-                path,
+                connection: Connection::Port { port, path },
             });
         }
         if let Ok(Some(_)) = child.try_wait() {
@@ -231,8 +332,7 @@ pub async fn launch_with(
             if let Some((port, path)) = previous.as_deref().and_then(parse_devtools_active_port) {
                 return Ok(Launched {
                     child: None,
-                    port,
-                    path,
+                    connection: Connection::Port { port, path },
                 });
             }
             return Err(agent_error(

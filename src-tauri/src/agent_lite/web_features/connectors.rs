@@ -375,7 +375,17 @@ fn export() -> Value {
                 "notSignedIn": relay::NOT_SIGNED_IN,
                 "needsApproval": relay::NEEDS_APPROVAL,
                 "tooLarge": relay::TOO_LARGE,
+                "clockAhead": relay::CLOCK_AHEAD,
+                "badArguments": relay::BAD_ARGUMENTS,
                 "noAnswer": relay::NO_ANSWER,
+            },
+            "approval": {
+                "type": crate::connectors::relay_approval::APPROVAL_TYPE,
+                "vector": {
+                    "tool": "resolve",
+                    "arguments": r#"{"id":"PROJ-1","status":"done"}"#,
+                    "digest": crate::connectors::relay_approval::digest("resolve", r#"{"id":"PROJ-1","status":"done"}"#),
+                },
             },
             "offerIds": [
                 {"device": "mac", "connector": "sentry", "id": relay::offer_id("mac", "sentry")},

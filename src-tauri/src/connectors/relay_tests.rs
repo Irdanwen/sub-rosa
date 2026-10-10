@@ -32,6 +32,8 @@ fn errand(tool: &str, approved: bool, at: chrono::DateTime<chrono::Utc>) -> Erra
         arguments: r#"{"query":"crash"}"#.into(),
         approved,
         requested_at: at.to_rfc3339(),
+        requested_by: "browser-1".into(),
+        approval: None,
     }
 }
 
@@ -94,6 +96,178 @@ fn a_call_runs_only_under_this_devices_own_rules() {
     assert_eq!(
         run(&large, true, Some(&sentry), true),
         Decision::Decline(TOO_LARGE.into())
+    );
+}
+
+/// A call dated ahead of this clock is refused (it would otherwise stay
+/// fresh past its lifetime), past a minute of drift; arguments that are not
+/// an object are declined, never run as an empty one.
+#[test]
+fn a_call_from_the_future_or_without_an_object_is_not_made() {
+    let now = chrono::Utc::now();
+    let tools = [tool("search", true)];
+    let sentry = connector("sentry");
+    let run = |errand: &Errand| decide(errand, true, Some(&sentry), true, &tools, now);
+    let ahead = now + chrono::Duration::seconds(super::super::relay_approval::CLOCK_SKEW_SECS + 5);
+    assert_eq!(
+        run(&errand("search", false, ahead)),
+        Decision::Decline(CLOCK_AHEAD.into())
+    );
+    let drift = now + chrono::Duration::seconds(30);
+    assert!(matches!(
+        run(&errand("search", false, drift)),
+        Decision::Run(_)
+    ));
+    let mut undated = errand("search", false, now);
+    undated.requested_at = "soon".into();
+    assert_eq!(run(&undated), Decision::Decline(TOO_LATE.into()));
+    for arguments in ["[1,2]", "\"crash\"", "null", "42", "{not json"] {
+        let mut odd = errand("search", false, now);
+        odd.arguments = arguments.into();
+        assert_eq!(
+            run(&odd),
+            Decision::Decline(BAD_ARGUMENTS.into()),
+            "{arguments}"
+        );
+    }
+}
+
+/// A browser device key, as WebCrypto makes one, and its approval of a call.
+struct Browser {
+    key: p256::ecdsa::SigningKey,
+    public: super::super::relay_approval::BrowserKey,
+}
+
+impl Browser {
+    fn new(id: &str) -> Self {
+        use base64::Engine as _;
+        let key = loop {
+            let bytes = p256::FieldBytes::from(rand::random::<[u8; 32]>());
+            if let Ok(key) = p256::ecdsa::SigningKey::from_bytes(&bytes) {
+                break key;
+            }
+        };
+        let point = key.verifying_key().to_encoded_point(false);
+        let encode = |c: Option<&p256::FieldBytes>| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(c.unwrap())
+        };
+        Self {
+            public: super::super::relay_approval::BrowserKey {
+                device_id: id.into(),
+                x: encode(point.x()),
+                y: encode(point.y()),
+            },
+            key,
+        }
+    }
+
+    fn sign(&self, header: Value, claims: Value) -> String {
+        use base64::Engine as _;
+        use p256::ecdsa::signature::Signer as _;
+        let b64 = |value: &Value| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value.to_string())
+        };
+        let input = format!("{}.{}", b64(&header), b64(&claims));
+        let signature: p256::ecdsa::Signature = self.key.sign(input.as_bytes());
+        format!(
+            "{input}.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes())
+        )
+    }
+
+    fn approve(&self, errand: &Errand, iat: i64) -> String {
+        self.sign(
+            json!({"alg": "ES256", "typ": super::super::relay_approval::APPROVAL_TYPE, "kid": self.public.device_id}),
+            json!({
+                "eid": errand.id,
+                "dig": super::super::relay_approval::digest(&errand.tool, &errand.arguments),
+                "iat": iat,
+            }),
+        )
+    }
+}
+
+/// An "ask" call runs only with an approval its asking browser signed over
+/// this very call, and only while that browser is a live device of the
+/// account. The row's own flag is not enough.
+#[test]
+fn an_approval_counts_only_when_its_browser_signed_this_call() {
+    use super::super::relay_approval::{browser_keys, digest, holds};
+    let now = chrono::Utc::now();
+    let browser = Browser::new("browser-1");
+    let stranger = Browser::new("browser-9");
+    let keys = vec![browser.public.clone()];
+    let mut call = errand("resolve", true, now);
+    assert!(!holds(&call, &keys, now), "a flag without a signature");
+
+    call.approval = Some(browser.approve(&call, now.timestamp()));
+    assert!(holds(&call, &keys, now));
+
+    // Another call, other arguments, another tool: the same approval is void.
+    let mut other = call.clone();
+    other.arguments = r#"{"query":"everything"}"#.into();
+    assert!(!holds(&other, &keys, now));
+    let mut renamed = call.clone();
+    renamed.tool = "delete".into();
+    assert!(!holds(&renamed, &keys, now));
+    let mut replayed = call.clone();
+    replayed.id = "e2".into();
+    assert!(!holds(&replayed, &keys, now));
+    // Signed by a browser the account does not list, or for another asker.
+    let mut forged = call.clone();
+    forged.approval = Some(stranger.approve(&call, now.timestamp()));
+    forged.requested_by = "browser-9".into();
+    assert!(!holds(&forged, &keys, now));
+    let mut misattributed = call.clone();
+    misattributed.requested_by = "browser-2".into();
+    assert!(!holds(&misattributed, &keys, now));
+    // Too old, or from a clock too far ahead.
+    let mut stale = call.clone();
+    stale.approval = Some(browser.approve(&call, now.timestamp() - EXPIRY_SECS - 5));
+    assert!(!holds(&stale, &keys, now));
+    let mut early = call.clone();
+    early.approval = Some(browser.approve(&call, now.timestamp() + 600));
+    assert!(!holds(&early, &keys, now));
+    // A tampered signature, a wrong type, an unsigned token.
+    let mut tampered = call.clone();
+    let token = call.approval.clone().unwrap();
+    let at = token.rfind('.').unwrap() + 10;
+    let flipped = if &token[at..=at] == "A" { "B" } else { "A" };
+    tampered.approval = Some(format!("{}{flipped}{}", &token[..at], &token[at + 1..]));
+    assert!(!holds(&tampered, &keys, now));
+    let mut typed = call.clone();
+    typed.approval = Some(browser.sign(
+        json!({"alg": "ES256", "typ": "dpop+jwt", "kid": "browser-1"}),
+        json!({"eid": call.id, "dig": digest(&call.tool, &call.arguments), "iat": now.timestamp()}),
+    ));
+    assert!(!holds(&typed, &keys, now));
+    let mut none = call.clone();
+    none.approval = Some(format!("{}.{}.", "eyJhbGciOiJub25lIn0", "e30"));
+    assert!(!holds(&none, &keys, now));
+
+    // The account service's list: live browser devices with a key only.
+    let listed = json!([
+        {"id": "browser-1", "kind": "browser", "revoked_at": null, "public_key": {"x": browser.public.x, "y": browser.public.y}},
+        {"id": "browser-9", "kind": "browser", "revoked_at": "2026-10-01T00:00:00Z", "public_key": {"x": stranger.public.x, "y": stranger.public.y}},
+        {"id": "mac", "kind": "native", "revoked_at": null},
+        {"id": "browser-3", "kind": "browser", "revoked_at": null},
+    ]);
+    assert_eq!(browser_keys(&listed), keys);
+    // A browser revoked since is no longer listed, so its approval is void.
+    assert!(!holds(
+        &call,
+        &browser_keys(&json!([listed[1].clone()])),
+        now
+    ));
+}
+
+/// The digest the web client computes (`relay.ts`) is this one, byte for
+/// byte: a vector both sides check.
+#[test]
+fn the_approval_digest_is_the_shared_vector() {
+    assert_eq!(
+        super::super::relay_approval::digest("resolve", r#"{"id":"PROJ-1","status":"done"}"#),
+        "D-UvKPYRo3fvOfJUuyJFlvoCFIThcMC27D7XYTNKm28"
     );
 }
 

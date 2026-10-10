@@ -49,6 +49,15 @@ fn device_row(r: &sqlx::postgres::PgRow) -> Device {
         renewed_at: r.get("renewed_at"),
         renew_count: r.get("renew_count"),
         kind: DeviceKind::parse(r.get("kind")),
+        // Only a browser device has one; a row read without the columns
+        // (a narrower RETURNING) simply has none.
+        public_key: match (
+            r.try_get::<Option<String>, _>("public_x"),
+            r.try_get::<Option<String>, _>("public_y"),
+        ) {
+            (Ok(Some(x)), Ok(Some(y))) => Some(subrosa_domain::DevicePublicKey { x, y }),
+            _ => None,
+        },
     }
 }
 fn account(row: &sqlx::postgres::PgRow) -> Account {

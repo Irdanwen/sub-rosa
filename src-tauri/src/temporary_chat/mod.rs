@@ -65,6 +65,75 @@ pub async fn is_temporary_session(
     )
 }
 
+/// Whether `chat_id` names a temporary chat, as a phone task id or as a
+/// desktop session id: a caller from either shell passes what it holds.
+pub async fn is_temporary_chat(
+    pool: &SqlitePool,
+    chat_id: &str,
+) -> Result<bool, sqlx::error::Error> {
+    let chat_id = chat_id.trim();
+    if chat_id.is_empty() {
+        return Ok(false);
+    }
+    Ok(is_temporary(pool, chat_id).await? || is_temporary_session(pool, chat_id).await?)
+}
+
+/// Refuses work that would outlive a temporary chat: a research report, a
+/// study deck, a file in the gallery. Each of those is kept, listed and
+/// synchronised on its own, so a temporary chat may not start one.
+pub async fn refuse_in_temporary(pool: &SqlitePool, chat_id: Option<&str>) -> Result<(), AppError> {
+    let Some(chat_id) = chat_id else {
+        return Ok(());
+    };
+    if is_temporary_chat(pool, chat_id).await? {
+        return Err(AppError::new(
+            "temporary_chat_refused",
+            "A temporary chat keeps nothing, so this is not available in it. Start a regular chat to use it.",
+        ));
+    }
+    Ok(())
+}
+
+/// The files the runtime leaves for a session in `$HERMES_HOME/sessions`
+/// that its own delete does not remove: request dumps
+/// (`request_dump_{id}_*.json`), transcripts (`{id}.json`, `{id}.jsonl`) and
+/// the snapshot (`session_{id}.json`). They hold the conversation, so a
+/// temporary chat takes them with it. Returns how many were removed.
+pub fn remove_session_files(sessions_dir: &std::path::Path, session_id: &str) -> usize {
+    // A stored session id is the runtime's own (`20260703_183342_0feb18`);
+    // anything else is not used to build a path.
+    if session_id.is_empty()
+        || session_id.len() > 200
+        || !session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+    {
+        return 0;
+    }
+    let exact = [
+        format!("{session_id}.json"),
+        format!("{session_id}.jsonl"),
+        format!("session_{session_id}.json"),
+    ];
+    let dump_prefix = format!("request_dump_{session_id}_");
+    let Ok(entries) = std::fs::read_dir(sessions_dir) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let matches =
+            exact.contains(&name) || (name.starts_with(&dump_prefix) && name.ends_with(".json"));
+        if matches
+            && entry.file_type().is_ok_and(|kind| kind.is_file())
+            && std::fs::remove_file(entry.path()).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 /// The `WHERE` the archive reads a table with: a temporary chat is not part
 /// of what a person carries away.
 pub fn archive_filter(table: &str) -> &'static str {
@@ -249,16 +318,29 @@ async fn delete_hermes_session(app: &AppHandle, session_id: &str) -> Result<bool
     )
     .await
     {
-        Ok(_) => Ok(true),
+        Ok(_) => {
+            remove_runtime_files(app, session_id);
+            Ok(true)
+        }
         Err(error) if error.code == "hermes_bridge_not_running" => Ok(false),
         // Already gone is what was asked for.
         Err(error)
             if error.code == "hermes_bridge_api_failed"
                 && error.message.starts_with("Hermes API returned 404") =>
         {
+            remove_runtime_files(app, session_id);
             Ok(true)
         }
         Err(error) => Err(error),
+    }
+}
+
+/// What the runtime's delete leaves on disk for `session_id`, removed after
+/// it answered.
+#[cfg(desktop)]
+fn remove_runtime_files(app: &AppHandle, session_id: &str) {
+    if let Ok(home) = crate::hermes_bridge::resolve_june_hermes_home(app) {
+        remove_session_files(&home.join("sessions"), session_id);
     }
 }
 

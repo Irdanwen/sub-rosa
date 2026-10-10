@@ -105,3 +105,29 @@ origin. A question runs as an agent-lite turn filed in the chat list.**
 - **Content scripts on every site.** Reading pages ahead of time would make
   answers faster and needs `<all_urls>`, which is exactly the standing access
   this extension exists to avoid.
+
+## Addendum (2026-10-10): the origin checked again, the unpacked id kept to development, the pipe closed to other users
+
+The post-release audit of 1.89.0 found three gaps, now closed:
+
+- **The origin is checked when it is named.** The browser starts the host
+  only for the ids its manifest allows, but the app took any origin the
+  relay reported. `Session` now refuses an origin outside this build's list
+  (`origin_not_allowed`) and answers nothing after it.
+- **The unpacked id is development only.** `aphalahbhpimjbfdkjkdfgfbohboceig`
+  is derived from the public `key` in the extension's manifest, so anyone can
+  load an extension under it. `CHROMIUM_EXTENSION_IDS` is split: the stores'
+  ids (`STORE_CHROMIUM_EXTENSION_IDS`, the release list, empty until the
+  extension is published) and the unpacked id, allowed only by a debug build
+  or one built with `SUBROSA_ALLOW_UNPACKED_EXTENSION=1`. Until a store id is
+  added, a release build answers no Chromium extension (docs/browser-extension.md).
+- **Windows.** The named pipe is created with an explicit DACL (protected,
+  generic all for the current user's SID, nothing else; `pipe_security.rs`,
+  the SDDL a pure, tested function), replacing the default DACL the
+  Consequences above leaned on. An empty `USERNAME` gives no pipe rather than
+  one name every such account shares, and a user name is spelled losslessly
+  (characters a pipe name cannot hold become their UTF-8 bytes), so two
+  users never collide on a shortened name. The Windows half type-checks
+  (and passes clippy) for `x86_64-pc-windows-msvc` in an isolated crate with
+  the same `windows` features; the full app cannot be checked for that target
+  on a Mac (`ring`), and it has not run on Windows hardware.

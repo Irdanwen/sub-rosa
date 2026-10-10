@@ -69,7 +69,12 @@ interface Export {
       needsApproval: string;
       tooLarge: string;
       noAnswer: string;
+      clockAhead: string;
+      badArguments: string;
     };
+    /** The signed approval of an "ask" call (ADR-0107 addendum), and a
+     * digest vector Rust checks too. */
+    approval: { type: string; vector: { tool: string; arguments: string; digest: string } };
     offerIds: { device: string; connector: string; id: string }[];
   };
   tables: Record<string, TableCodec>;

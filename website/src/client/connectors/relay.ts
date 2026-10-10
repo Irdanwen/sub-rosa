@@ -22,6 +22,7 @@
  * device has to be open, and a late answer still reaches the call's card.
  */
 import { t } from "../../lib/i18n";
+import { encode } from "../../lib/vault";
 import { type Row, timestamp, travellingRow } from "../codec";
 import type { SyncClient } from "../sync";
 import { type CallRecord, callKey, updateCall } from "./calls";
@@ -186,6 +187,16 @@ export function messageText(message: string): string {
         "This action needs your approval before it runs.",
         "Cette action a besoin de votre accord avant de s’exécuter.",
       );
+    case words.clockAhead:
+      return t(
+        "This call is dated ahead of that device's clock, so it was not made. Check this device's date and time.",
+        "Cet appel est daté en avance sur l’horloge de cet appareil, il n’a donc pas été fait. Vérifiez la date et l’heure de cet appareil-ci.",
+      );
+    case words.badArguments:
+      return t(
+        "This call's arguments are not ones a tool takes, so it was not made.",
+        "Les arguments de cet appel ne conviennent à aucun outil, il n’a donc pas été fait.",
+      );
     case words.tooLarge:
       return t(
         "This call carries more than another device can take.",
@@ -196,7 +207,36 @@ export function messageText(message: string): string {
   }
 }
 
-/** Writes a call addressed to the offer's device, and sends it at once. */
+/** JSON with every object's keys in order: the arguments a call carries,
+ * written one way, so the approval signed over them names one text. */
+export function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, inner: unknown) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(
+          Object.keys(inner as Record<string, unknown>)
+            .sort()
+            .map((key) => [key, (inner as Record<string, unknown>)[key]]),
+        )
+      : inner,
+  );
+}
+
+/** What an approval is of (`relay_approval::digest` in Rust): SHA-256 over
+ * the tool's name, a NUL byte and the arguments exactly as the row carries
+ * them, in base64url. */
+export async function approvalDigest(tool: string, argumentsText: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const name = encoder.encode(tool);
+  const args = encoder.encode(argumentsText);
+  const bytes = new Uint8Array(name.length + 1 + args.length);
+  bytes.set(name, 0);
+  bytes.set(args, name.length + 1);
+  return encode(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
+}
+
+/** Writes a call addressed to the offer's device, and sends it at once. An
+ * approved call carries this browser's signature over it in `message`: the
+ * device runs an action that asks only on that (ADR-0107 addendum). */
 export async function requestCall(
   sync: SyncClient,
   input: {
@@ -205,13 +245,24 @@ export async function requestCall(
     args: Record<string, unknown>;
     approved: boolean;
     requestedBy: string;
+    signApproval?: (claims: object) => Promise<string | null>;
   },
 ): Promise<string> {
-  const argumentsText = JSON.stringify(input.args ?? {});
+  const argumentsText = canonicalJson(input.args ?? {});
   if (new TextEncoder().encode(argumentsText).length > RELAY.maxArgumentBytes)
     throw new RelayError("too_large");
   const id = crypto.randomUUID();
   const now = timestamp();
+  const approval =
+    input.approved && input.signApproval
+      ? await input
+          .signApproval({
+            eid: id,
+            dig: await approvalDigest(input.tool, argumentsText),
+            iat: Math.floor(Date.now() / 1000),
+          })
+          .catch(() => null)
+      : null;
   const row: Row = travellingRow("connector_errands", {
     id,
     device_id: input.offer.deviceId,
@@ -223,7 +274,7 @@ export async function requestCall(
     requested_at: now,
     state: "requested",
     result: null,
-    message: null,
+    message: approval,
     updated_at: now,
   });
   await sync.write("connector_errands", row);
@@ -353,6 +404,7 @@ export async function relayCall(
       args: call.arguments,
       approved,
       requestedBy: env.deviceId ?? "browser",
+      signApproval: env.signApproval,
     });
   } catch (error) {
     const reason =

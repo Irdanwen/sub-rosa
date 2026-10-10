@@ -170,6 +170,19 @@ Named, because a threat model that claims everything protects nothing.
   The Excel pane's Python runs there as on `/app`, in that origin's own copy
   of the opaque-origin `/python-sandbox.html` frame (previous point).
   See [ADR-0102](adr/0102-an-office-task-pane-is-a-browser-device-whose-session-a-sign-in-window-carries.md).
+
+- **Script injected into the account site, and your connector sign-ins.**
+  When "Run connectors for my browser" is on, a computer or phone of yours
+  runs connector calls a tab addresses to it (ADR-0107). A tool you set to
+  "allow" runs on a call any open tab of the account can file, so a
+  compromised tab can use your connector sign-ins for those tools while that
+  app is open. A tool set to "ask" runs only with an approval the asking
+  browser signed with its device key over that exact call, checked against
+  the key the account service lists for that live browser device (ADR-0107
+  addendum, 2026-10-10): that closes the row to anyone else who can write it,
+  and to a revoked browser, but a compromised tab can still ask its own
+  device key to sign. "Deny", or leaving the switch off, is the only rule a
+  compromised tab cannot get past.
 - **Cryptographic isolation after device revocation.** Revocation blocks the
   device's sessions immediately at the service. It does not rotate the vault
   root or erase past copies. A revoked device obtaining ciphertext through

@@ -8651,6 +8651,22 @@
               "browser"
             ],
             "description": "native for an app, browser for a browser admitted as a device (ADR 0096)"
+          },
+          "public_key": {
+            "type": "object",
+            "description": "A browser device's P-256 public key (base64url coordinates), present for browser devices only, so the account's apps can check what that browser signed (ADR-0107 addendum)",
+            "properties": {
+              "x": {
+                "type": "string"
+              },
+              "y": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ]
           }
         },
         "required": [
