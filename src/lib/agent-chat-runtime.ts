@@ -14,7 +14,11 @@ import {
   isUpstreamRateLimitedErrorSentinel,
   isUpstreamRateLimitedMessage,
 } from "./errors";
-import { isScheduledRunPreamble, stripScheduledRunPreamble } from "./hermes-adapter";
+import {
+  isModelSwitchMarker,
+  isScheduledRunPreamble,
+  stripScheduledRunPreamble,
+} from "./hermes-adapter";
 import { stripMentionPromptBlock } from "./agent-mentions";
 import { type HermesProcessNotice, parseHermesProcessNotice } from "./hermes-process-notice";
 import { displayedUserMessageText } from "./issue-report-prompt";
@@ -246,6 +250,10 @@ export function buildHermesSessionChatTurns(
         status: "complete",
       });
       turn.status = "complete";
+      continue;
+    }
+
+    if (message.role === "user" && isModelSwitchMarker(resolveHermesMessageText(message))) {
       continue;
     }
 

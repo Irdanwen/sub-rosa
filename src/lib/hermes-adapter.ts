@@ -194,6 +194,15 @@ function stringPresent(value: unknown) {
  * delivery preamble the cron runner injects: `[IMPORTANT: You are running as a
  * scheduled cron job. … nothing more.]`. Recognized by that exact opener so a
  * user message that merely starts with "[IMPORTANT" is never mistaken for it. */
+/** The note the pinned runtime writes after a live model switch
+ * (`_append_model_switch_marker` in its gateway): stored as a USER row so
+ * strict providers accept it mid-history, but nobody typed it. Branching a
+ * chat switches the fork's model and writes one. It is history for the model,
+ * never a bubble, and never "the last question" to ask again. */
+export function isModelSwitchMarker(content: string) {
+  return /^\s*\[System: The active model for this chat has changed to /.test(content);
+}
+
 export function isScheduledRunPreamble(content: string) {
   return /^\s*\[IMPORTANT:\s*You are running as a scheduled cron job\.?/i.test(content);
 }
