@@ -104,6 +104,15 @@ Android was not part of this run.
 
 ## Broken, deferred
 
+Of the list below, the first four were fixed on this branch after the run
+(W10): the tool activity labels now read through `t()`
+(`src/lib/agent-tool-label-text.ts`), the mission card follows the real run
+state (`AssignmentDetail.tsx`), the guard plugin redacts a temporary chat's
+words from `agent.log` (ADR-0083 addendum), and the runtime's own browser
+toolset is switched off in the rendered config (ADR-0094 addendum). The
+gateway label and the gallery question remain as written.
+
+
 - **A debug build takes over the person's Hermes gateway.** The app registers
   the gateway as the LaunchAgent `ai.hermes.gateway` (`spawn_hermes_gateway_start`,
   `src-tauri/src/hermes_bridge.rs`), a label the debug and release builds
