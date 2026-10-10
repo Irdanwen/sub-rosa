@@ -34,8 +34,8 @@ the comparison table under "Comparez les fonctionnalités", and add any row
 that is not here as `no` with the lot that will close it. Write the date of
 the reading here.
 
-Gaps: 1
-Gated: 61
+Gaps: 0
+Gated: 62
 Unverified: 14
 
 ## Matrix
@@ -97,7 +97,7 @@ Unverified: 14
 | Screen and app awareness | yes | n/a | n/a | n/a | D: `src-tauri/src/screen_awareness/mod.rs` |  |
 | Home screen widgets | n/a | unverified | unverified | n/a | i: `src-tauri/gen/apple/Widgets` · A: `src-tauri/android/src/main/java/xyz/carpediem/subrosa/nativebridge/AskWidgetProvider.kt` |  |
 | Watch app | n/a | unverified | n/a | n/a | i: `src-tauri/gen/apple/Watch` `src-tauri/src/watch_relay.rs` |  |
-| Browser extension | partial | n/a | n/a | n/a | D: `browser-extension/manifest.json` `src-tauri/src/browser_extension/mod.rs` | P8 |
+| Browser extension | gated | n/a | n/a | n/a | D: `browser-extension/manifest.json` `src-tauri/src/browser_extension/mod.rs` |  |
 | Share into the app | n/a | yes | yes | n/a | i: `src-tauri/gen/apple/ShareExtension` `src-tauri/src/share_inbox.rs` · A: `src-tauri/android/src/main/java/xyz/carpediem/subrosa/nativebridge/ShareReceiverActivity.kt` `src-tauri/src/share_inbox.rs` |  |
 | Siri and Shortcuts | n/a | yes | n/a | n/a | i: `src-tauri/gen/apple/Sources/os-june/Intents` |  |
 | Spotlight | yes | yes | n/a | n/a | D: `src-tauri/src/spotlight.rs` · i: `src-tauri/src/spotlight.rs` |  |
@@ -157,12 +157,6 @@ Unverified: 14
 
 Every `partial` and `no` cell, with what is missing.
 
-- **Browser extension** (desktop, P8): the extension and its native-messaging
-  host ship with the app (ADR-0100), but it has no listing on the Chrome Web
-  Store, Edge Add-ons or Firefox Add-ons, so a person can install it only by
-  loading it unpacked in developer mode. Closing it: the three store listings,
-  then the listed extension id in the native host's allowed origins
-  (HANDOFF.md, "10 octobre 2026").
 
 ## Gated
 
@@ -193,6 +187,14 @@ when one is lifted, flip the cells to `yes` and remove the entry.
   Office origin and an AppSource listing for anyone to install them without
   sideloading. Gate: Carpe Diem #464 deployed, the Office origin cutover, the
   AppSource review. They are also unverified (see below).
+- **Browser extension** (desktop): the extension and its native-messaging
+  host ship with the app (ADR-0100), but the host's allowed origins list only
+  store-assigned extension ids, and a release build has none yet; the unpacked
+  development id is accepted only by debug builds or a build made with
+  `SUBROSA_ALLOW_UNPACKED_EXTENSION=1` (`src-tauri/src/browser_extension/host_manifest.rs`).
+  So a person on a release build gets "no extension" until a listing exists.
+  Gate: the Chrome Web Store, Edge Add-ons and Firefox Add-ons listings, then
+  their ids in the allowed origins (HANDOFF.md, "10 octobre 2026").
 - **Shared projects** and **Group chats** (desktop and phones `yes`): end-to-end
   encrypted with a protocol of Sub Rosa's own (ADR-0098,
   `docs/security/spaces-protocol.md`). They ship behind a "Preview" switch, off
