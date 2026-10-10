@@ -397,7 +397,9 @@ jobs:
       # and the updater dialog showed exactly that. The commit subjects on
       # this repository are written as sentences, so they are the notes: the
       # same text goes on the GitHub release and into latest.json, which the
-      # updater shows before the user accepts an update.
+      # updater shows before the user accepts an update. A merge commit
+      # contributes its PR title and number. Dry run from any checkout:
+      # `node scripts/generate-release-changelog.mjs 1.89.0 - --to v1.89.0`.
       - name: Write the release notes
         env:
           VERSION: ${{ needs.resolve.outputs.version }}

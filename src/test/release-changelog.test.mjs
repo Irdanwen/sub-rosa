@@ -3,6 +3,7 @@ import {
   findPreviousRelease,
   findPreviousReleaseTag,
   formatChangelog,
+  parseArgs,
   parseGitLogRecords,
   parsePreviousReleaseLine,
   releaseNoteTitleForCommit,
@@ -171,5 +172,28 @@ describe("formatChangelog", () => {
         commits: [],
       }),
     ).toContain("- No source changes recorded since the previous release.");
+  });
+});
+
+describe("parseArgs", () => {
+  it("defaults to HEAD, as the release workflow calls it", () => {
+    expect(parseArgs(["1.89.0", "notes.md"])).toEqual({
+      version: "1.89.0",
+      outputPath: "notes.md",
+      to: "HEAD",
+    });
+  });
+
+  it("builds a past release's notes from any checkout as a dry run", () => {
+    expect(parseArgs(["1.89.0", "-", "--to", "v1.89.0"])).toEqual({
+      version: "1.89.0",
+      outputPath: "-",
+      to: "v1.89.0",
+    });
+  });
+
+  it("refuses a missing ref or a missing output path", () => {
+    expect(() => parseArgs(["1.89.0", "-", "--to"])).toThrow(/--to needs a git ref/);
+    expect(() => parseArgs(["1.89.0"])).toThrow(/Usage/);
   });
 });
