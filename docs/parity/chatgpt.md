@@ -157,6 +157,8 @@ Unverified: 14
 
 Every `partial` and `no` cell, with what is missing.
 
+None today. What a person cannot reach yet is held by an external gate
+(below), not by missing code.
 
 ## Gated
 
