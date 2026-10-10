@@ -120,6 +120,14 @@ Named, because a threat model that claims everything protects nothing.
   script sinks, and Subresource Integrity pins the entry files. Revoking the
   browser from any device stops its key and its renewals. See
   [ADR-0096](adr/0096-a-browser-is-a-device.md).
+- **Microsoft's Office.js in the Office add-ins.** Office requires it from
+  Microsoft's CDN, updated in place, so it cannot be pinned. It runs on the
+  add-ins' own origin, never the account's (ADR-0102, addendum of
+  2026-10-10): it can do whatever a pane can (sign as the pane's browser
+  device, spend the pane's bounded key, ask the account origin's courier for
+  its seven device calls, none of which spends), and it cannot reach the
+  account's cookie, its storage, the vault or another browser device's keys.
+  See [ADR-0102](adr/0102-an-office-task-pane-is-a-browser-device-whose-session-a-sign-in-window-carries.md).
 - **Cryptographic isolation after device revocation.** Revocation blocks the
   device's sessions immediately at the service. It does not rotate the vault
   root or erase past copies. A revoked device obtaining ciphertext through

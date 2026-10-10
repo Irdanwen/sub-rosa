@@ -18,6 +18,9 @@ CVM by the operator's owner. What it changes, all inside the operator:
   and `https://furetier.com` are allowed on `/partner/keys`,
   `/partner/keys/poll`, `/partner/capabilities` and the inference routes listed
   in the contract (section 7); every other origin rule is unchanged.
+  The Office add-ins' origin, `https://office.subrosa.furetier.com`, has to
+  join that list (`SUBROSA_SITE_ORIGINS`) before a pane can obtain or use a
+  key ([office-addins.md](office-addins.md#deployment), step 0).
 - `operator/src/services/partners.ts`, `operator/src/routes/partnerRoute.ts`,
   `operator/src/services/db.ts`: the `kind`/`bound` assertion claims, the
   bounded key columns (`api_keys.bound_*`, added at boot by `ensureColumn`),

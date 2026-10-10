@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
+import { checkOrigin, PRODUCTION_OFFICE_ORIGIN } from "../scripts/office-origins.mjs";
 import { pyodidePlugin } from "../scripts/pyodide-assets.mjs";
 import { subresourceIntegrity } from "./vite-sri";
 
@@ -14,8 +15,15 @@ export default defineConfig(({ mode }) => {
     if (origin.protocol !== "https:" || origin.origin !== env.VITE_ACCOUNT_ORIGIN)
       throw new Error("VITE_ACCOUNT_ORIGIN must be an HTTPS origin without a path.");
   }
+  // The only origin the Office courier frame answers (ADR-0102, addendum).
+  const officeOrigin = checkOrigin(
+    env.VITE_OFFICE_ORIGIN || PRODUCTION_OFFICE_ORIGIN,
+    "VITE_OFFICE_ORIGIN",
+  );
+  const page = (path: string) => fileURLToPath(new URL(path, import.meta.url));
   return {
     base,
+    define: { "import.meta.env.VITE_OFFICE_ORIGIN": JSON.stringify(officeOrigin) },
     // The web client's Python (ADR-0086 on the web) is served from the site's
     // own origin under /pyodide/, verified by hash at build, never from a CDN
     // at run time. SUBROSA_PYODIDE=0 builds the site without it.
@@ -36,6 +44,18 @@ export default defineConfig(({ mode }) => {
         "/auth": { target: "http://127.0.0.1:8088", changeOrigin: false },
       },
     },
-    build: { target: "es2022", sourcemap: false },
+    build: {
+      target: "es2022",
+      sourcemap: false,
+      rollupOptions: {
+        input: {
+          index: page("index.html"),
+          // The Office add-ins' two account-origin pages (ADR-0102,
+          // addendum): neither runs Office.js, which stays on its own origin.
+          "office-courier": page("office/courier.html"),
+          "office-signed-in": page("office/signed-in.html"),
+        },
+      },
+    },
   };
 });

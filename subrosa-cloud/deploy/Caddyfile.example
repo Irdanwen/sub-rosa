@@ -1,4 +1,4 @@
-# Replace the hostname only after DNS, OIDC callback and public_url are configured.
+# Replace the hostnames only after DNS, OIDC callback and public_url are configured.
 account.example.invalid {
     encode zstd gzip
     request_body {
@@ -9,7 +9,7 @@ account.example.invalid {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
     }
-    @site not path /app /app/* /connector-view.html /office/*
+    @site not path /app /app/* /connector-view.html /office/courier.html /office/moved.html
     header @site {
         X-Frame-Options "DENY"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"
@@ -22,11 +22,29 @@ account.example.invalid {
         Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()"
         Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa"
     }
-    # The Office task panes (ADR-0102): see nginx-account.conf.example.
-    @office path /office/*
-    header @office {
+    # The Office add-ins run on their own origin (ADR-0102, addendum of
+    # 2026-10-10; the office block below): see nginx-account.conf.example.
+    @courier path /office/courier.html
+    header @courier {
         Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs"
+        Content-Security-Policy "default-src 'none'; script-src 'self'; connect-src 'self'; frame-ancestors https://office.example.invalid; require-trusted-types-for 'script'; trusted-types 'none'"
+        Cache-Control "no-store"
+    }
+    @signedin path /office/signed-in.html
+    header @signedin Cache-Control "no-store"
+    @moved path /office/moved.html
+    header @moved {
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        Content-Security-Policy "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com"
+    }
+    @officeold path /office/word.html /office/excel.html /office/powerpoint.html /office/session.html /office/commands.html
+    redir @officeold /office/moved.html 308
+    @officeother {
+        path /office/*
+        not path /office/courier.html /office/signed-in.html /office/moved.html
+    }
+    handle @officeother {
+        respond 404
     }
     @view path /connector-view.html
     header @view {
@@ -49,6 +67,41 @@ account.example.invalid {
         root * /srv/website
         try_files {path} /index.html
         file_server
+    }
+}
+
+# The Office add-ins' own origin (ADR-0102, addendum of 2026-10-10): static
+# files from office-addins/dist, no service, no cookie. See
+# nginx-office.conf.example.
+office.example.invalid {
+    encode zstd gzip
+    request_body {
+        max_size 1KB
+    }
+    request_header -Cookie
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        -Set-Cookie
+    }
+    @office path /office/*
+    header @office {
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src 'self' https://appsforoffice.microsoft.com https://account.example.invalid/office/courier.html; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs"
+    }
+    @pyodide path /pyodide/*
+    header @pyodide {
+        X-Frame-Options "DENY"
+        Cache-Control "public, max-age=604800"
+    }
+    @files path /office/* /pyodide/*
+    handle @files {
+        root * /srv/office
+        file_server
+    }
+    handle {
+        respond 404
     }
 }
 

@@ -1,0 +1,15 @@
+# The Office add-ins' own origin (ADR-0102, addendum of 2026-10-10), for a
+# static host; the VPS serves the same headers from
+# subrosa-cloud/deploy/nginx-office.conf.example. Office on the web frames the
+# panes, so no X-Frame-Options and a frame-ancestors naming Office's own hosts;
+# Office.js from Microsoft's CDN, loading its files through its "officejs"
+# Trusted Types policy; WebAssembly and a blob worker for the Excel pane's
+# Python; the account origin's courier as the sign-in window's one frame.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src 'self' https://appsforoffice.microsoft.com https://subrosa.furetier.com/office/courier.html; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000
+/pyodide/*
+  Cache-Control: public, max-age=604800

@@ -1,14 +1,33 @@
 /**
- * Opens the sign-in window (`/office/session.html`) with Office's dialog API
- * and, once it says who is signed in, routes the account service's calls
- * through it (`courier.ts`, ADR-0102). Closing the window, by the person or by
- * `close`, puts the page's own `fetch` back.
+ * Opens the sign-in window (`/office/session.html`, on the pane's own office
+ * origin) with Office's dialog API and, once it says who is signed in, routes
+ * the account service's calls through it and its courier frame
+ * (`office-courier.ts`, ADR-0102 and its addendum). Closing the window, by the
+ * person or by `close`, puts back the pane's default transport, which reaches
+ * nothing: a pane never calls the account service itself.
  */
-import { type Account, setAccountScope, setApiTransport } from "../../../website/src/lib/api";
+import {
+  type Account,
+  type ApiTransport,
+  setAccountScope,
+  setApiTransport,
+} from "../../../website/src/lib/api";
+import { courierTransport, parseMessage } from "../../../website/src/lib/office-courier";
 import { type OfficeDialog, type OfficeGlobal, supports } from "../office";
-import { courierTransport, parseMessage } from "../session/courier";
 
 export const SIGN_IN_PATH = "/office/session.html";
+
+/**
+ * The pane's transport while no sign-in window is open. The account's cookie
+ * never reaches the office origin and that origin serves no `/api/`, so a
+ * call there could only fail, or worse, reach whatever answered: the pane
+ * answers itself that there is no session, without a request.
+ */
+export const noSession: ApiTransport = async () =>
+  new Response(JSON.stringify({ error: { code: "unauthorized" } }), {
+    status: 401,
+    headers: { "content-type": "application/json" },
+  });
 
 export interface SignInWindow {
   account: Account;
@@ -50,7 +69,7 @@ export function openSignInWindow(
         if (!open) return;
         open = false;
         courier.closed();
-        setApiTransport(null);
+        setApiTransport(noSession);
       };
       dialog.addEventHandler(office.EventType.DialogMessageReceived, (arg) => {
         // Only the account origin's own page speaks for the session.

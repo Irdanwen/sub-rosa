@@ -155,24 +155,33 @@ describe("the web client's own policy on /app", () => {
   });
 });
 
-/** The places that serve the Office task panes (ADR-0102), each with the
- * policy of its `/office/` block. */
+/** The deploy examples name placeholder hosts; the static headers, the real
+ * ones. Read with the real ones so every copy compares. */
+const placeholders = (text: string) =>
+  text
+    .replaceAll("https://account.example.invalid", "https://subrosa.furetier.com")
+    .replaceAll("https://office.example.invalid", "https://office.subrosa.furetier.com");
+const read = (file: string) => placeholders(readFileSync(file, "utf8") as string);
+
+/** The places that serve the Office task panes, each with its policy: their
+ * own origin since the addendum of 2026-10-10 to ADR-0102. */
 const OFFICE_SOURCES: [string, RegExp][] = [
-  ["website/public/_headers", /^\/office\/\*\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m],
+  ["office-addins/public/_headers", /^\/\*\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m],
   [
-    "subrosa-cloud/deploy/nginx-account.conf.example",
+    "subrosa-cloud/deploy/nginx-office.conf.example",
     /location \^~ \/office\/ \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
   ],
   [
     "subrosa-cloud/deploy/Caddyfile.example",
-    /header @office \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+    /office\.example\.invalid \{[\s\S]*?header @office \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
   ],
 ];
+const COURIER = "https://subrosa.furetier.com/office/courier.html";
 
-describe("the Office task panes' own policy on /office/", () => {
+describe("the Office task panes' own policy, on their own origin", () => {
   const operator = new URL(CARPE_DIEM_OPERATOR).origin;
   const office = OFFICE_SOURCES.map(([file, pattern]) => {
-    const line = pattern.exec(readFileSync(file, "utf8") as string)?.[1] ?? "";
+    const line = pattern.exec(read(file))?.[1] ?? "";
     return [file, directives(line)] as const;
   });
 
@@ -181,12 +190,15 @@ describe("the Office task panes' own policy on /office/", () => {
       expect(csp.get("script-src"), file).toBe(
         "'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com",
       );
-      // What the pane may post to is still the site and the operator.
+      // What the pane may post to is still its own origin and the operator.
       expect(csp.get("connect-src"), file).toBe(`'self' ${operator}`);
       expect(csp.get("trusted-types"), file).toBe("subrosa officejs");
       expect(csp.get("require-trusted-types-for"), file).toBe("'script'");
       expect(csp.get("worker-src"), file).toBe("'self' blob:");
-      expect(csp.get("frame-src"), file).toBe("https://appsforoffice.microsoft.com");
+      // The sign-in window frames the account's courier page, and only it.
+      expect(csp.get("frame-src"), file).toBe(
+        `'self' https://appsforoffice.microsoft.com ${COURIER}`,
+      );
       expect([...csp.values()].join(" "), file).not.toContain("'unsafe-eval'");
       expect([...csp.values()].join(" "), file).not.toContain("'unsafe-inline'");
     }
@@ -214,15 +226,101 @@ describe("the Office task panes' own policy on /office/", () => {
       }
   });
 
-  it("sends no X-Frame-Options on /office/, which would keep Office on the web out", () => {
-    const nginx = readFileSync("subrosa-cloud/deploy/nginx-account.conf.example", "utf8") as string;
+  it("sends no X-Frame-Options to the panes, which would keep Office on the web out", () => {
+    const nginx = read("subrosa-cloud/deploy/nginx-office.conf.example");
     const from = nginx.indexOf("location ^~ /office/");
+    expect(nginx.slice(from, nginx.indexOf("}", from))).not.toContain("X-Frame-Options");
+    expect(read("office-addins/public/_headers")).not.toMatch(/^\s+X-Frame-Options:/m);
+    const caddy = read("subrosa-cloud/deploy/Caddyfile.example");
+    const block = caddy.slice(caddy.indexOf("office.example.invalid {"));
+    expect(block.slice(0, block.indexOf("@pyodide"))).not.toContain("X-Frame-Options");
+  });
+
+  it("proxies no service and passes no cookie on the office origin", () => {
+    const nginx = read("subrosa-cloud/deploy/nginx-office.conf.example");
+    expect(nginx).not.toMatch(/proxy_pass|\/api|\/auth/);
+    const caddy = read("subrosa-cloud/deploy/Caddyfile.example");
+    const block = caddy.slice(
+      caddy.indexOf("office.example.invalid {"),
+      caddy.indexOf("# Public pages (ADR 0097)"),
+    );
+    expect(block).not.toContain("reverse_proxy");
+    expect(block).toContain("request_header -Cookie");
+  });
+});
+
+/** The account origin's two pages for the add-ins, and the page at their
+ * old addresses: none runs Office.js. */
+const ACCOUNT_OFFICE: Record<string, { courier: RegExp; moved: RegExp }> = {
+  "website/public/_headers": {
+    courier: /^\/office\/courier\.html\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m,
+    moved: /^\/office\/moved\.html\n(?:.*\n)*?\s+Content-Security-Policy: ([^\n]+)/m,
+  },
+  "subrosa-cloud/deploy/nginx-account.conf.example": {
+    courier: /location = \/office\/courier\.html \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+    moved: /location = \/office\/moved\.html \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  },
+  "subrosa-cloud/deploy/Caddyfile.example": {
+    courier: /header @courier \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+    moved: /header @moved \{[\s\S]*?Content-Security-Policy "([^"]+)"/,
+  },
+};
+
+describe("the account origin after the add-ins moved", () => {
+  it("serves the courier with a policy that lets only the office origin frame it", () => {
+    for (const [file, { courier }] of Object.entries(ACCOUNT_OFFICE)) {
+      const line = courier.exec(read(file))?.[1];
+      expect(line, file).toBe(
+        "default-src 'none'; script-src 'self'; connect-src 'self'; frame-ancestors https://office.subrosa.furetier.com; require-trusted-types-for 'script'; trusted-types 'none'",
+      );
+    }
+  });
+
+  it("sends the courier no X-Frame-Options and no cache", () => {
+    const headers = read("website/public/_headers");
+    const rule = headers.slice(headers.indexOf("\n/office/courier.html\n"));
+    const courier = rule.slice(0, rule.indexOf("\n/office/signed-in.html"));
+    expect(courier).toMatch(/! X-Frame-Options/);
+    expect(courier).not.toMatch(/^\s+X-Frame-Options:/m);
+    expect(courier).toContain("Cache-Control: no-store");
+    const nginx = read("subrosa-cloud/deploy/nginx-account.conf.example");
+    const from = nginx.indexOf("location = /office/courier.html");
     const block = nginx.slice(from, nginx.indexOf("}", from));
     expect(block).not.toContain("X-Frame-Options");
-    const headers = readFileSync("website/public/_headers", "utf8") as string;
-    expect(headers).toMatch(/\/office\/\*\n(?:\s+!.*\n)*\s+! X-Frame-Options/);
-    const caddy = readFileSync("subrosa-cloud/deploy/Caddyfile.example", "utf8") as string;
-    expect(caddy).toContain("@site not path /app /app/* /connector-view.html /office/*");
+    expect(block).toContain("Cache-Control no-store");
+    const caddy = read("subrosa-cloud/deploy/Caddyfile.example");
+    expect(caddy).toContain(
+      "@site not path /app /app/* /connector-view.html /office/courier.html /office/moved.html",
+    );
+  });
+
+  it("runs no script on the page at the old addresses", () => {
+    for (const [file, { moved }] of Object.entries(ACCOUNT_OFFICE)) {
+      const csp = directives(moved.exec(read(file))?.[1] ?? "");
+      expect(csp.get("default-src"), file).toBe("'none'");
+      expect(csp.has("script-src"), file).toBe(false);
+    }
+  });
+
+  it("no longer serves Office.js anywhere", () => {
+    for (const file of [
+      "website/public/_headers",
+      "subrosa-cloud/deploy/nginx-account.conf.example",
+      "subrosa-cloud/deploy/nginx-marketing.conf",
+    ])
+      expect(read(file), file).not.toContain("appsforoffice");
+    const caddy = read("subrosa-cloud/deploy/Caddyfile.example");
+    const account = caddy.slice(0, caddy.indexOf("office.example.invalid {"));
+    expect(account).not.toContain("appsforoffice");
+  });
+
+  it("sends the old pane addresses to the moved page", () => {
+    const redirects = read("website/public/_redirects");
+    for (const page of ["word", "excel", "powerpoint", "session", "commands"])
+      expect(redirects).toContain(`/office/${page}.html /office/moved.html 308`);
+    expect(read("subrosa-cloud/deploy/nginx-account.conf.example")).toContain(
+      "^/office/(word|excel|powerpoint|session|commands)\\.html$",
+    );
   });
 });
 

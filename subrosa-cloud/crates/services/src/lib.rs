@@ -51,9 +51,11 @@ const RETURN_TO: &[&str] = &[
     "/account/usage",
     // The web client (WP19) offers "sign in" from its own page.
     "/app",
-    // An Office add-in signs in from a dialog window, whose session carries
-    // the pane's device calls (ADR-0102).
-    "/office/session.html",
+    // An Office add-in signs in from a dialog window on the add-ins' own
+    // origin (ADR-0102, addendum of 2026-10-10). This static page, which runs
+    // no Office.js, sends the window back there to a URL fixed by its build.
+    // The dialog itself is no longer served by this origin, so it is not here.
+    "/office/signed-in.html",
 ];
 
 /// How many issuance assertions one account may ask for per minute. A person
@@ -821,9 +823,18 @@ mod tests {
         assert!(RETURN_TO.contains(&"/app"));
     }
 
-    /// An Office add-in's sign-in window lands back on itself (ADR-0102).
+    /// An Office add-in's sign-in window lands on the account origin's
+    /// signed-in page, which hands it back to the add-ins' origin; the old
+    /// dialog address, now a page saying the add-ins moved, is no longer a
+    /// destination (ADR-0102, addendum of 2026-10-10).
     #[test]
-    fn the_office_sign_in_window_can_be_returned_to_after_sign_in() {
-        assert!(RETURN_TO.contains(&"/office/session.html"));
+    fn the_office_sign_in_window_returns_through_the_signed_in_page() {
+        assert!(RETURN_TO.contains(&"/office/signed-in.html"));
+        assert!(!RETURN_TO.contains(&"/office/session.html"));
+        assert!(
+            RETURN_TO
+                .iter()
+                .all(|path| !path.starts_with("/office/") || *path == "/office/signed-in.html")
+        );
     }
 }

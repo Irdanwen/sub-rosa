@@ -1,8 +1,14 @@
 // @ts-expect-error node:fs is available in the Vitest runtime.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-// @ts-expect-error a plain script module, typed by its use here.
-import { HOSTS, manifest, PRODUCTION_ORIGIN } from "../../office-addins/scripts/manifests.mjs";
+import {
+  ACCOUNT_ORIGIN,
+  HOSTS,
+  manifest,
+  PRODUCTION_ORIGIN,
+  VERSION,
+  // @ts-expect-error a plain script module, typed by its use here.
+} from "../../office-addins/scripts/manifests.mjs";
 
 interface Host {
   file: string;
@@ -87,9 +93,25 @@ describe("the Office add-in manifests", () => {
     ]);
   });
 
-  it("name only HTTPS URLs on the account origin, served by the build", () => {
+  it("serve the panes from the add-ins' own origin, never the account's", () => {
+    expect(PRODUCTION_ORIGIN).toBe("https://office.subrosa.furetier.com");
+    expect(ACCOUNT_ORIGIN).toBe("https://subrosa.furetier.com");
+    expect(VERSION).toBe("1.0.1.0");
     for (const entry of hosts) {
-      const xml = manifest(entry);
+      const root = parse(manifest(entry)).documentElement;
+      // The sign-in window goes to the account origin to sign in.
+      const domains = [...root.getElementsByTagName("AppDomain")].map((d) => d.textContent);
+      expect(domains, entry.file).toEqual([ACCOUNT_ORIGIN]);
+      expect(root.getElementsByTagName("SupportUrl")[0].getAttribute("DefaultValue")).toBe(
+        `${ACCOUNT_ORIGIN}/help`,
+      );
+    }
+    expect(() => manifest(hosts[0], ACCOUNT_ORIGIN, ACCOUNT_ORIGIN)).toThrow();
+  });
+
+  it("name only HTTPS URLs on the office origin, served by the build", () => {
+    for (const entry of hosts) {
+      const xml = manifest(entry).replace(/<SupportUrl [^>]+>/, "");
       const urls = [...xml.matchAll(/(?:DefaultValue|Value)="(https?:[^"]+)"/g)].map((m) => m[1]);
       expect(urls.length, entry.file).toBeGreaterThan(5);
       for (const url of urls) expect(new URL(url).origin, url).toBe(PRODUCTION_ORIGIN);
@@ -135,9 +157,10 @@ describe("the Office add-in manifests", () => {
 
   it("refuse an origin that is not HTTPS", () => {
     expect(() => manifest(hosts[0], "http://localhost:1431")).toThrow();
-    expect(manifest(hosts[0], "https://localhost:1431")).toContain(
-      "https://localhost:1431/office/word.html",
-    );
+    expect(() => manifest(hosts[0], "https://localhost:1431", "http://localhost:1430")).toThrow();
+    const dev = manifest(hosts[0], "https://localhost:1431", "https://localhost:1430");
+    expect(dev).toContain("https://localhost:1431/office/word.html");
+    expect(dev).toContain("<AppDomain>https://localhost:1430</AppDomain>");
   });
 });
 
