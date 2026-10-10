@@ -105,6 +105,17 @@ pub struct Device {
     /// `native` for an app, `browser` for a browser admitted as a device
     /// (ADR 0096). Both are revoked the same way.
     pub kind: DeviceKind,
+    /// A browser device's public key (P-256, base64url coordinates), so
+    /// the account's apps can check what that browser signed: an approval
+    /// of a relayed connector call (ADR-0107 addendum). Public by nature;
+    /// absent for an app.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<DevicePublicKey>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DevicePublicKey {
+    pub x: String,
+    pub y: String,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -489,7 +500,9 @@ pub struct SecurityEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::SecurityEventKind;
+    use super::{Device, DeviceKind, DevicePublicKey, SecurityEventKind};
+    use chrono::Utc;
+    use uuid::Uuid;
 
     /// The Rust list, the serialized names, the SQL constraint and the
     /// published schema are four spellings of one contract. A kind missing from the constraint would
@@ -532,5 +545,42 @@ mod tests {
             })
             .unwrap_or_default();
         assert_eq!(documented, named, "openapi.json lists the same kinds");
+    }
+
+    /// A browser device lists its public key, so the account's apps can
+    /// check what it signed; an app's device lists none.
+    #[test]
+    fn a_browser_device_lists_its_public_key_and_an_app_none() {
+        let device = |kind, public_key| Device {
+            id: Uuid::nil(),
+            name: "Chrome".into(),
+            created_at: Utc::now(),
+            last_seen_at: Utc::now(),
+            revoked_at: None,
+            renewed_at: None,
+            renew_count: 0,
+            kind,
+            public_key,
+        };
+        let browser = serde_json::to_value(device(
+            DeviceKind::Browser,
+            Some(DevicePublicKey {
+                x: "x".into(),
+                y: "y".into(),
+            }),
+        ))
+        .unwrap_or_default();
+        assert_eq!(
+            browser["public_key"],
+            serde_json::json!({"x": "x", "y": "y"})
+        );
+        let app = serde_json::to_value(device(DeviceKind::Native, None)).unwrap_or_default();
+        assert!(app.get("public_key").is_none());
+        let openapi: serde_json::Value =
+            serde_json::from_str(include_str!("../../../openapi.json")).unwrap_or_default();
+        assert_eq!(
+            openapi["components"]["schemas"]["Device"]["properties"]["public_key"]["required"],
+            serde_json::json!(["x", "y"])
+        );
     }
 }

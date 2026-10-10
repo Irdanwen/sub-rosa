@@ -615,6 +615,138 @@ async fn a_401_leads_through_discovery_registration_pkce_and_the_exchange() {
     assert!(has_credential(&row));
 }
 
+#[test]
+fn a_server_must_name_the_issuer_it_was_fetched_for() {
+    let metadata = |issuer: Option<&str>| {
+        let mut value = json!({
+            "authorization_endpoint": "https://a.example.com/auth",
+            "token_endpoint": "https://a.example.com/token",
+            "code_challenge_methods_supported": ["S256"],
+            "authorization_response_iss_parameter_supported": true,
+        });
+        if let Some(issuer) = issuer {
+            value["issuer"] = json!(issuer);
+        }
+        value
+    };
+    let server = oauth::parse_auth_server(
+        &metadata(Some("https://a.example.com")),
+        "https://a.example.com/",
+    )
+    .unwrap();
+    assert_eq!(server.issuer, "https://a.example.com");
+    assert!(server.iss_parameter_supported);
+    for (named, expected) in [
+        (Some("https://evil.example.com"), "https://a.example.com"),
+        (Some("https://a.example.com/other"), "https://a.example.com"),
+        (Some("https://a.example.com//"), "https://a.example.com"),
+        (None, "https://a.example.com"),
+    ] {
+        assert_eq!(
+            oauth::parse_auth_server(&metadata(named), expected)
+                .unwrap_err()
+                .code,
+            "connector_oauth_issuer",
+            "{named:?}"
+        );
+    }
+}
+
+/// A server whose metadata names another issuer is refused before anything
+/// is registered; one that says its callback carries `iss` must send its own.
+#[tokio::test]
+async fn the_sign_in_server_is_the_one_its_metadata_and_callback_name() {
+    let (base, log) = serve(|base, request| {
+        if request.path == "/.well-known/oauth-authorization-server" {
+            return json_resp(json!({
+                "issuer": "https://login.elsewhere.example",
+                "authorization_endpoint": format!("{base}/authorize"),
+                "token_endpoint": format!("{base}/token"),
+                "registration_endpoint": format!("{base}/register"),
+                "code_challenge_methods_supported": ["S256"],
+            }));
+        }
+        mcp_handler(base, request, Some("good"))
+    })
+    .await;
+    let pool = pool().await;
+    let row = connector("oauth-mixup", &format!("{base}/mcp"), "oauth");
+    insert(&pool, &row).await.unwrap();
+    let Err(refused) = runtime::begin_sign_in(&pool, &row).await else {
+        panic!("a server naming another issuer is not signed in to");
+    };
+    assert_eq!(refused.code, "connector_oauth_issuer");
+    assert!(!log
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|request| request.path == "/register"));
+
+    let (base, _) = serve(|base, request| {
+        if request.path == "/.well-known/oauth-authorization-server" {
+            return json_resp(json!({
+                "issuer": base,
+                "authorization_endpoint": format!("{base}/authorize"),
+                "token_endpoint": format!("{base}/token"),
+                "registration_endpoint": format!("{base}/register"),
+                "code_challenge_methods_supported": ["S256"],
+                "authorization_response_iss_parameter_supported": true,
+            }));
+        }
+        mcp_handler(base, request, Some("good"))
+    })
+    .await;
+    let row = connector("oauth-iss", &format!("{base}/mcp"), "oauth");
+    insert(&pool, &row).await.unwrap();
+    let runtime::SignIn::Browser(url) = runtime::begin_sign_in(&pool, &row).await.unwrap() else {
+        panic!("a server that answers 401 needs the browser");
+    };
+    let state_param = reqwest::Url::parse(&url)
+        .unwrap()
+        .query_pairs()
+        .find(|(key, _)| key == "state")
+        .map(|(_, value)| value.into_owned())
+        .unwrap();
+    let flow = oauth::take_pending(&state_param, chrono::Utc::now().timestamp()).unwrap();
+    assert_eq!(flow.issuer.as_deref(), Some(base.as_str()));
+    let callback = |extra: &str| {
+        format!(
+            "{}?code=the-code&state={state_param}{extra}",
+            oauth::REDIRECT_URI
+        )
+    };
+    let accepted =
+        |url: String| oauth::issuer_accepted(&flow, oauth::callback_issuer(&url).as_deref());
+    assert!(!accepted(callback("")), "the server said it names itself");
+    assert!(!accepted(callback(
+        "&iss=https%3A%2F%2Flogin.elsewhere.example"
+    )));
+    assert!(accepted(callback(&format!(
+        "&iss={}",
+        urlencoding::encode(&base)
+    ))));
+
+    // A server that never said so is not asked for it, but a wrong one is
+    // still refused; a built-in sign-in has no metadata to agree with.
+    let mut quiet = flow;
+    quiet.issuer_in_response = false;
+    assert!(oauth::issuer_accepted(&quiet, None));
+    assert!(!oauth::issuer_accepted(
+        &quiet,
+        Some("https://login.elsewhere.example")
+    ));
+    let verifier = crate::redacted::Redacted::new("v".to_string());
+    let builtin = oauth::PendingFlow::new(
+        "google",
+        &verifier,
+        "https://t",
+        "id",
+        oauth::REDIRECT_URI,
+        None,
+    );
+    assert!(oauth::issuer_accepted(&builtin, None));
+}
+
 #[tokio::test]
 async fn a_stale_token_is_refreshed_once_and_the_call_goes_through() {
     let (base, _) = serve(|base, request| mcp_handler(base, request, Some("good2"))).await;

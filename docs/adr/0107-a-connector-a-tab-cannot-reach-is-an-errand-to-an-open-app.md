@@ -117,3 +117,44 @@ ids (`docs/accounts-sync-contract.md`), so a tab cannot count on the
 The definition row's non-UUID object id is fixed by the ADR-0092 addendum of
 the same date: a connector now travels under a UUID derived from its id. The
 relay still carries everything a tab needs, so this design is unchanged.
+
+## Addendum (2026-10-10): an approval is bound to the browser that gave it
+
+The post-release audit of 1.89.0 found that a tab marking `approved: 1`
+itself was enough for a device to run a tool that asks, and that the threat
+model did not say so. Three changes:
+
+- **A signed approval.** An approved call now carries a compact JWS
+  (`ES256`, type `subrosa-approval+jwt`, `kid` the browser device's id)
+  signed with the browser's non-extractable device key (ADR-0096). Its
+  claims name the call (`eid`, the row id), what it does (`dig`, SHA-256 over
+  the tool's name, a NUL byte and the arguments exactly as the row carries
+  them, which the tab writes with sorted keys) and when (`iat`). The device
+  runs a tool whose rule here is "ask" only when that signature verifies
+  against the public key the account service lists for that browser, the
+  browser is a live device of this account (the list is this account's, a
+  revoked browser is not in it), the row says that browser asked, and the
+  time fits the call's lifetime (`connectors/relay_approval.rs`). Anything
+  less counts as unapproved: the row comes back as `ask`. The service now
+  lists a browser device's public key (`Device.public_key`, additive; the
+  service needs that deploy before a tab's approvals can verify, and until
+  then an approved call comes back as `ask`).
+- **Carried in `message`.** A new column or table would make every released
+  app stop synchronising on the first such row (the unknown-column rule
+  above), so the JWS travels in the row's `message` while it is
+  `requested`; the answering device overwrites it with its reason, as it
+  always did. A shared vector (`packages/chat-core/web/connectors.json`,
+  `relay.approval`) holds the digest equal on both sides.
+- **The clock and the arguments.** A call dated more than a minute ahead of
+  the device's clock is declined (it would otherwise stay fresh past its
+  lifetime), and arguments that are not a JSON object are declined instead of
+  being run as `{}`.
+
+"Approved on the device itself" is not offered: the device showing its own
+approval card was rejected above for the reason it still has (the person is
+at the tab). What this does not close is written in docs/threat-model.md: a
+compromised tab can still ask its own device key to sign, and a tool set to
+"allow" runs on any call a tab of the account files. Tests:
+`connectors::relay::tests` (signature, replay, other arguments, other tool,
+unknown or revoked browser, stale and early approvals, skew, non-object
+arguments) and `src/test/website-connector-relay.test.ts`.

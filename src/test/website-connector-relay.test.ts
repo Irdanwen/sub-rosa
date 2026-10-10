@@ -4,11 +4,20 @@ import exported from "@subrosa/chat-core/web/connectors.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCall, pendingCalls } from "../../website/src/client/connectors/calls";
 import {
+  approvalDigest,
+  canonicalJson,
   configureRelayTiming,
+  messageText,
   noAnswer,
   offerFor,
   reconcileRelayed,
 } from "../../website/src/client/connectors/relay";
+import {
+  APPROVAL_TYPE,
+  type DeviceRecord,
+  signApproval,
+} from "../../website/src/lib/browser-device";
+import { decode } from "../../website/src/lib/vault";
 import { connectorProviders } from "../../website/src/client/connectors/research";
 import type { ConnectorEnv } from "../../website/src/client/connectors/runtime";
 import { memorySecrets, Secrets } from "../../website/src/client/connectors/secrets";
@@ -29,6 +38,7 @@ const TAB = "0191d1a4-0000-7000-8000-00000000b10b";
 const relay = (exported as unknown as { relay: Record<string, unknown> }).relay as {
   sentences: Record<string, string>;
   offerIds: { device: string; connector: string; id: string }[];
+  approval: { type: string; vector: { tool: string; arguments: string; digest: string } };
 };
 
 beforeEach(() => {
@@ -254,5 +264,58 @@ describe("a connector one of the person's apps runs for the tab", () => {
     );
     expect(said).toBe(`Sentry could not do that: ${relay.sentences.tooLarge}`);
     expect(made).toHaveLength(0);
+  });
+
+  it("signs an approval over exactly the call it sends, as this browser's device", async () => {
+    const { env, host, answer, made } = await world();
+    const pair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
+    const record = { deviceId: TAB, signing: pair.privateKey } as unknown as DeviceRecord;
+    env.signApproval = (claims) => signApproval(record, claims);
+    configureRelayTiming({ pollMs: 1, waitMs: 50, sleep: () => answer(computer) });
+    const addition = await connectorTurn(env, info);
+    await addition?.run?.("sentry__resolve_issue", { status: "done", id: "PROJ-1" }, info);
+    const [pending] = await pendingCalls(env.store, "chat");
+    await decide(env, host, pending.id, true);
+    expect(made).toHaveLength(1);
+    const row = made[0];
+    // Arguments in one spelling, keys in order: the text the digest names.
+    expect(row.arguments).toBe('{"id":"PROJ-1","status":"done"}');
+    const token = String(row.message);
+    const [header, claims, signature] = token.split(".");
+    const json = (part: string) => JSON.parse(new TextDecoder().decode(decode(part)));
+    expect(json(header)).toEqual({ alg: "ES256", typ: APPROVAL_TYPE, kid: TAB });
+    expect(APPROVAL_TYPE).toBe(relay.approval.type);
+    expect(json(claims).eid).toBe(row.id);
+    expect(json(claims).dig).toBe(await approvalDigest("resolve_issue", String(row.arguments)));
+    expect(
+      await crypto.subtle.verify(
+        { name: "ECDSA", hash: "SHA-256" },
+        pair.publicKey,
+        decode(signature),
+        new TextEncoder().encode(`${header}.${claims}`),
+      ),
+    ).toBe(true);
+  });
+
+  it("computes the digest Rust checks, over canonical arguments", async () => {
+    const vector = relay.approval.vector;
+    expect(await approvalDigest(vector.tool, vector.arguments)).toBe(vector.digest);
+    expect(canonicalJson({ b: [{ z: 1, a: 2 }], a: { y: null, x: "1" } })).toBe(
+      '{"a":{"x":"1","y":null},"b":[{"a":2,"z":1}]}',
+    );
+  });
+
+  it("sends an unapproved call without a signature, and words the new refusals", async () => {
+    const { env, answer, made } = await world();
+    env.signApproval = async () => "never used";
+    configureRelayTiming({ pollMs: 1, waitMs: 50, sleep: () => answer(computer) });
+    const addition = await connectorTurn(env, info);
+    await addition?.run?.("sentry__search_issues", { query: "crash" }, info);
+    expect(made[0].message).toBeNull();
+    expect(messageText(relay.sentences.clockAhead)).toContain("dated ahead");
+    expect(messageText(relay.sentences.badArguments)).toContain("arguments");
   });
 });

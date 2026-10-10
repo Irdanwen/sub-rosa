@@ -3,6 +3,7 @@
  * feature's sealed store, this browser's sealed secrets and the network. Tests
  * hand their own (`configureConnectors`).
  */
+import { indexedDbStore, signApproval } from "../../lib/browser-device";
 import type { FeatureHost } from "../feature";
 import type { Fetch } from "./mcp";
 import { appRedirectUri, type ConnectorEnv } from "./runtime";
@@ -18,6 +19,8 @@ interface Options {
   location: () => string;
   /** Removes the sign-in's parameters from the address bar. */
   cleanLocation: () => void;
+  /** Signs an approval as this browser's device. */
+  approve: (accountId: string, claims: object) => Promise<string | null>;
 }
 
 let options: Options = {
@@ -31,6 +34,10 @@ let options: Options = {
     for (const name of ["code", "state", "error", "error_description", "iss"])
       url.searchParams.delete(name);
     window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  },
+  approve: async (accountId, claims) => {
+    const record = await indexedDbStore.get(accountId);
+    return record ? signApproval(record, claims) : null;
   },
 };
 
@@ -51,5 +58,6 @@ export function envFor(host: FeatureHost): ConnectorEnv {
     fetch: options.fetch,
     redirectUri: options.redirectUri(),
     deviceId: host.device.id,
+    signApproval: (claims) => options.approve(host.account.id, claims),
   };
 }

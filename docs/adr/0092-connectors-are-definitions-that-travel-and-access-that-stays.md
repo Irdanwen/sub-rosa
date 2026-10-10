@@ -246,3 +246,24 @@ so a connector added anywhere stayed there (recorded in ADR-0107).
   skill pack, an assistant or an assignment names. Skill packs, connector
   relays, connector errands and daily brief cards already travel under UUIDs
   and are unchanged.
+
+## Addendum (2026-10-10): the sign-in server must name itself
+
+The post-release audit of 1.89.0 found that an authorization server's
+metadata was trusted whatever issuer it named, and that the browser's answer
+was not checked against the server it was sent to. Two checks in
+`connectors/oauth.rs`:
+
+- **RFC 8414 §3.3.** The metadata's `issuer` must be the issuer it was
+  fetched for (one trailing slash is let go, as resource metadata and server
+  metadata often differ by it and nothing else); a missing or different one
+  refuses the sign-in (`connector_oauth_issuer`) before anything is
+  registered.
+- **RFC 9207.** When the metadata says
+  `authorization_response_iss_parameter_supported`, the flow kept in the
+  keychain records the issuer, and a callback without `iss`, or naming
+  another server, is refused. A server that does not say so is not asked for
+  `iss`, but a wrong one is still refused; the built-in Google, Microsoft and
+  GitHub sign-ins have fixed endpoints and no metadata to agree with. Tests
+  against the mock server: `connectors::tests::a_server_must_name_the_issuer_it_was_fetched_for`
+  and `the_sign_in_server_is_the_one_its_metadata_and_callback_name`.
