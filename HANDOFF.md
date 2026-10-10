@@ -301,3 +301,130 @@ la feuille Health Connect et l'écran de justification, l'historique au-delà
 de trente jours sur Android. Le pont iOS est vérifié à la compilation
 (`cargo check --target aarch64-apple-ios`), le pont Kotlin seulement par la
 CI Android.
+
+## 10. Clients OAuth des connecteurs (Google, Microsoft, GitHub) : ⏳ en attente
+
+Les connecteurs intégrés se connectent avec les identifiants client **de l'app**,
+compilés dans le binaire (`option_env!`, `src-tauri/src/connectors/build_clients.rs`).
+Sans eux, le connecteur est absent : Réglages › Connecteurs l'affiche « Indisponible
+dans cette version ». La 1.89.0 est sortie sans les trois. Depuis, chaque build le dit :
+`cargo:warning` dans `build.rs`, et une annotation `::warning::` sur les runs de
+`release.yml`, `ios-release.yml` et `android-release.yml` (`scripts/connector-clients.mjs`).
+Un identifiant client OAuth n'est pas un secret (il est lisible dans l'app livrée) ;
+aucun **secret client** n'est créé ni demandé, les trois flux sont publics (PKCE ou
+device flow).
+
+**Où chaque fournisseur est proposé** (vérifié dans la documentation des fournisseurs,
+2026-10-10) :
+
+| | Mac | iPhone | Windows | Android |
+|---|---|---|---|---|
+| Google | oui | oui | non | non |
+| Microsoft | oui | oui | oui | oui |
+| GitHub | oui | oui | oui | oui |
+
+Google ne renvoie vers un schéma propre à l'app (`subrosa://…`) pour **aucun** type de
+client : le type *iOS* accepte seulement l'identifiant client inversé
+(`com.googleusercontent.apps.<id>:/oauth2redirect`), le type *Desktop app* seulement une
+adresse de bouclage (`http://127.0.0.1:<port>`, que l'app n'écoute pas), et le type
+*Android* n'accepte plus de schéma personnalisé. Google documente aussi que les apps
+macOS utilisent un client de type *iOS*. Un seul client *iOS* (identifiant de bundle
+`xyz.carpediem.subrosa`, commun au Mac et à l'iPhone) sert donc les deux plateformes
+Apple ; l'app dérive l'adresse de retour de l'identifiant et les workflows enregistrent
+le schéma inversé dans le bundle. Windows et Android n'ont pas Google (addendum du
+2026-10-10 de l'ADR-0092). Sources :
+[OAuth 2.0 for iOS & Desktop Apps](https://developers.google.com/identity/protocols/oauth2/native-app),
+[Google Sign-In, iOS et macOS](https://developers.google.com/identity/sign-in/ios/start-integrating).
+
+**La version web et les compléments Office ne lisent aucun identifiant client** :
+Google, Microsoft et GitHub y sont « app seulement » (`APP_ONLY_AUTH`,
+`website/src/client/connectors/store.ts`) et passent par une app ouverte (ADR-0107).
+Rien à poser dans les builds du site ni dans ses recettes de déploiement.
+
+### 10.1 Google (Google Cloud)
+
+1. [console.cloud.google.com](https://console.cloud.google.com) › nouveau projet
+   « Sub Rosa ».
+2. *API et services › Bibliothèque* : activer **Google Calendar API**,
+   **Google Drive API** et **People API**.
+3. *Google Auth Platform* (écran de consentement) :
+   - *Branding* : nom « Sub Rosa », e-mail d'assistance, logo, page d'accueil
+     `https://subrosa.furetier.com`, politique de confidentialité et conditions
+     publiées sur ce domaine ; domaine autorisé : le domaine racine de
+     `subrosa.furetier.com` (à vérifier dans la Search Console avec le même compte
+     Google).
+   - *Audience* : **Externe**, statut **En test** au départ ; ajouter tes comptes
+     comme utilisateurs test. En test, les jetons d'actualisation expirent au bout de
+     7 jours et seuls les utilisateurs test peuvent se connecter.
+   - *Accès aux données* : ajouter exactement
+     `https://www.googleapis.com/auth/calendar.events`,
+     `https://www.googleapis.com/auth/drive.file` et
+     `https://www.googleapis.com/auth/contacts.readonly`. Aucun n'est « restreint » ;
+     `calendar.events` et `contacts.readonly` sont « sensibles » : le passage en
+     production demande la **validation de l'app** par Google (justification de chaque
+     portée, vidéo du parcours de connexion), sans évaluation CASA.
+   - **Gmail** (`gmail.readonly`) est une portée **restreinte** : ne pas l'ajouter. Elle
+     exige l'évaluation de sécurité CASA ; le code reste derrière
+     `builtin::GMAIL_VERIFIED = false`.
+4. *Clients › Créer un client* : type d'application **iOS** (pas *Desktop app*, pas
+   *Android*), identifiant de bundle `xyz.carpediem.subrosa`, ID d'équipe `H6N5V777LL`
+   (l'ID App Store est facultatif). Copier l'**ID client**
+   (`<chiffres>-<lettres>.apps.googleusercontent.com`). Il n'y a pas de secret.
+5. Quand la connexion marche avec les comptes test : *Audience › Publier l'app*, puis
+   soumettre la validation des portées sensibles.
+
+### 10.2 Microsoft (Entra)
+
+1. [entra.microsoft.com](https://entra.microsoft.com) › *Applications › Inscriptions
+   d'applications › Nouvelle inscription* : nom « Sub Rosa », types de comptes
+   **« Comptes dans un annuaire organisationnel et comptes Microsoft personnels »**
+   (l'app passe par le point de terminaison `common`).
+2. *URI de redirection* : plateforme **« Applications mobiles et de bureau »**, URI
+   `subrosa://connector/callback` (une seule inscription sert les quatre plateformes).
+3. *Authentification* : laisser « Autoriser les flux clients publics » sur **Non**
+   (il ne concerne que le device code et le mot de passe, que l'app n'utilise pas ;
+   la connexion PKCE depuis une URI « mobile et bureau » est déjà publique). Ne créer
+   **aucun** secret ni certificat.
+4. *Autorisations d'API › Microsoft Graph › Autorisations déléguées* : `User.Read`,
+   `Calendars.ReadWrite`, `Files.Read`, `Mail.Read`, `offline_access`. Pas de
+   consentement administrateur : chaque personne consent pour elle-même.
+5. Recommandé avant l'ouverture aux comptes professionnels : *Personnalisation et
+   propriétés › Éditeur vérifié* (identifiant Microsoft AI Cloud Partner Program).
+   Sans lui, beaucoup de locataires refusent le consentement à une app multilocataire
+   d'un éditeur non vérifié ; les comptes personnels ne sont pas concernés.
+6. Copier l'**ID d'application (client)**, un GUID.
+
+### 10.3 GitHub (OAuth App, device flow)
+
+1. github.com › *Settings › Developer settings › OAuth Apps › New OAuth App* (une
+   **OAuth App**, pas une GitHub App), sous le compte ou l'organisation qui publie
+   Sub Rosa.
+2. Nom « Sub Rosa », page d'accueil `https://subrosa.furetier.com`, URL de rappel
+   `https://subrosa.furetier.com/` (champ obligatoire, inutilisé par le device flow).
+3. Cocher **Enable Device Flow** (sans elle, GitHub refuse la demande de code).
+4. Ne pas générer de secret client. Copier le **Client ID** (`Ov23li…`). Les portées
+   (`repo read:org read:user`) sont demandées par l'app à la connexion.
+5. Les organisations qui restreignent l'accès des OAuth Apps devront approuver
+   Sub Rosa pour que ses dépôts soient visibles.
+
+### 10.4 Poser les secrets puis vérifier
+
+Sur `Irdanwen/sub-rosa` (*Settings › Secrets and variables › Actions*) ou en ligne de
+commande :
+
+```bash
+gh secret set SUBROSA_GOOGLE_CLIENT_ID --repo Irdanwen/sub-rosa   # ID client iOS Google
+gh secret set SUBROSA_MS_CLIENT_ID     --repo Irdanwen/sub-rosa   # GUID Entra
+gh secret set SUBROSA_GITHUB_CLIENT_ID --repo Irdanwen/sub-rosa   # Client ID OAuth App
+```
+
+Puis lancer une fois le workflow manuel **Connector clients check**
+(`gh workflow run connectors-check.yml --repo Irdanwen/sub-rosa`) : il ne construit rien
+et échoue si un identifiant manque ou n'a pas la bonne forme, sans jamais l'afficher.
+La release suivante n'a plus d'annotation « does not offer the … connector » sur Mac et
+iPhone ; Windows et Android gardent une simple note pour Google. `desktop.yml` reçoit
+les mêmes identifiants, pour que clippy et les tests voient le code d'une release.
+
+**Non vérifié sans matériel** : la connexion réelle à chacun des trois, l'ouverture de
+l'app par le schéma inversé de Google sur Mac et iPhone, et le retour par
+`subrosa://connector/callback` depuis Microsoft sur les quatre plateformes.

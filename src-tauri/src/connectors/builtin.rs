@@ -5,8 +5,11 @@
 //! events, Drive `drive.file` (the files Sub Rosa created or the person opened
 //! with it, never the whole Drive, and the screens say so), Contacts read;
 //! Microsoft Graph calendars, files read and mail read. The client ids come
-//! from the build (`SUBROSA_GOOGLE_CLIENT_ID`, `SUBROSA_MS_CLIENT_ID`); a build
-//! without one does not offer that provider at all.
+//! from the build (`SUBROSA_GOOGLE_CLIENT_ID`, `SUBROSA_MS_CLIENT_ID`, see
+//! [`super::build_clients`]); a build without one does not offer that provider
+//! at all. Google is offered on the Mac and the iPhone only: its iOS client
+//! type, which serves both, is the only one it sends back to an app's own
+//! scheme.
 //!
 //! Full Gmail access is a restricted scope: Google lets an app use it only
 //! after an independent security assessment (CASA). The code path is here,
@@ -62,13 +65,20 @@ pub struct Provider {
 }
 
 fn present(value: Option<&'static str>) -> Option<&'static str> {
-    value.map(str::trim).filter(|value| !value.is_empty())
+    super::build_clients::configured(value)
 }
+
+/// Google's iOS client type serves the Mac too; on Windows and Android Google
+/// refuses a custom scheme, so a build there carries no Google id at all.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+const GOOGLE_CLIENT_ID: Option<&str> = option_env!("SUBROSA_GOOGLE_CLIENT_ID");
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+const GOOGLE_CLIENT_ID: Option<&str> = None;
 
 const GOOGLE: Provider = Provider {
     id: "google",
     name: "Google",
-    client_id: option_env!("SUBROSA_GOOGLE_CLIENT_ID"),
+    client_id: GOOGLE_CLIENT_ID,
     authorize: GOOGLE_AUTHORIZE,
     token: GOOGLE_TOKEN,
 };
@@ -90,13 +100,17 @@ pub fn provider(id: &str) -> Option<&'static Provider> {
 }
 
 /// Where Google sends the browser back. Google accepts a custom scheme only
-/// for its iOS client type, as the reversed client id, so a build that ships
-/// Google sets `SUBROSA_GOOGLE_REDIRECT_URI` to the one its client was
-/// registered with and registers that scheme in the bundle.
+/// for its iOS client type, as the reversed client id, so the redirect is
+/// derived from the client id (`SUBROSA_GOOGLE_REDIRECT_URI` overrides it) and
+/// the release workflows register that scheme in the bundle
+/// (`scripts/connector-clients.mjs`).
 fn google_redirect() -> String {
-    present(option_env!("SUBROSA_GOOGLE_REDIRECT_URI"))
-        .unwrap_or(oauth::REDIRECT_URI)
-        .to_string()
+    if let Some(redirect) = present(option_env!("SUBROSA_GOOGLE_REDIRECT_URI")) {
+        return redirect.to_string();
+    }
+    present(GOOGLE.client_id)
+        .and_then(super::build_clients::google_redirect_for)
+        .unwrap_or_else(|| oauth::REDIRECT_URI.to_string())
 }
 
 /// Callback addresses other than `subrosa://connector/callback`.
@@ -112,6 +126,11 @@ pub fn extra_redirects() -> Vec<String> {
 impl Provider {
     pub fn available(&self) -> bool {
         present(self.client_id).is_some()
+    }
+
+    /// The client id this build carries, if any.
+    pub fn client_id(&self) -> Option<&'static str> {
+        present(self.client_id)
     }
 
     fn scopes(&self) -> Vec<String> {

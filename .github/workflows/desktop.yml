@@ -226,10 +226,21 @@ jobs:
           mkdir -p src-tauri/binaries
           touch "src-tauri/binaries/june-api-$(rustc -vV | sed -n 's/host: //p')"
 
+      # The connectors' client ids, as a release build has them, so clippy and
+      # the tests see the code paths a release ships. Empty on a pull request
+      # from a fork or Dependabot; the tests hold either way.
       - name: Clippy
+        env:
+          SUBROSA_GOOGLE_CLIENT_ID: ${{ secrets.SUBROSA_GOOGLE_CLIENT_ID }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Cargo test
+        env:
+          SUBROSA_GOOGLE_CLIENT_ID: ${{ secrets.SUBROSA_GOOGLE_CLIENT_ID }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
   windows-rust:
@@ -313,6 +324,9 @@ jobs:
         run: ./scripts/bundle-hermes-runtime-windows.ps1
 
       - name: Tauri Windows bundle
+        env:
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
         run: node scripts/tauri-build.mjs --debug --no-sign
 
       - name: Verify Windows bundle
@@ -404,6 +418,10 @@ jobs:
           touch "src-tauri/binaries/june-api-${{ matrix.target }}"
 
       - name: cargo check (${{ matrix.target }})
+        env:
+          SUBROSA_GOOGLE_CLIENT_ID: ${{ secrets.SUBROSA_GOOGLE_CLIENT_ID }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
         run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --lib
 
   # Windows had no signal on a PR either: the NSIS bundle below is manual
@@ -446,6 +464,9 @@ jobs:
           touch "src-tauri/binaries/june-api-$(rustc -vV | sed -n 's/host: //p').exe"
 
       - name: cargo check
+        env:
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
         run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 
 # Coverage reruns of these suites live in coverage.yml (the frontend floor on every PR, the Rust floor on a clock). They

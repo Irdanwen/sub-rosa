@@ -289,11 +289,30 @@ jobs:
             sleep $((attempt * 5))
           done
 
+      # Google, Microsoft and GitHub sign in with client ids compiled into the
+      # app; a build without one ships without that connector, and 1.89.0
+      # shipped without all three while nothing said so. Annotate the run with
+      # each connector this build leaves out, and register Google's redirect
+      # scheme in the bundle (HANDOFF.md, OAuth clients). Google exists only on
+      # the Mac: Google returns a Windows app to a loopback address alone.
+      - name: Connector clients
+        shell: bash
+        env:
+          SUBROSA_GOOGLE_CLIENT_ID: ${{ runner.os == 'macOS' && secrets.SUBROSA_GOOGLE_CLIENT_ID || '' }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
+          PLATFORM: ${{ runner.os == 'macOS' && 'macos' || 'windows' }}
+        run: node scripts/connector-clients.mjs build --platform "$PLATFORM" --overlay connector-clients.conf.json
+
       - name: Build + sign app (tauri-action)
         id: tauri
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           SKIP_SIDECAR_BUILD: "1"
+          # The connectors' client ids (option_env! in src-tauri/src/connectors/).
+          SUBROSA_GOOGLE_CLIENT_ID: ${{ runner.os == 'macOS' && secrets.SUBROSA_GOOGLE_CLIENT_ID || '' }}
+          SUBROSA_MS_CLIENT_ID: ${{ secrets.SUBROSA_MS_CLIENT_ID }}
+          SUBROSA_GITHUB_CLIENT_ID: ${{ secrets.SUBROSA_GITHUB_CLIENT_ID }}
           # Updater signing (required by createUpdaterArtifacts)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -307,7 +326,7 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          args: --target ${{ matrix.target }} --config ${{ matrix.config }}
+          args: --target ${{ matrix.target }} --config ${{ matrix.config }} --config connector-clients.conf.json
 
       # Signing and notarization both pass on an app macOS refuses to run:
       # 1.74.0 claimed a restricted entitlement without the provisioning profile

@@ -9,6 +9,7 @@
 //! - [`mcp`]: the Streamable HTTP client;
 //! - [`oauth`]: discovery, registration, PKCE, the `subrosa://` callback;
 //! - [`catalog`]: the one-tap list; [`builtin`]: Google and Microsoft;
+//!   [`build_clients`]: which of the app's own OAuth clients a build carries;
 //! - [`runtime`]: a token that is fresh, a session, a call;
 //! - [`policy`] and [`calls`]: allow, ask or deny, and the durable proposal
 //!   behind an "ask";
@@ -32,6 +33,7 @@ use crate::domain::types::AppError;
 
 pub mod agent;
 pub mod apps;
+pub mod build_clients;
 pub mod builtin;
 pub mod calls;
 pub mod catalog;
@@ -399,19 +401,18 @@ pub struct CatalogDto {
     pub builtins: Vec<BuiltinDto>,
 }
 
-/// The built-in providers this build offers. GitHub is listed only when the
-/// build carries its client id: without one there is nothing to offer.
+/// The built-in providers, each saying whether this build offers it. One
+/// whose client id the build lacks is still listed, as "Not available in this
+/// build", so a release that dropped one says so instead of hiding it.
 pub fn builtins() -> Vec<BuiltinDto> {
     let mut builtins = builtin::catalog();
-    if github::available() {
-        builtins.push(BuiltinDto {
-            id: github::ID,
-            name: github::NAME,
-            available: true,
-            description: "Repositories, issues and pull requests",
-            gated: Vec::new(),
-        });
-    }
+    builtins.push(BuiltinDto {
+        id: github::ID,
+        name: github::NAME,
+        available: github::available(),
+        description: "Repositories, issues and pull requests",
+        gated: Vec::new(),
+    });
     builtins
 }
 
@@ -800,6 +801,16 @@ pub fn on_deep_link(app: &AppHandle, url: &str) {
     });
 }
 
+/// The client id a build variable held when this binary was compiled.
+fn compiled_client(var: &str) -> Option<&'static str> {
+    match var {
+        "SUBROSA_GOOGLE_CLIENT_ID" => builtin::provider("google")?.client_id(),
+        "SUBROSA_MS_CLIENT_ID" => builtin::provider("microsoft")?.client_id(),
+        "SUBROSA_GITHUB_CLIENT_ID" => github::client_id(),
+        _ => None,
+    }
+}
+
 /// Hears the sign-ins that come back, and starts the trigger clock.
 pub fn setup(app: &AppHandle) {
     use tauri_plugin_deep_link::DeepLinkExt;
@@ -815,6 +826,15 @@ pub fn setup(app: &AppHandle) {
         }
     });
     triggers::start_clock(app);
+    let left_out: Vec<&str> = build_clients::missing(std::env::consts::OS, |var| {
+        compiled_client(var).map(str::to_string)
+    })
+    .into_iter()
+    .map(|client| client.connector)
+    .collect();
+    if !left_out.is_empty() {
+        tracing::info!(?left_out, "connectors this build does not offer");
+    }
     // Rules that arrive from another device reach the runtime's ledger too.
     #[cfg(desktop)]
     {

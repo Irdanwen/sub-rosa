@@ -62,3 +62,6 @@ src-tauri/gen/android/app/src/main/assets/
 # Python bytecode (MCP scripts compiled during local checks)
 __pycache__/
 *.pyc
+
+# Tauri config overlay written by scripts/connector-clients.mjs in the release workflows
+connector-clients.conf.json
