@@ -182,6 +182,8 @@ not the upstream fix lands.
 
 ## QA
 
+- [qa/parity-1.89.1.md](qa/parity-1.89.1.md) - parity verification of 1.89.1 (W9): desktop from source, iPhone simulator, web; seven fixes, what stayed unpaid and why, side effects on the Mac
+
 - [qa/assistants-2026-09-21.md](qa/assistants-2026-09-21.md) - private assistants, desktop/mobile walkthroughs, permission and paid-generation regression coverage, remaining live checks
 
 - [qa/2026-09-05-public-readiness.md](qa/2026-09-05-public-readiness.md) — Studio discovery, model choice, recovery, localization, paid multimodal trials, artifact format fixes and remaining release checks
