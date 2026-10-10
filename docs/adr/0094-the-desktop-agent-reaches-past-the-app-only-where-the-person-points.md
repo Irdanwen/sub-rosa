@@ -127,3 +127,51 @@ reaching.**
   binary was not chosen: the helper already owns the frontmost-app tracking
   and Accessibility this feature reads, and a second capture path would split
   one permission story into two.
+
+## Addendum (2026-10-10): consent is held in the browser, before the page loads
+
+The post-release audit of 1.89.0 found the consent gate one step late and the
+socket too open. Four changes, all in `src-tauri/src/agent_browser/`:
+
+- **The host is read the way the browser reads it.** `site::host_of` and
+  `openable` now parse with the `url` crate (WHATWG rules, already in the
+  lockfile through reqwest): http and https only, the host as the browser
+  will contact it, IDN in its ASCII form, trailing dot dropped. The hand
+  parser took `https://evil.example\@allowed.example/` for `allowed.example`;
+  a browser opens `evil.example`, and so does the gate's reading now. Table
+  tests cover the backslash, `%2F@`, userinfo, a suffix that is not a site
+  and an international name.
+- **Consent before load (`gate.rs`).** The decision above said "a click that
+  leads to a new site is asked about the same way, and a refusal goes back":
+  by then the page had loaded. Every page target is now held by the
+  DevTools `Fetch` domain, paused on document requests at the request stage:
+  the agent's tab from the moment it is attached, and every tab the browser
+  opens later through `Target.setAutoAttach` with `waitForDebuggerOnStart`
+  (held, then let run). A main-frame document of a site not yet allowed is
+  asked about (120 seconds), then continued or failed with
+  `BlockedByClient`; a redirect is a new paused request, so each hop is
+  decided; a document inside a frame of an allowed page goes on. The gate
+  runs on its own task fed by the client's event channel and never takes the
+  action lock; it shares only the consent (`Arc<tokio::Mutex<Consent>>`).
+  `open_url` still asks first, so a refusal is its answer; the old check after
+  an action (`admit_current`, and `back()` when it fails) stays as a backstop
+  only. A refused navigation is reported as the action's result and the tab
+  is not sent back, since nothing loaded.
+- **The ledger counts what loaded.** One egress row per document the gate
+  let through (each redirect hop, each popup), not only per `open_url`.
+- **No port on macOS and Linux.** The browser is started with
+  `--remote-debugging-pipe` and the app's two pipe ends placed on its fds 3
+  and 4 (`pipe.rs`, NUL-framed JSON, the same 48 MB cap), so no other local
+  process can reach the browser the agent drives. Readiness is the answer to
+  `Browser.getVersion`. Windows keeps the loopback port (handing a child
+  extra handles is not something the standard library does there), and
+  `--remote-allow-origins` is still never passed, so no web page can open it.
+
+Verified: mock-socket tests (a click toward a refused site is failed before
+it loads with no history navigation; an allowed site is continued with a
+ledger row; redirects and frames; an attached popup is held before it runs,
+a worker only let run) and the opt-in real-browser test, run once over the
+pipe against Brave on macOS on 2026-10-10 (`connected to Brave over Pipe`;
+the link to a refused site never reached the test server and the tab showed
+`chrome-error://chromewebdata/`). The main-frame test assumes a page target's
+id is its main frame's id, which that run confirmed.

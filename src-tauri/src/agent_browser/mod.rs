@@ -10,8 +10,10 @@
 //! - **Consent is per site, asked before the first request.** A site is a
 //!   registrable domain (`site.rs`). A new one raises a card in the chat:
 //!   always, only this time, or no. "Always" lands in Settings, where the
-//!   person can take it back. A link that leads to a new site is asked about
-//!   the same way, and refused by going back.
+//!   person can take it back. Every page's document request is paused in
+//!   the browser until the site is allowed (`gate.rs`), so a link, a form, a
+//!   redirect or a popup that leads to a new site is asked about the same
+//!   way, and a refused one never loads.
 //! - **Some fields are the person's.** Password, payment and one-time-code
 //!   fields are refused before they are focused, and so are CAPTCHAs
 //!   (`snapshot.rs`). The agent is told to hand over, not to work around.
@@ -19,12 +21,17 @@
 //!   indicator shows, with a Stop that closes the browser. After a Stop the
 //!   agent cannot reopen it without the person saying yes again.
 //! - **Egress.** The browser goes where the person's task needs, bounded by
-//!   the allow list; each opened page is one row in the egress ledger
-//!   (ADR-0043): the host and when, nothing of the page.
+//!   the allow list; each page the gate lets load is one row in the egress
+//!   ledger (ADR-0043): the host and when, nothing of the page.
+//! - **Only the app can drive it.** On macOS and Linux the DevTools protocol
+//!   runs over a pipe the browser inherits (`pipe.rs`), not a port another
+//!   local process could open.
 
 pub mod browser;
 pub mod cdp;
+pub mod gate;
 pub mod launch;
+pub mod pipe;
 pub mod site;
 pub mod snapshot;
 pub mod ws;
@@ -35,7 +42,7 @@ mod tests;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -146,7 +153,9 @@ type Waiting = (Option<String>, oneshot::Sender<ConsentAnswer>);
 
 struct Live {
     tab: browser::Tab,
-    consent: browser::Consent,
+    /// Shared with the gate, which decides on its own task.
+    consent: Arc<tokio::sync::Mutex<browser::Consent>>,
+    gate: gate::Gate,
 }
 
 fn hub() -> &'static Hub {
@@ -255,6 +264,7 @@ fn publish(app: &AppHandle) {
 }
 
 /// Asks through a card in the app's windows.
+#[derive(Clone)]
 struct WindowAsker {
     app: AppHandle,
 }
@@ -358,7 +368,9 @@ async fn run(
         return Err(agent_error("browser_not_open", "No page is open."));
     };
     // The durable list may have changed in Settings since the last call.
-    live.consent.allowed = settings.allowed_sites.clone();
+    live.consent.lock().await.allowed = settings.allowed_sites.clone();
+    // A refusal left by a popup nobody waited for is not this action's.
+    live.gate.take_refusal();
     let text = |key: &str| {
         params
             .get(key)
@@ -369,12 +381,12 @@ async fn run(
 
     if action == "open_url" {
         let url = text("url");
-        let started = std::time::Instant::now();
-        let (location, remembered, loaded) = live.tab.open(&url, &mut live.consent, asker).await?;
+        let (location, remembered, loaded) = live.tab.open(&url, &live.consent, asker).await?;
         if let Some(site) = remembered {
             remember_site(app, &site);
         }
-        record_visit(&location, started.elapsed());
+        // The page the gate let through is the ledger's row; a redirect is a
+        // row of its own there.
         let site = location.site().unwrap_or_default();
         set_site(Some(site.clone()));
         journal("open", &site);
@@ -485,18 +497,19 @@ async fn run(
     Ok(result)
 }
 
-/// After something that may navigate: the new page's site must be allowed
-/// too, or the tab goes back to where it was.
+/// After something that may navigate: the gate already held the new page
+/// until its site was allowed; its refusal is the action's answer.
 async fn follow_up(
     app: &AppHandle,
     live: &mut Live,
     asker: &WindowAsker,
 ) -> Result<Value, AppError> {
-    if let Err(error) = admit_current(app, live, asker).await {
-        let _ = live.tab.back().await;
-        return Err(error);
+    let (location, remembered) =
+        gate::after_action(&mut live.tab, &live.gate, &live.consent, asker).await?;
+    if let Some(remembered) = remembered {
+        remember_site(app, &remembered);
     }
-    let location = live.tab.location().await?;
+    set_site(location.site());
     Ok(
         json!({ "url": location.url, "title": location.title, "next": "Take a new snapshot: refs from the last one may no longer be valid." }),
     )
@@ -512,7 +525,8 @@ async fn admit_current(
         // about:blank and friends belong to no site.
         return Ok(());
     };
-    if let Some(remembered) = live.consent.admit(&site, asker).await? {
+    let admitted = live.consent.lock().await.admit(&site, asker).await?;
+    if let Some(remembered) = admitted {
         remember_site(app, &remembered);
     }
     set_site(Some(site));
@@ -525,25 +539,37 @@ fn set_site(site: Option<String>) {
     }
 }
 
-/// One ledger row per opened page: the host, when, how long. The browser's
-/// own traffic is its own; this is the person-readable trace that the agent
-/// went there.
-fn record_visit(location: &browser::Location, elapsed: Duration) {
-    let Some(host) = site::host_of(&location.url) else {
-        return;
-    };
+/// One ledger row per page the gate let load: the host and when. The
+/// browser's own traffic is its own; this is the person-readable trace that
+/// the agent went there.
+fn record_visit(host: &str) {
     crate::egress_ledger::record(crate::egress_ledger::EgressEntry {
         at: chrono::Utc::now().to_rfc3339(),
-        host,
+        host: host.to_string(),
         purpose: "browser".to_string(),
         method: "GET".to_string(),
         request_bytes: 0,
         response_bytes: 0,
         status: None,
-        duration_ms: elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+        duration_ms: 0,
         model: None,
         note_id: None,
     });
+}
+
+/// What the gate tells the app: the ledger, and "always" answers.
+struct AppSink {
+    app: AppHandle,
+}
+
+impl gate::GateSink for AppSink {
+    fn visited(&self, host: &str) {
+        record_visit(host);
+    }
+
+    fn remembered(&self, site: &str) {
+        remember_site(&self.app, site);
+    }
 }
 
 async fn start(app: &AppHandle, settings: &AgentBrowserSettings) -> Result<Live, AppError> {
@@ -557,11 +583,40 @@ async fn start(app: &AppHandle, settings: &AgentBrowserSettings) -> Result<Live,
         .map_err(|error| agent_error("browser_profile_failed", error.to_string()))?
         .join("agent-browser-profile");
     let launched = launch::launch(&chosen.executable, &profile_dir).await?;
-    let client = cdp::CdpClient::connect(launched.port, &launched.path).await?;
-    let session_id = cdp::attach_to_page(&client).await?;
+    let (client, child) = launch::connect(launched).await?;
     if let Ok(mut slot) = hub().child.lock() {
-        *slot = launched.child;
+        *slot = child;
     }
+    let consent = Arc::new(tokio::sync::Mutex::new(browser::Consent {
+        allowed: settings.allowed_sites.clone(),
+        this_session: Vec::new(),
+    }));
+    let events = client
+        .take_events()
+        .ok_or_else(|| agent_error("browser_connect_failed", "The browser's events are taken."))?;
+    let gate = gate::Gate::spawn(
+        client.clone(),
+        events,
+        consent.clone(),
+        Arc::new(WindowAsker { app: app.clone() }),
+        Arc::new(AppSink { app: app.clone() }),
+    );
+    // Nothing loads before the tab is held: a browser the gate cannot hold
+    // is closed, not used.
+    let attached = match cdp::attach_to_page(&client).await {
+        Ok(attached) => match gate.arm(&attached).await {
+            Ok(()) => attached,
+            Err(error) => {
+                let _ = client.call("Browser.close", json!({}), None).await;
+                shut_down_process().await;
+                return Err(error);
+            }
+        },
+        Err(error) => {
+            shut_down_process().await;
+            return Err(error);
+        }
+    };
     if let Ok(mut slot) = hub().cdp.lock() {
         *slot = Some(client.clone());
     }
@@ -569,11 +624,9 @@ async fn start(app: &AppHandle, settings: &AgentBrowserSettings) -> Result<Live,
         *name = Some(chosen.name.clone());
     }
     Ok(Live {
-        tab: browser::Tab::new(client, session_id),
-        consent: browser::Consent {
-            allowed: settings.allowed_sites.clone(),
-            this_session: Vec::new(),
-        },
+        tab: browser::Tab::new(client, attached.session_id),
+        consent,
+        gate,
     })
 }
 

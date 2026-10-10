@@ -7,6 +7,8 @@
 //! America meets, and a suffix missing here errs on the strict side (the
 //! person is asked about `city.example`, never let through to a neighbour).
 
+use url::{Host, Url};
+
 /// Second-level labels that are public suffixes under some country codes
 /// (`co.uk`, `com.au`, `gouv.fr`...). Checked only under a two-letter TLD.
 const SECOND_LEVEL_SUFFIXES: &[&str] = &[
@@ -34,25 +36,28 @@ const KNOWN_SUFFIXES: &[&str] = &[
 /// `chrome:`, `javascript:` and `data:` would reach the person's disk or the
 /// browser's own settings rather than a site.
 pub fn openable(url: &str) -> bool {
-    let lower = url.trim().to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
+    parse_web(url).is_some()
 }
 
-/// The host of an http(s) URL, lowercased, without port or credentials.
+/// `url` parsed the way the browser parses it (the WHATWG URL standard, which
+/// the `url` crate implements), when it is an http(s) address with a host.
+/// Reading the host by hand is how `https://evil.example\@allowed.example/`
+/// came to look like `allowed.example`: for a browser `\` ends the host, so
+/// that address opens `evil.example`.
+fn parse_web(url: &str) -> Option<Url> {
+    let parsed = Url::parse(url.trim()).ok()?;
+    (matches!(parsed.scheme(), "http" | "https") && parsed.host().is_some()).then_some(parsed)
+}
+
+/// The host of an http(s) URL as the browser will contact it: lowercased,
+/// IDN in its ASCII form, without port, credentials or trailing dot.
 pub fn host_of(url: &str) -> Option<String> {
-    let trimmed = url.trim();
-    let rest = trimmed
-        .strip_prefix("https://")
-        .or_else(|| trimmed.strip_prefix("http://"))
-        .or_else(|| trimmed.strip_prefix("HTTPS://"))
-        .or_else(|| trimmed.strip_prefix("HTTP://"))?;
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
-    let host_port = authority.rsplit('@').next().unwrap_or_default();
-    let host = if let Some(stripped) = host_port.strip_prefix('[') {
+    let parsed = parse_web(url)?;
+    let host = match parsed.host()? {
+        Host::Domain(domain) => domain.to_string(),
+        Host::Ipv4(address) => address.to_string(),
         // An IPv6 literal keeps its brackets off.
-        stripped.split(']').next().unwrap_or_default()
-    } else {
-        host_port.split(':').next().unwrap_or_default()
+        Host::Ipv6(address) => address.to_string(),
     };
     let host = host.trim_end_matches('.').to_ascii_lowercase();
     (!host.is_empty()).then_some(host)
