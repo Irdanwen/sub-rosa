@@ -178,7 +178,7 @@ not the upstream fix lands.
 
 - [qa/2026-09-05-public-readiness.md](qa/2026-09-05-public-readiness.md) — Studio discovery, model choice, recovery, localization, paid multimodal trials, artifact format fixes and remaining release checks
 
-- [qa/agent-driven-integration.md](qa/agent-driven-integration.md) — QA strategy (3 layers, skill-first agent-driven)
+- [qa/agent-driven-integration.md](qa/agent-driven-integration.md) — QA strategy (3 layers, skill-first agent-driven), and when to dispatch the opt-in `#[ignore]` Rust tests lane
 - `qa/feature-user-stories.tsv` — story → code → test traceability matrix
 - `qa/agent-e2e-qa-runs/` — dated end-to-end QA run logs
 

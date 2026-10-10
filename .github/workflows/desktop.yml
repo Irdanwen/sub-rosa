@@ -46,7 +46,7 @@ jobs:
     name: Frontend lint and tests
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -78,7 +78,7 @@ jobs:
     name: Biome check
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -116,7 +116,7 @@ jobs:
   # open to "changed" so the suite can never be skipped by accident.
   changes:
     name: Changed paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       frontend: ${{ steps.diff.outputs.frontend }}
       rust: ${{ steps.diff.outputs.rust }}
@@ -131,6 +131,7 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2129 # one output per line reads as a table
           if [[ -z "$BASE" || "$BASE" == "0000000000000000000000000000000000000000" ]] \
             || ! git cat-file -e "$BASE" 2>/dev/null; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
@@ -165,7 +166,7 @@ jobs:
     name: Tauri Rust format
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

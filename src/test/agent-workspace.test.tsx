@@ -263,6 +263,37 @@ function mockGlmCapabilities(capabilities: string[]) {
   });
 }
 
+/**
+ * Holds every Hermes transcript read until the test answers. The diagnosis
+ * refresh a finished report turn queues fires 300 ms later on a real timer;
+ * on a loaded machine it used to complete before the test clicked Send
+ * report, so the "Sending" state and the wait on the refresh went unseen.
+ * Reads made before `answer` stay pending unless `releaseHeld` is set;
+ * reads made after it get the messages at once.
+ */
+function holdSessionMessageReads() {
+  const held: Array<(messages: unknown[]) => void> = [];
+  let answered: unknown[] | undefined;
+  mocks.listHermesSessionMessages.mockImplementation(() =>
+    answered
+      ? Promise.resolve(answered)
+      : new Promise((resolve) => {
+          held.push(resolve);
+        }),
+  );
+  return {
+    heldCount: () => held.length,
+    async answer(messages: unknown[], options: { releaseHeld: boolean }) {
+      answered = messages;
+      if (options.releaseHeld) {
+        await act(async () => {
+          for (const resolve of held.splice(0)) resolve(messages);
+        });
+      }
+    },
+  };
+}
+
 describe("AgentWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -857,20 +888,7 @@ describe("AgentWorkspace", () => {
     // The report waits for June's diagnosis; nothing is filed yet.
     expect(mocks.submitIssueReport).not.toHaveBeenCalled();
 
-    mocks.listHermesSessionMessages.mockResolvedValue([
-      {
-        id: "m1",
-        role: "user",
-        content: submitted.text,
-        timestamp: "2026-06-11T10:00:00Z",
-      },
-      {
-        id: "m2",
-        role: "assistant",
-        content: "The screenshot shows the recorder stuck on saving.",
-        timestamp: "2026-06-11T10:00:10Z",
-      },
-    ]);
+    const reads = holdSessionMessageReads();
     act(() => {
       for (const handler of mocks.gatewayEventHandlers) {
         handler({ type: "turn.completed", session_id: "runtime-session-2" });
@@ -882,7 +900,25 @@ describe("AgentWorkspace", () => {
     await user.click(screen.getByRole("button", { name: "Send report" }));
     expect(await screen.findByText("Sending")).toBeInTheDocument();
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    // Sending waits on the diagnosis refresh, held until June's reply lands.
     expect(mocks.submitIssueReport).not.toHaveBeenCalled();
+    await reads.answer(
+      [
+        {
+          id: "m1",
+          role: "user",
+          content: submitted.text,
+          timestamp: "2026-06-11T10:00:00Z",
+        },
+        {
+          id: "m2",
+          role: "assistant",
+          content: "The screenshot shows the recorder stuck on saving.",
+          timestamp: "2026-06-11T10:00:10Z",
+        },
+      ],
+      { releaseHeld: true },
+    );
 
     await waitFor(() =>
       expect(mocks.submitIssueReport).toHaveBeenCalledWith({
@@ -1168,7 +1204,6 @@ describe("AgentWorkspace", () => {
       received: true,
       delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
     });
-    let stalledRefreshStarted = false;
 
     render(<AgentWorkspace />);
 
@@ -1182,6 +1217,7 @@ describe("AgentWorkspace", () => {
       }),
     );
 
+    const reads = holdSessionMessageReads();
     act(() => {
       for (const handler of mocks.gatewayEventHandlers) {
         handler({ type: "turn.completed", session_id: "runtime-session-2" });
@@ -1189,21 +1225,22 @@ describe("AgentWorkspace", () => {
     });
 
     expect(await screen.findByText(/Report ready/)).toBeInTheDocument();
-    mocks.listHermesSessionMessages.mockResolvedValue([
-      {
-        id: "m1",
-        role: "assistant",
-        content: "The recorder failed while saving.",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-    mocks.listHermesSessionMessages.mockImplementationOnce(() => {
-      stalledRefreshStarted = true;
-      return new Promise(() => {});
-    });
+    // The refresh the finished turn queued starts and never answers; the
+    // read delivery makes once it stops waiting gets the diagnosis.
+    await waitFor(() => expect(reads.heldCount()).toBe(1), { timeout: 3000 });
+    await reads.answer(
+      [
+        {
+          id: "m1",
+          role: "assistant",
+          content: "The recorder failed while saving.",
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      { releaseHeld: false },
+    );
     await user.click(screen.getByRole("button", { name: "Send report" }));
     expect(await screen.findByText("Sending")).toBeInTheDocument();
-    await waitFor(() => expect(stalledRefreshStarted).toBe(true));
 
     await waitFor(
       () =>
@@ -1217,7 +1254,7 @@ describe("AgentWorkspace", () => {
         }),
       { timeout: 3000 },
     );
-  });
+  }, 15_000);
 
   it("appends report follow-ups before filing", async () => {
     const user = userEvent.setup();
@@ -2301,8 +2338,16 @@ describe("AgentWorkspace", () => {
       AGENT_NEW_SESSION_PENDING_KEY,
       JSON.stringify({ createdAt: Date.now(), category: "bug" }),
     );
+    // The first delivery fails only once the test has seen it sending: an
+    // immediate rejection could clear "Sending" before the query ran.
+    let rejectFirstDelivery: ((error: Error) => void) | undefined;
     mocks.submitIssueReport
-      .mockRejectedValueOnce(new Error("upstream_provider_failed"))
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectFirstDelivery = reject;
+          }),
+      )
       .mockResolvedValue({
         received: true,
         delivery: { filed: { urls: ["https://github.com/Irdanwen/sub-rosa/issues/12"] } },
@@ -2337,6 +2382,10 @@ describe("AgentWorkspace", () => {
     expect(await screen.findByText(/Report ready/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Send report" }));
     expect(await screen.findByText("Sending")).toBeInTheDocument();
+    await waitFor(() => expect(rejectFirstDelivery).toBeDefined(), { timeout: 3000 });
+    await act(async () => {
+      rejectFirstDelivery?.(new Error("upstream_provider_failed"));
+    });
     expect(await screen.findByText(/The issue report could not be sent/)).toBeInTheDocument();
     expect(screen.getByText(/upstream_provider_failed/)).toBeInTheDocument();
 

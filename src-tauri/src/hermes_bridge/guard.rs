@@ -202,11 +202,10 @@ mod tests {
 
     /// Runs the installed plugin's hook against a ledger and a `state.db`, in
     /// a real Python, the way the runtime calls it. Skipped where no
-    /// `python3` is on the path.
+    /// `python3` is on the path, except under CI.
     #[test]
     fn the_plugin_refuses_memory_writes_in_temporary_chats_only() {
-        if Command::new("python3").arg("--version").output().is_err() {
-            eprintln!("python3 not found: the plugin's own test is skipped");
+        if !crate::test_python::python3_available("the plugin's own test") {
             return;
         }
         let home = tempfile::tempdir().unwrap();
@@ -279,8 +278,7 @@ mod tests {
     /// as the ledger says, and a name or a ledger it cannot read asks.
     #[test]
     fn the_plugin_applies_the_connector_rules_and_asks_when_unsure() {
-        if Command::new("python3").arg("--version").output().is_err() {
-            eprintln!("python3 not found: the plugin's own test is skipped");
+        if !crate::test_python::python3_available("the plugin's own test") {
             return;
         }
         let home = tempfile::tempdir().unwrap();
