@@ -191,6 +191,22 @@ fn unavailable_error() -> AppError {
         "Creating a key from your account is not available yet. Paste a Carpe Diem key instead.",
     )
 }
+/// Carpe Diem answers `410 ACCOUNT_CLOSED` when the person deleted the Carpe
+/// Diem account this Sub Rosa account was linked to. It never recreates it on
+/// its own: the screen says so, and only the person's explicit choice sends
+/// `reactivate` (see [`issue_body`]). `details.closedAt` carries the date
+/// when Carpe Diem gives a readable one.
+fn account_closed_error(body: &Value) -> AppError {
+    let mut error = AppError::new(
+        "carpe_diem_account_closed",
+        "Your Carpe Diem account was deleted. Its credits are gone and cannot be refunded.",
+    );
+    error.details = body["closedAt"]
+        .as_str()
+        .filter(|at| chrono::DateTime::parse_from_rfc3339(at).is_ok())
+        .map(|at| json!({ "closedAt": at }));
+    error
+}
 fn expired_error() -> AppError {
     AppError::new(
         "carpe_diem_link_expired",
@@ -276,6 +292,7 @@ pub(crate) fn interpret(status: u16, body: &Value) -> Result<Answer, AppError> {
             "carpe_diem_link_declined",
             "The link was declined from the confirmation page. Nothing was created.",
         )),
+        410 if code == "ACCOUNT_CLOSED" => Err(account_closed_error(body)),
         410 => Err(expired_error()),
         _ => Err(rejected_error()),
     }
@@ -439,10 +456,22 @@ fn alive(at: &str) -> bool {
 
 // --- Issuing ------------------------------------------------------------------
 
+/// The body of `/partner/keys`. `reactivate` is sent only after the person
+/// chose, on the screen that said their Carpe Diem account was deleted, to
+/// open a new and empty one; never on Sub Rosa's own initiative.
+pub(crate) fn issue_body(reactivate: bool) -> Value {
+    if reactivate {
+        json!({ "reactivate": true })
+    } else {
+        json!({})
+    }
+}
+
 async fn post_keys(
     base: &str,
     ephemeral: &Ephemeral,
     assertion: &Redacted<String>,
+    reactivate: bool,
 ) -> Result<Answer, AppError> {
     let htu = format!("{}/partner/keys", partner_root(base));
     let proof = ephemeral.proof(&htu, assertion.expose_str(), chrono::Utc::now().timestamp());
@@ -454,7 +483,7 @@ async fn post_keys(
             format!("PartnerAssertion {}", assertion.expose_str()),
         )
         .header("DPoP", proof)
-        .json(&json!({}))
+        .json(&issue_body(reactivate))
         .send()
         .await
         .map_err(|_| unreachable_error())?;
@@ -501,8 +530,16 @@ async fn activate(
 /// Creates this device's key. Needs a sign-in less than five minutes old: the
 /// account service refuses an older one, and the screen then asks for a fresh
 /// sign-in and calls this again.
+///
+/// `reactivate` is the person's answer to `carpe_diem_account_closed`: they
+/// chose a new, empty Carpe Diem account in place of the one they deleted.
+/// Carpe Diem ignores it for any account that was not deleted.
 #[tauri::command]
-pub async fn carpe_diem_issue_key(app: AppHandle) -> Result<IssueOutcome, AppError> {
+pub async fn carpe_diem_issue_key(
+    app: AppHandle,
+    reactivate: Option<bool>,
+) -> Result<IssueOutcome, AppError> {
+    let reactivate = reactivate == Some(true);
     let base = settings::base_url();
     // Two tries at most: a replayed assertion (a retried request that already
     // landed), or one signed in the second Carpe Diem revoked the account's
@@ -510,7 +547,7 @@ pub async fn carpe_diem_issue_key(app: AppHandle) -> Result<IssueOutcome, AppErr
     for _ in 0..2 {
         let ephemeral = Ephemeral::generate();
         let assertion = crate::account::carpe_diem_link::assertion(&app, &ephemeral.jkt()).await?;
-        match post_keys(&base, &ephemeral, &assertion).await? {
+        match post_keys(&base, &ephemeral, &assertion, reactivate).await? {
             Answer::Issued { key, key_id } => {
                 *pending_lock() = None;
                 activate(&app, &base, key, key_id).await?;
@@ -776,6 +813,10 @@ mod tests {
         );
         assert_eq!(code(410, json!({})), "carpe_diem_link_expired");
         assert_eq!(
+            code(410, json!({"code":"LINK_REQUEST_EXPIRED"})),
+            "carpe_diem_link_expired"
+        );
+        assert_eq!(
             code(401, json!({"code":"PROOF_INVALID"})),
             "carpe_diem_issue_rejected"
         );
@@ -792,6 +833,34 @@ mod tests {
             code(403, json!({"code":"DEVICE_REVOKED"})),
             "carpe_diem_issue_rejected"
         );
+    }
+
+    #[test]
+    fn a_deleted_account_is_said_with_its_date_and_never_taken_for_an_expiry() {
+        let closed = interpret(
+            410,
+            &json!({"code":"ACCOUNT_CLOSED","closedAt":"2026-10-10T12:30:00.000Z","error":"…"}),
+        )
+        .unwrap_err();
+        assert_eq!(closed.code, "carpe_diem_account_closed");
+        assert_eq!(
+            closed.details,
+            Some(json!({"closedAt":"2026-10-10T12:30:00.000Z"}))
+        );
+        // A date that does not read is left out, the refusal is not.
+        let undated = interpret(
+            410,
+            &json!({"code":"ACCOUNT_CLOSED","closedAt":"yesterday"}),
+        )
+        .unwrap_err();
+        assert_eq!(undated.code, "carpe_diem_account_closed");
+        assert_eq!(undated.details, None);
+    }
+
+    #[test]
+    fn only_the_persons_choice_asks_for_a_new_account() {
+        assert_eq!(issue_body(false), json!({}));
+        assert_eq!(issue_body(true), json!({"reactivate": true}));
     }
 
     #[test]

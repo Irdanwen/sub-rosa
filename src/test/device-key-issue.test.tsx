@@ -243,6 +243,66 @@ describe("the device key card", () => {
     expect(calls("carpe_diem_issue_key")).toHaveLength(0);
   });
 
+  it("says a deleted Carpe Diem account was deleted, and asks before opening a new one", async () => {
+    let attempts = 0;
+    issue = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw {
+          code: "carpe_diem_account_closed",
+          message:
+            "Your Carpe Diem account was deleted. Its credits are gone and cannot be refunded.",
+          details: { closedAt: "2026-10-10T12:30:00.000Z" },
+        };
+      }
+      return { status: "issued" };
+    };
+    const onIssued = vi.fn();
+    render(<DeviceKeyIssue autoStart onIssued={onIssued} onUseKey={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Your Carpe Diem account was deleted on .*2026\. Its credits are gone and cannot be refunded\./,
+    );
+    // Nothing is retried, and no "try again" sends the same refusal back.
+    await act(async () => undefined);
+    expect(calls("carpe_diem_issue_key")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Paste a key instead" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open a new, empty account" }));
+    await waitFor(() => expect(onIssued).toHaveBeenCalledTimes(1));
+    const sent = calls("carpe_diem_issue_key");
+    expect(sent).toHaveLength(2);
+    expect(sent[0]?.[1]).toBeUndefined();
+    expect(sent[1]?.[1]).toEqual({ reactivate: true });
+  });
+
+  it("keeps the person's choice of a new account across a fresh sign-in", async () => {
+    let attempts = 0;
+    issue = async () => {
+      attempts += 1;
+      if (attempts === 1) throw { code: "carpe_diem_account_closed", message: "Deleted." };
+      if (attempts === 2) throw { code: "carpe_diem_reauth_required", message: "Sign in again." };
+      return { status: "issued" };
+    };
+    const onIssued = vi.fn();
+    render(<DeviceKeyIssue autoStart onIssued={onIssued} />);
+    // No readable date: the sentence without one, never the raw message.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your Carpe Diem account was deleted. Its credits are gone and cannot be refunded.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open a new, empty account" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
+    await waitFor(() => expect(mocks.openExternalUrl).toHaveBeenCalledTimes(1));
+
+    emit("subrosa://account-updated");
+    await waitFor(() => expect(onIssued).toHaveBeenCalledTimes(1));
+    expect(calls("carpe_diem_issue_key").map(([, args]) => args)).toEqual([
+      undefined,
+      { reactivate: true },
+      { reactivate: true },
+    ]);
+  });
+
   it("says what failed and lets the person try again or paste a key", async () => {
     issue = async () => {
       throw { code: "carpe_diem_issue_limited", message: "Your account created several keys." };
