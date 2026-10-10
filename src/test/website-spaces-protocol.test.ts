@@ -180,7 +180,7 @@ describe("epoch heads", () => {
   });
 
   it("verifies the chain from the inviter and refuses another anchor", async () => {
-    expect((await verifyChain(null, heads, v.identities.alice.bundle)).epoch).toBe(4);
+    expect((await verifyChain(null, heads, v.identities.alice.bundle)).latest.epoch).toBe(4);
     await expect(verifyChain(null, heads, v.identities.bob.bundle)).rejects.toThrow();
   });
 
