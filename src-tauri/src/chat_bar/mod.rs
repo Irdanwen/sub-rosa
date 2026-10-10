@@ -170,7 +170,20 @@ fn configure_window(app: &AppHandle) {
 }
 
 /// Opens the panel when it is closed, closes it when it is open.
+///
+/// The press arrives on the thread that heard it: the dictation helper's
+/// reader on macOS, the hot key thread on Windows. AppKit traps when a window
+/// is ordered front anywhere but the main thread ("Must only be used from the
+/// main thread"), which closed the app at the first press of the shortcut, so
+/// the work is handed to the main thread.
 pub fn toggle(app: &AppHandle) {
+    let handle = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || toggle_on_main_thread(&handle)) {
+        tracing::warn!(%error, "the chat bar could not reach the main thread");
+    }
+}
+
+fn toggle_on_main_thread(app: &AppHandle) {
     let visible = app
         .get_webview_window(WINDOW_LABEL)
         .and_then(|window| window.is_visible().ok())
