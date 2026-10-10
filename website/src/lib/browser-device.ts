@@ -351,7 +351,28 @@ async function keep(
   return next;
 }
 
+/**
+ * Carpe Diem's `410 ACCOUNT_CLOSED`: the person deleted the Carpe Diem account
+ * this Sub Rosa account was linked to. Every key it had, this browser's
+ * included, was revoked with it, and Carpe Diem recreates nothing by itself.
+ * The page says so; only the person's explicit choice calls `birthKey` again
+ * with `reactivate`, for a new and empty account.
+ */
+export class AccountClosedError extends ApiError {
+  constructor(public closedAt: string | null) {
+    super("ACCOUNT_CLOSED", "Your Carpe Diem account was deleted.", 410);
+  }
+}
+
+/** Carpe Diem's revocation cutoff counts whole seconds: an assertion signed
+ * after this wait is past it. */
+export const REVOKED_RETRY_AFTER_MS = 1100;
+
 function carpeDiemError(status: number, body: Record<string, unknown>): ApiError {
+  if (status === 410 && body.code === "ACCOUNT_CLOSED") {
+    const at = typeof body.closedAt === "string" ? body.closedAt : "";
+    return new AccountClosedError(Number.isNaN(Date.parse(at)) ? null : at);
+  }
   return new ApiError(
     typeof body.code === "string" ? body.code : "carpe_diem_unavailable",
     "Carpe Diem could not issue a key.",
@@ -363,8 +384,31 @@ function carpeDiemError(status: number, body: Record<string, unknown>): ApiError
  * Asks the service for an assertion as this browser device, then Carpe Diem
  * for the key. The ephemeral key exists only inside this call and the poll it
  * may hand back.
+ *
+ * `reactivate` only after the person chose a new, empty Carpe Diem account in
+ * place of the one they deleted (`AccountClosedError`); never on its own. An
+ * assertion signed in the second Carpe Diem revoked the account's keys
+ * (`403 ASSERTION_REVOKED`) is replaced once by a fresh one.
  */
-export async function birthKey(store: DeviceStore, record: DeviceRecord): Promise<Birth> {
+export async function birthKey(
+  store: DeviceStore,
+  record: DeviceRecord,
+  { reactivate = false }: { reactivate?: boolean } = {},
+): Promise<Birth> {
+  try {
+    return await attemptBirth(store, record, reactivate);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.code !== "ASSERTION_REVOKED") throw error;
+    await new Promise((resolve) => setTimeout(resolve, REVOKED_RETRY_AFTER_MS));
+    return attemptBirth(store, record, reactivate);
+  }
+}
+
+async function attemptBirth(
+  store: DeviceStore,
+  record: DeviceRecord,
+  reactivate: boolean,
+): Promise<Birth> {
   if (!record.deviceId) throw new ApiError("device_required", "This browser is not a device.", 403);
   const ephemeral = await newSigningPair();
   const jwk = { kty: "EC", crv: "P-256", x: ephemeral.x, y: ephemeral.y };
@@ -387,7 +431,7 @@ export async function birthKey(store: DeviceStore, record: DeviceRecord): Promis
       Authorization: `PartnerAssertion ${assertion}`,
       DPoP: await dpop("/partner/keys", assertion),
     },
-    body: "{}",
+    body: reactivate ? JSON.stringify({ reactivate: true }) : "{}",
   });
   if (status === 201)
     return { status: "issued", record: await keep(store, record, body as unknown as Issued) };
