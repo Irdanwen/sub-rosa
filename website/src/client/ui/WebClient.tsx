@@ -791,14 +791,15 @@ export function WebClient({
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
-        <div className="wc-tabs">
+        <fieldset className="wc-tabs">
+          <legend className="sr-only">{t("History", "Historique")}</legend>
           <button type="button" aria-pressed={!showArchived} onClick={() => setShowArchived(false)}>
             {t("Chats", "Discussions")}
           </button>
           <button type="button" aria-pressed={showArchived} onClick={() => setShowArchived(true)}>
             {t("Archived", "Archivées")}
           </button>
-        </div>
+        </fieldset>
         <nav className="wc-list">
           {shownChats.length === 0 && (
             <p className="quiet">

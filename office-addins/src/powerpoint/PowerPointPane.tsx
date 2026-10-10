@@ -136,7 +136,7 @@ export function PowerPointPane({
                     <ul>
                       {[...slide.bullets, ...slide.left.bullets, ...slide.right.bullets].map(
                         (bullet, at) => (
-                          // biome-ignore lint/suspicious/noArrayIndexKey: as above.
+                          // biome-ignore lint/suspicious/noArrayIndexKey: a drafted slide's bullets are fixed and may repeat.
                           <li key={at}>{bullet.text}</li>
                         ),
                       )}
