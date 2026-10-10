@@ -71,13 +71,19 @@ The Vercel frontend proxies `/api/operator/*` to the operator, including
   static host. The policy adds `connect-src https://carpe-diem.xyz` and Trusted
   Types; `src/test/website-csp.test.ts` keeps the four copies identical.
 - The web client's own blocks (ADR-0104): `/app` (its policy adds
-  WebAssembly, a blob worker, the connector view frame, the probed connector
-  origins, and the microphone, camera and screen), `/connector-view.html`
-  (its own policy, framed only by the site) and `/pyodide/` (module types for
-  `.mjs`, `application/wasm`). The site build now carries Pyodide under
+  WebAssembly, the connector view and Python sandbox frames, the probed
+  connector origins, and the microphone, camera and screen),
+  `/connector-view.html` (its own policy, framed only by the site),
+  `/python-sandbox.html` (its own policy, with the site's origin written in
+  place of `https://account.example.invalid`, and no `X-Frame-Options`), and
+  `/assets/python-sandbox*` and `/pyodide/` with
+  `Access-Control-Allow-Origin: *` (the sandbox fetches them from an opaque
+  origin; `/pyodide/` also needs module types for `.mjs` and
+  `application/wasm`). The site build now carries Pyodide under
   `/pyodide/` (about 20 MB; `SUBROSA_PYODIDE=0` builds without it, and Python
   is then unavailable in the tab). Check `/app` in Chrome as below, plus one
-  Python run and one voice turn.
+  Python run and one voice turn; `website/scripts/python-sandbox-smoke.mjs`
+  checks the sandbox against the built site before publishing.
 - After publishing, open `/account/devices` in Chrome with the developer tools
   console open and check there is no CSP or Trusted Types violation.
 

@@ -1,10 +1,33 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { pyodidePlugin } from "../scripts/pyodide-assets.mjs";
 import { subresourceIntegrity } from "../website/vite-sri";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
+
+/** The development server's copy of the site's Python sandbox (ADR-0104
+ * addendum of 2026-10-10), which the Excel pane frames: the built panes use
+ * the site's own `/python-sandbox.html`. */
+function pythonSandboxInDev(): Plugin {
+  const page = here("../website/python-sandbox.html");
+  const entry = here("../website/src/client/analysis/python-sandbox.ts");
+  return {
+    name: "subrosa-python-sandbox-dev",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/python-sandbox.html", async (_request, response) => {
+        const html = readFileSync(page, "utf8").replace(
+          "/src/client/analysis/python-sandbox.ts",
+          `/@fs${entry}`,
+        );
+        response.setHeader("Content-Type", "text/html");
+        response.end(await server.transformIndexHtml("/python-sandbox.html", html));
+      });
+    },
+  };
+}
 
 /**
  * The Office task panes (ADR-0102), built into the account site's `dist`
@@ -22,6 +45,7 @@ export default defineConfig(({ command }) => ({
     subresourceIntegrity(),
     // Pyodide is emitted by the site's own build; the dev server serves it.
     pyodidePlugin(here(".."), command === "serve" && process.env.SUBROSA_PYODIDE !== "0"),
+    pythonSandboxInDev(),
   ],
   worker: { format: "es" },
   server: {

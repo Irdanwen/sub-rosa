@@ -36,6 +36,22 @@ export default defineConfig(({ mode }) => {
         "/auth": { target: "http://127.0.0.1:8088", changeOrigin: false },
       },
     },
-    build: { target: "es2022", sourcemap: false },
+    build: {
+      target: "es2022",
+      sourcemap: false,
+      // The Python sandbox (python-sandbox.html, ADR-0104 addendum of
+      // 2026-10-10) is a page of its own whose scripts are fetched from an
+      // opaque origin, so only `/assets/python-sandbox*` answers it with
+      // CORS. The preload polyfill would be a chunk both pages share, under
+      // another name; every browser the site supports preloads modules
+      // natively, and one that does not loads them on import as before.
+      modulePreload: { polyfill: false },
+      rollupOptions: {
+        input: {
+          index: fileURLToPath(new URL("index.html", import.meta.url)),
+          "python-sandbox": fileURLToPath(new URL("python-sandbox.html", import.meta.url)),
+        },
+      },
+    },
   };
 });
