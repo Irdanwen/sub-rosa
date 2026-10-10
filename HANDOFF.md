@@ -18,7 +18,18 @@ pas faite. Quand une porte s'ouvre, repasser les cellules à `yes` puis lancer
    `curl` le CORS et la naissance d'une clé (voir
    [docs/browser-device-deployment.md](docs/browser-device-deployment.md)).
    **Carpe Diem #465** (synthèse vocale en flux) est facultative : la voix
-   marche sans, avec plus de latence.
+   marche sans, avec plus de latence. **Carpe Diem #469** (ouverte le
+   2026-10-10) ajoute `https://office.subrosa.furetier.com` à
+   `SUBROSA_SITE_ORIGINS` : à déployer avec #464, sinon chaque appel d'un
+   volet Office est refusé par CORS. **#468** aligne le contrat partenaire
+   (preuve `ath` sur le corps exact, ce qu'une révocation échouée enregistre).
+   Enfin, l'opérateur n'a **pas d'entrée `subrosa` dans `PARTNERS_JSON`**
+   (id `subrosa`, issuer `https://subrosa.furetier.com`, kid
+   `sr-eQvPaeyZV9pBLrdZ`) : c'est pourquoi les révocations de clés que le
+   service envoie reçoivent 404 (15 lignes en échec en production le
+   2026-10-10, comptées sur `/readyz` sous `partner_revocations`). Tant que
+   l'entrée manque, une clé d'appareil révoquée côté Sub Rosa reste valable
+   chez Carpe Diem jusqu'à son expiration.
 2. **Clients OAuth Google, Microsoft et GitHub** : à créer, puis poser les
    trois secrets CI `SUBROSA_GOOGLE_CLIENT_ID`, `SUBROSA_MS_CLIENT_ID` et
    `SUBROSA_GITHUB_CLIENT_ID` (et `SUBROSA_GOOGLE_REDIRECT_URI` pour le client
@@ -49,11 +60,34 @@ pas faite. Quand une porte s'ouvre, repasser les cellules à `yes` puis lancer
    « Unverified » de la matrice dit quoi essayer.
 8. **Bascule de l'origine Office** vers `office.subrosa.furetier.com` (DNS
    Cloudflare, vhost 80, certificat certbot en webroot, vhost 443, publication),
-   pour que `office.js` ne s'exécute plus sur l'origine du compte.
+   pour que `office.js` ne s'exécute plus sur l'origine du compte. Ordre
+   exact : section « Deployment » de [docs/office-addins.md](docs/office-addins.md) ;
+   l'étape 0 (CORS de l'opérateur) est Carpe Diem #469.
 9. **Admin Keycloak** : remplacer l'admin temporaire `subrosa-bootstrap` par un
    admin permanent à mot de passe généré, gardé dans `private/` du VPS et
    jamais affiché, puis supprimer `subrosa-bootstrap` et faire tourner le mot
-   de passe de l'ancien compte.
+   de passe de l'ancien compte (`python3 stack.py admin-rotate --dry-run`, puis
+   sans `--dry-run`, depuis `/opt/subrosa-accounts/deploy`).
+10. **Une dépense sur la clé Carpe Diem de ce Mac qui ne vient pas de l'app**
+    (vue pendant la vérification réelle du 2026-10-10, registre en lecture
+    seule `GET /api/operator/buyer/usage`) : un appel `gemini-3-5-flash` toutes
+    les 15 minutes et un `gpt-4o-mini` via OpenRouter toutes les 24 minutes,
+    plus une session interactive `claude-fable-5-1` avec cinq images (69
+    crédits entre 19:33 et 19:42). Le registre ne nomme pas le client. À
+    identifier (une routine de l'app installée, un autre outil qui tient la
+    même clé) et, si c'est inconnu, faire tourner la clé depuis le compte.
+11. **Deux pièges de développement, pas des portes.** Une build de debug
+    lancée sur ce Mac remplace le LaunchAgent `ai.hermes.gateway` de l'app
+    installée par le sien (même label, venu de la CLI Hermes épinglée) :
+    après une session `pnpm tauri:dev`, vérifier que
+    `~/Library/LaunchAgents/ai.hermes.gateway.plist` pointe de nouveau sur
+    `xyz.carpediem.subrosa/hermes`, sinon les routines de l'app installée ne
+    tournent plus. Et les deux apps écoutent le même raccourci de barre de
+    chat : avant 1.89.1, un ⌥Espace fait planter la 1.89.0 installée.
+12. **Question produit (ADR-0084)** : en mode protégé, la galerie Studio
+    montre encore les rendus adultes déjà produits. L'ADR promet des rendus
+    neufs filtrés et des modèles adultes cachés, pas une galerie masquée. À
+    trancher par le titulaire ; la matrice ne change pas pour cela.
 
 ## Mise à jour du 8 octobre 2026 : un navigateur devient un appareil (ADR-0096)
 
