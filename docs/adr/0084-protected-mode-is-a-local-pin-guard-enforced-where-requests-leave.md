@@ -146,3 +146,15 @@ clear, immediate refusal at the switch.
 **Still not covered**: quiet hours and the media switch rely on the clock and
 files of the device, like the rest of protected mode. Someone who changes the
 device time or edits the file removes them.
+
+## Addendum (2026-10-10): the chat's own picture leaves where Studio's does
+
+The desktop chat's image mode (`generate_image`) went through the sidecar's
+`/v1/image/generate`, past `carpe_diem::media::send`, so protected mode
+neither refused an adult model there, nor forced `safe_mode`, nor applied
+the image switch or quiet hours. It now goes through `media::send` on
+`/image/generate` (`providers/chat_image.rs`), the path every one of those
+rules covers, and the sidecar route it used is no longer called from the
+app (`june_api::generate_image` is removed, so no second way out remains).
+The reply is still PNG, read from the operator's `images` envelope. Test:
+`providers::chat_image::tests`.

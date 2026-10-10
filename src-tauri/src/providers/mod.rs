@@ -2,6 +2,8 @@
 //! generation models the user selected. Advanced users may also store their
 //! own Venice API key locally; responses only expose whether one is present.
 
+pub(crate) mod chat_image;
+
 use crate::domain::types::AppError;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
@@ -410,9 +412,8 @@ pub struct GenerateImageRequest {
     pub model: Option<String>,
 }
 
-/// Generates an image from a prompt via the June API, defaulting to the saved
-/// image model. Provider keys and the upstream call live in June API; this
-/// command only resolves the model and forwards the prompt.
+/// Generates an image from a prompt, defaulting to the saved image model,
+/// through the media proxy where protected mode is enforced (`chat_image`).
 #[tauri::command]
 pub async fn generate_image(
     request: GenerateImageRequest,
@@ -426,7 +427,7 @@ pub async fn generate_image(
         .map(|model| model.trim().to_string())
         .filter(|model| !model.is_empty())
         .unwrap_or_else(image_model);
-    crate::june_api::generate_image(prompt, model).await
+    chat_image::generate(&prompt, &model).await
 }
 
 #[tauri::command]
