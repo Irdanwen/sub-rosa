@@ -3,7 +3,7 @@ use crate::{
     assistants::general::GeneralTaskList,
     audio::{
         capture::{
-            capture_status_for_recovery, finish_active_capture, finish_capture, is_capture_active,
+            capture_status_for_recovery, finish_active_capture, finish_capture,
             microphone_device_available, microphone_device_hint, microphone_permission_state,
             pause_capture, resume_capture, start_capture, CaptureRecoverySnapshot,
         },
@@ -1604,7 +1604,8 @@ fn recording_source_readiness(source_mode: RecordingSourceMode) -> RecordingSour
     #[cfg(desktop)]
     let system = {
         let mut system = crate::audio::system_macos::system_audio_readiness();
-        if should_probe_system_audio_permission(source_mode, system.ready, is_capture_active()) {
+        let capture_active = crate::audio::capture::is_capture_active();
+        if should_probe_system_audio_permission(source_mode, system.ready, capture_active) {
             system = apply_system_audio_permission_probe_result(
                 system,
                 crate::audio::system_macos::helper_permission_check(),
@@ -1651,6 +1652,8 @@ fn assemble_recording_source_readiness(
     }
 }
 
+// System audio is desktop-only; mobile compiles these for nothing.
+#[cfg_attr(mobile, allow(dead_code))]
 fn should_probe_system_audio_permission(
     source_mode: RecordingSourceMode,
     system_ready: bool,
@@ -1659,6 +1662,7 @@ fn should_probe_system_audio_permission(
     source_mode == RecordingSourceMode::MicrophonePlusSystem && system_ready && !capture_active
 }
 
+#[cfg_attr(mobile, allow(dead_code))]
 fn apply_system_audio_permission_probe_result(
     mut system: SourceReadinessDto,
     result: Result<(), AppError>,

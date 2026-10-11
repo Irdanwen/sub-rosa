@@ -6,9 +6,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+// The version gate below serves the macOS helper; other targets compile it
+// for its tests only.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const SYSTEM_AUDIO_MIN_MACOS_VERSION: &str =
     include_str!("../../system-audio-min-macos-version.txt");
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct MacosVersion {
     major: u32,
@@ -375,6 +379,7 @@ fn macos_version_supports_system_audio() -> bool {
     macos_version_string_supports_system_audio(&version)
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn macos_version_string_supports_system_audio(version: &str) -> bool {
     let Some(current) = parse_macos_version(version) else {
         return false;
@@ -385,10 +390,12 @@ fn macos_version_string_supports_system_audio(version: &str) -> bool {
     current >= minimum
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn system_audio_min_macos_version_label() -> &'static str {
     SYSTEM_AUDIO_MIN_MACOS_VERSION.trim()
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn parse_macos_version(version: &str) -> Option<MacosVersion> {
     let mut parts = version.trim().split('.').map(|part| part.parse::<u32>());
     let major = match parts.next() {

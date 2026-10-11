@@ -109,6 +109,9 @@ struct InstallSource {
 }
 
 #[tauri::command]
+// One cfg block per platform, each returning: a cfg block cannot be the
+// tail expression, so the `return`s are needed.
+#[allow(clippy::needless_return)]
 pub async fn store_context() -> Result<StoreContext, AppError> {
     #[cfg(target_os = "ios")]
     {
