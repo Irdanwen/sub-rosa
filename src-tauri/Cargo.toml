@@ -102,11 +102,15 @@ subtle = "2.6"
 # the direct sqlx-core dependency intentionally enables its runtime hook.
 # Decodes imported audio and video containers in-process (ADR-0026): pure
 # Rust, no subprocess, no bundled ffmpeg to sign or notarize, and it builds for
-# iOS like everything else. Pinned to 0.5 rather than the ten-day-old 0.6:
-# 0.5.5 is the documented, widely-deployed API and needs no MSRV bump.
-# Defaults already cover FLAC/Vorbis/PCM/ADPCM in OGG, MKV/WebM and WAV; the
-# rest are the containers and codecs an import actually arrives in.
-symphonia = { version = "0.5.5", features = ["aac", "aiff", "alac", "caf", "isomp4", "mp3"] }
+# iOS like everything else. The features are 0.6's defaults (FLAC, Vorbis,
+# PCM, ADPCM in OGG, MKV/WebM and WAV, plus tag readers) and the containers
+# and codecs an import actually arrives in, minus `opt-simd`: it swaps the
+# built-in FFT for rustfft, whose rounding moves decoded AAC and Vorbis by a
+# few LSB once normalization gain applies, where without it 0.6 decodes
+# bit-for-bit what 0.5 did. 0.6 also moved gapless trimming from the format
+# reader to the decoder (AudioDecoderOptions::gapless, on by default), so each
+# caller states it.
+symphonia = { version = "0.6.1", default-features = false, features = ["aac", "adpcm", "aiff", "alac", "all-meta", "caf", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 sqlx = { package = "sqlx-core", version = "0.8", default-features = false, features = ["_rt-tokio", "chrono", "uuid"] }
 sqlx-sqlite = { version = "0.8", default-features = false, features = ["bundled", "chrono", "uuid"] }
 tauri = { version = "2.8.0", features = ["protocol-asset", "macos-private-api", "tray-icon", "image-png"] }
