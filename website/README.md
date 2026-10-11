@@ -125,7 +125,22 @@ so the page cannot quietly fall behind the app.
 ## Deployment
 
 The default build serves the complete website at the root of its dedicated
-account origin. For a temporary marketing subpage on an existing domain:
+account origin. The production builds, each checked by rebuilding the commit
+already online and comparing the `index-<hash>.js` it names:
+
+```sh
+# Public site, https://furetier.com/subrosa/ (then scripts/deploy-website-vps.sh,
+# which refuses a build without the account origin)
+VITE_SITE_BASE=/subrosa/ VITE_ACCOUNT_ORIGIN=https://subrosa.furetier.com pnpm build:website
+# Account site, https://subrosa.furetier.com/ (published by hand, see docs/vps-account-stack.md)
+VITE_OFFICE_ORIGIN=https://office.subrosa.furetier.com pnpm --filter @subrosa/website build
+# Office panes, https://office.subrosa.furetier.com/ (see docs/office-addins.md)
+VITE_ACCOUNT_ORIGIN=https://subrosa.furetier.com VITE_OFFICE_ORIGIN=https://office.subrosa.furetier.com \
+  pnpm --filter @subrosa/office-addins build
+```
+
+For a temporary marketing subpage on another domain, before an account
+service exists:
 
 ```sh
 VITE_SITE_BASE=/subrosa/ VITE_ACCOUNTS_UNAVAILABLE=1 pnpm build:website
