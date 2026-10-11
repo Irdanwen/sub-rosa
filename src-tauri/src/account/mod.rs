@@ -74,8 +74,17 @@ pub struct AccountStatus {
     pub recovery_available: bool,
     pub sync_enabled: bool,
     pub pending_changes: i64,
+    /// What waits to leave this device, what arrived and waits for a
+    /// dependency, what this build cannot read, and the bytes of files still
+    /// to move: the status line names each rather than summing them.
+    pub outbox_count: i64,
+    pub inbox_pending: i64,
+    pub inbox_parked: i64,
+    pub files_pending_bytes: i64,
     pub conflicts: i64,
+    pub recently_deleted_count: i64,
     pub last_synced_at: Option<String>,
+    pub last_received_at: Option<String>,
     pub last_sync_error: Option<String>,
     pub sync_issue_count: i64,
     pub sync_issues: Vec<sync::SyncIssue>,
@@ -639,6 +648,11 @@ pub async fn account_status(app: AppHandle) -> Result<AccountStatus, AppError> {
     // vault is open is asked separately, of the keyring, and stays true across
     // a session this device can get back on its own.
     let signed_in = connection != "none";
+    let counts = query("SELECT (SELECT count(*) FROM account_sync_outbox) AS outbox,(SELECT count(*) FROM account_sync_inbox i WHERE i.applied=0 AND NOT EXISTS(SELECT 1 FROM account_sync_issues s WHERE s.lane='inbox' AND s.item_id=i.revision)) AS pending,(SELECT count(*) FROM account_sync_issues WHERE lane='inbox') AS parked,(SELECT count(*) FROM account_sync_heads h JOIN account_sync_inbox i ON i.revision=h.revision WHERE i.deleted=1 AND h.kind IN ('note','memory')) AS deleted")
+        .fetch_one(&pool)
+        .await?;
+    let outbox_count: i64 = counts.get("outbox");
+    let inbox_pending: i64 = counts.get("pending");
     Ok(AccountStatus {
         default_server_url: DEFAULT_ACCOUNT_SERVER,
         server_url: row.get("server_url"),
@@ -661,16 +675,18 @@ pub async fn account_status(app: AppHandle) -> Result<AccountStatus, AppError> {
         }),
         account: if signed_in { account } else { None },
         sync_enabled: row.get::<i64, _>("enabled") != 0,
-        pending_changes: files::pending_transfers(&pool).await?
-            + query("SELECT (SELECT count(*) FROM account_sync_outbox)+(SELECT count(*) FROM account_sync_inbox WHERE applied=0) AS n")
-                .fetch_one(&pool)
-                .await?
-                .get::<i64, _>("n"),
+        pending_changes: files::pending_transfers(&pool).await? + outbox_count + inbox_pending,
+        outbox_count,
+        inbox_pending,
+        inbox_parked: counts.get("parked"),
+        files_pending_bytes: files::pending_bytes(&pool).await?,
         conflicts: query("SELECT count(*) AS n FROM account_sync_conflicts WHERE resolved=0")
             .fetch_one(&pool)
             .await?
             .get("n"),
+        recently_deleted_count: counts.get("deleted"),
         last_synced_at: row.get("last_synced_at"),
+        last_received_at: row.get("last_received_at"),
         last_sync_error: row.get("last_sync_error"),
         sync_issue_count: sync::issue_count(&pool).await?,
         sync_issues: sync::issues(&pool).await?,
@@ -1339,6 +1355,32 @@ pub fn setup(app: &AppHandle) {
             crate::connectors::relay::run_pending(&app).await;
         }
     });
+}
+
+/// Notes and memories a deletion took in the last thirty days (ADR-0108).
+#[tauri::command]
+pub async fn account_recently_deleted(app: AppHandle) -> Result<Vec<sync::DeletedItem>, AppError> {
+    let pool = pool(&app).await?;
+    let s = session(&pool).await?;
+    let key = vault_key(&s)?;
+    sync::recently_deleted(&pool, &s, &key).await
+}
+
+/// Brings one of them back, on every device.
+#[tauri::command]
+pub async fn account_restore_deleted(
+    app: AppHandle,
+    object_id: String,
+) -> Result<AccountStatus, AppError> {
+    {
+        let _guard = SESSION_LOCK.lock().await;
+        let pool = pool(&app).await?;
+        let s = session(&pool).await?;
+        let key = vault_key(&s)?;
+        sync::restore_deleted(&pool, &s, &key, &object_id).await?;
+    }
+    let _ = sync::run(&app).await;
+    account_status(app).await
 }
 
 #[tauri::command]

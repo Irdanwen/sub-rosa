@@ -335,7 +335,7 @@ pub async fn run(app: &AppHandle) -> Result<(), AppError> {
                     .bind(&failure.code)
                     .execute(&pool)
                     .await;
-            let _ = app.emit("subrosa://sync-updated", ());
+            let _ = app.emit("subrosa://sync-updated", json!({"error":failure.code}));
         }
     }
     result
@@ -357,6 +357,12 @@ async fn run_inner(app: &AppHandle) -> Result<(), AppError> {
     }
     let s = session(&pool).await?;
     let key = vault_key(&s)?;
+    let had_error: Option<String> =
+        query("SELECT last_sync_error FROM account_sync_control WHERE id=1")
+            .fetch_one(&pool)
+            .await?
+            .get("last_sync_error");
+    let transfers_before = super::files::pending_transfers(&pool).await.unwrap_or(0);
     let summary = synchronize(&pool, &s, &key).await?;
     if summary.applied > 0 {
         query("UPDATE account_sync_control SET last_received_at=? WHERE id=1")
@@ -374,7 +380,13 @@ async fn run_inner(app: &AppHandle) -> Result<(), AppError> {
         .bind(chrono::Utc::now().to_rfc3339())
         .execute(&pool)
         .await?;
-    let _ = app.emit("subrosa://sync-updated", ());
+    // The webview re-reads its lists on this event, so it is sent when
+    // something moved: a revision applied or sent, a file that progressed,
+    // an error that cleared. An idle pass is silent.
+    let transfers_after = super::files::pending_transfers(&pool).await.unwrap_or(0);
+    if summary.changed() || had_error.is_some() || transfers_after != transfers_before {
+        let _ = app.emit("subrosa://sync-updated", json!({"applied":summary.applied,"pushed":summary.pushed,"preserved":summary.preserved,"parked":summary.parked,"kinds":summary.kinds}));
+    }
     Ok(())
 }
 /// What one pass did, for the status line and the event the webview hears.
@@ -1184,6 +1196,17 @@ pub(super) async fn delete_locally(
             crate::spotlight::forget(std::slice::from_ref(&id.to_string()));
         }
         "agent_tasks" => {
+            // The desktop keeps the chat in its own runtime too: the file
+            // lane, which has the app, asks it to forget the session.
+            let session: Option<String> =
+                query("SELECT hermes_session_id FROM agent_tasks WHERE id=?")
+                    .bind(id)
+                    .fetch_optional(&mut *conn)
+                    .await?
+                    .and_then(|row| row.get("hermes_session_id"));
+            if let Some(session) = session.filter(|s| !s.is_empty()) {
+                queue_removed_file(conn, "hermes-session", session, &now).await?;
+            }
             for sql in [
                 "DELETE FROM agent_tool_events WHERE task_id=?",
                 "DELETE FROM agent_messages WHERE task_id=?",
@@ -1615,6 +1638,175 @@ async fn replay_pending(
     }
     Ok(())
 }
+/// Days a deletion stays listed, and restorable, after it was decided.
+const RECENTLY_DELETED_DAYS: i64 = 30;
+
+/// Something a deletion took, as the account panel lists it (ADR-0108).
+#[derive(Serialize, Clone, Debug)]
+pub struct DeletedItem {
+    pub object_id: String,
+    pub kind: String,
+    pub title: String,
+    pub deleted_at: String,
+}
+
+/// When a time-ordered revision was minted, as the service mints them.
+fn revision_time(revision: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let (seconds, nanos) = uuid::Uuid::parse_str(revision)
+        .ok()?
+        .get_timestamp()?
+        .to_unix();
+    chrono::DateTime::from_timestamp(i64::try_from(seconds).ok()?, nanos)
+}
+
+fn item_title(row: &Value) -> String {
+    ["title", "name", "text", "content", "edited_content"]
+        .iter()
+        .filter_map(|field| row[*field].as_str())
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+        .map(|s| s.lines().next().unwrap_or_default().chars().take(120).collect())
+        .unwrap_or_default()
+}
+
+/// The last live revision of an object this device holds as deleted, if the
+/// journal still has one it can read.
+async fn last_live_revision(
+    pool: &SqlitePool,
+    s: &Session,
+    key: &[u8; 32],
+    object_id: &str,
+    before: i64,
+) -> Result<Option<(Change, Value)>, AppError> {
+    let rows = query("SELECT * FROM account_sync_inbox WHERE object_id=? AND deleted=0 AND sequence<? ORDER BY sequence DESC LIMIT 5")
+        .bind(object_id)
+        .bind(before)
+        .fetch_all(pool)
+        .await?;
+    for r in rows {
+        let c = Change {
+            sequence: r.get("sequence"),
+            resolved_revisions: serde_json::from_str(&r.get::<String, _>("resolved_revisions"))
+                .unwrap_or_default(),
+            object_id: r.get("object_id"),
+            revision: r.get("revision"),
+            parent_revision: r.get("parent_revision"),
+            kind: r.get("kind"),
+            ciphertext: r.get("ciphertext"),
+            deleted: r.get("deleted"),
+            operation_id: r.get("operation_id"),
+        };
+        if let Ok(body) = verify(s, key, &c) {
+            if matches!(body["table"].as_str(), Some("notes" | "memories")) {
+                return Ok(Some((c, body)));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Notes and memories a deletion took in the last thirty days, read from
+/// the journal this device keeps: the tombstone that is the head, and the
+/// last live revision before it. Nothing is listed that is back already.
+pub(super) async fn recently_deleted(
+    pool: &SqlitePool,
+    s: &Session,
+    key: &[u8; 32],
+) -> Result<Vec<DeletedItem>, AppError> {
+    let rows = query("SELECT h.object_id,h.kind,i.revision,i.sequence FROM account_sync_heads h JOIN account_sync_inbox i ON i.revision=h.revision WHERE i.deleted=1 AND h.kind IN ('note','memory') ORDER BY i.sequence DESC LIMIT 500")
+        .fetch_all(pool)
+        .await?;
+    let horizon = chrono::Utc::now() - chrono::Duration::days(RECENTLY_DELETED_DAYS);
+    let mut items = Vec::new();
+    for row in rows {
+        let object_id: String = row.get("object_id");
+        let kind: String = row.get("kind");
+        let revision: String = row.get("revision");
+        let Some(at) = revision_time(&revision) else {
+            continue;
+        };
+        if at < horizon {
+            continue;
+        }
+        let table = if kind == "note" { "notes" } else { "memories" };
+        let present = query(&format!("SELECT 1 FROM {table} WHERE id=?"))
+            .bind(&object_id)
+            .fetch_optional(pool)
+            .await?
+            .is_some();
+        if present {
+            continue;
+        }
+        let Some((_, body)) =
+            last_live_revision(pool, s, key, &object_id, row.get("sequence")).await?
+        else {
+            continue;
+        };
+        items.push(DeletedItem {
+            object_id,
+            kind,
+            title: item_title(&body["row"]),
+            deleted_at: at.to_rfc3339(),
+        });
+        if items.len() >= 200 {
+            break;
+        }
+    }
+    Ok(items)
+}
+
+/// Brings a deleted note or memory back, on every device: its last live
+/// revision is written here again and leaves as a child of the tombstone,
+/// which every other device holds as the head and so applies. Children of a
+/// note (recordings, transcripts) are not brought back; the text is.
+pub(super) async fn restore_deleted(
+    pool: &SqlitePool,
+    s: &Session,
+    key: &[u8; 32],
+    object_id: &str,
+) -> Result<(), AppError> {
+    let head = query("SELECT i.revision,i.sequence,i.kind FROM account_sync_heads h JOIN account_sync_inbox i ON i.revision=h.revision WHERE h.object_id=? AND i.deleted=1")
+        .bind(object_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| error("sync_not_deleted"))?;
+    let tombstone: String = head.get("revision");
+    let kind: String = head.get("kind");
+    let (live, body) = last_live_revision(pool, s, key, object_id, head.get("sequence"))
+        .await?
+        .ok_or_else(|| error("sync_restore_unavailable"))?;
+    let mut tx = pool.begin().await?;
+    if pending_unparked(&mut tx, object_id).await? {
+        return Err(error("sync_pending_changes"));
+    }
+    let restored = Change {
+        deleted: false,
+        ..live
+    };
+    if !apply(&mut tx, &restored, &body).await? {
+        return Err(error("sync_dependencies_pending"));
+    }
+    let op = uuid::Uuid::new_v4().to_string();
+    let mut chosen = body;
+    chosen["operation_id"] = json!(op);
+    chosen["parent_revision"] = json!(tombstone);
+    chosen["resolved_revisions"] = json!([]);
+    chosen["deleted"] = json!(false);
+    let encoded =
+        Zeroizing::new(serde_json::to_vec(&chosen).map_err(|_| error("sync_format_invalid"))?);
+    let ciphertext = crypto::seal(key, &aad(s, &kind, object_id), &encoded)?;
+    query("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted,ciphertext,parent_revision,resolved_revisions) VALUES(?,?,?,'{}',0,?,?,'[]')")
+        .bind(op)
+        .bind(object_id)
+        .bind(&kind)
+        .bind(ciphertext)
+        .bind(&tombstone)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 pub async fn conflict_preview(app: &AppHandle, id: &str) -> Result<Value, AppError> {
     let pool = pool(app).await?;
     let s = session(&pool).await?;

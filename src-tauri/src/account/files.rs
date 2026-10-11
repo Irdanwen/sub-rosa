@@ -155,7 +155,7 @@ pub(super) async fn step(
     // remainder across an iOS suspension without trusting a JavaScript future.
     let gallery = crate::carpe_diem::media::artifacts_dir(app)?;
     let references = crate::assistants::references_dir(app)?;
-    remove_queued_files(pool, &paths, &gallery, &references).await?;
+    remove_queued_files(app, pool, &paths, &gallery, &references).await?;
     stage_assistant_files(pool, &references).await?;
     let inventory = super::studio::inventory(app, pool, &gallery).await;
     if let Some(row) = next_upload(pool).await? {
@@ -187,6 +187,7 @@ pub(super) async fn step(
 /// moves its container on reinstall. A file already gone is done; one that
 /// cannot be removed right now stays queued for the next pass.
 async fn remove_queued_files(
+    app: &AppHandle,
     pool: &SqlitePool,
     paths: &AppPaths,
     gallery: &std::path::Path,
@@ -243,6 +244,13 @@ async fn remove_queued_files(
                 Ok(target) => std::fs::remove_file(target),
                 Err(_) => Ok(()),
             },
+            // A chat deleted elsewhere: the desktop's runtime still lists it
+            // until the workspace is told (ADR-0108).
+            "hermes-session" => {
+                use tauri::Emitter as _;
+                let _ = app.emit("subrosa://hermes-session-removed", json!({"session_id":path}));
+                Ok(())
+            }
             _ => Ok(()),
         };
         match result {
@@ -331,6 +339,14 @@ const ASSISTANT_DOWNLOAD_ELIGIBLE: &str = "(m.source_kind<>'assistant' OR (m.art
 pub(super) async fn pending_transfers(pool: &SqlitePool) -> Result<i64, AppError> {
     Ok(query(&format!("{ASSISTANT_OWNERS} SELECT (SELECT count(*) FROM account_file_uploads u WHERE u.completed=0 AND {ASSISTANT_UPLOAD_ELIGIBLE})+(SELECT count(*) FROM account_file_downloads d LEFT JOIN account_file_manifests m ON m.id=d.manifest_id WHERE d.completed=0 AND (m.source_kind IS NULL OR {ASSISTANT_DOWNLOAD_ELIGIBLE})) AS n"))
         .fetch_one(pool).await?.get("n"))
+}
+
+/// Bytes still to move in either direction, for the status line.
+pub(super) async fn pending_bytes(pool: &SqlitePool) -> Result<i64, AppError> {
+    Ok(query("SELECT COALESCE((SELECT SUM(MAX(bytes-next_offset,0)) FROM account_file_uploads WHERE completed=0),0)+COALESCE((SELECT SUM(MAX(m.bytes-MIN(COALESCE(d.next_chunk,0)*1048576,m.bytes),0)) FROM account_file_manifests m LEFT JOIN account_file_downloads d ON d.manifest_id=m.id LEFT JOIN audio_artifacts a ON a.id=m.artifact_id WHERE COALESCE(d.completed,0)=0 AND ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id)))),0) AS n")
+        .fetch_one(pool)
+        .await?
+        .get::<i64, _>("n"))
 }
 
 async fn next_upload(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {

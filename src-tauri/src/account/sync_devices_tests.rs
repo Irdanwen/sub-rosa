@@ -356,3 +356,74 @@ async fn old_deletion_cards_are_settled_by_revision_order_and_the_head_moves_to_
     assert_eq!(mac.head(&id).await.as_deref(), Some(tombstone_revision.as_str()));
     assert_eq!(mac.outbox(&id).await, 0, "settling sent something");
 }
+
+#[tokio::test]
+async fn a_recently_deleted_note_is_listed_and_restored_on_every_device() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (device(&service, "mac").await, device(&service, "phone").await);
+    let id = note();
+    mac.create_note(&id, "Monday").await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    phone.delete_note(&id).await;
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(mac.title(&id).await, None);
+    let listed = recently_deleted(&mac.pool, &mac.session, &key).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].object_id, id);
+    assert_eq!(listed[0].title, "Monday");
+    assert_eq!(listed[0].kind, "note");
+    // The device that deleted it lists it too: the journal is the same.
+    assert_eq!(recently_deleted(&phone.pool, &phone.session, &key).await.unwrap().len(), 1);
+    restore_deleted(&mac.pool, &mac.session, &key, &id).await.unwrap();
+    assert_eq!(mac.title(&id).await.as_deref(), Some("Monday"));
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    assert_eq!(phone.title(&id).await.as_deref(), Some("Monday"), "the restore did not reach the phone");
+    assert_eq!(phone.cards(&id).await + mac.cards(&id).await, 0);
+    assert_eq!(service.heads(&id).await.len(), 1);
+    assert!(recently_deleted(&mac.pool, &mac.session, &key).await.unwrap().is_empty());
+    assert!(recently_deleted(&phone.pool, &phone.session, &key).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_deleted_conversation_is_not_recreated_by_the_hermes_mirror() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (device(&service, "mac").await, device(&service, "phone").await);
+    // The Mac mirrors a Hermes session into a portable conversation.
+    let mut response = json!([{"role":"user","content":"Hello","id":"m1"},{"role":"assistant","content":"Hi","id":"m2"}]);
+    super::super::conversations::mirror_history(&mac.pool, "account-one", "session-42", &mut response)
+        .await
+        .unwrap();
+    let task: String = query("SELECT id FROM agent_tasks WHERE hermes_session_id='session-42'")
+        .fetch_one(&mac.pool)
+        .await
+        .unwrap()
+        .get("id");
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    assert_eq!(phone.count("SELECT count(*) AS n FROM agent_tasks WHERE id=?", &task).await, 1);
+    // The phone deletes the conversation.
+    for sql in [
+        "DELETE FROM agent_messages WHERE task_id=?",
+        "DELETE FROM agent_tasks WHERE id=?",
+    ] {
+        query(sql).bind(&task).execute(&phone.pool).await.unwrap();
+    }
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(mac.count("SELECT count(*) AS n FROM agent_tasks WHERE id=?", &task).await, 0);
+    // The desktop runtime still has the session; reading it again must not
+    // bring the conversation back.
+    let mut again = json!([{"role":"user","content":"Hello","id":"m1"},{"role":"assistant","content":"Hi","id":"m2"}]);
+    super::super::conversations::mirror_history(&mac.pool, "account-one", "session-42", &mut again)
+        .await
+        .unwrap();
+    assert_eq!(mac.count("SELECT count(*) AS n FROM agent_tasks WHERE id=?", &task).await, 0);
+    assert_eq!(mac.outbox(&task).await, 0);
+    // And the runtime is asked to forget it.
+    assert_eq!(mac.count("SELECT count(*) AS n FROM account_sync_removed_files WHERE lane='hermes-session' AND path=?", "session-42").await, 1);
+}
