@@ -1,16 +1,18 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { App } from "../app/App";
 import { MEETING_START_TRANSCRIPTION_EVENT } from "../lib/events";
 import type { BootstrapResponse, NoteDto, RecordingSessionDto } from "../lib/tauri";
 
 type TauriListener = (event: { payload: unknown }) => unknown;
+/** What a Tauri `listen` resolves to: the call that removes the listener. */
+type Unlisten = () => void;
 
 const mocks = vi.hoisted(() => ({
   listeners: new Map<string, TauriListener>(),
   listen: vi.fn((event: string, listener: TauriListener) => {
     mocks.listeners.set(event, listener);
-    return Promise.resolve(vi.fn());
+    return Promise.resolve(vi.fn<Unlisten>());
   }),
   getCurrentWindow: vi.fn(),
   bootstrapApp: vi.fn(),
@@ -267,7 +269,7 @@ describe("meeting start transcription event", () => {
   });
 
   it("cleans up Tauri listeners that resolve after unmount", async () => {
-    const cleanups: Array<ReturnType<typeof vi.fn>> = [];
+    const cleanups: Array<Mock<Unlisten>> = [];
     const pendingListeners: Array<(cleanup: (typeof cleanups)[number]) => void> = [];
     mocks.listen.mockImplementation((event: string, listener: TauriListener) => {
       mocks.listeners.set(event, listener);
@@ -283,7 +285,7 @@ describe("meeting start transcription event", () => {
 
     await act(async () => {
       for (const resolve of pendingListeners) {
-        const cleanup = vi.fn();
+        const cleanup = vi.fn<Unlisten>();
         cleanups.push(cleanup);
         resolve(cleanup);
       }
