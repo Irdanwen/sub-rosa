@@ -18,7 +18,8 @@ discovery endpoints plus a pricing endpoint:
 | `GET /pricing` | Per-model cost in USD + credits, with the current dynamic `multiplier`. |
 
 Base URL: `https://carpe-diem.xyz/api/operator/v1` (and `…/api/operator` for the
-grouped `/models`). **All three are public — no auth required.**
+grouped `/models` and for `/pricing`). **All three are public — no auth required.**
+In the examples below, `base` is `https://carpe-diem.xyz/api/operator`.
 
 > **Carpe Diem does NOT expose `/models/traits` or `/models/compatibility_mapping`.**
 > Use `carpe_diem_type` + `tier` + `capabilities` to pick a model. Don't call the
@@ -104,7 +105,7 @@ Same catalog as `/v1/models`, grouped by category — handy for building a picke
 ## `GET /pricing`
 
 ```bash
-curl https://carpe-diem.xyz/api/operator/v1/pricing
+curl https://carpe-diem.xyz/api/operator/pricing
 ```
 
 Returns `{ models[], fixedCost[], updatedAt }`:
@@ -132,8 +133,9 @@ const model = list.data.find((m: any) =>
 ### Estimate a call's cost
 
 ```ts
-const pricing = await fetch(`${base}/v1/pricing`).then(r => r.json())
-const row = pricing.models.find((m: any) => m.id === myModel)
+// /pricing sits at the operator root, beside /v1 (there is no /v1/pricing).
+const pricing = await fetch(`${base}/pricing`).then(r => r.json())
+const row = pricing.models.find((m: any) => m.model === myModel)
 // 1 credit = $0.01; row carries the current multiplier-adjusted rate
 ```
 
