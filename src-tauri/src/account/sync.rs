@@ -1740,3 +1740,11 @@ mod web_tests;
 #[cfg(test)]
 #[path = "sync_connector_tests.rs"]
 mod connector_tests;
+
+#[cfg(test)]
+#[path = "sync_fake_service.rs"]
+pub(super) mod fake_service;
+
+#[cfg(test)]
+#[path = "sync_devices_tests.rs"]
+mod devices_tests;
