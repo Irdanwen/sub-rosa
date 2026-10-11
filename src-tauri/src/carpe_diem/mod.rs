@@ -21,6 +21,8 @@ pub mod jobs;
 pub mod local_session;
 pub mod media;
 pub mod media_protocol;
+#[cfg(desktop)]
+mod orphan;
 pub mod settings;
 pub mod sidecar;
 pub mod stream_usage;

@@ -54,6 +54,11 @@ const LOCAL_USER_ID: &str = "usr_local";
 /// App handle for the request-side guard (`ensure_ready_for_request`), set at
 /// `setup`. Same global-handle pattern as `agent_hud`.
 static APP: OnceLock<AppHandle> = OnceLock::new();
+
+/// Where the running backend's pid is recorded, so a backend that outlives a
+/// crashed app is found at the next launch (see `orphan`).
+#[cfg(desktop)]
+static ORPHAN_RECORD: OnceLock<PathBuf> = OnceLock::new();
 /// How long a request-side heal waits for the restarted backend to report
 /// Ready before letting the request proceed (and fail) as before. The
 /// in-process server binds in well under a second; this only pads for the
@@ -127,9 +132,19 @@ pub struct SidecarStatusDto {
 pub fn setup(app: &mut tauri::App) {
     app.manage(SidecarState(Mutex::new(Process::default())));
     let _ = APP.set(app.handle().clone());
+    #[cfg(desktop)]
+    if let Ok(dir) = app.path().app_local_data_dir() {
+        let _ = ORPHAN_RECORD.set(dir.join(super::orphan::RECORD_FILE));
+    }
     let handle = app.handle().clone();
     // Spawn off the setup thread: starting the backend must not block the UI.
     tauri::async_runtime::spawn(async move {
+        // The backend a crashed run left behind goes first: it still holds
+        // the key and a port. Terminating it can wait up to a second.
+        #[cfg(desktop)]
+        if let Some(path) = ORPHAN_RECORD.get().cloned() {
+            let _ = tauri::async_runtime::spawn_blocking(move || super::orphan::reap(&path)).await;
+        }
         start_or_mark_unconfigured(&handle);
     });
 }
@@ -367,6 +382,10 @@ fn spawn_sidecar(app: &AppHandle) {
                 bearer_token: crate::redacted::Redacted::new(token.clone()),
                 user_id: LOCAL_USER_ID.to_string(),
             });
+            #[cfg(desktop)]
+            if let Some(path) = ORPHAN_RECORD.get() {
+                super::orphan::remember(path, backend.id());
+            }
             let generation = store_child(app, backend, port);
             set_status(app, SidecarStatus::Starting, Some(port), None);
             spawn_health_check(app.clone(), port, generation);
@@ -668,8 +687,12 @@ fn spawn_health_check(app: AppHandle, port: u16, generation: u64) {
 /// the in-process server's shutdown future on mobile.
 #[cfg(desktop)]
 fn kill_backend(mut backend: Backend) {
+    let pid = backend.id();
     let _ = backend.kill();
     let _ = backend.wait();
+    if let Some(path) = ORPHAN_RECORD.get() {
+        super::orphan::forget(path, pid);
+    }
 }
 
 #[cfg(mobile)]
