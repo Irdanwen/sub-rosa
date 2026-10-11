@@ -47,7 +47,6 @@ pub(super) struct Journal {
 pub(super) struct Service {
     pub base: String,
     pub journal: Arc<Mutex<Journal>>,
-    pub changed: Arc<Notify>,
 }
 
 impl Service {
@@ -69,11 +68,8 @@ impl Service {
                 tokio::spawn(async move { serve(stream, journal, changed).await });
             }
         });
-        Service {
-            base,
-            journal,
-            changed,
-        }
+        drop(changed);
+        Service { base, journal }
     }
     pub async fn heads(&self, object_id: &str) -> Vec<Revision> {
         self.journal
@@ -98,6 +94,7 @@ impl Service {
     pub async fn posts(&self) -> usize {
         self.journal.lock().await.posts
     }
+    #[allow(dead_code)]
     pub async fn gets(&self) -> usize {
         self.journal.lock().await.gets
     }

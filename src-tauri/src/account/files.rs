@@ -37,10 +37,7 @@ fn modified(meta: &std::fs::Metadata) -> Result<String, AppError> {
 }
 async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, AppError> {
     uuid::Uuid::parse_str(id).map_err(|_| file_error())?;
-    let client = crate::http_client::credentialed(Duration::from_secs(25))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| error("account_network"))?;
+    let client = crate::http_client::account();
     let started = Instant::now();
     let method_name = if bytes.is_some() { "PUT" } else { "GET" };
     let request_bytes = bytes.as_ref().map_or(0, |v| v.len() as u64);
@@ -53,6 +50,7 @@ async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, 
             },
             format!("{}/api/v1/blobs/{id}", s.base),
         )
+        .timeout(Duration::from_secs(25))
         .bearer_auth(s.token.expose_str());
     let req = if let Some(bytes) = bytes {
         req.header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
@@ -339,6 +337,27 @@ const ASSISTANT_DOWNLOAD_ELIGIBLE: &str = "(m.source_kind<>'assistant' OR (m.art
 pub(super) async fn pending_transfers(pool: &SqlitePool) -> Result<i64, AppError> {
     Ok(query(&format!("{ASSISTANT_OWNERS} SELECT (SELECT count(*) FROM account_file_uploads u WHERE u.completed=0 AND {ASSISTANT_UPLOAD_ELIGIBLE})+(SELECT count(*) FROM account_file_downloads d LEFT JOIN account_file_manifests m ON m.id=d.manifest_id WHERE d.completed=0 AND (m.source_kind IS NULL OR {ASSISTANT_DOWNLOAD_ELIGIBLE})) AS n"))
         .fetch_one(pool).await?.get("n"))
+}
+
+/// Whether the lane has anything to do: a recording not yet staged, a chunk
+/// to send or fetch, a file to remove. Read by the tick that wakes the
+/// driver, so it costs four indexed queries and no network.
+pub(super) async fn has_work(pool: &SqlitePool) -> Result<bool, AppError> {
+    if query("SELECT 1 FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
+        .fetch_optional(pool)
+        .await?
+        .is_some()
+    {
+        return Ok(true);
+    }
+    if query("SELECT 1 FROM account_sync_removed_files LIMIT 1")
+        .fetch_optional(pool)
+        .await?
+        .is_some()
+    {
+        return Ok(true);
+    }
+    Ok(next_upload(pool).await?.is_some() || next_download(pool).await?.is_some())
 }
 
 /// Bytes still to move in either direction, for the status line.

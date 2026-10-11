@@ -113,6 +113,15 @@ pub(super) async fn retry_issues(pool: &SqlitePool) -> Result<(), AppError> {
     query("DELETE FROM account_sync_outbox WHERE operation_id IN (SELECT i.item_id FROM account_sync_issues i JOIN account_sync_outbox old ON old.operation_id=i.item_id WHERE i.lane='outbox' AND i.code IN ('sync_object_too_large','sync_local_object_invalid') AND EXISTS(SELECT 1 FROM account_sync_outbox newer WHERE newer.object_id=old.object_id AND newer.sequence>old.sequence))")
         .execute(&mut *tx)
         .await?;
+    // A row the service refused for a parent it does not know is sealed
+    // again against the current head; one with no body of its own (a
+    // resolution, a restore) names a revision that is gone and is dropped.
+    query("DELETE FROM account_sync_outbox WHERE body='{}' AND operation_id IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox' AND code='sync_parent_unknown')")
+        .execute(&mut *tx)
+        .await?;
+    query("UPDATE account_sync_outbox SET ciphertext=NULL,parent_revision=NULL,resolved_revisions='[]' WHERE operation_id IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox' AND code='sync_parent_unknown')")
+        .execute(&mut *tx)
+        .await?;
     // A changed file needs a new manifest and fresh immutable chunk ids.
     query("DELETE FROM account_file_uploads WHERE artifact_id IN (SELECT item_id FROM account_sync_issues WHERE lane='upload' AND code='sync_file_changed')")
         .execute(&mut *tx)
@@ -125,7 +134,10 @@ pub(super) async fn retry_issues(pool: &SqlitePool) -> Result<(), AppError> {
 }
 
 pub(super) fn isolatable_outbox_error(code: &str) -> bool {
-    matches!(code, "sync_object_too_large" | "sync_local_object_invalid")
+    matches!(
+        code,
+        "sync_object_too_large" | "sync_local_object_invalid" | "sync_parent_unknown"
+    )
 }
 
 pub(super) fn isolatable_file_error(code: &str) -> bool {

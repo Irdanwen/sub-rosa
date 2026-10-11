@@ -536,14 +536,25 @@ pub(super) async fn request(
     path: &str,
     body: Option<Value>,
 ) -> Result<Value, AppError> {
-    let client = crate::http_client::credentialed(Duration::from_secs(25))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| error("account_network"))?;
+    request_within(base, token, method, path, body, Duration::from_secs(25)).await
+}
+/// The same, with a deadline of the caller's: the long wait holds for
+/// twenty seconds by design.
+pub(super) async fn request_within(
+    base: &str,
+    token: Option<&Redacted<String>>,
+    method: reqwest::Method,
+    path: &str,
+    body: Option<Value>,
+    deadline: Duration,
+) -> Result<Value, AppError> {
+    let client = crate::http_client::account();
     let started = Instant::now();
     let method_name = method.as_str().to_string();
     let request_bytes = body.as_ref().map_or(0, |v| v.to_string().len() as u64);
-    let mut req = client.request(method, format!("{base}{path}"));
+    let mut req = client
+        .request(method, format!("{base}{path}"))
+        .timeout(deadline);
     if let Some(token) = token {
         req = req.bearer_auth(token.expose_str());
     }
@@ -601,6 +612,7 @@ pub(super) async fn request(
             _ if status.as_u16() == 404 => "vault_not_found",
             _ if status.as_u16() == 401 => "account_not_connected",
             _ if status.as_u16() == 409 => "account_conflict",
+            _ if status.as_u16() == 400 => "account_invalid_request",
             _ => "account_request_failed",
         }));
     }
@@ -1141,6 +1153,7 @@ pub async fn account_sync_set_enabled(
     drop(_guard);
     if enabled {
         sync::resume(&app).await;
+        poke();
     }
     account_status(app).await
 }
@@ -1315,8 +1328,126 @@ mod tests {
     }
 }
 
-/// The timer merely re-drives durable rows. Launch/resume/background sweeps
-/// independently recover the same rows if iOS suspends this timer.
+/// Wakes the driver: something to send, something the service says has
+/// arrived, a pass a person asked for. Wake-ups coalesce; one during a pass
+/// is one more pass, not one per call.
+pub fn poke() {
+    WAKE.notify_one();
+}
+static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
+/// Whether the last tick found something waiting to leave this device. Read
+/// by the phone's lifecycle observer, which may not touch SQLite.
+pub fn local_work() -> bool {
+    LOCAL_WORK.load(std::sync::atomic::Ordering::Relaxed)
+}
+static LOCAL_WORK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// How long a wait holds on the service before answering "nothing new".
+/// Under the service's thirty-second request timeout and the client's
+/// deadline below.
+const WAIT_DEADLINE: Duration = Duration::from_secs(30);
+/// How long the driver sleeps between two passes nothing asked for: the
+/// balance snapshot, the file inventory and the usage capture still happen.
+const QUIET_PASS: Duration = Duration::from_secs(60);
+/// How often the tick looks at the outbox and the file lanes, locally.
+const TICK: Duration = Duration::from_secs(2);
+/// The polling cadence when the service does not know the long wait.
+const POLL: Duration = Duration::from_secs(5);
+
+/// Holds on the service until something new is in the journal, then wakes
+/// the driver (ADR-0109). A service that does not know the route answers
+/// 404 (`vault_not_found`, as every 404 is mapped): the waiter then polls
+/// at the old cadence until the next launch. Failures back off, and the
+/// backoff is dropped when the app comes back to the foreground, because a
+/// request cut by a suspension was not refused by anyone.
+async fn waiter(app: AppHandle) {
+    let mut supported = true;
+    let mut backoff = POLL;
+    let mut unmoved: Option<i64> = None;
+    let mut stalls = 0u32;
+    loop {
+        if !supported {
+            tokio::time::sleep(POLL).await;
+            poke();
+            continue;
+        }
+        let ready = async {
+            let pool = pool(&app).await?;
+            let enabled: i64 = query("SELECT enabled FROM account_sync_control WHERE id=1")
+                .fetch_one(&pool)
+                .await?
+                .get("enabled");
+            if enabled == 0 {
+                return Err(error("account_not_connected"));
+            }
+            let s = session(&pool).await?;
+            let cursor: i64 = query("SELECT cursor FROM account_sync_control WHERE id=1")
+                .fetch_one(&pool)
+                .await?
+                .get("cursor");
+            Ok::<_, AppError>((s, cursor))
+        }
+        .await;
+        let (s, cursor) = match ready {
+            Ok(ready) => ready,
+            Err(_) => {
+                tokio::time::sleep(POLL).await;
+                continue;
+            }
+        };
+        // A wake-up that moved nothing (a pass that could not run, a cursor
+        // that cannot advance) must not become a tight loop.
+        if unmoved == Some(cursor) {
+            stalls += 1;
+            let hold = Duration::from_secs((1u64 << stalls.min(5)).min(30));
+            tokio::time::sleep(hold).await;
+        } else {
+            stalls = 0;
+        }
+        let epoch = crate::ios_background::lifecycle_epoch();
+        let started = Instant::now();
+        match request_within(
+            &s.base,
+            Some(&s.token),
+            reqwest::Method::GET,
+            &format!("/api/v1/sync/wait?after={cursor}"),
+            None,
+            WAIT_DEADLINE,
+        )
+        .await
+        {
+            Ok(answer) => {
+                backoff = POLL;
+                if answer["changed"] == true {
+                    unmoved = Some(cursor);
+                    poke();
+                } else {
+                    unmoved = None;
+                }
+                if started.elapsed() < Duration::from_secs(1) {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+            Err(failure) if failure.code == "vault_not_found" => {
+                tracing::info!("the account service does not offer the long wait; polling");
+                supported = false;
+            }
+            Err(_) => {
+                if crate::ios_background::lifecycle_epoch() != epoch {
+                    backoff = POLL;
+                }
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(Duration::from_secs(60));
+            }
+        }
+    }
+}
+
+/// The driver runs every pass; nothing else runs one on a clock. It is woken
+/// by the waiter (something arrived), by the tick (something to send), by
+/// the sweep and by the commands, and runs on its own once a minute for the
+/// bookkeeping a pass also does. Launch/resume/background sweeps recover the
+/// same durable rows if the phone suspends these tasks.
 pub fn setup(app: &AppHandle) {
     // A sign-in that finished in the browser arrives here: at cold launch as
     // the URL that started the app, and afterwards through the single-instance
@@ -1337,24 +1468,40 @@ pub fn setup(app: &AppHandle) {
             }
         });
     }
-    let app = app.clone();
+    let driver = app.clone();
     tauri::async_runtime::spawn(async move {
         // Before anything is asked of it: a connected account whose
         // synchronisation is paused still deserves a live session, so the
         // screen tells the truth without waiting for the first action.
-        keep_alive(&app).await;
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        keep_alive(&driver).await;
         loop {
-            interval.tick().await;
-            sync::resume(&app).await;
-            spaces::resume(&app).await;
+            tokio::select! {
+                _ = WAKE.notified() => {}
+                _ = tokio::time::sleep(QUIET_PASS) => {}
+            }
+            sync::resume(&driver).await;
+            spaces::resume(&driver).await;
             // A connector call a browser tab asked this device to make
             // (ADR-0107): somebody is waiting for it, so it is looked for
             // after every synchronisation rather than every minute.
-            crate::connectors::relay::run_pending(&app).await;
+            crate::connectors::relay::run_pending(&driver).await;
         }
     });
+    let ticker = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(TICK).await;
+            let waiting = match pool(&ticker).await {
+                Ok(pool) => sync::has_local_work(&pool).await.unwrap_or(false),
+                Err(_) => false,
+            };
+            LOCAL_WORK.store(waiting, std::sync::atomic::Ordering::Relaxed);
+            if waiting {
+                poke();
+            }
+        }
+    });
+    tauri::async_runtime::spawn(waiter(app.clone()));
 }
 
 /// Notes and memories a deletion took in the last thirty days (ADR-0108).

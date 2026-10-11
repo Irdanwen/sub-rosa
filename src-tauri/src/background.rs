@@ -25,6 +25,11 @@ use tauri::AppHandle;
 /// Re-drive every durable queue. Safe to call concurrently with itself; each
 /// queue de-duplicates its own in-flight work.
 pub async fn sweep(app: &AppHandle) {
+    // What the other devices did while this one was away, first: a person
+    // who opens the phone after the Mac expects the Mac's work to be there,
+    // and nothing below depends on it.
+    crate::account::sync::resume(app).await;
+    crate::account::poke();
     // Notes killed in transit (recorded audio is on disk, the note row is
     // stuck in `transcribing`/`generating`). Mobile only: desktop is not
     // suspended out from under a running pipeline, and auto-retrying there
@@ -97,7 +102,6 @@ pub async fn sweep(app: &AppHandle) {
     // Passages and their vectors for "Ask your notes" (ADR-0046): cut what
     // changed, embed what is pending, a bounded amount per pass.
     crate::ask::semantic::catch_up(app).await;
-    crate::account::sync::resume(app).await;
 }
 
 /// Fire-and-forget [`sweep`], for call sites that are not async (app setup, the
@@ -119,4 +123,7 @@ pub fn has_pending_work() -> bool {
         // A scheduled task or assignment this phone runs: iOS may wake the
         // app now and then to look, opportunistically (ADR-0091).
         || crate::assignments::has_scheduled_work()
+        // Changes waiting to leave this phone (ADR-0109): a background window
+        // is worth asking for when the outbox is not empty.
+        || crate::account::local_work()
 }

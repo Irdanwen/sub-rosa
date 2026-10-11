@@ -427,3 +427,133 @@ async fn a_deleted_conversation_is_not_recreated_by_the_hermes_mirror() {
     // And the runtime is asked to forget it.
     assert_eq!(mac.count("SELECT count(*) AS n FROM account_sync_removed_files WHERE lane='hermes-session' AND path=?", "session-42").await, 1);
 }
+
+#[tokio::test]
+async fn a_hundred_rows_leave_in_two_posts_in_outbox_order() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (device(&service, "mac").await, device(&service, "phone").await);
+    let ids: Vec<String> = (0..100).map(|_| note()).collect();
+    for (i, id) in ids.iter().enumerate() {
+        mac.create_note(id, &format!("Note {i}")).await;
+    }
+    let before = service.posts().await;
+    let summary = mac.sync(&key).await.unwrap();
+    assert_eq!(summary.pushed, 100);
+    assert_eq!(service.posts().await - before, 2, "a hundred rows cost more than two trips");
+    // Sequence order on the service is outbox order.
+    let mut last = 0;
+    for id in &ids {
+        let revisions = service.revisions(id).await;
+        assert_eq!(revisions.len(), 1);
+        assert!(revisions[0].sequence > last);
+        last = revisions[0].sequence;
+    }
+    phone.sync(&key).await.unwrap();
+    assert_eq!(phone.title(&ids[99]).await.as_deref(), Some("Note 99"));
+    assert_eq!(mac.count("SELECT count(*) AS n FROM account_sync_outbox WHERE object_id<>?", "").await, 0);
+}
+
+#[tokio::test]
+async fn a_refused_batch_falls_back_one_by_one_and_parks_only_the_refused_row() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let mac = device(&service, "mac").await;
+    let (good, bad, other) = (note(), note(), note());
+    mac.create_note(&good, "Good").await;
+    mac.create_note(&bad, "Bad").await;
+    mac.create_note(&other, "Other").await;
+    // One row already sealed against a parent the service never saw.
+    query("UPDATE account_sync_outbox SET ciphertext='x',parent_revision=? WHERE object_id=?")
+        .bind(uuid::Uuid::now_v7().to_string())
+        .bind(&bad)
+        .execute(&mac.pool)
+        .await
+        .unwrap();
+    let before = service.posts().await;
+    let summary = mac.sync(&key).await.unwrap();
+    assert_eq!(summary.pushed, 2);
+    // One batch refused, then one request per row.
+    assert_eq!(service.posts().await - before, 4);
+    assert_eq!(service.revisions(&good).await.len(), 1);
+    assert_eq!(service.revisions(&other).await.len(), 1);
+    assert_eq!(service.revisions(&bad).await.len(), 0);
+    let parked = issues(&mac.pool).await.unwrap();
+    assert_eq!(parked.len(), 1);
+    assert_eq!(parked[0].code, "sync_parent_unknown");
+    // Retried, the row is sealed again against the current head and leaves.
+    retry_issues(&mac.pool).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(service.revisions(&bad).await.len(), 1);
+    assert_eq!(mac.outbox(&bad).await, 0);
+}
+
+#[tokio::test]
+async fn the_wait_answers_at_once_after_an_append_and_otherwise_times_out() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (device(&service, "mac").await, device(&service, "phone").await);
+    mac.create_note(&note(), "First").await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    let cursor = phone.cursor().await;
+    // Nothing new: the wait holds for the service's window, then says so.
+    let started = std::time::Instant::now();
+    let answer = request_within(&phone.session.base, Some(&phone.session.token), reqwest::Method::GET, &format!("/api/v1/sync/wait?after={cursor}"), None, Duration::from_secs(30)).await.unwrap();
+    assert_eq!(answer["changed"], false);
+    assert!(started.elapsed() >= Duration::from_secs(1));
+    // Something new on the Mac: the wait returns within the second.
+    let waiting = {
+        let s = Session {
+            base: phone.session.base.clone(),
+            account: phone.session.account.clone(),
+            token: Redacted::new("phone".into()),
+        };
+        tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            let answer = request_within(&s.base, Some(&s.token), reqwest::Method::GET, &format!("/api/v1/sync/wait?after={cursor}"), None, Duration::from_secs(30)).await.unwrap();
+            (answer, started.elapsed())
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    mac.create_note(&note(), "Second").await;
+    mac.sync(&key).await.unwrap();
+    let (answer, elapsed) = waiting.await.unwrap();
+    assert_eq!(answer["changed"], true);
+    assert!(elapsed < Duration::from_secs(1), "the wait took {elapsed:?}");
+    // An older service answers 404, which the client reads as "not offered".
+    service.journal.lock().await.without_wait = true;
+    let refused = request_within(&phone.session.base, Some(&phone.session.token), reqwest::Method::GET, &format!("/api/v1/sync/wait?after={cursor}"), None, Duration::from_secs(30)).await.unwrap_err();
+    assert_eq!(refused.code, "vault_not_found");
+}
+
+#[tokio::test]
+async fn a_fresh_library_is_handed_the_heads_and_ends_with_the_same_rows() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let mac = device(&service, "mac").await;
+    let (kept, edited, deleted) = (note(), note(), note());
+    mac.create_note(&kept, "Kept").await;
+    mac.create_note(&edited, "Edited once").await;
+    mac.create_note(&deleted, "Deleted").await;
+    mac.sync(&key).await.unwrap();
+    mac.edit_note(&edited, "Edited twice").await;
+    mac.sync(&key).await.unwrap();
+    mac.edit_note(&edited, "Edited thrice").await;
+    mac.delete_note(&deleted).await;
+    mac.sync(&key).await.unwrap();
+    assert_eq!(service.journal.lock().await.revisions.len(), 6);
+    // A new phone: heads, plus the live revision a tombstone retired.
+    let phone = device(&service, "phone").await;
+    let summary = phone.sync(&key).await.unwrap();
+    assert_eq!(phone.title(&kept).await.as_deref(), Some("Kept"));
+    assert_eq!(phone.title(&edited).await.as_deref(), Some("Edited thrice"));
+    assert_eq!(phone.title(&deleted).await, None);
+    assert_eq!(phone.count("SELECT count(*) AS n FROM account_sync_inbox WHERE object_id<>?", "").await, 4, "the phone received history, not heads");
+    assert!(summary.applied >= 3);
+    assert_eq!(phone.cursor().await, 6);
+    // And it can still list what was deleted.
+    let listed = recently_deleted(&phone.pool, &phone.session, &key).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].title, "Deleted");
+}
