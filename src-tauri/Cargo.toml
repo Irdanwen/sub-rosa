@@ -211,7 +211,7 @@ keyring = { version = "3", default-features = false }
 cpal = { version = "0.15", features = ["oboe-shared-stdcxx"] }
 # cpal reads the JavaVM and Context from ndk-context; android.rs initializes it.
 ndk-context = "0.1"
-jni = "0.21"
+jni = "0.22"
 # The voice conversation opens its microphone with the VoiceCommunication
 # preset, the source Android attaches its echo canceller to; cpal cannot ask
 # for a preset. The same Oboe cpal links, so nothing new is fetched.
