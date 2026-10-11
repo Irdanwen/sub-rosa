@@ -32,7 +32,9 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+// TypeScript 7 (the native compiler) ships no JavaScript compiler API, so the
+// i18n scripts parse with typescript 5, kept as the `typescript5` alias.
+import ts from "typescript5";
 import { verifyCatalog } from "./verify-catalogs.mjs";
 
 /** The languages with a website catalog: French is written in the code. */

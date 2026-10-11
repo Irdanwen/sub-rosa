@@ -41,6 +41,11 @@ updates:
       # it would otherwise fail every time (2026-10-11, PR #307).
       - dependency-name: "@biomejs/biome"
         versions: [">= 2.5.12, < 2.6.0"]
+      # `typescript5` is an alias of typescript 5.x kept for the i18n scripts,
+      # which use the JavaScript compiler API that TypeScript 7 (the native
+      # compiler) no longer ships. Moving it to 7 breaks `pnpm i18n:check`.
+      - dependency-name: "typescript5"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: cargo
     directory: /src-tauri
