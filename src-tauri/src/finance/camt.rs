@@ -59,8 +59,7 @@ pub fn looks_like(content: &str) -> bool {
     head.contains("camt.053") || head.contains("camt.052") || head.contains("BkToCstmrStmt")
 }
 
-fn local(name: &[u8]) -> String {
-    let name = String::from_utf8_lossy(name);
+fn local(name: &str) -> String {
     name.rsplit(':').next().unwrap_or_default().to_string()
 }
 
@@ -68,12 +67,12 @@ fn entity(reference: &quick_xml::events::BytesRef<'_>) -> String {
     if let Ok(Some(c)) = reference.resolve_char_ref() {
         return c.to_string();
     }
-    match reference.decode().as_deref() {
-        Ok("amp") => "&".into(),
-        Ok("lt") => "<".into(),
-        Ok("gt") => ">".into(),
-        Ok("quot") => "\"".into(),
-        Ok("apos") => "'".into(),
+    match &**reference {
+        "amp" => "&".into(),
+        "lt" => "<".into(),
+        "gt" => ">".into(),
+        "quot" => "\"".into(),
+        "apos" => "'".into(),
         _ => String::new(),
     }
 }
@@ -138,13 +137,11 @@ pub fn parse(content: &str) -> Result<CamtStatement, AppError> {
                 path.push(name);
             }
             Ok(Event::Text(chunk)) => {
-                let decoded = chunk
-                    .xml_content(quick_xml::XmlVersion::Implicit1_0)
-                    .unwrap_or_default();
+                let decoded = chunk.xml_content(quick_xml::XmlVersion::Implicit1_0);
                 text_buffer.push_str(&decoded);
             }
             Ok(Event::GeneralRef(reference)) => text_buffer.push_str(&entity(&reference)),
-            Ok(Event::CData(data)) => text_buffer.push_str(&String::from_utf8_lossy(data.as_ref())),
+            Ok(Event::CData(data)) => text_buffer.push_str(&data),
             Ok(Event::End(_)) => {
                 let value = text_buffer.trim().to_string();
                 text_buffer.clear();

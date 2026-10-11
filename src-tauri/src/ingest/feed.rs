@@ -32,13 +32,19 @@ pub const MAX_FEED_BYTES: usize = 8 * 1024 * 1024;
 /// the feed: shows routinely publish trailers and notes alongside episodes.
 pub fn first_episode(xml: &str) -> Result<FeedEpisode, AppError> {
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    // No `trim_text`: a title arrives as several events (text, then each
+    // entity, then text), and trimming each piece would glue "Tom & Jerry"
+    // into "Tom&Jerry". The whole title is trimmed once, when it closes.
     reader.config_mut().check_end_names = false;
 
     let mut show: Option<String> = None;
     let mut in_item = false;
     // Where the text we are collecting should land.
     let mut collecting: Option<&'static str> = None;
+    // The title being collected, assembled from every piece until it closes.
+    let mut title_text = String::new();
+    // An Atom title of `type="html"` is escaped once more, as HTML.
+    let mut title_is_html = false;
     let mut item_title: Option<String> = None;
     let mut pending: Option<FeedEpisode> = None;
     let mut depth_title_seen_outside_item = false;
@@ -54,6 +60,13 @@ pub fn first_episode(xml: &str) -> Result<FeedEpisode, AppError> {
                     }
                     "title" => {
                         collecting = Some(if in_item { "item-title" } else { "show-title" });
+                        title_text.clear();
+                        title_is_html = element.attributes().flatten().any(|attribute| {
+                            local_name(attribute.key.as_ref()) == "type"
+                                && attribute
+                                    .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                                    .is_ok_and(|value| value.trim().eq_ignore_ascii_case("html"))
+                        });
                     }
                     // RSS: <enclosure url="..." type="audio/mpeg"/>
                     // Atom: <link rel="enclosure" href="..." type="audio/mpeg"/>
@@ -98,43 +111,39 @@ pub fn first_episode(xml: &str) -> Result<FeedEpisode, AppError> {
                     _ => collecting = None,
                 }
             }
-            Ok(Event::Text(text)) => {
-                if let Some(target) = collecting.take() {
-                    // Titles routinely carry entities (`&amp;`, `&#8217;`), so
-                    // decode the bytes and then unescape what they meant.
-                    // quick-xml 0.41 asks which XML version's character rules
-                    // to apply. Feeds rarely carry a declaration, and the spec
-                    // says an entity without one is 1.0.
-                    let decoded = text
-                        .xml_content(quick_xml::XmlVersion::Implicit1_0)
-                        .unwrap_or_default();
-                    let value = quick_xml::escape::unescape(&decoded)
-                        .map(|value| value.trim().to_string())
-                        .unwrap_or_else(|_| decoded.trim().to_string());
-                    absorb_title(
-                        target,
-                        value,
-                        &mut show,
-                        &mut item_title,
-                        &mut depth_title_seen_outside_item,
-                    );
-                }
+            // quick-xml asks which XML version's end-of-line rules to apply.
+            // Feeds rarely carry a declaration, and the spec says a document
+            // without one is 1.0.
+            Ok(Event::Text(text)) if collecting.is_some() => {
+                title_text.push_str(&text.xml_content(quick_xml::XmlVersion::Implicit1_0));
+            }
+            // Titles routinely carry entities (`&amp;`, `&#8217;`): each one is
+            // its own event, between two pieces of text.
+            Ok(Event::GeneralRef(reference)) if collecting.is_some() => {
+                title_text.push_str(&entity(&reference));
             }
             // CDATA is already literal: unescaping it would be wrong.
-            Ok(Event::CData(data)) => {
-                if let Some(target) = collecting.take() {
-                    let value = String::from_utf8_lossy(data.as_ref()).trim().to_string();
-                    absorb_title(
-                        target,
-                        value,
-                        &mut show,
-                        &mut item_title,
-                        &mut depth_title_seen_outside_item,
-                    );
-                }
-            }
+            Ok(Event::CData(data)) if collecting.is_some() => title_text.push_str(&data),
             Ok(Event::End(element)) => {
                 let name = local_name(element.name().as_ref());
+                if name == "title" {
+                    if let Some(target) = collecting.take() {
+                        let text = title_text.trim();
+                        let value = if title_is_html {
+                            quick_xml::escape::unescape(text)
+                                .map_or_else(|_| text.to_string(), |value| value.into_owned())
+                        } else {
+                            text.to_string()
+                        };
+                        absorb_title(
+                            target,
+                            value,
+                            &mut show,
+                            &mut item_title,
+                            &mut depth_title_seen_outside_item,
+                        );
+                    }
+                }
                 if name == "item" || name == "entry" {
                     in_item = false;
                     // The enclosure may have been read before this item's
@@ -199,14 +208,27 @@ fn absorb_title(
     }
 }
 
+/// What an entity reference stands for: a character reference, one of the
+/// five XML predefines, or, for anything a feed did not declare (`&nbsp;`
+/// pasted from HTML), the reference as written rather than nothing.
+fn entity(reference: &quick_xml::events::BytesRef<'_>) -> String {
+    if let Ok(Some(c)) = reference.resolve_char_ref() {
+        return c.to_string();
+    }
+    match &**reference {
+        "amp" => "&".into(),
+        "lt" => "<".into(),
+        "gt" => ">".into(),
+        "quot" => "\"".into(),
+        "apos" => "'".into(),
+        other => format!("&{other};"),
+    }
+}
+
 /// Strip any namespace prefix and lowercase, so `itunes:title` and `TITLE`
 /// both read as `title`.
-fn local_name(raw: &[u8]) -> String {
-    let name = String::from_utf8_lossy(raw);
-    name.rsplit(':')
-        .next()
-        .unwrap_or(&name)
-        .to_ascii_lowercase()
+fn local_name(name: &str) -> String {
+    name.rsplit(':').next().unwrap_or(name).to_ascii_lowercase()
 }
 
 /// Whether an enclosure is audio or video rather than a transcript, an image
@@ -264,6 +286,34 @@ mod tests {
     </item>
   </channel>
 </rss>"#;
+
+    #[test]
+    fn a_title_with_entities_is_read_whole() {
+        // Each entity is its own event between two pieces of text; reading
+        // only the first piece turned "Tom & Jerry's" into "Tom".
+        let feed = "<rss><channel><title>Tom &amp; Jerry&#8217;s &lt;show&gt;</title>\
+            <item><title>  Episode &quot;1&quot;, it&apos;s &nbsp;live  </title>\
+            <enclosure url=\"https://e.com/a.mp3?x=1&amp;y=2\" type=\"audio/mpeg\"/>\
+            </item></channel></rss>";
+        let episode = first_episode(feed).unwrap();
+        assert_eq!(episode.show.as_deref(), Some("Tom & Jerry\u{2019}s <show>"));
+        assert_eq!(
+            episode.title.as_deref(),
+            Some("Episode \"1\", it's &nbsp;live")
+        );
+        assert_eq!(episode.media_url, "https://e.com/a.mp3?x=1&y=2");
+    }
+
+    #[test]
+    fn an_atom_html_title_is_unescaped_once_more() {
+        let feed = r#"<feed xmlns="http://www.w3.org/2005/Atom"><title type="text">A &amp;amp; B</title>
+            <entry><title type="html">Q&amp;amp;A &amp;#8212; live</title>
+            <link rel="enclosure" href="https://e.com/v.m4a" type="audio/x-m4a"/></entry></feed>"#;
+        let episode = first_episode(feed).unwrap();
+        // Text is read as written; only HTML gets its second layer removed.
+        assert_eq!(episode.show.as_deref(), Some("A &amp; B"));
+        assert_eq!(episode.title.as_deref(), Some("Q&A \u{2014} live"));
+    }
 
     #[test]
     fn takes_the_newest_episode_and_the_show_it_belongs_to() {
