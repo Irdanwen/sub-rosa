@@ -86,3 +86,18 @@ stay), and two majors Dependabot opened on 2026-10-11 that CI cannot
 prove: #324 `@simplewebauthn/browser` 14 (needs a real passkey sign-in) and
 #325 vite 8 (needs the built site and app checked page by page).
 
+
+## Resolution, later on 2026-10-11
+
+The "still open" list above was wrong by the time it was written: four
+more majors had opened during the day. All are settled now, each checked
+on real inputs.
+
+| PR | Outcome |
+|---|---|
+| #325 vite 8 | merged; under Rolldown `manualChunks` pulled React into the editor chunk and the runtime helpers into the locale chunk, so the meeting HUD preloaded 782 KB instead of 14 KB. Fixed with prioritised `codeSplitting` groups before merging, and `scripts/check-window-chunks.mjs` (run in `desktop.yml`) now fails when a window preloads a chunk it does not use. 827 prerendered pages and 6 Office pages identical once hashes are stripped, 0.000 % pixel difference on 11 pages served under the production CSP |
+| #324 `@simplewebauthn/browser` 14 | merged; registration and sign-in responses identical in shape to 13 against a Chromium virtual authenticator. A pre-existing bug found on the way: the account page never said "no passkey was selected" (the library wraps the `DOMException`), fixed in the same PR |
+| #339 zip 8.6, #334 jni 0.22 | #344: zip reads 50 real Office files and writes 4 documents identically; jni's one entry point gives the same result as before on a real JVM with `-Xcheck:jni` (not yet on a phone) |
+| #333 x25519-dalek 3, #338 scrypt 0.12 | #343: RFC 7748 and RFC 7914 vectors and a PIN record written by scrypt 0.11 frozen first, unchanged after |
+
+Still open: the Biome 2.5.15 decision.
