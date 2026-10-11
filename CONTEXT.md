@@ -1650,17 +1650,62 @@ described in the proposal. Revocation cannot erase previously downloaded data.
 **Synchronisation**: exchanging durable, versioned user data between devices,
 including conflict handling and deletions. Distinct from archive import/export.
 
-**Clean deletion**: a remote deletion whose parent revision is this device's
-head for the object, with nothing of the object or its children waiting in the
-outbox and no child revised after it. It is applied locally the way this
-device's own delete would be, and no review card is written
-([ADR-0072](docs/adr/0072-a-clean-remote-deletion-is-applied-not-reviewed.md)).
+**Revision (sync)**: one version of a synchronised object as the service
+holds it: an identifier the service mints, time-ordered, an authenticated
+parent, a kind, and the ciphertext. _Avoid_: confusing it with a note
+rewrite's "revision" (the writing surface) or a shared project's epoch head.
 
-**Divergent deletion**: any other remote deletion: this device edited the
-object since, or holds an unsent change to it or to one of its children, or a
-child was revised after the deletion was decided. It is kept as a review card
-("deleted on another device, version preserved"). _Avoid_: "conflict" for a
-clean deletion, which is not a disagreement.
+**Head (sync)**: the revision this device holds as current for an object
+(`account_sync_heads`). The service keeps its own heads per object; a push
+whose parent is not a head leaves a **sibling** head there.
+
+**Outbox**: the rows of local changes waiting to leave this device, one
+unsent snapshot per object rewritten in place by the triggers, sealed into
+ciphertext under a frozen operation id when they go. **Inbox**: the revisions
+received, kept with their ciphertext, applied or waiting.
+
+**Tombstone**: the revision that records a deletion. It carries the object's
+kind and an authenticated `deleted` flag; the service never reads it.
+
+**Cursor**: the sequence this device has received up to, committed with the
+inbox rows of each page.
+
+**Parked revision**: a received revision this build cannot read (a table or
+column a newer build wrote), set aside as an issue in lane `inbox` so the
+stream goes on; "Retry blocked items" after an update re-admits it
+([ADR-0108](docs/adr/0108-a-later-deletion-wins-and-what-it-took-can-be-restored.md)).
+
+**Clean deletion**: a remote deletion that applies locally the way this
+device's own delete would, with no review card: nothing of the object or its
+children waits to leave this device (rows parked by an issue do not count),
+no child was revised after it, and it is at least as recent as the local
+head: it is the head, its parent is the head, it acknowledged the head, or
+it was minted after it
+([ADR-0072](docs/adr/0072-a-clean-remote-deletion-is-applied-not-reviewed.md),
+[ADR-0108](docs/adr/0108-a-later-deletion-wins-and-what-it-took-can-be-restored.md)).
+
+**Divergent deletion**: a remote deletion this device cannot apply on its
+own: it holds an unsent change to the object or to one of its children, or a
+child was revised after the deletion, or the head is an edit minted after the
+deletion was decided. It is kept as a review card ("deleted on another
+device, version preserved"). _Avoid_: "conflict" for a clean deletion, which
+is not a disagreement.
+
+**Recently deleted**: the notes and memories a deletion took in the last
+thirty days, listed from the journal this device keeps (the tombstone that is
+the head and the last live revision before it). "Restore" writes that
+revision back as a live child of the tombstone, on every device. Text only:
+a deleted note's recordings and transcripts do not return. _Avoid_: "trash",
+which would be a column on every table.
+
+**Review card** (conflict card): a revision kept for a person to answer,
+because it crossed this device's own work. Answering it sends a resolution
+that names what it acknowledged.
+
+**Wait** (long wait): `GET /api/v1/sync/wait`, a request the service holds
+until the account's journal moves, which is how a device learns of a change
+within a second instead of at the next poll
+([ADR-0109](docs/adr/0109-changes-arrive-by-waiting-not-polling.md)).
 
 **Work continuity**: retrieving the same user-visible history and results and
 continuing compatible work on another device. Distinct from transferring a

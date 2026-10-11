@@ -37,30 +37,44 @@ fn modified(meta: &std::fs::Metadata) -> Result<String, AppError> {
 }
 async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, AppError> {
     uuid::Uuid::parse_str(id).map_err(|_| file_error())?;
-    let client = crate::http_client::credentialed(Duration::from_secs(25))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| error("account_network"))?;
+    let client = crate::http_client::account();
     let started = Instant::now();
     let method_name = if bytes.is_some() { "PUT" } else { "GET" };
     let request_bytes = bytes.as_ref().map_or(0, |v| v.len() as u64);
-    let req = client
-        .request(
-            if bytes.is_some() {
-                reqwest::Method::PUT
-            } else {
-                reqwest::Method::GET
-            },
-            format!("{}/api/v1/blobs/{id}", s.base),
-        )
-        .bearer_auth(s.token.expose_str());
-    let req = if let Some(bytes) = bytes {
-        req.header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(bytes)
-    } else {
-        req
+    // Built the same way each time it is sent: a throttled chunk is re-sent
+    // with its bytes and its content type, or it is not re-sent at all.
+    let request = || {
+        let req = client
+            .request(
+                if bytes.is_some() {
+                    reqwest::Method::PUT
+                } else {
+                    reqwest::Method::GET
+                },
+                format!("{}/api/v1/blobs/{id}", s.base),
+            )
+            .timeout(Duration::from_secs(25))
+            .bearer_auth(s.token.expose_str());
+        match &bytes {
+            Some(bytes) => req
+                .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+                .body(bytes.clone()),
+            None => req,
+        }
     };
-    let mut response = req.send().await.map_err(|_| error("account_network"))?;
+    let mut response = request()
+        .send()
+        .await
+        .map_err(|_| error("account_network"))?;
+    if response.status().as_u16() == 429 {
+        // A throttle, not an allowance: the service says so with a short
+        // retry window. One more try here beats parking the file ten minutes.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        response = request()
+            .send()
+            .await
+            .map_err(|_| error("account_network"))?;
+    }
     let status = response.status();
     let mut output = Vec::new();
     let mut body_error = None;
@@ -118,11 +132,19 @@ fn blob_failure_code(status: u16) -> &'static str {
         _ => "sync_blob_request_failed",
     }
 }
+/// How much of a pass the file lane may spend once the journal is done, and
+/// how much of the pass's deadline must remain before one more request is
+/// started: a request has 25 seconds of its own, and the pass must not be
+/// cut mid-write.
+const LANE_BUDGET: Duration = Duration::from_secs(12);
+const LANE_MARGIN: Duration = Duration::from_secs(30);
+
 pub(super) async fn step(
     app: &AppHandle,
     pool: &SqlitePool,
     s: &Session,
     key: &[u8; 32],
+    deadline: Instant,
 ) -> Result<(), AppError> {
     let root = app_data_dir(app).map_err(|_| file_error())?;
     let paths = AppPaths::from_data_dir(root.clone()).map_err(|_| file_error())?;
@@ -155,27 +177,50 @@ pub(super) async fn step(
     // remainder across an iOS suspension without trusting a JavaScript future.
     let gallery = crate::carpe_diem::media::artifacts_dir(app)?;
     let references = crate::assistants::references_dir(app)?;
-    remove_queued_files(pool, &paths, &gallery, &references).await?;
+    remove_queued_files(app, pool, &paths, &gallery, &references).await?;
     stage_assistant_files(pool, &references).await?;
     let inventory = super::studio::inventory(app, pool, &gallery).await;
-    if let Some(row) = next_upload(pool).await? {
-        let artifact: String = row.get("artifact_id");
-        if let Err(failure) = upload_one(pool, s, key, &paths, &gallery).await {
-            if sync::isolatable_file_error(&failure.code) {
-                sync::record_issue(pool, "upload", &artifact, &failure.code).await?;
-            } else {
-                return Err(failure);
+    // Chunks move until the lane's budget or the pass's deadline is spent
+    // (ADR-0109): a recording is minutes of audio, not one megabyte a pass.
+    // The first chunk in each direction always goes, so a slow link still
+    // makes progress. Durable rows retain the remainder across an iOS
+    // suspension without trusting a JavaScript future.
+    let started = Instant::now();
+    // One direction per iteration, so an iteration costs one request at most
+    // and the deadline test between two of them is honest.
+    let mut upload_turn = true;
+    let mut idle_turns = 0;
+    loop {
+        let mut moved = false;
+        if upload_turn {
+            if let Some(row) = next_upload(pool).await? {
+                let artifact: String = row.get("artifact_id");
+                match upload_one(pool, s, key, &paths, &gallery).await {
+                    Ok(()) => moved = true,
+                    Err(failure) if sync::isolatable_file_error(&failure.code) => {
+                        sync::record_issue(pool, "upload", &artifact, &failure.code).await?;
+                    }
+                    Err(failure) => return Err(failure),
+                }
+            }
+        } else if let Some(row) = next_download(pool).await? {
+            let manifest: String = row.get("id");
+            match download_one(pool, s, key, &root, &gallery).await {
+                Ok(()) => moved = true,
+                Err(failure) if sync::isolatable_file_error(&failure.code) => {
+                    sync::record_issue(pool, "download", &manifest, &failure.code).await?;
+                }
+                Err(failure) => return Err(failure),
             }
         }
-    }
-    if let Some(row) = next_download(pool).await? {
-        let manifest: String = row.get("id");
-        if let Err(failure) = download_one(pool, s, key, &root, &gallery).await {
-            if sync::isolatable_file_error(&failure.code) {
-                sync::record_issue(pool, "download", &manifest, &failure.code).await?;
-            } else {
-                return Err(failure);
-            }
+        upload_turn = !upload_turn;
+        idle_turns = if moved { 0 } else { idle_turns + 1 };
+        let now = Instant::now();
+        if idle_turns >= 2
+            || now.duration_since(started) >= LANE_BUDGET
+            || now + LANE_MARGIN >= deadline
+        {
+            break;
         }
     }
     inventory?;
@@ -187,6 +232,7 @@ pub(super) async fn step(
 /// moves its container on reinstall. A file already gone is done; one that
 /// cannot be removed right now stays queued for the next pass.
 async fn remove_queued_files(
+    app: &AppHandle,
     pool: &SqlitePool,
     paths: &AppPaths,
     gallery: &std::path::Path,
@@ -243,6 +289,18 @@ async fn remove_queued_files(
                 Ok(target) => std::fs::remove_file(target),
                 Err(_) => Ok(()),
             },
+            // A chat deleted elsewhere: the desktop's runtime still lists it
+            // until the workspace is told (ADR-0108). The row stays until the
+            // workspace says it forgot the session (`hermes_session_forgotten`):
+            // an event into a webview that is not mounted yet would be lost.
+            "hermes-session" => {
+                use tauri::Emitter as _;
+                let _ = app.emit(
+                    "subrosa://hermes-session-removed",
+                    json!({"session_id":path}),
+                );
+                continue;
+            }
             _ => Ok(()),
         };
         match result {
@@ -333,12 +391,41 @@ pub(super) async fn pending_transfers(pool: &SqlitePool) -> Result<i64, AppError
         .fetch_one(pool).await?.get("n"))
 }
 
+/// Whether the lane has anything to do: a recording not yet staged, a chunk
+/// to send or fetch, a file to remove. Read by the tick that wakes the
+/// driver, so it costs four indexed queries and no network.
+pub(super) async fn has_work(pool: &SqlitePool) -> Result<bool, AppError> {
+    if query("SELECT 1 FROM account_sync_removed_files WHERE lane<>'hermes-session' LIMIT 1")
+        .fetch_optional(pool)
+        .await?
+        .is_some()
+    {
+        return Ok(true);
+    }
+    if query("SELECT 1 FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
+        .fetch_optional(pool)
+        .await?
+        .is_some()
+    {
+        return Ok(true);
+    }
+    Ok(next_upload(pool).await?.is_some() || next_download(pool).await?.is_some())
+}
+
+/// Bytes still to move in either direction, for the status line.
+pub(super) async fn pending_bytes(pool: &SqlitePool) -> Result<i64, AppError> {
+    Ok(query("SELECT COALESCE((SELECT SUM(MAX(bytes-next_offset,0)) FROM account_file_uploads WHERE completed=0),0)+COALESCE((SELECT SUM(MAX(m.bytes-MIN(COALESCE(d.next_chunk,0)*1048576,m.bytes),0)) FROM account_file_manifests m LEFT JOIN account_file_downloads d ON d.manifest_id=m.id LEFT JOIN audio_artifacts a ON a.id=m.artifact_id WHERE COALESCE(d.completed,0)=0 AND ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id)))),0) AS n")
+        .fetch_one(pool)
+        .await?
+        .get::<i64, _>("n"))
+}
+
 async fn next_upload(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
     Ok(query(&format!("{ASSISTANT_OWNERS} SELECT u.*,COALESCE(a.path,u.source_path) AS path,COALESCE(a.format,u.source_format) AS format FROM account_file_uploads u LEFT JOIN audio_artifacts a ON a.id=u.artifact_id WHERE u.completed=0 AND (a.id IS NOT NULL OR u.source_kind IN ('studio','assistant')) AND {ASSISTANT_UPLOAD_ELIGIBLE} AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=u.artifact_id) ORDER BY u.rowid LIMIT 1"))
         .fetch_optional(pool).await?)
 }
 async fn next_download(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
-    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 AND {ASSISTANT_DOWNLOAD_ELIGIBLE} AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='download' AND i.item_id=m.id) ORDER BY m.rowid LIMIT 1"))
+    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 AND {ASSISTANT_DOWNLOAD_ELIGIBLE} AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='download' AND i.item_id=m.id) ORDER BY (m.source_kind='audio') DESC,m.created_at DESC,m.rowid DESC LIMIT 1"))
         .fetch_optional(pool).await?)
 }
 
@@ -477,13 +564,31 @@ pub(super) async fn download_one(
     if current < 0 || current as usize >= chunks.len() {
         return Err(error("sync_blob_invalid"));
     }
+    // Two chunks in flight (ADR-0109): the second is fetched while the first
+    // travels, and written only when the first was good, so progress stays
+    // contiguous. Not more: the service holds a request slot for the whole
+    // of a chunk's object-storage read, and a phone and a desktop share them.
     let chunk = &chunks[current as usize];
-    let encrypted = blob(s, &chunk.id, None).await?;
-    let envelope = std::str::from_utf8(&encrypted).map_err(|_| error("sync_blob_invalid"))?;
-    let clear = crypto::open(key, &blob_aad(s, &chunk.id), envelope)?;
-    if clear.len() as u64 != chunk.bytes || digest(&clear) != chunk.sha256 {
-        return Err(error("sync_blob_invalid"));
-    }
+    let following = chunks.get(current as usize + 1);
+    let (first, second) = tokio::join!(blob(s, &chunk.id, None), async {
+        match following {
+            Some(next) => blob(s, &next.id, None).await.ok(),
+            None => None,
+        }
+    });
+    let open = |piece: &Chunk, encrypted: Vec<u8>| -> Result<Zeroizing<Vec<u8>>, AppError> {
+        let envelope = std::str::from_utf8(&encrypted).map_err(|_| error("sync_blob_invalid"))?;
+        let clear = crypto::open(key, &blob_aad(s, &piece.id), envelope)?;
+        if clear.len() as u64 != piece.bytes || digest(&clear) != piece.sha256 {
+            return Err(error("sync_blob_invalid"));
+        }
+        Ok(clear)
+    };
+    let clear = open(chunk, first?)?;
+    let second = match (following, second) {
+        (Some(next), Some(encrypted)) => open(next, encrypted).ok(),
+        _ => None,
+    };
     let studio = row.get::<String, _>("source_kind") == "studio";
     let assistant = row.get::<String, _>("source_kind") == "assistant";
     if assistant && row.get::<i64, _>("bytes") > 20 * 1024 * 1024 {
@@ -557,8 +662,14 @@ pub(super) async fn download_one(
         .await
         .map_err(|_| file_error())?;
     file.write_all(&clear).await.map_err(|_| file_error())?;
+    let mut advanced = 1;
+    if let Some(second) = &second {
+        file.write_all(second).await.map_err(|_| file_error())?;
+        advanced = 2;
+    }
     file.sync_all().await.map_err(|_| file_error())?;
     drop(file);
+    let current = current + advanced - 1;
     let done = current as usize + 1 == chunks.len();
     if done {
         tokio::fs::rename(&partial, &target)
@@ -592,6 +703,27 @@ fn ensure_contained(dir: &std::path::Path, path: &PathBuf) -> Result<(), AppErro
     }
     Ok(())
 }
+/// Runtime sessions of chats deleted elsewhere, still to be forgotten by the
+/// desktop workspace (ADR-0108).
+pub(super) async fn hermes_sessions_removed(pool: &SqlitePool) -> Result<Vec<String>, AppError> {
+    Ok(query("SELECT path FROM account_sync_removed_files WHERE lane='hermes-session' ORDER BY id LIMIT 50")
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row| row.get::<String, _>("path"))
+        .collect())
+}
+pub(super) async fn hermes_session_forgotten(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<(), AppError> {
+    query("DELETE FROM account_sync_removed_files WHERE lane='hermes-session' AND path=?")
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -758,7 +890,9 @@ mod tests {
             query("INSERT INTO account_file_manifests(id,artifact_id,bytes,format,chunks_json,created_at,source_kind) VALUES(?,?,1,'txt','[]','now',?)")
                 .bind(format!("manifest-{id}")).bind(id).bind(kind).execute(&pool).await.unwrap();
         }
-        for id in ["live", "snapshot", "studio"] {
+        // Newest first: the file a person just made is the one they want on
+        // the other device.
+        for id in ["studio", "snapshot", "live"] {
             let row = next_download(&pool).await.unwrap().unwrap();
             assert_eq!(row.get::<String, _>("artifact_id"), id);
             query("DELETE FROM account_file_manifests WHERE artifact_id=?")

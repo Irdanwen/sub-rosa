@@ -120,3 +120,16 @@ container on reinstall).
   used to compare two revisions of the same account minted by the same
   service, where it is monotonic by construction. It is never compared with a
   device's own time.
+
+## Addendum 2026-10-11: a later deletion wins
+
+[ADR-0108](0108-a-later-deletion-wins-and-what-it-took-can-be-restored.md)
+replaces the "divergent deletion" rule above. A deletion whose parent is not
+the local head still applies when nothing of the object is unsent, no child
+is newer, and the tombstone was minted after the head; a pass now receives
+before it sends, so a device that was away seals its tombstone against the
+head the service holds; and what a deletion took is listed and restorable
+for thirty days. The clean-deletion rule, the answer that sends nothing when
+the tombstone is already the head, and the file queue stand. The follow-up
+left here, serving only heads to a reconnecting device, is
+[ADR-0109](0109-changes-arrive-by-waiting-not-polling.md).

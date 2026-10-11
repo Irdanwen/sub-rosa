@@ -21,12 +21,19 @@ export type AccountStatus = {
   vault_exists?: boolean | null;
   sync_enabled: boolean;
   pending_changes: number;
+  /** What waits to leave, what arrived and waits, what this build cannot read. */
+  outbox_count?: number;
+  inbox_pending?: number;
+  inbox_parked?: number;
+  files_pending_bytes?: number;
   conflicts: number;
+  recently_deleted_count?: number;
   last_synced_at: string | null;
+  last_received_at?: string | null;
   last_sync_error?: string | null;
   sync_issue_count?: number;
   sync_issues?: Array<{
-    lane: "outbox" | "upload" | "download";
+    lane: "outbox" | "upload" | "download" | "inbox";
     item_id: string;
     code: string;
     created_at: string;
@@ -127,6 +134,17 @@ export const accountSyncSetEnabled = (enabled: boolean) =>
 export const accountSyncNow = () => statusCommand("account_sync_now");
 export const accountSyncRetryIssues = () => statusCommand("account_sync_retry_issues");
 export const accountSyncConflicts = () => invoke<AccountConflict[]>("account_sync_conflicts");
+/** A note or memory a deletion took in the last thirty days (ADR-0108). */
+export type AccountDeletedItem = {
+  object_id: string;
+  kind: "note" | "memory" | string;
+  title: string;
+  deleted_at: string;
+};
+export const accountRecentlyDeleted = () =>
+  invoke<AccountDeletedItem[]>("account_recently_deleted");
+export const accountRestoreDeleted = (objectId: string) =>
+  statusCommand("account_restore_deleted", { objectId });
 export const accountSyncRestoreConflict = (conflictId: string) =>
   statusCommand("account_sync_restore_conflict", { conflictId });
 export const accountVaultShareCarpeDiem = () => statusCommand("account_vault_share_carpe_diem");

@@ -244,6 +244,18 @@ pub(crate) async fn mirror_history(
         .as_ref()
         .map(|r| r.get::<String, _>("id"))
         .unwrap_or_else(|| stable_id(account_id, session_id));
+    // A chat another device deleted is not written back from the runtime's
+    // copy of it (ADR-0108): that would send it to every device as a child
+    // of the tombstone, and the deletion would never hold.
+    if existing.is_none()
+        && query("SELECT 1 FROM account_sync_heads h JOIN account_sync_inbox i ON i.revision=h.revision WHERE h.object_id=? AND i.deleted=1")
+            .bind(&task_id)
+            .fetch_optional(pool)
+            .await?
+            .is_some()
+    {
+        return Ok(());
+    }
     let branch = existing
         .as_ref()
         .is_some_and(|r| r.get::<i64, _>("portable_branch") != 0);

@@ -715,6 +715,17 @@ impl Repository {
         self.revoke_device(owner, id, RevocationReason::SignedOut)
             .await
     }
+    /// The account's journal watermark: the sequence of its latest revision.
+    /// A missing account reads as a session that no longer exists, as `changes`
+    /// has it.
+    pub async fn watermark(&self, owner: Uuid) -> Result<i64> {
+        sqlx::query_scalar("SELECT next_sequence FROM accounts WHERE id=$1")
+            .bind(owner)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?
+            .ok_or(Error::Unauthorized)
+    }
     pub async fn changes(&self, p: PageParams<'_>) -> Result<JournalPage> {
         let mut tx = self.pool.begin().await.map_err(db)?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -730,7 +741,13 @@ impl Repository {
         if p.after > watermark {
             return Err(Error::Invalid);
         }
-        let mut rows=sqlx::query("SELECT * FROM revisions WHERE account_id=$1 AND sequence>$2 AND sequence<=$3 AND ($4::text IS NULL OR kind=$4) ORDER BY sequence LIMIT $5").bind(p.owner).bind(p.after).bind(watermark).bind(p.kind).bind(p.limit+1).fetch(&mut *tx);
+        // Heads mode keeps what a client needs to converge and nothing it could
+        // only replay: every current head, plus the direct parent of a head when
+        // the object has more than one (the common ancestor a merge needs) or
+        // when the head is a tombstone (what the deletion took away). Retired
+        // intermediate revisions are skipped. The snapshot keeps the two reads
+        // consistent with each other.
+        let mut rows=sqlx::query("SELECT * FROM revisions WHERE account_id=$1 AND sequence>$2 AND sequence<=$3 AND ($4::text IS NULL OR kind=$4) AND (NOT $6 OR is_head OR revision IN (SELECT r.parent_revision FROM revisions r WHERE r.account_id=$1 AND r.is_head AND r.parent_revision IS NOT NULL AND (r.deleted OR (SELECT count(*) FROM revisions h WHERE h.account_id=r.account_id AND h.object_id=r.object_id AND h.is_head)>1))) ORDER BY sequence LIMIT $5").bind(p.owner).bind(p.after).bind(watermark).bind(p.kind).bind(p.limit+1).bind(p.heads).fetch(&mut *tx);
         let mut changes = Vec::new();
         let mut bytes = 128usize;
         let mut has_more = false;
@@ -1413,6 +1430,8 @@ pub struct PageParams<'a> {
     pub after: i64,
     pub limit: i64,
     pub kind: Option<&'a str>,
+    /// Only heads and the parents a merge or a deletion listing needs.
+    pub heads: bool,
 }
 
 pub struct DeviceExchangeParams<'a> {

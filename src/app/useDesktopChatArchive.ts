@@ -1,5 +1,8 @@
 import { type Dispatch, type SetStateAction, useCallback, useMemo } from "react";
-import { useAccountSyncUpdated } from "../lib/account-sync-events";
+import {
+  useAccountSyncUpdated,
+  useHermesSessionsRemovedElsewhere,
+} from "../lib/account-sync-events";
 import {
   ARCHIVE_FOLDER_NAME,
   archiveFolderIds,
@@ -41,6 +44,7 @@ export function useDesktopChatArchive({
     setSessionFolders(sessionFolderMap(await listSessionFolders()));
   }, [setSessionFolders]);
   useAccountSyncUpdated(refresh);
+  useHermesSessionsRemovedElsewhere();
 
   const archivedIds = useMemo(
     () =>

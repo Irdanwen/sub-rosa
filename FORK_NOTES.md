@@ -2635,3 +2635,77 @@ agenda dans le brief web, adhésion à un espace depuis l'onglet.
 | `src-tauri/src/lib.rs` | `connector_relay_settings`, `connector_relay_set_enabled` dans les deux listes | Réappliquer |
 | `src-tauri/src/db/migrations.rs` | `074_connector_relays.sql` | Réappliquer |
 | `src-tauri/src/connectors/mod.rs` | `pub mod relay` | Réappliquer ; add/add (voir Connecteurs) |
+
+## Une suppression plus récente l'emporte, les changements arrivent par attente (2026-10-11, ADR-0108 et 0109)
+
+Rapporté : la synchro « met du temps » et « des éléments effacés sur l'un ne
+s'effacent pas bien ». Deux ADR, une PR, un harnais deux appareils.
+
+- **Suppressions** (`account/sync.rs`, ADR-0108) : `synchronize` **reçoit
+  avant d'envoyer** (`pull` puis `push`) ; chaque révision reçue passe par
+  `admit` sous un `SAVEPOINT` (une révision illisible, `sync_format_invalid`,
+  est parquée en voie `inbox` d'`account_sync_issues` et la page continue ;
+  sans le savepoint, `applying=1` pouvait survivre à l'échec et faire taire
+  tous les triggers) ; une tombale non scellée **absorbe** la révision vivante
+  qui arrive ; au scellement (`seal`) une tombale nomme toutes les sœurs
+  connues dans `resolved_revisions` ; côté receveur `deletion_applies`
+  remplace `deletion_is_clean` (tête absente, ou tombale = tête, ou parent =
+  tête, ou tête acquittée, ou tête < révision UUIDv7, et enfants propres) ;
+  `apply_deletion` purge les lignes d'outbox parquées de l'objet et marque
+  appliquées les lignes d'inbox de ses enfants ; `settle_clean_deletions`
+  réévalue chaque carte de suppression et pose la tête sur la tombale.
+  `recently_deleted`/`restore_deleted` lisent le journal local (horodatage
+  = UUIDv7 de la tombale, 30 jours, notes et souvenirs) ; la restauration est
+  un enfant vivant de la tombale, donc appliquée partout. `mirror_history`
+  (`conversations.rs`) refuse de recréer une tâche dont la tête est une
+  tombale ; `delete_locally("agent_tasks")` met la session Hermes dans
+  `account_sync_removed_files` (voie `hermes-session`) ; la ligne reste
+  jusqu'à ce que le webview l'ait vidée par les commandes partagées
+  `account_hermes_sessions_removed` / `account_hermes_session_forgotten`
+  (hook `useHermesSessionsRemovedElsewhere`, monté par
+  `useDesktopChatArchive`, qui supprime la session dans le runtime puis
+  rejoue `AGENT_DELETE_SESSION_EVENT`), un événement vers un webview pas
+  encore monté étant perdu.
+- **Vitesse** (ADR-0109) : `push` envoie par lots de 50 lignes / 4 Mio
+  (`next_outbox_batch`, `seal`, `post_batch`), repli ligne par ligne sur un
+  lot refusé (`sync_parent_unknown`, re-scellé par `retry_issues`) ;
+  `http_client::account()` est le client partagé (connexion gardée ;
+  `tests/egress.rs` interdit un client ailleurs) ; `account::setup` lance un
+  **pilote** (`WAKE: Notify`, `poke()`), un **tick** de 2 s qui ne lit que
+  SQLite (`sync::has_local_work`, `files::has_work`, pose `LOCAL_WORK` lu
+  par `background::has_pending_work`) et un **veilleur** qui tient
+  `GET /api/v1/sync/wait?after=` (404 → sondage 5 s ; repli 5→60 s remis à
+  zéro quand `lifecycle_epoch` change) ; `background::sweep` synchronise en
+  premier ; `pull` demande `limit=500` et `heads=1` quand `cursor == 0` et
+  l'inbox est vide ; `files::step` boucle sur un budget de 12 s avec deux
+  morceaux en vol, audio le plus récent d'abord, et un 429 réessayé une
+  fois. `run` a 45 s (`PASS_DEADLINE`) et attend le verrou 10 s au lieu de
+  se taire.
+- **Serveur** (`subrosa-cloud`) : route `GET /api/v1/sync/wait` (sémaphore
+  `WAIT_SLOTS` propre, `Notify` par compte sur `Service`, recontrôle 5 s),
+  paramètre `heads=1` de `GET /api/v1/sync` (têtes + parents directs des
+  têtes multiples et des tombales). Rétro-compatible ; aucune migration.
+- **Statut et panneau** : migration 076 (`last_received_at`) ;
+  `account_status` expose `outbox_count`, `inbox_pending`, `inbox_parked`,
+  `files_pending_bytes`, `recently_deleted_count`, `last_received_at` ;
+  l'événement `subrosa://sync-updated` porte `{applied, pushed, preserved,
+  parked, kinds}` ou `{error}` et n'est émis que si quelque chose a bougé ;
+  commandes partagées `account_recently_deleted`, `account_restore_deleted`.
+- **Preuve** : `sync_devices_tests.rs` (un faux service de journal en mémoire
+  derrière un socket, mêmes règles que `persistence::append/changes`, et deux
+  bibliothèques sur un compte : 17 scénarios). Le faux service vit dans le
+  fichier de tests parce que `tests/egress.rs` ne reconnaît les modules de
+  test que par leur nom (`*_tests.rs`).
+- **Revue (10 constats corrigés avant fusion)** : réessai 429 sans corps,
+  ligne refusée en 400 qui bloquait la file (`sync_request_refused`), tick
+  actif synchro désactivée (`has_local_work` lit `enabled`, `hold_off` après
+  un passage impossible), révision vivante appliquée par-dessus une ligne
+  parquée (`pending_any` pour le vivant, `pending_unparked` pour les
+  tombales), `replay_pending` qui n'avançait plus après 200 lignes en attente
+  (pagination par `sequence`), suppression croisée avec un envoi raté (tête
+  locale tombale = réglé), `heads=1` décidé une fois par réception, voie
+  fichiers à un sens par itération avec 30 s de marge, cartes résolues après
+  le scellement seulement, session Hermes drainée par commande.
+- **À re-merger** : tout ce qui précède est fork-side ; aucun fichier
+  upstream touché hormis `background.rs` (ordre du balayage) et
+  `http_client.rs` (client partagé).

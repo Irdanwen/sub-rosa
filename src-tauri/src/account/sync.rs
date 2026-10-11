@@ -6,14 +6,25 @@ use sqlx_sqlite::SqliteConnection;
 use tauri::Emitter;
 
 pub const CREDENTIAL_ID: &str = "00000000-0000-4000-8000-000000000001";
+use super::sync_deletions::{
+    apply_deletion, deletion_applies, settle_edits_older_than_a_local_deletion,
+};
+pub(super) use super::sync_deletions::{
+    delete_locally, recently_deleted, restore_deleted, settle_clean_deletions, DeletedItem,
+};
+#[cfg(test)]
+pub(super) use super::sync_issues::isolatable_outbox_error;
 pub use super::sync_issues::SyncIssue;
 pub(super) use super::sync_issues::{
-    isolatable_file_error, isolatable_outbox_error, issue_count, issues, reconcile_issues,
-    record_issue, retry_issues,
+    isolatable_file_error, issue_count, issues, reconcile_issues, record_issue, record_issue_on,
+    retry_issues,
 };
+#[cfg(test)]
+pub(super) use super::sync_push::next_outbox;
+pub(super) use super::sync_push::{has_local_work, push, push_one};
 use super::sync_tables::{object_column, object_of, Table, TABLES};
 const UUID_SQL:&str="(lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-a'||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6))))";
-fn table(name: &str) -> Result<&'static Table, AppError> {
+pub(super) fn table(name: &str) -> Result<&'static Table, AppError> {
     // A distinct authenticated wire codec is mandatory: older clients ignore
     // unknown extra fields on agent_tasks and default unknown safety profiles.
     // They must reject the entire conversation rather than lose its permissions.
@@ -284,21 +295,21 @@ pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppErro
     tx.commit().await?;
     Ok(())
 }
-fn aad(s: &Session, kind: &str, id: &str) -> String {
+pub(super) fn aad(s: &Session, kind: &str, id: &str) -> String {
     format!("subrosa:object:v1:{}:{kind}:{id}", s.account.id)
 }
 #[derive(Deserialize)]
-struct Change {
-    sequence: i64,
+pub(super) struct Change {
+    pub(super) sequence: i64,
     #[serde(default)]
-    resolved_revisions: Vec<String>,
-    object_id: String,
-    revision: String,
-    parent_revision: Option<String>,
-    kind: String,
-    ciphertext: String,
-    deleted: bool,
-    operation_id: Option<String>,
+    pub(super) resolved_revisions: Vec<String>,
+    pub(super) object_id: String,
+    pub(super) revision: String,
+    pub(super) parent_revision: Option<String>,
+    pub(super) kind: String,
+    pub(super) ciphertext: String,
+    pub(super) deleted: bool,
+    pub(super) operation_id: Option<String>,
 }
 #[derive(Deserialize)]
 struct Page {
@@ -307,25 +318,33 @@ struct Page {
     has_more: bool,
 }
 #[derive(Deserialize)]
-struct PushResult {
-    operation_id: String,
-    revision: String,
-    sequence: i64,
-    conflict: bool,
+pub(super) struct PushResult {
+    pub(super) operation_id: String,
+    pub(super) revision: String,
+    pub(super) sequence: i64,
+    /// The service kept another head next to this one. The pull preserves
+    /// that branch as a card; listing this device's own revision as one
+    /// would ask the person to review a value already on screen.
+    #[allow(dead_code)]
+    pub(super) conflict: bool,
 }
 #[derive(Deserialize)]
-struct PushResults {
-    results: Vec<PushResult>,
+pub(super) struct PushResults {
+    pub(super) results: Vec<PushResult>,
 }
 pub async fn resume(app: &AppHandle) {
     if let Err(e) = run(app).await {
+        // A pass that cannot start (no session, a locked vault, no network)
+        // will not start in two seconds either: the tick and the waiter hold
+        // off, and the sweep or a command brings the next attempt.
+        super::hold_off(Duration::from_secs(30));
         if !matches!(e.code.as_str(), "account_not_connected" | "vault_locked") {
             tracing::warn!(code=%e.code,"account synchronization deferred");
         }
     }
 }
 pub async fn run(app: &AppHandle) -> Result<(), AppError> {
-    let result = tokio::time::timeout(Duration::from_secs(30), run_inner(app))
+    let result = tokio::time::timeout(PASS_DEADLINE, run_inner(app))
         .await
         .unwrap_or_else(|_| Err(error("sync_timeout")));
     if let Err(failure) = &result {
@@ -335,15 +354,23 @@ pub async fn run(app: &AppHandle) -> Result<(), AppError> {
                     .bind(&failure.code)
                     .execute(&pool)
                     .await;
-            let _ = app.emit("subrosa://sync-updated", ());
+            let _ = app.emit("subrosa://sync-updated", json!({"error":failure.code}));
         }
     }
     result
 }
+/// A pass is given this long in all; the file lane keeps clear of the end.
+const PASS_DEADLINE: Duration = Duration::from_secs(45);
+
 async fn run_inner(app: &AppHandle) -> Result<(), AppError> {
+    let deadline = Instant::now() + PASS_DEADLINE;
     #[cfg(desktop)]
     let _ = super::conversations::backfill_desktop(app).await;
-    let Ok(_guard) = SESSION_LOCK.try_lock() else {
+    // A pass under way is let finish rather than skipped in silence: a
+    // person who asked for a sync, or a wake-up the waiter delivered, would
+    // otherwise be lost to a chat mirror holding the lock for a moment.
+    let Ok(_guard) = tokio::time::timeout(Duration::from_secs(10), SESSION_LOCK.lock()).await
+    else {
         return Ok(());
     };
     let _background = crate::ios_background::BackgroundTask::begin("account-sync");
@@ -357,8 +384,20 @@ async fn run_inner(app: &AppHandle) -> Result<(), AppError> {
     }
     let s = session(&pool).await?;
     let key = vault_key(&s)?;
-    synchronize(&pool, &s, &key).await?;
-    let file_result = super::files::step(app, &pool, &s, &key).await;
+    let had_error: Option<String> =
+        query("SELECT last_sync_error FROM account_sync_control WHERE id=1")
+            .fetch_one(&pool)
+            .await?
+            .get("last_sync_error");
+    let transfers_before = super::files::pending_transfers(&pool).await.unwrap_or(0);
+    let summary = synchronize(&pool, &s, &key).await?;
+    if summary.applied > 0 {
+        query("UPDATE account_sync_control SET last_received_at=? WHERE id=1")
+            .bind(chrono::Utc::now().to_rfc3339())
+            .execute(&pool)
+            .await?;
+    }
+    let file_result = super::files::step(app, &pool, &s, &key, deadline).await;
     capture_turn_usage(&pool).await?;
     if let Err(failure) = capture_balance(&pool).await {
         tracing::debug!(code=%failure.code,"account balance snapshot deferred");
@@ -368,30 +407,69 @@ async fn run_inner(app: &AppHandle) -> Result<(), AppError> {
         .bind(chrono::Utc::now().to_rfc3339())
         .execute(&pool)
         .await?;
-    let _ = app.emit("subrosa://sync-updated", ());
+    // The webview re-reads its lists on this event, so it is sent when
+    // something moved: a revision applied or sent, a file that progressed,
+    // an error that cleared. An idle pass is silent.
+    let transfers_after = super::files::pending_transfers(&pool).await.unwrap_or(0);
+    if summary.changed() || had_error.is_some() || transfers_after != transfers_before {
+        let _ = app.emit("subrosa://sync-updated", json!({"applied":summary.applied,"pushed":summary.pushed,"preserved":summary.preserved,"parked":summary.parked,"kinds":summary.kinds}));
+    }
     Ok(())
 }
+/// What one pass did, for the status line and the event the webview hears.
+#[derive(Default, Debug, Clone, Serialize)]
+pub struct Summary {
+    pub pushed: usize,
+    pub applied: usize,
+    pub preserved: usize,
+    pub parked: usize,
+    pub kinds: std::collections::BTreeSet<String>,
+}
+impl Summary {
+    pub fn changed(&self) -> bool {
+        self.pushed + self.applied + self.preserved + self.parked > 0
+    }
+    pub(super) fn note(&mut self, kind: &str) {
+        self.kinds.insert(kind.to_string());
+    }
+}
+/// How many changes one page asks for. The service allows 500.
+const PAGE_LIMIT: usize = 500;
+
 pub(super) async fn synchronize(
     pool: &SqlitePool,
     s: &Session,
     key: &[u8; 32],
+) -> Result<Summary, AppError> {
+    let mut summary = Summary::default();
+    // Receive before sending (ADR-0108). A deletion decided on stale
+    // knowledge is then sealed against the head the service holds, not the
+    // one this device remembered, and a tombstone waiting to leave absorbs
+    // the edit that arrives instead of crossing it as a sibling.
+    pull(pool, s, key, &mut summary).await?;
+    push(pool, s, key, &mut summary).await?;
+    replay_pending(pool, s, key, &mut summary).await?;
+    summary.applied += settle_clean_deletions(pool, s, key).await?;
+    auto_merge_note_conflicts(pool, s, key).await;
+    auto_resolve_identical_conflicts(pool, s, key).await;
+    settle_edits_older_than_a_local_deletion(pool, s, key).await;
+    Ok(summary)
+}
+
+async fn pull(
+    pool: &SqlitePool,
+    s: &Session,
+    key: &[u8; 32],
+    summary: &mut Summary,
 ) -> Result<(), AppError> {
-    // Push before pulling: a local edit is either acknowledged, or preserved as
-    // a sibling by the server. Incoming changes cannot race this run's lock.
-    for _ in 0..100 {
-        let Some(row) = next_outbox(pool, None).await? else {
-            break;
-        };
-        let operation: String = row.get("operation_id");
-        match push_one(pool, s, key, None).await {
-            Ok(true) => {}
-            Ok(false) => break,
-            Err(failure) if isolatable_outbox_error(&failure.code) => {
-                record_issue(pool, "outbox", &operation, &failure.code).await?;
-            }
-            Err(failure) => return Err(failure),
-        }
-    }
+    // A library that has never received anything asks for the heads
+    // (ADR-0109): what is, not everything that was. Decided once: the first
+    // page fills the inbox, and the following pages are the same bootstrap.
+    let fresh = query("SELECT 1 FROM account_sync_control WHERE id=1 AND cursor=0 AND NOT EXISTS(SELECT 1 FROM account_sync_inbox)")
+        .fetch_optional(pool)
+        .await?
+        .is_some();
+    let heads = if fresh { "&heads=1" } else { "" };
     for _ in 0..10 {
         let cursor: i64 = query("SELECT cursor FROM account_sync_control WHERE id=1")
             .fetch_one(pool)
@@ -400,12 +478,12 @@ pub(super) async fn synchronize(
         let data = call(
             s,
             reqwest::Method::GET,
-            &format!("/api/v1/sync?after={cursor}&limit=100"),
+            &format!("/api/v1/sync?after={cursor}&limit={PAGE_LIMIT}{heads}"),
             None,
         )
         .await?;
         let page: Page = serde_json::from_value(data).map_err(|_| error("sync_format_invalid"))?;
-        if page.cursor < cursor || page.changes.len() > 100 {
+        if page.cursor < cursor || page.changes.len() > PAGE_LIMIT {
             return Err(error("sync_format_invalid"));
         }
         let mut tx = pool.begin().await?;
@@ -413,9 +491,6 @@ pub(super) async fn synchronize(
             if change.sequence <= cursor || change.sequence > page.cursor {
                 return Err(error("sync_format_invalid"));
             }
-            // Authenticate even replayed/own revisions. Server substitution is rejected
-            // before any cursor or local content changes.
-            let body = verify(s, key, change)?;
             let existing = query("SELECT revision FROM account_sync_inbox WHERE revision=?")
                 .bind(&change.revision)
                 .fetch_optional(&mut *tx)
@@ -424,36 +499,7 @@ pub(super) async fn synchronize(
                 continue;
             }
             query("INSERT INTO account_sync_inbox(revision,object_id,kind,ciphertext,parent_revision,operation_id,deleted,sequence,resolved_revisions) VALUES(?,?,?,?,?,?,?,?,?)").bind(&change.revision).bind(&change.object_id).bind(&change.kind).bind(&change.ciphertext).bind(&change.parent_revision).bind(&change.operation_id).bind(change.deleted).bind(change.sequence).bind(json!(change.resolved_revisions).to_string()).execute(&mut *tx).await?;
-            let head = query("SELECT revision FROM account_sync_heads WHERE object_id=?")
-                .bind(&change.object_id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .map(|r| r.get::<String, _>("revision"));
-            let pending = query("SELECT 1 FROM account_sync_outbox WHERE object_id=? LIMIT 1")
-                .bind(&change.object_id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .is_some();
-            if head.as_deref() == Some(&change.revision) {
-                mark_applied(&mut tx, &change.revision).await?;
-                continue;
-            }
-            if pending
-                || (head.is_some()
-                    && head != change.parent_revision
-                    && !head
-                        .as_ref()
-                        .is_some_and(|h| change.resolved_revisions.contains(h)))
-            {
-                preserve(&mut tx, change).await?;
-                mark_applied(&mut tx, &change.revision).await?;
-                continue;
-            }
-            // Dependencies can arrive in a later page. A durable inbox retains them and
-            // replay_pending below retries once their parent note/task is present.
-            if apply(&mut tx, change, &body).await? {
-                head_and_applied(&mut tx, change).await?;
-            }
+            admit(&mut tx, s, key, change, summary).await?;
         }
         query("UPDATE account_sync_control SET cursor=? WHERE id=1")
             .bind(page.cursor)
@@ -464,19 +510,252 @@ pub(super) async fn synchronize(
             break;
         }
     }
-    replay_pending(pool, s, key).await?;
-    settle_clean_deletions(pool, s, key).await?;
-    auto_merge_note_conflicts(pool, s, key).await;
-    auto_resolve_identical_conflicts(pool, s, key).await;
     Ok(())
 }
 
-/// A sibling that says exactly what this device already holds is not a
-/// disagreement, and asking a person to review it is noise. It happens
-/// whenever two devices send the same content from the same parent: a memory
-/// re-sent after a local-only write, a setting touched twice. Keeping the
-/// local copy acknowledges the sibling, so the other devices converge too.
-/// Deletions and real differences stay for review.
+/// What became of a revision this device was handed.
+#[derive(Debug, PartialEq, Eq)]
+enum Admitted {
+    /// Written into the library, and the head moved to it.
+    Applied,
+    /// Kept as a card for a person: it crossed work of this device's own.
+    Preserved,
+    /// Left in the inbox for a parent that has not arrived or applied yet.
+    Waiting,
+    /// Set aside as an issue: this build cannot read it. The stream goes on.
+    Parked,
+    /// Already this device's head, or history a deletion here had settled.
+    Already,
+}
+
+/// Admits one inbound revision under a savepoint, so a revision this build
+/// cannot read is parked and the page goes on, and nothing half-written
+/// stays behind: without the savepoint, `applying=1` could outlive the
+/// failure and silence every trigger in the library (ADR-0108).
+async fn admit(
+    conn: &mut SqliteConnection,
+    s: &Session,
+    key: &[u8; 32],
+    c: &Change,
+    summary: &mut Summary,
+) -> Result<Admitted, AppError> {
+    query("SAVEPOINT admit").execute(&mut *conn).await?;
+    match admit_inner(conn, s, key, c).await {
+        Ok(outcome) => {
+            query("RELEASE admit").execute(&mut *conn).await?;
+            match outcome {
+                Admitted::Applied => {
+                    summary.applied += 1;
+                    summary.note(&c.kind);
+                }
+                Admitted::Preserved => {
+                    summary.preserved += 1;
+                    summary.note(&c.kind);
+                }
+                Admitted::Waiting | Admitted::Parked | Admitted::Already => {}
+            }
+            Ok(outcome)
+        }
+        Err(failure) if failure.code == "sync_format_invalid" => {
+            query("ROLLBACK TO admit").execute(&mut *conn).await?;
+            query("RELEASE admit").execute(&mut *conn).await?;
+            record_issue_on(conn, "inbox", &c.revision, &failure.code).await?;
+            summary.parked += 1;
+            Ok(Admitted::Parked)
+        }
+        Err(failure) => Err(failure),
+    }
+}
+
+pub(super) async fn head_of(
+    conn: &mut SqliteConnection,
+    object_id: &str,
+) -> Result<Option<String>, AppError> {
+    Ok(
+        query("SELECT revision FROM account_sync_heads WHERE object_id=?")
+            .bind(object_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .map(|r| r.get::<String, _>("revision")),
+    )
+}
+
+/// Whether something of `object_id` waits to leave this device. A row set
+/// aside by an issue does not count: it is not going anywhere until a person
+/// retries it, and a deletion that applies takes it along.
+pub(super) async fn pending_unparked(
+    conn: &mut SqliteConnection,
+    object_id: &str,
+) -> Result<bool, AppError> {
+    Ok(query("SELECT 1 FROM account_sync_outbox o WHERE o.object_id=? AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='outbox' AND i.item_id=o.operation_id) LIMIT 1")
+        .bind(object_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .is_some())
+}
+
+pub(super) async fn pending_any(
+    conn: &mut SqliteConnection,
+    object_id: &str,
+) -> Result<bool, AppError> {
+    Ok(
+        query("SELECT 1 FROM account_sync_outbox WHERE object_id=? LIMIT 1")
+            .bind(object_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .is_some(),
+    )
+}
+
+/// A deletion of this device's own that has not been sealed yet: its parent
+/// is decided at seal time, so what arrives meanwhile is simply what it will
+/// retire.
+async fn unsealed_tombstone(
+    conn: &mut SqliteConnection,
+    object_id: &str,
+) -> Result<Option<i64>, AppError> {
+    Ok(query("SELECT sequence FROM account_sync_outbox WHERE object_id=? AND deleted=1 AND ciphertext IS NULL ORDER BY sequence DESC LIMIT 1")
+        .bind(object_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .map(|r| r.get::<i64, _>("sequence")))
+}
+
+pub(super) async fn resolve_cards_of(
+    conn: &mut SqliteConnection,
+    object_id: &str,
+) -> Result<(), AppError> {
+    query("UPDATE account_sync_conflicts SET resolved=1 WHERE object_id=? AND resolved=0")
+        .bind(object_id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
+/// Whether the row this revision describes belongs to a parent object this
+/// device holds as deleted. Such a row is history the deletion settled: a
+/// transcript of a note that is gone does not wait for the note to return.
+async fn parent_object_deleted(
+    conn: &mut SqliteConnection,
+    body: &Value,
+) -> Result<bool, AppError> {
+    for (field, parent) in [("note_id", "notes"), ("task_id", "agent_tasks")] {
+        let Some(id) = body["row"][field].as_str() else {
+            continue;
+        };
+        if body["table"] == "assistant_references" {
+            continue;
+        }
+        let present = query(&format!("SELECT 1 FROM {parent} WHERE id=?"))
+            .bind(id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .is_some();
+        if present {
+            continue;
+        }
+        let tombstoned = query("SELECT 1 FROM account_sync_heads h JOIN account_sync_inbox i ON i.revision=h.revision WHERE h.object_id=? AND i.deleted=1")
+            .bind(id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .is_some();
+        if tombstoned {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+async fn admit_inner(
+    conn: &mut SqliteConnection,
+    s: &Session,
+    key: &[u8; 32],
+    c: &Change,
+) -> Result<Admitted, AppError> {
+    // Authenticate even replayed/own revisions. Server substitution is
+    // rejected before any cursor or local content changes.
+    let body = verify(s, key, c)?;
+    let head = head_of(conn, &c.object_id).await?;
+    if head.as_deref() == Some(&c.revision) {
+        mark_applied(conn, &c.revision).await?;
+        return Ok(Admitted::Already);
+    }
+    // Behind its parent, whether that one waits for a dependency or was
+    // parked: a child applied out of order would read as a disagreement.
+    if let Some(parent) = &c.parent_revision {
+        let waiting = query("SELECT 1 FROM account_sync_inbox WHERE revision=? AND applied=0")
+            .bind(parent)
+            .fetch_optional(&mut *conn)
+            .await?
+            .is_some();
+        if waiting {
+            return Ok(Admitted::Waiting);
+        }
+    }
+    if let Some(sequence) = unsealed_tombstone(conn, &c.object_id).await? {
+        if c.deleted {
+            // Deleted there too: one tombstone is enough.
+            query("DELETE FROM account_sync_outbox WHERE sequence=?")
+                .bind(sequence)
+                .execute(&mut *conn)
+                .await?;
+        } else {
+            // Absorbed: the deletion this device is about to send retires
+            // this revision too. Nothing is written, the row is gone here.
+            query("INSERT INTO account_sync_heads(object_id,revision,kind) VALUES(?,?,?) ON CONFLICT(object_id) DO UPDATE SET revision=excluded.revision,kind=excluded.kind").bind(&c.object_id).bind(&c.revision).bind(&c.kind).execute(&mut *conn).await?;
+            resolve_cards_of(conn, &c.object_id).await?;
+            mark_applied(conn, &c.revision).await?;
+            return Ok(Admitted::Applied);
+        }
+    }
+    // A live revision crossing any unsent row of the object, parked or not,
+    // is a question for a person: a parked snapshot re-sealed later would
+    // otherwise write over what arrived. A deletion takes parked rows with it.
+    let pending = if c.deleted {
+        pending_unparked(conn, &c.object_id).await?
+    } else {
+        pending_any(conn, &c.object_id).await?
+    };
+    if pending {
+        preserve(conn, c).await?;
+        mark_applied(conn, &c.revision).await?;
+        return Ok(Admitted::Preserved);
+    }
+    let head = head_of(conn, &c.object_id).await?;
+    if !c.deleted
+        && head.is_some()
+        && head != c.parent_revision
+        && !head
+            .as_ref()
+            .is_some_and(|h| c.resolved_revisions.contains(h))
+    {
+        preserve(conn, c).await?;
+        mark_applied(conn, &c.revision).await?;
+        return Ok(Admitted::Preserved);
+    }
+    if !c.deleted && parent_object_deleted(conn, &body).await? {
+        mark_applied(conn, &c.revision).await?;
+        return Ok(Admitted::Already);
+    }
+    // Dependencies can arrive in a later page. A durable inbox retains them
+    // and `replay_pending` retries once their parent note/task is present.
+    if !apply(conn, c, &body).await? {
+        return Ok(Admitted::Waiting);
+    }
+    head_and_applied(conn, c).await?;
+    let preserved = c.deleted
+        && query("SELECT 1 FROM account_sync_conflicts WHERE id=? AND resolved=0")
+            .bind(&c.revision)
+            .fetch_optional(&mut *conn)
+            .await?
+            .is_some();
+    Ok(if preserved {
+        Admitted::Preserved
+    } else {
+        Admitted::Applied
+    })
+}
+
 async fn auto_resolve_identical_conflicts(pool: &SqlitePool, s: &Session, key: &[u8; 32]) {
     let rows = match query("SELECT * FROM account_sync_conflicts WHERE resolved=0 AND deleted=0 ORDER BY created_at LIMIT 200")
         .fetch_all(pool)
@@ -635,106 +914,7 @@ fn merge_note_body(base: &Value, local: &Value, remote: &Value) -> Option<Value>
     };
     Some(merged)
 }
-async fn next_outbox(
-    pool: &SqlitePool,
-    object_filter: Option<&str>,
-) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
-    Ok(query("SELECT o.* FROM account_sync_outbox o WHERE (?1 IS NULL OR o.object_id=?1) AND NOT EXISTS(SELECT 1 FROM account_sync_outbox earlier WHERE earlier.object_id=o.object_id AND earlier.sequence<o.sequence) AND NOT EXISTS(SELECT 1 FROM account_sync_issues issue WHERE issue.lane='outbox' AND issue.item_id=o.operation_id) ORDER BY o.sequence LIMIT 1")
-        .bind(object_filter)
-        .fetch_optional(pool)
-        .await?)
-}
-
-async fn push_one(
-    pool: &SqlitePool,
-    s: &Session,
-    key: &[u8; 32],
-    object_filter: Option<&str>,
-) -> Result<bool, AppError> {
-    let row = next_outbox(pool, object_filter).await?;
-    let Some(row) = row else {
-        return Ok(false);
-    };
-    let sequence: i64 = row.get("sequence");
-    let resolved_revisions: Vec<String> =
-        serde_json::from_str(&row.get::<String, _>("resolved_revisions"))
-            .map_err(|_| error("sync_local_object_invalid"))?;
-    let operation_id: String = row.get("operation_id");
-    let id: String = row.get("object_id");
-    let kind: String = row.get("kind");
-    let deleted: bool = row.get("deleted");
-    let existing: Option<String> = row.get("ciphertext");
-    let (ciphertext, parent) = if let Some(ciphertext) = existing {
-        (ciphertext, row.get::<Option<String>, _>("parent_revision"))
-    } else {
-        let mut tx = pool.begin().await?;
-        let parent = query("SELECT revision FROM account_sync_heads WHERE object_id=?")
-            .bind(&id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .map(|r| r.get::<String, _>("revision"));
-        let mut body: Value = serde_json::from_str(&row.get::<String, _>("body"))
-            .map_err(|_| error("sync_local_object_invalid"))?;
-        body["v"] = json!(1);
-        body["operation_id"] = json!(operation_id);
-        body["parent_revision"] = json!(parent);
-        body["deleted"] = json!(deleted);
-        body["resolved_revisions"] = json!(resolved_revisions);
-        let clear = Zeroizing::new(
-            serde_json::to_vec(&body).map_err(|_| error("sync_local_object_invalid"))?,
-        );
-        let ciphertext = crypto::seal(key, &aad(s, &kind, &id), &clear)?;
-        let sealed = query("UPDATE account_sync_outbox SET ciphertext=?,parent_revision=? WHERE sequence=? AND ciphertext IS NULL AND body=?")
-            .bind(&ciphertext)
-            .bind(&parent)
-            .bind(sequence)
-            .bind(row.get::<String, _>("body"))
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
-        tx.commit().await?;
-        // A newer edit of the same object rewrote this unsent row after it was
-        // read (the triggers keep one unsent snapshot per object). Sealing the
-        // stale body would send it and drop the edit, so nothing is sent and
-        // the row is read again.
-        if sealed == 0 {
-            return Ok(true);
-        }
-        (ciphertext, parent)
-    };
-    if ciphertext.len() > 1024 * 1024 {
-        return Err(error("sync_object_too_large"));
-    }
-    let data=call(s,reqwest::Method::POST,"/api/v1/sync",Some(json!({"operations":[{"operation_id":operation_id,"object_id":id,"parent_revision":parent,"kind":kind,"ciphertext":ciphertext,"deleted":deleted,"resolved_revisions":resolved_revisions}]}))).await?;
-    let result: PushResults =
-        serde_json::from_value(data).map_err(|_| error("sync_format_invalid"))?;
-    if result.results.len() != 1 {
-        return Err(error("sync_format_invalid"));
-    }
-    let result = &result.results[0];
-    if result.operation_id != operation_id {
-        return Err(error("sync_format_invalid"));
-    }
-    let mut tx = pool.begin().await?;
-    // The local variant already exists on this device. The pull will preserve
-    // the *other* branch; listing our own pushed sibling as a conflict would
-    // repeatedly ask the user to resolve a value already on screen.
-    let _server_preserved_sibling = result.conflict;
-    // Even a sibling becomes this device's own head. Other branch changes are
-    // retained as conflicts on pull, never silently applied over the local edit.
-    query("INSERT INTO account_sync_heads(object_id,revision,kind) VALUES(?,?,?) ON CONFLICT(object_id) DO UPDATE SET revision=excluded.revision,kind=excluded.kind").bind(&id).bind(&result.revision).bind(&kind).execute(&mut *tx).await?;
-    query("INSERT OR IGNORE INTO account_sync_inbox(revision,object_id,kind,ciphertext,parent_revision,operation_id,deleted,sequence,applied,resolved_revisions) VALUES(?,?,?,?,?,?,?,?,1,?)")
-        .bind(&result.revision).bind(&id).bind(&kind).bind(&ciphertext)
-        .bind(&parent).bind(&operation_id).bind(deleted).bind(result.sequence).bind(json!(resolved_revisions).to_string())
-        .execute(&mut *tx).await?;
-    query("DELETE FROM account_sync_outbox WHERE sequence=?")
-        .bind(sequence)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(true)
-}
-fn verify(s: &Session, key: &[u8; 32], c: &Change) -> Result<Value, AppError> {
+pub(super) fn verify(s: &Session, key: &[u8; 32], c: &Change) -> Result<Value, AppError> {
     uuid::Uuid::parse_str(&c.object_id).map_err(|_| error("sync_format_invalid"))?;
     uuid::Uuid::parse_str(&c.revision).map_err(|_| error("sync_format_invalid"))?;
     let clear = crypto::open(key, &aad(s, &c.kind, &c.object_id), &c.ciphertext)?;
@@ -790,230 +970,6 @@ async fn preserve(conn: &mut SqliteConnection, c: &Change) -> Result<(), AppErro
     query("INSERT OR IGNORE INTO account_sync_conflicts(id,object_id,kind,ciphertext,parent_revision,operation_id,deleted,created_at,resolved_revisions) VALUES(?,?,?,?,?,?,?,?,?)").bind(&c.revision).bind(&c.object_id).bind(&c.kind).bind(&c.ciphertext).bind(&c.parent_revision).bind(&c.operation_id).bind(c.deleted).bind(chrono::Utc::now().to_rfc3339()).bind(json!(c.resolved_revisions).to_string()).execute(conn).await?;
     Ok(())
 }
-/// Whether a remote deletion can be applied here without losing work another
-/// device never saw (ADR-0072). The object itself is already known to be
-/// clean when this runs: its parent is the local head and nothing of it waits
-/// in the outbox. What remains is its children, because deleting a note takes
-/// its sessions, recordings and transcripts with it. A child with an unsent
-/// local change, or a child revised after the deletion (its head revision
-/// sorts after the tombstone, both being time-ordered UUIDs the service
-/// minted), means the deleting device decided on stale knowledge, and that is
-/// a disagreement for a person. Objects without children are always clean.
-async fn deletion_is_clean(
-    conn: &mut SqliteConnection,
-    table: &str,
-    c: &Change,
-) -> Result<bool, AppError> {
-    let children: &[(&str, &str)] = match table {
-        "notes" => &[
-            ("recording_sessions", "note_id"),
-            ("audio_artifacts", "note_id"),
-            ("transcripts", "note_id"),
-        ],
-        "agent_tasks" => &[("agent_messages", "task_id")],
-        _ => &[],
-    };
-    for (child, column) in children {
-        let newer = query(&format!("SELECT 1 FROM {child} ch WHERE ch.{column}=? AND (EXISTS(SELECT 1 FROM account_sync_outbox o WHERE o.object_id=ch.id) OR EXISTS(SELECT 1 FROM account_sync_heads h WHERE h.object_id=ch.id AND h.revision>?)) LIMIT 1"))
-            .bind(&c.object_id)
-            .bind(&c.revision)
-            .fetch_optional(&mut *conn)
-            .await?;
-        if newer.is_some() {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-/// Removes an object another device deleted, the way this device's own delete
-/// would. Callers hold `applying=1`, so no outbox row echoes the deletion. A
-/// database connection knows nothing of the app's directories, so files the
-/// rows pointed at are queued for the file lane rather than removed here.
-pub(super) async fn delete_locally(
-    conn: &mut SqliteConnection,
-    table: &str,
-    id: &str,
-) -> Result<(), AppError> {
-    let now = chrono::Utc::now().to_rfc3339();
-    match table {
-        "notes" => {
-            let paths = query("SELECT path FROM audio_artifacts WHERE note_id=? AND path<>''")
-                .bind(id)
-                .fetch_all(&mut *conn)
-                .await?;
-            for row in paths {
-                queue_removed_file(conn, "recording", row.get("path"), &now).await?;
-            }
-            crate::db::repositories::delete_note_records(conn, id).await?;
-            crate::spotlight::forget(std::slice::from_ref(&id.to_string()));
-        }
-        "agent_tasks" => {
-            for sql in [
-                "DELETE FROM agent_tool_events WHERE task_id=?",
-                "DELETE FROM agent_messages WHERE task_id=?",
-                "DELETE FROM session_folders WHERE session_id=?",
-                "DELETE FROM assistant_conversations WHERE task_id=?",
-                "DELETE FROM agent_tasks WHERE id=?",
-            ] {
-                query(sql).bind(id).execute(&mut *conn).await?;
-            }
-        }
-        "audio_artifacts" => {
-            let path: Option<String> = query("SELECT path FROM audio_artifacts WHERE id=?")
-                .bind(id)
-                .fetch_optional(&mut *conn)
-                .await?
-                .map(|row| row.get("path"));
-            if let Some(path) = path.filter(|p| !p.is_empty()) {
-                queue_removed_file(conn, "recording", path, &now).await?;
-            }
-            query("DELETE FROM audio_artifacts WHERE id=?")
-                .bind(id)
-                .execute(&mut *conn)
-                .await?;
-        }
-        "account_studio_files" | "assistant_references" | "project_files" => {
-            let lane = if table == "account_studio_files" {
-                "studio"
-            } else {
-                "assistant"
-            };
-            let name: Option<String> = query(&format!("SELECT file_name FROM {table} WHERE id=?"))
-                .bind(id)
-                .fetch_optional(&mut *conn)
-                .await?
-                .map(|row| row.get("file_name"));
-            if let Some(name) = name.filter(|n| !n.is_empty()) {
-                if lane == "studio" {
-                    // What this device filed about the file goes with it: its
-                    // mark (or a later folder change would revive it as a
-                    // child of the tombstone), its provenance, and a download
-                    // of it still under way, which would otherwise finish and
-                    // put the file back after the deletion.
-                    query("DELETE FROM studio_marks WHERE file_id=?")
-                        .bind(id)
-                        .execute(&mut *conn)
-                        .await?;
-                    query("DELETE FROM studio_artifact_metadata WHERE id=?")
-                        .bind(&name)
-                        .execute(&mut *conn)
-                        .await?;
-                    let manifests: Vec<String> =
-                        query("SELECT id FROM account_file_manifests WHERE artifact_id=?")
-                            .bind(id)
-                            .fetch_all(&mut *conn)
-                            .await?
-                            .into_iter()
-                            .map(|row| row.get("id"))
-                            .collect();
-                    for manifest in manifests {
-                        query("DELETE FROM account_file_downloads WHERE manifest_id=?")
-                            .bind(&manifest)
-                            .execute(&mut *conn)
-                            .await?;
-                        queue_removed_file(conn, "staging", format!("{manifest}.part"), &now)
-                            .await?;
-                    }
-                }
-                queue_removed_file(conn, lane, name, &now).await?;
-            }
-            query(&format!("DELETE FROM {table} WHERE id=?"))
-                .bind(id)
-                .execute(&mut *conn)
-                .await?;
-        }
-        "account_session_folders" => super::session_folders::delete_locally(conn, id).await?,
-        // A connector is deleted by its object, and what this device kept
-        // about it goes with it, as its own removal would take it. Its
-        // keychain entries are this device's, and a sign-in reuses them.
-        "connectors" => {
-            for sql in [
-                "DELETE FROM connector_state WHERE connector_id IN (SELECT id FROM connectors WHERE object_id=?)",
-                "DELETE FROM connector_triggers WHERE connector_id IN (SELECT id FROM connectors WHERE object_id=?)",
-                "DELETE FROM connectors WHERE object_id=?",
-            ] {
-                query(sql).bind(id).execute(&mut *conn).await?;
-            }
-        }
-        "account_note_folders" => {
-            query("DELETE FROM note_folders WHERE (note_id,folder_id) IN (SELECT note_id,folder_id FROM account_note_folders WHERE id=?)")
-                .bind(id)
-                .execute(&mut *conn)
-                .await?;
-            query("DELETE FROM account_note_folders WHERE id=?")
-                .bind(id)
-                .execute(&mut *conn)
-                .await?;
-        }
-        _ => {
-            let t = self::table(table)?;
-            query(&format!("DELETE FROM {} WHERE id=?", t.name))
-                .bind(id)
-                .execute(&mut *conn)
-                .await?;
-        }
-    }
-    Ok(())
-}
-async fn queue_removed_file(
-    conn: &mut SqliteConnection,
-    lane: &str,
-    path: String,
-    now: &str,
-) -> Result<(), AppError> {
-    query("INSERT INTO account_sync_removed_files(lane,path,created_at) VALUES(?,?,?)")
-        .bind(lane)
-        .bind(path)
-        .bind(now)
-        .execute(conn)
-        .await?;
-    Ok(())
-}
-/// Cards written for deletions that would apply themselves today. Before
-/// ADR-0072 every tombstone became a card, including one whose parent was the
-/// local head: the service holds that deletion as the object's only head and
-/// this device has nothing unsent, so the card asks a question with one
-/// answer. Settling it sends nothing, because there is no sibling to
-/// acknowledge; a divergent card (a live local head) is left for a person.
-pub(super) async fn settle_clean_deletions(
-    pool: &SqlitePool,
-    s: &Session,
-    key: &[u8; 32],
-) -> Result<(), AppError> {
-    let rows = query("SELECT c.* FROM account_sync_conflicts c JOIN account_sync_heads h ON h.object_id=c.object_id AND h.revision=c.id WHERE c.resolved=0 AND c.deleted=1 AND NOT EXISTS(SELECT 1 FROM account_sync_outbox o WHERE o.object_id=c.object_id) ORDER BY c.created_at LIMIT 200")
-        .fetch_all(pool)
-        .await?;
-    for row in rows {
-        let c = conflict_change(&row)?;
-        let Ok(body) = verify(s, key, &c) else {
-            continue;
-        };
-        let Some(name) = body["table"].as_str() else {
-            continue;
-        };
-        if name == "carpe_diem_settings" {
-            continue;
-        }
-        let table = table(name)?.name;
-        let mut tx = pool.begin().await?;
-        if !deletion_is_clean(&mut tx, table, &c).await? {
-            continue;
-        }
-        query("UPDATE account_sync_control SET applying=1 WHERE id=1")
-            .execute(&mut *tx)
-            .await?;
-        delete_locally(&mut tx, table, &c.object_id).await?;
-        query("UPDATE account_sync_control SET applying=0 WHERE id=1")
-            .execute(&mut *tx)
-            .await?;
-        query("UPDATE account_sync_conflicts SET resolved=1 WHERE id=?")
-            .bind(&c.revision)
-            .execute(&mut *tx)
-            .await?;
-        tx.commit().await?;
-    }
-    Ok(())
-}
 async fn mark_applied(conn: &mut SqliteConnection, revision: &str) -> Result<(), AppError> {
     query("UPDATE account_sync_inbox SET applied=1 WHERE revision=?")
         .bind(revision)
@@ -1032,7 +988,11 @@ async fn head_and_applied(conn: &mut SqliteConnection, c: &Change) -> Result<(),
     query("INSERT INTO account_sync_heads(object_id,revision,kind) VALUES(?,?,?) ON CONFLICT(object_id) DO UPDATE SET revision=excluded.revision,kind=excluded.kind").bind(&c.object_id).bind(&c.revision).bind(&c.kind).execute(&mut *conn).await?;
     mark_applied(conn, &c.revision).await
 }
-async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<bool, AppError> {
+pub(super) async fn apply(
+    conn: &mut SqliteConnection,
+    c: &Change,
+    body: &Value,
+) -> Result<bool, AppError> {
     if body["table"] == "assistant_conversations"
         && !c.deleted
         && body.get("assistant_snapshot").map_or(true, Value::is_null)
@@ -1059,11 +1019,12 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
         // A deletion has no dependencies to wait for and nothing to coerce.
         // Clean, it is applied like this device's own delete (ADR-0072);
         // over work the deleting device never saw, it is kept for review.
+        let head = head_of(conn, &c.object_id).await?;
         query("UPDATE account_sync_control SET applying=1 WHERE id=1")
             .execute(&mut *conn)
             .await?;
-        if deletion_is_clean(conn, t.name, c).await? {
-            delete_locally(conn, t.name, &c.object_id).await?;
+        if deletion_applies(conn, t.name, c, head.as_deref()).await? {
+            apply_deletion(conn, t.name, &c.object_id).await?;
         } else {
             preserve(conn, c).await?;
         }
@@ -1232,53 +1193,51 @@ async fn apply(conn: &mut SqliteConnection, c: &Change, body: &Value) -> Result<
         .await?;
     Ok(true)
 }
-async fn replay_pending(pool: &SqlitePool, s: &Session, key: &[u8; 32]) -> Result<(), AppError> {
+/// Inbox rows that could not be applied on arrival: a dependency that had
+/// not come yet, a parent still waiting. Each pass admits what it can;
+/// rows parked by an issue are not looked at until a person retries them.
+async fn replay_pending(
+    pool: &SqlitePool,
+    s: &Session,
+    key: &[u8; 32],
+    summary: &mut Summary,
+) -> Result<(), AppError> {
     for _ in 0..TABLES.len() {
-        let rows =
-            query("SELECT * FROM account_sync_inbox WHERE applied=0 ORDER BY sequence LIMIT 1000")
+        let mut progressed = false;
+        let mut after = 0i64;
+        // Pages by sequence, so rows behind a crowd of waiting ones are still
+        // looked at; bounded per pass all the same.
+        for _ in 0..10 {
+            let rows = query("SELECT * FROM account_sync_inbox WHERE applied=0 AND sequence>? AND revision NOT IN (SELECT item_id FROM account_sync_issues WHERE lane='inbox') ORDER BY sequence LIMIT 200")
+                .bind(after)
                 .fetch_all(pool)
                 .await?;
-        let mut progressed = false;
-        for r in rows {
-            let c = Change {
-                sequence: r.get("sequence"),
-                resolved_revisions: serde_json::from_str(&r.get::<String, _>("resolved_revisions"))
-                    .map_err(|_| error("sync_format_invalid"))?,
-                object_id: r.get("object_id"),
-                revision: r.get("revision"),
-                parent_revision: r.get("parent_revision"),
-                kind: r.get("kind"),
-                ciphertext: r.get("ciphertext"),
-                deleted: r.get("deleted"),
-                operation_id: r.get("operation_id"),
-            };
-            let body = verify(s, key, &c)?;
-            let mut tx = pool.begin().await?;
-            let pending = query("SELECT 1 FROM account_sync_outbox WHERE object_id=? LIMIT 1")
-                .bind(&c.object_id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .is_some();
-            let head = query("SELECT revision FROM account_sync_heads WHERE object_id=?")
-                .bind(&c.object_id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .map(|r| r.get::<String, _>("revision"));
-            if pending
-                || (head.is_some()
-                    && head != c.parent_revision
-                    && !head
-                        .as_ref()
-                        .is_some_and(|h| c.resolved_revisions.contains(h)))
-            {
-                preserve(&mut tx, &c).await?;
-                mark_applied(&mut tx, &c.revision).await?;
-                progressed = true;
-            } else if apply(&mut tx, &c, &body).await? {
-                head_and_applied(&mut tx, &c).await?;
-                progressed = true;
+            if rows.is_empty() {
+                break;
             }
-            tx.commit().await?;
+            for r in rows {
+                after = r.get("sequence");
+                let c = Change {
+                    sequence: r.get("sequence"),
+                    resolved_revisions: serde_json::from_str(
+                        &r.get::<String, _>("resolved_revisions"),
+                    )
+                    .map_err(|_| error("sync_format_invalid"))?,
+                    object_id: r.get("object_id"),
+                    revision: r.get("revision"),
+                    parent_revision: r.get("parent_revision"),
+                    kind: r.get("kind"),
+                    ciphertext: r.get("ciphertext"),
+                    deleted: r.get("deleted"),
+                    operation_id: r.get("operation_id"),
+                };
+                let mut tx = pool.begin().await?;
+                let outcome = admit(&mut tx, s, key, &c, summary).await?;
+                tx.commit().await?;
+                if outcome != Admitted::Waiting {
+                    progressed = true;
+                }
+            }
         }
         if !progressed {
             break;
@@ -1369,7 +1328,7 @@ pub async fn resolve_conflict(app: &AppHandle, id: &str, resolution: &str) -> Re
     let key = vault_key(&s)?;
     resolve_in_store(&pool, &s, &key, id, resolution).await
 }
-fn conflict_change(r: &sqlx_sqlite::SqliteRow) -> Result<Change, AppError> {
+pub(super) fn conflict_change(r: &sqlx_sqlite::SqliteRow) -> Result<Change, AppError> {
     Ok(Change {
         sequence: 0,
         resolved_revisions: serde_json::from_str(&r.get::<String, _>("resolved_revisions"))
@@ -1397,12 +1356,7 @@ pub(super) async fn resolve_in_store(
     let c = conflict_change(&r)?;
     let remote = verify(s, key, &c)?;
     let mut tx = pool.begin().await?;
-    if query("SELECT 1 FROM account_sync_outbox WHERE object_id=? LIMIT 1")
-        .bind(&c.object_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .is_some()
-    {
+    if pending_any(&mut tx, &c.object_id).await? {
         return Err(error("sync_pending_changes"));
     }
     let parent = query("SELECT revision FROM account_sync_heads WHERE object_id=?")
@@ -1641,7 +1595,7 @@ pub async fn restore_credential(app: &AppHandle) -> Result<(), AppError> {
         let data = call(
             &s,
             reqwest::Method::GET,
-            &format!("/api/v1/sync?after={cursor}&limit=100"),
+            &format!("/api/v1/sync?after={cursor}&limit=500&kind=settings"),
             None,
         )
         .await?;
@@ -1740,3 +1694,7 @@ mod web_tests;
 #[cfg(test)]
 #[path = "sync_connector_tests.rs"]
 mod connector_tests;
+
+#[cfg(test)]
+#[path = "sync_devices_tests.rs"]
+mod devices_tests;

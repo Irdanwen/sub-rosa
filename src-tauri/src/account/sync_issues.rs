@@ -32,6 +32,11 @@ pub(super) async fn issues(pool: &SqlitePool) -> Result<Vec<SyncIssue>, AppError
             "upload" => query("SELECT file_name AS label FROM account_studio_files WHERE id=?")
                 .bind(&item_id).fetch_optional(pool).await?
                 .map(|row| row.get::<String, _>("label")),
+            // A revision this build cannot read says nothing a person can
+            // use beyond its kind; the label stays the kind.
+            "inbox" => query("SELECT kind AS label FROM account_sync_inbox WHERE revision=?")
+                .bind(&item_id).fetch_optional(pool).await?
+                .map(|row| row.get::<String, _>("label")),
             "download" => query("SELECT COALESCE(s.file_name,n.title,r.file_name) AS label FROM account_file_manifests m LEFT JOIN account_studio_files s ON s.id=m.artifact_id LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN notes n ON n.id=a.note_id LEFT JOIN assistant_references r ON r.id=m.artifact_id WHERE m.id=?")
                 .bind(&item_id).fetch_optional(pool).await?
                 .and_then(|row| row.get::<Option<String>, _>("label")),
@@ -63,7 +68,7 @@ pub(super) async fn issue_count(pool: &SqlitePool) -> Result<i64, AppError> {
 const TRANSIENT_FILE_RETRY_MINUTES: f64 = 10.0;
 
 pub(super) async fn reconcile_issues(pool: &SqlitePool) -> Result<(), AppError> {
-    query("DELETE FROM account_sync_issues WHERE (lane='outbox' AND NOT EXISTS(SELECT 1 FROM account_sync_outbox o WHERE o.operation_id=item_id)) OR (lane='upload' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=item_id AND u.completed=0) AND NOT EXISTS(SELECT 1 FROM audio_artifacts a WHERE a.id=item_id AND a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id))) OR (lane='download' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.id=item_id))")
+    query("DELETE FROM account_sync_issues WHERE (lane='outbox' AND NOT EXISTS(SELECT 1 FROM account_sync_outbox o WHERE o.operation_id=item_id)) OR (lane='upload' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=item_id AND u.completed=0) AND NOT EXISTS(SELECT 1 FROM audio_artifacts a WHERE a.id=item_id AND a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id))) OR (lane='download' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.id=item_id)) OR (lane='inbox' AND NOT EXISTS(SELECT 1 FROM account_sync_inbox r WHERE r.revision=item_id AND r.applied=0))")
         .execute(pool)
         .await?;
     query("DELETE FROM account_sync_issues WHERE lane IN ('upload','download') AND code IN ('sync_storage_limited','sync_blob_missing','sync_blob_request_failed','account_network') AND julianday(created_at) < julianday('now') - ?/1440.0")
@@ -79,12 +84,24 @@ pub(super) async fn record_issue(
     item_id: &str,
     code: &str,
 ) -> Result<(), AppError> {
+    let mut conn = pool.acquire().await?;
+    record_issue_on(&mut conn, lane, item_id, code).await
+}
+
+/// The same, inside a transaction the caller holds: a revision parked while
+/// its page is being admitted must land with the page or not at all.
+pub(super) async fn record_issue_on(
+    conn: &mut sqlx_sqlite::SqliteConnection,
+    lane: &str,
+    item_id: &str,
+    code: &str,
+) -> Result<(), AppError> {
     query("INSERT INTO account_sync_issues(lane,item_id,code,created_at) VALUES(?,?,?,?) ON CONFLICT(lane,item_id) DO UPDATE SET code=excluded.code")
         .bind(lane)
         .bind(item_id)
         .bind(code)
         .bind(chrono::Utc::now().to_rfc3339())
-        .execute(pool)
+        .execute(conn)
         .await?;
     Ok(())
 }
@@ -94,6 +111,15 @@ pub(super) async fn retry_issues(pool: &SqlitePool) -> Result<(), AppError> {
     // These validations happen before HTTP. A newer snapshot of the same
     // local object supersedes one that never left this device.
     query("DELETE FROM account_sync_outbox WHERE operation_id IN (SELECT i.item_id FROM account_sync_issues i JOIN account_sync_outbox old ON old.operation_id=i.item_id WHERE i.lane='outbox' AND i.code IN ('sync_object_too_large','sync_local_object_invalid') AND EXISTS(SELECT 1 FROM account_sync_outbox newer WHERE newer.object_id=old.object_id AND newer.sequence>old.sequence))")
+        .execute(&mut *tx)
+        .await?;
+    // A row the service refused for a parent it does not know is sealed
+    // again against the current head; one with no body of its own (a
+    // resolution, a restore) names a revision that is gone and is dropped.
+    query("DELETE FROM account_sync_outbox WHERE body='{}' AND operation_id IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox' AND code IN ('sync_parent_unknown','sync_request_refused'))")
+        .execute(&mut *tx)
+        .await?;
+    query("UPDATE account_sync_outbox SET ciphertext=NULL,parent_revision=NULL,resolved_revisions='[]' WHERE operation_id IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox' AND code IN ('sync_parent_unknown','sync_request_refused'))")
         .execute(&mut *tx)
         .await?;
     // A changed file needs a new manifest and fresh immutable chunk ids.
@@ -108,7 +134,13 @@ pub(super) async fn retry_issues(pool: &SqlitePool) -> Result<(), AppError> {
 }
 
 pub(super) fn isolatable_outbox_error(code: &str) -> bool {
-    matches!(code, "sync_object_too_large" | "sync_local_object_invalid")
+    matches!(
+        code,
+        "sync_object_too_large"
+            | "sync_local_object_invalid"
+            | "sync_parent_unknown"
+            | "sync_request_refused"
+    )
 }
 
 pub(super) fn isolatable_file_error(code: &str) -> bool {

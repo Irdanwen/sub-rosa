@@ -16,7 +16,11 @@ use figment::{
 use jsonwebtoken::{Algorithm, Header, encode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::sync::Arc;
+use std::{
+    collections::BTreeSet,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use subrosa_config::{Config, Oidc, Storage};
 use subrosa_domain::{Operation, Secret};
 use subrosa_persistence::Repository;
@@ -902,6 +906,168 @@ async fn filtered_sync_uses_snapshot_cursor_and_caps_serialized_bytes() -> Resul
     assert_eq!(tail["data"]["has_more"], false);
     assert_eq!(
         f.json("GET", "/api/v1/sync?kind=unknown", &alice, json!({}))
+            .await?
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    Ok(())
+}
+
+/// A parked read: the GET the app sends when it has nothing new to push.
+fn wait_request(browser: &Browser, after: i64) -> Result<Request<Body>> {
+    Ok(Request::builder()
+        .uri(format!("/api/v1/sync/wait?after={after}"))
+        .header(header::COOKIE, &browser.cookie)
+        .body(Body::empty())?)
+}
+async fn watermark(f: &Fixture, browser: &Browser) -> Result<i64> {
+    let (_, page) = f.json("GET", "/api/v1/sync", browser, json!({})).await?;
+    page["data"]["cursor"].as_i64().context("cursor")
+}
+async fn push_one(f: &Fixture, browser: &Browser, op: Operation) -> Result<Uuid> {
+    let (status, result) = f
+        .json("POST", "/api/v1/sync", browser, json!({"operations":[op]}))
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    Ok(Uuid::parse_str(
+        result["data"]["results"][0]["revision"]
+            .as_str()
+            .context("revision")?,
+    )?)
+}
+
+#[tokio::test]
+async fn wait_answers_at_once_after_an_append_and_times_out_otherwise() -> Result<()> {
+    const WINDOW: Duration = Duration::from_secs(2);
+    let f = Fixture::new().await?;
+    // The same service, shared wake-ups included, with a window a test can afford.
+    let app = subrosa_api::router(f.service.clone().with_wait_window(WINDOW));
+    let alice = f.login("alice").await?;
+    let bob = f.login("bob").await?;
+    let after = watermark(&f, &alice).await?;
+    // Above the watermark is a client error, not a wait.
+    let (status, _) = decode_response(
+        app.clone()
+            .oneshot(wait_request(&alice, after + 1)?)
+            .await?,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Parked, then woken by a push of the same account.
+    let parked = tokio::spawn(app.clone().oneshot(wait_request(&alice, after)?));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let pushed = Instant::now();
+    push_one(&f, &alice, operation(Uuid::new_v4(), None, "cipher")).await?;
+    let (status, body) = decode_response(parked.await??).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["changed"], true);
+    assert!(
+        pushed.elapsed() < Duration::from_secs(1),
+        "a push wakes the wait at once"
+    );
+    // Nothing new for alice, and a push by bob is not hers: the window runs out.
+    let after = watermark(&f, &alice).await?;
+    let started = Instant::now();
+    let parked = tokio::spawn(app.clone().oneshot(wait_request(&alice, after)?));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    push_one(&f, &bob, operation(Uuid::new_v4(), None, "cipher")).await?;
+    let (status, body) = decode_response(parked.await??).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["changed"], false);
+    assert!(
+        started.elapsed() >= WINDOW,
+        "another account's push does not wake it"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn wait_does_not_consume_a_request_slot() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    let after = watermark(&f, &alice).await?;
+    // As many waits as the service has request slots, all parked.
+    let parked: Vec<_> = (0..16)
+        .map(|_| wait_request(&alice, after))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .map(|request| tokio::spawn(f.app.clone().oneshot(request)))
+        .collect();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let (status, _) = f.json("GET", "/api/v1/me", &alice, json!({})).await?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "an ordinary request still gets a slot"
+    );
+    // One push frees them all, and each is told there is something to read.
+    push_one(&f, &alice, operation(Uuid::new_v4(), None, "cipher")).await?;
+    for task in parked {
+        let (status, body) = decode_response(task.await??).await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["data"]["changed"], true);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn heads_mode_returns_heads_and_their_direct_parents_only() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    // An object edited three times: one head, two retired ancestors.
+    let chain = Uuid::new_v4();
+    let c1 = push_one(&f, &alice, operation(chain, None, "chain-1")).await?;
+    let c2 = push_one(&f, &alice, operation(chain, Some(c1), "chain-2")).await?;
+    let c3 = push_one(&f, &alice, operation(chain, Some(c2), "chain-3")).await?;
+    // An object with two sibling heads off the same parent.
+    let forked = Uuid::new_v4();
+    let s0 = push_one(&f, &alice, operation(forked, None, "fork-0")).await?;
+    let s1 = push_one(&f, &alice, operation(forked, Some(s0), "fork-left")).await?;
+    let s2 = push_one(&f, &alice, operation(forked, Some(s0), "fork-right")).await?;
+    // An object deleted: a live revision, then its tombstone.
+    let gone = Uuid::new_v4();
+    let d0 = push_one(&f, &alice, operation(gone, None, "live")).await?;
+    let mut tombstone = operation(gone, Some(d0), "tombstone");
+    tombstone.deleted = true;
+    let d1 = push_one(&f, &alice, tombstone).await?;
+    let revisions = |page: &Value| -> Result<BTreeSet<Uuid>> {
+        page["data"]["changes"]
+            .as_array()
+            .context("changes")?
+            .iter()
+            .map(|change| {
+                Ok(Uuid::parse_str(
+                    change["revision"].as_str().context("revision")?,
+                )?)
+            })
+            .collect()
+    };
+    for query in ["heads=1", "heads=true"] {
+        let (status, page) = f
+            .json(
+                "GET",
+                &format!("/api/v1/sync?after=0&{query}&limit=100"),
+                &alice,
+                json!({}),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            revisions(&page)?,
+            BTreeSet::from([c3, s0, s1, s2, d0, d1]),
+            "the chain's head, both siblings with their parent, the tombstone with what it retired"
+        );
+        assert_eq!(page["data"]["cursor"], 8);
+        assert_eq!(page["data"]["has_more"], false);
+    }
+    // Without the flag the full history still comes back.
+    let (_, full) = f
+        .json("GET", "/api/v1/sync?after=0&limit=100", &alice, json!({}))
+        .await?;
+    assert_eq!(revisions(&full)?.len(), 8);
+    assert_eq!(full["data"]["cursor"], 8);
+    assert_eq!(
+        f.json("GET", "/api/v1/sync?heads=maybe", &alice, json!({}))
             .await?
             .0,
         StatusCode::BAD_REQUEST

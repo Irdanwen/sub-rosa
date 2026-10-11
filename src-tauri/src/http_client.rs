@@ -69,6 +69,23 @@ pub fn loopback(timeout: Duration) -> ClientBuilder {
     credentialed(timeout)
 }
 
+/// The one client the account service is reached with. A pass is pushes,
+/// pages and file chunks in a row; built once, the client keeps the
+/// connection open across them instead of paying a TLS handshake for each.
+/// Every request sets its own deadline. Redirects are refused outright: the
+/// configured origin is the only one a credential may reach.
+pub fn account() -> &'static Client {
+    static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        build(
+            credentialed(Duration::from_secs(60))
+                .redirect(Policy::none())
+                .tcp_keepalive(Some(Duration::from_secs(30))),
+            "account service",
+        )
+    })
+}
+
 /// Builds a configured client, naming what it is for if that fails.
 ///
 /// reqwest only fails here when the TLS backend cannot initialize, in which

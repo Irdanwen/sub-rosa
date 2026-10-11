@@ -3,7 +3,11 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, PoisonError},
+    time::Duration,
+};
 use subrosa_config::Config;
 use subrosa_domain::{
     BlobStore, CarpeDiemPartner, DeviceLogin, DeviceRequest, Error, IdentityProvider,
@@ -35,7 +39,22 @@ pub struct Service {
     carpe_diem: Option<Arc<dyn CarpeDiemPartner>>,
     /// When the stuck-revocation alarm last went off, in this process.
     revocation_alarm: Arc<std::sync::Mutex<Option<chrono::DateTime<Utc>>>>,
+    /// One wake-up per account for the requests parked on `wait_for_changes`.
+    /// Process-local on purpose: a wake-up lost across a restart is covered by
+    /// the periodic re-read, not by anything durable.
+    journal_watch: Arc<Mutex<HashMap<Uuid, Arc<tokio::sync::Notify>>>>,
+    /// How long `wait_for_changes` parks before answering "nothing yet".
+    wait_window: Duration,
 }
+
+/// How long a wait holds its request open. Well under the 30 s request
+/// timeout, so a quiet account gets a 200 and not a 408 the client would
+/// mistake for an outage.
+pub const WAIT_WINDOW: Duration = Duration::from_secs(20);
+/// How often a parked wait re-reads the watermark whatever the wake-ups say:
+/// a notification lost across a restart then costs five seconds, not the
+/// whole window.
+const WAIT_POLL: Duration = Duration::from_secs(5);
 /// Where sign-in may send the browser back to. An allowlist rather than a shape
 /// test, because the parameter is attacker-supplied and an open redirect on the
 /// account origin would be handed a fresh session on arrival.
@@ -115,7 +134,16 @@ impl Service {
             ledger: None,
             carpe_diem: None,
             revocation_alarm: Arc::default(),
+            journal_watch: Arc::default(),
+            wait_window: WAIT_WINDOW,
         }
+    }
+    /// Shortens the long wait. For tests, which cannot afford twenty seconds
+    /// per quiet account.
+    #[must_use]
+    pub fn with_wait_window(mut self, window: Duration) -> Self {
+        self.wait_window = window;
+        self
     }
     /// Arms the Carpe Diem partner (ADR 0069). Without it the assertion route
     /// answers 404 and revocations wait in the outbox.
@@ -499,6 +527,7 @@ impl Service {
         after: i64,
         limit: i64,
         kind: Option<&str>,
+        heads: bool,
     ) -> Result<subrosa_domain::JournalPage> {
         if after < 0
             || !(1..=500).contains(&limit)
@@ -512,8 +541,68 @@ impl Service {
                 after,
                 limit,
                 kind,
+                heads,
             })
             .await
+    }
+    /// Parks until the account's journal moves past `after`, or the window
+    /// runs out. `true` means there is something to read.
+    ///
+    /// The wake-up is armed before the watermark is read: an append that
+    /// commits between the read and the park would otherwise be missed until
+    /// the next re-read.
+    pub async fn wait_for_changes(&self, session: &Session, after: i64) -> Result<bool> {
+        if after < 0 {
+            return Err(Error::Invalid);
+        }
+        let owner = session.account.id;
+        let notify = self.watch(owner);
+        let deadline = tokio::time::Instant::now() + self.wait_window;
+        let answer = loop {
+            let notified = notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let watermark = match self.repository.watermark(owner).await {
+                Ok(watermark) => watermark,
+                Err(e) => break Err(e),
+            };
+            if after > watermark {
+                break Err(Error::Invalid);
+            }
+            if watermark > after {
+                break Ok(true);
+            }
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                break Ok(false);
+            }
+            // A timeout here is not an answer, only the cue to read again.
+            let _ = tokio::time::timeout(WAIT_POLL.min(deadline - now), notified).await;
+        };
+        self.unwatch(owner, &notify);
+        answer
+    }
+    fn watch(&self, owner: Uuid) -> Arc<tokio::sync::Notify> {
+        self.journal_watch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(owner)
+            .or_default()
+            .clone()
+    }
+    /// Drops the account's entry once nobody else holds it. Not required at
+    /// this scale, but it keeps the map the size of the accounts waiting now.
+    fn unwatch(&self, owner: Uuid, notify: &Arc<tokio::sync::Notify>) {
+        let mut watch = self
+            .journal_watch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if watch
+            .get(&owner)
+            .is_some_and(|held| Arc::ptr_eq(held, notify) && Arc::strong_count(held) == 2)
+        {
+            watch.remove(&owner);
+        }
     }
     pub async fn append(
         &self,
@@ -541,13 +630,25 @@ impl Service {
             let digest = hash(serde_json::to_vec(&op).map_err(|_| Error::Invalid)?);
             checked.push((op, digest));
         }
-        self.repository
+        let results = self
+            .repository
             .append(AppendParams {
                 session,
                 operations: &checked,
                 quota: self.config.account_quota_bytes,
             })
-            .await
+            .await?;
+        // After the commit, so a waiter that wakes and re-reads sees the rows.
+        let notify = self
+            .journal_watch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&session.account.id)
+            .cloned();
+        if let Some(notify) = notify {
+            notify.notify_waiters();
+        }
+        Ok(results)
     }
     pub async fn save_vault(
         &self,

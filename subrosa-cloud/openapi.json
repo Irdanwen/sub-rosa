@@ -3205,6 +3205,21 @@
           },
           {
             "$ref": "#/components/parameters/ExpectedAccount"
+          },
+          {
+            "in": "query",
+            "name": "heads",
+            "description": "When `1` or `true`, the page holds only current heads plus the direct parent of a head whose object has several heads (the ancestor a merge needs) or whose head is a tombstone (what the deletion took away). Retired intermediate revisions are skipped. Composes with `after`, `limit` and `kind`; a completed scan ends at the same cursor a full replay would.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1",
+                "false",
+                "true"
+              ],
+              "default": "0"
+            }
           }
         ]
       },
@@ -3363,6 +3378,153 @@
           }
         },
         "parameters": [
+          {
+            "$ref": "#/components/parameters/ExpectedAccount"
+          }
+        ]
+      }
+    },
+    "/api/v1/sync/wait": {
+      "get": {
+        "summary": "Park until the journal moves past a watermark, at most twenty seconds",
+        "description": "Answers `{\"changed\": true}` as soon as the account's journal holds a sequence above `after`, otherwise `{\"changed\": false}` when the window runs out. A client with nothing new calls this instead of polling `GET /api/v1/sync`. `after` must not exceed the current watermark. An older service answers 404 `not_found`: the client then falls back to polling.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "changed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "changed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Authorization pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Retry after delay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "nativeSession": []
+          },
+          {
+            "browserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0,
+              "default": 0
+            }
+          },
           {
             "$ref": "#/components/parameters/ExpectedAccount"
           }
