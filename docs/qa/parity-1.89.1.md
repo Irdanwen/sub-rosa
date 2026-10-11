@@ -121,6 +121,18 @@ gateway label and the gallery question remain as written.
   installed app's gateway, which runs its routines, was replaced by the debug
   one until it was restored (below). The label comes from the pinned Hermes CLI; a fix means a per-build
   label there, not a local change.
+  *2026-10-11:* the cause is narrower and wider than that. Hermes derives the
+  label from `HERMES_HOME`, and any home outside `~/.hermes` counts as a root of
+  its own (`_profile_suffix` returns `""`), so every Sub Rosa build, and a
+  standalone Hermes in `~/.hermes`, all claim `ai.hermes.gateway`. A debug build
+  on macOS now leaves a LaunchAgent that serves another home alone, writes why
+  in `logs/gateway-start.log`, and goes without routines;
+  `SUBROSA_DEV_GATEWAY=1` takes it over on purpose
+  (`src-tauri/src/hermes_bridge/gateway_start.rs`). Still open: a label per
+  build (a bundle-time patch letting Sub Rosa name the service, the way
+  `patch-hermes-ws-origin.sh` patches the runtime) with a migration of the
+  installed LaunchAgent and Windows task, so the release no longer collides
+  with a standalone Hermes either.
 - **A temporary chat leaves its first words in the runtime's log.** The
   pinned runtime logs every turn at INFO with the first 80 characters of the
   message (`agent/turn_context.py`, "conversation turn: … msg=…") into
