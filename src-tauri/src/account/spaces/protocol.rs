@@ -261,7 +261,7 @@ pub fn seal_envelope(
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| invalid())?;
     let ciphertext = cipher
         .encrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::from(nonce),
             Payload {
                 msg: plaintext,
                 aad: aad.as_bytes(),
