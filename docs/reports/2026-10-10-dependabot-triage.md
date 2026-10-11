@@ -78,8 +78,11 @@ replaced on real inputs, not only by CI.
 | #100 vitest 4 | #331: mock typings, an `Audio` mock that must be constructible, an `agent-hud` test that counted microtasks, coverage include scoped to `src/`; frontend floor re-based to 74.7 because v4 counts lines from the AST (80.86 under v3, 74.76 under v4, same tests) |
 | #98 symphonia 0.6 | #330: ported; PCM bit-identical to 0.5 on 29 real files once `opt-simd` is left out and Vorbis keeps its trimming; AAC-LC in `.caf` now decodes |
 | #122 key pill | merged after a rebase onto the current card, with its sentences in the six catalogs |
+| #323 pdfjs-dist 6.4, #326 tauri-plugin-updater 2.13.2 (opened 2026-10-11) | merged; 6.4 extracts the same text as 6.2 from the same PDFs |
+| #327 ed25519-dalek 3 (opened 2026-10-11) | merged; only `digest` moves, and `spaces-v1.json`'s signatures regenerate identical |
 
 Still open: the decision on Biome 2.5.15 (re-baseline that one rule, or
-stay), and the majors Dependabot opened on 2026-10-11 (#324
-`@simplewebauthn/browser` 14, #325 vite 8, #327 `ed25519-dalek` 3).
+stay), and two majors Dependabot opened on 2026-10-11 that CI cannot
+prove: #324 `@simplewebauthn/browser` 14 (needs a real passkey sign-in) and
+#325 vite 8 (needs the built site and app checked page by page).
 
