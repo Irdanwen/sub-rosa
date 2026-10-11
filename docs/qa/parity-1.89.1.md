@@ -133,6 +133,23 @@ gateway label and the gallery question remain as written.
   `patch-hermes-ws-origin.sh` patches the runtime) with a migration of the
   installed LaunchAgent and Windows task, so the release no longer collides
   with a standalone Hermes either.
+  *2026-10-11, fixed for 1.89.3:* the four paths that lay down the Hermes
+  source (two bundles, two managed installers) patch `_profile_suffix` so only
+  the platform's own home (`~/.hermes`, `%LOCALAPPDATA%\hermes`) is the
+  default; any other home gets the hash Hermes already used for arbitrary
+  paths, `ai.hermes.gateway-<8 hex>` and `Hermes_Gateway_<8 hex>`
+  (`scripts/patch-hermes-service-label.sh`). Hashing `HERMES_HOME` rather than
+  passing a name keeps the CLI, the launchd daemon (whose plist carries only
+  `PATH`, `VIRTUAL_ENV` and `HERMES_HOME`) and the app in agreement. Before
+  starting the gateway, an app whose runtime carries the patch removes the
+  bare-named LaunchAgent or task, and only one whose definition names its own
+  home (`src-tauri/src/hermes_bridge/gateway_label.rs`); a managed runtime
+  installed before the patch is reinstalled (`runtime.json` records the patch
+  set). Verified: the pinned source patched by all four copies is identical
+  and fails loudly when the line moves; names for the release, debug,
+  `~/.hermes` and profile homes as above; the migration against the real
+  launchd on macOS and the real Task Scheduler on Windows, plus both
+  PowerShell copies under Windows PowerShell 5.1, in a one-off CI job.
 - **A temporary chat leaves its first words in the runtime's log.** The
   pinned runtime logs every turn at INFO with the first 80 characters of the
   message (`agent/turn_context.py`, "conversation turn: … msg=…") into
