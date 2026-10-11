@@ -1,4 +1,6 @@
-import ts from "typescript";
+// TypeScript 7 (the native compiler) ships no JavaScript compiler API, so the
+// i18n scripts parse with typescript 5, kept as the `typescript5` alias.
+import ts from "typescript5";
 
 const COPY_ATTRIBUTES = new Set([
   "aria-label",

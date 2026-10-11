@@ -20,7 +20,9 @@
  * Text inside <code>, <kbd> and <pre> is left as it is; so is text with
  * fewer than two letters (a glyph, a shortcut, a number).
  */
-import ts from "typescript";
+// TypeScript 7 (the native compiler) ships no JavaScript compiler API, so the
+// i18n scripts parse with typescript 5, kept as the `typescript5` alias.
+import ts from "typescript5";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 

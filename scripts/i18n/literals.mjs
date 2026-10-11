@@ -13,7 +13,9 @@
  * two letters and a space or a capital start. Template literals with
  * `${…}` are listed for a hand pass instead.
  */
-import ts from "typescript";
+// TypeScript 7 (the native compiler) ships no JavaScript compiler API, so the
+// i18n scripts parse with typescript 5, kept as the `typescript5` alias.
+import ts from "typescript5";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
