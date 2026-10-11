@@ -6,7 +6,7 @@
 
 ## Où on en est
 
-- **Apps** : **1.89.1** publiée (10 octobre) sur desktop (macOS arm64 et Intel, Windows ; l'updater l'annonce), TestFlight et Android. Depuis la 1.79.2, aucun lien d'achat là où la boutique l'interdit ; la suppression d'un compte Carpe Diem (`410 ACCOUNT_CLOSED`) est gérée depuis la PR #314.
+- **Apps** : **1.89.2** (11 octobre) sur desktop (macOS arm64 et Intel, Windows ; l'updater l'annonce), TestFlight et Android. Depuis la 1.79.2, aucun lien d'achat là où la boutique l'interdit ; la suppression d'un compte Carpe Diem (`410 ACCOUNT_CLOSED`) est gérée depuis la PR #314.
 - **Service de comptes** (`subrosa.furetier.com`) en production :
   - migration 0009 appliquée, clé de partenaire armée ;
   - la route d'assertion répond 401 sans session ;
