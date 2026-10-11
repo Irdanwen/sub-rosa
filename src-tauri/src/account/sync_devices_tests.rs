@@ -40,7 +40,7 @@ pub(super) async fn device(service: &Service, name: &str) -> Device {
 }
 
 impl Device {
-    pub async fn sync(&self, key: &[u8; 32]) -> Result<(), AppError> {
+    pub async fn sync(&self, key: &[u8; 32]) -> Result<Summary, AppError> {
         synchronize(&self.pool, &self.session, key).await
     }
     pub async fn create_note(&self, id: &str, title: &str) {
@@ -228,4 +228,131 @@ async fn an_edit_not_yet_sent_keeps_a_card_on_the_device_that_holds_it_only() {
     assert_eq!(phone.title(&id).await, None);
     assert_eq!(mac.cards(&id).await + phone.cards(&id).await, 0);
     assert_eq!(service.heads(&id).await.len(), 1);
+}
+
+/// A revision as a newer build would write it: a column this build does not
+/// know, under the same table.
+fn unreadable_note(s: &Session, key: &[u8; 32], id: &str, parent: Option<String>) -> Value {
+    let op = uuid::Uuid::new_v4().to_string();
+    let body = json!({"v":1,"operation_id":op,"parent_revision":parent,"deleted":false,"table":"notes","row":{"id":id,"title":"From the future","mood_colour":"teal","created_at":"now","updated_at":"now"}});
+    json!({"operation_id":op,"object_id":id,"parent_revision":parent,"kind":"note","ciphertext":crypto::seal(key,&aad(s,"note",id),&serde_json::to_vec(&body).unwrap()).unwrap(),"deleted":false})
+}
+
+#[tokio::test]
+async fn an_unreadable_revision_is_parked_the_cursor_advances_and_applying_is_back_to_zero() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (device(&service, "mac").await, device(&service, "phone").await);
+    let (future, ordinary) = (note(), note());
+    // The phone, on a newer build, writes a note this Mac cannot read, then
+    // an ordinary one, then deletes the ordinary one.
+    let op = unreadable_note(&phone.session, &key, &future, None);
+    let data = call(&phone.session, reqwest::Method::POST, "/api/v1/sync", Some(json!({"operations":[op]}))).await.unwrap();
+    assert_eq!(data["results"].as_array().unwrap().len(), 1);
+    phone.create_note(&ordinary, "Ordinary").await;
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(mac.title(&ordinary).await.as_deref(), Some("Ordinary"), "the stream froze on the unreadable revision");
+    assert_eq!(mac.title(&future).await, None);
+    assert_eq!(mac.applying().await, 0, "applying was left set");
+    assert_eq!(mac.cursor().await, 2);
+    let parked = mac.count("SELECT count(*) AS n FROM account_sync_issues WHERE lane='inbox' AND item_id<>?", "").await;
+    assert_eq!(parked, 1);
+    // A deletion decided on the phone still reaches the Mac.
+    phone.delete_note(&ordinary).await;
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(mac.title(&ordinary).await, None);
+    assert_eq!(mac.cards(&ordinary).await, 0);
+    // The Mac still writes: its triggers were not silenced.
+    let own = note();
+    mac.create_note(&own, "Still mine").await;
+    assert_eq!(mac.outbox(&own).await, 1);
+}
+
+#[tokio::test]
+async fn a_child_of_a_parked_revision_waits_instead_of_becoming_a_card() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (device(&service, "mac").await, device(&service, "phone").await);
+    // A library with history: a fresh one would be handed the heads only,
+    // and the parked parent would not be among them.
+    mac.create_note(&note(), "Earlier").await;
+    mac.sync(&key).await.unwrap();
+    let id = note();
+    let op = unreadable_note(&phone.session, &key, &id, None);
+    let data = call(&phone.session, reqwest::Method::POST, "/api/v1/sync", Some(json!({"operations":[op]}))).await.unwrap();
+    let first = data["results"][0]["revision"].as_str().unwrap().to_string();
+    // An ordinary edit of the same note, child of the unreadable one.
+    let op2 = {
+        let op = uuid::Uuid::new_v4().to_string();
+        let body = json!({"v":1,"operation_id":op,"parent_revision":first,"deleted":false,"table":"notes","row":{"id":id,"title":"Readable again","created_at":"now","updated_at":"now"}});
+        json!({"operation_id":op,"object_id":id,"parent_revision":first,"kind":"note","ciphertext":crypto::seal(&key,&aad(&phone.session,"note",&id),&serde_json::to_vec(&body).unwrap()).unwrap(),"deleted":false})
+    };
+    call(&phone.session, reqwest::Method::POST, "/api/v1/sync", Some(json!({"operations":[op2]}))).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(mac.cards(&id).await, 0, "a child of a parked parent became a card");
+    assert_eq!(mac.title(&id).await, None);
+    assert_eq!(mac.count("SELECT count(*) AS n FROM account_sync_inbox WHERE applied=0 AND object_id=?", &id).await, 2);
+    // Once the parked parent is retried (after an update that reads it, here
+    // the issue is simply lifted and the parent is still unreadable), the
+    // child keeps waiting rather than jumping ahead.
+    retry_issues(&mac.pool).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(mac.cards(&id).await, 0);
+}
+
+#[tokio::test]
+async fn old_deletion_cards_are_settled_by_revision_order_and_the_head_moves_to_the_tombstone() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (device(&service, "mac").await, device(&service, "phone").await);
+    let id = note();
+    mac.create_note(&id, "Monday").await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    mac.edit_note(&id, "Monday, revised").await;
+    mac.sync(&key).await.unwrap();
+    // The phone, behind a build that sent before receiving, pushed a
+    // tombstone with a stale parent: the service holds two heads.
+    let stale = mac.head(&id).await.unwrap();
+    let parent: String = query("SELECT parent_revision FROM account_sync_inbox WHERE revision=?")
+        .bind(&stale)
+        .fetch_one(&mac.pool)
+        .await
+        .unwrap()
+        .get("parent_revision");
+    let op = uuid::Uuid::new_v4().to_string();
+    let body = json!({"v":1,"operation_id":op,"parent_revision":parent,"deleted":true,"table":"notes","row":{"id":id}});
+    let tomb = json!({"operation_id":op,"object_id":id,"parent_revision":parent,"kind":"note","ciphertext":crypto::seal(&key,&aad(&phone.session,"note",&id),&serde_json::to_vec(&body).unwrap()).unwrap(),"deleted":true});
+    call(&phone.session, reqwest::Method::POST, "/api/v1/sync", Some(json!({"operations":[tomb]}))).await.unwrap();
+    assert_eq!(service.heads(&id).await.len(), 2);
+    // And the Mac, on the old rule, wrote a card for it. Reproduce that card.
+    let tombstone_revision = service.revisions(&id).await.into_iter().find(|r| r.deleted).unwrap().revision;
+    query("INSERT INTO account_sync_conflicts(id,object_id,kind,ciphertext,parent_revision,operation_id,deleted,created_at,resolved_revisions) SELECT revision,object_id,kind,ciphertext,parent_revision,operation_id,deleted,'2026-10-01T00:00:00Z','[]' FROM account_sync_inbox WHERE revision=?")
+        .bind(&tombstone_revision)
+        .execute(&mac.pool)
+        .await
+        .ok();
+    // The inbox row may not exist yet on the Mac: pull it as a card the old way.
+    if mac.cards(&id).await == 0 {
+        let data = call(&mac.session, reqwest::Method::GET, &format!("/api/v1/sync?after={}&limit=100", mac.cursor().await), None).await.unwrap();
+        let change = data["changes"].as_array().unwrap().iter().find(|c| c["deleted"] == true).unwrap();
+        query("INSERT INTO account_sync_inbox(revision,object_id,kind,ciphertext,parent_revision,operation_id,deleted,sequence,applied,resolved_revisions) VALUES(?,?,?,?,?,?,1,?,1,'[]')")
+            .bind(change["revision"].as_str()).bind(&id).bind("note").bind(change["ciphertext"].as_str()).bind(change["parent_revision"].as_str()).bind(change["operation_id"].as_str()).bind(change["sequence"].as_i64())
+            .execute(&mac.pool).await.unwrap();
+        query("INSERT INTO account_sync_conflicts(id,object_id,kind,ciphertext,parent_revision,operation_id,deleted,created_at,resolved_revisions) VALUES(?,?,'note',?,?,?,1,'2026-10-01T00:00:00Z','[]')")
+            .bind(change["revision"].as_str()).bind(&id).bind(change["ciphertext"].as_str()).bind(change["parent_revision"].as_str()).bind(change["operation_id"].as_str())
+            .execute(&mac.pool).await.unwrap();
+        query("UPDATE account_sync_control SET cursor=? WHERE id=1").bind(data["cursor"].as_i64()).execute(&mac.pool).await.unwrap();
+    }
+    assert_eq!(mac.cards(&id).await, 1);
+    assert_eq!(mac.title(&id).await.as_deref(), Some("Monday, revised"));
+    // The new rule settles it on the next pass: the deletion is later than
+    // the head, nothing is unsent.
+    mac.sync(&key).await.unwrap();
+    assert_eq!(mac.cards(&id).await, 0);
+    assert_eq!(mac.title(&id).await, None);
+    assert_eq!(mac.head(&id).await.as_deref(), Some(tombstone_revision.as_str()));
+    assert_eq!(mac.outbox(&id).await, 0, "settling sent something");
 }
