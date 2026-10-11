@@ -35,28 +35,35 @@ pub fn init() -> TauriPlugin<tauri::Wry> {
 /// keeps its own copies and never fills ndk-context, so without this the first
 /// `default_input_config()` panics. `initialize_android_context` asserts it
 /// runs once, hence the `Once`; the global reference is leaked on purpose
-/// because ndk-context holds the raw pointer for the life of the process.
+/// (`into_raw`) because ndk-context holds the raw pointer for the life of the
+/// process. `with_env` catches a panic instead of letting it unwind into the
+/// JVM, and nothing here throws, so a failure only costs the microphone.
 #[no_mangle]
-pub extern "system" fn Java_xyz_carpediem_subrosa_nativebridge_SubRosaPlugin_initNdkContext(
-    env: jni::JNIEnv,
-    _plugin: jni::objects::JObject,
-    context: jni::objects::JObject,
+pub extern "system" fn Java_xyz_carpediem_subrosa_nativebridge_SubRosaPlugin_initNdkContext<
+    'local,
+>(
+    mut env: jni::EnvUnowned<'local>,
+    _plugin: jni::objects::JObject<'local>,
+    context: jni::objects::JObject<'local>,
 ) {
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(|| {
-        let (Ok(vm), Ok(context)) = (env.get_java_vm(), env.new_global_ref(context)) else {
+        let outcome = env.with_env(|env| -> jni::errors::Result<()> {
+            let vm = env.get_java_vm()?;
+            let context = env.new_global_ref(context)?;
+            // SAFETY: both pointers stay valid for the process: the JavaVM is
+            // process-wide and the global reference is never deleted.
+            unsafe {
+                ndk_context::initialize_android_context(
+                    vm.get_raw().cast(),
+                    context.into_raw().cast(),
+                );
+            }
+            Ok(())
+        });
+        if !matches!(outcome.into_outcome(), jni::Outcome::Ok(())) {
             tracing::warn!("Android context unavailable; microphone capture will fail");
-            return;
-        };
-        // SAFETY: both pointers stay valid for the process: the JavaVM is
-        // process-wide and the global reference is never deleted.
-        unsafe {
-            ndk_context::initialize_android_context(
-                vm.get_java_vm_pointer().cast(),
-                context.as_obj().as_raw().cast(),
-            );
         }
-        std::mem::forget(context);
     });
 }
 

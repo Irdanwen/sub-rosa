@@ -80,7 +80,8 @@ quick-xml = "0.42"
 # engine writes them, and the encodings older bank exports use.
 regex = "1"
 encoding_rs = "0.8"
-zip = { version = "4.6", default-features = false, features = ["deflate"] }
+# tauri-plugin-updater still asks for zip 4, so desktop builds compile both.
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 pdf-extract = "0.12.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "cookies"] }
 # Pure-Rust FFT for the echo-rejection similarity gate (GCC-PHAT lag estimation).
@@ -215,7 +216,9 @@ keyring = { version = "3", default-features = false }
 cpal = { version = "0.15", features = ["oboe-shared-stdcxx"] }
 # cpal reads the JavaVM and Context from ndk-context; android.rs initializes it.
 ndk-context = "0.1"
-jni = "0.21"
+# Tauri, cpal and oboe stay on jni 0.21: only raw pointers cross from
+# android.rs to ndk-context, so the two versions never share a type.
+jni = "0.22"
 # The voice conversation opens its microphone with the VoiceCommunication
 # preset, the source Android attaches its echo canceller to; cpal cannot ask
 # for a preset. The same Oboe cpal links, so nothing new is fetched.
