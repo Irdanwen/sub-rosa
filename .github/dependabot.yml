@@ -34,6 +34,13 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/react-dom"
         update-types: ["version-update:semver-major"]
+      # Biome 2.5.12 to 2.5.15 widen noDescendingSpecificity from 98 sites to
+      # 386 on unchanged CSS, mostly selectors that never match the same
+      # element. The ratchet only goes down, so the upgrade is a decision of
+      # its own (re-baseline that rule or stay), not part of a weekly group
+      # it would otherwise fail every time (2026-10-11, PR #307).
+      - dependency-name: "@biomejs/biome"
+        versions: [">= 2.5.12, < 2.6.0"]
 
   - package-ecosystem: cargo
     directory: /src-tauri
