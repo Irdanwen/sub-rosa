@@ -75,7 +75,7 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = "2"
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
-quick-xml = "0.41"
+quick-xml = "0.42"
 # Bank statements (crate::finance): regular expression rules, as the budget
 # engine writes them, and the encodings older bank exports use.
 regex = "1"

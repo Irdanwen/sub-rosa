@@ -102,12 +102,10 @@ pub fn first_episode(xml: &str) -> Result<FeedEpisode, AppError> {
                 if let Some(target) = collecting.take() {
                     // Titles routinely carry entities (`&amp;`, `&#8217;`), so
                     // decode the bytes and then unescape what they meant.
-                    // quick-xml 0.41 asks which XML version's character rules
-                    // to apply. Feeds rarely carry a declaration, and the spec
-                    // says an entity without one is 1.0.
-                    let decoded = text
-                        .xml_content(quick_xml::XmlVersion::Implicit1_0)
-                        .unwrap_or_default();
+                    // quick-xml asks which XML version's end-of-line rules to
+                    // apply. Feeds rarely carry a declaration, and the spec
+                    // says a document without one is 1.0.
+                    let decoded = text.xml_content(quick_xml::XmlVersion::Implicit1_0);
                     let value = quick_xml::escape::unescape(&decoded)
                         .map(|value| value.trim().to_string())
                         .unwrap_or_else(|_| decoded.trim().to_string());
@@ -123,7 +121,7 @@ pub fn first_episode(xml: &str) -> Result<FeedEpisode, AppError> {
             // CDATA is already literal: unescaping it would be wrong.
             Ok(Event::CData(data)) => {
                 if let Some(target) = collecting.take() {
-                    let value = String::from_utf8_lossy(data.as_ref()).trim().to_string();
+                    let value = data.trim().to_string();
                     absorb_title(
                         target,
                         value,
@@ -201,12 +199,8 @@ fn absorb_title(
 
 /// Strip any namespace prefix and lowercase, so `itunes:title` and `TITLE`
 /// both read as `title`.
-fn local_name(raw: &[u8]) -> String {
-    let name = String::from_utf8_lossy(raw);
-    name.rsplit(':')
-        .next()
-        .unwrap_or(&name)
-        .to_ascii_lowercase()
+fn local_name(name: &str) -> String {
+    name.rsplit(':').next().unwrap_or(name).to_ascii_lowercase()
 }
 
 /// Whether an enclosure is audio or video rather than a transcript, an image

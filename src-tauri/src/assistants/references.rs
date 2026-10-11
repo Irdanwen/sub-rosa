@@ -392,10 +392,7 @@ fn entity_text(entity: quick_xml::events::BytesRef<'_>) -> Result<String, AppErr
     {
         return Ok(ch.to_string());
     }
-    let decoded = entity
-        .decode()
-        .map_err(|_| error("assistant_reference_invalid"))?;
-    match decoded.as_ref() {
+    match &*entity {
         "amp" => Ok("&".into()),
         "lt" => Ok("<".into()),
         "gt" => Ok(">".into()),
@@ -414,16 +411,12 @@ fn xml_text(xml: &str) -> Result<String, AppError> {
             Ok(Event::DocType(_)) => return Err(error("assistant_reference_invalid")),
             Ok(Event::Text(text)) => {
                 out.push_str(
-                    &quick_xml::escape::unescape(
-                        &text
-                            .decode()
-                            .map_err(|_| error("assistant_reference_invalid"))?,
-                    )
-                    .map_err(|_| error("assistant_reference_invalid"))?,
+                    &quick_xml::escape::unescape(&text)
+                        .map_err(|_| error("assistant_reference_invalid"))?,
                 );
             }
             Ok(Event::GeneralRef(entity)) => out.push_str(&entity_text(entity)?),
-            Ok(Event::End(tag)) if matches!(tag.local_name().as_ref(), b"p" | b"row" | b"si") => {
+            Ok(Event::End(tag)) if matches!(tag.local_name().as_ref(), "p" | "row" | "si") => {
                 out.push('\n')
             }
             Err(_) => return Err(error("assistant_reference_invalid")),
@@ -526,24 +519,20 @@ fn shared_strings(xml: &str) -> Result<Vec<String>, AppError> {
             Ok(Event::Eof) => break,
             Ok(Event::DocType(_)) => return Err(error("assistant_reference_invalid")),
             Ok(Event::Start(tag)) => {
-                if tag.local_name().as_ref() == b"si" {
+                if tag.local_name().as_ref() == "si" {
                     current.clear();
                 }
-                in_text = tag.local_name().as_ref() == b"t";
+                in_text = tag.local_name().as_ref() == "t";
             }
             Ok(Event::End(tag)) => {
-                if tag.local_name().as_ref() == b"si" {
+                if tag.local_name().as_ref() == "si" {
                     strings.push(current.clone());
                 }
                 in_text = false;
             }
             Ok(Event::Text(text)) if in_text => current.push_str(
-                &quick_xml::escape::unescape(
-                    &text
-                        .decode()
-                        .map_err(|_| error("assistant_reference_invalid"))?,
-                )
-                .map_err(|_| error("assistant_reference_invalid"))?,
+                &quick_xml::escape::unescape(&text)
+                    .map_err(|_| error("assistant_reference_invalid"))?,
             ),
             Ok(Event::GeneralRef(entity)) if in_text => current.push_str(&entity_text(entity)?),
             Err(_) => return Err(error("assistant_reference_invalid")),
@@ -565,39 +554,32 @@ fn sheet_text(xml: &str, strings: &[String]) -> Result<String, AppError> {
             Ok(Event::Eof) => break,
             Ok(Event::DocType(_)) => return Err(error("assistant_reference_invalid")),
             Ok(Event::Start(tag)) => {
-                if tag.local_name().as_ref() == b"c" {
+                if tag.local_name().as_ref() == "c" {
                     cell.clear();
                     value.clear();
                     shared = false;
                     for attr in tag.attributes() {
                         let attr = attr.map_err(|_| error("assistant_reference_invalid"))?;
                         let val = attr
-                            .decoded_and_normalized_value(
-                                quick_xml::XmlVersion::default(),
-                                reader.decoder(),
-                            )
+                            .normalized_value(quick_xml::XmlVersion::default())
                             .map_err(|_| error("assistant_reference_invalid"))?;
                         match attr.key.as_ref() {
-                            b"r" => cell = val.into_owned(),
-                            b"t" => shared = val == "s",
+                            "r" => cell = val.into_owned(),
+                            "t" => shared = val == "s",
                             _ => {}
                         }
                     }
                 }
-                reading = matches!(tag.local_name().as_ref(), b"v" | b"t");
+                reading = matches!(tag.local_name().as_ref(), "v" | "t");
             }
             Ok(Event::Text(text)) if reading => value.push_str(
-                &quick_xml::escape::unescape(
-                    &text
-                        .decode()
-                        .map_err(|_| error("assistant_reference_invalid"))?,
-                )
-                .map_err(|_| error("assistant_reference_invalid"))?,
+                &quick_xml::escape::unescape(&text)
+                    .map_err(|_| error("assistant_reference_invalid"))?,
             ),
             Ok(Event::GeneralRef(entity)) if reading => value.push_str(&entity_text(entity)?),
             Ok(Event::End(tag)) => {
                 reading = false;
-                if tag.local_name().as_ref() == b"c" {
+                if tag.local_name().as_ref() == "c" {
                     let resolved = if shared {
                         strings
                             .get(

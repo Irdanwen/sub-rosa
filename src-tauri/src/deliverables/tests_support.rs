@@ -48,18 +48,15 @@ fn elements(xml: &str) -> Vec<(String, BTreeMap<String, String>)> {
             Ok(_) => continue,
             Err(error) => panic!("XML is not well formed: {error}\n{xml}"),
         };
-        let name = String::from_utf8_lossy(tag.local_name().as_ref()).into_owned();
+        let name = tag.local_name().as_ref().to_owned();
         let mut attributes = BTreeMap::new();
         for attribute in tag.attributes() {
             let attribute = attribute.unwrap_or_else(|e| panic!("bad attribute: {e}"));
             let value = attribute
-                .decoded_and_normalized_value(quick_xml::XmlVersion::default(), reader.decoder())
+                .normalized_value(quick_xml::XmlVersion::default())
                 .unwrap()
                 .into_owned();
-            attributes.insert(
-                String::from_utf8_lossy(attribute.key.local_name().as_ref()).into_owned(),
-                value,
-            );
+            attributes.insert(attribute.key.local_name().as_ref().to_owned(), value);
         }
         out.push((name, attributes));
         if opened {
