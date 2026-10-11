@@ -12,7 +12,7 @@ import {
 } from "../lib/api";
 import { date, number, t, websiteLocale } from "../lib/i18n";
 import { localizedSiteHref } from "../lib/paths";
-import { registerPasskey, signInWithPasskey } from "../lib/passkeys";
+import { passkeyWasDismissed, registerPasskey, signInWithPasskey } from "../lib/passkeys";
 import { decryptObject, prepareObject, prepareVault, sendObject, unlockVault } from "../lib/vault";
 import { BrowserDeviceCard, deviceKindLabel, useBrowserDevice } from "./browser-device";
 import { Library } from "./library";
@@ -31,7 +31,7 @@ function useLifetime() {
   return active;
 }
 function errorMessage(error: unknown) {
-  if (error instanceof DOMException && error.name === "NotAllowedError")
+  if (passkeyWasDismissed(error))
     return t(
       "No passkey was selected. Try again or use another sign-in method.",
       "Aucune passkey n’a été sélectionnée. Réessayez ou choisissez une autre méthode de connexion.",
