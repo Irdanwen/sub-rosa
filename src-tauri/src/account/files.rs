@@ -210,10 +210,7 @@ pub(super) async fn step(
             }
         }
         let now = Instant::now();
-        if !moved
-            || now.duration_since(started) >= LANE_BUDGET
-            || now + LANE_MARGIN >= deadline
-        {
+        if !moved || now.duration_since(started) >= LANE_BUDGET || now + LANE_MARGIN >= deadline {
             break;
         }
     }
@@ -287,7 +284,10 @@ async fn remove_queued_files(
             // until the workspace is told (ADR-0108).
             "hermes-session" => {
                 use tauri::Emitter as _;
-                let _ = app.emit("subrosa://hermes-session-removed", json!({"session_id":path}));
+                let _ = app.emit(
+                    "subrosa://hermes-session-removed",
+                    json!({"session_id":path}),
+                );
                 Ok(())
             }
             _ => Ok(()),
@@ -566,8 +566,7 @@ pub(super) async fn download_one(
         }
     });
     let open = |piece: &Chunk, encrypted: Vec<u8>| -> Result<Zeroizing<Vec<u8>>, AppError> {
-        let envelope =
-            std::str::from_utf8(&encrypted).map_err(|_| error("sync_blob_invalid"))?;
+        let envelope = std::str::from_utf8(&encrypted).map_err(|_| error("sync_blob_invalid"))?;
         let clear = crypto::open(key, &blob_aad(s, &piece.id), envelope)?;
         if clear.len() as u64 != piece.bytes || digest(&clear) != piece.sha256 {
             return Err(error("sync_blob_invalid"));

@@ -15,7 +15,9 @@ pub mod spaces;
 pub(crate) mod studio;
 mod summaries;
 pub mod sync;
+mod sync_deletions;
 mod sync_issues;
+mod sync_push;
 mod sync_tables;
 use crate::{domain::types::AppError, redacted::Redacted};
 use serde::{Deserialize, Serialize};
@@ -668,7 +670,11 @@ pub async fn account_status(app: AppHandle) -> Result<AccountStatus, AppError> {
     Ok(AccountStatus {
         default_server_url: DEFAULT_ACCOUNT_SERVER,
         server_url: row.get("server_url"),
-        device_id: if signed_in { row.get("device_id") } else { None },
+        device_id: if signed_in {
+            row.get("device_id")
+        } else {
+            None
+        },
         connection,
         device_authorized,
         login_pending: base.as_deref().is_some_and(login::has_pending),

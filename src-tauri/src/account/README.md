@@ -105,7 +105,7 @@ committed transactionally. Pending parents are replayed from the durable inbox.
 Concurrent branches are retained for review; explicit resolution acknowledges all
 known heads. A new concurrent branch remains a conflict. Resolution can keep the
 current version, use the received version, or copy a note; finished note summaries
-follow the selected note. A received deletion requires explicit review.
+follow the selected note. A received deletion applies when it is at least as recent as what this device holds and nothing is unsent; what it took is listed under "Recently deleted" (ADR-0108).
 
 A durable `account_sync_issues` row isolates a rejected local object or file so
 other objects keep moving. Later operations for the same object wait behind its
@@ -129,7 +129,7 @@ are bounded to 2 GiB and 2048 chunks. Download progress is durable after each
 verified, flushed chunk; final rename happens only when all checks pass. Staging
 is outside the gallery. Paths are generated locally, not taken from remote
 payloads, and iOS gallery paths are reconstructed from relative filenames.
-One upload and one download chunk are processed per sweep. Native timers, launch,
+Chunks move until the lane's budget is spent (twelve seconds of a pass, two downloads in flight, newest audio first), and the first in each direction always goes. Native timers, launch,
 resume, and background sweep all resume durable work; no JavaScript polling
 promise owns long-running synchronization. Account HTTP traffic uses the shared
 client factory and records only destination, purpose, counts, status and duration.
