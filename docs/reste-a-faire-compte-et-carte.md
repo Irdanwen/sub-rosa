@@ -1,10 +1,12 @@
 # Reste à faire : compte par email, clé Carpe Diem et crédits par carte
 
-*État au 1er octobre 2026 au soir. Côté Sub Rosa, tout est livré. Ce qui reste dépend de Stripe, d'une relecture juridique, puis de Carpe Diem, **dans cet ordre**.*
+*État au 11 octobre 2026. Côté Sub Rosa, tout est livré. Ce qui reste dépend de Stripe, d'une relecture juridique, puis de Carpe Diem, **dans cet ordre**.*
+
+> **Relevé du 11 octobre.** Les PR Carpe Diem #397 et #398 sont fusionnées (7 octobre), ainsi que #464, #465 et #469 (10 et 11 octobre). Mais `GET /api/operator/partner/capabilities` répond toujours `{"keyIssuance":false,"fiat":false}` : ni la carte ni l'émission de clés ne sont armées en production, et `PARTNERS_JSON` n'y est pas (le `/readyz` du service de comptes montre encore 15 révocations en attente, toutes bloquées). La suite reste donc celle des sections 1 à 4.
 
 ## Où on en est
 
-- **Apps** : **1.79.2** publiée (1er octobre) sur desktop (macOS arm64 et Intel, Windows ; l'updater l'annonce), TestFlight et Android (build 213031634). Elle contient les correctifs de l'audit : aucun lien d'achat là où la boutique l'interdit.
+- **Apps** : **1.89.2** (11 octobre) sur desktop (macOS arm64 et Intel, Windows ; l'updater l'annonce), TestFlight et Android. Depuis la 1.79.2, aucun lien d'achat là où la boutique l'interdit ; la suppression d'un compte Carpe Diem (`410 ACCOUNT_CLOSED`) est gérée depuis la PR #314.
 - **Service de comptes** (`subrosa.furetier.com`) en production :
   - migration 0009 appliquée, clé de partenaire armée ;
   - la route d'assertion répond 401 sans session ;
@@ -65,7 +67,8 @@
 
 **Qui :** Geolours, car le déploiement Phala lui revient.
 
-- [ ] Relire et fusionner **Lumen-labs-ch/Carpe-diem-#397** (opérateur), puis **#398** (paiement et pages). #398 est empilée sur #397 : sa CI ne tournera qu'une fois reciblée sur `main`.
+- [x] Relire et fusionner **Lumen-labs-ch/Carpe-diem-#397** (opérateur), puis **#398** (paiement et pages). Fait le 7 octobre.
+- [ ] Déployer ce code en production : au 11 octobre, `capabilities` répond encore `keyIssuance:false` et `fiat:false`.
 - [ ] Sealed env de l'opérateur, posé **en une seule mise à jour complète** (jamais un `-e` partiel, cf. l'incident du 14 mai) :
 
   | Variable | Valeur |
@@ -147,7 +150,7 @@ Si `keyIssuance` reste à `false`, c'est voulu tant qu'il manque le mailer, la c
 - **Rotation de la clé de partenaire** : procédure dans `docs/vps-account-stack.md` ; faire épingler les deux `kid` avant de retirer l'ancien.
 - **Liste d'autorisation de sortie réseau** du serveur de comptes : si elle est un jour mise en place, y inclure `carpe-diem.xyz`.
 - **Nettoyage** une fois Carpe Diem fusionné :
-  - les worktrees `Sub Rosa/.worktrees/{cloud-partner,app-account-key,migration-race,release-1.79.0,site-verify,store-policy}` et `CarpeDiem/.worktrees/{partner-keys,pay-frontend}` ;
+  - ~~les worktrees `Sub Rosa/.worktrees/{cloud-partner,app-account-key,migration-race,release-1.79.0,site-verify,store-policy}`~~ (retirés le 11 octobre) et `CarpeDiem/.worktrees/{partner-keys,pay-frontend}` ;
   - les copies `~/.subrosa-accounts/prod.stale-*` et `prod.bak-carpe-diem-*` sur le VPS.
 
 ## Références
