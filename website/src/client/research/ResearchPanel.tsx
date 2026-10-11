@@ -67,8 +67,33 @@ function statusLabel(run: Run): string {
 }
 
 /** The ceiling as the plan screen says it: each part, then the total, or why
- * there is none. */
-export function CeilingLine({ value }: { value: ResearchCeiling }) {
+ * there is none. A price list that could not be read is said as such, with a
+ * way to read it again, never as prices Carpe Diem does not have. */
+export function CeilingLine({
+  value,
+  unreadable = false,
+  onRetry,
+}: {
+  value: ResearchCeiling;
+  unreadable?: boolean;
+  onRetry?: () => void;
+}) {
+  if (unreadable)
+    return (
+      <div className="error" role="alert">
+        <p>
+          {t(
+            "Carpe Diem's prices could not be read, so this plan has no ceiling yet. Nothing is spent before you start the research.",
+            "Les prix de Carpe Diem n’ont pas pu être lus : ce plan n’a pas encore de plafond. Rien n’est dépensé avant le lancement de la recherche.",
+          )}
+        </p>
+        {onRetry && (
+          <button className="button" type="button" onClick={onRetry}>
+            {t("Read the prices again", "Relire les prix")}
+          </button>
+        )}
+      </div>
+    );
   const part = (amount: number | undefined) =>
     amount === undefined ? t("price unknown", "prix inconnu") : usd(amount);
   return (
@@ -308,18 +333,23 @@ function RunView({
   const [answers, setAnswers] = useState<string[]>(() => run.clarifyQuestions.map(() => ""));
   const [plan, setPlan] = useState<ResearchPlan | null>(run.plan);
   const [depth, setDepth] = useState<Depth>(run.depth);
-  const [prices, setPrices] = useState<ResearchPrices>({});
+  // Null: Carpe Diem's price list could not be read (not the same as a
+  // price it does not list).
+  const [prices, setPrices] = useState<ResearchPrices | null>({});
   useEffect(() => setPlan(run.plan), [run.plan]);
+  const loadPrices = useCallback(
+    (signal?: AbortSignal) =>
+      researchPrices(host.operator, run.model, signal).then((found) => {
+        if (!signal?.aborted) setPrices(found);
+      }),
+    [host.operator, run.model],
+  );
   useEffect(() => {
     if (run.status !== "planned") return;
     const controller = new AbortController();
-    host
-      .openKey()
-      .catch(() => null)
-      .then((key) => researchPrices(host.operator, key, run.model, controller.signal))
-      .then(setPrices);
+    void loadPrices(controller.signal);
     return () => controller.abort();
-  }, [run.status, run.model, host]);
+  }, [run.status, loadPrices]);
 
   const searches = plan?.sections.reduce((sum, section) => sum + section.queries.length, 0) ?? 0;
   const done = run.steps.filter((step) => step.status !== "pending").length;
@@ -427,7 +457,10 @@ function RunView({
           <fieldset className="research-depths">
             <legend>{t("Depth", "Profondeur")}</legend>
             {DEPTHS.map((item) => {
-              const value = ceiling(estimate(item, Math.min(searches, maxQueries(item))), prices);
+              const value = ceiling(
+                estimate(item, Math.min(searches, maxQueries(item))),
+                prices ?? {},
+              );
               return (
                 <label key={item}>
                   <input
@@ -443,7 +476,9 @@ function RunView({
             })}
           </fieldset>
           <CeilingLine
-            value={ceiling(estimate(depth, Math.min(searches, maxQueries(depth))), prices)}
+            value={ceiling(estimate(depth, Math.min(searches, maxQueries(depth))), prices ?? {})}
+            unreadable={prices === null}
+            onRetry={() => void loadPrices()}
           />
           <button className="button primary" type="submit" disabled={busy}>
             {t("Start research", "Lancer la recherche")}

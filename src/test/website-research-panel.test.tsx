@@ -22,7 +22,15 @@ const json = (value: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
-function setup() {
+const PRICES = {
+  models: [{ model: "m", inputPrice: 1, outputPrice: 2 }],
+  fixedCost: [
+    { model: "augment-search", costUsd: 0.004 },
+    { model: "augment-scrape", costUsd: 0.005 },
+  ],
+};
+
+function setup(pricing: () => Response = () => json(PRICES)) {
   const store = memoryClientStore();
   const key = new Uint8Array(32).fill(9);
   const sync = new SyncClient(ACCOUNT, key, store, new FakeJournal().transport());
@@ -39,14 +47,7 @@ function setup() {
       "/v1/augment/search": () =>
         json({ results: [{ title: "Study", url: "https://study.example/cop" }] }),
       "/v1/augment/scrape": () => json({ content: "A long field study." }),
-      "/v1/pricing": () =>
-        json({
-          models: [{ model: "m", inputPrice: 1, outputPrice: 2 }],
-          fixedCost: [
-            { model: "augment-search", costUsd: 0.004 },
-            { model: "augment-scrape", costUsd: 0.005 },
-          ],
-        }),
+      "/pricing": pricing,
     },
   );
   const host = {
@@ -83,6 +84,33 @@ describe("the deep research panel", () => {
     const note = listNotes(sync).find((item) => item.title === "Heat pumps");
     expect(note?.body).toContain("They work in the cold [1].");
     expect(note?.body).toContain("1. [Study](https://study.example/cop)");
+  });
+
+  it("says when Carpe Diem's prices could not be read, and reads them again on request", async () => {
+    const user = userEvent.setup();
+    let readable = false;
+    // What a browser sees when the operator does not admit this origin on
+    // /pricing: the fetch itself fails.
+    const { host } = setup(() => {
+      if (!readable) throw new TypeError("Failed to fetch");
+      return json(PRICES);
+    });
+    render(<ResearchPanel host={host} />);
+    await user.type(screen.getByLabelText("What should be researched?"), "Do heat pumps work?");
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.type(await screen.findByLabelText("Which country?"), "Switzerland");
+    await user.click(screen.getByRole("button", { name: "Make the plan" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Carpe Diem's prices could not be read, so this plan has no ceiling yet.",
+    );
+    // Not passed off as prices Carpe Diem does not have.
+    expect(screen.queryByText(/price unknown/)).toBeNull();
+    expect(screen.queryByText(/Total at most/)).toBeNull();
+
+    readable = true;
+    await user.click(screen.getByRole("button", { name: "Read the prices again" }));
+    expect(await screen.findByText(/Total at most/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("hands the composer's draft to the panel", async () => {
