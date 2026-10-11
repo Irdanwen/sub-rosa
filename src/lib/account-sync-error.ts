@@ -62,6 +62,20 @@ export function accountSyncError(code: string): string {
       return t(
         "Some content did not match what this version understands, and was left alone. Update your apps, then try again.",
       );
+    case "sync_parent_unknown":
+      return t(
+        "An item referred to a version the service no longer knows. Retry blocked items to send it again from the current one.",
+      );
+    case "account_invalid_request":
+      return t(
+        "The sync service refused a request from this version. Update your apps, then try again.",
+      );
+    case "sync_not_deleted":
+      return t("That item is already back.");
+    case "sync_restore_unavailable":
+      return t(
+        "The last version of that item is not in this device's journal, so it cannot be restored from here.",
+      );
     case "sync_local_object_invalid":
       return t(
         "An item on this device could not be prepared for sync. Other items will continue to sync.",

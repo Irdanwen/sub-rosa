@@ -329,7 +329,7 @@ pub async fn resume(app: &AppHandle) {
     }
 }
 pub async fn run(app: &AppHandle) -> Result<(), AppError> {
-    let result = tokio::time::timeout(Duration::from_secs(30), run_inner(app))
+    let result = tokio::time::timeout(PASS_DEADLINE, run_inner(app))
         .await
         .unwrap_or_else(|_| Err(error("sync_timeout")));
     if let Err(failure) = &result {
@@ -344,7 +344,11 @@ pub async fn run(app: &AppHandle) -> Result<(), AppError> {
     }
     result
 }
+/// A pass is given this long in all; the file lane keeps clear of the end.
+const PASS_DEADLINE: Duration = Duration::from_secs(45);
+
 async fn run_inner(app: &AppHandle) -> Result<(), AppError> {
+    let deadline = Instant::now() + PASS_DEADLINE;
     #[cfg(desktop)]
     let _ = super::conversations::backfill_desktop(app).await;
     // A pass under way is let finish rather than skipped in silence: a
@@ -378,7 +382,7 @@ async fn run_inner(app: &AppHandle) -> Result<(), AppError> {
             .execute(&pool)
             .await?;
     }
-    let file_result = super::files::step(app, &pool, &s, &key).await;
+    let file_result = super::files::step(app, &pool, &s, &key, deadline).await;
     capture_turn_usage(&pool).await?;
     if let Err(failure) = capture_balance(&pool).await {
         tracing::debug!(code=%failure.code,"account balance snapshot deferred");

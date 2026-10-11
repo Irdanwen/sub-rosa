@@ -3119,6 +3119,7 @@ dependencies = [
  "subrosa-domain",
  "subrosa-persistence",
  "subtle",
+ "tokio",
  "tracing",
  "uuid",
 ]

@@ -2919,11 +2919,13 @@ export function AgentWorkspace({
   const windowEventHandlersRef = useRef({
     startNewTask,
     removeHermesSessionLocally,
+    forgetRemovedHermesSession,
   });
   useEffect(() => {
     windowEventHandlersRef.current = {
       startNewTask,
       removeHermesSessionLocally,
+      forgetRemovedHermesSession,
     };
     gatewayCloseHandlerRef.current = (fullMode: boolean) => {
       // Feature 04: a disconnect is NOT a resolution — pending actions must
@@ -2956,9 +2958,20 @@ export function AgentWorkspace({
 
     window.addEventListener(AGENT_NEW_SESSION_EVENT, handleNewSession);
     window.addEventListener(AGENT_DELETE_SESSION_EVENT, handleDeleteSession);
+    // A chat deleted on another device (ADR-0108): the sync lane removed its
+    // rows and asks the workspace to drop the runtime session too, or the
+    // chat would come back from the runtime's copy on the next read.
+    let cancelled = false;
+    const removed = listen<{ session_id?: string }>("subrosa://hermes-session-removed", (event) => {
+      const sessionId = event.payload?.session_id;
+      if (cancelled || !sessionId) return;
+      void windowEventHandlersRef.current.forgetRemovedHermesSession(sessionId);
+    }).catch(() => () => {});
     return () => {
+      cancelled = true;
       window.removeEventListener(AGENT_NEW_SESSION_EVENT, handleNewSession);
       window.removeEventListener(AGENT_DELETE_SESSION_EVENT, handleDeleteSession);
+      void removed.then((unlisten) => unlisten()).catch(() => {});
     };
   }, []);
 
@@ -6619,6 +6632,17 @@ export function AgentWorkspace({
     // point a recycled id at a folder its user never picked.
     forgetSessionMode(sessionId);
     forgetSessionWorkingDir(sessionId);
+  }
+
+  // The runtime's copy of a chat deleted elsewhere. A runtime that no longer
+  // has it is the outcome wanted, so its refusal is not an error to show.
+  async function forgetRemovedHermesSession(sessionId: string) {
+    try {
+      await deleteHermesSession(sessionId);
+    } catch {
+      /* Already gone, or no runtime: the local removal is what matters. */
+    }
+    removeHermesSessionLocally(sessionId, false);
   }
 
   async function deleteSelectedHermesSession(sessionId: string) {

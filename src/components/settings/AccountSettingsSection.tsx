@@ -34,7 +34,10 @@ import {
   accountVaultShareCarpeDiem,
   accountVaultRestoreCarpeDiem,
   accountSyncSetEnabled,
+  accountRecentlyDeleted,
+  accountRestoreDeleted,
   accountSyncNow,
+  type AccountDeletedItem,
   accountSyncRetryIssues,
   accountSyncConflicts,
 } from "../../lib/account";
@@ -102,6 +105,7 @@ export function AccountSettingsSection({
   const [newRecoveryKey, setNewRecoveryKey] = useState("");
   const [recoveryCheck, setRecoveryCheck] = useState("");
   const [consent, setConsent] = useState(false);
+  const [deleted, setDeleted] = useState<AccountDeletedItem[]>([]);
   const [confirmation, setConfirmation] = useState<
     { kind: "logout" | "delete" | "restore-key" } | { kind: "revoke"; device: AccountDevice } | null
   >(null);
@@ -202,6 +206,24 @@ export function AccountSettingsSection({
       cancelled = true;
     };
   }, [status?.account?.id, status?.conflicts]);
+
+  // What a deletion took, listed from this device's journal (ADR-0108); the
+  // count on the status says when the list changed.
+  useEffect(() => {
+    if (!status?.account?.id || !status.vault_unlocked || !status.recently_deleted_count) {
+      setDeleted([]);
+      return;
+    }
+    let cancelled = false;
+    void accountRecentlyDeleted()
+      .then((next) => {
+        if (!cancelled) setDeleted(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [status?.account?.id, status?.vault_unlocked, status?.recently_deleted_count]);
 
   // Visiting the website never approves a device. The person compares this
   // code and approves there; the verifier remains in the native keychain.
@@ -979,13 +1001,38 @@ export function AccountSettingsSection({
               {status.sync_enabled
                 ? status.last_sync_error || status.sync_issue_count || status.sync_issues?.length
                   ? t("Some items could not sync. Your local copies are preserved.")
-                  : status.pending_changes > 0
-                    ? t("{count} changes waiting to sync", { count: status.pending_changes })
-                    : status.last_synced_at
-                      ? t("Last synced: {time}", { time: formatAccountDate(status.last_synced_at) })
-                      : t("Waiting for the first sync")
+                  : (status.outbox_count ?? 0) > 0
+                    ? t("Sending {count} changes", { count: status.outbox_count ?? 0 })
+                    : (status.inbox_pending ?? 0) > 0
+                      ? t("Receiving {count} changes", { count: status.inbox_pending ?? 0 })
+                      : (status.files_pending_bytes ?? 0) > 0
+                        ? t("{size} of files left to transfer", {
+                            size: formatSize(status.files_pending_bytes ?? 0),
+                          })
+                        : status.pending_changes > 0
+                          ? t("{count} changes waiting to sync", { count: status.pending_changes })
+                          : status.last_synced_at
+                            ? t("Up to date. Last synced: {time}", {
+                                time: formatAccountDate(status.last_synced_at),
+                              })
+                            : t("Waiting for the first sync")
                 : t("Sync is paused. Your changes stay on this device.")}
             </p>
+            {status.sync_enabled && status.last_received_at ? (
+              <p className="settings-row-description">
+                {t("Last received from another device: {time}", {
+                  time: formatAccountDate(status.last_received_at),
+                })}
+              </p>
+            ) : null}
+            {status.sync_enabled && (status.inbox_parked ?? 0) > 0 ? (
+              <InlineNotice
+                body={t(
+                  "{count} items were made by a newer version and will be read after you update this app.",
+                  { count: status.inbox_parked ?? 0 },
+                )}
+              />
+            ) : null}
             {status.sync_enabled && status.last_sync_error ? (
               <InlineNotice body={accountSyncError(status.last_sync_error)} />
             ) : null}
@@ -1071,6 +1118,34 @@ export function AccountSettingsSection({
               onResolved={refresh}
               formatDate={formatAccountDate}
             />
+            {status.sync_enabled && deleted.length > 0 ? (
+              <div className="account-form">
+                <p className="settings-row-description">
+                  {t(
+                    "Recently deleted on one of your devices. Restoring brings the text back on all of them.",
+                  )}
+                </p>
+                {deleted.map((item) => (
+                  <div className="account-device" key={item.object_id}>
+                    <p className="settings-row-description">
+                      {t("{item}, deleted {time}", {
+                        item:
+                          item.title || (item.kind === "memory" ? t("Memory entry") : t("Note")),
+                        time: formatAccountDate(item.deleted_at),
+                      })}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={busy}
+                      onClick={() => void run(() => accountRestoreDeleted(item.object_id))}
+                    >
+                      {t("Restore")}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </AccountCard>
 
           <AccountCard title={t("Carpe Diem on your devices")}>
@@ -1286,6 +1361,13 @@ function formatAccountDate(value: string) {
 export { securityHistoryUrl } from "./AccountSecurityHistory";
 
 /** Never render provider response text, URLs containing tokens, or credentials. */
+
+/** Bytes as a person reads them on a status line: whole megabytes, one decimal gigabyte. */
+function formatSize(bytes: number): string {
+  if (bytes >= 1_000_000_000) return t("{n} GB", { n: (bytes / 1_000_000_000).toFixed(1) });
+  if (bytes >= 1_000_000) return t("{n} MB", { n: Math.round(bytes / 1_000_000) });
+  return t("{n} KB", { n: Math.max(1, Math.round(bytes / 1_000)) });
+}
 
 export function accountError(cause: unknown): string {
   switch (errorCode(cause)) {

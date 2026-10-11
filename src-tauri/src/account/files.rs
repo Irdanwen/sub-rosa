@@ -59,6 +59,25 @@ async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, 
         req
     };
     let mut response = req.send().await.map_err(|_| error("account_network"))?;
+    if response.status().as_u16() == 429 {
+        // A throttle, not an allowance: the service says so with a short
+        // retry window. One more try here beats parking the file ten minutes.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        response = client
+            .request(
+                if request_bytes > 0 {
+                    reqwest::Method::PUT
+                } else {
+                    reqwest::Method::GET
+                },
+                format!("{}/api/v1/blobs/{id}", s.base),
+            )
+            .timeout(Duration::from_secs(25))
+            .bearer_auth(s.token.expose_str())
+            .send()
+            .await
+            .map_err(|_| error("account_network"))?;
+    }
     let status = response.status();
     let mut output = Vec::new();
     let mut body_error = None;
@@ -116,11 +135,17 @@ fn blob_failure_code(status: u16) -> &'static str {
         _ => "sync_blob_request_failed",
     }
 }
+/// How much of a pass the file lane may spend once the journal is done, and
+/// what it leaves of the pass's own deadline for the bookkeeping after it.
+const LANE_BUDGET: Duration = Duration::from_secs(12);
+const LANE_MARGIN: Duration = Duration::from_secs(4);
+
 pub(super) async fn step(
     app: &AppHandle,
     pool: &SqlitePool,
     s: &Session,
     key: &[u8; 32],
+    deadline: Instant,
 ) -> Result<(), AppError> {
     let root = app_data_dir(app).map_err(|_| file_error())?;
     let paths = AppPaths::from_data_dir(root.clone()).map_err(|_| file_error())?;
@@ -156,24 +181,40 @@ pub(super) async fn step(
     remove_queued_files(app, pool, &paths, &gallery, &references).await?;
     stage_assistant_files(pool, &references).await?;
     let inventory = super::studio::inventory(app, pool, &gallery).await;
-    if let Some(row) = next_upload(pool).await? {
-        let artifact: String = row.get("artifact_id");
-        if let Err(failure) = upload_one(pool, s, key, &paths, &gallery).await {
-            if sync::isolatable_file_error(&failure.code) {
-                sync::record_issue(pool, "upload", &artifact, &failure.code).await?;
-            } else {
-                return Err(failure);
+    // Chunks move until the lane's budget or the pass's deadline is spent
+    // (ADR-0109): a recording is minutes of audio, not one megabyte a pass.
+    // The first chunk in each direction always goes, so a slow link still
+    // makes progress. Durable rows retain the remainder across an iOS
+    // suspension without trusting a JavaScript future.
+    let started = Instant::now();
+    loop {
+        let mut moved = false;
+        if let Some(row) = next_upload(pool).await? {
+            let artifact: String = row.get("artifact_id");
+            match upload_one(pool, s, key, &paths, &gallery).await {
+                Ok(()) => moved = true,
+                Err(failure) if sync::isolatable_file_error(&failure.code) => {
+                    sync::record_issue(pool, "upload", &artifact, &failure.code).await?;
+                }
+                Err(failure) => return Err(failure),
             }
         }
-    }
-    if let Some(row) = next_download(pool).await? {
-        let manifest: String = row.get("id");
-        if let Err(failure) = download_one(pool, s, key, &root, &gallery).await {
-            if sync::isolatable_file_error(&failure.code) {
-                sync::record_issue(pool, "download", &manifest, &failure.code).await?;
-            } else {
-                return Err(failure);
+        if let Some(row) = next_download(pool).await? {
+            let manifest: String = row.get("id");
+            match download_one(pool, s, key, &root, &gallery).await {
+                Ok(()) => moved = true,
+                Err(failure) if sync::isolatable_file_error(&failure.code) => {
+                    sync::record_issue(pool, "download", &manifest, &failure.code).await?;
+                }
+                Err(failure) => return Err(failure),
             }
+        }
+        let now = Instant::now();
+        if !moved
+            || now.duration_since(started) >= LANE_BUDGET
+            || now + LANE_MARGIN >= deadline
+        {
+            break;
         }
     }
     inventory?;
@@ -373,7 +414,7 @@ async fn next_upload(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>
         .fetch_optional(pool).await?)
 }
 async fn next_download(pool: &SqlitePool) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
-    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 AND {ASSISTANT_DOWNLOAD_ELIGIBLE} AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='download' AND i.item_id=m.id) ORDER BY m.rowid LIMIT 1"))
+    Ok(query(&format!("{ASSISTANT_OWNERS} SELECT m.*,COALESCE(d.next_chunk,0) AS next_chunk FROM account_file_manifests m LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN account_file_downloads d ON d.manifest_id=m.id WHERE ((m.source_kind='audio' AND a.path='') OR (m.source_kind IN ('studio','assistant') AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=m.artifact_id))) AND COALESCE(d.completed,0)=0 AND {ASSISTANT_DOWNLOAD_ELIGIBLE} AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='download' AND i.item_id=m.id) ORDER BY (m.source_kind='audio') DESC,m.created_at DESC,m.rowid DESC LIMIT 1"))
         .fetch_optional(pool).await?)
 }
 
@@ -512,13 +553,32 @@ pub(super) async fn download_one(
     if current < 0 || current as usize >= chunks.len() {
         return Err(error("sync_blob_invalid"));
     }
+    // Two chunks in flight (ADR-0109): the second is fetched while the first
+    // travels, and written only when the first was good, so progress stays
+    // contiguous. Not more: the service holds a request slot for the whole
+    // of a chunk's object-storage read, and a phone and a desktop share them.
     let chunk = &chunks[current as usize];
-    let encrypted = blob(s, &chunk.id, None).await?;
-    let envelope = std::str::from_utf8(&encrypted).map_err(|_| error("sync_blob_invalid"))?;
-    let clear = crypto::open(key, &blob_aad(s, &chunk.id), envelope)?;
-    if clear.len() as u64 != chunk.bytes || digest(&clear) != chunk.sha256 {
-        return Err(error("sync_blob_invalid"));
-    }
+    let following = chunks.get(current as usize + 1);
+    let (first, second) = tokio::join!(blob(s, &chunk.id, None), async {
+        match following {
+            Some(next) => blob(s, &next.id, None).await.ok(),
+            None => None,
+        }
+    });
+    let open = |piece: &Chunk, encrypted: Vec<u8>| -> Result<Zeroizing<Vec<u8>>, AppError> {
+        let envelope =
+            std::str::from_utf8(&encrypted).map_err(|_| error("sync_blob_invalid"))?;
+        let clear = crypto::open(key, &blob_aad(s, &piece.id), envelope)?;
+        if clear.len() as u64 != piece.bytes || digest(&clear) != piece.sha256 {
+            return Err(error("sync_blob_invalid"));
+        }
+        Ok(clear)
+    };
+    let clear = open(chunk, first?)?;
+    let second = match (following, second) {
+        (Some(next), Some(encrypted)) => open(next, encrypted).ok(),
+        _ => None,
+    };
     let studio = row.get::<String, _>("source_kind") == "studio";
     let assistant = row.get::<String, _>("source_kind") == "assistant";
     if assistant && row.get::<i64, _>("bytes") > 20 * 1024 * 1024 {
@@ -592,8 +652,14 @@ pub(super) async fn download_one(
         .await
         .map_err(|_| file_error())?;
     file.write_all(&clear).await.map_err(|_| file_error())?;
+    let mut advanced = 1;
+    if let Some(second) = &second {
+        file.write_all(second).await.map_err(|_| file_error())?;
+        advanced = 2;
+    }
     file.sync_all().await.map_err(|_| file_error())?;
     drop(file);
+    let current = current + advanced - 1;
     let done = current as usize + 1 == chunks.len();
     if done {
         tokio::fs::rename(&partial, &target)
@@ -793,7 +859,9 @@ mod tests {
             query("INSERT INTO account_file_manifests(id,artifact_id,bytes,format,chunks_json,created_at,source_kind) VALUES(?,?,1,'txt','[]','now',?)")
                 .bind(format!("manifest-{id}")).bind(id).bind(kind).execute(&pool).await.unwrap();
         }
-        for id in ["live", "snapshot", "studio"] {
+        // Newest first: the file a person just made is the one they want on
+        // the other device.
+        for id in ["studio", "snapshot", "live"] {
             let row = next_download(&pool).await.unwrap().unwrap();
             assert_eq!(row.get::<String, _>("artifact_id"), id);
             query("DELETE FROM account_file_manifests WHERE artifact_id=?")

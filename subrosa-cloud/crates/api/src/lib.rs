@@ -112,6 +112,7 @@ pub fn router(service: Service) -> Router {
         .route("/api/v1/device-login/approve", post(approve))
         .route("/api/v1/device-login/exchange", post(exchange_device))
         .route("/api/v1/sync", get(changes).post(append))
+        .route("/api/v1/sync/wait", get(wait))
         .route("/api/v1/vault", get(vault).put(save_vault))
         .route("/api/v1/shares", get(shares).post(create_share))
         .route("/api/v1/shares/{id}", axum::routing::delete(revoke_share))
@@ -149,6 +150,9 @@ pub fn router(service: Service) -> Router {
         .with_state(state)
 }
 static REQUEST_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(16);
+/// The long wait parks for up to twenty seconds; sixteen of them would be the
+/// whole service. They queue on their own, wider, semaphore instead.
+static WAIT_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(256);
 
 /// Who to charge a request to.
 ///
@@ -183,10 +187,15 @@ fn client_address(service: &Service, request: &Request) -> String {
 }
 
 async fn guard(State(s): State<Arc<Service>>, mut request: Request, next: Next) -> Response {
-    let Ok(_slot) = REQUEST_SLOTS.try_acquire() else {
+    let path = request.uri().path().to_owned();
+    let slots = if path == "/api/v1/sync/wait" {
+        &WAIT_SLOTS
+    } else {
+        &REQUEST_SLOTS
+    };
+    let Ok(_slot) = slots.try_acquire() else {
         return ApiError(Error::RateLimited).into_response();
     };
-    let path = request.uri().path().to_owned();
     if path != "/livez" && path != "/readyz" {
         let peer = client_address(&s, &request);
         request.extensions_mut().insert(ClientAddress(peer.clone()));
@@ -585,9 +594,20 @@ struct Cursor {
     #[serde(default = "page_size")]
     limit: i64,
     kind: Option<String>,
+    /// `1` or `true` asks for heads and the parents a merge needs only.
+    #[serde(default)]
+    heads: Option<String>,
 }
 fn page_size() -> i64 {
     100
+}
+/// A query flag, read the way a hand-typed URL writes it.
+fn flag(value: Option<&str>) -> Result<bool> {
+    match value.map(str::to_ascii_lowercase).as_deref() {
+        None | Some("0" | "false") => Ok(false),
+        Some("1" | "true") => Ok(true),
+        Some(_) => Err(Error::Invalid.into()),
+    }
 }
 async fn changes(
     State(s): State<Arc<Service>>,
@@ -598,7 +618,31 @@ async fn changes(
     if q.after < 0 || !(1..=500).contains(&q.limit) {
         return Err(Error::Invalid.into());
     }
-    Ok(ok(s.changes(&a, q.after, q.limit, q.kind.as_deref()).await?).into_response())
+    let heads = flag(q.heads.as_deref())?;
+    Ok(ok(s
+        .changes(&a, q.after, q.limit, q.kind.as_deref(), heads)
+        .await?)
+    .into_response())
+}
+#[derive(Deserialize)]
+struct Watermark {
+    #[serde(default)]
+    after: i64,
+}
+/// Answers `changed: true` as soon as the journal moves past `after`, or
+/// `changed: false` once the wait window runs out. A client with nothing new
+/// parks here instead of polling.
+async fn wait(
+    State(s): State<Arc<Service>>,
+    h: HeaderMap,
+    Query(q): Query<Watermark>,
+) -> Result<Response> {
+    let a = session(&s, &h, false).await?;
+    if q.after < 0 {
+        return Err(Error::Invalid.into());
+    }
+    let changed = s.wait_for_changes(&a, q.after).await?;
+    Ok(ok(json!({"changed":changed})).into_response())
 }
 #[derive(Deserialize)]
 struct Push {
