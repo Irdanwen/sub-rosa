@@ -278,6 +278,37 @@ mod tests {
     }
 
     #[test]
+    fn x25519_matches_rfc_7748() {
+        fn bytes(hex: &str) -> [u8; 32] {
+            let mut out = [0u8; 32];
+            for (i, byte) in out.iter_mut().enumerate() {
+                *byte = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap();
+            }
+            out
+        }
+        // RFC 7748 section 6.1: both public keys and the shared secret.
+        let alice = bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+        let bob = bytes("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
+        assert_eq!(
+            hex(&public_key(&alice)),
+            "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
+        );
+        assert_eq!(
+            hex(&public_key(&bob)),
+            "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"
+        );
+        let shared = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
+        assert_eq!(
+            hex(dh(&alice, &public_key(&bob)).unwrap().as_slice()),
+            shared
+        );
+        assert_eq!(
+            hex(dh(&bob, &public_key(&alice)).unwrap().as_slice()),
+            shared
+        );
+    }
+
+    #[test]
     fn a_low_order_point_is_refused() {
         assert_eq!(seal(&[0u8; 32], b"a", b"", b"key").unwrap_err(), HpkeError);
     }
