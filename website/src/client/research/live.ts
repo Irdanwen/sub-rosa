@@ -163,13 +163,14 @@ export function liveBackend(
 /** What a run's model, a search and a page read cost, from the operator's
  * public price list (`/pricing`, the one `voice/routing.ts` reads). It needs
  * no key: Carpe Diem serves no `/v1/pricing`, and a browser key may not read
- * `/pricing` (`BROWSER_KEY_ROUTE`), so none is sent. Nothing known when it
- * does not answer. */
+ * `/pricing` (`BROWSER_KEY_ROUTE`), so none is sent. Null when the list
+ * cannot be read (network, CORS, refusal): not the same as a price the list
+ * does not have, and the plan screen says which. */
 export async function researchPrices(
   operator: Operator,
   model: string,
   signal?: AbortSignal,
-): Promise<ResearchPrices> {
+): Promise<ResearchPrices | null> {
   try {
     const response = await operator.fetch(`${operator.root}/pricing`, {
       headers: { Accept: "application/json" },
@@ -181,6 +182,6 @@ export async function researchPrices(
     if (!response.ok) throw await failure(response);
     return pricesFrom(await response.json(), model);
   } catch {
-    return {};
+    return null;
   }
 }

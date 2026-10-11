@@ -394,5 +394,20 @@ describe("the research engine's world in the browser", () => {
     // the price list is asked for without one.
     expect(calls.slice(before).map((call) => call.path)).toEqual(["/pricing"]);
     expect(sent.map((headers) => headers.get("Authorization"))).toEqual([null]);
+    // A model the list does not have is a price not known; a list that cannot
+    // be read is null, which the plan screen says differently.
+    expect(await researchPrices(operator, "not-listed")).toEqual({ searchUsd: 0.004 });
+    const unreachable = {
+      ...operator,
+      fetch: (async () => {
+        throw new TypeError("Failed to fetch");
+      }) as typeof fetch,
+    };
+    expect(await researchPrices(unreachable, "m")).toBeNull();
+    const refusing = {
+      ...operator,
+      fetch: (async () => new Response("{}", { status: 404 })) as typeof fetch,
+    };
+    expect(await researchPrices(refusing, "m")).toBeNull();
   });
 });
