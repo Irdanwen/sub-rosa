@@ -159,7 +159,7 @@ pub fn seal_with_ephemeral(
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| HpkeError)?;
     let ciphertext = cipher
         .encrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::try_from(nonce.as_slice()).map_err(|_| HpkeError)?,
             Payload {
                 msg: plaintext,
                 aad,
@@ -193,7 +193,7 @@ pub fn open(
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| HpkeError)?;
     cipher
         .decrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::try_from(nonce.as_slice()).map_err(|_| HpkeError)?,
             Payload {
                 msg: ciphertext,
                 aad,

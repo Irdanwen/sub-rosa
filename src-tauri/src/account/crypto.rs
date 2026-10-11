@@ -43,7 +43,7 @@ pub fn seal(key: &[u8; 32], aad: &str, bytes: &[u8]) -> Result<String, AppError>
     let nonce: [u8; 12] = rand::random();
     let ciphertext = cipher
         .encrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::from(nonce),
             Payload {
                 msg: bytes,
                 aad: aad.as_bytes(),
@@ -77,7 +77,7 @@ pub fn open(key: &[u8; 32], aad: &str, envelope: &str) -> Result<Zeroizing<Vec<u
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| invalid())?;
     cipher
         .decrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::try_from(nonce.as_slice()).map_err(|_| invalid())?,
             Payload {
                 msg: &ciphertext,
                 aad: aad.as_bytes(),
