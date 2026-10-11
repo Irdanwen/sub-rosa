@@ -117,12 +117,12 @@ async fn a_device_key_is_born_from_a_real_account_and_dies_alone() {
     // the proof this code signs.
     let a = Ephemeral::generate();
     let assertion_a = assertion(&f, &f.devices[0], &a.jkt()).await;
-    let key_a = issued(post_keys(&f.base, &a, &assertion_a).await.unwrap());
+    let key_a = issued(post_keys(&f.base, &a, &assertion_a, false).await.unwrap());
     assert_eq!(credits_status(&f, &key_a).await, 200);
 
     // The same assertion twice is a replay, never a second key.
     assert_eq!(
-        post_keys(&f.base, &a, &assertion_a).await.unwrap(),
+        post_keys(&f.base, &a, &assertion_a, false).await.unwrap(),
         Answer::Replayed
     );
 
@@ -130,12 +130,14 @@ async fn a_device_key_is_born_from_a_real_account_and_dies_alone() {
     let a_again = Ephemeral::generate();
     let bound_to_a_again = assertion(&f, &f.devices[0], &a_again.jkt()).await;
     let thief = Ephemeral::generate();
-    assert!(post_keys(&f.base, &thief, &bound_to_a_again).await.is_err());
+    assert!(post_keys(&f.base, &thief, &bound_to_a_again, false)
+        .await
+        .is_err());
 
     // Device B gets its own key, on the same account.
     let b = Ephemeral::generate();
     let assertion_b = assertion(&f, &f.devices[1], &b.jkt()).await;
-    let key_b = issued(post_keys(&f.base, &b, &assertion_b).await.unwrap());
+    let key_b = issued(post_keys(&f.base, &b, &assertion_b, false).await.unwrap());
     assert_ne!(key_a.expose_str(), key_b.expose_str());
     assert_eq!(credits_status(&f, &key_b).await, 200);
 
@@ -147,7 +149,7 @@ async fn a_device_key_is_born_from_a_real_account_and_dies_alone() {
     // Re-issuing for B rotates it: the previous key of that device stops.
     let b2 = Ephemeral::generate();
     let assertion_b2 = assertion(&f, &f.devices[1], &b2.jkt()).await;
-    let key_b2 = issued(post_keys(&f.base, &b2, &assertion_b2).await.unwrap());
+    let key_b2 = issued(post_keys(&f.base, &b2, &assertion_b2, false).await.unwrap());
     assert_eq!(credits_status(&f, &key_b).await, 401);
     assert_eq!(credits_status(&f, &key_b2).await, 200);
 }
@@ -162,7 +164,11 @@ async fn a_device_revoked_from_the_account_loses_its_key() {
     assert!(f.devices.len() >= 3, "a third, disposable device");
     let lost = Ephemeral::generate();
     let assertion_lost = assertion(&f, &f.devices[2], &lost.jkt()).await;
-    let key = issued(post_keys(&f.base, &lost, &assertion_lost).await.unwrap());
+    let key = issued(
+        post_keys(&f.base, &lost, &assertion_lost, false)
+            .await
+            .unwrap(),
+    );
     assert_eq!(credits_status(&f, &key).await, 200);
     // What a thief holding the device would keep aside while it is signed in.
     let hoarded_key = Ephemeral::generate();
@@ -187,7 +193,9 @@ async fn a_device_revoked_from_the_account_loses_its_key() {
     }
     // The hoarded, still unexpired assertion buys nothing once the device is
     // revoked: Carpe Diem remembers the device, not just its last key.
-    assert!(post_keys(&f.base, &hoarded_key, &hoarded).await.is_err());
+    assert!(post_keys(&f.base, &hoarded_key, &hoarded, false)
+        .await
+        .is_err());
 }
 
 async fn operator_post(f: &Fixture, path: &str, body: Value) -> (u16, Value) {
@@ -226,7 +234,7 @@ async fn an_existing_carpe_diem_account_is_linked_only_with_consent() {
         code,
         expires_at,
         email_hint,
-    } = post_keys(&f.base, &device, &signed).await.unwrap()
+    } = post_keys(&f.base, &device, &signed, false).await.unwrap()
     else {
         panic!("an existing account must ask for consent");
     };

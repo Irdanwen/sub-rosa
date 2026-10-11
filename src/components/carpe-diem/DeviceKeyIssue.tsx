@@ -2,13 +2,14 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type IssueOutcome,
+  accountClosedAt,
   carpeDiemIssueCancel,
   carpeDiemIssueKey,
   carpeDiemIssuePoll,
   openAccountSignIn,
 } from "../../lib/carpe-diem-issue";
 import { errorCode, messageFromError } from "../../lib/errors";
-import { t } from "../../lib/i18n";
+import { intlLocale, t } from "../../lib/i18n";
 import { InlineNotice } from "../ui/InlineNotice";
 
 /** How often a waiting confirmation asks Carpe Diem, while the screen is seen. */
@@ -20,6 +21,7 @@ type Phase =
   | { kind: "confirm"; outcome: IssueOutcome }
   | { kind: "reauth"; opening: boolean }
   | { kind: "issued" }
+  | { kind: "closed"; closedAt: Date | null }
   | { kind: "failed"; message: string };
 
 /**
@@ -29,6 +31,12 @@ type Phase =
  * confirm by mail with the code shown here; the sign-in is too old and a fresh
  * one is needed (the page opens and the attempt resumes by itself); or it
  * fails, with a way to try again or paste a key instead.
+ *
+ * One refusal is not a failure to retry: the person deleted the Carpe Diem
+ * account this one was linked to. Its credits are gone, and Carpe Diem
+ * recreates nothing by itself. The card says so and offers a new, empty
+ * account only as a button; that click is the one request that carries
+ * `reactivate`, and nothing here sends it on its own.
  *
  * Nothing here outlives the screen: the confirmation is asked about only while
  * the card is visible, and a phone that suspends simply asks again when it
@@ -52,6 +60,9 @@ export function DeviceKeyIssue({
   const mounted = useRef(true);
   const started = useRef(false);
   const awaitingSignIn = useRef(false);
+  /** The current attempt is the person's choice of a new, empty account, so
+   * a fresh sign-in it needed resumes it as such. */
+  const reactivating = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -79,17 +90,26 @@ export function DeviceKeyIssue({
       setPhase({ kind: "reauth", opening: false });
       return;
     }
+    if (errorCode(cause) === "carpe_diem_account_closed") {
+      reactivating.current = false;
+      setPhase({ kind: "closed", closedAt: accountClosedAt(cause) });
+      return;
+    }
     setPhase({ kind: "failed", message: messageFromError(cause) });
   }, []);
 
-  const issue = useCallback(async () => {
-    setPhase({ kind: "issuing" });
-    try {
-      settle(await carpeDiemIssueKey());
-    } catch (cause) {
-      fail(cause);
-    }
-  }, [fail, settle]);
+  const issue = useCallback(
+    async (reactivate = false) => {
+      reactivating.current = reactivate;
+      setPhase({ kind: "issuing" });
+      try {
+        settle(await carpeDiemIssueKey({ reactivate }));
+      } catch (cause) {
+        fail(cause);
+      }
+    },
+    [fail, settle],
+  );
 
   useEffect(() => {
     if (!autoStart || started.current) return;
@@ -104,7 +124,7 @@ export function DeviceKeyIssue({
     const finished = listen("subrosa://account-updated", () => {
       if (cancelled || !awaitingSignIn.current) return;
       awaitingSignIn.current = false;
-      void issue();
+      void issue(reactivating.current);
     }).catch(() => () => {});
     return () => {
       cancelled = true;
@@ -249,6 +269,43 @@ export function DeviceKeyIssue({
           </div>
         </div>
       );
+    case "closed":
+      return (
+        <div className="account-form">
+          <InlineNotice
+            role="alert"
+            body={
+              phase.closedAt
+                ? t(
+                    "Your Carpe Diem account was deleted on {date}. Its credits are gone and cannot be refunded.",
+                    {
+                      date: phase.closedAt.toLocaleDateString(intlLocale(), {
+                        dateStyle: "long",
+                      }),
+                    },
+                  )
+                : t(
+                    "Your Carpe Diem account was deleted. Its credits are gone and cannot be refunded.",
+                  )
+            }
+          />
+          <p className="settings-row-description">
+            {t(
+              "You can open a new, empty Carpe Diem account for this device. Nothing is created unless you choose it.",
+            )}
+          </p>
+          <div className="account-actions">
+            <button
+              type="button"
+              className="primary-action primary-solid"
+              onClick={() => void issue(true)}
+            >
+              {t("Open a new, empty account")}
+            </button>
+            {pasteInstead}
+          </div>
+        </div>
+      );
     case "failed":
       return (
         <div className="account-form">
@@ -257,7 +314,7 @@ export function DeviceKeyIssue({
             <button
               type="button"
               className="primary-action primary-solid"
-              onClick={() => void issue()}
+              onClick={() => void issue(reactivating.current)}
             >
               {t("Try again")}
             </button>

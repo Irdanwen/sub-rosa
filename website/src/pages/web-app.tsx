@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Account, ApiError, api, setAccountScope } from "../lib/api";
 import {
+  AccountClosedError,
   birthKey,
   type DeviceRecord,
   type DeviceStore,
@@ -96,7 +97,14 @@ function DeviceGate({ account, store }: { account: Account; store: DeviceStore }
       .then((birth) => {
         if (birth.status === "issued") setRecord(birth.record);
       })
-      .catch(() => undefined);
+      .catch(async (err) => {
+        // The Carpe Diem account was deleted and its keys with it: the gate
+        // sends the person to the devices page, which says so and asks.
+        if (!(err instanceof AccountClosedError)) return;
+        const keyless = { ...record, key: null };
+        await store.put(keyless).catch(() => undefined);
+        setRecord(keyless);
+      });
   }, [record, store, setRecord]);
 
   if (record === undefined)

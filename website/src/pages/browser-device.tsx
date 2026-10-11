@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, api, type Device } from "../lib/api";
 import {
+  AccountClosedError,
   type Admission,
   type Birth,
   type DeviceRecord,
@@ -79,7 +80,10 @@ type Stage =
   | { kind: "choose" }
   | { kind: "recovery" }
   | { kind: "pairing"; code: string; requestId: string }
-  | { kind: "confirm"; code: string; emailHint: string };
+  | { kind: "confirm"; code: string; emailHint: string }
+  /** Carpe Diem says the linked account was deleted. Nothing is asked again
+   * until the person chooses a new, empty account. */
+  | { kind: "closed"; closedAt: string | null };
 
 export function BrowserDeviceCard({
   accountId,
@@ -166,20 +170,33 @@ export function BrowserDeviceCard({
     );
   }, [accountId, setRecord, store]);
 
+  // The deleted account took this browser's key with it: the copy here is
+  // dead, and keeping it would show a key that no longer answers.
+  const closed = useCallback(
+    async (current: DeviceRecord, err: AccountClosedError) => {
+      const keyless = { ...current, key: null };
+      await store.put(keyless).catch(() => undefined);
+      setRecord(keyless);
+      setStage({ kind: "closed", closedAt: err.closedAt });
+    },
+    [setRecord, store],
+  );
+
   const mint = useCallback(
-    async (current: DeviceRecord) => {
+    async (current: DeviceRecord, reactivate = false) => {
       setBusy(true);
       setError("");
       try {
-        await handleBirth(await birthKey(store, current));
+        await handleBirth(await birthKey(store, current, { reactivate }));
       } catch (err) {
         if (err instanceof ApiError && err.code === "device_proof_invalid") await forgetRevoked();
+        else if (err instanceof AccountClosedError) await closed(current, err);
         else setError(failure(err), err);
       } finally {
         setBusy(false);
       }
     },
-    [handleBirth, store, setError, forgetRevoked],
+    [handleBirth, store, setError, forgetRevoked, closed],
   );
 
   // Only an explicit revocation in the list counts. A list fetched before this
@@ -395,6 +412,34 @@ export function BrowserDeviceCard({
                 )}
               </p>
               <code className="secret">{stage.code}</code>
+            </div>
+          ) : stage.kind === "closed" ? (
+            <div className="notice" role="alert">
+              <p>
+                {stage.closedAt
+                  ? t(
+                      `Your Carpe Diem account was deleted on ${date(stage.closedAt)}. Its credits are gone and cannot be refunded.`,
+                      `Votre compte Carpe Diem a été supprimé le ${date(stage.closedAt)}. Ses crédits sont perdus et ne peuvent pas être remboursés.`,
+                    )
+                  : t(
+                      "Your Carpe Diem account was deleted. Its credits are gone and cannot be refunded.",
+                      "Votre compte Carpe Diem a été supprimé. Ses crédits sont perdus et ne peuvent pas être remboursés.",
+                    )}
+              </p>
+              <p>
+                {t(
+                  "You can open a new, empty Carpe Diem account for this browser. Nothing is created unless you choose it.",
+                  "Vous pouvez ouvrir un nouveau compte Carpe Diem, vide, pour ce navigateur. Rien n’est créé sans votre choix.",
+                )}
+              </p>
+              <button
+                className="button primary"
+                type="button"
+                disabled={busy}
+                onClick={() => void mint(record, true)}
+              >
+                {t("Open a new, empty account", "Ouvrir un nouveau compte, vide")}
+              </button>
             </div>
           ) : record.key ? (
             <p className="quiet">
