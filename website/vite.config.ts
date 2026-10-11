@@ -54,7 +54,7 @@ export default defineConfig(({ mode }) => {
       // another name; every browser the site supports preloads modules
       // natively, and one that does not loads them on import as before.
       modulePreload: { polyfill: false },
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           index: page("index.html"),
           "python-sandbox": page("python-sandbox.html"),

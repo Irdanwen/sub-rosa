@@ -34,7 +34,7 @@ export default defineConfig({
     target: "es2022",
     minify: !process.env.TAURI_DEBUG,
     sourcemap: Boolean(process.env.TAURI_DEBUG),
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         hud: fileURLToPath(new URL("./hud.html", import.meta.url)),
@@ -47,13 +47,36 @@ export default defineConfig({
         // chunk, so an app release does not make the webview re-parse the
         // editor or the animation runtime, and the note list can paint
         // before the canvas libraries are even requested.
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-          if (/[\\/](prosemirror-[a-z-]+|@tiptap|linkifyjs)[\\/]/.test(id)) return "editor";
-          if (/[\\/](framer-motion|motion-dom|motion-utils)[\\/]/.test(id)) return "motion";
-          if (/[\\/](@xyflow|d3-[a-z-]+)[\\/]/.test(id)) return "flow";
-          if (/[\\/](react-dom|react|scheduler)[\\/]/.test(id)) return "react";
-          return undefined;
+        //
+        // A group also takes in what its modules import, so the order is
+        // load-bearing: React goes first, or the editor's React bindings
+        // carry React into `editor` and every HUD window loads the editor to
+        // get React. The locale catalogs are a group of their own for a
+        // subtler reason: when every chunk comes from automatic splitting,
+        // Rolldown puts its helpers (`__commonJS`, `__export`) in a shared
+        // chunk, here the catalogs, and a HUD that imports one Tauri module
+        // downloads every language; with them grouped, the helpers get their
+        // own `rolldown-runtime` chunk.
+        codeSplitting: {
+          groups: [
+            {
+              name: "react",
+              priority: 40,
+              test: /node_modules[\\/](react-dom|react|scheduler)[\\/]/,
+            },
+            {
+              name: "motion",
+              priority: 30,
+              test: /node_modules[\\/](framer-motion|motion-dom|motion-utils)[\\/]/,
+            },
+            { name: "flow", priority: 20, test: /node_modules[\\/](@xyflow|d3-[a-z-]+)[\\/]/ },
+            {
+              name: "editor",
+              priority: 10,
+              test: /node_modules[\\/](prosemirror-[a-z-]+|@tiptap|linkifyjs)[\\/]/,
+            },
+            { name: "i18n", priority: 5, test: /src[\\/](lib[\\/]i18n\.ts|locales[\\/])/ },
+          ],
         },
       },
     },

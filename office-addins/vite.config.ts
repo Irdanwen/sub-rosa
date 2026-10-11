@@ -51,7 +51,7 @@ export default defineConfig(({ command, mode }) => {
       // `/office/assets/python-sandbox*` answers it with CORS; the preload
       // polyfill would be a chunk it shares with the panes (as on the site).
       modulePreload: { polyfill: false },
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           word: here("office/word.html"),
           excel: here("office/excel.html"),

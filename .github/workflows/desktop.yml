@@ -71,6 +71,15 @@ jobs:
       - name: Vitest
         run: pnpm test
 
+      # The release is the only other place this bundle is built, so a
+      # chunking change that makes a HUD window load the editor would
+      # otherwise ship unseen (scripts/check-window-chunks.mjs).
+      - name: Build the app frontend
+        run: pnpm exec vite build
+
+      - name: HUD windows load only their own chunks
+        run: node scripts/check-window-chunks.mjs
+
   # Biome enforces JS/TS/JSON/CSS formatting + linting for src/ and scripts/.
   # `pnpm check` fails on formatting drift, lint errors, and banned imports
   # (the icons-central-only spec bans lucide via noRestrictedImports).
