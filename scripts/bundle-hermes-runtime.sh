@@ -216,6 +216,11 @@ mv "$unpacked" "$out/hermes-agent"
 # WebSocket upgrades. See scripts/patch-hermes-ws-origin.sh for the writeup.
 "$root/scripts/patch-hermes-ws-origin.sh" "$out/hermes-agent"
 
+# Fork patch: a HERMES_HOME of its own names a gateway service of its own, so
+# the app never takes over another Hermes' launchd job or Windows task. See
+# scripts/patch-hermes-service-label.sh for the writeup.
+"$root/scripts/patch-hermes-service-label.sh" "$out/hermes-agent"
+
 # Dev-only weight the runtime never imports. Conservative on purpose: web/ and
 # ui-tui/ stay (hermes resolves them relative to its project root), and apps/
 # stays until the dashboard build because Hermes 0.19 web imports apps/shared.

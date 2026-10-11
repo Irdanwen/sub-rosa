@@ -302,6 +302,41 @@ if (!$wsOriginText.Contains('"tauri.localhost"')) {
   Log "patched ws-origin: hermes_cli\web_server.py"
 }
 
+# Give this Hermes home its own gateway service (mirror of
+# scripts/patch-hermes-service-label.sh, see it for the root cause): any home
+# outside %LOCALAPPDATA%\hermes counted as the default root and claimed the
+# bare Hermes_Gateway task, so Sub Rosa's homes and a standalone Hermes took
+# over one another's gateway. Only the first `if home == default:` inside
+# _profile_suffix (_profile_arg has the same line). Read and written as UTF-8
+# without BOM: gateway.py holds non-ASCII text a default encoding would mangle.
+$serviceLabelFile = Join-Path $agentDir "hermes_cli\gateway.py"
+if (Test-Path -LiteralPath $serviceLabelFile -PathType Leaf) {
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  $serviceLabelText = [System.IO.File]::ReadAllText($serviceLabelFile, $utf8)
+  if (!$serviceLabelText.Contains("patch-hermes-service-label")) {
+    $serviceLabelBad = "`n    if home == default:"
+    $serviceLabelGood = "`n    # Sub Rosa (patch-hermes-service-label.sh): only the platform home is the default." +
+      "`n    from hermes_constants import _get_platform_default_hermes_home" +
+      "`n    if home == default and home == _get_platform_default_hermes_home().resolve():"
+    $fnAt = $serviceLabelText.IndexOf("`ndef _profile_suffix() -> str:")
+    $lineAt = -1
+    $nextFnAt = -1
+    if ($fnAt -ge 0) {
+      $lineAt = $serviceLabelText.IndexOf($serviceLabelBad, $fnAt, [System.StringComparison]::Ordinal)
+      $nextFnAt = $serviceLabelText.IndexOf("`ndef ", $fnAt + 1, [System.StringComparison]::Ordinal)
+    }
+    if ($lineAt -lt 0 -or ($nextFnAt -ge 0 -and $lineAt -gt $nextFnAt)) {
+      Fail "gateway.py: expected _profile_suffix default-root test not found - upstream changed, re-audit the service-label fix."
+    }
+    $serviceLabelText = $serviceLabelText.Substring(0, $lineAt) + $serviceLabelGood +
+      $serviceLabelText.Substring($lineAt + $serviceLabelBad.Length)
+    [System.IO.File]::WriteAllText($serviceLabelFile, $serviceLabelText, $utf8)
+    Log "patched service-label: hermes_cli\gateway.py"
+  }
+} else {
+  Fail "hermes_cli\gateway.py missing - hermes layout changed, re-audit the service-label fix."
+}
+
 # Hermes 0.19 web imports apps/shared, so apps must remain through the build.
 foreach ($prune in @("tests", "website", ".github")) {
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $agentDir $prune)

@@ -132,8 +132,9 @@ pub struct SidecarStatusDto {
 pub fn setup(app: &mut tauri::App) {
     app.manage(SidecarState(Mutex::new(Process::default())));
     let _ = APP.set(app.handle().clone());
+    // Per build: a debug run beside the installed app keeps its own record.
     #[cfg(desktop)]
-    if let Ok(dir) = app.path().app_local_data_dir() {
+    if let Ok(dir) = crate::app_paths::app_local_data_dir(app.handle()) {
         let _ = ORPHAN_RECORD.set(dir.join(super::orphan::RECORD_FILE));
     }
     let handle = app.handle().clone();

@@ -76,13 +76,13 @@ pas faite. Quand une porte s'ouvre, repasser les cellules à `yes` puis lancer
     crédits entre 19:33 et 19:42). Le registre ne nomme pas le client. À
     identifier (une routine de l'app installée, un autre outil qui tient la
     même clé) et, si c'est inconnu, faire tourner la clé depuis le compte.
-11. **Deux pièges de développement, pas des portes.** Une build de debug
-    lancée sur ce Mac remplace le LaunchAgent `ai.hermes.gateway` de l'app
-    installée par le sien (même label, venu de la CLI Hermes épinglée) :
-    après une session `pnpm tauri:dev`, vérifier que
-    `~/Library/LaunchAgents/ai.hermes.gateway.plist` pointe de nouveau sur
-    `xyz.carpediem.subrosa/hermes`, sinon les routines de l'app installée ne
-    tournent plus. Et les deux apps écoutent le même raccourci de barre de
+11. **Deux pièges de développement, pas des portes.** Jusqu'à 1.89.2, une
+    build de debug lancée sur ce Mac remplaçait le LaunchAgent
+    `ai.hermes.gateway` de l'app installée par le sien. Depuis 1.89.3, chaque
+    home Hermes a son propre service (`ai.hermes.gateway-<hash>`, patch
+    `scripts/patch-hermes-service-label.sh`) et l'app retire l'ancien service
+    à son nom ; une build de debug avec un runtime non patché refuse encore
+    de prendre le service d'un autre home (`gateway_start.rs`). Et les deux apps écoutent le même raccourci de barre de
     chat : avant 1.89.1, un ⌥Espace fait planter la 1.89.0 installée.
 12. **Question produit (ADR-0084)** : en mode protégé, la galerie Studio
     montre encore les rendus adultes déjà produits. L'ADR promet des rendus

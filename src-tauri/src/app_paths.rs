@@ -64,6 +64,16 @@ pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, tauri::Error> {
     })
 }
 
+/// The app's local data folder, kept apart for a debug build the way
+/// `app_data_dir` is, so a debug run never reads or rewrites the installed
+/// app's machine-local state (the sidecar's pid record, for one).
+#[cfg(desktop)]
+pub fn app_local_data_dir(app: &AppHandle) -> Result<PathBuf, tauri::Error> {
+    app.path().app_local_data_dir().map(|data_dir| {
+        app_data_dir_for_build(data_dir, cfg!(debug_assertions), use_prod_data_dir())
+    })
+}
+
 fn use_prod_data_dir() -> bool {
     std::env::var_os(USE_PROD_DATA_DIR_ENV).is_some()
 }

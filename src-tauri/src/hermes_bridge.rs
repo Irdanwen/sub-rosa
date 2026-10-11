@@ -40,6 +40,10 @@ const SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
 // runtime unpatched, so upstream's HERMES_RUNTIME_PATCH_SET / patched-source
 // hashes are intentionally absent.)
 const HERMES_AGENT_INSTALL_COMMIT: &str = "3ef6bbd201263d354fd83ec55b3c306ded2eb72a";
+/// The fork's patches a managed runtime carries (`scripts/patch-hermes-*.sh`,
+/// mirrored in `hermes_bridge/managed_install.*`). Recorded in `runtime.json`:
+/// a runtime installed before a patch was added is reinstalled, not kept.
+const HERMES_MANAGED_PATCHES: &str = "cron-shadow,ws-origin,service-label";
 const HERMES_SOURCE_TARBALL_URL: &str =
     "https://github.com/NousResearch/hermes-agent/archive/3ef6bbd201263d354fd83ec55b3c306ded2eb72a.tar.gz";
 const HERMES_SOURCE_TARBALL_SHA256: &str =
@@ -6251,7 +6255,10 @@ fn managed_hermes_runtime_current(app: &AppHandle) -> Result<bool, AppError> {
     let Ok(metadata) = fs::read_to_string(metadata_path) else {
         return Ok(false);
     };
-    Ok(metadata.contains(&format!(r#""commit":"{HERMES_AGENT_INSTALL_COMMIT}""#)))
+    Ok(
+        metadata.contains(&format!(r#""commit":"{HERMES_AGENT_INSTALL_COMMIT}""#))
+            && metadata.contains(&format!(r#""patches":"{HERMES_MANAGED_PATCHES}""#)),
+    )
 }
 
 fn user_local_hermes_command() -> Option<PathBuf> {
@@ -6370,6 +6377,7 @@ async fn install_managed_hermes_runtime_unix(
                 .env("JUNE_HERMES_INSTALL_DIR", &install_dir)
                 .env("JUNE_HERMES_HOME", &hermes_home)
                 .env("JUNE_HERMES_INSTALL_COMMIT", HERMES_AGENT_INSTALL_COMMIT)
+                .env("JUNE_HERMES_PATCHES", HERMES_MANAGED_PATCHES)
                 .env("JUNE_HERMES_SOURCE_TARBALL_URL", HERMES_SOURCE_TARBALL_URL)
                 .env(
                     "JUNE_HERMES_SOURCE_TARBALL_SHA256",
@@ -6464,6 +6472,7 @@ async fn install_managed_hermes_runtime_windows(
             .env("JUNE_HERMES_INSTALL_DIR", &install_dir)
             .env("JUNE_HERMES_HOME", &hermes_home)
             .env("JUNE_HERMES_INSTALL_COMMIT", HERMES_AGENT_INSTALL_COMMIT)
+            .env("JUNE_HERMES_PATCHES", HERMES_MANAGED_PATCHES)
             .env("JUNE_HERMES_SOURCE_TARBALL_URL", HERMES_SOURCE_TARBALL_URL)
             .env(
                 "JUNE_HERMES_SOURCE_TARBALL_SHA256",
@@ -6513,327 +6522,12 @@ async fn install_managed_hermes_runtime_windows(
     Ok(())
 }
 
-const MANAGED_HERMES_INSTALL_SCRIPT: &str = r#"
-set -euo pipefail
-
-runtime_dir="${JUNE_HERMES_RUNTIME_DIR:?}"
-install_dir="${JUNE_HERMES_INSTALL_DIR:?}"
-hermes_home="${JUNE_HERMES_HOME:?}"
-install_commit="${JUNE_HERMES_INSTALL_COMMIT:?}"
-source_tarball_url="${JUNE_HERMES_SOURCE_TARBALL_URL:?}"
-source_tarball_sha256="${JUNE_HERMES_SOURCE_TARBALL_SHA256:?}"
-
-mkdir -p "$runtime_dir" "$hermes_home"
-
-if [ ! -f "$install_dir/pyproject.toml" ] || [ ! -f "$install_dir/scripts/install.sh" ]; then
-  tmp_dir="$(mktemp -d "$runtime_dir/download.XXXXXX")"
-  cleanup() { rm -rf "$tmp_dir"; }
-  trap cleanup EXIT
-  curl -LsSf "$source_tarball_url" -o "$tmp_dir/hermes-agent.tar.gz"
-  actual_sha256="$(shasum -a 256 "$tmp_dir/hermes-agent.tar.gz" | awk '{print $1}')"
-  if [ "$actual_sha256" != "$source_tarball_sha256" ]; then
-    echo "Hermes source archive checksum mismatch." >&2
-    echo "expected: $source_tarball_sha256" >&2
-    echo "actual:   $actual_sha256" >&2
-    exit 1
-  fi
-  tar -xzf "$tmp_dir/hermes-agent.tar.gz" -C "$tmp_dir"
-  unpacked_dir="$(find "$tmp_dir" -maxdepth 1 -type d -name 'hermes-agent-*' | head -n 1)"
-  if [ -z "$unpacked_dir" ]; then
-    echo "Hermes source archive did not contain a hermes-agent directory." >&2
-    exit 1
-  fi
-  rm -rf "$install_dir"
-  mkdir -p "$(dirname "$install_dir")"
-  mv "$unpacked_dir" "$install_dir"
-fi
-
-# Upstream's install.sh (v2026.7.20) runs $UV_CMD unquoted in the venv-create,
-# uv-sync, and pip-install-tier calls. The managed uv it installs lives under
-# the app data dir — "Application Support" on macOS — so the space word-splits
-# the path and every one of those calls fails with "/Users/…/Library/
-# Application: No such file or directory". Quote the bare uses after
-# extraction. Idempotent (an already-quoted $UV_CMD is preceded by a quote,
-# which the pattern excludes) and applied outside the download guard so a
-# previously extracted tree gets patched on retry too.
-sed -e 's/^\$UV_CMD/"$UV_CMD"/g' \
-  -e 's/\([^"]\)\$UV_CMD/\1"$UV_CMD"/g' "$install_dir/scripts/install.sh" \
-  > "$install_dir/scripts/install.sh.quoted"
-mv "$install_dir/scripts/install.sh.quoted" "$install_dir/scripts/install.sh"
-
-# Fix the plugins/cron sys.path shadow that 500s the Routines page (mirror of
-# scripts/patch-hermes-cron-shadow.sh). The raft and discord platform adapters
-# insert their grandparent (hermes-agent/plugins) at sys.path[0], so top-level
-# `import cron` finds the plugins/cron plugin instead of the core cron package
-# and every dashboard cron endpoint raises ImportError -> HTTP 500. Point the
-# insert at the hermes-agent root (parents[3]) instead. Scoped to just these
-# two files (the gateway/platforms/*.py inserts are one level shallower, so
-# their parents[2] is already the root and must be left alone). Idempotent and
-# applied outside the download guard so a retry re-patches an existing tree.
-for cron_shadow_rel in plugins/platforms/raft/adapter.py plugins/platforms/discord/adapter.py; do
-  cron_shadow_file="$install_dir/$cron_shadow_rel"
-  [ -f "$cron_shadow_file" ] || continue
-  sed -e 's/resolve()\.parents\[2\]))/resolve().parents[3]))/g' \
-    "$cron_shadow_file" > "$cron_shadow_file.cron-shadow"
-  mv "$cron_shadow_file.cron-shadow" "$cron_shadow_file"
-done
-
-# Accept the Windows webview origin (http://tauri.localhost) on WebSocket
-# upgrades (mirror of scripts/patch-hermes-ws-origin.sh — see it for the root
-# cause). The /api/ws DNS-rebinding guard only accepts http(s) Origins whose
-# host is in _LOOPBACK_HOST_VALUES; the Windows Tauri webview lives on
-# http://tauri.localhost, so every chat WebSocket handshake was refused.
-# *.localhost is loopback-only per RFC 6761, so no rebinding surface is added.
-# Anchored to the indented member line (the unindented twin inside
-# _local_dashboard_request must stay untouched). Idempotent (a patched line no
-# longer matches) and outside the download guard so retries re-patch.
-ws_origin_file="$install_dir/hermes_cli/web_server.py"
-if [ -f "$ws_origin_file" ]; then
-  sed -e 's/^    "localhost", "127\.0\.0\.1", "::1",$/    "localhost", "127.0.0.1", "::1", "tauri.localhost",/' \
-    "$ws_origin_file" > "$ws_origin_file.ws-origin"
-  mv "$ws_origin_file.ws-origin" "$ws_origin_file"
-fi
-
-run_stage() {
-  local stage="$1"
-  HERMES_HOME="$hermes_home" HERMES_INSTALL_DIR="$install_dir" \
-    bash "$install_dir/scripts/install.sh" \
-      --dir "$install_dir" \
-      --hermes-home "$hermes_home" \
-      --stage "$stage" \
-      --json \
-      --non-interactive
-}
-
-run_stage venv
-run_stage python-deps
-run_stage node-deps
-run_stage config
-run_stage complete
-
-cat > "$runtime_dir/runtime.json" <<EOF
-{"source":"NousResearch/hermes-agent","commit":"$install_commit","installDir":"$install_dir"}
-EOF
-"#;
+// Applies the fork's Hermes patches too: keep it in step with scripts/patch-hermes-*.sh.
+const MANAGED_HERMES_INSTALL_SCRIPT: &str = include_str!("hermes_bridge/managed_install.sh");
 
 #[cfg(target_os = "windows")]
-const WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT: &str = r##"
-$ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"
-
-$runtimeDir = $env:JUNE_HERMES_RUNTIME_DIR
-$installDir = $env:JUNE_HERMES_INSTALL_DIR
-$hermesHome = $env:JUNE_HERMES_HOME
-$installCommit = $env:JUNE_HERMES_INSTALL_COMMIT
-$sourceTarballUrl = $env:JUNE_HERMES_SOURCE_TARBALL_URL
-$sourceTarballSha256 = ($env:JUNE_HERMES_SOURCE_TARBALL_SHA256).ToLowerInvariant()
-$uvDownloadUrl = $env:JUNE_HERMES_UV_URL
-$uvDownloadSha256 = ($env:JUNE_HERMES_UV_SHA256).ToLowerInvariant()
-
-if ([string]::IsNullOrWhiteSpace($runtimeDir) -or
-    [string]::IsNullOrWhiteSpace($installDir) -or
-    [string]::IsNullOrWhiteSpace($hermesHome) -or
-    [string]::IsNullOrWhiteSpace($uvDownloadUrl)) {
-  throw "Hermes installer paths were not provided."
-}
-
-New-Item -ItemType Directory -Force -Path $runtimeDir, $hermesHome | Out-Null
-
-function Invoke-Native {
-  param(
-    [Parameter(Mandatory = $true)][string]$FilePath,
-    [Parameter(Mandatory = $true)][string[]]$Arguments
-  )
-  Write-Output ("running: " + $FilePath + " " + ($Arguments -join " "))
-  & $FilePath @Arguments
-  if ($LASTEXITCODE -ne 0) {
-    throw "$FilePath exited with code $LASTEXITCODE"
-  }
-}
-
-function Get-VerifiedDownload {
-  param(
-    [Parameter(Mandatory = $true)][string]$Uri,
-    [Parameter(Mandatory = $true)][string]$Destination,
-    [Parameter(Mandatory = $true)][string]$Sha256
-  )
-  Write-Output "downloading: $Uri"
-  Invoke-WebRequest -Uri $Uri -OutFile $Destination
-  $actual = (Get-FileHash -Algorithm SHA256 -Path $Destination).Hash.ToLowerInvariant()
-  if ($actual -ne $Sha256) {
-    throw "Checksum mismatch for $Uri. Expected $Sha256, got $actual."
-  }
-}
-
-if (!(Test-Path (Join-Path $installDir "pyproject.toml"))) {
-  $tmpDir = Join-Path $runtimeDir ("download-" + [guid]::NewGuid().ToString("N"))
-  New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-  try {
-    $archive = Join-Path $tmpDir "hermes-agent.tar.gz"
-    Get-VerifiedDownload -Uri $sourceTarballUrl -Destination $archive -Sha256 $sourceTarballSha256
-    Invoke-Native "tar" @("-xzf", $archive, "-C", $tmpDir)
-    $unpacked = Get-ChildItem -Path $tmpDir -Directory |
-      Where-Object { $_.Name -like "hermes-agent-*" } |
-      Select-Object -First 1
-    if ($null -eq $unpacked) {
-      throw "Hermes source archive did not contain a hermes-agent directory."
-    }
-    if (Test-Path $installDir) {
-      Remove-Item -Recurse -Force -Path $installDir
-    }
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $installDir) | Out-Null
-    Move-Item -Path $unpacked.FullName -Destination $installDir
-  } finally {
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $tmpDir
-  }
-}
-
-# Fix the plugins/cron sys.path shadow that 500s the Routines page (mirror of
-# scripts/patch-hermes-cron-shadow.sh). The raft and discord platform adapters
-# insert hermes-agent/plugins at sys.path[0], so top-level `import cron` finds
-# the plugins/cron plugin instead of core cron and every dashboard cron endpoint
-# raises ImportError -> HTTP 500. Point the insert at the hermes-agent root
-# (parents[3]). Scoped to the two adapters (gateway/platforms/*.py already use
-# the root). Idempotent and outside the download guard so retries re-patch.
-foreach ($cronShadowRel in @("plugins\platforms\raft\adapter.py", "plugins\platforms\discord\adapter.py")) {
-  $cronShadowFile = Join-Path $installDir $cronShadowRel
-  if (Test-Path -LiteralPath $cronShadowFile -PathType Leaf) {
-    $cronShadowText = Get-Content -LiteralPath $cronShadowFile -Raw
-    $cronShadowText = $cronShadowText.Replace("resolve().parents[2]))", "resolve().parents[3]))")
-    Set-Content -LiteralPath $cronShadowFile -Value $cronShadowText -NoNewline
-  }
-}
-
-# Accept the Windows webview origin (http://tauri.localhost) on WebSocket
-# upgrades (mirror of scripts/patch-hermes-ws-origin.sh — see it for the root
-# cause). The /api/ws DNS-rebinding guard only accepts http(s) Origins whose
-# host is in _LOOPBACK_HOST_VALUES; the Windows Tauri webview lives on
-# http://tauri.localhost, so every chat WebSocket handshake was refused
-# (close 4403 before accept) -> "Could not connect to Hermes gateway."
-# *.localhost is loopback-only per RFC 6761, so no rebinding surface is
-# added. The leading indentation anchors the match to the frozenset member
-# line (an unindented twin inside _local_dashboard_request must stay
-# untouched). Idempotent via the tauri.localhost guard; outside the download
-# guard so retries re-patch an existing tree.
-$wsOriginFile = Join-Path $installDir "hermes_cli\web_server.py"
-if (Test-Path -LiteralPath $wsOriginFile -PathType Leaf) {
-  $wsOriginText = Get-Content -LiteralPath $wsOriginFile -Raw
-  if (!$wsOriginText.Contains('"tauri.localhost"')) {
-    $wsOriginText = $wsOriginText.Replace('    "localhost", "127.0.0.1", "::1",', '    "localhost", "127.0.0.1", "::1", "tauri.localhost",')
-    Set-Content -LiteralPath $wsOriginFile -Value $wsOriginText -NoNewline
-  }
-}
-
-# Bootstrap a self-contained uv + CPython inside the runtime dir. End-user
-# Windows machines have no Python (and no compiler toolchain), so the install
-# must bring its own interpreter the same way the release bundle does.
-$uvDir = Join-Path $runtimeDir "uv"
-$uvExe = Join-Path $uvDir "uv.exe"
-if (!(Test-Path $uvExe)) {
-  $uvTmp = Join-Path $runtimeDir ("uv-download-" + [guid]::NewGuid().ToString("N"))
-  New-Item -ItemType Directory -Force -Path $uvTmp | Out-Null
-  try {
-    $uvArchive = Join-Path $uvTmp "uv.zip"
-    Get-VerifiedDownload -Uri $uvDownloadUrl -Destination $uvArchive -Sha256 $uvDownloadSha256
-    Expand-Archive -Path $uvArchive -DestinationPath $uvTmp -Force
-    $downloadedUv = Get-ChildItem -Path $uvTmp -Recurse -File -Filter "uv.exe" |
-      Select-Object -First 1
-    if ($null -eq $downloadedUv) {
-      throw "uv archive did not contain uv.exe."
-    }
-    New-Item -ItemType Directory -Force -Path $uvDir | Out-Null
-    Move-Item -Path $downloadedUv.FullName -Destination $uvExe -Force
-  } finally {
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $uvTmp
-  }
-}
-
-# Script-scoped uv configuration: this powershell process only runs the
-# installer, so plain $env: assignments are simpler and safer than a
-# save/restore dance (see the $null -> "" coercion bug this replaced).
-$pythonRoot = Join-Path $runtimeDir "python"
-$env:UV_NO_CONFIG = "1"
-$env:UV_PYTHON_INSTALL_DIR = $pythonRoot
-$env:UV_PYTHON_INSTALL_BIN = "0"
-
-Invoke-Native $uvExe @("python", "install", "3.11")
-$pythonInstall = Get-ChildItem -Path $pythonRoot -Directory |
-  Where-Object { $_.Name -like "cpython-3.11*" } |
-  Select-Object -First 1
-if ($null -eq $pythonInstall) {
-  throw "uv did not install a cpython-3.11 runtime under $pythonRoot."
-}
-$py = Join-Path $pythonInstall.FullName "python.exe"
-if (!(Test-Path $py)) {
-  throw "Managed Python interpreter missing at $py."
-}
-
-$venvDir = Join-Path $installDir "venv"
-if (Test-Path $venvDir) {
-  Remove-Item -Recurse -Force -Path $venvDir
-}
-Invoke-Native $uvExe @("venv", "--python", $py, $venvDir)
-$venvPython = Join-Path $venvDir "Scripts\python.exe"
-if (!(Test-Path $venvPython)) {
-  throw "Python virtual environment was not created at $venvDir."
-}
-
-Set-Location $installDir
-Invoke-Native $uvExe @("pip", "install", "-p", $venvPython, "-e", ".[all]")
-
-$homeDirs = @("cron", "sessions", "logs", "pairing", "hooks", "image_cache", "audio_cache", "memories", "skills")
-foreach ($dir in $homeDirs) {
-  New-Item -ItemType Directory -Force -Path (Join-Path $hermesHome $dir) | Out-Null
-}
-
-$envFile = Join-Path $hermesHome ".env"
-if (!(Test-Path $envFile)) {
-  $exampleEnv = Join-Path $installDir ".env.example"
-  if (Test-Path $exampleEnv) {
-    Copy-Item -Path $exampleEnv -Destination $envFile
-  } else {
-    New-Item -ItemType File -Path $envFile | Out-Null
-  }
-}
-
-$configFile = Join-Path $hermesHome "config.yaml"
-if (!(Test-Path $configFile)) {
-  $exampleConfig = Join-Path $installDir "cli-config.yaml.example"
-  if (Test-Path $exampleConfig) {
-    Copy-Item -Path $exampleConfig -Destination $configFile
-  }
-}
-
-$soulFile = Join-Path $hermesHome "SOUL.md"
-if (!(Test-Path $soulFile)) {
-  [System.IO.File]::WriteAllText($soulFile, "# Hermes Agent Persona`n", (New-Object System.Text.UTF8Encoding $false))
-}
-
-$skillsSync = Join-Path $installDir "tools\skills_sync.py"
-if (Test-Path $skillsSync) {
-  try {
-    Invoke-Native $venvPython @($skillsSync)
-  } catch {
-    $sourceSkills = Join-Path $installDir "skills"
-    $targetSkills = Join-Path $hermesHome "skills"
-    if (Test-Path $sourceSkills) {
-      Copy-Item -Path (Join-Path $sourceSkills "*") -Destination $targetSkills -Recurse -Force
-    }
-  }
-}
-
-$hermesExe = Join-Path $venvDir "Scripts\hermes.exe"
-if (!(Test-Path $hermesExe)) {
-  throw "Hermes executable was not created at $hermesExe."
-}
-
-$metadata = [ordered]@{
-  source = "NousResearch/hermes-agent"
-  commit = $installCommit
-  installDir = $installDir
-} | ConvertTo-Json -Compress
-[System.IO.File]::WriteAllText((Join-Path $runtimeDir "runtime.json"), $metadata, (New-Object System.Text.UTF8Encoding $false))
-"##;
+const WINDOWS_MANAGED_HERMES_INSTALL_SCRIPT: &str =
+    include_str!("hermes_bridge/managed_install.ps1");
 
 fn apply_isolated_hermes_env(
     cmd: &mut Command,
@@ -8570,6 +8264,7 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
 
 mod builtin_mcp;
 mod connectors_mcp;
+mod gateway_label;
 mod gateway_start;
 #[cfg(test)]
 use builtin_mcp::render_context_mcp_entry;
