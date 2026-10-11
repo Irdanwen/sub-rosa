@@ -126,6 +126,9 @@ struct CaptureStats {
     bytes_written: i64,
 }
 
+// One cfg block per platform, each returning: a cfg block cannot be the
+// tail expression, so the `return`s are needed.
+#[allow(clippy::needless_return)]
 pub fn microphone_permission_state() -> (String, Option<String>) {
     // iOS has a real permission API; device presence is meaningless there
     // (the microphone always enumerates, granted or not).
@@ -160,6 +163,7 @@ pub fn microphone_device_hint() -> String {
     "No microphone input device is available.".to_string()
 }
 
+#[cfg_attr(target_os = "android", allow(dead_code))]
 fn microphone_permission_hint() -> String {
     #[cfg(target_os = "macos")]
     {

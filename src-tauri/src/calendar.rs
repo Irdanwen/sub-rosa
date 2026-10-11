@@ -26,7 +26,10 @@ pub const MATCH_BEFORE_SECS: i64 = 10 * 60;
 /// joins are the norm, but an hour later is a different meeting.
 pub const MATCH_AFTER_SECS: i64 = 15 * 60;
 /// Attendee lists are display metadata on a note, not a directory.
+// Read by the EventKit code on Apple targets; Android has no calendar reader.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 const MAX_ATTENDEES: usize = 24;
+#[cfg_attr(target_os = "android", allow(dead_code))]
 const MAX_TEXT: usize = 400;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -107,6 +110,7 @@ pub fn match_recording(started_at: i64, events: &[CalendarEventDto]) -> Calendar
     CalendarMatch::Ambiguous(candidates.into_iter().cloned().collect())
 }
 
+#[cfg_attr(target_os = "android", allow(dead_code))]
 fn cap(value: String) -> String {
     if value.chars().count() > MAX_TEXT {
         value.chars().take(MAX_TEXT).collect::<String>() + "…"

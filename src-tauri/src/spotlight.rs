@@ -20,6 +20,8 @@ use tauri::AppHandle;
 
 const SETTINGS_FILE: &str = "spotlight.json";
 /// Groups our items so a single call can drop all of them.
+/// (Read by the Core Spotlight code on Apple targets only.)
+#[cfg_attr(target_os = "android", allow(dead_code))]
 const DOMAIN: &str = "xyz.carpediem.subrosa.notes";
 /// What a search result shows under the title.
 const MAX_SUMMARY_CHARS: usize = 300;
