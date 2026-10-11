@@ -5281,7 +5281,7 @@ async fn run_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result
 
 fn hermes_gateway_start_command(connection: &HermesBridgeConnection) -> Command {
     let hermes_home = PathBuf::from(&connection.hermes_home);
-    let mut cmd = build_hermes_gateway_start_command(connection, &hermes_home);
+    let mut cmd = gateway_start::start_command(connection, &hermes_home);
     match open_gateway_start_log(&hermes_home) {
         Some((log_for_stdout, log_for_stderr)) => {
             cmd.stdout(log_for_stdout).stderr(log_for_stderr);
@@ -5289,42 +5289,6 @@ fn hermes_gateway_start_command(connection: &HermesBridgeConnection) -> Command 
         None => {
             cmd.stdout(Stdio::null()).stderr(Stdio::null());
         }
-    }
-    cmd
-}
-
-/// Pure command construction so a test can assert the spawn is the bare hermes
-/// executable (no `sandbox-exec` wrapper) with the isolated environment.
-fn build_hermes_gateway_start_command(
-    connection: &HermesBridgeConnection,
-    hermes_home: &Path,
-) -> Command {
-    let mut cmd = Command::new(&connection.command);
-    if cfg!(windows) {
-        // `gateway start` is a dead end on a fresh Windows install: with no
-        // service registered it asks "Install it now? [Y/n]", and Hermes'
-        // prompt_yes_no() exits on the EOF it reads from a closed stdin (it
-        // never consults HERMES_NONINTERACTIVE), so the gateway is never
-        // installed and routines never fire. `gateway install` is idempotent
-        // and reads its two intent questions from these env vars; the one
-        // prompt left (UAC elevation for non-admin accounts) is answered "n"
-        // through the piped stdin — see answer_gateway_install_prompts — so
-        // the install lands on the Startup-folder fallback instead of dying.
-        cmd.args(["gateway", "install"]);
-        cmd.env("HERMES_GATEWAY_INSTALL_START_NOW", "1");
-        cmd.env("HERMES_GATEWAY_INSTALL_START_ON_LOGIN", "1");
-    } else {
-        cmd.args(["gateway", "start"]);
-    }
-    // No sandbox-status hint: `gateway start` is a helper invocation, not the
-    // agent runtime, so it never builds a system prompt.
-    apply_isolated_hermes_env(&mut cmd, hermes_home, &connection.token, None);
-    cmd.env("HERMES_NONINTERACTIVE", "1");
-    cmd.current_dir(hermes_home);
-    if cfg!(windows) {
-        cmd.stdin(Stdio::piped());
-    } else {
-        cmd.stdin(Stdio::null());
     }
     cmd
 }
@@ -8606,6 +8570,7 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
 
 mod builtin_mcp;
 mod connectors_mcp;
+mod gateway_start;
 #[cfg(test)]
 use builtin_mcp::render_context_mcp_entry;
 use builtin_mcp::{
@@ -9926,7 +9891,10 @@ mod tests {
             full_mode: false,
         };
 
-        let cmd = build_hermes_gateway_start_command(&connection, Path::new("/tmp/hermes-home"));
+        let cmd = gateway_start::build_hermes_gateway_start_command(
+            &connection,
+            Path::new("/tmp/hermes-home"),
+        );
 
         // The whole point of the direct spawn: the program is the hermes CLI
         // itself, never a sandbox-exec wrapper — launchd rejects service
