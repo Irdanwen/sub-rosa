@@ -87,7 +87,7 @@ pub fn matches(pin: &str, stored: &PinHash) -> bool {
 }
 
 fn derive(pin: &str, salt: &[u8], log_n: u8, r: u32, p: u32) -> Option<[u8; HASH_BYTES]> {
-    let params = scrypt::Params::new(log_n, r, p, HASH_BYTES).ok()?;
+    let params = scrypt::Params::new(log_n, r, p).ok()?;
     let mut out = [0u8; HASH_BYTES];
     scrypt::scrypt(pin.as_bytes(), salt, &params, &mut out).ok()?;
     Some(out)
@@ -203,6 +203,37 @@ mod tests {
         let stored = hash("4321").unwrap();
         assert_eq!(stored.log_n, DEFAULT_LOG_N);
         assert!(matches("4321", &stored));
+    }
+
+    #[test]
+    fn scrypt_matches_rfc_7914() {
+        // RFC 7914 section 12, first vector: the KDF itself, before any of
+        // this module's choices.
+        let params = scrypt::Params::new(4, 1, 1).unwrap();
+        let mut out = [0u8; 64];
+        scrypt::scrypt(b"", b"", &params, &mut out).unwrap();
+        let hex: String = out.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(
+            hex,
+            "77d6576238657b203b19ca42c18a0497f16b4844e3074ae8dfdffa3fede21442\
+             fcd0069ded0948f8326a753a0fc81f17e8d3e0fb2e0d3628cf35e20c38d18906"
+        );
+    }
+
+    #[test]
+    fn a_pin_stored_by_an_earlier_build_still_matches() {
+        // Written with the default parameters by scrypt 0.11 and checked
+        // against Python's hashlib.scrypt: a crate upgrade must keep opening
+        // the PINs people already set.
+        let stored = PinHash {
+            log_n: DEFAULT_LOG_N,
+            r: DEFAULT_R,
+            p: DEFAULT_P,
+            salt: "EREREREREREREREREREREQ==".to_string(),
+            hash: "fS9adTnTVm3frDiSlUuJwHHiAEragXg9OcvwqfeNYic=".to_string(),
+        };
+        assert!(matches("2580", &stored));
+        assert!(!matches("2581", &stored));
     }
 
     #[test]
