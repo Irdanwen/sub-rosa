@@ -1157,3 +1157,118 @@ async fn a_fresh_library_is_handed_the_heads_and_ends_with_the_same_rows() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].title, "Deleted");
 }
+
+#[tokio::test]
+async fn a_row_the_service_refuses_with_400_is_parked_and_the_rows_behind_it_leave() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let mac = device(&service, "mac").await;
+    let (bad, after) = (note(), note());
+    mac.create_note(&bad, "Bad").await;
+    mac.create_note(&after, "After").await;
+    // A row sealed with more acknowledgements than the service takes.
+    let too_many = json!((0..65)
+        .map(|_| uuid::Uuid::now_v7().to_string())
+        .collect::<Vec<_>>())
+    .to_string();
+    query("UPDATE account_sync_outbox SET ciphertext='x',resolved_revisions=? WHERE object_id=?")
+        .bind(&too_many)
+        .bind(&bad)
+        .execute(&mac.pool)
+        .await
+        .unwrap();
+    let summary = mac.sync(&key).await.unwrap();
+    assert_eq!(summary.pushed, 1);
+    assert_eq!(
+        service.revisions(&after).await.len(),
+        1,
+        "the row behind the refused one was held back"
+    );
+    let parked = issues(&mac.pool).await.unwrap();
+    assert_eq!(parked.len(), 1);
+    assert_eq!(parked[0].code, "sync_request_refused");
+    // The next pass does not stall on it either.
+    let summary = mac.sync(&key).await.unwrap();
+    assert_eq!(summary.pushed, 0);
+    // Retried, it is sealed again from its body and leaves.
+    retry_issues(&mac.pool).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(service.revisions(&bad).await.len(), 1);
+}
+
+#[tokio::test]
+async fn two_deletions_crossing_a_failed_push_still_settle_without_a_card() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    let id = note();
+    mac.create_note(&id, "Monday").await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    // The Mac deletes; its tombstone is sealed but the push fails.
+    mac.delete_note(&id).await;
+    service.journal.lock().await.refuse_posts = true;
+    assert!(mac.sync(&key).await.is_err());
+    service.journal.lock().await.refuse_posts = false;
+    assert_eq!(mac.count("SELECT count(*) AS n FROM account_sync_outbox WHERE object_id=? AND ciphertext IS NOT NULL", &id).await, 1);
+    // The phone deletes too and sends it first.
+    phone.delete_note(&id).await;
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    assert_eq!(
+        mac.cards(&id).await + phone.cards(&id).await,
+        0,
+        "a deletion both devices made was left for review"
+    );
+    assert_eq!(mac.title(&id).await, None);
+    assert_eq!(mac.outbox(&id).await + phone.outbox(&id).await, 0);
+}
+
+#[tokio::test]
+async fn a_remote_edit_over_a_parked_local_edit_is_kept_for_review_not_applied() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    let id = note();
+    mac.create_note(&id, "Monday").await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    // The Mac's next edit is parked (too large, say); the phone edits too.
+    mac.edit_note(&id, "Monday, Mac").await;
+    let op: String = query("SELECT operation_id FROM account_sync_outbox WHERE object_id=?")
+        .bind(&id)
+        .fetch_one(&mac.pool)
+        .await
+        .unwrap()
+        .get("operation_id");
+    record_issue(&mac.pool, "outbox", &op, "sync_object_too_large")
+        .await
+        .unwrap();
+    phone.edit_note(&id, "Monday, phone").await;
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(
+        mac.title(&id).await.as_deref(),
+        Some("Monday, Mac"),
+        "the parked edit was written over"
+    );
+    assert_eq!(mac.cards(&id).await, 1);
+}
+
+#[tokio::test]
+async fn a_library_with_sync_off_reports_no_local_work() {
+    let service = Service::start().await;
+    let mac = device(&service, "mac").await;
+    mac.create_note(&note(), "Local").await;
+    assert!(has_local_work(&mac.pool).await.unwrap());
+    set_enabled(&mac.pool, false).await.unwrap();
+    assert!(!has_local_work(&mac.pool).await.unwrap());
+}

@@ -116,10 +116,10 @@ pub(super) async fn retry_issues(pool: &SqlitePool) -> Result<(), AppError> {
     // A row the service refused for a parent it does not know is sealed
     // again against the current head; one with no body of its own (a
     // resolution, a restore) names a revision that is gone and is dropped.
-    query("DELETE FROM account_sync_outbox WHERE body='{}' AND operation_id IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox' AND code='sync_parent_unknown')")
+    query("DELETE FROM account_sync_outbox WHERE body='{}' AND operation_id IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox' AND code IN ('sync_parent_unknown','sync_request_refused'))")
         .execute(&mut *tx)
         .await?;
-    query("UPDATE account_sync_outbox SET ciphertext=NULL,parent_revision=NULL,resolved_revisions='[]' WHERE operation_id IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox' AND code='sync_parent_unknown')")
+    query("UPDATE account_sync_outbox SET ciphertext=NULL,parent_revision=NULL,resolved_revisions='[]' WHERE operation_id IN (SELECT item_id FROM account_sync_issues WHERE lane='outbox' AND code IN ('sync_parent_unknown','sync_request_refused'))")
         .execute(&mut *tx)
         .await?;
     // A changed file needs a new manifest and fresh immutable chunk ids.
@@ -136,7 +136,10 @@ pub(super) async fn retry_issues(pool: &SqlitePool) -> Result<(), AppError> {
 pub(super) fn isolatable_outbox_error(code: &str) -> bool {
     matches!(
         code,
-        "sync_object_too_large" | "sync_local_object_invalid" | "sync_parent_unknown"
+        "sync_object_too_large"
+            | "sync_local_object_invalid"
+            | "sync_parent_unknown"
+            | "sync_request_refused"
     )
 }
 

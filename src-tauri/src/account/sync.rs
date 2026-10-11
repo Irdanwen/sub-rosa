@@ -334,6 +334,10 @@ pub(super) struct PushResults {
 }
 pub async fn resume(app: &AppHandle) {
     if let Err(e) = run(app).await {
+        // A pass that cannot start (no session, a locked vault, no network)
+        // will not start in two seconds either: the tick and the waiter hold
+        // off, and the sweep or a command brings the next attempt.
+        super::hold_off(Duration::from_secs(30));
         if !matches!(e.code.as_str(), "account_not_connected" | "vault_locked") {
             tracing::warn!(code=%e.code,"account synchronization deferred");
         }
@@ -458,19 +462,19 @@ async fn pull(
     key: &[u8; 32],
     summary: &mut Summary,
 ) -> Result<(), AppError> {
+    // A library that has never received anything asks for the heads
+    // (ADR-0109): what is, not everything that was. Decided once: the first
+    // page fills the inbox, and the following pages are the same bootstrap.
+    let fresh = query("SELECT 1 FROM account_sync_control WHERE id=1 AND cursor=0 AND NOT EXISTS(SELECT 1 FROM account_sync_inbox)")
+        .fetch_optional(pool)
+        .await?
+        .is_some();
+    let heads = if fresh { "&heads=1" } else { "" };
     for _ in 0..10 {
         let cursor: i64 = query("SELECT cursor FROM account_sync_control WHERE id=1")
             .fetch_one(pool)
             .await?
             .get("cursor");
-        // A library that has never received anything asks for the heads
-        // (ADR-0109): what is, not everything that was.
-        let fresh = cursor == 0
-            && query("SELECT 1 FROM account_sync_inbox LIMIT 1")
-                .fetch_optional(pool)
-                .await?
-                .is_none();
-        let heads = if fresh { "&heads=1" } else { "" };
         let data = call(
             s,
             reqwest::Method::GET,
@@ -590,6 +594,19 @@ pub(super) async fn pending_unparked(
         .is_some())
 }
 
+pub(super) async fn pending_any(
+    conn: &mut SqliteConnection,
+    object_id: &str,
+) -> Result<bool, AppError> {
+    Ok(
+        query("SELECT 1 FROM account_sync_outbox WHERE object_id=? LIMIT 1")
+            .bind(object_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .is_some(),
+    )
+}
+
 /// A deletion of this device's own that has not been sealed yet: its parent
 /// is decided at seal time, so what arrives meanwhile is simply what it will
 /// retire.
@@ -691,7 +708,15 @@ async fn admit_inner(
             return Ok(Admitted::Applied);
         }
     }
-    if pending_unparked(conn, &c.object_id).await? {
+    // A live revision crossing any unsent row of the object, parked or not,
+    // is a question for a person: a parked snapshot re-sealed later would
+    // otherwise write over what arrived. A deletion takes parked rows with it.
+    let pending = if c.deleted {
+        pending_unparked(conn, &c.object_id).await?
+    } else {
+        pending_any(conn, &c.object_id).await?
+    };
+    if pending {
         preserve(conn, c).await?;
         mark_applied(conn, &c.revision).await?;
         return Ok(Admitted::Preserved);
@@ -1178,29 +1203,40 @@ async fn replay_pending(
     summary: &mut Summary,
 ) -> Result<(), AppError> {
     for _ in 0..TABLES.len() {
-        let rows =
-            query("SELECT * FROM account_sync_inbox WHERE applied=0 AND revision NOT IN (SELECT item_id FROM account_sync_issues WHERE lane='inbox') ORDER BY sequence LIMIT 200")
+        let mut progressed = false;
+        let mut after = 0i64;
+        // Pages by sequence, so rows behind a crowd of waiting ones are still
+        // looked at; bounded per pass all the same.
+        for _ in 0..10 {
+            let rows = query("SELECT * FROM account_sync_inbox WHERE applied=0 AND sequence>? AND revision NOT IN (SELECT item_id FROM account_sync_issues WHERE lane='inbox') ORDER BY sequence LIMIT 200")
+                .bind(after)
                 .fetch_all(pool)
                 .await?;
-        let mut progressed = false;
-        for r in rows {
-            let c = Change {
-                sequence: r.get("sequence"),
-                resolved_revisions: serde_json::from_str(&r.get::<String, _>("resolved_revisions"))
+            if rows.is_empty() {
+                break;
+            }
+            for r in rows {
+                after = r.get("sequence");
+                let c = Change {
+                    sequence: r.get("sequence"),
+                    resolved_revisions: serde_json::from_str(
+                        &r.get::<String, _>("resolved_revisions"),
+                    )
                     .map_err(|_| error("sync_format_invalid"))?,
-                object_id: r.get("object_id"),
-                revision: r.get("revision"),
-                parent_revision: r.get("parent_revision"),
-                kind: r.get("kind"),
-                ciphertext: r.get("ciphertext"),
-                deleted: r.get("deleted"),
-                operation_id: r.get("operation_id"),
-            };
-            let mut tx = pool.begin().await?;
-            let outcome = admit(&mut tx, s, key, &c, summary).await?;
-            tx.commit().await?;
-            if outcome != Admitted::Waiting {
-                progressed = true;
+                    object_id: r.get("object_id"),
+                    revision: r.get("revision"),
+                    parent_revision: r.get("parent_revision"),
+                    kind: r.get("kind"),
+                    ciphertext: r.get("ciphertext"),
+                    deleted: r.get("deleted"),
+                    operation_id: r.get("operation_id"),
+                };
+                let mut tx = pool.begin().await?;
+                let outcome = admit(&mut tx, s, key, &c, summary).await?;
+                tx.commit().await?;
+                if outcome != Admitted::Waiting {
+                    progressed = true;
+                }
             }
         }
         if !progressed {
@@ -1320,7 +1356,7 @@ pub(super) async fn resolve_in_store(
     let c = conflict_change(&r)?;
     let remote = verify(s, key, &c)?;
     let mut tx = pool.begin().await?;
-    if pending_unparked(&mut tx, &c.object_id).await? {
+    if pending_any(&mut tx, &c.object_id).await? {
         return Err(error("sync_pending_changes"));
     }
     let parent = query("SELECT revision FROM account_sync_heads WHERE object_id=?")

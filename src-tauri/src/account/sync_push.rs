@@ -86,9 +86,6 @@ async fn seal(
                 .into_iter()
                 .map(|r| r.get::<String, _>("id"))
                 .collect();
-            if !siblings.is_empty() {
-                resolve_cards_of(tx, &id).await?;
-            }
             siblings
         } else {
             resolved_revisions
@@ -115,6 +112,12 @@ async fn seal(
             .rows_affected();
         if sealed == 0 {
             return Ok(None);
+        }
+        // Only once the tombstone is frozen with their names: resolved
+        // earlier, a seal that was skipped would have left them resolved and
+        // the next seal would find none.
+        if deleted && !resolved.is_empty() {
+            resolve_cards_of(tx, &id).await?;
         }
         (ciphertext, parent, resolved)
     };
@@ -172,6 +175,17 @@ async fn post_batch(pool: &SqlitePool, s: &Session, sealed: &[Sealed]) -> Result
     }
     tx.commit().await?;
     Ok(sealed.len())
+}
+
+/// What the service's refusal of one row becomes: an issue that sets the row
+/// aside so the rows behind it leave. A parent it does not know (409) and a
+/// request it will not take (400) are both re-sealed on retry.
+fn refused(code: &str) -> Option<&'static str> {
+    match code {
+        "account_conflict" => Some("sync_parent_unknown"),
+        "account_invalid_request" => Some("sync_request_refused"),
+        _ => None,
+    }
 }
 
 /// Sends what waits, a batch at a time (ADR-0109). A batch the service
@@ -234,20 +248,25 @@ pub(super) async fn push(
                             summary.pushed += 1;
                             summary.note(&kind);
                         }
-                        Err(failure) if failure.code == "account_conflict" => {
-                            record_issue(pool, "outbox", &item.operation_id, "sync_parent_unknown")
-                                .await?;
+                        Err(failure) if refused(&failure.code).is_some() => {
+                            record_issue(
+                                pool,
+                                "outbox",
+                                &item.operation_id,
+                                refused(&failure.code).unwrap_or_default(),
+                            )
+                            .await?;
                         }
                         Err(failure) => return Err(failure),
                     }
                 }
             }
-            Err(failure) if failure.code == "account_conflict" => {
+            Err(failure) if refused(&failure.code).is_some() => {
                 record_issue(
                     pool,
                     "outbox",
                     &sealed[0].operation_id,
-                    "sync_parent_unknown",
+                    refused(&failure.code).unwrap_or_default(),
                 )
                 .await?;
             }
@@ -290,5 +309,14 @@ pub(super) async fn push_one(
 /// Whether anything waits to leave this device, so a tick can wake the
 /// driver without a network request: unsent rows the issues did not park.
 pub(super) async fn has_local_work(pool: &SqlitePool) -> Result<bool, AppError> {
+    let enabled = query(
+        "SELECT 1 FROM account_sync_control WHERE id=1 AND enabled=1 AND account_id IS NOT NULL",
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !enabled {
+        return Ok(false);
+    }
     Ok(!next_outbox_batch(pool, None, 1).await?.is_empty() || super::files::has_work(pool).await?)
 }

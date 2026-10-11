@@ -2659,9 +2659,13 @@ s'effacent pas bien ». Deux ADR, une PR, un harnais deux appareils.
   un enfant vivant de la tombale, donc appliquée partout. `mirror_history`
   (`conversations.rs`) refuse de recréer une tâche dont la tête est une
   tombale ; `delete_locally("agent_tasks")` met la session Hermes dans
-  `account_sync_removed_files` (voie `hermes-session`) et la voie fichiers
-  émet `subrosa://hermes-session-removed`, que `AgentWorkspace` écoute pour
-  supprimer la session dans le runtime.
+  `account_sync_removed_files` (voie `hermes-session`) ; la ligne reste
+  jusqu'à ce que le webview l'ait vidée par les commandes partagées
+  `account_hermes_sessions_removed` / `account_hermes_session_forgotten`
+  (hook `useHermesSessionsRemovedElsewhere`, monté par
+  `useDesktopChatArchive`, qui supprime la session dans le runtime puis
+  rejoue `AGENT_DELETE_SESSION_EVENT`), un événement vers un webview pas
+  encore monté étant perdu.
 - **Vitesse** (ADR-0109) : `push` envoie par lots de 50 lignes / 4 Mio
   (`next_outbox_batch`, `seal`, `post_batch`), repli ligne par ligne sur un
   lot refusé (`sync_parent_unknown`, re-scellé par `retry_issues`) ;
@@ -2687,9 +2691,21 @@ s'effacent pas bien ». Deux ADR, une PR, un harnais deux appareils.
   l'événement `subrosa://sync-updated` porte `{applied, pushed, preserved,
   parked, kinds}` ou `{error}` et n'est émis que si quelque chose a bougé ;
   commandes partagées `account_recently_deleted`, `account_restore_deleted`.
-- **Preuve** : `account/sync_fake_service.rs` (faux service de journal en
-  mémoire derrière un socket, mêmes règles que `persistence::append/changes`)
-  et `sync_devices_tests.rs` (deux bibliothèques, un compte : 13 scénarios).
+- **Preuve** : `sync_devices_tests.rs` (un faux service de journal en mémoire
+  derrière un socket, mêmes règles que `persistence::append/changes`, et deux
+  bibliothèques sur un compte : 17 scénarios). Le faux service vit dans le
+  fichier de tests parce que `tests/egress.rs` ne reconnaît les modules de
+  test que par leur nom (`*_tests.rs`).
+- **Revue (10 constats corrigés avant fusion)** : réessai 429 sans corps,
+  ligne refusée en 400 qui bloquait la file (`sync_request_refused`), tick
+  actif synchro désactivée (`has_local_work` lit `enabled`, `hold_off` après
+  un passage impossible), révision vivante appliquée par-dessus une ligne
+  parquée (`pending_any` pour le vivant, `pending_unparked` pour les
+  tombales), `replay_pending` qui n'avançait plus après 200 lignes en attente
+  (pagination par `sequence`), suppression croisée avec un envoi raté (tête
+  locale tombale = réglé), `heads=1` décidé une fois par réception, voie
+  fichiers à un sens par itération avec 30 s de marge, cartes résolues après
+  le scellement seulement, session Hermes drainée par commande.
 - **À re-merger** : tout ce qui précède est fork-side ; aucun fichier
   upstream touché hormis `background.rs` (ordre du balayage) et
   `http_client.rs` (client partagé).

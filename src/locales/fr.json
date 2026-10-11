@@ -4929,6 +4929,7 @@
   "The switch is on but yt-dlp is not installed, so platform links are still refused.": "L’option est activée, mais yt-dlp n’est pas installé ; les liens de plateformes sont donc toujours refusés.",
   "The sync service is unavailable or did not respond in time. Your changes will retry automatically.": "Le service de synchronisation est indisponible ou n’a pas répondu à temps. Vos modifications feront automatiquement l’objet d’une nouvelle tentative.",
   "The sync service refused a request from this version. Update your apps, then try again.": "Le service de synchronisation a refusé une requête de cette version. Mettez vos apps à jour, puis réessayez.",
+  "The sync service refused one item from this version. Retry blocked items after updating your apps.": "Le service de synchronisation a refusé un élément de cette version. Réessayez les éléments bloqués après avoir mis vos apps à jour.",
   "The text is sent and stored unencrypted, unlike your synced notes.": "Le texte est envoyé et conservé sans chiffrement, contrairement à vos notes synchronisées.",
   "The text of the project's files, as it was when the project was shared.": "Le texte des fichiers du projet, tel qu'il était au moment du partage.",
   "The token could not be removed.": "Le jeton n'a pas pu être retiré.",

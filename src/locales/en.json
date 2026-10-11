@@ -4929,6 +4929,7 @@
   "The switch is on but yt-dlp is not installed, so platform links are still refused.": "The switch is on but yt-dlp is not installed, so platform links are still refused.",
   "The sync service is unavailable or did not respond in time. Your changes will retry automatically.": "The sync service is unavailable or did not respond in time. Your changes will retry automatically.",
   "The sync service refused a request from this version. Update your apps, then try again.": "The sync service refused a request from this version. Update your apps, then try again.",
+  "The sync service refused one item from this version. Retry blocked items after updating your apps.": "The sync service refused one item from this version. Retry blocked items after updating your apps.",
   "The text is sent and stored unencrypted, unlike your synced notes.": "The text is sent and stored unencrypted, unlike your synced notes.",
   "The text of the project's files, as it was when the project was shared.": "The text of the project's files, as it was when the project was shared.",
   "The token could not be removed.": "The token could not be removed.",

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef } from "react";
 import { AGENT_DELETE_SESSION_EVENT } from "./agent-events";
@@ -40,33 +41,50 @@ export function useAccountSyncUpdated(refresh: () => Promise<unknown>) {
 }
 
 /**
- * A chat another device deleted (ADR-0108). The sync lane removed its rows
- * and says which runtime session they belonged to; the desktop's runtime
- * still lists it until it is asked to forget it, and the workspace drops it
- * through the same event the sidebar uses. A runtime that no longer has it
- * is the outcome wanted, so its refusal is not an error to show.
+ * Chats another device deleted (ADR-0108). The sync lane removed their rows
+ * and keeps each runtime session id until the workspace says it forgot it,
+ * so a chat deleted while this window was not open is still dropped. Asked
+ * on mount, on every sync event, and when the lane says one just happened.
+ * A runtime that no longer has the session is the outcome wanted, so its
+ * refusal is not an error to show.
  */
 export function useHermesSessionsRemovedElsewhere() {
   useEffect(() => {
     let disposed = false;
-    const subscription = listen<{ session_id?: string }>(
-      "subrosa://hermes-session-removed",
-      (event) => {
-        const sessionId = event.payload?.session_id;
-        if (disposed || !sessionId) return;
-        void deleteHermesSession(sessionId)
-          .catch(() => {})
-          .then(() => {
-            if (disposed) return;
-            window.dispatchEvent(
-              new CustomEvent(AGENT_DELETE_SESSION_EVENT, { detail: { sessionId } }),
-            );
-          });
-      },
-    ).catch(() => () => {});
+    let draining = false;
+    const drain = async () => {
+      if (draining) return;
+      draining = true;
+      try {
+        const removed = await invoke<string[]>("account_hermes_sessions_removed");
+        for (const sessionId of removed) {
+          if (disposed) return;
+          try {
+            await deleteHermesSession(sessionId);
+          } catch {
+            /* Already gone, or no runtime: the local removal is what matters. */
+          }
+          window.dispatchEvent(
+            new CustomEvent(AGENT_DELETE_SESSION_EVENT, { detail: { sessionId } }),
+          );
+          await invoke("account_hermes_session_forgotten", { sessionId });
+        }
+      } catch {
+        /* The next sync event asks again. */
+      } finally {
+        draining = false;
+      }
+    };
+    void drain();
+    const subscriptions = [ACCOUNT_SYNC_UPDATED_EVENT, "subrosa://hermes-session-removed"].map(
+      (name) =>
+        listen(name, () => {
+          if (!disposed) void drain();
+        }).catch(() => () => {}),
+    );
     return () => {
       disposed = true;
-      void subscription.then((unlisten) => unlisten());
+      for (const subscription of subscriptions) void subscription.then((unlisten) => unlisten());
     };
   }, []);
 }

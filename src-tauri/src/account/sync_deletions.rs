@@ -83,6 +83,13 @@ pub(super) async fn deletion_applies(
                 || c.parent_revision.as_deref() == Some(h)
                 || c.resolved_revisions.iter().any(|r| r == h)
                 || h < c.revision.as_str()
+                // Deleted here too: two deletions of one object never need a
+                // person, whichever was minted first.
+                || query("SELECT 1 FROM account_sync_inbox WHERE revision=? AND deleted=1")
+                    .bind(h)
+                    .fetch_optional(&mut *conn)
+                    .await?
+                    .is_some()
         }
     };
     if !settled {

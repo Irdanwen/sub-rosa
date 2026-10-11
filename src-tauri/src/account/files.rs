@@ -41,31 +41,12 @@ async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, 
     let started = Instant::now();
     let method_name = if bytes.is_some() { "PUT" } else { "GET" };
     let request_bytes = bytes.as_ref().map_or(0, |v| v.len() as u64);
-    let req = client
-        .request(
-            if bytes.is_some() {
-                reqwest::Method::PUT
-            } else {
-                reqwest::Method::GET
-            },
-            format!("{}/api/v1/blobs/{id}", s.base),
-        )
-        .timeout(Duration::from_secs(25))
-        .bearer_auth(s.token.expose_str());
-    let req = if let Some(bytes) = bytes {
-        req.header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(bytes)
-    } else {
-        req
-    };
-    let mut response = req.send().await.map_err(|_| error("account_network"))?;
-    if response.status().as_u16() == 429 {
-        // A throttle, not an allowance: the service says so with a short
-        // retry window. One more try here beats parking the file ten minutes.
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        response = client
+    // Built the same way each time it is sent: a throttled chunk is re-sent
+    // with its bytes and its content type, or it is not re-sent at all.
+    let request = || {
+        let req = client
             .request(
-                if request_bytes > 0 {
+                if bytes.is_some() {
                     reqwest::Method::PUT
                 } else {
                     reqwest::Method::GET
@@ -73,7 +54,23 @@ async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, 
                 format!("{}/api/v1/blobs/{id}", s.base),
             )
             .timeout(Duration::from_secs(25))
-            .bearer_auth(s.token.expose_str())
+            .bearer_auth(s.token.expose_str());
+        match &bytes {
+            Some(bytes) => req
+                .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+                .body(bytes.clone()),
+            None => req,
+        }
+    };
+    let mut response = request()
+        .send()
+        .await
+        .map_err(|_| error("account_network"))?;
+    if response.status().as_u16() == 429 {
+        // A throttle, not an allowance: the service says so with a short
+        // retry window. One more try here beats parking the file ten minutes.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        response = request()
             .send()
             .await
             .map_err(|_| error("account_network"))?;
@@ -136,9 +133,11 @@ fn blob_failure_code(status: u16) -> &'static str {
     }
 }
 /// How much of a pass the file lane may spend once the journal is done, and
-/// what it leaves of the pass's own deadline for the bookkeeping after it.
+/// how much of the pass's deadline must remain before one more request is
+/// started: a request has 25 seconds of its own, and the pass must not be
+/// cut mid-write.
 const LANE_BUDGET: Duration = Duration::from_secs(12);
-const LANE_MARGIN: Duration = Duration::from_secs(4);
+const LANE_MARGIN: Duration = Duration::from_secs(30);
 
 pub(super) async fn step(
     app: &AppHandle,
@@ -187,19 +186,24 @@ pub(super) async fn step(
     // makes progress. Durable rows retain the remainder across an iOS
     // suspension without trusting a JavaScript future.
     let started = Instant::now();
+    // One direction per iteration, so an iteration costs one request at most
+    // and the deadline test between two of them is honest.
+    let mut upload_turn = true;
+    let mut idle_turns = 0;
     loop {
         let mut moved = false;
-        if let Some(row) = next_upload(pool).await? {
-            let artifact: String = row.get("artifact_id");
-            match upload_one(pool, s, key, &paths, &gallery).await {
-                Ok(()) => moved = true,
-                Err(failure) if sync::isolatable_file_error(&failure.code) => {
-                    sync::record_issue(pool, "upload", &artifact, &failure.code).await?;
+        if upload_turn {
+            if let Some(row) = next_upload(pool).await? {
+                let artifact: String = row.get("artifact_id");
+                match upload_one(pool, s, key, &paths, &gallery).await {
+                    Ok(()) => moved = true,
+                    Err(failure) if sync::isolatable_file_error(&failure.code) => {
+                        sync::record_issue(pool, "upload", &artifact, &failure.code).await?;
+                    }
+                    Err(failure) => return Err(failure),
                 }
-                Err(failure) => return Err(failure),
             }
-        }
-        if let Some(row) = next_download(pool).await? {
+        } else if let Some(row) = next_download(pool).await? {
             let manifest: String = row.get("id");
             match download_one(pool, s, key, &root, &gallery).await {
                 Ok(()) => moved = true,
@@ -209,8 +213,13 @@ pub(super) async fn step(
                 Err(failure) => return Err(failure),
             }
         }
+        upload_turn = !upload_turn;
+        idle_turns = if moved { 0 } else { idle_turns + 1 };
         let now = Instant::now();
-        if !moved || now.duration_since(started) >= LANE_BUDGET || now + LANE_MARGIN >= deadline {
+        if idle_turns >= 2
+            || now.duration_since(started) >= LANE_BUDGET
+            || now + LANE_MARGIN >= deadline
+        {
             break;
         }
     }
@@ -281,14 +290,16 @@ async fn remove_queued_files(
                 Err(_) => Ok(()),
             },
             // A chat deleted elsewhere: the desktop's runtime still lists it
-            // until the workspace is told (ADR-0108).
+            // until the workspace is told (ADR-0108). The row stays until the
+            // workspace says it forgot the session (`hermes_session_forgotten`):
+            // an event into a webview that is not mounted yet would be lost.
             "hermes-session" => {
                 use tauri::Emitter as _;
                 let _ = app.emit(
                     "subrosa://hermes-session-removed",
                     json!({"session_id":path}),
                 );
-                Ok(())
+                continue;
             }
             _ => Ok(()),
         };
@@ -384,14 +395,14 @@ pub(super) async fn pending_transfers(pool: &SqlitePool) -> Result<i64, AppError
 /// to send or fetch, a file to remove. Read by the tick that wakes the
 /// driver, so it costs four indexed queries and no network.
 pub(super) async fn has_work(pool: &SqlitePool) -> Result<bool, AppError> {
-    if query("SELECT 1 FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
+    if query("SELECT 1 FROM account_sync_removed_files WHERE lane<>'hermes-session' LIMIT 1")
         .fetch_optional(pool)
         .await?
         .is_some()
     {
         return Ok(true);
     }
-    if query("SELECT 1 FROM account_sync_removed_files LIMIT 1")
+    if query("SELECT 1 FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
         .fetch_optional(pool)
         .await?
         .is_some()
@@ -692,6 +703,27 @@ fn ensure_contained(dir: &std::path::Path, path: &PathBuf) -> Result<(), AppErro
     }
     Ok(())
 }
+/// Runtime sessions of chats deleted elsewhere, still to be forgotten by the
+/// desktop workspace (ADR-0108).
+pub(super) async fn hermes_sessions_removed(pool: &SqlitePool) -> Result<Vec<String>, AppError> {
+    Ok(query("SELECT path FROM account_sync_removed_files WHERE lane='hermes-session' ORDER BY id LIMIT 50")
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row| row.get::<String, _>("path"))
+        .collect())
+}
+pub(super) async fn hermes_session_forgotten(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<(), AppError> {
+    query("DELETE FROM account_sync_removed_files WHERE lane='hermes-session' AND path=?")
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

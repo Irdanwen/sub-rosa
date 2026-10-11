@@ -21,6 +21,7 @@ const EMITTED = [
   "sync_storage_limited",
   "sync_timeout",
   "sync_parent_unknown",
+  "sync_request_refused",
   "sync_not_deleted",
   "sync_restore_unavailable",
   "account_invalid_request",

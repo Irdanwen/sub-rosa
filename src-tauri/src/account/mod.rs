@@ -1347,6 +1347,23 @@ pub fn local_work() -> bool {
     LOCAL_WORK.load(std::sync::atomic::Ordering::Relaxed)
 }
 static LOCAL_WORK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Until when the tick and the waiter leave the driver alone, as seconds
+/// since the epoch: set after a pass that could not start.
+static HOLD_OFF_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn epoch_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+pub(super) fn hold_off(for_how_long: Duration) {
+    HOLD_OFF_UNTIL.store(
+        epoch_seconds() + for_how_long.as_secs(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+fn held_off() -> bool {
+    epoch_seconds() < HOLD_OFF_UNTIL.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// How long a wait holds on the service before answering "nothing new".
 /// Under the service's thirty-second request timeout and the client's
@@ -1372,6 +1389,10 @@ async fn waiter(app: AppHandle) {
     let mut unmoved: Option<i64> = None;
     let mut stalls = 0u32;
     loop {
+        if held_off() {
+            tokio::time::sleep(POLL).await;
+            continue;
+        }
         if !supported {
             tokio::time::sleep(POLL).await;
             poke();
@@ -1502,12 +1523,26 @@ pub fn setup(app: &AppHandle) {
                 Err(_) => false,
             };
             LOCAL_WORK.store(waiting, std::sync::atomic::Ordering::Relaxed);
-            if waiting {
+            if waiting && !held_off() {
                 poke();
             }
         }
     });
     tauri::async_runtime::spawn(waiter(app.clone()));
+}
+
+/// Runtime sessions of chats deleted elsewhere that the desktop workspace
+/// has not forgotten yet (ADR-0108); the workspace answers each one.
+#[tauri::command]
+pub async fn account_hermes_sessions_removed(app: AppHandle) -> Result<Vec<String>, AppError> {
+    files::hermes_sessions_removed(&pool(&app).await?).await
+}
+#[tauri::command]
+pub async fn account_hermes_session_forgotten(
+    app: AppHandle,
+    session_id: String,
+) -> Result<(), AppError> {
+    files::hermes_session_forgotten(&pool(&app).await?, &session_id).await
 }
 
 /// Notes and memories a deletion took in the last thirty days (ADR-0108).
