@@ -27,13 +27,13 @@ use super::turns::{
 use crate::domain::types::AppError;
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 use std::path::{Path, PathBuf};
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::audio::well_known::CODEC_ID_VORBIS;
+use symphonia::core::codecs::audio::{AudioCodecId, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 /// What decoding produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,25 +64,19 @@ pub fn decode_to_transcription_wav(
         hint.with_extension(extension);
     }
 
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             stream,
-            &FormatOptions {
-                enable_gapless: true,
-                ..Default::default()
-            },
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(unsupported_or_failed)?;
-    let mut format = probed.format;
 
     // The *default* track of a video file is usually the video track, so pick
-    // the first track with a codec we can actually decode.
+    // the first audio track with a codec we can actually name.
     let track = format
-        .tracks()
-        .iter()
-        .find(|track| track.codec_params.codec != CODEC_TYPE_NULL)
+        .first_track_known_codec(TrackType::Audio)
         .ok_or_else(|| {
             AppError::new(
                 "media_decode_unsupported",
@@ -90,14 +84,26 @@ pub fn decode_to_transcription_wav(
             )
         })?;
     let track_id = track.id;
-    let codec = format!("{:?}", track.codec_params.codec);
+    let Some(params) = track
+        .codec_params
+        .as_ref()
+        .and_then(|params| params.audio())
+    else {
+        return Err(AppError::new(
+            "media_decode_unsupported",
+            "This file has no audio track this app can read.",
+        ));
+    };
+    // Gapless: drop the encoder's priming and padding frames, so the
+    // transcript's timeline starts where the recording does.
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(params, &AudioDecoderOptions::default().gapless(true))
         .map_err(unsupported_or_failed)?;
+    let codec = decoder.codec_info().short_name.to_string();
 
     // Pass one: decode, downmix, resample, write. Gain waits for the peak.
     let mut writer: Option<TranscriptionWavWriter> = None;
-    let mut sample_buffer: Option<SampleBuffer<i16>> = None;
+    let mut interleaved: Vec<i16> = Vec::new();
     let mut mono: Vec<i16> = Vec::new();
     let mut peak = 0.0_f32;
     let mut input_rate = 0_u32;
@@ -105,8 +111,9 @@ pub fn decode_to_transcription_wav(
 
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            // Symphonia signals a clean end of stream as an EOF io error.
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
+            // A truncated file ends on an EOF io error rather than a clean end.
             Err(SymphoniaError::IoError(error))
                 if error.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
@@ -115,7 +122,7 @@ pub fn decode_to_transcription_wav(
             Err(SymphoniaError::ResetRequired) => break,
             Err(error) => return Err(decode_failed(error)),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
         let buffer = match decoder.decode(&packet) {
@@ -127,16 +134,16 @@ pub fn decode_to_transcription_wav(
             Err(error) => return Err(decode_failed(error)),
         };
 
-        let spec = *buffer.spec();
-        let channels = spec.channels.count().max(1);
+        let rate = buffer.spec().rate().max(1);
+        let channels = buffer.spec().channels().count().max(1);
         if writer.is_none() {
-            input_rate = spec.rate.max(1);
+            input_rate = rate;
             writer = Some(TranscriptionWavWriter::create(
                 output_path,
                 input_rate,
                 1.0,
             )?);
-        } else if spec.rate.max(1) != input_rate {
+        } else if rate != input_rate {
             // Rate changes mid-stream are pathological; refusing is honest.
             return Err(AppError::new(
                 "media_decode_unsupported",
@@ -144,23 +151,12 @@ pub fn decode_to_transcription_wav(
             ));
         }
 
-        let capacity = buffer.capacity() as u64;
-        // `is_none_or` would read better but is newer than this crate's MSRV.
-        let needs_new_buffer = match sample_buffer.as_ref() {
-            Some(existing) => (existing.capacity() as u64) < capacity * channels as u64,
-            None => true,
-        };
-        if needs_new_buffer {
-            sample_buffer = Some(SampleBuffer::<i16>::new(capacity, spec));
-        }
-        let Some(interleaved) = sample_buffer.as_mut() else {
-            continue;
-        };
-        interleaved.copy_interleaved_ref(buffer);
+        // Reused across packets: it grows to the largest packet and stays.
+        buffer.copy_to_vec_interleaved(&mut interleaved);
 
         mono.clear();
         mono.reserve(interleaved.len() / channels + 1);
-        for frame in interleaved.samples().chunks(channels) {
+        for frame in interleaved.chunks(channels) {
             let sum: i32 = frame.iter().map(|sample| *sample as i32).sum();
             let value =
                 (sum / frame.len().max(1) as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
@@ -201,6 +197,18 @@ pub fn decode_to_transcription_wav(
         duration_ms: (frames as i64 * 1000) / TRANSCRIPTION_SAMPLE_RATE as i64,
         codec,
     })
+}
+
+/// Decoder options for a caller that keeps every decoded frame, encoder
+/// priming and padding included, rather than trimming them away.
+///
+/// Vorbis is the exception. Its first packet only primes the overlap and
+/// carries no audio of its own (Vorbis I, section 4.3.8): Symphonia 0.5 always
+/// returned nothing for it, while 0.6 returns the unoverlapped half-window
+/// unless gapless trimming is on, which would put up to 1024 frames of
+/// artifact in front of the real audio. Trimming keeps Vorbis to its audio.
+pub(crate) fn untrimmed_decoder_options(codec: AudioCodecId) -> AudioDecoderOptions {
+    AudioDecoderOptions::default().gapless(codec == CODEC_ID_VORBIS)
 }
 
 /// Rewrite a 16 kHz mono WAV with a fixed gain, streaming through a sibling

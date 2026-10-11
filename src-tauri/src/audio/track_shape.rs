@@ -8,13 +8,13 @@
 
 use std::path::Path;
 
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::audio::CODEC_ID_NULL_AUDIO;
+use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymphoniaError;
+use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 use crate::domain::types::AppError;
 
@@ -40,27 +40,33 @@ pub fn measure(path: &Path, bins: usize) -> Result<Waveform, AppError> {
     if let Some(extension) = path.extension().and_then(|value| value.to_str()) {
         hint.with_extension(extension);
     }
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(failed)?;
-    let mut format = probed.format;
     // The audio track, not merely the first decodable one: a clip's default
     // track is its picture.
-    let track = format
+    let (track_id, params) = format
         .tracks()
         .iter()
-        .find(|track| {
-            track.codec_params.codec != CODEC_TYPE_NULL && track.codec_params.sample_rate.is_some()
+        .find_map(|track| match &track.codec_params {
+            Some(CodecParameters::Audio(params))
+                if params.codec != CODEC_ID_NULL_AUDIO && params.sample_rate.is_some() =>
+            {
+                Some((track.id, params.clone()))
+            }
+            _ => None,
         })
         .ok_or_else(|| AppError::new("media_decode_unsupported", "No audio track."))?;
-    let track_id = track.id;
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(
+            &params,
+            &super::decode::untrimmed_decoder_options(params.codec),
+        )
         .map_err(failed)?;
 
     let mut windows: Vec<f32> = Vec::new();
@@ -68,10 +74,11 @@ pub fn measure(path: &Path, bins: usize) -> Result<Waveform, AppError> {
     let mut in_window = 0_usize;
     let mut frames = 0_u64;
     let mut rate = 0_u32;
-    let mut buffer: Option<SampleBuffer<f32>> = None;
+    let mut samples: Vec<f32> = Vec::new();
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(SymphoniaError::IoError(error))
                 if error.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
@@ -80,7 +87,7 @@ pub fn measure(path: &Path, bins: usize) -> Result<Waveform, AppError> {
             Err(SymphoniaError::ResetRequired) => break,
             Err(error) => return Err(failed(error)),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
         let decoded = match decoder.decode(&packet) {
@@ -89,22 +96,10 @@ pub fn measure(path: &Path, bins: usize) -> Result<Waveform, AppError> {
             Err(SymphoniaError::ResetRequired) => break,
             Err(error) => return Err(failed(error)),
         };
-        let spec = *decoded.spec();
-        rate = spec.rate.max(1);
-        let channels = spec.channels.count().max(1);
-        let capacity = decoded.capacity() as u64;
-        let needs_new = match buffer.as_ref() {
-            Some(existing) => (existing.capacity() as u64) < capacity * channels as u64,
-            None => true,
-        };
-        if needs_new {
-            buffer = Some(SampleBuffer::<f32>::new(capacity, spec));
-        }
-        let Some(samples) = buffer.as_mut() else {
-            continue;
-        };
-        samples.copy_interleaved_ref(decoded);
-        for frame in samples.samples().chunks(channels) {
+        rate = decoded.spec().rate().max(1);
+        let channels = decoded.spec().channels().count().max(1);
+        decoded.copy_to_vec_interleaved(&mut samples);
+        for frame in samples.chunks(channels) {
             let loudest = frame
                 .iter()
                 .fold(0.0_f32, |max, sample| max.max(sample.abs()));

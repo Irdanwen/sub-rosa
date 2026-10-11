@@ -17,13 +17,11 @@ use base64::Engine as _;
 use serde::Deserialize;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 /// What the replies are read with: the engine and voice chosen in Settings
 /// (the webview resolves `voice-preference.ts` and hands them over).
@@ -86,30 +84,36 @@ pub fn decode_clip(bytes: &[u8], extension: &str) -> Result<(Vec<f32>, u32), App
     let stream = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());
     let mut hint = Hint::new();
     hint.with_extension(extension);
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|error| failed(error.to_string()))?;
-    let mut format = probed.format;
     let track = format
-        .tracks()
-        .iter()
-        .find(|track| track.codec_params.codec != CODEC_TYPE_NULL)
+        .first_track_known_codec(TrackType::Audio)
         .ok_or_else(|| failed("no audio track".to_string()))?;
     let track_id = track.id;
+    let params = track
+        .codec_params
+        .as_ref()
+        .and_then(|params| params.audio())
+        .ok_or_else(|| failed("no audio track".to_string()))?;
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(
+            params,
+            &crate::audio::decode::untrimmed_decoder_options(params.codec),
+        )
         .map_err(|error| failed(error.to_string()))?;
     let mut samples = Vec::new();
     let mut rate = 0u32;
-    let mut buffer: Option<SampleBuffer<f32>> = None;
+    let mut interleaved: Vec<f32> = Vec::new();
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(SymphoniaError::IoError(error))
                 if error.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
@@ -118,7 +122,7 @@ pub fn decode_clip(bytes: &[u8], extension: &str) -> Result<(Vec<f32>, u32), App
             Err(SymphoniaError::ResetRequired) => break,
             Err(error) => return Err(failed(error.to_string())),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
         let decoded = match decoder.decode(&packet) {
@@ -126,22 +130,10 @@ pub fn decode_clip(bytes: &[u8], extension: &str) -> Result<(Vec<f32>, u32), App
             Err(SymphoniaError::DecodeError(_)) => continue,
             Err(error) => return Err(failed(error.to_string())),
         };
-        let spec = *decoded.spec();
-        rate = spec.rate.max(1);
-        let channels = spec.channels.count().max(1);
-        let capacity = decoded.capacity() as u64;
-        let needs_new = match buffer.as_ref() {
-            Some(existing) => (existing.capacity() as u64) < capacity * channels as u64,
-            None => true,
-        };
-        if needs_new {
-            buffer = Some(SampleBuffer::<f32>::new(capacity, spec));
-        }
-        let Some(interleaved) = buffer.as_mut() else {
-            continue;
-        };
-        interleaved.copy_interleaved_ref(decoded);
-        samples.extend(super::resample::to_mono(interleaved.samples(), channels));
+        rate = decoded.spec().rate().max(1);
+        let channels = decoded.spec().channels().count().max(1);
+        decoded.copy_to_vec_interleaved(&mut interleaved);
+        samples.extend(super::resample::to_mono(&interleaved, channels));
     }
     if samples.is_empty() || rate == 0 {
         return Err(failed("the clip has no audio".to_string()));
