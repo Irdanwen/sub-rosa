@@ -15,6 +15,15 @@ if ! rg -q '/subrosa/assets/' "$repo_root/website/dist/index.html"; then
   echo 'Build the website with VITE_SITE_BASE=/subrosa/ before deployment.' >&2
   exit 1
 fi
+# Account pages live on their own origin, so no other application on this
+# domain shares the account vault's browser storage. Built without
+# VITE_ACCOUNT_ORIGIN, the public site links to /subrosa/account instead and
+# serves the account app on furetier.com, which is what the two deploys of
+# 2026-10-10 did until 2026-10-11.
+if ! rg -q 'href="https://subrosa\.furetier\.com/account' "$repo_root/website/dist/index.html"; then
+  echo 'Build the website with VITE_ACCOUNT_ORIGIN=https://subrosa.furetier.com before deployment.' >&2
+  exit 1
+fi
 
 ssh "${ssh_args[@]}" "$deploy_host" \
   "install -d -m 755 '$deploy_root/releases' '$deploy_root/www' && mkdir -m 755 '$deploy_root/releases/$deploy_id'"
