@@ -1,2 +1,7 @@
 /account/* /index.html 200
 /account /index.html 200
+/office/word.html /office/moved.html 308
+/office/excel.html /office/moved.html 308
+/office/powerpoint.html /office/moved.html 308
+/office/session.html /office/moved.html 308
+/office/commands.html /office/moved.html 308

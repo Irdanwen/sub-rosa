@@ -2,7 +2,7 @@
   "name": "@subrosa/office-addins",
   "version": "0.1.0",
   "private": true,
-  "description": "Sub Rosa in Word, Excel and PowerPoint: task panes served by the account site, each a browser device of its account (ADR-0102).",
+  "description": "Sub Rosa in Word, Excel and PowerPoint: task panes served by their own origin, each a browser device of its account (ADR-0102).",
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && vite build",

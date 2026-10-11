@@ -4,35 +4,39 @@
 use super::*;
 use serde_json::json;
 
-const SPACE: &str = "0191d1a4-5a00-7000-8000-00000000a001";
-const ALICE: &str = "0191d1a4-0000-7000-8000-0000000000a1";
-const BOB: &str = "0191d1a4-0000-7000-8000-0000000000b2";
-const CAROL: &str = "0191d1a4-0000-7000-8000-0000000000c3";
+pub(crate) const SPACE: &str = "0191d1a4-5a00-7000-8000-00000000a001";
+pub(crate) const ALICE: &str = "0191d1a4-0000-7000-8000-0000000000a1";
+pub(crate) const BOB: &str = "0191d1a4-0000-7000-8000-0000000000b2";
+pub(crate) const CAROL: &str = "0191d1a4-0000-7000-8000-0000000000c3";
 const INVITATION: &str = "0191d1a4-1000-7000-8000-00000000f001";
-const CREATED: &str = "2026-10-08T12:00:00Z";
+pub(crate) const CREATED: &str = "2026-10-08T12:00:00Z";
 
 fn identity(seed: u8) -> IdentitySecret {
     IdentitySecret::from_seeds([seed; 32], [seed.wrapping_add(100); 32])
 }
-fn alice() -> IdentitySecret {
+pub(crate) fn alice() -> IdentitySecret {
     identity(1)
 }
-fn bob() -> IdentitySecret {
+pub(crate) fn bob() -> IdentitySecret {
     identity(2)
 }
-fn carol() -> IdentitySecret {
+pub(crate) fn carol() -> IdentitySecret {
     identity(3)
 }
-fn member(secret: &IdentitySecret, account: &str, role: &str) -> HeadMember {
+/// The keys a dishonest service holds.
+pub(crate) fn mallory() -> IdentitySecret {
+    identity(13)
+}
+pub(crate) fn member(secret: &IdentitySecret, account: &str, role: &str) -> HeadMember {
     HeadMember::from_bundle(&secret.bundle(account, CREATED), role)
 }
-fn key(epoch: u8) -> [u8; 32] {
+pub(crate) fn key(epoch: u8) -> [u8; 32] {
     [0x40 + epoch; 32]
 }
 
 /// Epoch 1 (Alice alone), 2 (Bob admitted), 3 (Carol admitted), 4 (Bob left,
 /// Carol rotated).
-fn chain() -> Vec<EpochHead> {
+pub(crate) fn chain() -> Vec<EpochHead> {
     let e1 = EpochHead::sign(
         HeadDraft {
             space_id: SPACE,
@@ -105,7 +109,78 @@ fn chain() -> Vec<EpochHead> {
     vec![e1, e2, e3, e4]
 }
 
-fn body(kind: &str, object_id: &str, author: &str, data: Value) -> ObjectBody {
+/// Epoch 1 as a dishonest service would forge it for Bob: Alice's place held
+/// by a key the service controls, Bob named with his real keys so a key can
+/// be sealed to him, signed by the false Alice as a first head must be.
+pub(crate) fn forged_first_head() -> EpochHead {
+    EpochHead::sign(
+        HeadDraft {
+            space_id: SPACE,
+            epoch: 1,
+            prev: None,
+            owner: ALICE,
+            members: vec![
+                member(&mallory(), ALICE, ROLE_OWNER),
+                member(&bob(), BOB, ROLE_MEMBER),
+            ],
+            key: &key(13),
+            author: ALICE,
+            departures: vec![],
+            created_at: CREATED,
+        },
+        &mallory(),
+    )
+}
+
+/// What a device that trusts a head makes of the heads a service returns:
+/// `ok` with the epochs it may use, or `rollback`.
+fn chain_cases() -> Value {
+    let heads = chain();
+    let mut mutated = heads[1].clone();
+    mutated.members[1].ed25519 = mallory().bundle(BOB, CREATED).ed25519;
+    let forged = forged_first_head();
+    let case = |name: &str, shown: Vec<&EpochHead>, expect: &str, epochs: &[u64]| {
+        let mut case = json!({
+            "name": name,
+            "trusted_epoch": 3,
+            "heads": shown,
+            "expect": expect,
+        });
+        if expect == "ok" {
+            case["epochs"] = json!(epochs);
+        }
+        case
+    };
+    json!([
+        case("genuine", heads.iter().collect(), "ok", &[1, 2, 3, 4]),
+        case(
+            "forged_epoch_1",
+            vec![&forged, &heads[1], &heads[2], &heads[3]],
+            "rollback",
+            &[],
+        ),
+        case(
+            "epoch_1_omitted",
+            vec![&heads[1], &heads[2], &heads[3]],
+            "ok",
+            &[2, 3, 4],
+        ),
+        case(
+            "epoch_2_mutated",
+            vec![&heads[0], &mutated, &heads[2], &heads[3]],
+            "rollback",
+            &[],
+        ),
+        case(
+            "epoch_1_below_a_gap",
+            vec![&heads[0], &heads[2], &heads[3]],
+            "rollback",
+            &[],
+        ),
+    ])
+}
+
+pub(crate) fn body(kind: &str, object_id: &str, author: &str, data: Value) -> ObjectBody {
     ObjectBody {
         v: 1,
         kind: kind.into(),
@@ -118,7 +193,7 @@ fn body(kind: &str, object_id: &str, author: &str, data: Value) -> ObjectBody {
         data,
     }
 }
-fn wire(body: &ObjectBody, epoch: u64, parts: &SealedParts) -> WireObject {
+pub(crate) fn wire(body: &ObjectBody, epoch: u64, parts: &SealedParts) -> WireObject {
     WireObject {
         object_id: body.object_id.clone(),
         revision: body.revision.clone(),
@@ -468,6 +543,7 @@ fn vectors() -> Value {
             "acceptance_bob": acceptance_proof(&invite_secret, INVITATION, SPACE, &bob_bundle),
         },
         "operations": operations(),
+        "chain_cases": chain_cases(),
         "profile_id": {
             "space_id": SPACE,
             "account_id": CAROL,
@@ -498,13 +574,65 @@ fn vectors_match_the_shared_fixture() {
 #[test]
 fn a_whole_chain_verifies_from_its_anchor() {
     let heads = chain();
-    let latest = verify_chain(None, &heads, Some(&alice().bundle(ALICE, CREATED))).unwrap();
-    assert_eq!(latest.epoch, 4);
-    // From a trusted middle, too.
+    let chain = verify_chain(None, &heads, Some(&alice().bundle(ALICE, CREATED))).unwrap();
+    assert_eq!(chain.latest.epoch, 4);
     assert_eq!(
-        verify_chain(Some(&heads[1]), &heads, None).unwrap().epoch,
-        4
+        chain.heads.keys().copied().collect::<Vec<_>>(),
+        [1, 2, 3, 4]
     );
+    // From a trusted middle, too: the later heads forward, the earlier one
+    // by the hash the trusted head names.
+    let chain = verify_chain(Some(&heads[1]), &heads, None).unwrap();
+    assert_eq!(chain.latest.epoch, 4);
+    assert_eq!(
+        chain.heads.keys().copied().collect::<Vec<_>>(),
+        [1, 2, 3, 4]
+    );
+}
+
+/// The shared chain cases, as the committed fixture holds them: the browser
+/// replays the same file.
+#[test]
+fn chain_cases_from_the_fixture_hold() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/spaces-v1.json");
+    let fixture: Value =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("fixture")).unwrap();
+    let genuine = chain();
+    let cases = fixture["chain_cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 5);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let trusted =
+            &genuine[usize::try_from(case["trusted_epoch"].as_u64().unwrap() - 1).unwrap()];
+        let heads: Vec<EpochHead> = serde_json::from_value(case["heads"].clone()).unwrap();
+        let result = verify_chain(Some(trusted), &heads, None);
+        match case["expect"].as_str().unwrap() {
+            "ok" => {
+                let chain = result.unwrap_or_else(|e| panic!("{name}: {}", e.code));
+                let epochs: Vec<u64> = serde_json::from_value(case["epochs"].clone()).unwrap();
+                assert_eq!(
+                    chain.heads.keys().copied().collect::<Vec<_>>(),
+                    epochs,
+                    "{name}"
+                );
+                for (epoch, head) in &chain.heads {
+                    assert_eq!(
+                        head,
+                        &genuine[usize::try_from(*epoch - 1).unwrap()],
+                        "{name}"
+                    );
+                }
+            }
+            _ => assert_eq!(result.unwrap_err().code, "space_rollback", "{name}"),
+        }
+    }
+}
+
+#[test]
+fn an_omitted_old_head_leaves_its_key_without_a_head() {
+    let heads = chain();
+    let chain = verify_chain(Some(&heads[2]), &heads[1..], None).unwrap();
+    assert!(!chain.heads.contains_key(&1));
 }
 
 #[test]

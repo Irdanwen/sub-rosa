@@ -56,17 +56,35 @@ pub fn socket_path() -> Option<PathBuf> {
 }
 
 /// The pipe for a Windows user. Pipes share one namespace per machine, so
-/// the user's name is part of it.
-pub fn pipe_name_for(user: &str, debug: bool) -> String {
-    let user: String = user
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-        .collect();
-    format!(r"\\.\pipe\{}.browser-extension.{user}", folder_name(debug))
+/// the user's name is part of it; without one (an empty or unreadable
+/// `USERNAME`) there is no pipe, rather than one name every such account
+/// would share. The pipe's DACL (`pipe_security`) is what keeps other users
+/// out; the name only keeps two users' apps from colliding.
+pub fn pipe_name_for(user: &str, debug: bool) -> Option<String> {
+    // Every other character is spelled as its UTF-8 bytes, so two names that
+    // differ only in letters a pipe name could not carry stay two pipes.
+    let mut spelled = String::new();
+    for c in user.trim().chars() {
+        if c.is_ascii_alphanumeric() || matches!(c, '-' | '.') {
+            spelled.push(c);
+        } else {
+            let mut bytes = [0_u8; 4];
+            for byte in c.encode_utf8(&mut bytes).bytes() {
+                spelled.push_str(&format!("_{byte:02x}"));
+            }
+        }
+    }
+    let spelled: String = spelled.chars().take(160).collect();
+    (!spelled.is_empty()).then(|| {
+        format!(
+            r"\\.\pipe\{}.browser-extension.{spelled}",
+            folder_name(debug)
+        )
+    })
 }
 
 #[cfg(windows)]
-pub fn pipe_name() -> String {
+pub fn pipe_name() -> Option<String> {
     let user = std::env::var("USERNAME").unwrap_or_default();
     pipe_name_for(&user, cfg!(debug_assertions))
 }
@@ -117,9 +135,23 @@ mod tests {
     #[test]
     fn the_pipe_is_per_user_and_per_build() {
         assert_eq!(
-            pipe_name_for("Ana Smith", false),
-            r"\\.\pipe\xyz.carpediem.subrosa.browser-extension.AnaSmith"
+            pipe_name_for("Ana Smith", false).as_deref(),
+            Some(r"\\.\pipe\xyz.carpediem.subrosa.browser-extension.Ana_20Smith")
         );
         assert_ne!(pipe_name_for("ana", true), pipe_name_for("ana", false));
+    }
+
+    #[test]
+    fn no_user_name_means_no_pipe() {
+        assert_eq!(pipe_name_for("", false), None);
+        assert_eq!(pipe_name_for("   ", true), None);
+        // A name in another script is still that user's own pipe.
+        let anna = pipe_name_for("Анна", false).unwrap();
+        assert!(
+            anna.ends_with(".browser-extension._d0_90_d0_bd_d0_bd_d0_b0"),
+            "{anna}"
+        );
+        assert_ne!(pipe_name_for("Анна", false), pipe_name_for("Анны", false));
+        assert!(!pipe_name_for("a\\b", false).unwrap().ends_with("a\\b"));
     }
 }

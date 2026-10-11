@@ -1,14 +1,103 @@
 # HANDOFF — Ce que le fork Sub Rosa attend de l'humain
 
+## Mise à jour du 10 octobre 2026 : ce qui reste aux portes externes après 1.89.0
+
+L'audit de 1.89.0 a repassé la matrice de parité (`docs/parity/chatgpt.md`) :
+tout ce qui suit y est marqué `gated` ou `unverified` tant que l'action n'est
+pas faite. Quand une porte s'ouvre, repasser les cellules à `yes` puis lancer
+`node scripts/parity-gaps.mjs`.
+
+1. **Carpe Diem #464 à déployer (Geolours)** : fusionnée le 2026-10-10, pas
+   déployée. Sans elle, l'opérateur n'émet pas de clé navigateur et ne répond
+   pas au CORS du site : toute la colonne Web (`/app`) et les extensions Office
+   s'arrêtent à l'écran « Ce navigateur a besoin d'une nouvelle clé ». Ordre
+   **obligatoire** : opérateur Carpe Diem (CVM Phala), puis service de comptes
+   (migration `0011` et ses routes), puis site (rebuild SRI et CSP des vhosts).
+   Le service et le site sont déjà en ligne : l'ordre a été inversé en 1.89.0,
+   il faut donc déployer l'opérateur sans attendre et vérifier ensuite par
+   `curl` le CORS et la naissance d'une clé (voir
+   [docs/browser-device-deployment.md](docs/browser-device-deployment.md)).
+   **Carpe Diem #465** (synthèse vocale en flux) est facultative : la voix
+   marche sans, avec plus de latence. **Carpe Diem #469** (ouverte le
+   2026-10-10) ajoute `https://office.subrosa.furetier.com` à
+   `SUBROSA_SITE_ORIGINS` : à déployer avec #464, sinon chaque appel d'un
+   volet Office est refusé par CORS. **#468** aligne le contrat partenaire
+   (preuve `ath` sur le corps exact, ce qu'une révocation échouée enregistre).
+   Enfin, l'opérateur n'a **pas d'entrée `subrosa` dans `PARTNERS_JSON`**
+   (id `subrosa`, issuer `https://subrosa.furetier.com`, kid
+   `sr-eQvPaeyZV9pBLrdZ`) : c'est pourquoi les révocations de clés que le
+   service envoie reçoivent 404 (15 lignes en échec en production le
+   2026-10-10, comptées sur `/readyz` sous `partner_revocations`). Tant que
+   l'entrée manque, une clé d'appareil révoquée côté Sub Rosa reste valable
+   chez Carpe Diem jusqu'à son expiration.
+2. **Clients OAuth Google, Microsoft et GitHub** : à créer, puis poser les
+   trois secrets CI `SUBROSA_GOOGLE_CLIENT_ID`, `SUBROSA_MS_CLIENT_ID` et
+   `SUBROSA_GITHUB_CLIENT_ID` (et `SUBROSA_GOOGLE_REDIRECT_URI` pour le client
+   iOS de Google). Sans eux, aucune build n'offre ces connecteurs. Étapes
+   exactes : section du paquet W8 (création dans Google Cloud, Entra, GitHub
+   OAuth app en device flow, schéma `subrosa://`).
+3. **Listings de l'extension navigateur** : Chrome Web Store, Edge Add-ons et
+   Firefox Add-ons (AMO). Aujourd'hui l'extension ne s'installe qu'en mode
+   développeur. Une fois listée, reporter l'id attribué par chaque store dans
+   `CHROMIUM_EXTENSION_IDS` / `GECKO_EXTENSION_ID`
+   (`src-tauri/src/browser_extension/host_manifest.rs`), sinon l'hôte natif
+   refuse l'extension installée depuis le store.
+4. **Office, AppSource** : soumettre les trois manifestes
+   (`office-addins/manifests/*.xml`) à la validation AppSource de Microsoft,
+   **après** la bascule vers l'origine Office dédiée (point 8). Jusque-là, les
+   compléments ne s'installent que par chargement latéral, et ils n'ont jamais
+   été lancés dans un vrai Excel, Word ou PowerPoint.
+5. **CASA pour Gmail** : l'accès complet à Gmail est un scope restreint ;
+   Google exige l'évaluation de sécurité indépendante CASA avant de l'ouvrir.
+   Le code est là derrière `GMAIL_VERIFIED` (`src-tauri/src/connectors/builtin.rs`),
+   qui passe à `true` par un changement de build après l'évaluation.
+6. **Revue indépendante du protocole des espaces** (projets partagés,
+   discussions de groupe, ADR-0098, `docs/security/spaces-protocol.md`) : à
+   commander. L'interrupteur « Aperçu » reste éteint par défaut jusque-là.
+7. **Essais sur matériel** : montre, widgets, Santé (iPhone et Android),
+   numérisation de documents, voix sur haut-parleur de téléphone (annulation
+   d'écho). Rien de cela n'a tourné sur un appareil réel ; la section
+   « Unverified » de la matrice dit quoi essayer.
+8. **Bascule de l'origine Office** vers `office.subrosa.furetier.com` (DNS
+   Cloudflare, vhost 80, certificat certbot en webroot, vhost 443, publication),
+   pour que `office.js` ne s'exécute plus sur l'origine du compte. Ordre
+   exact : section « Deployment » de [docs/office-addins.md](docs/office-addins.md) ;
+   l'étape 0 (CORS de l'opérateur) est Carpe Diem #469.
+9. **Admin Keycloak** : remplacer l'admin temporaire `subrosa-bootstrap` par un
+   admin permanent à mot de passe généré, gardé dans `private/` du VPS et
+   jamais affiché, puis supprimer `subrosa-bootstrap` et faire tourner le mot
+   de passe de l'ancien compte (`python3 stack.py admin-rotate --dry-run`, puis
+   sans `--dry-run`, depuis `/opt/subrosa-accounts/deploy`).
+10. **Une dépense sur la clé Carpe Diem de ce Mac qui ne vient pas de l'app**
+    (vue pendant la vérification réelle du 2026-10-10, registre en lecture
+    seule `GET /api/operator/buyer/usage`) : un appel `gemini-3-5-flash` toutes
+    les 15 minutes et un `gpt-4o-mini` via OpenRouter toutes les 24 minutes,
+    plus une session interactive `claude-fable-5-1` avec cinq images (69
+    crédits entre 19:33 et 19:42). Le registre ne nomme pas le client. À
+    identifier (une routine de l'app installée, un autre outil qui tient la
+    même clé) et, si c'est inconnu, faire tourner la clé depuis le compte.
+11. **Deux pièges de développement, pas des portes.** Une build de debug
+    lancée sur ce Mac remplace le LaunchAgent `ai.hermes.gateway` de l'app
+    installée par le sien (même label, venu de la CLI Hermes épinglée) :
+    après une session `pnpm tauri:dev`, vérifier que
+    `~/Library/LaunchAgents/ai.hermes.gateway.plist` pointe de nouveau sur
+    `xyz.carpediem.subrosa/hermes`, sinon les routines de l'app installée ne
+    tournent plus. Et les deux apps écoutent le même raccourci de barre de
+    chat : avant 1.89.1, un ⌥Espace fait planter la 1.89.0 installée.
+12. **Question produit (ADR-0084)** : en mode protégé, la galerie Studio
+    montre encore les rendus adultes déjà produits. L'ADR promet des rendus
+    neufs filtrés et des modèles adultes cachés, pas une galerie masquée. À
+    trancher par le titulaire ; la matrice ne change pas pour cela.
+
 ## Mise à jour du 8 octobre 2026 : un navigateur devient un appareil (ADR-0096)
 
 Le client web pourra obtenir sa propre clé Carpe Diem, bornée (2 $ par jour,
 7 jours, ni routeur ni x402). Trois déploiements, **dans cet ordre** :
 
-1. **Carpe Diem (porte externe, Geolours)** : la branche locale
-   `feat/subrosa-browser-devices` du dépôt Carpe Diem (non poussée) porte la
-   borne dans l'opérateur et le CORS du site Sub Rosa. À relire, fusionner et
-   déployer sur le CVM Phala.
+1. **Carpe Diem (porte externe, Geolours)** : la borne dans l'opérateur et le
+   CORS du site Sub Rosa, d'abord sur la branche `feat/subrosa-browser-devices`,
+   sont devenus la PR Carpe Diem #464, fusionnée le 2026-10-10 et pas encore
+   déployée sur le CVM Phala (voir la mise à jour du 10 octobre).
 2. **Service de comptes** : migration `0011` et deux routes, seulement après
    l'opérateur (sinon l'ancien opérateur émettrait une clé sans borne).
 3. **Site** : rebuild (intégrité SRI) et nouvelle CSP dans les vhosts nginx du
@@ -301,3 +390,130 @@ la feuille Health Connect et l'écran de justification, l'historique au-delà
 de trente jours sur Android. Le pont iOS est vérifié à la compilation
 (`cargo check --target aarch64-apple-ios`), le pont Kotlin seulement par la
 CI Android.
+
+## 10. Clients OAuth des connecteurs (Google, Microsoft, GitHub) : ⏳ en attente
+
+Les connecteurs intégrés se connectent avec les identifiants client **de l'app**,
+compilés dans le binaire (`option_env!`, `src-tauri/src/connectors/build_clients.rs`).
+Sans eux, le connecteur est absent : Réglages › Connecteurs l'affiche « Indisponible
+dans cette version ». La 1.89.0 est sortie sans les trois. Depuis, chaque build le dit :
+`cargo:warning` dans `build.rs`, et une annotation `::warning::` sur les runs de
+`release.yml`, `ios-release.yml` et `android-release.yml` (`scripts/connector-clients.mjs`).
+Un identifiant client OAuth n'est pas un secret (il est lisible dans l'app livrée) ;
+aucun **secret client** n'est créé ni demandé, les trois flux sont publics (PKCE ou
+device flow).
+
+**Où chaque fournisseur est proposé** (vérifié dans la documentation des fournisseurs,
+2026-10-10) :
+
+| | Mac | iPhone | Windows | Android |
+|---|---|---|---|---|
+| Google | oui | oui | non | non |
+| Microsoft | oui | oui | oui | oui |
+| GitHub | oui | oui | oui | oui |
+
+Google ne renvoie vers un schéma propre à l'app (`subrosa://…`) pour **aucun** type de
+client : le type *iOS* accepte seulement l'identifiant client inversé
+(`com.googleusercontent.apps.<id>:/oauth2redirect`), le type *Desktop app* seulement une
+adresse de bouclage (`http://127.0.0.1:<port>`, que l'app n'écoute pas), et le type
+*Android* n'accepte plus de schéma personnalisé. Google documente aussi que les apps
+macOS utilisent un client de type *iOS*. Un seul client *iOS* (identifiant de bundle
+`xyz.carpediem.subrosa`, commun au Mac et à l'iPhone) sert donc les deux plateformes
+Apple ; l'app dérive l'adresse de retour de l'identifiant et les workflows enregistrent
+le schéma inversé dans le bundle. Windows et Android n'ont pas Google (addendum du
+2026-10-10 de l'ADR-0092). Sources :
+[OAuth 2.0 for iOS & Desktop Apps](https://developers.google.com/identity/protocols/oauth2/native-app),
+[Google Sign-In, iOS et macOS](https://developers.google.com/identity/sign-in/ios/start-integrating).
+
+**La version web et les compléments Office ne lisent aucun identifiant client** :
+Google, Microsoft et GitHub y sont « app seulement » (`APP_ONLY_AUTH`,
+`website/src/client/connectors/store.ts`) et passent par une app ouverte (ADR-0107).
+Rien à poser dans les builds du site ni dans ses recettes de déploiement.
+
+### 10.1 Google (Google Cloud)
+
+1. [console.cloud.google.com](https://console.cloud.google.com) › nouveau projet
+   « Sub Rosa ».
+2. *API et services › Bibliothèque* : activer **Google Calendar API**,
+   **Google Drive API** et **People API**.
+3. *Google Auth Platform* (écran de consentement) :
+   - *Branding* : nom « Sub Rosa », e-mail d'assistance, logo, page d'accueil
+     `https://subrosa.furetier.com`, politique de confidentialité et conditions
+     publiées sur ce domaine ; domaine autorisé : le domaine racine de
+     `subrosa.furetier.com` (à vérifier dans la Search Console avec le même compte
+     Google).
+   - *Audience* : **Externe**, statut **En test** au départ ; ajouter tes comptes
+     comme utilisateurs test. En test, les jetons d'actualisation expirent au bout de
+     7 jours et seuls les utilisateurs test peuvent se connecter.
+   - *Accès aux données* : ajouter exactement
+     `https://www.googleapis.com/auth/calendar.events`,
+     `https://www.googleapis.com/auth/drive.file` et
+     `https://www.googleapis.com/auth/contacts.readonly`. Aucun n'est « restreint » ;
+     `calendar.events` et `contacts.readonly` sont « sensibles » : le passage en
+     production demande la **validation de l'app** par Google (justification de chaque
+     portée, vidéo du parcours de connexion), sans évaluation CASA.
+   - **Gmail** (`gmail.readonly`) est une portée **restreinte** : ne pas l'ajouter. Elle
+     exige l'évaluation de sécurité CASA ; le code reste derrière
+     `builtin::GMAIL_VERIFIED = false`.
+4. *Clients › Créer un client* : type d'application **iOS** (pas *Desktop app*, pas
+   *Android*), identifiant de bundle `xyz.carpediem.subrosa`, ID d'équipe `H6N5V777LL`
+   (l'ID App Store est facultatif). Copier l'**ID client**
+   (`<chiffres>-<lettres>.apps.googleusercontent.com`). Il n'y a pas de secret.
+5. Quand la connexion marche avec les comptes test : *Audience › Publier l'app*, puis
+   soumettre la validation des portées sensibles.
+
+### 10.2 Microsoft (Entra)
+
+1. [entra.microsoft.com](https://entra.microsoft.com) › *Applications › Inscriptions
+   d'applications › Nouvelle inscription* : nom « Sub Rosa », types de comptes
+   **« Comptes dans un annuaire organisationnel et comptes Microsoft personnels »**
+   (l'app passe par le point de terminaison `common`).
+2. *URI de redirection* : plateforme **« Applications mobiles et de bureau »**, URI
+   `subrosa://connector/callback` (une seule inscription sert les quatre plateformes).
+3. *Authentification* : laisser « Autoriser les flux clients publics » sur **Non**
+   (il ne concerne que le device code et le mot de passe, que l'app n'utilise pas ;
+   la connexion PKCE depuis une URI « mobile et bureau » est déjà publique). Ne créer
+   **aucun** secret ni certificat.
+4. *Autorisations d'API › Microsoft Graph › Autorisations déléguées* : `User.Read`,
+   `Calendars.ReadWrite`, `Files.Read`, `Mail.Read`, `offline_access`. Pas de
+   consentement administrateur : chaque personne consent pour elle-même.
+5. Recommandé avant l'ouverture aux comptes professionnels : *Personnalisation et
+   propriétés › Éditeur vérifié* (identifiant Microsoft AI Cloud Partner Program).
+   Sans lui, beaucoup de locataires refusent le consentement à une app multilocataire
+   d'un éditeur non vérifié ; les comptes personnels ne sont pas concernés.
+6. Copier l'**ID d'application (client)**, un GUID.
+
+### 10.3 GitHub (OAuth App, device flow)
+
+1. github.com › *Settings › Developer settings › OAuth Apps › New OAuth App* (une
+   **OAuth App**, pas une GitHub App), sous le compte ou l'organisation qui publie
+   Sub Rosa.
+2. Nom « Sub Rosa », page d'accueil `https://subrosa.furetier.com`, URL de rappel
+   `https://subrosa.furetier.com/` (champ obligatoire, inutilisé par le device flow).
+3. Cocher **Enable Device Flow** (sans elle, GitHub refuse la demande de code).
+4. Ne pas générer de secret client. Copier le **Client ID** (`Ov23li…`). Les portées
+   (`repo read:org read:user`) sont demandées par l'app à la connexion.
+5. Les organisations qui restreignent l'accès des OAuth Apps devront approuver
+   Sub Rosa pour que ses dépôts soient visibles.
+
+### 10.4 Poser les secrets puis vérifier
+
+Sur `Irdanwen/sub-rosa` (*Settings › Secrets and variables › Actions*) ou en ligne de
+commande :
+
+```bash
+gh secret set SUBROSA_GOOGLE_CLIENT_ID --repo Irdanwen/sub-rosa   # ID client iOS Google
+gh secret set SUBROSA_MS_CLIENT_ID     --repo Irdanwen/sub-rosa   # GUID Entra
+gh secret set SUBROSA_GITHUB_CLIENT_ID --repo Irdanwen/sub-rosa   # Client ID OAuth App
+```
+
+Puis lancer une fois le workflow manuel **Connector clients check**
+(`gh workflow run connectors-check.yml --repo Irdanwen/sub-rosa`) : il ne construit rien
+et échoue si un identifiant manque ou n'a pas la bonne forme, sans jamais l'afficher.
+La release suivante n'a plus d'annotation « does not offer the … connector » sur Mac et
+iPhone ; Windows et Android gardent une simple note pour Google. `desktop.yml` reçoit
+les mêmes identifiants, pour que clippy et les tests voient le code d'une release.
+
+**Non vérifié sans matériel** : la connexion réelle à chacun des trois, l'ouverture de
+l'app par le schéma inversé de Google sur Mac et iPhone, et le retour par
+`subrosa://connector/callback` depuis Microsoft sur les quatre plateformes.

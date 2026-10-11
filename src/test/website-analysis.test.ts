@@ -7,7 +7,6 @@ import {
   createPythonEngine,
   describe as describeOutcome,
 } from "../../website/src/client/analysis/python";
-import { trustedScriptUrl, workerSource } from "../../website/src/client/analysis/worker-url";
 
 type Answer = (run: WorkerRun) => Partial<WorkerDone> | "silent" | "crash";
 
@@ -169,21 +168,5 @@ describe("Python in the web client", () => {
     expect(
       await addition?.run?.("web_search", {}, { chatId: "c", temporary: false, question: "" }),
     ).toBeUndefined();
-  });
-
-  it("starts the worker from a blob only the Trusted Types policy lets through", () => {
-    expect(workerSource("https://site.test/assets/python.worker.js")).toBe(
-      'import "https://site.test/assets/python.worker.js";\n',
-    );
-    const policies: string[] = [];
-    vi.stubGlobal("trustedTypes", {
-      createPolicy(name: string, rules: { createScriptURL(input: string): string }) {
-        policies.push(name);
-        return { createScriptURL: (input: string) => `trusted:${rules.createScriptURL(input)}` };
-      },
-    });
-    expect(() => trustedScriptUrl("https://evil.test/x.js")).toThrow();
-    expect(policies).toEqual(["subrosa"]);
-    vi.unstubAllGlobals();
   });
 });

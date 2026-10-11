@@ -188,3 +188,63 @@ Raising the deployment target to 16.4 would drop the phones that stop at iOS
 and the Android WebView, whose CSP handling for blob workers is the standard
 one but was not run here. The `query_data` fallback stays unbuilt: nothing
 here called for it.
+
+## Addendum 2026-10-10: what the worker can no longer reach
+
+A post-release audit (finding S1) showed that `guardFetch` held one road out
+of many. Pyodide's `js` module is the worker's global by default, so the
+model's code, steered by a hidden instruction in an attached file, could still
+reach `XMLHttpRequest` and `WebSocket` (which the app's CSP lets through to
+`ipc:` and the loopback sidecar), `indexedDB`, `caches`, `crypto.subtle`, and
+Emscripten's own IDBFS, which opens any IndexedDB by name.
+
+**Decision.** The shared worker body (`packages/chat-core/src/python/worker.ts`)
+now hardens its scope before anything else runs (`harden.ts`):
+
+- It keeps bound copies of its `fetch` and `postMessage`, then deletes, along
+  the whole prototype chain of the global (own properties, then
+  `DedicatedWorkerGlobalScope.prototype`, `WorkerGlobalScope.prototype` and up),
+  `indexedDB`, `caches`, `XMLHttpRequest`, `WebSocket`, `WebSocketStream`,
+  `WebTransport`, `EventSource`, `BroadcastChannel`, `Worker`, `SharedWorker`,
+  `importScripts`, `fetchLater`, `cookieStore`, the WebRTC constructors and
+  WebKit's legacy file system calls; `navigator.storage`, `navigator.locks` and
+  `navigator.serviceWorker`; and `crypto.subtle` (`getRandomValues`, which
+  `os.urandom` needs, stays). Deleting from the prototype, not shadowing on the
+  global, leaves no getter to call with the global as its receiver.
+- A property the engine will not let go of is hidden behind an own,
+  non-writable, non-configurable `undefined`. Every name is then read back with
+  `typeof`; if one is still there, Python never starts and the tool answers
+  "unavailable" (fail closed).
+- `loadPyodide` 0.29 receives `jsglobals`: a frozen, null-prototype object
+  holding `setTimeout`, `clearTimeout` and `queueMicrotask` wrappers that
+  refuse a string. Pyodide's event loop schedules through its internal API, so
+  `asyncio.sleep` is unaffected; `import js` now offers nothing that leads back
+  to the global, `pyodide.http` fails to import its `fetch` and `XMLHttpRequest`,
+  and `run_js` finds no `eval`.
+- `fetch` stays, behind `guardFetch`, built on the kept copy.
+
+The phone keeps no frame around the worker: its origin holds no browser
+device key, and the page's policy already refuses `eval`. On the web, the
+worker also runs in an opaque-origin frame (ADR-0104 addendum of the same day).
+
+**Measured** with `website/scripts/python-sandbox-smoke.mjs`, which runs the
+built worker as a plain blob worker of a page under a loopback policy, the
+phone's shape, as well as in the web's frame: every probe raised
+(`js.indexedDB`, `js.XMLHttpRequest`, `js.WebSocket`, `js.fetch`, `js.crypto`,
+`run_js("indexedDB")`, `pyodide_js._api.config.jsglobals.indexedDB`, the
+`Function` constructor, an IDBFS mount on `/subrosa-browser-device`, `pyfetch`,
+`pyxhr`, a string to `setTimeout`, `urllib`), a scan of every attribute of
+`pyodide_js._api` and `pyodide_js._module` found no reachable `indexedDB`,
+`XMLHttpRequest`, `WebSocket` or `caches`, while `subrosa_chart`,
+`subrosa_table`, `asyncio.sleep` and a pandas `groupby` answered. Run in
+headless Chromium 151, Playwright's WebKit 26.4, and Safari on the iOS 26.3
+simulator, both with the site's worker chunk and with the app's own
+(`SUBROSA_PYODIDE=1` build of `src/lib/python/python.worker.ts`). With the
+hardening patched out of the bundle, the same smoke fails on every `js.*`
+probe and, in the plain worker, on the IDBFS mount and an `XMLHttpRequest`
+that reached the server, which is what it is there to catch.
+
+The debug self-test in the app (`SIMCTL_CHILD_SUBROSA_PYTHON_SELFTEST=1`) was
+not re-run for this change: it needs a full iOS simulator build of the Rust
+crate, which the machine's free disk did not allow. It is the check to run
+before the next phone release.

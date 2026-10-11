@@ -420,6 +420,16 @@ os-june/
   re-litigate accepted decisions.** Append-only: supersede with a new ADR (or a
   dated addendum), never rewrite the decision. Numbering: scan `docs/adr/` for
   the highest `NNNN-*.md` and increment.
+  **When lots run in parallel**, the coordinator hands each one its ADR number
+  and its SQL migration number in advance, so two branches never claim the
+  same one. A lot that ends without a decision meeting the ADR bar, or
+  without a migration, leaves its number unused for good: never renumber to
+  fill a gap (references in commits and reports would point at the wrong
+  file), and record the gap in `docs/index.md` (ADRs). Gaps in
+  `src-tauri/migrations/` are expected for the same reason; `run_migrations`
+  replays the explicit list in `src-tauri/src/db/migrations.rs` against a
+  ledger of applied names, so numbers need not be contiguous. Addenda are headed
+  `## Addendum YYYY-MM-DD: <subject>`.
 - **[specs/003-conversation-turns/plan.md](specs/003-conversation-turns/plan.md)**
   — the current feature spec; its plan doubles as the tech-stack and
   shell-command reference for new agents.

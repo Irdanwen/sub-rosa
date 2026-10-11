@@ -114,6 +114,8 @@ pub mod storefront;
 pub mod stream_relay;
 pub mod study;
 pub mod temporary_chat;
+#[cfg(test)]
+mod test_python;
 #[cfg(desktop)]
 pub mod theme_icon;
 #[cfg(desktop)]

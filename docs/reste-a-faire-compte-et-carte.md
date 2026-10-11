@@ -107,7 +107,7 @@ Si `keyIssuance` reste à `false`, c'est voulu tant qu'il manque le mailer, la c
 
 **Qui :** moi.
 
-- [ ] **Vider la file des révocations.** Les révocations qui attendaient (appareils révoqués ou déconnectés depuis le 30 septembre) sont relancées avec une reprise progressive qui monte jusqu'à **6 h**. Pour les envoyer tout de suite :
+- [ ] **Vider la file des révocations.** Les révocations qui attendaient (appareils révoqués ou déconnectés depuis le 30 septembre) sont relancées avec une reprise progressive qui monte jusqu'à **6 h**. Au 10 octobre, 15 révocations (2 comptes, depuis le 4 octobre) échouaient toutes en `http 404` : l'opérateur répond `NOT_FOUND` tant que `PARTNERS_JSON` ne contient pas l'entrée `subrosa` (`prod/carpe-diem-partner.public.json`, `kid` `sr-eQvPaeyZV9pBLrdZ`). C'est le même réglage qui tient `keyIssuance` à `false`. La file se vide d'elle-même une fois l'entrée déployée ; `curl -s http://127.0.0.1:18088/readyz` sur le VPS montre `partner_revocations.pending`. Pour les envoyer tout de suite :
 
   ```sh
   ssh -i ~/.ssh/id_ed25519 root@178.104.103.33 \

@@ -111,7 +111,7 @@ async fn connect() -> Option<Halves> {
 async fn connect() -> Option<Halves> {
     use tokio::net::windows::named_pipe::ClientOptions;
     const ERROR_PIPE_BUSY: i32 = 231;
-    let name = super::endpoint::pipe_name();
+    let name = super::endpoint::pipe_name()?;
     for _ in 0..20 {
         match ClientOptions::new().open(&name) {
             Ok(client) => {

@@ -12,9 +12,11 @@ import vectors from "../../src-tauri/tests/fixtures/spaces-v1.json";
 import { ApiError } from "../../website/src/lib/api";
 import {
   type Me,
+  SPACES_ENABLED,
   type SpacesTransport,
   acceptInvitation,
   askAssistant,
+  behindPreview,
   leave,
   itemsOf,
   loadIdentity,
@@ -28,6 +30,7 @@ import {
   type Bytes,
   type EpochHead,
   type IdentityBundle,
+  IdentitySecret,
   type WireObject,
   acceptanceProof,
   headMember,
@@ -36,9 +39,11 @@ import {
   memberFromBundle,
   openObject,
   safetyNumber,
+  sealObject,
   sealPayload,
   signHead,
   tokenHash,
+  verifyChain,
   wrapKey,
 } from "../../website/src/client/spaces/protocol";
 import type { FeatureStore } from "../../website/src/client/feature";
@@ -262,6 +267,14 @@ class FakeService {
 
 const v = vectors as unknown as {
   profile_id: { space_id: string; account_id: string; id: string };
+  space: { heads: EpochHead[] };
+  chain_cases: {
+    name: string;
+    trusted_epoch: number;
+    heads: EpochHead[];
+    expect: "ok" | "rollback";
+    epochs?: number[];
+  }[];
 };
 const ALICE = "0191d1a4-0000-7000-8000-0000000000a1";
 const BOB = "0191d1a4-0000-7000-8000-0000000000b2";
@@ -679,6 +692,148 @@ describe("shared projects in the browser", () => {
     // The owner reads Carol's epoch and verifies it like any other.
     const aliceView = await openSpace(service.as(ALICE), memoryClientStore(), alice, SPACE);
     expect(aliceView.latest.epoch).toBe(3);
+  });
+  it("replays the shared chain cases: only heads linked to the trusted one are used", async () => {
+    expect(v.chain_cases).toHaveLength(5);
+    for (const c of v.chain_cases) {
+      const trusted = v.space.heads[c.trusted_epoch - 1];
+      const result = verifyChain(trusted, c.heads, null);
+      if (c.expect === "rollback") {
+        await expect(result, c.name).rejects.toMatchObject({ code: "space_rollback" });
+        continue;
+      }
+      const chain = await result;
+      expect(
+        [...chain.heads.keys()].sort((a, b) => a - b),
+        c.name,
+      ).toEqual(c.epochs);
+      for (const [epoch, head] of chain.heads)
+        expect(head, c.name).toEqual(v.space.heads[epoch - 1]);
+    }
+  });
+
+  it("refuses a forged first head, with a key sealed to the reader and a note in the owner's name", async () => {
+    const service = new FakeService();
+    const alice = await loadIdentity(service.as(ALICE), vault(), ALICE);
+    const bob = await loadIdentity(service.as(BOB), vault(), BOB);
+    const bobStore = memoryClientStore();
+    const keys = await share(service, alice);
+    const link = await invite(service, alice);
+    await acceptInvitation(
+      service.as(BOB),
+      bobStore,
+      bob,
+      await openInvitation(service.as(BOB), bob, link.link),
+    );
+    await rotate(service, alice, keys, [alice.bundle, bob.bundle], bob.bundle);
+    await openSpace(service.as(BOB), bobStore, bob, SPACE);
+    const trusted = await bobStore.get<EpochHead>("meta", `space-head:${SPACE}`);
+    expect(trusted?.epoch).toBe(2);
+
+    // The service forges epoch 1: Alice's place held by its own key, Bob
+    // named with his, a key sealed to him, and a note signed as "Alice".
+    const mallory = IdentitySecret.generate();
+    const forgedKey = crypto.getRandomValues(new Uint8Array(32)) as Bytes;
+    const forged = await signHead(
+      {
+        spaceId: SPACE,
+        epoch: 1,
+        prev: null,
+        owner: ALICE,
+        members: [
+          memberFromBundle(await mallory.bundle(ALICE, "now"), "owner"),
+          memberFromBundle(bob.bundle, "member"),
+        ],
+        key: forgedKey,
+        author: ALICE,
+        departures: [],
+        createdAt: "2026-10-08T12:00:00Z",
+      },
+      mallory,
+    );
+    const space = service.spaces.get(SPACE);
+    if (!space) throw new Error("space");
+    space.heads[0] = forged;
+    space.wraps.set(`1:${BOB}`, await wrapKey(forgedKey, bob.bundle.x25519, SPACE, 1, BOB));
+    const note = {
+      v: 1 as const,
+      kind: "note" as const,
+      object_id: crypto.randomUUID(),
+      revision: crypto.randomUUID(),
+      parent_revision: null,
+      author: ALICE,
+      created_at: "2026-10-08T12:00:00Z",
+      deleted: false,
+      data: { title: "Venue", body: "Wire the deposit to this account." },
+    };
+    const sealed = await sealObject(forgedKey, SPACE, 1, note, mallory);
+    space.objects.push({
+      object_id: note.object_id,
+      revision: note.revision,
+      parent_revision: null,
+      kind: "note",
+      epoch: 1,
+      author_account_id: ALICE,
+      ...sealed,
+      deleted: false,
+      sequence: space.objects.length + 1,
+      created_at: "now",
+    });
+
+    await expect(openSpace(service.as(BOB), bobStore, bob, SPACE)).rejects.toMatchObject({
+      code: "space_rollback",
+    });
+    // Nothing was kept: the trusted head is the one Bob had.
+    expect(await bobStore.get<EpochHead>("meta", `space-head:${SPACE}`)).toEqual(trusted);
+  });
+
+  it("leaves a key without a head when the service omits an old epoch", async () => {
+    const service = new FakeService();
+    const alice = await loadIdentity(service.as(ALICE), vault(), ALICE);
+    const bob = await loadIdentity(service.as(BOB), vault(), BOB);
+    const bobStore = memoryClientStore();
+    const keys = await share(service, alice);
+    const link = await invite(service, alice);
+    await acceptInvitation(
+      service.as(BOB),
+      bobStore,
+      bob,
+      await openInvitation(service.as(BOB), bob, link.link),
+    );
+    await rotate(service, alice, keys, [alice.bundle, bob.bundle], bob.bundle);
+    await openSpace(service.as(BOB), bobStore, bob, SPACE);
+    await rotate(service, alice, keys, [alice.bundle, bob.bundle]);
+    service.spaces.get(SPACE)?.heads.shift();
+    await expect(openSpace(service.as(BOB), bobStore, bob, SPACE)).rejects.toThrow(
+      "A key names an unknown epoch.",
+    );
+  });
+
+  it("sends nothing to the service while the Preview switch is off", async () => {
+    const service = new FakeService();
+    const calls: string[] = [];
+    const inner = service.as(ALICE);
+    const counted: SpacesTransport = {
+      get: (path) => {
+        calls.push(path);
+        return inner.get(path);
+      },
+      send: (method, path, body) => {
+        calls.push(path);
+        return inner.send(method, path, body);
+      },
+    };
+    const store = memoryClientStore();
+    await expect(loadIdentity(behindPreview(store, counted), vault(), ALICE)).rejects.toMatchObject(
+      { code: "spaces_disabled" },
+    );
+    await expect(behindPreview(null, counted).get("/api/v1/spaces")).rejects.toMatchObject({
+      code: "spaces_disabled",
+    });
+    expect(calls).toEqual([]);
+    await store.put("local", SPACES_ENABLED, true);
+    await loadIdentity(behindPreview(store, counted), vault(), ALICE);
+    expect(calls.length).toBeGreaterThan(0);
   });
 });
 

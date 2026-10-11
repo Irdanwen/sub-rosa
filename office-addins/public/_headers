@@ -1,0 +1,31 @@
+# The Office add-ins' own origin (ADR-0102, addendum of 2026-10-10), for a
+# static host; the VPS serves the same headers from
+# subrosa-cloud/deploy/nginx-office.conf.example. Office on the web frames the
+# panes, so no X-Frame-Options and a frame-ancestors naming Office's own hosts;
+# Office.js from Microsoft's CDN, loading its files through its "officejs"
+# Trusted Types policy; WebAssembly and a blob worker (Office.js's needs were
+# not measured, ADR-0104); this origin's Python sandbox as the Excel pane's
+# frame and the account origin's courier as the sign-in window's.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src 'self' https://appsforoffice.microsoft.com https://subrosa.furetier.com/office/courier.html; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000
+
+# The Excel pane's Python sandbox (ADR-0104 addendum of 2026-10-10), as on the
+# account origin: framed with sandbox="allow-scripts" by the pane, so it has
+# an opaque origin and reaches this origin's sandbox scripts and Pyodide by
+# CORS, nothing else; framed by this origin and, through the pane, Office's
+# hosts.
+/python-sandbox.html
+  ! Content-Security-Policy
+  ! Permissions-Policy
+  Content-Security-Policy: default-src 'none'; script-src https://office.subrosa.furetier.com/office/assets/ https://office.subrosa.furetier.com/pyodide/ 'wasm-unsafe-eval'; worker-src data: https://office.subrosa.furetier.com/office/assets/; connect-src https://office.subrosa.furetier.com/pyodide/; frame-ancestors https://office.subrosa.furetier.com https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types subrosa-python
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cache-Control: no-store
+/office/assets/python-sandbox*
+  Access-Control-Allow-Origin: *
+/pyodide/*
+  Cache-Control: public, max-age=604800
+  Access-Control-Allow-Origin: *

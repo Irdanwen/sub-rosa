@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import urllib.error
 import urllib.request
 from typing import Any
@@ -158,9 +159,20 @@ def main() -> None:
         message = read_message()
         if message is None:
             return
-        reply = handle_message(target, message)
-        if reply is not None:
-            write_message(reply)
+        # A tool call can wait minutes on a consent card. Run it beside the
+        # read loop, so the runtime's keepalive `ping` is still answered: a
+        # ping left unanswered made the runtime kill this server mid-call,
+        # and the turn waited forever for a reply that could not come.
+        if message.get("method") == "tools/call":
+            threading.Thread(target=answer, args=(target, message), daemon=True).start()
+        else:
+            answer(target, message)
+
+
+def answer(target: str, message: dict[str, Any]) -> None:
+    reply = handle_message(target, message)
+    if reply is not None:
+        write_message(reply)
 
 
 def handle_message(target: str, message: dict[str, Any]) -> dict[str, Any] | None:
@@ -293,10 +305,14 @@ def read_message() -> dict[str, Any] | None:
     return json.loads(sys.stdin.buffer.read(length).decode("utf-8"))
 
 
+_WRITE_LOCK = threading.Lock()
+
+
 def write_message(payload: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
-    sys.stdout.write("\n")
-    sys.stdout.flush()
+    line = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+    with _WRITE_LOCK:
+        sys.stdout.write(line)
+        sys.stdout.flush()
 
 
 def response(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:

@@ -55,6 +55,25 @@ describe("repairContractionSpacing", () => {
 });
 
 describe("Agent chat runtime", () => {
+  it("does not show the runtime's model-switch note as a message the person sent", () => {
+    const turns = buildHermesSessionChatTurns([
+      { id: "1", role: "user", content: "Count to 5", timestamp: "2026-10-10T19:00:00.000Z" },
+      { id: "2", role: "assistant", content: "1 2 3 4 5", timestamp: "2026-10-10T19:00:01.000Z" },
+      {
+        id: "3",
+        role: "user",
+        content:
+          "[System: The active model for this chat has changed to z-ai-glm-5-3-flash via provider custom. From this point forward, use this runtime metadata when answering questions about what model/provider is active.]",
+        timestamp: "2026-10-10T19:00:02.000Z",
+      },
+    ]);
+
+    expect(turns.map((turn) => [turn.id, turn.role])).toEqual([
+      ["1", "user"],
+      ["2", "assistant"],
+    ]);
+  });
+
   it("strips the cron preamble and flags a scheduled-run turn", () => {
     const preamble =
       "[IMPORTANT: You are running as a scheduled cron job. SILENT: respond " +

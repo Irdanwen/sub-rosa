@@ -11,20 +11,21 @@
   Cache-Control: no-store
 /api/*
   Cache-Control: no-store
-# The web client (ADR-0101, WP20b): the site's policy plus WebAssembly and a
-# blob worker for Python (ADR-0086), the catalog's connector origins a tab may
-# call (website/src/client/connectors/web-availability.json), the connector
-# view host as a frame, and the microphone, camera and screen for voice. On a
-# host that merges matching rules, "! Name" detaches the site-wide value first.
+# The web client (ADR-0101, WP20b): the site's policy plus WebAssembly, the
+# catalog's connector origins a tab may call
+# (website/src/client/connectors/web-availability.json), the connector view
+# host and the Python sandbox as frames, and the microphone, camera and screen
+# for voice. On a host that merges matching rules, "! Name" detaches the
+# site-wide value first.
 /app
   ! Content-Security-Policy
   ! Permissions-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa
   Permissions-Policy: camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()
 /app/*
   ! Content-Security-Policy
   ! Permissions-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz https://huggingface.co https://mcp.intercom.com https://mcp.linear.app https://mcp.notion.com https://mcp.squareup.com https://mcp.webflow.com; worker-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa
   Permissions-Policy: camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()
 # A connector's interactive view (ADR-0092): framed sandboxed by /app with an
 # opaque origin, it runs the view's inline script and nothing of the site.
@@ -36,16 +37,40 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
   X-Frame-Options: SAMEORIGIN
   Cache-Control: no-store
-/pyodide/*
-  Cache-Control: public, max-age=604800
 
-# The Office task panes (ADR-0102): framed by Office on the web, so no
-# X-Frame-Options and frame-ancestors naming Office's own hosts; Office.js from
-# Microsoft's CDN, loading its files through its "officejs" Trusted Types
-# policy; WebAssembly and a blob worker for the Excel pane's Python.
-/office/*
+# The Python sandbox (ADR-0104 addendum of 2026-10-10): framed with
+# sandbox="allow-scripts" by /app, so it has an opaque origin and reaches the
+# site's scripts and Pyodide by CORS, nothing else. The Excel pane frames the
+# office origin's own copy (office-addins/public/_headers), never this one.
+# Replace https://account.example.invalid with the site's own origin.
+/python-sandbox.html
   ! Content-Security-Policy
   ! Permissions-Policy
   ! X-Frame-Options
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src https://appsforoffice.microsoft.com; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs
+  Content-Security-Policy: default-src 'none'; script-src https://account.example.invalid/assets/ https://account.example.invalid/pyodide/ 'wasm-unsafe-eval'; worker-src data: https://account.example.invalid/assets/; connect-src https://account.example.invalid/pyodide/; frame-ancestors https://account.example.invalid; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types subrosa-python
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cache-Control: no-store
+/assets/python-sandbox*
+  Access-Control-Allow-Origin: *
+/pyodide/*
+  Cache-Control: public, max-age=604800
+  Access-Control-Allow-Origin: *
+
+# The Office add-ins run on their own origin (ADR-0102, addendum of
+# 2026-10-10; office-addins/public/_headers): Office.js never runs here. This
+# origin keeps the courier, framed only by the office origin's sign-in window,
+# the page sign-in returns to, and a page at the add-ins' old addresses
+# (_redirects) saying where they went.
+/office/courier.html
+  ! Content-Security-Policy
+  ! Permissions-Policy
+  ! X-Frame-Options
+  Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self'; frame-ancestors https://office.subrosa.furetier.com; require-trusted-types-for 'script'; trusted-types 'none'
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cache-Control: no-store
+/office/signed-in.html
+  Cache-Control: no-store
+/office/moved.html
+  ! Content-Security-Policy
+  ! X-Frame-Options
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com

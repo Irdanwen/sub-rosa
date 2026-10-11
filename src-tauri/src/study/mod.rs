@@ -84,6 +84,8 @@ pub async fn set_mode(pool: &SqlitePool, chat_id: &str, on: bool) -> Result<bool
         return Err(AppError::new("study_chat_missing", "Open a chat first."));
     }
     if on {
+        // A study chat keeps its mode and grows a deck: not a temporary one.
+        crate::temporary_chat::refuse_in_temporary(pool, Some(chat_id)).await?;
         query(
             "INSERT INTO study_chats (chat_id, updated_at) VALUES (?1, ?2)
              ON CONFLICT(chat_id) DO UPDATE SET updated_at = excluded.updated_at",
@@ -202,6 +204,7 @@ pub async fn add_cards(
         .as_deref()
         .map(str::trim)
         .filter(|id| !id.is_empty());
+    crate::temporary_chat::refuse_in_temporary(pool, chat_id).await?;
     let stamp = stamp(now);
     let mut added = 0;
     for (front, back) in &cards {

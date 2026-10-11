@@ -45,7 +45,7 @@ export function tabMeta(
         note?.processingStatus === "transcribing" ||
         note?.processingStatus === "generating";
       return {
-        title: note?.title?.trim() || "New note",
+        title: note?.title?.trim() || t("New note"),
         icon: <IconNoteText size={TAB_ICON_SIZE} />,
         status: processing ? "working" : undefined,
       };
@@ -53,7 +53,7 @@ export function tabMeta(
     case "folders": {
       const folder = nav.folderId ? folders.find((f) => f.id === nav.folderId) : undefined;
       return {
-        title: folder?.name?.trim() || "Projects",
+        title: folder?.name?.trim() || t("Projects"),
         icon: <IconProjects size={TAB_ICON_SIZE} />,
       };
     }
@@ -63,7 +63,7 @@ export function tabMeta(
         : undefined;
       const sessionId = nav.agentSessionId;
       return {
-        title: agentSessionTabTitle(session) || nav.agentSessionTitle?.trim() || "New session",
+        title: agentSessionTabTitle(session) || nav.agentSessionTitle?.trim() || t("New session"),
         icon: <IconBubble3 size={TAB_ICON_SIZE} />,
         status: !sessionId
           ? undefined

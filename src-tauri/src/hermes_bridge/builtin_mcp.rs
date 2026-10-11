@@ -42,6 +42,15 @@ pub(super) fn cron_toolsets(sandboxed: &[&str]) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
+/// The `agent:` line that switches the runtime's own `browser` toolset off
+/// (ADR-0094, addendum 2026-10-10). The runtime's browser tools start a
+/// browser of their own, which fails inside the app's jail, and the agent
+/// tried them first before reaching `june_browser`, the person's browser the
+/// app drives with consent. `agent.disabled_toolsets` is the runtime's last
+/// word on a platform's toolsets (`_get_platform_tools`), so the model is
+/// never offered them. `web_search` stays: the `web` toolset carries it too.
+pub(super) const RUNTIME_DISABLED_TOOLSETS: &str = "  disabled_toolsets: [browser]\n";
+
 const JUNE_BROWSER_MCP_SCRIPT_NAME: &str = "june_browser_mcp.py";
 pub(super) const JUNE_BROWSER_MCP_SCRIPT: &str = include_str!("../hermes/june_browser_mcp.py");
 

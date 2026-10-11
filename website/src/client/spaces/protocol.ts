@@ -582,17 +582,27 @@ export async function verifyNext(prev: EpochHead | null, head: EpochHead): Promi
   )
     throw invalid();
 }
-/** The heads a service returned, against what this tab already trusts.
- * Returns the latest. */
+/** What a chain check leaves a tab to rely on: the latest head, and every
+ * head it may use for a key's commitment, a membership or an author's key. */
+export interface VerifiedChain {
+  latest: EpochHead;
+  heads: Map<number, EpochHead>;
+}
+/** The heads a service returned, against what this tab already trusts. A
+ * later head verifies forward from the trusted one; an earlier one must be
+ * the head it names, link by link (`hash(head_e) == head_{e+1}.prev`). A
+ * returned head below a missing epoch, or one that does not link, is another
+ * history: a rollback. Omitted old heads are simply not in `heads`. */
 export async function verifyChain(
   trusted: EpochHead | null,
   heads: EpochHead[],
   anchor: IdentityBundle | null,
-): Promise<EpochHead> {
+): Promise<VerifiedChain> {
   const ordered = [...heads].sort((a, b) => a.epoch - b.epoch);
   if (ordered.some((h, i) => i > 0 && ordered[i - 1].epoch === h.epoch)) throw invalid();
   const latest = ordered.at(-1);
   if (!latest) throw invalid();
+  const verified = new Map<number, EpochHead>();
   if (trusted) {
     if (latest.epoch < trusted.epoch) throw rollback();
     const same = ordered.find((h) => h.epoch === trusted.epoch);
@@ -600,9 +610,18 @@ export async function verifyChain(
     let previous = trusted;
     for (const head of ordered.filter((h) => h.epoch > trusted.epoch)) {
       await verifyNext(previous, head);
+      verified.set(head.epoch, head);
       previous = head;
     }
-    return latest;
+    verified.set(trusted.epoch, trusted);
+    let link = trusted;
+    for (const head of ordered.filter((h) => h.epoch < trusted.epoch).reverse()) {
+      if (head.epoch + 1 !== link.epoch || (await headHash(head)) !== link.prev) throw rollback();
+      checkShape(head);
+      verified.set(head.epoch, head);
+      link = head;
+    }
+    return { latest, heads: verified };
   }
   await verifyNext(null, ordered[0]);
   if (anchor) {
@@ -616,7 +635,8 @@ export async function verifyChain(
       throw invalid();
   }
   for (let i = 1; i < ordered.length; i++) await verifyNext(ordered[i - 1], ordered[i]);
-  return latest;
+  for (const head of ordered) verified.set(head.epoch, head);
+  return { latest, heads: verified };
 }
 
 // --- Wrapped keys ------------------------------------------------------------

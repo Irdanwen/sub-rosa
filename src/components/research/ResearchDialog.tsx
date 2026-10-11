@@ -477,7 +477,7 @@ function ResearchPlanEditor({
       </label>
       <ol className="research-sections">
         {plan.sections.map((section, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: sections are edited in place
+          // biome-ignore lint/suspicious/noArrayIndexKey: a section has no id and is never moved; removing one only shifts controlled fields
           <li key={index} className="research-section">
             <div className="research-section-head">
               <input

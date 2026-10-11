@@ -21,8 +21,10 @@
 //!   own rules again, makes the call, and writes the bounded result into the
 //!   same row, which synchronises back.
 //! - **The rules are this device's.** A tool denied here is declined; one
-//!   that asks runs only when the person approved it where they asked, and
-//!   otherwise the row says so and the tab shows the approval card. The
+//!   that asks runs only when the person approved it where they asked, with
+//!   an approval the asking browser signed over this very call
+//!   (`relay_approval`), and otherwise the row says so and the tab shows the
+//!   approval card. The
 //!   switch is off until the owner turns it on, as for errands, and a device
 //!   that has it off declines rather than leaving the tab waiting.
 //! - **Short lived and single use.** A call is about a conversation that is
@@ -70,6 +72,10 @@ pub(crate) const NOT_SIGNED_IN: &str = "This connector is not signed in on this 
 pub(crate) const NEEDS_APPROVAL: &str =
     "This action needs your approval before it runs. Approve it where you asked.";
 pub(crate) const TOO_LARGE: &str = "This call carries more than another device can take.";
+pub(crate) const CLOCK_AHEAD: &str =
+    "This call is dated ahead of this device's clock, so it was not made. Check the date and time of the device that asked.";
+pub(crate) const BAD_ARGUMENTS: &str =
+    "This call's arguments are not ones a tool takes, so it was not made.";
 
 /// What a tab tells the model when nothing answered in time. Only a tab
 /// says it, so it is a template the web client fills (`{device}` is
@@ -284,6 +290,11 @@ pub struct Errand {
     pub arguments: String,
     pub approved: bool,
     pub requested_at: String,
+    /// The device the row says asked.
+    pub requested_by: String,
+    /// The asking browser's signed approval (`relay_approval`), carried in
+    /// the row's `message` while it is `requested`.
+    pub approval: Option<String>,
 }
 
 fn errand_of(row: &sqlx_sqlite::SqliteRow) -> Errand {
@@ -294,6 +305,10 @@ fn errand_of(row: &sqlx_sqlite::SqliteRow) -> Errand {
         arguments: row.get("arguments"),
         approved: row.get::<i64, _>("approved") != 0,
         requested_at: row.get("requested_at"),
+        requested_by: row.get("requested_by"),
+        approval: row
+            .get::<Option<String>, _>("message")
+            .filter(|message| message.len() <= 4096),
     }
 }
 
@@ -322,11 +337,16 @@ pub fn decide(
     if !accepting {
         return Decision::Decline(NOT_ACCEPTING.into());
     }
-    let fresh = chrono::DateTime::parse_from_rfc3339(&errand.requested_at).is_ok_and(|at| {
-        now.signed_duration_since(at.with_timezone(&chrono::Utc))
-            <= chrono::Duration::seconds(EXPIRY_SECS)
-    });
-    if !fresh {
+    let Ok(at) = chrono::DateTime::parse_from_rfc3339(&errand.requested_at) else {
+        return Decision::Decline(TOO_LATE.into());
+    };
+    let age = now.signed_duration_since(at.with_timezone(&chrono::Utc));
+    // A call dated ahead of this clock would stay fresh for longer than its
+    // lifetime: refused rather than trusted, past a minute of drift.
+    if age < -chrono::Duration::seconds(super::relay_approval::CLOCK_SKEW_SECS) {
+        return Decision::Decline(CLOCK_AHEAD.into());
+    }
+    if age > chrono::Duration::seconds(EXPIRY_SECS) {
         return Decision::Decline(TOO_LATE.into());
     }
     if errand.arguments.len() > MAX_ARGUMENT_BYTES {
@@ -341,9 +361,11 @@ pub fn decide(
     if !signed_in {
         return Decision::Decline(NOT_SIGNED_IN.into());
     }
+    // A tool takes an object; anything else is not quietly made into an
+    // empty one, which would run the tool on its defaults.
     let arguments = match serde_json::from_str::<Value>(&errand.arguments) {
         Ok(value @ Value::Object(_)) => value,
-        _ => json!({}),
+        _ => return Decision::Decline(BAD_ARGUMENTS.into()),
     };
     // A tool this device never listed has no hint: it asks, like any tool
     // that does not say it only reads.
@@ -439,10 +461,15 @@ pub(crate) async fn pending(pool: &SqlitePool, device: &str) -> Vec<Errand> {
 }
 
 /// Handles one call end to end: decide, claim, call, write the answer.
-async fn handle(app: &AppHandle, pool: &SqlitePool, errand: Errand) {
+async fn handle(app: &AppHandle, pool: &SqlitePool, mut errand: Errand) {
     let Some(_claim) = RunClaim::take(&errand.id) else {
         return;
     };
+    // An approval counts only when the asking browser signed it over this
+    // call and the account service lists that browser as a live device.
+    if errand.approved {
+        errand.approved = approval_holds(app, &errand).await;
+    }
     let connector = super::get(pool, &errand.connector_id).await.ok();
     let signed_in = connector.as_ref().is_some_and(super::has_credential);
     let tools = match &connector {
@@ -507,6 +534,23 @@ async fn handle(app: &AppHandle, pool: &SqlitePool, errand: Errand) {
     // The answer leaves now rather than at the next tick: somebody is
     // waiting for it in a tab.
     let _ = crate::account::sync::run(app).await;
+}
+
+async fn approval_holds(app: &AppHandle, errand: &Errand) -> bool {
+    if errand.approval.is_none() {
+        return false;
+    }
+    match crate::account::account_devices(app.clone()).await {
+        Ok(devices) => super::relay_approval::holds(
+            errand,
+            &super::relay_approval::browser_keys(&devices),
+            chrono::Utc::now(),
+        ),
+        Err(error) => {
+            tracing::warn!(code = %error.code, "a relayed approval could not be checked");
+            false
+        }
+    }
 }
 
 /// Picks up the calls addressed to this device. Called after every

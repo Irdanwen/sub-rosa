@@ -44,6 +44,12 @@ it never holds, sees or spends a key.
    device to bind a key to. A session renewed by the device secret inherits the
    device's admission time (ADR-0056) and is never recent, so a stolen device
    secret can keep a device signed in but cannot mint it a key.
+
+   *Superseded in part by [ADR-0096](0096-a-browser-is-a-device.md)
+   (2026-10-08): "Browsers have no device to bind a key to" no longer holds
+   for a browser admitted as a device, which obtains a key bounded more
+   tightly than an app's. "Only a recent app session may ask" still holds for
+   apps.*
 3. **Revocation follows the device.** Revoking a device, signing it out, or
    deleting the account writes a revocation into a durable outbox in the same
    transaction, and the maintenance loop delivers it to Carpe Diem until Carpe

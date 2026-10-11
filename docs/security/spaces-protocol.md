@@ -135,18 +135,35 @@ all of these hold:
 
 ### 4.2 Verifying a chain, and rollback
 
-A device keeps the last head it verified for each space. When the service
-answers with a list of heads:
+A device keeps the last head it verified for each space (the app keeps every
+head it verified, in `space_heads`; a tab keeps only the latest). When the
+service answers with a list of heads:
 
 - with a trusted head `H` already kept: the latest returned epoch must be at
   least `H.epoch`, any returned head at `H.epoch` must hash to `hash(H)`, and
-  every later head must verify after the previous one starting from `H`.
-  Anything else is a **rollback** (or a fork) and is refused with
-  `space_rollback`: nothing is changed and the error is shown;
+  every later head must verify after the previous one starting from `H`. Every
+  returned head **older** than `H` must be the head `H` names, link by link
+  downwards: `hash(head_e) = head_{e+1}.prev`, from `H` down to the oldest
+  returned, with no epoch missing in between. Those heads are history this
+  device already accepted, matched by hash rather than judged again. Anything
+  else, an older head below a missing epoch or one that does not link, is a
+  **rollback** (or a fork) and is refused with `space_rollback`: nothing is
+  changed and the error is shown;
 - with nothing trusted yet: the chain must start at epoch 1, verify throughout,
   and the owner entry of `head_1` must equal the **anchor**: this account's own
   bundle for a space it created, the inviter's bundle carried in the link for
   a space it joined (section 7).
+
+**Only verified heads are used.** The result of the check is the latest head
+and the set of heads it verified (forward from `H`, `H` itself, and the heads
+linked backwards from it). That set, and nothing else the service returned,
+names the commitment a wrapped key is checked against (section 5), the
+membership, and the key each author's signature is checked under (section 6).
+The app completes it with the heads it kept (each verified when it was kept);
+where both have a head for one epoch, the two must have the same hash, or the
+answer is a rollback. A service may omit old heads: a key or an object of an
+epoch with no verified head is then refused (a key) or left unread (an
+object), never checked against a head the service supplied unverified.
 
 The service also refuses an epoch that is not `current + 1`, so two devices
 racing to rotate meet at a conflict, and the loser reads the winner's epoch.
@@ -339,7 +356,7 @@ an assistant reply; the membership as the members believe it to be.
 | Adversary | Can | Cannot |
 | --- | --- | --- |
 | Honest but curious service | read metadata (section 10) | read content, names, keys |
-| Malicious service | withhold objects or heads; replay an older state to a device that has never seen the space; refuse writes; delay delivery; serve a different but valid-looking set of objects to different members; drop a member's departure | substitute a member's keys undetected after the first verified head (heads are signed); give a member a key that passes the commitment check; show a device an epoch older than one it verified (rollback is detected); admit an invitee without the link (no proof); write in a member's name (no signature) |
+| Malicious service | withhold objects or heads; replay an older state to a device that has never seen the space; refuse writes; delay delivery; serve a different but valid-looking set of objects to different members; drop a member's departure | substitute a member's keys undetected after the first verified head (heads are signed); substitute an earlier head under a verified one (older heads are used only when they hash-link to it, section 4.2); give a member a key that passes the commitment check; show a device an epoch older than one it verified (rollback is detected); admit an invitee without the link (no proof); write in a member's name (no signature, and the signing key comes only from a verified head) |
 | Network attacker | see TLS metadata | anything the service cannot |
 | A member | read everything in the space while a member, including history; write as themselves; ask the assistant at their own expense | write as someone else; add or remove anyone unless they are the owner; remove anyone but members who signed themselves out |
 | A removed member | see section 9 | read objects written after the removal |
@@ -380,7 +397,13 @@ changes as the app composes them (`client::compose_rotation`, with fixed keys,
 times and HPKE ephemerals): an invitation's request to the service, Carol's
 acceptance, the owner admitting her (her earlier keys sealed to her), the
 owner removing Bob (no key for him), and Carol rotating Bob out after he
-signed a leave statement. The browser implementation reproduces every value
+signed a leave statement. Its `chain_cases` (2026-10-10) are what a device
+that trusts epoch 3 makes of five answers: the genuine chain (`ok`, every
+epoch usable), epoch 1 replaced by a head a dishonest service signed with its
+own keys for the owner and a key commitment of its own (`rollback`), epoch 1
+omitted (`ok`, epochs 2 to 4 only, so a key for epoch 1 has no head), one
+field of epoch 2 changed (`rollback`), and epoch 1 shown below a missing
+epoch 2 (`rollback`). The browser implementation reproduces every value
 byte for byte (`src/test/website-spaces-protocol.test.ts`,
 `src/test/website-spaces-membership.test.ts`), and the Rust HPKE
 seal is opened by an independent RFC 9180 implementation (the `hpke` crate) in
@@ -395,13 +418,21 @@ Behaviour tests:
   damaged invitation codes, the sealed payload, identity sealing, safety
   numbers.
 - Rust store (`store_tests.rs`): ordering, the epoch rule, the outbox.
+- Rust client (`client_tests.rs`, a local HTTP service): a forged epoch-1
+  head with a key sealed to the reader and a note signed in the owner's name
+  is refused as a rollback and writes no head, member or object, whether the
+  device kept the whole history or only its trusted head; the same service
+  telling the truth is read normally.
 - Service (`subrosa-cloud/crates/api/tests/support/spaces.rs`, real
   PostgreSQL): membership authorization, epochs one at a time, writes only
   under the current epoch, idempotent retries, single-use invitations, leaving
   and non-owner rotation, identity immutability while in a space, deletion.
 - Browser (`src/test/website-spaces-client.test.ts`): a whole share, invite,
   admit, write, ask and read cycle, rollback detection, removal, invitation
-  replay, against an in-memory service; and the owner's side from a tab
+  replay, against an in-memory service; the shared `chain_cases`; a forged
+  epoch-1 head with a key and a note refused with nothing kept; an omitted
+  old head leaving its key refused; nothing sent while the Preview switch is
+  off (2026-10-10); and the owner's side from a tab
   (2026-10-08): a link made and admitted from the tab after the safety number,
   an acceptance the tab cannot check refused, a link withdrawn, a removal, and
   a member rotating out someone who left.

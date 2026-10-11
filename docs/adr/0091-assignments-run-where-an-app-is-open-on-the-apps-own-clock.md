@@ -82,7 +82,7 @@ behind a row written first.**
   the screen says runs happen while the app is open and catch up when it
   opens.
 
-## Addendum to the moments: the daily brief
+## Addendum 2026-10-08: the daily brief joins the moments
 
 The daily brief is the third moment the app speaks first, and keeps their two
 rules. It is off until asked for. Silence is a feature: a morning with no
@@ -121,7 +121,7 @@ first written more than four hours after its time waits quietly in Today.
 - **WorkManager on Android.** A new dependency and a headless runtime, for
   wake-ups the platform may defer anyway.
 
-## Addendum (2026-10-08): run jobs carry a tag, and notifications are translated
+## Addendum 2026-10-08: run jobs carry a tag, and notifications are translated
 
 - The Consequences above said routine history would list the assignments'
   one-shot jobs. It no longer does. Each run's job is named with a machine

@@ -39,7 +39,8 @@ pub enum ConsentAnswer {
 }
 
 /// Asks the person. The app shows a card in the chat; the tests answer from
-/// a script.
+/// a script. Shared between the actions and the gate (`gate.rs`), which asks
+/// on its own task.
 pub trait ConsentAsker: Send + Sync {
     fn ask<'a>(&'a self, site: &'a str)
         -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send + 'a>>;
@@ -78,12 +79,17 @@ impl Consent {
                 "browser_site_refused",
                 format!("The person did not allow the browser on {site}. Do not try this site again unless they ask."),
             )),
-            ConsentAnswer::Unanswered => Err(agent_error(
-                "browser_site_unanswered",
-                format!("The person has not answered whether the browser may use {site}. Ask them in the chat, and try again once they agree."),
-            )),
+            ConsentAnswer::Unanswered => Err(unanswered(site)),
         }
     }
+}
+
+/// Nobody answered whether the browser may use `site`.
+pub fn unanswered(site: &str) -> AppError {
+    agent_error(
+        "browser_site_unanswered",
+        format!("The person has not answered whether the browser may use {site}. Ask them in the chat, and try again once they agree."),
+    )
 }
 
 /// One driven tab.
@@ -178,12 +184,16 @@ impl Tab {
         }
     }
 
-    /// Opens `url` after the consent gate. Never navigates when the site is
-    /// refused: the refusal is decided before the first byte is requested.
+    /// Opens `url` after asking. Never navigates when the site is refused: the
+    /// refusal is decided before the first byte is requested. The gate
+    /// (`gate.rs`) holds the navigation itself too, and every redirect it
+    /// takes; asking here first is what lets the agent hear a refusal as the
+    /// answer to `open_url`. The consent is let go before navigating, since
+    /// the gate needs it to let the page through.
     pub async fn open(
         &mut self,
         url: &str,
-        consent: &mut Consent,
+        consent: &tokio::sync::Mutex<Consent>,
         asker: &dyn ConsentAsker,
     ) -> Result<(Location, Option<String>, bool), AppError> {
         if !site::openable(url) {
@@ -194,7 +204,7 @@ impl Tab {
         }
         let site = site::site_of(url)
             .ok_or_else(|| agent_error("browser_url_refused", "That address has no site."))?;
-        let remembered = consent.admit(&site, asker).await?;
+        let remembered = consent.lock().await.admit(&site, asker).await?;
         let navigated = self.page("Page.navigate", json!({ "url": url })).await?;
         if let Some(error) = navigated.get("errorText").and_then(Value::as_str) {
             if !error.is_empty() {

@@ -83,18 +83,31 @@ async fn listen(app: AppHandle) -> std::io::Result<()> {
 #[cfg(windows)]
 async fn listen(app: AppHandle) -> std::io::Result<()> {
     use tokio::net::windows::named_pipe::ServerOptions;
-    let name = super::endpoint::pipe_name();
+    let name = super::endpoint::pipe_name().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "USERNAME is empty, so the browser extension pipe has no name",
+        )
+    })?;
+    // Only this user may open it, like the owner-only socket elsewhere.
+    let mut security = super::pipe_security::SecurityAttributes::current_user_only()?;
     // The first instance fails if someone else already holds the name.
-    let mut server = ServerOptions::new()
-        .first_pipe_instance(true)
-        .reject_remote_clients(true)
-        .create(&name)?;
+    // SAFETY: `security` outlives every instance created from it.
+    let mut server = unsafe {
+        ServerOptions::new()
+            .first_pipe_instance(true)
+            .reject_remote_clients(true)
+            .create_with_security_attributes_raw(&name, security.as_mut_ptr())?
+    };
     loop {
         server.connect().await?;
         let connected = server;
-        server = ServerOptions::new()
-            .reject_remote_clients(true)
-            .create(&name)?;
+        // SAFETY: as above.
+        server = unsafe {
+            ServerOptions::new()
+                .reject_remote_clients(true)
+                .create_with_security_attributes_raw(&name, security.as_mut_ptr())?
+        };
         let (read, write) = tokio::io::split(connected);
         tauri::async_runtime::spawn(serve(app.clone(), read, write));
     }
@@ -399,7 +412,7 @@ mod tests {
         let (reader, writer) = tokio::io::split(app_side);
         let mut book = PairingBook::default();
         book.begin("123456".into(), chrono::Utc::now());
-        let mut session = Session::default();
+        let mut session = Session::with_allowed(vec!["chrome-extension://abc/".to_string()]);
         let server = tokio::spawn(serve_frames(reader, writer, move |frame, sink| {
             let decision = session.decide(&mut book, frame, chrono::Utc::now(), "1.2.3", || {
                 "tok".to_string()

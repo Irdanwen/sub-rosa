@@ -47,10 +47,12 @@ export function formatCell(value: TableCell): string {
 export function DataTable({ table, label }: { table: TableChatBlock; label: string }) {
   const [sort, setSort] = useState<Sort | null>(null);
   const [visible, setVisible] = useState(TABLE_PAGE_ROWS);
+  // Sorting moves rows, so each one keeps its place in the block as its key.
   const rows = useMemo(() => {
-    if (!sort) return table.rows;
-    return [...table.rows].sort((a, b) =>
-      compareCells(a[sort.column] ?? null, b[sort.column] ?? null, sort.direction),
+    const placed = table.rows.map((cells, source) => ({ cells, source }));
+    if (!sort) return placed;
+    return placed.sort((a, b) =>
+      compareCells(a.cells[sort.column] ?? null, b.cells[sort.column] ?? null, sort.direction),
     );
   }, [table.rows, sort]);
   const toggle = (column: number) =>
@@ -71,7 +73,7 @@ export function DataTable({ table, label }: { table: TableChatBlock; label: stri
                 const sorted = sort?.column === index ? sort.direction : undefined;
                 return (
                   <th
-                    // biome-ignore lint/suspicious/noArrayIndexKey: columns are positional
+                    // biome-ignore lint/suspicious/noArrayIndexKey: columns are positional, labels may repeat, and sorting moves rows, never columns
                     key={index}
                     scope="col"
                     aria-sort={sorted ?? "none"}
@@ -103,12 +105,11 @@ export function DataTable({ table, label }: { table: TableChatBlock; label: stri
             </tr>
           </thead>
           <tbody>
-            {rows.slice(0, visible).map((row, rowIndex) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity beyond their place
-              <tr key={rowIndex}>
-                {row.map((value, index) => (
+            {rows.slice(0, visible).map((row) => (
+              <tr key={row.source}>
+                {row.cells.map((value, index) => (
                   <td
-                    // biome-ignore lint/suspicious/noArrayIndexKey: cells are positional
+                    // biome-ignore lint/suspicious/noArrayIndexKey: a cell's column is its identity, and columns never move
                     key={index}
                     data-numeric={table.columns[index]?.numeric || undefined}
                   >

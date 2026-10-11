@@ -16,6 +16,7 @@ const server = await createServer({
 try {
   const { App } = await server.ssrLoadModule("/src/App.tsx");
   const i18n = await server.ssrLoadModule("/src/lib/i18n.ts");
+  const { alternateLinks, siteOrigin } = await server.ssrLoadModule("/src/lib/alternates.ts");
   const { pageMeta } = await server.ssrLoadModule("/src/pages/meta.ts");
   const { guides } = await server.ssrLoadModule("/src/pages/docs-content.ts");
   const { families } = await server.ssrLoadModule("/src/models/catalog.ts");
@@ -39,7 +40,8 @@ try {
     ...categories.map((category) => `/models/${category.id}`),
     ...families.map((family) => `/models/${family.slug}`),
   ];
-  const base = server.config.base.replace(/\/$/, "");
+  // hreflang alternates must be absolute URLs, so the build knows its origin.
+  const origin = siteOrigin(server.config.base, server.config.env.VITE_SITE_ORIGIN ?? "");
   // Every public page in each of the site's languages: English at the root,
   // the others under their prefix (`/fr/`, `/de/`, `/pt-br/`), each naming
   // all of them as alternates.
@@ -51,13 +53,7 @@ try {
       const body = renderToString(createElement(App, { initialPath: path }));
       i18n.setWebsiteLocale(locale);
       const { title, description } = pageMeta(page);
-      const alternates = [
-        ...i18n.SITE_LOCALES.map(
-          (other) =>
-            `<link rel="alternate" hreflang="${other}" href="${base}${i18n.localizedPublicPath(page, other)}" />`,
-        ),
-        `<link rel="alternate" hreflang="x-default" href="${base}${page}" />`,
-      ].join("");
+      const alternates = alternateLinks(page, server.config.base, origin);
       const html = template
         .replace('<html lang="en">', `<html lang="${locale}">`)
         .replace(

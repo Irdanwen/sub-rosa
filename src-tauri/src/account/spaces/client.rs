@@ -169,6 +169,8 @@ struct PagedObject {
 /// A space as this device has just verified it.
 pub struct Verified {
     pub latest: EpochHead,
+    /// Only heads verified here or kept from an earlier verification: these
+    /// name the keys' commitments and each author's signing key.
     pub heads: BTreeMap<u64, EpochHead>,
     pub keys: BTreeMap<u64, Zeroizing<[u8; 32]>>,
     pub detail: Detail,
@@ -211,20 +213,36 @@ pub async fn fetch(pool: &SqlitePool, ctx: &Ctx, row: &SpaceRow) -> Result<Fetch
     let trusted = store::latest_head(pool, &row.id).await?;
     let anchor: IdentityBundle =
         serde_json::from_str(&row.anchor_json).map_err(|_| protocol::invalid())?;
-    let latest = protocol::verify_chain(
+    let chain = protocol::verify_chain(
         trusted.as_ref(),
         &heads,
         trusted.is_none().then_some(&anchor),
-    )?
-    .clone();
+    )?;
+    let latest = chain.latest;
     if latest.space_id != row.id || detail.current_epoch != latest.epoch {
         return Err(protocol::invalid());
     }
     if latest.member(ctx.me()).is_none() {
         return Ok(Fetched::Gone);
     }
-    let floor = trusted.as_ref().map_or(0, |head| head.epoch);
-    let fresh: Vec<&EpochHead> = heads.iter().filter(|h| h.epoch > floor).collect();
+    // Only verified heads are used from here on: the chain's, completed by
+    // the ones this device kept, which must be the same heads where both
+    // exist. An unverified head never names a key, a member or an author.
+    let mut by_epoch = chain.heads;
+    let mut kept_epochs = Vec::new();
+    for kept in store::heads(pool, &row.id).await? {
+        if let Some(head) = by_epoch.get(&kept.epoch) {
+            if head.hash() != kept.hash() {
+                return Err(protocol::rollback());
+            }
+        }
+        kept_epochs.push(kept.epoch);
+        by_epoch.entry(kept.epoch).or_insert(kept);
+    }
+    let fresh: Vec<&EpochHead> = by_epoch
+        .values()
+        .filter(|head| !kept_epochs.contains(&head.epoch))
+        .collect();
     store::save_heads(pool, &row.id, &fresh).await?;
     // The service's copy of each member's identity must be the keys the
     // signed head names: a substituted key is refused, not shown.
@@ -255,8 +273,6 @@ pub async fn fetch(pool: &SqlitePool, ctx: &Ctx, row: &SpaceRow) -> Result<Fetch
         members.push((member.account_id.clone(), member.role.clone(), bundle));
     }
     store::replace_members(pool, &row.id, &members).await?;
-    let by_epoch: BTreeMap<u64, EpochHead> =
-        heads.into_iter().map(|head| (head.epoch, head)).collect();
     let mut keys = BTreeMap::new();
     for wrapped in &detail.keys {
         let head = by_epoch.get(&wrapped.epoch).ok_or_else(protocol::invalid)?;

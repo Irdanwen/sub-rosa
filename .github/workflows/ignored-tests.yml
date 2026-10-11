@@ -1,0 +1,92 @@
+name: ignored tests
+
+# The src-tauri tests marked #[ignore] reach real things: MCP servers and
+# OAuth metadata on the internet, and the Chromium-family browser on the
+# machine. The push lanes never run them, so nothing notices when a server
+# changes its protocol or a browser its DevTools handshake. This lane runs
+# them on demand and keeps the log. See docs/qa/agent-driven-integration.md
+# ("Opt-in Rust tests") for when to dispatch it.
+#
+# Left out on purpose: voice::io_apple (opens a real microphone, which a
+# runner has not got), voice::selftest (spends credits), and the account,
+# Carpe Diem and issue-filing live tests (each needs a private fixture or
+# token that has no business in this repository's secrets).
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: Test name filters, space separated (libtest substring match)
+        required: false
+        default: real_server real_browser
+
+permissions:
+  contents: read
+
+jobs:
+  ignored:
+    name: Ignored src-tauri tests
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: tauri-cargo-registry-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            tauri-cargo-registry-${{ runner.os }}-
+
+      # Same placeholder as desktop.yml: tauri-build checks that the sidecar
+      # path exists, and none of these tests runs it.
+      - name: Stage placeholder june-api sidecar (externalBin)
+        run: |
+          mkdir -p src-tauri/binaries
+          touch "src-tauri/binaries/june-api-$(rustc -vV | sed -n 's/host: //p')"
+
+      # real_browser_end_to_end returns early, and passes, when it finds no
+      # browser. The macOS images ship Google Chrome; say so either way, so a
+      # green run without one is not read as a browser that was driven.
+      - name: Look for a Chromium-family browser
+        run: |
+          found=""
+          for app in "Google Chrome" "Microsoft Edge" "Brave Browser" "Chromium"; do
+            if [ -d "/Applications/$app.app" ]; then
+              found="$app"
+              break
+            fi
+          done
+          if [ -n "$found" ]; then
+            echo "Browser for real_browser_end_to_end: $found" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::No Chromium-family browser on this runner: real_browser_end_to_end will return without driving one."
+            echo "No Chromium-family browser on this runner: real_browser_end_to_end did not drive one." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Run the ignored tests
+        env:
+          FILTER: ${{ inputs.filter }}
+        run: |
+          set -o pipefail
+          set -f
+          # Word splitting is the point: each filter is its own argument.
+          # shellcheck disable=SC2086
+          cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored --nocapture $FILTER \
+            2>&1 | tee ignored-tests.log
+
+      - name: Upload the log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ignored-tests-log
+          path: ignored-tests.log
+          if-no-files-found: warn
+          retention-days: 30

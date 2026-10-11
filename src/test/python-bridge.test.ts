@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { startPythonBridge, type WorkerLike } from "../lib/python/bridge";
-import { mountedFiles, safeFileName, sheetListingToCsv } from "../lib/python/files";
-import { PYTHON_PRELUDE } from "../lib/python/prelude";
+import { mountedFiles, safeFileName, sheetListingToCsv } from "@subrosa/chat-core/python/files";
+import { PYTHON_PRELUDE } from "@subrosa/chat-core/python/prelude";
 import type { PythonReply, PythonRunEvent, WorkerDone, WorkerRun } from "../lib/python/protocol";
 import {
   createRunner,
@@ -9,7 +9,7 @@ import {
   NO_NETWORK,
   packagesFor,
   type PyodideLike,
-} from "../lib/python/runner";
+} from "@subrosa/chat-core/python/runner";
 import { pythonWorkerSource, pythonWorkerUrl } from "../lib/python/worker-url";
 
 function fakePyodide(answer: (code: string) => unknown = () => "{}") {

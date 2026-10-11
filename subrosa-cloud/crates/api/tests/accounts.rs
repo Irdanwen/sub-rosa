@@ -2483,6 +2483,137 @@ async fn revoking_a_device_revokes_its_carpe_diem_key_until_carpe_diem_answers()
     Ok(())
 }
 
+/// Readiness, as the container healthcheck and an operator read it.
+async fn readyz(app: &Router) -> Result<(StatusCode, Value)> {
+    decode_response(
+        app.clone()
+            .oneshot(Request::builder().uri("/readyz").body(Body::empty())?)
+            .await?,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn a_refused_revocation_says_why_shows_on_readiness_and_alarms_once_a_day() -> Result<()> {
+    let f = Fixture::new().await?;
+    let p = Partner::arm(&f).await?;
+    let (status, ready) = readyz(&p.app).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        ready["data"],
+        json!({"status":"ready","partner_revocations":{"pending":0,"stuck":0}})
+    );
+
+    // What production met: an operator without the partner configured
+    // answers 404 to every revocation.
+    Mock::given(method("POST"))
+        .and(path("/partner/keys/revoke"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"code":"NOT_FOUND"})))
+        .mount(&p.operator)
+        .await;
+    let token = app_device(&f, "heidi", "Heidi laptop").await?;
+    let device = token["device_id"].as_str().context("device")?.to_owned();
+    let (status, _) = bearer(
+        &p.app,
+        "DELETE",
+        &format!("/api/v1/devices/{device}"),
+        &token["access_token"],
+        json!({}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    p.service.maintenance().await?;
+    let last_error: Option<String> =
+        sqlx::query_scalar("SELECT last_error FROM partner_revocations")
+            .fetch_one(&f.pool)
+            .await?;
+    assert_eq!(
+        last_error.as_deref(),
+        Some("http 404"),
+        "the status, not a generic outage"
+    );
+    let (status, ready) = readyz(&p.app).await?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a refusing Carpe Diem never makes the service unready"
+    );
+    assert_eq!(
+        ready["data"]["partner_revocations"],
+        json!({"pending":1,"stuck":0})
+    );
+    // Not stuck yet: no alarm.
+    assert!(!p.service.alarm_if_stuck(Utc::now()).await?);
+
+    // A day of refusals later, still asked, now stuck.
+    sqlx::query(
+        "UPDATE partner_revocations SET attempts=$1, next_attempt_at=now()-interval '1 second'",
+    )
+    .bind(subrosa_persistence::REVOCATION_STUCK_AFTER_ATTEMPTS)
+    .execute(&f.pool)
+    .await?;
+    p.service.maintenance().await?;
+    assert_eq!(
+        p.operator
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .len(),
+        2,
+        "a stuck revocation is still asked"
+    );
+    let (attempts, backed_off): (i32, bool) = sqlx::query_as(
+        "SELECT attempts, next_attempt_at <= now() + interval '6 hours 1 minute' FROM partner_revocations",
+    )
+    .fetch_one(&f.pool)
+    .await?;
+    assert_eq!(
+        attempts,
+        subrosa_persistence::REVOCATION_STUCK_AFTER_ATTEMPTS + 1
+    );
+    assert!(backed_off, "the backoff stops growing at six hours");
+    let (_, ready) = readyz(&p.app).await?;
+    assert_eq!(
+        ready["data"]["partner_revocations"],
+        json!({"pending":1,"stuck":1})
+    );
+    let backlog = p.service.revocation_backlog().await?;
+    assert_eq!(backlog.last_error.as_deref(), Some("http 404"));
+    assert!(backlog.oldest.is_some());
+    // The tick above already raised the alarm; it stays quiet for a day, then
+    // speaks again while the revocation is still stuck.
+    let now = Utc::now();
+    assert!(!p.service.alarm_if_stuck(now).await?);
+    assert!(
+        !p.service
+            .alarm_if_stuck(now + chrono::TimeDelta::hours(23))
+            .await?
+    );
+    assert!(
+        p.service
+            .alarm_if_stuck(now + chrono::TimeDelta::hours(25))
+            .await?
+    );
+
+    // Carpe Diem configured at last: delivered, and the backlog is empty.
+    p.operator.reset().await;
+    Mock::given(method("POST"))
+        .and(path("/partner/keys/revoke"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok":true,"revoked":0})))
+        .mount(&p.operator)
+        .await;
+    sqlx::query("UPDATE partner_revocations SET next_attempt_at=now()-interval '1 second'")
+        .execute(&f.pool)
+        .await?;
+    p.service.maintenance().await?;
+    let (_, ready) = readyz(&p.app).await?;
+    assert_eq!(
+        ready["data"]["partner_revocations"],
+        json!({"pending":0,"stuck":0})
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn signing_out_and_deleting_the_account_each_leave_a_revocation() -> Result<()> {
     let f = Fixture::new().await?;
@@ -2940,9 +3071,15 @@ impl BrowserKey {
         let (x, y) = (encode(point.x()), encode(point.y()));
         Self { signing, x, y }
     }
-    /// A proof for `path`. Without `kid` it carries the public key, which is
-    /// how a browser that is not a device yet presents the key it will be.
-    fn proof(&self, kid: Option<&str>, path: &str, bound: Option<&str>) -> String {
+    /// A proof for `path`, bound to `body` exactly as `as_browser` sends it.
+    /// Without `kid` it carries the public key, which is how a browser that
+    /// is not a device yet presents the key it will be.
+    fn proof(&self, kid: Option<&str>, path: &str, body: &Value) -> String {
+        let bytes = serde_json::to_vec(body).unwrap_or_default();
+        self.signed(kid, path, Some(URL_SAFE_NO_PAD.encode(hash(bytes))))
+    }
+    /// A proof with whatever `ath` it is given, or none.
+    fn signed(&self, kid: Option<&str>, path: &str, ath: Option<String>) -> String {
         use p256::ecdsa::signature::Signer;
         let header = match kid {
             Some(kid) => json!({"alg":"ES256","typ":"subrosa-device+jwt","kid":kid}),
@@ -2956,8 +3093,8 @@ impl BrowserKey {
             "iat":Utc::now().timestamp(),
             "jti":Uuid::new_v4().to_string(),
         });
-        if let Some(bound) = bound {
-            claims["ath"] = json!(URL_SAFE_NO_PAD.encode(hash(bound)));
+        if let Some(ath) = ath {
+            claims["ath"] = json!(ath);
         }
         let input = format!(
             "{}.{}",
@@ -3008,12 +3145,13 @@ async fn recovery_admitted(f: &Fixture, browser: &Browser, key: &BrowserKey) -> 
         )
         .await?;
     assert_eq!(status, StatusCode::OK);
+    let body = json!({"name":"Browser - Firefox","admission":{"recovery_proof":proof}});
     let (status, device) = as_browser(
         &f.app,
         "/api/v1/browser-devices",
         browser,
-        json!({"name":"Browser - Firefox","admission":{"recovery_proof":proof}}),
-        Some(key.proof(None, "/api/v1/browser-devices", None)),
+        body.clone(),
+        Some(key.proof(None, "/api/v1/browser-devices", &body)),
     )
     .await?;
     assert_eq!(status, StatusCode::OK, "{device}");
@@ -3027,14 +3165,18 @@ async fn a_browser_becomes_a_device_only_after_a_pairing_an_app_approved() -> Re
     let other_tab = f.login("alice").await?;
     let app = app_device(&f, "alice", "Alice laptop").await?;
     let key = BrowserKey::new();
+    let body = |pairing: Uuid| json!({"name":"Browser - Firefox","admission":{"pairing_request_id":pairing}});
     let admit = |pairing: Uuid, proof: String| {
         as_browser(
             &f.app,
             "/api/v1/browser-devices",
             &browser,
-            json!({"name":"Browser - Firefox","admission":{"pairing_request_id":pairing}}),
+            body(pairing),
             Some(proof),
         )
+    };
+    let signed = |key: &BrowserKey, pairing: Uuid| {
+        key.proof(None, "/api/v1/browser-devices", &body(pairing))
     };
     let pair = |id: Uuid| {
         f.json(
@@ -3048,9 +3190,9 @@ async fn a_browser_becomes_a_device_only_after_a_pairing_an_app_approved() -> Re
     // Not approved yet, then approved by another browser tab: neither admits.
     let by_tab = Uuid::new_v4();
     assert_eq!(pair(by_tab).await?.0, StatusCode::OK);
-    let (status, body) = admit(by_tab, key.proof(None, "/api/v1/browser-devices", None)).await?;
+    let (status, answer) = admit(by_tab, signed(&key, by_tab)).await?;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["error"]["code"], "admission_required");
+    assert_eq!(answer["error"]["code"], "admission_required");
     let approve = format!("/api/v1/pairing/{by_tab}/approve");
     assert_eq!(
         f.json("POST", &approve, &other_tab, json!({"envelope":"sealed"}))
@@ -3058,9 +3200,9 @@ async fn a_browser_becomes_a_device_only_after_a_pairing_an_app_approved() -> Re
             .0,
         StatusCode::OK
     );
-    let (status, body) = admit(by_tab, key.proof(None, "/api/v1/browser-devices", None)).await?;
+    let (status, answer) = admit(by_tab, signed(&key, by_tab)).await?;
     assert_eq!(
-        (status, body["error"]["code"].clone()),
+        (status, answer["error"]["code"].clone()),
         (StatusCode::FORBIDDEN, json!("admission_required")),
         "a browser tab is not a device and cannot admit one"
     );
@@ -3079,26 +3221,45 @@ async fn a_browser_becomes_a_device_only_after_a_pairing_an_app_approved() -> Re
     assert_eq!(status, StatusCode::OK);
     let impostor = BrowserKey::new();
     let forged = {
-        let honest = key.proof(None, "/api/v1/browser-devices", None);
-        let signed_elsewhere = impostor.proof(None, "/api/v1/browser-devices", None);
+        let honest = signed(&key, by_app);
+        let signed_elsewhere = signed(&impostor, by_app);
         let (head, _) = honest.rsplit_once('.').context("jws")?;
         let (_, signature) = signed_elsewhere.rsplit_once('.').context("jws")?;
         format!("{head}.{signature}")
     };
-    let (status, body) = admit(by_app, forged).await?;
+    let (status, answer) = admit(by_app, forged).await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["error"]["code"], "device_proof_invalid");
-    let (status, device) = admit(by_app, key.proof(None, "/api/v1/browser-devices", None)).await?;
+    assert_eq!(answer["error"]["code"], "device_proof_invalid");
+    // The proof binds the body: one signed for another admission, for the
+    // same admission under another name, or with no body hash at all, is
+    // refused. (The admission budget is five a minute; what is tested here is
+    // the binding, not the rate limit.)
+    sqlx::query("DELETE FROM rate_limits")
+        .execute(&f.pool)
+        .await?;
+    let (status, answer) = admit(by_app, signed(&key, by_tab)).await?;
+    assert_eq!(
+        (status, answer["error"]["code"].clone()),
+        (StatusCode::UNAUTHORIZED, json!("device_proof_invalid"))
+    );
+    let renamed = key.proof(
+        None,
+        "/api/v1/browser-devices",
+        &json!({"name":"Browser - Evil","admission":{"pairing_request_id":by_app}}),
+    );
+    assert_eq!(admit(by_app, renamed).await?.0, StatusCode::UNAUTHORIZED);
+    let unbound = key.signed(None, "/api/v1/browser-devices", None);
+    assert_eq!(admit(by_app, unbound).await?.0, StatusCode::UNAUTHORIZED);
+    sqlx::query("DELETE FROM rate_limits")
+        .execute(&f.pool)
+        .await?;
+    let (status, device) = admit(by_app, signed(&key, by_app)).await?;
     assert_eq!(status, StatusCode::OK, "{device}");
     assert_eq!(device["data"]["kind"], "browser");
     assert_eq!(device["data"]["name"], "Browser - Firefox");
 
     // One approval, one browser.
-    let (status, _) = admit(
-        by_app,
-        BrowserKey::new().proof(None, "/api/v1/browser-devices", None),
-    )
-    .await?;
+    let (status, _) = admit(by_app, signed(&BrowserKey::new(), by_app)).await?;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     let (_, list) = f
@@ -3139,12 +3300,14 @@ async fn the_recovery_key_admits_a_browser_through_a_verifier_that_follows_the_v
     let browser = f.login("alice").await?;
     let (proof, verifier) = recovery_proof();
     let admit = |proof: String, key: BrowserKey| {
+        let body = json!({"name":"Browser - Safari","admission":{"recovery_proof":proof}});
+        let signed = key.proof(None, "/api/v1/browser-devices", &body);
         as_browser(
             &f.app,
             "/api/v1/browser-devices",
             &browser,
-            json!({"name":"Browser - Safari","admission":{"recovery_proof":proof}}),
-            Some(key.proof(None, "/api/v1/browser-devices", None)),
+            body,
+            Some(signed),
         )
     };
     // No vault, then a vault without a verifier: nothing to compare against.
@@ -3218,17 +3381,22 @@ async fn a_browser_device_gets_a_bounded_assertion_while_it_lives() -> Result<()
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["error"]["code"], "device_required");
     // Bound to another ephemeral key, or signed for another route: refused.
+    let body = json!({"jkt": JKT});
     let (status, _) = ask(Some(key.proof(
         Some(&id),
         "/api/v1/carpe-diem/assertion",
-        Some("0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4J"),
+        &json!({"jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4J"}),
     )))
     .await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let (status, _) = ask(Some(key.proof(
+    let (status, _) = ask(Some(key.proof(Some(&id), "/api/v1/browser-devices", &body))).await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // The previous binding, a hash of the thumbprint alone, no longer passes:
+    // the proof covers the body, byte for byte.
+    let (status, _) = ask(Some(key.signed(
         Some(&id),
-        "/api/v1/browser-devices",
-        Some(JKT),
+        "/api/v1/carpe-diem/assertion",
+        Some(URL_SAFE_NO_PAD.encode(hash(JKT))),
     )))
     .await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -3236,16 +3404,20 @@ async fn a_browser_device_gets_a_bounded_assertion_while_it_lives() -> Result<()
     let (status, _) = ask(Some(BrowserKey::new().proof(
         Some(&id),
         "/api/v1/carpe-diem/assertion",
-        Some(JKT),
+        &body,
     )))
     .await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
+    // The refusals above spent the per-minute assertion budget.
+    sqlx::query("DELETE FROM rate_limits")
+        .execute(&f.pool)
+        .await?;
     // The session is no longer recent: a live browser device still renews.
     sqlx::query("UPDATE sessions SET authenticated_at=now()-interval '2 days'")
         .execute(&f.pool)
         .await?;
-    let proof = key.proof(Some(&id), "/api/v1/carpe-diem/assertion", Some(JKT));
+    let proof = key.proof(Some(&id), "/api/v1/carpe-diem/assertion", &body);
     let (status, body) = ask(Some(proof.clone())).await?;
     assert_eq!(status, StatusCode::OK, "{body}");
     let claims = p.claims(body["data"]["assertion"].as_str().context("assertion")?)?;
@@ -3293,7 +3465,7 @@ async fn a_browser_device_gets_a_bounded_assertion_while_it_lives() -> Result<()
     let (status, _) = ask(Some(key.proof(
         Some(&id),
         "/api/v1/carpe-diem/assertion",
-        Some(JKT),
+        &body,
     )))
     .await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -3323,7 +3495,7 @@ async fn a_browser_device_signs_itself_out_without_a_step_up() -> Result<()> {
             "/api/v1/browser-devices/renounce",
             &browser,
             json!({}),
-            Some(key.proof(Some(&id), "/api/v1/browser-devices/renounce", None)),
+            Some(key.proof(Some(&id), "/api/v1/browser-devices/renounce", &json!({}))),
         )
     };
     assert_eq!(renounce().await?.0, StatusCode::OK);
@@ -3343,7 +3515,7 @@ async fn a_browser_device_signs_itself_out_without_a_step_up() -> Result<()> {
         "/api/v1/browser-devices/renounce",
         &bob,
         json!({}),
-        Some(key.proof(Some(&id), "/api/v1/browser-devices/renounce", None)),
+        Some(key.proof(Some(&id), "/api/v1/browser-devices/renounce", &json!({}))),
     )
     .await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);

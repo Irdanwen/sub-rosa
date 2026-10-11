@@ -1,23 +1,13 @@
-import { t, type LocaleChoice, localeChoice, chooseLocaleAndReload } from "../../lib/i18n";
+import { t, type LocaleChoice, localeChoice } from "../../lib/i18n";
 import { listen } from "@tauri-apps/api/event";
-import { PRODUCT_NAME } from "../../lib/branding";
-import { IconCheckmark1Small } from "central-icons/IconCheckmark1Small";
-import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
-import { IconCircleCheck } from "central-icons/IconCircleCheck";
-import { IconCircleQuestionmark } from "central-icons/IconCircleQuestionmark";
-import { IconCircleX } from "central-icons/IconCircleX";
-import { IconExclamationCircle } from "central-icons/IconExclamationCircle";
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import {
-  JUNE_COMMUNITY_URL,
   dictationHelperCommand,
   dictationSettings,
   listVeniceModels,
   localAudioFileSrc,
   providerModelSettings,
-  juneOpenCommunityPage,
-  juneOpenVerifyPage,
   clearVeniceApiKey,
   setDictationLanguage,
   setDictationMicrophone,
@@ -25,14 +15,11 @@ import {
   setVeniceModel,
 } from "../../lib/tauri";
 import { LANGUAGE_OPTIONS, languageLabel } from "../../lib/dictation-languages";
-import { autostartEnabled, autostartSupported, setAutostartEnabled } from "../../lib/autostart";
-import { replayOnboarding } from "../../lib/onboarding";
 import type {
   DictationHelperEvent,
   DictationMicrophoneDeviceDto,
   DictationShortcutKind,
   DictationSettingsDto,
-  DictationShortcutModifiers,
   DictationShortcutSetting,
   ProviderModelMode,
   ProviderModelSettingsDto,
@@ -40,28 +27,21 @@ import type {
   RecordingSourceReadinessDto,
   VeniceModelDto,
 } from "../../lib/tauri";
-import { KeycapShortcut } from "../shortcuts/KeycapShortcut";
 import { AgentBrowserSettingsSection } from "./AgentBrowserSettingsSection";
-import { ChatBarShortcutCard } from "./ChatBarShortcutCard";
 import {
   MODIFIER_REQUIRED_MESSAGE,
   chordFromKeyEvent,
   shortcutFromCapturePayload,
 } from "../shortcuts/use-shortcut-capture";
 import {
-  Select,
   selectPopoverPlacement,
   selectPopoverStyle,
   type SelectPopoverPlacement,
 } from "../ui/Select";
-import { SegmentedControl } from "../ui/SegmentedControl";
-import { InlineNotice } from "../ui/InlineNotice";
-import { Switch } from "../ui/Switch";
-import { APP_COMMIT_HASH, APP_VERSION } from "../../app/build-info";
+import { APP_VERSION } from "../../app/build-info";
 import type { ReportCategory } from "../agent/composer/reportCategory";
-import { getStoredTheme, setStoredTheme, type ThemePreference } from "../../lib/theme";
-import { DEFAULT_BRAND, getStoredBrand, setStoredBrand, type BrandId } from "../../lib/brand";
-import { AccentWheel } from "./AccentWheel";
+import { getStoredTheme, type ThemePreference } from "../../lib/theme";
+import { getStoredBrand, type BrandId } from "../../lib/brand";
 import { CarpeDiemSettings } from "./CarpeDiemSettings";
 import { AccountSettingsSection } from "./AccountSettingsSection";
 import { AutomationsSection } from "./AutomationsSection";
@@ -74,12 +54,11 @@ import {
   type ReleaseChannel,
 } from "../../lib/updater";
 import { isMacLikePlatform } from "../../lib/platform";
-import { unavailableOn, usePlatformCapabilities } from "../../lib/platform-capabilities";
+import { usePlatformCapabilities } from "../../lib/platform-capabilities";
 import { systemAudioAvailability } from "../../lib/source-readiness";
 import { parseDictationHelperEvent } from "../../lib/dictation-events";
 import { dispatchProviderModelSettingsChanged } from "../../lib/model-privacy";
-import { ProviderLogo } from "./ProviderLogo";
-import { ModelMeta, ModelPickerDialog, modelOptions, selectedModel } from "./ModelPickerDialog";
+import { modelOptions } from "./ModelPickerDialog";
 import { DEFAULT_IMAGE_MODEL, IMAGE_MODELS } from "../../lib/image-models";
 import { IMAGE_GENERATION_ENABLED } from "../../lib/feature-flags";
 import { AgentSettingsSection } from "./AgentSettingsSection";
@@ -93,66 +72,23 @@ import { McpServersSection } from "./McpServersSection";
 import { SetupSnapshotSection } from "./SetupSnapshotSection";
 import { ArchiveSection } from "./ArchiveSection";
 import { ToolsetsSection } from "./ToolsetsSection";
-import { DictionarySettingsSection } from "./DictionarySettingsSection";
-import { ImportSettingsSection } from "./ImportSettingsSection";
 import { CouncilSettingsSection } from "./CouncilSettingsSection";
 import { MemorySettingsSection } from "./MemorySettingsSection";
 import { PersonalizationSettingsSection } from "./PersonalizationSettingsSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ReportsSettingsSection } from "./ReportsSettingsSection";
 import { StorageSettingsSection } from "./StorageSettingsSection";
-import { MicTestControl, type MicTestState } from "./MicTestControl";
-import { StyleSettingsSection } from "./StyleSettingsSection";
-import { THEME_OPTIONS, UI_LANGUAGE_OPTIONS } from "./appearance-options";
-
-const RELEASE_CHANNEL_OPTIONS: readonly {
-  value: ReleaseChannel;
-  label: ReactNode;
-}[] = [
-  { value: "stable", label: t("Stable") },
-  { value: "rc", label: t("Release candidate") },
-];
-
-const EMPTY_MODIFIERS: DictationShortcutModifiers = {
-  command: false,
-  control: false,
-  option: false,
-  shift: false,
-  function: false,
-};
-
-const DEFAULT_SETTINGS: DictationSettingsDto = {
-  pushToTalkShortcut: {
-    keyCode: 0x02,
-    code: "KeyD",
-    label: t("Ctrl+Opt+D"),
-    pressCount: 1,
-    modifiers: {
-      ...EMPTY_MODIFIERS,
-      control: true,
-      option: true,
-    },
-  },
-  toggleShortcut: {
-    keyCode: 0x11,
-    code: "KeyT",
-    label: t("Ctrl+Opt+T"),
-    pressCount: 1,
-    modifiers: {
-      ...EMPTY_MODIFIERS,
-      control: true,
-      option: true,
-    },
-  },
-  microphone: {},
-  style: "standard",
-  language: undefined,
-};
-
-const DEFAULT_SHORTCUTS: Record<DictationShortcutKind, DictationShortcutSetting> = {
-  push_to_talk: DEFAULT_SETTINGS.pushToTalkShortcut,
-  toggle: DEFAULT_SETTINGS.toggleShortcut,
-};
+import type { MicTestState } from "./MicTestControl";
+import {
+  AboutSettingsTab,
+  AudioSettingsTab,
+  DEFAULT_SETTINGS,
+  DictationSettingsTab,
+  GeneralSettingsTab,
+  MIC_TEST_DURATION_SECONDS,
+  ModelsSettingsTab,
+  ShortcutsSettingsTab,
+} from "./AppSettingsTabs";
 
 const DEFAULT_PROVIDER_MODELS: ProviderModelSettingsDto = {
   transcriptionProvider: "venice",
@@ -164,8 +100,6 @@ const DEFAULT_PROVIDER_MODELS: ProviderModelSettingsDto = {
   imageModel: DEFAULT_IMAGE_MODEL,
   veniceApiKeyConfigured: false,
 };
-
-const MIC_TEST_DURATION_SECONDS = 5;
 
 export type SettingsTab =
   | "general"
@@ -900,427 +834,103 @@ export function AppSettings({
           </>
         ) : null}
         {activeTab === "general" ? (
-          <>
-            <section className="settings-group" aria-labelledby="appearance-heading">
-              <h2 id="appearance-heading" className="settings-group-heading">
-                {t("Appearance")}
-              </h2>
-              <div className="settings-card">
-                <div className="settings-rows">
-                  <div className="settings-row">
-                    <div className="settings-row-info">
-                      <h3 className="settings-row-title">{t("Theme")}</h3>
-                      <p className="settings-row-description">
-                        {t("Match the system or force light or dark mode.")}
-                      </p>
-                    </div>
-                    <div className="settings-row-control">
-                      <SegmentedControl<ThemePreference>
-                        aria-label={t("App theme")}
-                        value={theme}
-                        options={THEME_OPTIONS}
-                        onValueChange={(next) => {
-                          setTheme(next);
-                          setStoredTheme(next);
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="settings-row">
-                    <div className="settings-row-info">
-                      <h3 className="settings-row-title">{t("Language")}</h3>
-                      <p className="settings-row-description">
-                        {t("Follow the system, or pick one. Dates and numbers follow too.")}
-                      </p>
-                    </div>
-                    <div className="settings-row-control">
-                      <Select
-                        ariaLabel={t("Language")}
-                        value={language}
-                        placeholder={t("System")}
-                        options={[...UI_LANGUAGE_OPTIONS]}
-                        onChange={(next) => {
-                          setLanguage(next as LocaleChoice);
-                          chooseLocaleAndReload(next as LocaleChoice);
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="settings-row">
-                    <div className="settings-row-info">
-                      <h3 className="settings-row-title">{t("Accent")}</h3>
-                      <p className="settings-row-description">
-                        {t("The brand color used across buttons, highlights, and the recorder.")}
-                      </p>
-                    </div>
-                    <div className="settings-row-control">
-                      {brand !== DEFAULT_BRAND ? (
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          aria-label={t("Reset accent color to default")}
-                          onClick={() => {
-                            setBrand(DEFAULT_BRAND);
-                            setStoredBrand(DEFAULT_BRAND);
-                          }}
-                        >
-                          {t("Reset")}
-                        </button>
-                      ) : null}
-                      <AccentWheel
-                        value={brand}
-                        onChange={(id) => {
-                          setBrand(id);
-                          setStoredBrand(id);
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <PermissionsSettingsSection
-              microphonePermissionStatus={microphonePermissionStatus}
-              microphoneReadiness={microphoneReadiness}
-              accessibilityPermissionStatus={accessibilityPermissionStatus}
-              systemReadiness={systemReadiness}
-              onEnableMicrophone={onEnableMicrophone}
-              onEnableAccessibility={onEnableAccessibility}
-              onEnableSystemAudio={onEnableSystemAudio}
-            />
-
-            <StartupSettingsSection />
-          </>
+          <GeneralSettingsTab
+            theme={theme}
+            setTheme={setTheme}
+            language={language}
+            setLanguage={setLanguage}
+            brand={brand}
+            setBrand={setBrand}
+            microphonePermissionStatus={microphonePermissionStatus}
+            microphoneReadiness={microphoneReadiness}
+            accessibilityPermissionStatus={accessibilityPermissionStatus}
+            systemReadiness={systemReadiness}
+            onEnableMicrophone={onEnableMicrophone}
+            onEnableAccessibility={onEnableAccessibility}
+            onEnableSystemAudio={onEnableSystemAudio}
+          />
         ) : null}
 
         {activeTab === "shortcuts" ? (
-          <section className="settings-group" aria-labelledby="shortcuts-heading">
-            <h2 id="shortcuts-heading" className="settings-group-heading">
-              {t("Shortcuts")}
-            </h2>
-            <div className="settings-card">
-              <div className="settings-rows">
-                {dictationHotkeyAvailable ? (
-                  <>
-                    <ShortcutRow
-                      title={t("Push to talk")}
-                      description={t("Hold this shortcut to dictate, then release to paste.")}
-                      shortcut={settings.pushToTalkShortcut}
-                      defaultShortcut={DEFAULT_SHORTCUTS.push_to_talk}
-                      capturing={capturingShortcut === "push_to_talk"}
-                      disabled={!!capturingShortcut && capturingShortcut !== "push_to_talk"}
-                      error={capturingShortcut === "push_to_talk" ? shortcutError : undefined}
-                      onChange={() => void startShortcutCapture("push_to_talk")}
-                      onReset={() =>
-                        void saveShortcut("push_to_talk", DEFAULT_SHORTCUTS.push_to_talk)
-                      }
-                      onCancel={() => void cancelShortcutCapture()}
-                    />
-
-                    <ShortcutRow
-                      title={t("Toggle dictation")}
-                      description={t("Press this shortcut to start or stop dictation.")}
-                      shortcut={settings.toggleShortcut}
-                      defaultShortcut={DEFAULT_SHORTCUTS.toggle}
-                      capturing={capturingShortcut === "toggle"}
-                      disabled={!!capturingShortcut && capturingShortcut !== "toggle"}
-                      error={capturingShortcut === "toggle" ? shortcutError : undefined}
-                      onChange={() => void startShortcutCapture("toggle")}
-                      onReset={() => void saveShortcut("toggle", DEFAULT_SHORTCUTS.toggle)}
-                      onCancel={() => void cancelShortcutCapture()}
-                    />
-                  </>
-                ) : (
-                  <div className="settings-row">
-                    <div className="settings-row-info">
-                      <h3 className="settings-row-title">{t("Dictation shortcuts unavailable")}</h3>
-                      <p className="settings-row-description">
-                        {unavailableOn(capabilities, "A global dictation shortcut")}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            <ChatBarShortcutCard />
-          </section>
+          <ShortcutsSettingsTab
+            dictationHotkeyAvailable={dictationHotkeyAvailable}
+            capabilities={capabilities}
+            settings={settings}
+            capturingShortcut={capturingShortcut}
+            shortcutError={shortcutError}
+            startShortcutCapture={startShortcutCapture}
+            saveShortcut={saveShortcut}
+            cancelShortcutCapture={cancelShortcutCapture}
+          />
         ) : null}
 
         {activeTab === "dictation" ? (
-          <>
-            <section className="settings-group" aria-labelledby="dictation-heading">
-              <h2 id="dictation-heading" className="settings-group-heading">
-                {t("Dictation")}
-              </h2>
-              <div className="settings-card">
-                <div className="settings-rows">
-                  <div className="settings-row">
-                    <div className="settings-row-info">
-                      <h3 className="settings-row-title">{t("Language")}</h3>
-                      <p className="settings-row-description">
-                        {t("Default language hint for note transcription and dictation.")}
-                      </p>
-                    </div>
-                    <div className="settings-row-control" ref={languageWrapRef}>
-                      <button
-                        type="button"
-                        className="select-trigger settings-language-select"
-                        aria-label={t("Default transcription language")}
-                        aria-haspopup="listbox"
-                        aria-expanded={languageOpen}
-                        onClick={() => setLanguageOpen((value) => !value)}
-                      >
-                        <span>{languageLabel(settings.language ?? "")}</span>
-                        <IconChevronDownSmall size={14} />
-                      </button>
-                      {languageOpen ? (
-                        <ul
-                          className="select-popover"
-                          role="listbox"
-                          data-placement={languagePopoverPlacement}
-                          style={languagePopoverStyle()}
-                        >
-                          {LANGUAGE_OPTIONS.map((option) => {
-                            const selected = option.value === (settings.language ?? "");
-                            return (
-                              <li key={option.value || "auto"}>
-                                <button
-                                  type="button"
-                                  role="option"
-                                  aria-selected={selected}
-                                  data-selected={selected}
-                                  onClick={() => void selectLanguage(option.value)}
-                                >
-                                  <span>{option.label}</span>
-                                  <span className="select-check" aria-hidden>
-                                    {selected ? <IconCheckmark1Small size={14} /> : null}
-                                  </span>
-                                </button>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <StyleSettingsSection />
-
-            <DictionarySettingsSection />
-          </>
+          <DictationSettingsTab
+            settings={settings}
+            languageWrapRef={languageWrapRef}
+            languageOpen={languageOpen}
+            setLanguageOpen={setLanguageOpen}
+            languagePopoverPlacement={languagePopoverPlacement}
+            languagePopoverStyle={languagePopoverStyle()}
+            selectLanguage={selectLanguage}
+          />
         ) : null}
 
         {activeTab === "audio" ? (
-          <section className="settings-group" aria-labelledby="audio-heading">
-            <h2 id="audio-heading" className="settings-group-heading">
-              {t("Audio")}
-            </h2>
-            <div className="settings-card">
-              <div className="settings-rows">
-                <div className="settings-row">
-                  <div className="settings-row-info">
-                    <h3 className="settings-row-title">{t("Microphone")}</h3>
-                    <p className="settings-row-description">{microphoneDescription}</p>
-                  </div>
-                  <div className="settings-row-control" ref={micWrapRef}>
-                    <button
-                      type="button"
-                      className="select-trigger"
-                      aria-haspopup="listbox"
-                      aria-expanded={micOpen}
-                      onClick={() => {
-                        setMicOpen((value) => !value);
-                        void requestMicrophones();
-                      }}
-                    >
-                      <span>{microphoneName}</span>
-                      <IconChevronDownSmall size={14} />
-                    </button>
-                    {micOpen ? (
-                      // 2px = (trigger 32 - item 28) / 2, so the selected item
-                      // overlays the trigger label exactly with no visual jump.
-                      <ul
-                        className="select-popover"
-                        role="listbox"
-                        data-placement={micPopoverPlacement}
-                        style={microphonePopoverStyle()}
-                      >
-                        {microphoneOptions.map((option) => {
-                          const selected = (option.id ?? "") === (settings.microphone.id ?? "");
-                          return (
-                            <li key={option.id ?? "auto"}>
-                              <button
-                                type="button"
-                                role="option"
-                                aria-selected={selected}
-                                data-selected={selected}
-                                onClick={() =>
-                                  void selectMicrophone(
-                                    option.id,
-                                    option.id ? option.name : undefined,
-                                  )
-                                }
-                              >
-                                <span>{option.name}</span>
-                                <span className="select-check" aria-hidden>
-                                  {selected ? <IconCheckmark1Small size={14} /> : null}
-                                </span>
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : null}
-                  </div>
-                </div>
-
-                {macLikePlatform ? (
-                  <MicTestControl
-                    state={micTestState}
-                    level={micTestLevel}
-                    elapsedMs={micTestElapsedMs}
-                    sampleSrc={micTestSampleSrc}
-                    error={micTestError}
-                    playing={micTestPlaying}
-                    durationSeconds={MIC_TEST_DURATION_SECONDS}
-                    onStart={() => void startMicTest()}
-                    onStartOver={() => void startOverMicTest()}
-                    onPlaybackError={() => {
-                      setMicTestError("Microphone test recorded, but playback is unavailable.");
-                    }}
-                    onPlayingChange={setMicTestPlaying}
-                  />
-                ) : null}
-
-                {systemUnavailable ? null : (
-                  <div className="settings-row">
-                    <div className="settings-row-info">
-                      <h3 className="settings-row-title">{t("System audio")}</h3>
-                      <p className="settings-row-description">
-                        {t("Capture audio from other apps along with your microphone.")}
-                      </p>
-                    </div>
-                    <div className="settings-row-control">
-                      {systemDenied ? (
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={onEnableSystemAudio}
-                        >
-                          {t("Enable")}
-                        </button>
-                      ) : null}
-                      <Switch
-                        checked={systemOn}
-                        disabled={checkingSourceReadiness || systemLocked}
-                        aria-label={t("Capture system audio for notes")}
-                        onCheckedChange={(next) =>
-                          onSourceModeChange(next ? "microphonePlusSystem" : "microphoneOnly")
-                        }
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
+          <AudioSettingsTab
+            settings={settings}
+            microphoneName={microphoneName}
+            microphoneDescription={microphoneDescription}
+            microphoneOptions={microphoneOptions}
+            micWrapRef={micWrapRef}
+            micOpen={micOpen}
+            setMicOpen={setMicOpen}
+            micPopoverPlacement={micPopoverPlacement}
+            microphonePopoverStyle={microphonePopoverStyle()}
+            requestMicrophones={requestMicrophones}
+            selectMicrophone={selectMicrophone}
+            macLikePlatform={macLikePlatform}
+            micTestState={micTestState}
+            micTestLevel={micTestLevel}
+            micTestElapsedMs={micTestElapsedMs}
+            micTestSampleSrc={micTestSampleSrc}
+            micTestError={micTestError}
+            micTestPlaying={micTestPlaying}
+            startMicTest={startMicTest}
+            startOverMicTest={startOverMicTest}
+            onMicTestPlaybackError={() => {
+              setMicTestError("Microphone test recorded, but playback is unavailable.");
+            }}
+            setMicTestPlaying={setMicTestPlaying}
+            systemUnavailable={systemUnavailable}
+            systemDenied={systemDenied}
+            systemLocked={systemLocked}
+            systemOn={systemOn}
+            checkingSourceReadiness={checkingSourceReadiness}
+            onEnableSystemAudio={onEnableSystemAudio}
+            onSourceModeChange={onSourceModeChange}
+          />
         ) : null}
-        {activeTab === "audio" ? <ImportSettingsSection /> : null}
 
         {activeTab === "models" ? (
-          <>
-            <ModelPickerDialog
-              open={!!pickerMode}
-              mode={pickerMode ?? "transcription"}
-              value={pickerValue}
-              options={pickerOptions}
-              search={modelSearch}
-              onSearchChange={setModelSearch}
-              onClose={() => setPickerMode(undefined)}
-              onSelect={(modelId) => {
-                if (!pickerMode) return;
-                void selectVeniceModel(pickerMode, modelId);
-                setPickerMode(undefined);
-              }}
-            />
-
-            <section className="settings-group" aria-labelledby="models-heading">
-              <h2 id="models-heading" className="settings-group-heading">
-                {t("AI models")}
-              </h2>
-              <div className="settings-card">
-                <div className="settings-rows">
-                  <ModelRow
-                    title={t("Transcription")}
-                    description={t("Speech-to-text for note recordings and dictation.")}
-                    value={providerSettings.transcriptionModel}
-                    options={transcriptionOptions}
-                    onOpen={() => openModelPicker("transcription")}
-                  />
-                  <ModelRow
-                    title={t("Text")}
-                    description={t("Used for generated notes and agent responses.")}
-                    value={providerSettings.generationModel}
-                    options={generationOptions}
-                    onOpen={() => openModelPicker("generation")}
-                  />
-                  <button
-                    type="button"
-                    className="settings-row settings-more-options-trigger"
-                    aria-expanded={showMoreModelOptions}
-                    aria-controls="models-more-options"
-                    onClick={() => setShowMoreModelOptions((open) => !open)}
-                  >
-                    <span className="settings-row-info">
-                      <span className="settings-row-title">{t("More options")}</span>
-                      <span className="settings-row-description">
-                        {t("Advanced model settings.")}
-                      </span>
-                    </span>
-                    <IconChevronDownSmall
-                      className="settings-more-options-chevron"
-                      size={14}
-                      aria-hidden
-                    />
-                  </button>
-                  {showMoreModelOptions ? (
-                    <CarpeDiemKeyRow
-                      id="models-more-options"
-                      legacyVeniceKeyConfigured={providerSettings.veniceApiKeyConfigured}
-                      onOpenCarpeDiemSettings={() => setActiveTab("carpe-diem")}
-                      onRemoveLegacyKey={() => void removeVeniceApiKey()}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            </section>
-
-            {IMAGE_GENERATION_ENABLED ? (
-              <section className="settings-group" aria-labelledby="image-generation-heading">
-                <h2 id="image-generation-heading" className="settings-group-heading">
-                  {t("Image generation")}
-                </h2>
-                <p className="settings-group-description">
-                  {t("Choose the model Sub Rosa uses when you ask it to generate an image.")}
-                </p>
-                <div className="settings-card">
-                  <div className="settings-rows">
-                    <ModelRow
-                      title={t("Image")}
-                      description={t("Used when you generate an image from chat.")}
-                      value={providerSettings.imageModel}
-                      options={imageOptions}
-                      onOpen={() => openModelPicker("image")}
-                    />
-                  </div>
-                </div>
-              </section>
-            ) : null}
-          </>
+          <ModelsSettingsTab
+            pickerMode={pickerMode}
+            setPickerMode={setPickerMode}
+            pickerValue={pickerValue}
+            pickerOptions={pickerOptions}
+            modelSearch={modelSearch}
+            setModelSearch={setModelSearch}
+            selectVeniceModel={selectVeniceModel}
+            openModelPicker={openModelPicker}
+            providerSettings={providerSettings}
+            transcriptionOptions={transcriptionOptions}
+            generationOptions={generationOptions}
+            imageOptions={imageOptions}
+            showMoreModelOptions={showMoreModelOptions}
+            setShowMoreModelOptions={setShowMoreModelOptions}
+            onOpenCarpeDiemSettings={() => setActiveTab("carpe-diem")}
+            removeVeniceApiKey={removeVeniceApiKey}
+          />
         ) : null}
 
         {activeTab === "agent" ? <AgentSettingsSection /> : null}
@@ -1357,435 +967,20 @@ export function AppSettings({
         ) : null}
 
         {activeTab === "about" ? (
-          <section className="settings-group" aria-labelledby="about-heading">
-            <h2 id="about-heading" className="settings-group-heading">
-              {t("About")}
-            </h2>
-            <div className="settings-card">
-              <div className="settings-rows">
-                <div className="settings-row settings-row-meta">
-                  <div className="settings-row-info">
-                    <h3 className="settings-row-title settings-meta-label">
-                      {t("Release version")}
-                    </h3>
-                  </div>
-                  <div className="settings-row-control">
-                    <span className="settings-meta-value">{APP_VERSION}</span>
-                  </div>
-                </div>
-
-                <div className="settings-row settings-row-meta">
-                  <div className="settings-row-info">
-                    <h3 className="settings-row-title settings-meta-label">{t("Commit")}</h3>
-                  </div>
-                  <div className="settings-row-control">
-                    <span className="settings-meta-value settings-meta-value-mono">
-                      {APP_COMMIT_HASH}
-                    </span>
-                  </div>
-                </div>
-
-                {onCheckForUpdates ? (
-                  <>
-                    <div className="settings-row">
-                      <div className="settings-row-info">
-                        <h3 className="settings-row-title">{t("Updates")}</h3>
-                        <p className="settings-row-description">
-                          {t("Check whether a newer version of Sub Rosa is available.")}
-                        </p>
-                      </div>
-                      <div className="settings-row-control">
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={onCheckForUpdates}
-                        >
-                          {t("Check for updates")}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-info">
-                        <h3 className="settings-row-title">{t("Release channel")}</h3>
-                        <p className="settings-row-description">
-                          {t(
-                            "Stable is recommended. Release candidate gets early builds for testing.",
-                          )}
-                        </p>
-                      </div>
-                      <div className="settings-row-control">
-                        <SegmentedControl<ReleaseChannel>
-                          aria-label={t("Release channel")}
-                          value={releaseChannel}
-                          options={RELEASE_CHANNEL_OPTIONS}
-                          onValueChange={handleReleaseChannelChange}
-                        />
-                      </div>
-                    </div>
-
-                    {reconcileVersion ? (
-                      <div className="settings-row">
-                        <InlineNotice
-                          aria-label={t("Switch to stable now")}
-                          eyebrow={t("Switch to stable now?")}
-                          body={t(
-                            "Installs {reconcileVersion}, replacing your release candidate build. You'll get {version} when it reaches stable.",
-                            { reconcileVersion: reconcileVersion, version: baseVersion() },
-                          )}
-                          actions={
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-ghost"
-                                onClick={() => setReconcileVersion(undefined)}
-                              >
-                                {t("Not now")}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-secondary"
-                                onClick={confirmReconcileToStable}
-                              >
-                                {t("Switch to stable")}
-                              </button>
-                            </>
-                          }
-                        />
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-
-                <div className="settings-row">
-                  <div className="settings-row-info">
-                    <h3 className="settings-row-title">{t("Community")}</h3>
-                    <p className="settings-row-description">
-                      {t("Join us in the Sub Rosa community on Telegram at {url}.", {
-                        url: JUNE_COMMUNITY_URL.replace("https://", ""),
-                      })}
-                    </p>
-                  </div>
-                  <div className="settings-row-control">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => void juneOpenCommunityPage().catch(() => undefined)}
-                    >
-                      {t("Join community")}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="settings-row">
-                  <div className="settings-row-info">
-                    <h3 className="settings-row-title">{t("Where your data goes")}</h3>
-                    <p className="settings-row-description">
-                      {t(
-                        "{PRODUCT_NAME}'s backend runs on this machine, on loopback. See what it keeps, what leaves the device, and how to check both yourself.",
-                        { PRODUCT_NAME },
-                      )}
-                    </p>
-                  </div>
-                  <div className="settings-row-control">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() =>
-                        void juneOpenVerifyPage().catch((err: unknown) =>
-                          setStatus(messageFromError(err)),
-                        )
-                      }
-                    >
-                      {t("Open")}
-                    </button>
-                  </div>
-                </div>
-
-                {onReportIssue ? (
-                  <div className="settings-row">
-                    <div className="settings-row-info">
-                      <h3 className="settings-row-title">{t("Report an issue")}</h3>
-                      <p className="settings-row-description">
-                        {t(
-                          "Something not working? Describe it to Sub Rosa, attach a screenshot if you have one, and Sub Rosa will send the report to the team along with its own diagnosis.",
-                        )}
-                      </p>
-                    </div>
-                    <div className="settings-row-control">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => onReportIssue("bug")}
-                      >
-                        {t("Report an issue")}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {import.meta.env.DEV ? (
-                  // Dev builds only: same helper the devtools console exposes
-                  // as june.replayOnboarding() — clears completion and
-                  // reloads into the wizard.
-                  <div className="settings-row">
-                    <div className="settings-row-info">
-                      <h3 className="settings-row-title">{t("Replay onboarding")}</h3>
-                      <p className="settings-row-description">
-                        {t(
-                          "Dev only. Forget that onboarding finished and reload into the first-run wizard.",
-                        )}
-                      </p>
-                    </div>
-                    <div className="settings-row-control">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => replayOnboarding()}
-                      >
-                        {t("Replay onboarding")}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </section>
+          <AboutSettingsTab
+            onCheckForUpdates={onCheckForUpdates}
+            releaseChannel={releaseChannel}
+            handleReleaseChannelChange={handleReleaseChannelChange}
+            reconcileVersion={reconcileVersion}
+            onDismissReconcile={() => setReconcileVersion(undefined)}
+            confirmReconcileToStable={confirmReconcileToStable}
+            onVerifyPageError={(err: unknown) => setStatus(messageFromError(err))}
+            onReportIssue={onReportIssue}
+          />
         ) : null}
       </div>
     </div>
   );
-}
-
-type PermissionStatusTone = "allowed" | "attention" | "blocked" | "unsupported" | "unknown";
-
-type PermissionStatusView = {
-  label: string;
-  tone: PermissionStatusTone;
-};
-
-/** Launch-at-login toggle. Reads and writes the OS login item directly (the
- * LaunchAgent is the single source of truth), so state here can never drift
- * from what System Settings shows. Hidden in browser previews, where no
- * autostart backend exists. */
-function StartupSettingsSection() {
-  const [enabled, setEnabled] = useState<boolean>();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    if (!autostartSupported()) return;
-    let cancelled = false;
-    autostartEnabled()
-      .then((value) => {
-        if (!cancelled) setEnabled(value);
-      })
-      .catch(() => {
-        if (!cancelled) setError(t("Could not read the login item state."));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function toggle(next: boolean) {
-    setSaving(true);
-    setError(undefined);
-    try {
-      await setAutostartEnabled(next);
-      setEnabled(next);
-    } catch {
-      setError(t("Could not update the login item. Try again."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (!autostartSupported() || (enabled === undefined && !error)) return null;
-
-  return (
-    <section className="settings-group" aria-labelledby="startup-heading">
-      <h2 id="startup-heading" className="settings-group-heading">
-        {t("Startup")}
-      </h2>
-      <p className="settings-group-description">
-        {t(
-          "Dictation shortcuts, meeting detection, and scheduled routines only work while Sub Rosa is running.",
-        )}
-      </p>
-      <div className="settings-card">
-        <div className="settings-rows">
-          <div className="settings-row">
-            <div className="settings-row-info">
-              <h3 className="settings-row-title">{t("Open Sub Rosa at login")}</h3>
-              <p className="settings-row-description">
-                {t("Start Sub Rosa automatically when you sign in to your computer.")}
-              </p>
-            </div>
-            <div className="settings-row-control">
-              <Switch
-                checked={enabled === true}
-                disabled={saving || enabled === undefined}
-                aria-label={t("Open Sub Rosa at login")}
-                onCheckedChange={(next) => void toggle(next)}
-              />
-            </div>
-          </div>
-          {error ? <p className="settings-row-description">{error}</p> : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PermissionsSettingsSection({
-  microphonePermissionStatus,
-  microphoneReadiness,
-  accessibilityPermissionStatus,
-  systemReadiness,
-  onEnableMicrophone,
-  onEnableAccessibility,
-  onEnableSystemAudio,
-}: {
-  microphonePermissionStatus?: string;
-  microphoneReadiness?: RecordingSourceReadinessDto["sources"][number];
-  accessibilityPermissionStatus?: string;
-  systemReadiness?: RecordingSourceReadinessDto["sources"][number];
-  onEnableMicrophone?: () => void;
-  onEnableAccessibility?: () => void;
-  onEnableSystemAudio: () => void;
-}) {
-  const macLikePlatform = isMacLikePlatform();
-  return (
-    <section className="settings-group" aria-labelledby="permissions-heading">
-      <h2 id="permissions-heading" className="settings-group-heading">
-        {t("System permissions")}
-      </h2>
-      <p className="settings-group-description">
-        {macLikePlatform
-          ? t(
-              "macOS access used for recording audio, pasting dictation, and capturing system sound.",
-            )
-          : t("Access used for recording audio.")}
-      </p>
-      <div className="settings-card">
-        <div className="settings-rows">
-          <PermissionRow
-            title={t("Microphone")}
-            description={t("Record dictation and note audio.")}
-            status={permissionStatus(
-              microphonePermissionStatus ?? microphoneReadiness?.permissionState,
-            )}
-            onManage={onEnableMicrophone}
-          />
-
-          {macLikePlatform ? (
-            <>
-              <PermissionRow
-                title={t("Accessibility")}
-                description={t("Paste dictated text into the active app.")}
-                status={permissionStatus(accessibilityPermissionStatus)}
-                onManage={onEnableAccessibility}
-              />
-
-              <PermissionRow
-                title={t("System audio")}
-                description={t("Record audio from other apps when system audio is enabled.")}
-                status={sourcePermissionStatus(systemReadiness)}
-                onManage={onEnableSystemAudio}
-              />
-            </>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PermissionRow({
-  title,
-  description,
-  status,
-  onManage,
-}: {
-  title: string;
-  description: string;
-  status: PermissionStatusView;
-  onManage?: () => void;
-}) {
-  const actionDisabled = status.tone === "unsupported" || !onManage;
-  return (
-    <div className="settings-row">
-      <div className="settings-row-info">
-        <h3 className="settings-row-title">{title}</h3>
-        <p className="settings-row-description">{description}</p>
-      </div>
-      <div className="settings-row-control settings-permission-control">
-        <span
-          className="settings-permission-status"
-          data-status={status.tone}
-          role="img"
-          aria-label={status.label}
-          title={status.label}
-        >
-          <PermissionStatusIcon tone={status.tone} />
-        </span>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={actionDisabled}
-          aria-label={t("Manage {title} permission", { title: title })}
-          onClick={onManage}
-        >
-          {t("Manage")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function PermissionStatusIcon({ tone }: { tone: PermissionStatusTone }) {
-  if (tone === "allowed") return <IconCircleCheck size={16} />;
-  if (tone === "unknown") return <IconCircleQuestionmark size={16} />;
-  if (tone === "unsupported") return <IconCircleX size={16} />;
-  return <IconExclamationCircle size={16} />;
-}
-
-function permissionStatus(state?: string): PermissionStatusView {
-  switch (state) {
-    case "granted":
-      return { label: t("Allowed"), tone: "allowed" };
-    case "denied":
-      return { label: t("Blocked"), tone: "blocked" };
-    case "restricted":
-      return { label: t("Restricted"), tone: "blocked" };
-    case "missing":
-      return { label: t("Needs access"), tone: "attention" };
-    case "not_determined":
-      return { label: t("Not requested"), tone: "attention" };
-    case "unsupported":
-      return { label: t("Unsupported"), tone: "unsupported" };
-    case "unknown":
-      return { label: t("Unknown"), tone: "unknown" };
-    default:
-      return { label: t("Checking"), tone: "unknown" };
-  }
-}
-
-function sourcePermissionStatus(
-  source?: RecordingSourceReadinessDto["sources"][number],
-): PermissionStatusView {
-  if (!source) return { label: t("Checking"), tone: "unknown" };
-  // The two halves are independent: permissionState is the grant, `ready` is
-  // whether this Mac can actually capture. A microphone-only check never asks
-  // for the grant, and a granted source can still be uncapturable (the helper
-  // reports `system_audio_capture_unavailable`, recoverable by restarting).
-  if (source.permissionState === "granted") {
-    return source.ready
-      ? { label: t("Allowed"), tone: "allowed" }
-      : { label: t("Unavailable"), tone: "attention" };
-  }
-  return permissionStatus(source.permissionState);
 }
 
 function stringPayload(value: unknown) {
@@ -1803,178 +998,12 @@ function numericPayload(value: unknown) {
   return 0;
 }
 
-function ModelRow({
-  title,
-  description,
-  value,
-  options,
-  onOpen,
-}: {
-  title: string;
-  description: string;
-  value: string;
-  options: VeniceModelDto[];
-  onOpen: () => void;
-}) {
-  const model = selectedModel(options, value);
-  return (
-    <div className="settings-row">
-      <div className="settings-row-info">
-        <h3 className="settings-row-title">{title}</h3>
-        <p className="settings-row-description">{description}</p>
-      </div>
-      <div className="settings-row-control settings-model-control">
-        <button
-          type="button"
-          className="model-summary-button"
-          onClick={onOpen}
-          aria-label={t("Change {value} model", { value: title.toLowerCase() })}
-        >
-          <span className="model-summary-logo" aria-hidden>
-            <ProviderLogo provider={model.provider} id={model.id} name={model.name} />
-          </span>
-          <span className="model-summary-name">{model.name}</span>
-          <IconChevronDownSmall size={14} />
-          <span className="model-summary-meta">
-            <ModelMeta model={model} />
-          </span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function CarpeDiemKeyRow({
-  id,
-  legacyVeniceKeyConfigured,
-  onOpenCarpeDiemSettings,
-  onRemoveLegacyKey,
-}: {
-  id?: string;
-  legacyVeniceKeyConfigured: boolean;
-  onOpenCarpeDiemSettings: () => void;
-  onRemoveLegacyKey: () => void;
-}) {
-  return (
-    <>
-      <div id={id} className="settings-row">
-        <div className="settings-row-info">
-          <h3 className="settings-row-title">{t("Carpe Diem API key")}</h3>
-          <p className="settings-row-description">
-            {t("Model requests use the Carpe Diem key stored in your system keychain.")}
-          </p>
-        </div>
-        <div className="settings-row-control">
-          <button type="button" className="btn btn-secondary" onClick={onOpenCarpeDiemSettings}>
-            {t("Manage key")}
-          </button>
-        </div>
-      </div>
-      {legacyVeniceKeyConfigured ? (
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <h3 className="settings-row-title">{t("Legacy Venice key")}</h3>
-            <p className="settings-row-description">
-              {t(
-                "A Venice API key saved by an earlier version overrides your Carpe Diem key on every request. Remove it to use the Carpe Diem key.",
-              )}
-            </p>
-          </div>
-          <div className="settings-row-control">
-            <button type="button" className="btn btn-secondary" onClick={onRemoveLegacyKey}>
-              {t("Remove")}
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function ShortcutRow({
-  title,
-  description,
-  shortcut,
-  defaultShortcut,
-  capturing,
-  disabled,
-  error,
-  onChange,
-  onReset,
-  onCancel,
-}: {
-  title: string;
-  description: string;
-  shortcut: DictationShortcutSetting;
-  defaultShortcut: DictationShortcutSetting;
-  capturing: boolean;
-  disabled: boolean;
-  error?: string;
-  onChange: () => void;
-  onReset: () => void;
-  onCancel: () => void;
-}) {
-  const canReset = !capturing && !shortcutsMatch(shortcut, defaultShortcut) && !disabled;
-
-  return (
-    <div className="settings-row">
-      <div className="settings-row-info">
-        <h3 className="settings-row-title">{title}</h3>
-        <p className="settings-row-description">{description}</p>
-        {error ? <p className="settings-row-error">{error}</p> : null}
-      </div>
-      <div className="settings-row-control">
-        <KeycapShortcut label={shortcut.label} capturing={capturing} />
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={disabled}
-          onClick={capturing ? onCancel : onChange}
-        >
-          {capturing ? t("Cancel") : t("Change")}
-        </button>
-        {canReset ? (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            aria-label={t("Reset {title} shortcut to default", { title: title })}
-            onClick={onReset}
-          >
-            {t("Reset")}
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function shortcutKindLabel(kind: DictationShortcutKind) {
   return kind === "toggle" ? t("Toggle dictation") : t("Push to talk");
 }
 
 function shortcutForKind(settings: DictationSettingsDto, kind: DictationShortcutKind) {
   return kind === "toggle" ? settings.toggleShortcut : settings.pushToTalkShortcut;
-}
-
-function shortcutsMatch(first: DictationShortcutSetting, second: DictationShortcutSetting) {
-  const keyCodesMatch =
-    first.keyCode === undefined || second.keyCode === undefined || first.keyCode === second.keyCode;
-
-  return (
-    keyCodesMatch &&
-    first.code === second.code &&
-    first.label === second.label &&
-    first.pressCount === second.pressCount &&
-    first.modifiers.command === second.modifiers.command &&
-    first.modifiers.control === second.modifiers.control &&
-    first.modifiers.option === second.modifiers.option &&
-    first.modifiers.shift === second.modifiers.shift &&
-    first.modifiers.function === second.modifiers.function
-  );
-}
-
-function stringPayloadValue(value: unknown) {
-  return typeof value === "string" ? value : undefined;
 }
 
 function messageFromError(error: unknown) {
@@ -1988,10 +1017,4 @@ function messageFromError(error: unknown) {
 // leave-rc reconcile offer; a clean stable build has nothing to reconcile.
 function isPrereleaseBuild() {
   return APP_VERSION.includes("-rc");
-}
-
-// The base version an rc will become once promoted (0.0.25-rc.2 -> 0.0.25), used
-// to reassure the user which stable they will land on when it ships.
-function baseVersion() {
-  return APP_VERSION.split("-")[0];
 }

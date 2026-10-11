@@ -40,6 +40,10 @@ export interface ConnectorEnv {
   /** This browser as a device of the account, so a call relayed through
    * another device is never addressed to itself (ADR-0107). */
   deviceId?: string | null;
+  /** Signs an approval's claims with this browser's device key, so the app
+   * that runs a relayed call knows the yes came from this device (ADR-0107
+   * addendum). Null when it cannot. */
+  signApproval?: (claims: object) => Promise<string | null>;
 }
 
 /** Thrown when a connector needs the person to sign in (again). */

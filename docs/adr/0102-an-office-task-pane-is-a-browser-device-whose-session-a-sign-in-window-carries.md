@@ -122,3 +122,85 @@ the design.
   list and the telemetry refusal there (docs/office-addins.md).
 - AppSource submission is an external gate: a publisher account, the
   validation run, and Microsoft's review.
+
+## Addendum, 2026-10-10: the panes move to an origin of their own
+
+**Context.** The post-release audit of 1.89.0 (finding M1) replayed decision 5
+against the code: Office.js, which Microsoft updates in place and nobody can
+pin, ran first-party on the account origin. Under `/office/` it shared that
+origin with everything the account site protects: the vault unlocked in
+`/app`, the web client's browser device keys in IndexedDB, the CSRF cookie
+(readable by script) and the cookie-carrying API, all reachable by
+same-origin script. The `/office/` policy limited where it could post, not
+what it could reach.
+
+**Decision.**
+
+1. **The panes run on `https://office.subrosa.furetier.com`**: the three
+   panes, the sign-in window, the ribbon's function file and the Excel pane's
+   Pyodide, built into `office-addins/dist` and served by their own vhost
+   (`subrosa-cloud/deploy/nginx-office.conf.example`, the office block of the
+   Caddy example, `office-addins/public/_headers`). Their policy is decision
+   5's, plus `frame-src 'self' https://subrosa.furetier.com/office/courier.html`.
+   The account origin serves no Office.js any more; its old pane addresses
+   redirect to `/office/moved.html`, a page without script.
+2. **The session stays where it is.** The account cookie has no `Domain`
+   attribute, so it never reaches the office origin. The sign-in window, on
+   the office origin with Office.js (it needs `messageParent` and the pane's
+   messages), embeds `https://subrosa.furetier.com/office/courier.html`: an
+   account page with no Office.js, `default-src 'none'; script-src 'self';
+   connect-src 'self'`, framed only by the office origin, no cache. It runs
+   decision 2's `carry`, unchanged: the same seven calls, the recovery proof
+   refused. The two origins are the same site, so the `SameSite=Lax` cookie
+   and first-party storage reach the frame. Window and frame talk over
+   `postMessage` and each checks the other end: the frame answers only
+   `event.origin === office origin && event.source === parent`, the window
+   listens only to its own frame on the account origin, and both parse and
+   rewrite every message rather than pass it on.
+3. **Sign-in is a top-level visit to the account origin**:
+   `/auth/login?return_to=/office/signed-in.html`. That static page runs no
+   Office.js and `location.replace`s to the sign-in window at a URL fixed by
+   its build. The service's `RETURN_TO` gains `/office/signed-in.html` and
+   loses `/office/session.html`.
+4. **A pane never calls the account service itself**, on any platform. Its
+   origin has neither the cookie nor an `/api/`, so the desktop panes'
+   "direct" session of decision 2 is gone: every session call goes through
+   the window, and the recovery key never admits a pane (only the app's
+   approval does). While no window is open, the pane's transport answers
+   "no session" without a request.
+5. **Device proofs are signed for the account origin** (`VITE_ACCOUNT_ORIGIN`
+   and the path, which the service checks against `public_url`), not for the
+   page's. A pane is a browser device of the office origin: its keys live in
+   that origin's IndexedDB. Pane devices made on the account origin before
+   stay in the device list until revoked; their keys expire within seven days.
+6. **Manifests 1.0.1.0**, same ids: the panes on the office origin, the
+   account origin in `AppDomains` (the window goes there to sign in), the
+   support link on the account site.
+
+The account service needs no CORS for this: the pane's only direct calls are
+to Carpe Diem (key birth, inference, the web search), and everything else
+goes through the courier on the account origin. Carpe Diem, though, admits
+browser calls by origin (`SUBROSA_SITE_ORIGINS` in the operator's
+`browserKeys.ts`), and the office origin has to be added there before a pane
+on it can obtain or use a key.
+
+**Alternatives considered.**
+
+- **A stricter policy on `/office/` and nothing else.** A policy decides what
+  script may load and where it may post, not what same-origin script can
+  read; Office.js would still share IndexedDB, the CSRF cookie and the API
+  with the account site.
+- **A `Domain=furetier.com` cookie, or CORS with credentials on the service**,
+  so the panes call the service directly. Either hands the session to every
+  host of the site, or to Microsoft's script on the office origin, which is
+  what M1 is about.
+- **The courier inside the pane instead of the window.** In Office on the web
+  the pane is a frame on Microsoft's site, where the frame would be
+  third-party: no Lax cookie, partitioned storage. The window is top-level,
+  which is why it exists.
+
+**Consequences.** A third vhost, a third certificate and a third build to
+publish, in the order of docs/office-addins.md. The add-ins sideloaded before
+the move show the "moved" page until the new manifests are sideloaded; each
+pane then asks once more to sign in and to be approved from the app. Carpe
+Diem's operator must list the office origin before the panes work.

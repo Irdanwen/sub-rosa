@@ -117,8 +117,9 @@ export function AttachmentBar({
           aria-label={t("Attached to the next message", "Joint au prochain message")}
         >
           {attachments.map((attachment, index) => (
-            // Names may repeat; the order is the composer's own.
-            // biome-ignore lint/suspicious/noArrayIndexKey: a short list, never reordered
+            // Names may repeat and an attachment has no id. Removing one shifts
+            // the keys after it, which only redraws chips that hold no state.
+            // biome-ignore lint/suspicious/noArrayIndexKey: no id, never reordered, and a chip holds no state
             <li key={index}>
               {attachment.kind === "image" ? (
                 <img src={attachment.data} alt="" className="wc-thumb" />

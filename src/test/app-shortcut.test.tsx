@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
 import { HERO_GREETINGS } from "../components/agent/AgentWorkspace";
 import { MEETING_START_TRANSCRIPTION_EVENT } from "../lib/events";
@@ -271,6 +271,14 @@ function recordingSession(overrides: Partial<RecordingSessionDto> = {}): Recordi
 }
 
 describe("App shortcuts", () => {
+  // Settings is a lazy view (src/app/lazy-views.tsx). Its first import
+  // transforms the whole settings tree, which under a loaded machine took
+  // longer than findBy's one second and failed the menu-event test. Loading
+  // it here makes the lazy view resolve from the module cache.
+  beforeAll(async () => {
+    await import("../components/settings/AppSettings");
+  }, 60_000);
+
   beforeEach(() => {
     vi.clearAllMocks();
     const first = note();
@@ -390,6 +398,8 @@ describe("App shortcuts", () => {
     }
   });
 
+  // Three full menu round trips through the App shell: about a second on an
+  // idle machine, past the default five under a parallel build.
   it("opens a report draft from the app menu while a session is active", async () => {
     const user = userEvent.setup();
     const activeSession = {
@@ -431,7 +441,7 @@ describe("App shortcuts", () => {
       expect(screen.getByRole("button", { name: "Start session" })).toBeDisabled();
       expect(mocks.gatewayRequest).not.toHaveBeenCalledWith("session.create", expect.anything());
     }
-  });
+  }, 15_000);
 
   it("keeps a newly started chat attached to its tab before sessions hydrate", async () => {
     const restoreNavigator = stubNavigatorPlatform(

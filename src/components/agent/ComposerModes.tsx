@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { t } from "../../lib/i18n";
 import { withCodeContext, withCodeDraftContext } from "../../lib/code-mode";
 import { sessionWorkingDir } from "../../lib/agent-session-working-dir";
+import { useIsTemporaryChat, useTemporaryDraft } from "../../lib/temporary-chat";
 import {
   STUDY_CARDS_CHANGED_EVENT,
   setStudyMode,
@@ -40,7 +41,9 @@ export async function withModeContext(
  * research" opens the research dialog on what is typed. "Review" appears
  * once there are cards, with the number due. The desktop shows them as
  * chips beside the model; the phone, short of room, gathers them behind one
- * button.
+ * button. A temporary chat (ADR-0083) offers neither: a study chat keeps its
+ * mode and grows a deck, a report is kept and synchronised, and Rust refuses
+ * both there anyway. Review stays: it is about cards already kept.
  */
 export function ComposerModes({
   chatId,
@@ -52,6 +55,9 @@ export function ComposerModes({
   compact?: boolean;
 }) {
   const studying = useStudyMode(chatId);
+  const temporaryOpen = useIsTemporaryChat(chatId);
+  const temporaryNext = useTemporaryDraft();
+  const temporary = chatId ? temporaryOpen : temporaryNext;
   const [researchOpen, setResearchOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -91,6 +97,7 @@ export function ComposerModes({
   );
 
   if (compact) {
+    if (temporary) return null;
     return (
       <>
         <button
@@ -141,29 +148,34 @@ export function ComposerModes({
   // In a narrow composer the chips keep their icon and drop their words
   // (study-research.css, by the composer's width), so each one carries its
   // name for assistive technology and a tooltip whatever is shown.
+  if (temporary && cards.total === 0) return null;
   return (
     <div className="composer-modes">
-      <button
-        type="button"
-        className="composer-mode"
-        aria-pressed={studying}
-        aria-label={t("Study")}
-        title={t("A tutor that checks what you understood")}
-        onClick={toggleStudy}
-      >
-        <IconGraduateCap size={14} aria-hidden />
-        <span className="composer-mode-label">{t("Study")}</span>
-      </button>
-      <button
-        type="button"
-        className="composer-mode"
-        aria-label={t("Deep research")}
-        title={t("Research a question across the web and your notes")}
-        onClick={() => setResearchOpen(true)}
-      >
-        <IconDeepSearch size={14} aria-hidden />
-        <span className="composer-mode-label">{t("Deep research")}</span>
-      </button>
+      {temporary ? null : (
+        <>
+          <button
+            type="button"
+            className="composer-mode"
+            aria-pressed={studying}
+            aria-label={t("Study")}
+            title={t("A tutor that checks what you understood")}
+            onClick={toggleStudy}
+          >
+            <IconGraduateCap size={14} aria-hidden />
+            <span className="composer-mode-label">{t("Study")}</span>
+          </button>
+          <button
+            type="button"
+            className="composer-mode"
+            aria-label={t("Deep research")}
+            title={t("Research a question across the web and your notes")}
+            onClick={() => setResearchOpen(true)}
+          >
+            <IconDeepSearch size={14} aria-hidden />
+            <span className="composer-mode-label">{t("Deep research")}</span>
+          </button>
+        </>
+      )}
       {cards.total > 0 ? (
         <button
           type="button"

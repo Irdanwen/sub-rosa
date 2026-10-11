@@ -4,7 +4,8 @@
 //! Diem key that results is delivered to the app and never passes here.
 use super::{Result, ok, session};
 use axum::{
-    Json, Router,
+    Router,
+    body::Bytes,
     extract::State,
     http::HeaderMap,
     response::{IntoResponse, Response},
@@ -24,11 +25,10 @@ struct AssertionRequest {
     /// RFC 7638 thumbprint of the app's ephemeral P-256 key.
     jkt: String,
 }
-async fn assertion(
-    State(s): State<Arc<Service>>,
-    h: HeaderMap,
-    Json(b): Json<AssertionRequest>,
-) -> Result<Response> {
+async fn assertion(State(s): State<Arc<Service>>, h: HeaderMap, body: Bytes) -> Result<Response> {
+    // Parsed first, as the `Json` extractor did, but from bytes kept whole:
+    // a browser device's proof is bound to exactly these bytes.
+    let b: AssertionRequest = super::browser_devices::json_body(&h, &body)?;
     // Answered before any session is read, so an app can tell "this deployment
     // does not issue keys" apart from "sign in again".
     if !s.carpe_diem_enabled() {
@@ -36,6 +36,6 @@ async fn assertion(
     }
     let a = session(&s, &h, true).await?;
     // Only a browser device sends a proof; an app's bearer session is enough.
-    let proof = super::browser_devices::proof(&h);
+    let proof = super::browser_devices::proof(&h, &body);
     Ok(ok(s.carpe_diem_assertion(&a, &b.jkt, proof).await?).into_response())
 }

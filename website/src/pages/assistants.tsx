@@ -37,6 +37,12 @@ export function categoryName(category: Category | string): string {
   }
 }
 
+/** How many people added a listing: one sentence per plural form. */
+function addedCount(count: number): string {
+  if (count === 1) return t("1 added", "1 ajout");
+  return t("{count} added", "{count} ajouts").replace("{count}", String(count));
+}
+
 export function permissionName(key: string): string {
   switch (key) {
     case "web":
@@ -197,10 +203,7 @@ function CatalogPage() {
               <p>{listing.description}</p>
               <p className="quiet">
                 {listing.author ? `${listing.author.display_name} · ` : ""}
-                {t("{count} added", "{count} ajouts").replace(
-                  "{count}",
-                  String(listing.import_count),
-                )}
+                {addedCount(listing.import_count)}
               </p>
             </li>
           ))}
@@ -312,9 +315,7 @@ function ListingPage({ id }: { id: string }) {
             ))}
           </>
         ) : null}
-        <p className="quiet">
-          {t("{count} added", "{count} ajouts").replace("{count}", String(listing.import_count))}
-        </p>
+        <p className="quiet">{addedCount(listing.import_count)}</p>
         <ReportForm id={listing.id} />
       </div>
     </section>

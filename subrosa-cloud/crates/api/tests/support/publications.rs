@@ -419,6 +419,26 @@ async fn a_profile_and_a_listing_are_found_imported_reported_and_taken_down() ->
         imported["data"]["references"][0]["text"],
         "Short sentences."
     );
+    // Anybody may import, but one address counts at most ten a minute: the
+    // eleventh is refused and counts nothing, so a script cannot inflate the
+    // public count. Reading stays open.
+    let import = format!("/api/v1/catalog/assistants/{listing}/import");
+    for expected in 2..=10 {
+        let (status, body) = f.anonymous("POST", &import, json!({})).await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["data"]["import_count"], expected);
+    }
+    let (status, body) = f.anonymous("POST", &import, json!({})).await?;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["error"]["code"], "slow_down");
+    let (_, read) = f
+        .anonymous(
+            "GET",
+            &format!("/api/v1/catalog/assistants/{listing}"),
+            json!({}),
+        )
+        .await?;
+    assert_eq!(read["data"]["import_count"], 10);
 
     // The profile lists what its owner published.
     let page = Uuid::new_v4();

@@ -163,12 +163,7 @@ async fn a_removed_connector_leaves_nothing_in_the_runtime() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_installed_script_lists_and_calls_through_the_proxy_route() {
     use std::io::{BufRead as _, Write as _};
-    if std::process::Command::new("python3")
-        .arg("--version")
-        .output()
-        .is_err()
-    {
-        eprintln!("python3 not found: the script's own test is skipped");
+    if !crate::test_python::python3_available("the script's own test") {
         return;
     }
     let (base, log) = serve(|_, request| {

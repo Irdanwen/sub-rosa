@@ -255,9 +255,14 @@ async fn catalog(State(s): State<Arc<Service>>, Query(q): Query<CatalogQuery>) -
 async fn listing(State(s): State<Arc<Service>>, Path(id): Path<Uuid>) -> Result<Response> {
     Ok(ok(s.listing(id, false).await?).into_response())
 }
-/// The definition, for "Add to Sub Rosa", and one more on its import count.
-async fn import(State(s): State<Arc<Service>>, Path(id): Path<Uuid>) -> Result<Response> {
-    Ok(ok(s.listing(id, true).await?).into_response())
+/// The definition, for "Add to Sub Rosa", and one more on its import count,
+/// within a per-address budget.
+async fn import(
+    State(s): State<Arc<Service>>,
+    Extension(client): Extension<ClientAddress>,
+    Path(id): Path<Uuid>,
+) -> Result<Response> {
+    Ok(ok(s.import_listing(id, &client.0).await?).into_response())
 }
 
 #[derive(Deserialize)]

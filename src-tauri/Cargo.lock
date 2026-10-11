@@ -4425,7 +4425,7 @@ dependencies = [
 
 [[package]]
 name = "os-june"
-version = "1.89.0"
+version = "1.89.1"
 dependencies = [
  "aes-gcm",
  "age",
@@ -4446,6 +4446,7 @@ dependencies = [
  "jni 0.21.1",
  "june-embed",
  "keyring",
+ "libc",
  "ndk-context",
  "objc2",
  "objc2-app-kit",
@@ -4489,6 +4490,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
  "urlencoding",
  "uuid",
  "window-vibrancy 0.8.1",

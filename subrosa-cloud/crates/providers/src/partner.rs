@@ -12,7 +12,7 @@ use std::time::Duration;
 use subrosa_config::Config;
 use subrosa_domain::{
     BrowserBound, CarpeDiemPartner, Error, IssuanceAssertion, IssuanceClaims, PendingRevocation,
-    Result, Secret,
+    Result, RevocationFailure, Secret,
 };
 use uuid::Uuid;
 
@@ -145,19 +145,24 @@ impl CarpeDiemPartner for CarpeDiemPartnerProvider {
     fn browser_bound(&self) -> BrowserBound {
         self.browser
     }
-    async fn revoke(&self, revocation: &PendingRevocation) -> Result<()> {
+    async fn revoke(
+        &self,
+        revocation: &PendingRevocation,
+    ) -> std::result::Result<(), RevocationFailure> {
         let (issued, expires) = Self::window();
-        let assertion = self.sign(&RevocationBody {
-            iss: &self.issuer,
-            aud: &self.audience,
-            sub: revocation.subject,
-            scope: "key:revoke",
-            device_id: revocation.device_id,
-            reason: revocation.reason.as_str(),
-            jti: Uuid::new_v4(),
-            iat: issued.timestamp(),
-            exp: expires.timestamp(),
-        })?;
+        let assertion = self
+            .sign(&RevocationBody {
+                iss: &self.issuer,
+                aud: &self.audience,
+                sub: revocation.subject,
+                scope: "key:revoke",
+                device_id: revocation.device_id,
+                reason: revocation.reason.as_str(),
+                jti: Uuid::new_v4(),
+                iat: issued.timestamp(),
+                exp: expires.timestamp(),
+            })
+            .map_err(|_| RevocationFailure::Signing)?;
         let response = self
             .client
             .post(&self.revoke_url)
@@ -168,13 +173,13 @@ impl CarpeDiemPartner for CarpeDiemPartnerProvider {
             .json(&serde_json::json!({}))
             .send()
             .await
-            .map_err(|_| Error::Unavailable)?;
+            .map_err(|_| RevocationFailure::Unreachable)?;
         // The status is the whole answer. The body is not read, so a hostile or
         // broken operator cannot make this service buffer anything.
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(Error::Unavailable)
+            Err(RevocationFailure::Status(response.status().as_u16()))
         }
     }
 }
@@ -361,6 +366,6 @@ mod tests {
                 attempts: 0,
             })
             .await;
-        assert!(matches!(result, Err(Error::Unavailable)));
+        assert_eq!(result, Err(RevocationFailure::Unreachable));
     }
 }

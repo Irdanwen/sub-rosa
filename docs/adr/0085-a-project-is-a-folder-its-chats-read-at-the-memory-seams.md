@@ -98,7 +98,7 @@ Three constraints shaped the answer:
   the journal and sync would all need a second path; one column and one store
   rule keep them one.
 
-## Addendum (2026-10-07): "Project only" is enforced on the desktop too
+## Addendum 2026-10-07: "Project only" is enforced on the desktop too
 
 The first consequence above left the desktop's direction prompt-level: the
 shared SOUL carried the person's own memory into a "Project only" chat and the

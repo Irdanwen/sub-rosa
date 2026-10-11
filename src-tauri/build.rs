@@ -3,6 +3,11 @@
 // do not apply to it.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
+// Shared with the app, so the build and the Connectors screen agree on which
+// providers a build carries.
+#[path = "src/connectors/build_clients.rs"]
+mod build_clients;
+
 const SYSTEM_AUDIO_MIN_MACOS_VERSION_FILE: &str = "system-audio-min-macos-version.txt";
 const DICTATION_HELPER_MIN_MACOS_VERSION: &str = "14.0";
 
@@ -19,6 +24,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=OS_ACCOUNTS_API_URL");
     println!("cargo:rerun-if-env-changed=OS_ACCOUNTS_CLIENT_ID");
     println!("cargo:rerun-if-env-changed=JUNE_API_URL");
+    warn_about_connector_clients();
     clean_legacy_helper_bundles();
     build_system_audio_helper();
     build_dictation_helper();
@@ -64,6 +70,45 @@ fn main() {
             .compile("subrosa_apple_passkey");
     }
     tauri_build::build();
+}
+
+/// Google, Microsoft and GitHub sign in with client ids compiled in
+/// (`option_env!`); a build without one ships without that connector. 1.89.0
+/// shipped without all three and nothing said so, so every build now names
+/// what it leaves out. The release workflows say it again as an annotation.
+fn warn_about_connector_clients() {
+    for client in build_clients::CLIENTS {
+        println!("cargo:rerun-if-env-changed={}", client.var);
+    }
+    println!(
+        "cargo:rerun-if-env-changed={}",
+        build_clients::GOOGLE_REDIRECT_VAR
+    );
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    for client in build_clients::missing(&target_os, |var| std::env::var(var).ok()) {
+        println!(
+            "cargo:warning={} is not set: this build does not offer the {} connector (HANDOFF.md, OAuth clients).",
+            client.var, client.connector
+        );
+    }
+    let google = std::env::var(build_clients::GOOGLE.var).ok();
+    let overridden = build_clients::configured(
+        std::env::var(build_clients::GOOGLE_REDIRECT_VAR)
+            .ok()
+            .as_deref(),
+    )
+    .is_some();
+    if let Some(id) = build_clients::configured(google.as_deref()) {
+        if build_clients::GOOGLE.applies_to(&target_os)
+            && !overridden
+            && build_clients::google_redirect_for(id).is_none()
+        {
+            println!(
+                "cargo:warning={} is not a Google client id (ending in .apps.googleusercontent.com): Google will refuse to send the sign-in back to the app.",
+                build_clients::GOOGLE.var
+            );
+        }
+    }
 }
 
 /// `tauri_build::build()` validates every `bundle.resources` source path at

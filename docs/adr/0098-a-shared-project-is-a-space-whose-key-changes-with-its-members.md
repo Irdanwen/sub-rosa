@@ -123,7 +123,7 @@ member is removed, and in the protocol document.
   shown where trust is decided, and the link itself carries the inviter's keys
   outside the service.
 
-## Addendum (2026-10-08): the owner's side runs in a tab too
+## Addendum 2026-10-08: the owner's side runs in a tab too
 
 The decision's last bullet of Consequences said inviting, admitting and
 removing stay in the app. The web client now does all three, with the same
@@ -150,7 +150,7 @@ protocol and nothing new on the service
   reviewed. Creating a space still starts from a project in the app.
 
 
-## Addendum (2026-10-08, later): a tab creates a space too
+## Addendum 2026-10-08: a tab creates a space too
 
 The last sentence above no longer holds. Behind the same Preview switch, the
 web client shares one of the account's projects as a new space
@@ -163,3 +163,45 @@ itself is untouched. `client::compose_creation` (Rust) and `composeCreation`
 (`operations.creation` in `spaces-v1.json`) hold them to the same bytes; the
 created head is the chain's epoch 1. A tab carries no display name and no
 notes into the space, since it holds neither for a project.
+
+
+## Addendum (2026-10-10): only verified heads are used
+
+A post-release audit found that a device checked only the heads newer than
+the one it trusted, yet used every head the service returned, older ones
+included, to check a key's commitment, to decide membership and to find the
+key an author signs with. A dishonest service could therefore return a forged
+epoch 1 naming a real member with a key it controls, seal a key to the reader
+under that head, and have objects signed in that member's name accepted: the
+"write in a member's name" line of the protocol's threat model did not hold.
+Both implementations had the flaw, behind the Preview switch.
+
+- **The invariant.** A head is used only if it is the trusted head, verified
+  forward after it, or linked backwards from it
+  (`hash(head_e) == head_{e+1}.prev`, down to the oldest returned). The chain
+  check returns that set (`protocol::verify_chain` returns
+  `VerifiedChain { latest, heads }`, `verifyChain` returns
+  `{ latest, heads }`), and keys, membership and authors read only from it.
+  The app completes it with the heads it kept in `space_heads`, each
+  verified when written; where both hold a head for one epoch, the hashes
+  must match. Backward linking matches history instead of re-judging it:
+  every trusted head descends from a chain verified forward from epoch 1, so
+  a head with the hash it names is that head.
+- **A behavioural change.** A service that returns an older head below a
+  missing epoch (heads 1, 3 and 4 to a device trusting 3), or one that does
+  not link, is now refused with `space_rollback`, where it used to be
+  accepted. Omitting old heads altogether is still accepted; a key for an
+  omitted epoch then has no head and is refused in a tab, while the app uses
+  the head it kept. The service in this repository always returns the whole
+  chain, so no honest deployment is affected.
+- **Shared vectors.** `chain_cases` in `spaces-v1.json` hold five answers to a
+  device trusting epoch 3 (genuine, forged epoch 1, epoch 1 omitted, epoch 2
+  mutated, epoch 1 below a gap), replayed by both implementations, beside a
+  client-level test on each side where the service returns the forged head
+  with a matching wrapped key and object: nothing is accepted and nothing is
+  kept.
+- **The Preview switch is the client's.** The browser's spaces client now
+  holds the switch itself (`behindPreview` in
+  `website/src/client/spaces/client.ts`): with it off, no call reaches the
+  service, whichever component asks, as the app's commands refuse through
+  `enabled_pool`. The panel only turns it on.

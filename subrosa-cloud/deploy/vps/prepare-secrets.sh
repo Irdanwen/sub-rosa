@@ -10,6 +10,10 @@ for file in /source/*; do
   [ -f "$file" ] || continue
   name=$(basename "$file")
   case "$name" in
+    # The permanent Keycloak administrator's password (stack.py admin-rotate)
+    # stays in the source directory only: Keycloak keeps its hash, and no
+    # container needs it. Named here so nobody adds it to the list below.
+    keycloak-admin.password) continue ;;
     postgres-password|roles.sql|postgres.key) owner=999 ;;
     keycloak-password|keycloak-admin-password|subrosa-realm.json) owner=1000 ;;
     runtime.toml) owner=10001 ;;
@@ -26,5 +30,6 @@ for file in /source/*; do
 done
 # Public certificates are deliberately readable by all three TLS clients.
 chmod 0644 /prepared/postgres.crt /prepared/postgres-ca.crt
-# Removing the source bootstrap password must remove the previously copied one.
+# Removing the source bootstrap password must remove the previously copied one:
+# stack.py admin-rotate deletes the source, then runs this.
 if [ ! -f /source/keycloak-admin-password ]; then rm -f /prepared/keycloak-admin-password; fi

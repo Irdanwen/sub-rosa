@@ -181,6 +181,23 @@ describe("rewriting through the gateway", () => {
     expect(deps.send).toHaveBeenCalledWith("source", "Third question");
   });
 
+  it("regenerates past a model-switch note: backs up through it, never asks it again", async () => {
+    const marker =
+      "[System: The active model for this chat has changed to z-ai-glm-5-3-flash via provider custom. From this point forward, use this runtime metadata when answering questions about what model/provider is active.]";
+    const { deps, request, stored } = fakeDeps();
+    stored.source = [...messages, { id: "10", role: "user", content: marker }];
+
+    await regenerateLastReply(deps, "source");
+
+    expect(request).toHaveBeenCalledWith("command.dispatch", {
+      session_id: "source-runtime",
+      name: "undo",
+      arg: "2",
+    });
+    expect(stored.source?.map((m) => m.id)).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
+    expect(deps.send).toHaveBeenCalledWith("source", "Third question");
+  });
+
   it("refuses to rewrite while a reply is still coming", async () => {
     const { deps, request } = fakeDeps({ isBusy: () => true });
 

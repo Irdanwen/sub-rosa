@@ -363,12 +363,8 @@ import {
   type AgentChatTurn,
   type LiveHermesEvent,
 } from "../../lib/agent-chat-runtime";
-import {
-  type ToolActivityKind,
-  settledToolLabel,
-  toolActivityKind,
-  toolActivitySentence,
-} from "../../lib/agent-tool-labels";
+import { type ToolActivityKind, toolActivityKind } from "../../lib/agent-tool-labels";
+import { toolActivitySentenceText, toolRowLabel } from "../../lib/agent-tool-label-text";
 import {
   buildAgentChatGallery,
   buildAgentErrorGallery,
@@ -12128,7 +12124,7 @@ function AgentToolDisclosure({
       {/* Past tense once it is over: the label was minted while the step ran
        * and kept saying "now" forever after. */}
       <span className={running ? "agent-tool-name text-shimmer" : "agent-tool-name"}>
-        {running ? name : settledToolLabel(name)}
+        {toolRowLabel(name, running)}
       </span>
       {elapsed ? <span className="agent-tool-elapsed">{elapsed}</span> : null}
       {statusNode}
@@ -13329,7 +13325,7 @@ function agentStatusSummaryFromHermesEvent(
     const payload = event.payload as Record<string, unknown> | undefined;
     const name =
       stringValue(payload?.name) ?? stringValue(payload?.tool_name) ?? stringValue(payload?.tool);
-    return toolActivitySentence(name, payload);
+    return toolActivitySentenceText(name, payload);
   }
   if (event.type === "thinking.delta" || event.type === "reasoning.delta") {
     return t("Thinking.");

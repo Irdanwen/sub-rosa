@@ -97,20 +97,47 @@ function git(args) {
   });
 }
 
-function previousRelease() {
-  // HEAD is the new bump commit (and, in CI, its release tag). Excluding it
+/**
+ * `<version> <output-path> [--to <ref>]`. The output path `-` writes to
+ * stdout only. `--to` builds the notes as of another ref than HEAD, so a
+ * past release can be regenerated from any checkout as a dry run:
+ * `node scripts/generate-release-changelog.mjs 1.89.0 - --to v1.89.0`.
+ */
+export function parseArgs(argv) {
+  const positional = [];
+  let to = "HEAD";
+  for (let index = 0; index < argv.length; index++) {
+    if (argv[index] === "--to") {
+      to = argv[index + 1];
+      index++;
+      if (!to) throw new Error("--to needs a git ref");
+    } else {
+      positional.push(argv[index]);
+    }
+  }
+  const [version, outputPath] = positional;
+  if (!version || !outputPath || positional.length > 2) {
+    throw new Error(
+      "Usage: node scripts/generate-release-changelog.mjs <version> <output-path|-> [--to <ref>]",
+    );
+  }
+  return { version, outputPath, to };
+}
+
+function previousRelease(to) {
+  // `to` is the new bump commit (and, in CI, its release tag). Excluding it
   // avoids selecting the release being built. Tags can point at merge commits,
   // unlike bump subjects buried on the PR side of a merge.
-  const tag = findPreviousReleaseTag(git(["tag", "--merged", "HEAD^", "--sort=-version:refname"]));
+  const tag = findPreviousReleaseTag(git(["tag", "--merged", `${to}^`, "--sort=-version:refname"]));
   if (tag) {
     return { hash: git(["rev-list", "-n", "1", tag]).trim(), version: tag.slice(1) };
   }
-  const output = git(["log", "--first-parent", `--format=%H${FIELD_SEPARATOR}%s`, "HEAD"]);
+  const output = git(["log", "--first-parent", `--format=%H${FIELD_SEPARATOR}%s`, to]);
   return findPreviousRelease(output);
 }
 
-function commitsSince(hash) {
-  const range = hash ? `${hash}..HEAD` : "HEAD";
+function commitsSince(hash, to) {
+  const range = hash ? `${hash}..${to}` : to;
   const output = git([
     "log",
     "--first-parent",
@@ -122,19 +149,14 @@ function commitsSince(hash) {
 }
 
 async function main() {
-  const version = process.argv[2];
-  const outputPath = process.argv[3];
-  if (!version || !outputPath) {
-    throw new Error("Usage: node scripts/generate-release-changelog.mjs <version> <output-path>");
-  }
-
-  const release = previousRelease();
+  const { version, outputPath, to } = parseArgs(process.argv.slice(2));
+  const release = previousRelease(to);
   const changelog = formatChangelog({
     version,
     previousVersion: release?.version,
-    commits: commitsSince(release?.hash),
+    commits: commitsSince(release?.hash, to),
   });
-  await writeFile(outputPath, changelog);
+  if (outputPath !== "-") await writeFile(outputPath, changelog);
   process.stdout.write(changelog);
 }
 

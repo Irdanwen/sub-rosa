@@ -47,6 +47,10 @@ fn error(code: &str) -> AppError {
             "connector_oauth_registration",
             "This connector does not let apps register themselves, so Sub Rosa cannot sign in to it yet.",
         ),
+        "connector_oauth_issuer" => AppError::new(
+            "connector_oauth_issuer",
+            "This connector's sign-in names a different server than the one it points to, so Sub Rosa did not use it.",
+        ),
         "connector_oauth_expired" => AppError::new(
             "connector_oauth_expired",
             "That sign-in took too long. Start it again.",
@@ -211,6 +215,19 @@ pub struct AuthServer {
     /// The resource indicator a token is bound to (RFC 8707).
     #[serde(default)]
     pub resource: Option<String>,
+    /// The server says its answer to the browser names it (`iss`, RFC 9207),
+    /// so a callback without it, or naming another, is refused.
+    #[serde(default)]
+    pub iss_parameter_supported: bool,
+}
+
+/// Whether two issuer identifiers name the same server. RFC 8414 §3.3 and
+/// RFC 9207 §2.4 ask for identical strings; one trailing slash is let go,
+/// because a resource's metadata and the server's own often differ by it
+/// and nothing else.
+pub fn same_issuer(left: &str, right: &str) -> bool {
+    let bare = |value: &str| value.strip_suffix('/').unwrap_or(value).to_string();
+    !left.is_empty() && bare(left) == bare(right)
 }
 
 /// `(authorization servers, scopes, resource)` from protected resource
@@ -240,7 +257,9 @@ pub fn parse_protected_resource(value: &Value) -> (Vec<String>, Vec<String>, Opt
 }
 
 /// The endpoints an authorization server's metadata gives, refused when one
-/// is not secure or PKCE `S256` is not declared.
+/// is not secure, PKCE `S256` is not declared, or the metadata names another
+/// issuer than the one it was fetched for (RFC 8414 §3.3: a server cannot
+/// pass off another's endpoints as its own).
 pub fn parse_auth_server(value: &Value, issuer: &str) -> Result<AuthServer, AppError> {
     let endpoint = |key: &str| {
         value
@@ -260,17 +279,22 @@ pub fn parse_auth_server(value: &Value, issuer: &str) -> Result<AuthServer, AppE
     if !s256 {
         return Err(error("connector_oauth_pkce"));
     }
+    let named = value
+        .get("issuer")
+        .and_then(Value::as_str)
+        .filter(|named| same_issuer(named, issuer))
+        .ok_or_else(|| error("connector_oauth_issuer"))?;
     Ok(AuthServer {
-        issuer: value
-            .get("issuer")
-            .and_then(Value::as_str)
-            .unwrap_or(issuer)
-            .to_string(),
+        issuer: named.to_string(),
         authorization_endpoint,
         token_endpoint,
         registration_endpoint: endpoint("registration_endpoint"),
         scopes: Vec::new(),
         resource: None,
+        iss_parameter_supported: value
+            .get("authorization_response_iss_parameter_supported")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     })
 }
 
@@ -626,6 +650,12 @@ pub struct PendingFlow {
     #[serde(default)]
     pub resource: Option<String>,
     pub created_at: i64,
+    /// The issuer the sign-in was started with, when it was discovered.
+    #[serde(default)]
+    pub issuer: Option<String>,
+    /// That issuer said its callback carries `iss` (RFC 9207).
+    #[serde(default)]
+    pub issuer_in_response: bool,
 }
 
 /// Never prints the verifier.
@@ -657,7 +687,16 @@ impl PendingFlow {
             redirect_uri: redirect_uri.to_string(),
             resource: resource.map(str::to_string),
             created_at: chrono::Utc::now().timestamp(),
+            issuer: None,
+            issuer_in_response: false,
         }
+    }
+
+    /// The flow of a discovered server, which the callback must agree with.
+    pub fn with_issuer(mut self, server: &AuthServer) -> Self {
+        self.issuer = Some(server.issuer.clone());
+        self.issuer_in_response = server.iss_parameter_supported;
+        self
     }
 }
 
@@ -709,6 +748,32 @@ pub fn parse_callback(url: &str) -> Option<(String, CallbackOutcome)> {
         (Some(code), None) if !code.is_empty() => Some((state, CallbackOutcome::Code(code))),
         _ => None,
     }
+}
+
+/// The `iss` a callback carries (RFC 9207), if any.
+pub fn callback_issuer(url: &str) -> Option<String> {
+    reqwest::Url::parse(url)
+        .ok()?
+        .query_pairs()
+        .find(|(key, _)| key == "iss")
+        .map(|(_, value)| value.into_owned())
+}
+
+/// Whether the callback's `iss` fits the flow: required when the server
+/// said it sends one, and never another server's. Without it the answer
+/// could come from a different server the person also signs in to (the
+/// mix-up attack RFC 9207 closes).
+pub fn issuer_accepted(flow: &PendingFlow, iss: Option<&str>) -> bool {
+    match (flow.issuer.as_deref(), iss) {
+        (Some(expected), Some(named)) => same_issuer(named, expected),
+        (Some(_), None) => !flow.issuer_in_response,
+        // A built-in sign-in has fixed endpoints and no metadata to agree with.
+        (None, _) => true,
+    }
+}
+
+pub fn issuer_refused() -> AppError {
+    error("connector_oauth_issuer")
 }
 
 /// Whether a callback came back where the flow said it would: same scheme,

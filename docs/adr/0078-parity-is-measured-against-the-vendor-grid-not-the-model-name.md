@@ -50,3 +50,24 @@ row, and what Sub Rosa deliberately does differently without calling it a gap.
   file, so nobody mistakes a deliberate boundary for an oversight.
 - The web column is honest from the start: most rows read `no` there until a
   browser client exists.
+
+## Addendum 2026-10-10: gated and unverified are not parity
+
+The audit of 1.89.0 found `yes` cells a person could not reach: the whole web
+column waited for an undeployed Carpe Diem change, the Google, Microsoft and
+GitHub connectors for OAuth clients no build had, and the watch, widgets,
+health and scanning had never run on the hardware they target. The matrix
+counted them as parity because a `yes` only had to name files, any files, for
+the whole row.
+
+Two statuses now say what those cells are. `gated`: built and shipped, but it
+works only after an external deployment, credential or review that Sub Rosa
+does not control. `unverified`: shipped, never run on the target hardware.
+Each is named with its dependency under its own section of
+`docs/parity/chatgpt.md` and has its own counter (`Gated: N`,
+`Unverified: N`); `Gaps: N` still counts only `no` and `partial`, so a gate is
+never read as parity and never inflates the gap count either. Evidence is
+grouped per platform (`D:` `i:` `A:` `W:`) and every claimed cell needs an
+existing file in its own group, so a desktop-only file cannot prove a phone
+row. `src/test/parity-matrix.test.mjs` enforces all of it; "no feature behind
+ChatGPT" now means no gap, no gate and nothing unverified.

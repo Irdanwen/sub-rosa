@@ -75,3 +75,9 @@ updates:
       actions:
         patterns:
           - "*"
+    ignore:
+      # Mostly pinned to a commit of its `stable` branch, which hard-codes the
+      # toolchain. Dependabot moves the pin to the head of `master`, which
+      # requires a `toolchain` input, and every Rust job then fails in its
+      # first step (PR #119). Bump it by hand to the head of `stable`.
+      - dependency-name: "dtolnay/rust-toolchain"

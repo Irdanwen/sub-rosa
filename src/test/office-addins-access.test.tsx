@@ -1,11 +1,15 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAccountScope, setApiTransport } from "../../website/src/lib/api";
 import type { DeviceRecord, DeviceStore } from "../../website/src/lib/browser-device";
 import type { OfficeGlobal } from "../../office-addins/src/office";
 import { hasLiveKey, OfficeAccess } from "../../office-addins/src/pane/Access";
-import { SessionWindow, SIGN_IN_URL } from "../../office-addins/src/session/SessionWindow";
+import {
+  COURIER_PATH,
+  SessionWindow,
+  signInUrl,
+} from "../../office-addins/src/session/SessionWindow";
 
 const ACCOUNT = "0191d1a4-0000-7000-8000-000000000000";
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
@@ -79,20 +83,16 @@ describe("the add-in's account gate", () => {
     expect(screen.queryByText("ready")).toBeNull();
   });
 
-  it("offers the device card in its own session, recovery key included", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
-      String(input) === "/api/v1/me"
-        ? json(200, { data: { id: ACCOUNT, email: "a@b.c", created_at: "" } })
-        : json(200, { data: [] }),
-    );
+  it("never calls the account service itself, even with nothing stored", async () => {
+    const pageFetch = vi.spyOn(globalThis, "fetch");
     render(
       <OfficeAccess office={office} host="PowerPoint" store={memoryStore()}>
         {() => <p>ready</p>}
       </OfficeAccess>,
     );
-    await screen.findByRole("heading", { name: "This add-in" });
-    await userEvent.click(screen.getByRole("button", { name: "Use this browser as a device" }));
-    expect(screen.getByRole("button", { name: "Use my recovery key" })).toBeTruthy();
+    await screen.findByRole("heading", { name: "Connect Sub Rosa" });
+    // The office origin has no session: the sign-in window is the only way.
+    expect(pageFetch).not.toHaveBeenCalled();
   });
 
   it("knows a key that has run out", () => {
@@ -102,6 +102,7 @@ describe("the add-in's account gate", () => {
 });
 
 describe("the sign-in window", () => {
+  const ORIGIN = "https://account.test";
   function windowOffice() {
     let parentHandler: ((arg: { message: string; origin?: string }) => void) | null = null;
     const posted: unknown[] = [];
@@ -127,44 +128,71 @@ describe("the sign-in window", () => {
       send: (message: unknown) => parentHandler?.({ message: JSON.stringify(message) }),
     };
   }
+  /** What the courier frame would say, as a message from its window. */
+  function fromFrame(message: unknown, origin = ORIGIN) {
+    const frame = document.querySelector("iframe") as HTMLIFrameElement;
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: JSON.stringify(message),
+        origin,
+        source: frame.contentWindow,
+      }),
+    );
+  }
 
-  it("says who is signed in, then carries the pane's calls", async () => {
-    const fetch = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(async (input) =>
-        String(input) === "/api/v1/me"
-          ? json(200, { data: { id: ACCOUNT, email: "a@b.c", created_at: "" } })
-          : json(200, { data: { assertion: "jws" } }),
-      );
+  it("embeds the account origin's courier and says who is signed in", async () => {
+    const pageFetch = vi.spyOn(globalThis, "fetch");
     const { fake, posted, send } = windowOffice();
-    render(<SessionWindow office={fake} fresh={false} navigate={vi.fn()} />);
+    render(<SessionWindow office={fake} fresh={false} navigate={vi.fn()} origin={ORIGIN} />);
+    const frame = document.querySelector("iframe") as HTMLIFrameElement;
+    expect(frame.getAttribute("src")).toBe(`${ORIGIN}${COURIER_PATH}`);
+    const toFrame = vi.spyOn(frame.contentWindow as Window, "postMessage");
+    fromFrame({ v: 1, type: "ready", account: { id: ACCOUNT, email: "a@b.c" } });
     await screen.findByText(/Signed in as a@b.c/);
     expect(posted[0]).toEqual({ v: 1, type: "ready", account: { id: ACCOUNT, email: "a@b.c" } });
-    send({
-      v: 1,
-      type: "request",
-      id: "q1",
-      method: "POST",
-      path: "/api/v1/carpe-diem/assertion",
-      headers: { "subrosa-device-proof": "p" },
-      body: "{}",
-    });
-    await waitFor(() => expect(posted).toHaveLength(2));
-    expect(posted[1]).toMatchObject({ type: "response", id: "q1", status: 200 });
-    send({ v: 1, type: "request", id: "q2", method: "GET", path: "/api/v1/vault", headers: {} });
-    await waitFor(() => expect(posted).toHaveLength(3));
-    expect(posted[2]).toMatchObject({ id: "q2", status: 403 });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    send({ v: 1, type: "request", id: "q1", method: "GET", path: "/api/v1/me", headers: {} });
+    expect(toFrame).toHaveBeenCalledWith(expect.stringContaining('"id":"q1"'), ORIGIN);
+    // The window itself never calls the service: the frame does.
+    expect(pageFetch).not.toHaveBeenCalled();
   });
 
-  it("signs in on the account origin and comes back to itself", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(json(401, {}));
+  it("signs in on the account origin and comes back through the signed-in page", async () => {
     const navigate = vi.fn();
     const { fake, posted } = windowOffice();
-    render(<SessionWindow office={fake} fresh={false} navigate={navigate} />);
+    render(<SessionWindow office={fake} fresh={false} navigate={navigate} origin={ORIGIN} />);
+    fromFrame({ v: 1, type: "signed-out" });
     await userEvent.click(await screen.findByRole("button", { name: "Sign in" }));
-    expect(navigate).toHaveBeenCalledWith(SIGN_IN_URL);
-    expect(SIGN_IN_URL).toBe("/auth/login?return_to=%2Foffice%2Fsession.html");
+    expect(navigate).toHaveBeenCalledWith(
+      `${ORIGIN}/auth/login?return_to=%2Foffice%2Fsigned-in.html`,
+    );
+    expect(signInUrl(ORIGIN)).toBe(`${ORIGIN}/auth/login?return_to=%2Foffice%2Fsigned-in.html`);
     expect(posted).toEqual([{ v: 1, type: "signed-out" }]);
+  });
+
+  it("goes straight to sign-in when asked for a fresh one", () => {
+    const navigate = vi.fn();
+    const { fake } = windowOffice();
+    render(<SessionWindow office={fake} fresh navigate={navigate} origin={ORIGIN} />);
+    expect(navigate).toHaveBeenCalledWith(signInUrl(ORIGIN));
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("ignores what another origin says in the frame's name", async () => {
+    const { fake, posted } = windowOffice();
+    render(<SessionWindow office={fake} fresh={false} navigate={vi.fn()} origin={ORIGIN} />);
+    fromFrame(
+      { v: 1, type: "ready", account: { id: ACCOUNT, email: "evil@b.c" } },
+      "https://evil.test",
+    );
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: JSON.stringify({ v: 1, type: "ready", account: { id: ACCOUNT, email: "x@b.c" } }),
+        origin: ORIGIN,
+        source: window,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(posted).toEqual([]);
+    expect(screen.getByRole("status").textContent).toBe("Loading…");
   });
 });

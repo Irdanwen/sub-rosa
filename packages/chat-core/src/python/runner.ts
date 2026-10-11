@@ -55,13 +55,14 @@ export const NO_NETWORK =
  * policy, which the worker inherits, already refuses every other host, but
  * WebKit leaves a refused fetch pending instead of failing it (seen in the
  * iOS simulator), which would hold the run until its limit. This fails it at
- * once, with a reason the model can read. */
+ * once, with a reason the model can read. `original` is the worker's own
+ * `fetch`, kept by `hardenScope` before anything was removed. */
 export function guardFetch(
   scope: { fetch: typeof fetch },
   allowedPrefix: string,
   refusal: string = NO_NETWORK,
+  original: typeof fetch = scope.fetch.bind(scope),
 ) {
-  const original = scope.fetch.bind(scope);
   scope.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
     let resolved: string;

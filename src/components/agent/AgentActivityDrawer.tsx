@@ -31,7 +31,7 @@ import type {
 } from "../../lib/hermes-control-plane";
 import { nonEmpty } from "../../lib/hermes-control-plane";
 import type { AgentActivityPhase, AgentActivityRecord } from "../../lib/hermes-activity-store";
-import { toolActivityLabel } from "../../lib/agent-tool-labels";
+import { toolActivityText } from "../../lib/agent-tool-label-text";
 import type { AgentArtifact, ArtifactAction, ArtifactKind } from "../../lib/hermes-artifact-store";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { fileTypeIconComponent } from "./FileTypeIcon";
@@ -366,7 +366,7 @@ function ActivityRow({
             {phase.label}
           </span>
           {record.phase === "running" && nonEmpty(record.currentTool) ? (
-            <span className="agent-activity-row-tool">{toolActivityLabel(record.currentTool)}</span>
+            <span className="agent-activity-row-tool">{toolActivityText(record.currentTool)}</span>
           ) : null}
           {record.pendingActionCount > 0 ? (
             <span
@@ -559,7 +559,7 @@ function SubagentRow({
           </span>
           {working && nonEmpty(subagent.currentTool) ? (
             <span className="agent-activity-subagent-tool">
-              {toolActivityLabel(subagent.currentTool)}
+              {toolActivityText(subagent.currentTool)}
             </span>
           ) : null}
           {Number.isFinite(lastEventAt) ? (

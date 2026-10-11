@@ -9,11 +9,13 @@ import type { SyncClient } from "../sync";
 import {
   type Me,
   type OpenedInvitation,
+  SPACES_ENABLED,
   type SpaceSummary,
   type SpaceView,
   type SpacesTransport,
   acceptInvitation,
   askAssistant,
+  behindPreview,
   itemsOf,
   leave,
   listSpaces,
@@ -39,7 +41,6 @@ import {
 import "./spaces.css";
 
 type Key = Uint8Array<ArrayBuffer>;
-const ENABLED = "spaces-enabled";
 
 function failure(error: unknown): string {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
@@ -47,6 +48,11 @@ function failure(error: unknown): string {
     return t(
       "The service showed an older state of this shared project than this browser has already seen. Nothing was changed.",
       "Le service a montré un état de ce projet partagé plus ancien que celui que ce navigateur a déjà vu. Rien n’a été modifié.",
+    );
+  if (code === "spaces_disabled")
+    return t(
+      "Turn on shared projects first. They are a preview.",
+      "Activez d’abord les projets partagés. C’est un aperçu.",
     );
   if (code === "space_acceptance_unverifiable")
     return t(
@@ -109,7 +115,7 @@ export function SpacesEntry({
   openKey,
   operator,
   model,
-  transport = serviceSpaces,
+  transport: service = serviceSpaces,
   store: givenStore,
   sync = null,
 }: {
@@ -124,6 +130,8 @@ export function SpacesEntry({
   sync?: SyncClient | null;
 }) {
   const [store, setStore] = useState<ClientStore | null>(givenStore ?? null);
+  // Every call this panel makes reads the Preview switch first.
+  const transport = useMemo(() => behindPreview(store, service), [store, service]);
   const [enabled, setEnabled] = useState(false);
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
@@ -148,7 +156,7 @@ export function SpacesEntry({
   useEffect(() => {
     if (!store) return;
     void store
-      .get<boolean>("local", ENABLED)
+      .get<boolean>("local", SPACES_ENABLED)
       .then((on) => {
         setEnabled(on === true);
         if (code) setOpen(true);
@@ -207,7 +215,9 @@ export function SpacesEntry({
           <button
             type="button"
             className="button primary"
-            onClick={() => void store?.put("local", ENABLED, true).then(() => setEnabled(true))}
+            onClick={() =>
+              void store?.put("local", SPACES_ENABLED, true).then(() => setEnabled(true))
+            }
           >
             {t("Turn on shared projects", "Activer les projets partagés")}
           </button>

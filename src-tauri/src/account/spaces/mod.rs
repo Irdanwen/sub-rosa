@@ -8,6 +8,8 @@
 //! courier: it stores ciphertext, public keys and signed heads, and decides
 //! nothing a member's device does not check again here.
 mod client;
+#[cfg(test)]
+mod client_tests;
 pub mod commands;
 pub mod hpke;
 pub mod protocol;

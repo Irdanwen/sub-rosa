@@ -20,6 +20,8 @@
  * from the 9k-line workspace.
  */
 
+import { t } from "./i18n";
+
 /** Which of the three honest states a model switch resolved to. */
 export type ModelSwitchState = "active-session-switched" | "default-changed" | "switch-failed";
 
@@ -33,10 +35,11 @@ export type ModelSwitchOutcome = {
 /** Shown when the live session accepted the switch. Names the model so the
  * user can trust the running turn actually moved. */
 export function modelSwitchSuccessNotice(modelName: string): string {
-  return `Switched this session to ${modelName}.`;
+  return t("Switched this session to {model}.", { model: modelName });
 }
 
-/** No session was running, so only the default changed. */
+/** No session was running, so only the default changed. The constants are
+ * the English sources; the outcome carries them through `t()`. */
 export const MODEL_SWITCH_DEFAULT_ONLY_NOTICE =
   "Default model updated. It applies to new sessions.";
 
@@ -65,7 +68,7 @@ export function resolveModelSwitchOutcome(input: ResolveModelSwitchInput): Model
   if (!input.hasActiveSession) {
     return {
       state: "default-changed",
-      notice: MODEL_SWITCH_DEFAULT_ONLY_NOTICE,
+      notice: t("Default model updated. It applies to new sessions."),
     };
   }
   if (input.dispatchSucceeded) {
@@ -74,5 +77,8 @@ export function resolveModelSwitchOutcome(input: ResolveModelSwitchInput): Model
       notice: modelSwitchSuccessNotice(input.modelName),
     };
   }
-  return { state: "switch-failed", notice: MODEL_SWITCH_FAILED_NOTICE };
+  return {
+    state: "switch-failed",
+    notice: t("Could not switch the running session. This chat will use the new model next time."),
+  };
 }

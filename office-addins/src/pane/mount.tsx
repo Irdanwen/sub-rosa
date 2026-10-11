@@ -1,5 +1,6 @@
 import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { setApiTransport } from "../../../website/src/lib/api";
 import {
   requireWebsiteMessages,
   setWebsiteLocale,
@@ -13,6 +14,7 @@ import {
   officeReady,
 } from "../office";
 import { OfficeAccess, type Ready } from "./Access";
+import { noSession } from "./sign-in-window";
 import "../office.css";
 
 /**
@@ -37,6 +39,9 @@ export async function mountPane(
   host: HostName,
   render: (ready: Ready, office: OfficeGlobal) => ReactNode,
 ) {
+  // The pane's origin has no account session and serves no API: until a
+  // sign-in window carries them, the site's calls answer "no session" here.
+  setApiTransport(noSession);
   const found = officeGlobal();
   const ready = await officeReady(found);
   // A page opened outside Office still renders, and says so.

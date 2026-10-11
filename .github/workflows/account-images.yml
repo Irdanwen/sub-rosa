@@ -33,7 +33,7 @@ jobs:
             echo "Invalid branch or tag." >&2
             exit 1
           fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
@@ -79,6 +79,7 @@ jobs:
             cat images.env
             echo '```'
             echo
+            # shellcheck disable=SC2016 # the backticks are Markdown, not a command
             echo 'Copy `CLOUD_IMAGE` into the private `stack.env`; pull and tag the Keycloak digest as `subrosa-keycloak:26.7.3` on the host.'
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -11,6 +11,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 
 import { ComposerModes } from "../components/agent/ComposerModes";
 import { StudyReview } from "../components/study/StudyReview";
+import { markTemporaryChat, resetTemporaryChats, setTemporaryDraft } from "../lib/temporary-chat";
 import {
   resetStudyModes,
   setStudyMode,
@@ -131,6 +132,28 @@ describe("the composer modes", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Turn study mode on" }));
     await waitFor(() => expect(studyOn("c1")).toBe(true));
     expect(screen.getByRole("button", { name: "Study mode is on. More modes" })).toBeTruthy();
+  });
+});
+
+describe("the composer modes in a temporary chat", () => {
+  it("offer neither study nor research, on either shell, and keep the review", async () => {
+    resetTemporaryChats();
+    markTemporaryChat("temp-1");
+    handlers.study_cards_stats = () => ({ total: 2, due: 1, nextDueAt: null });
+    const { rerender } = render(<ComposerModes chatId="temp-1" draft="Anything" />);
+    expect(await screen.findByRole("button", { name: "Review, 1 due" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Study" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Deep research" })).toBeNull();
+    rerender(<ComposerModes chatId="temp-1" draft="" compact />);
+    expect(screen.queryByRole("button", { name: "Study and research" })).toBeNull();
+
+    // A new chat that will be temporary, before it has an id.
+    act(() => setTemporaryDraft(true));
+    rerender(<ComposerModes chatId={null} draft="" />);
+    expect(screen.queryByRole("button", { name: "Deep research" })).toBeNull();
+    act(() => setTemporaryDraft(false));
+    expect(await screen.findByRole("button", { name: "Deep research" })).toBeTruthy();
+    act(() => resetTemporaryChats());
   });
 });
 

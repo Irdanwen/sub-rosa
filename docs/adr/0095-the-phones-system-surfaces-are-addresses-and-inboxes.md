@@ -112,7 +112,7 @@ a durable row and answers when it can.**
   widget. The Swift targets compile for their simulators and devices; the
   Kotlin compiles only in the Android lane.
 
-## Addendum, 2026-10-08: the lane makes its own profiles
+## Addendum 2026-10-08: the lane makes its own profiles
 
 - The widgets left the app group. They are links and read nothing the app
   keeps, and associating a group with a bundle is the one step the App Store

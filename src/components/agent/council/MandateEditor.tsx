@@ -67,9 +67,10 @@ export function MandateEditor({
         </p>
         {mandate.acceptance.map((criterion, index) => (
           <CriterionRow
-            // Index is the identity here: criteria have no id, and reordering
-            // is not offered, so a row's position is stable for its lifetime.
-            // biome-ignore lint/suspicious/noArrayIndexKey: no stable id exists on a criterion
+            // Criteria have no id and reordering is not offered. Removing one
+            // shifts the keys after it, which is harmless: every field is
+            // controlled, so a shifted row only redraws the values it is given.
+            // biome-ignore lint/suspicious/noArrayIndexKey: no stable id exists on a criterion, and every field is controlled
             key={index}
             criterion={criterion}
             disabled={disabled}
@@ -181,9 +182,10 @@ function ListField({
       <legend className="council-field-label">{label}</legend>
       <p className="council-field-hint">{hint}</p>
       {values.map((value, index) => (
-        // A line has no identity beyond its position, and reordering is not
-        // offered, so the position is stable for the row's lifetime.
-        // biome-ignore lint/suspicious/noArrayIndexKey: a line has no stable id
+        // A line has no identity beyond its position and reordering is not
+        // offered. Removing one shifts the keys after it, which is harmless:
+        // the input is controlled, so a shifted row only redraws its value.
+        // biome-ignore lint/suspicious/noArrayIndexKey: a line has no stable id, and its input is controlled
         <div className="council-line" key={`${label}-${index}`}>
           <input
             className="council-input"

@@ -148,20 +148,30 @@ fn the_device_answers_are_read_as_the_rfc_says() {
 }
 
 #[test]
-fn a_build_without_its_client_id_does_not_offer_github() {
-    // The test build carries no SUBROSA_GITHUB_CLIENT_ID.
-    assert!(!github::available());
-    assert!(builtins().iter().all(|builtin| builtin.id != github::ID));
+fn github_is_listed_and_offered_only_with_its_client_id() {
+    // CI builds may carry SUBROSA_GITHUB_CLIENT_ID (desktop.yml), local ones
+    // do not: the listing tells the truth either way, and an absent id is
+    // shown as not available rather than hidden.
+    let listed = builtins();
+    let entry = listed
+        .iter()
+        .find(|builtin| builtin.id == github::ID)
+        .expect("GitHub is always listed");
+    assert_eq!(entry.available, github::available());
     let request = ConnectorAddRequest {
         catalog_id: Some(github::ID.into()),
         name: None,
         url: None,
         auth: None,
     };
-    assert_eq!(
-        connector_for(&request).unwrap_err().code,
-        "connector_unavailable"
-    );
+    if github::available() {
+        assert_eq!(connector_for(&request).unwrap().auth, github::ID);
+    } else {
+        assert_eq!(
+            connector_for(&request).unwrap_err().code,
+            "connector_unavailable"
+        );
+    }
     // Its hosts are on the Privacy screen.
     for host in ["api.githubcopilot.com", "github.com"] {
         assert!(crate::egress::DECLARED_EGRESS

@@ -210,6 +210,20 @@ pub async fn latest_head(pool: &SqlitePool, id: &str) -> Result<Option<EpochHead
     })
     .transpose()
 }
+/// Every head this device kept for a space. Each was verified when it was
+/// written, against the chain as it stood then.
+pub async fn heads(pool: &SqlitePool, id: &str) -> Result<Vec<EpochHead>, AppError> {
+    query("SELECT head_json FROM space_heads WHERE space_id=? ORDER BY epoch")
+        .bind(id)
+        .fetch_all(pool)
+        .await?
+        .iter()
+        .map(|row| {
+            serde_json::from_str::<EpochHead>(&row.get::<String, _>("head_json"))
+                .map_err(|_| super::protocol::invalid())
+        })
+        .collect()
+}
 pub async fn save_heads(pool: &SqlitePool, id: &str, heads: &[&EpochHead]) -> Result<(), AppError> {
     for head in heads {
         query("INSERT OR IGNORE INTO space_heads(space_id,epoch,head_json) VALUES(?,?,?)")

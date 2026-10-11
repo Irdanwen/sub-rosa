@@ -7255,7 +7255,7 @@ fn sbpl_regex_escape(value: &str) -> String {
     escaped
 }
 
-fn resolve_june_hermes_home(app: &AppHandle) -> Result<PathBuf, AppError> {
+pub(crate) fn resolve_june_hermes_home(app: &AppHandle) -> Result<PathBuf, AppError> {
     let path = crate::app_paths::app_data_dir(app)
         .map_err(|error| AppError::new("hermes_bridge_home_failed", error.to_string()))?
         .join("hermes");
@@ -7543,7 +7543,7 @@ fn render_hermes_config(
   gateway_timeout: 7200
   gateway_timeout_warning: 3600
   gateway_auto_continue_freshness: 10800
-approvals:
+{RUNTIME_DISABLED_TOOLSETS}approvals:
   mode: manual
   cron_mode: deny
 display:
@@ -8610,7 +8610,7 @@ mod connectors_mcp;
 use builtin_mcp::render_context_mcp_entry;
 use builtin_mcp::{
     render_mcp_servers_config, JuneContextMcpConfig, JuneMediaMcpConfig, JuneStudioMcpConfig,
-    JuneWebMcpConfig,
+    JuneWebMcpConfig, RUNTIME_DISABLED_TOOLSETS,
 };
 pub mod guard;
 mod local_reads;

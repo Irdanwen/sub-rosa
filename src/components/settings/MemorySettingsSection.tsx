@@ -166,8 +166,10 @@ export function MemorySettingsSection() {
 
   const emptyMessage =
     items.length === 0
-      ? "Nothing remembered yet. Facts are extracted automatically from your chats, or add one yourself."
-      : `No memories match "${query.trim()}".`;
+      ? t(
+          "Nothing remembered yet. Facts are extracted automatically from your chats, or add one yourself.",
+        )
+      : t("No memories match “{query}”.", { query: query.trim() });
 
   const held = settings?.heldByProtectedMode === true;
 

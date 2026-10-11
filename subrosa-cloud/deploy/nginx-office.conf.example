@@ -1,0 +1,116 @@
+# The Office add-ins' own origin (ADR-0102, addendum of 2026-10-10). Like
+# nginx-account.conf.example, this file names placeholder hosts: substitute the
+# real office and account hostnames when installing, for example
+#   sed -e 's/office.example.invalid/<office host>/g' \
+#       -e 's/account.example.invalid/<account host>/g' nginx-office.conf.example \
+#     > /etc/nginx/sites-available/subrosa-office
+# The task panes run Microsoft's Office.js, which cannot be pinned, so they are
+# served here and never by the account origin: nothing on this origin reaches
+# the account's cookie (host-only), its storage, its vault or its CSRF token.
+# Static files only (office-addins/dist, built with VITE_ACCOUNT_ORIGIN and
+# VITE_OFFICE_ORIGIN): no service is proxied, no cookie is set or read. The
+# sign-in window frames the account origin's /office/courier.html, the one
+# page that holds the session. Enable only after DNS and the certificate exist
+# (nginx-office-bootstrap.conf.example). Nginx stays managed separately from
+# the stack; never edit another application's vhost.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name office.example.invalid;
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+    location / { return 308 https://office.example.invalid$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name office.example.invalid;
+    ssl_certificate /etc/letsencrypt/live/office.example.invalid/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/office.example.invalid/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /srv/subrosa-office/www/current;
+    server_tokens off;
+    access_log off;
+    # Nothing here accepts a body.
+    client_max_body_size 1k;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+
+    # The panes, the sign-in window and the ribbon's function file. Office on
+    # the web frames the panes, so no X-Frame-Options and a frame-ancestors
+    # naming Office's hosts; Office.js comes from Microsoft's CDN and loads its
+    # files through its own "officejs" Trusted Types policy; the Excel pane
+    # runs Python like /app, in this origin's sandbox below; the sign-in
+    # window frames the account origin's courier and nothing else of it.
+    # add_header in a location replaces the inherited set, so the four headers
+    # above are repeated on purpose.
+    location ^~ /office/ {
+        limit_except GET { deny all; }
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://carpe-diem.xyz; worker-src 'self' blob:; frame-src 'self' https://appsforoffice.microsoft.com https://account.example.invalid/office/courier.html; object-src 'none'; base-uri 'none'; frame-ancestors https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; form-action 'self'; require-trusted-types-for 'script'; trusted-types subrosa officejs" always;
+        try_files $uri =404;
+    }
+    # The Excel pane's Python sandbox (ADR-0104 addendum of 2026-10-10), this
+    # origin's own copy of the account site's: framed with
+    # sandbox="allow-scripts" by the pane, an opaque origin whose policy
+    # reaches this origin's sandbox scripts and Pyodide, nothing else. Framed
+    # by this origin and, through the pane, by Office's hosts, so no
+    # X-Frame-Options.
+    location = /python-sandbox.html {
+        limit_except GET { deny all; }
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src https://office.example.invalid/office/assets/ https://office.example.invalid/pyodide/ 'wasm-unsafe-eval'; worker-src data: https://office.example.invalid/office/assets/; connect-src https://office.example.invalid/pyodide/; frame-ancestors https://office.example.invalid https://*.officeapps.live.com https://*.office.com https://*.office365.com https://*.cloud.microsoft https://*.sharepoint.com https://onedrive.live.com; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types subrosa-python" always;
+        add_header Cache-Control no-store always;
+        try_files $uri =404;
+    }
+    # Its scripts, fetched from that opaque origin, so answered with CORS.
+    location ^~ /office/assets/python-sandbox {
+        limit_except GET { deny all; }
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+        add_header Access-Control-Allow-Origin "*" always;
+        try_files $uri =404;
+    }
+    # Pyodide's files (ADR-0086) for the Excel pane, with types a module
+    # worker accepts, and CORS for the sandbox's opaque origin.
+    location ^~ /pyodide/ {
+        limit_except GET { deny all; }
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+        add_header Cache-Control "public, max-age=604800" always;
+        add_header Access-Control-Allow-Origin "*" always;
+        types {
+            text/javascript mjs js;
+            application/wasm wasm;
+            application/json json;
+            application/zip zip whl;
+        }
+        default_type application/octet-stream;
+        try_files $uri =404;
+    }
+    location = /robots.txt {
+        default_type text/plain;
+        return 200 "User-agent: *\nDisallow: /\n";
+    }
+    location / { return 404; }
+}

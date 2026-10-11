@@ -15,13 +15,15 @@ use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
 use uuid::Uuid;
 mod browser;
 pub mod publication;
+mod revocations;
 /// Shared projects (ADR 0098): the routes call the repository directly, the
 /// service has no logic of its own to add over a blind courier.
 pub mod space {
     pub use subrosa_persistence::{EpochWrite, InvitationWrite};
 }
 pub use browser::{
-    AdmissionRequest, DEVICE_PROOF_HEADER, DEVICE_PROOF_TYPE, thumbprint as jwk_thumbprint,
+    AdmissionRequest, DEVICE_PROOF_HEADER, DEVICE_PROOF_TYPE, DeviceProof,
+    thumbprint as jwk_thumbprint,
 };
 #[derive(Clone)]
 pub struct Service {
@@ -31,6 +33,8 @@ pub struct Service {
     storage: Arc<dyn BlobStore>,
     ledger: Option<Arc<dyn subrosa_domain::DeletionLedger>>,
     carpe_diem: Option<Arc<dyn CarpeDiemPartner>>,
+    /// When the stuck-revocation alarm last went off, in this process.
+    revocation_alarm: Arc<std::sync::Mutex<Option<chrono::DateTime<Utc>>>>,
 }
 /// Where sign-in may send the browser back to. An allowlist rather than a shape
 /// test, because the parameter is attacker-supplied and an open redirect on the
@@ -51,16 +55,16 @@ const RETURN_TO: &[&str] = &[
     "/account/usage",
     // The web client (WP19) offers "sign in" from its own page.
     "/app",
-    // An Office add-in signs in from a dialog window, whose session carries
-    // the pane's device calls (ADR-0102).
-    "/office/session.html",
+    // An Office add-in signs in from a dialog window on the add-ins' own
+    // origin (ADR-0102, addendum of 2026-10-10). This static page, which runs
+    // no Office.js, sends the window back there to a URL fixed by its build.
+    // The dialog itself is no longer served by this origin, so it is not here.
+    "/office/signed-in.html",
 ];
 
 /// How many issuance assertions one account may ask for per minute. A person
 /// signs in and asks once per device; anything faster is grinding.
 const ASSERTIONS_PER_MINUTE: i32 = 5;
-/// How many revocations one maintenance tick delivers.
-const REVOCATIONS_PER_TICK: i64 = 50;
 
 /// How many shares one account may have answering at once. A bound on the
 /// public surface, not a product limit anybody should reach: the links expire.
@@ -110,6 +114,7 @@ impl Service {
             storage,
             ledger: None,
             carpe_diem: None,
+            revocation_alarm: Arc::default(),
         }
     }
     /// Arms the Carpe Diem partner (ADR 0069). Without it the assertion route
@@ -132,14 +137,14 @@ impl Service {
     ///
     /// A browser qualifies only as an admitted browser device (ADR 0096): its
     /// session plus a `proof` signed by its non-extractable device key and
-    /// bound to `jkt`. It need not be recent, which is what lets its short
+    /// bound to the request body, which holds `jkt`. It need not be recent, which is what lets its short
     /// lived key be renewed while the device stays live, and its assertion
     /// asks Carpe Diem for the browser bound.
     pub async fn carpe_diem_assertion(
         &self,
         session: &Session,
         jkt: &str,
-        proof: Option<&str>,
+        proof: Option<DeviceProof<'_>>,
     ) -> Result<IssuanceAssertion> {
         let partner = self.carpe_diem.as_ref().ok_or(Error::NotFound)?;
         let browser = match (session.browser, session.device_id, proof) {
@@ -161,7 +166,7 @@ impl Service {
         }
         let (device_id, bound) = match (browser, session.device_id) {
             (Some(proof), _) => (
-                self.browser_device(session, proof, browser::ASSERTION_PATH, Some(jkt))
+                self.browser_device(session, proof, browser::ASSERTION_PATH)
                     .await?,
                 Some(partner.browser_bound()),
             ),
@@ -190,32 +195,6 @@ impl Service {
             jkt: jkt.into(),
             browser: bound,
         })
-    }
-    /// Delivers due revocations. A failure stays in the outbox with its
-    /// backoff; nothing here can block the rest of maintenance.
-    async fn deliver_revocations(&self) -> Result<()> {
-        let Some(partner) = &self.carpe_diem else {
-            return Ok(());
-        };
-        for revocation in self
-            .repository
-            .claim_revocations(REVOCATIONS_PER_TICK)
-            .await?
-        {
-            match partner.revoke(&revocation).await {
-                Ok(()) => self.repository.revocation_delivered(revocation.id).await?,
-                Err(error) => {
-                    tracing::warn!(
-                        attempts = revocation.attempts + 1,
-                        "Carpe Diem revocation will be retried"
-                    );
-                    self.repository
-                        .revocation_failed(revocation.id, &error.to_string())
-                        .await?;
-                }
-            }
-        }
-        Ok(())
     }
     #[must_use]
     pub fn with_deletion_ledger(
@@ -821,9 +800,18 @@ mod tests {
         assert!(RETURN_TO.contains(&"/app"));
     }
 
-    /// An Office add-in's sign-in window lands back on itself (ADR-0102).
+    /// An Office add-in's sign-in window lands on the account origin's
+    /// signed-in page, which hands it back to the add-ins' origin; the old
+    /// dialog address, now a page saying the add-ins moved, is no longer a
+    /// destination (ADR-0102, addendum of 2026-10-10).
     #[test]
-    fn the_office_sign_in_window_can_be_returned_to_after_sign_in() {
-        assert!(RETURN_TO.contains(&"/office/session.html"));
+    fn the_office_sign_in_window_returns_through_the_signed_in_page() {
+        assert!(RETURN_TO.contains(&"/office/signed-in.html"));
+        assert!(!RETURN_TO.contains(&"/office/session.html"));
+        assert!(
+            RETURN_TO
+                .iter()
+                .all(|path| !path.starts_with("/office/") || *path == "/office/signed-in.html")
+        );
     }
 }

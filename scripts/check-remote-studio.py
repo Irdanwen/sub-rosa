@@ -6,10 +6,16 @@ import sys
 
 FORBIDDEN = re.compile(r"furetier\.com|vmk_|[Vv]ideomaker")
 ACCOUNT_HOST = re.compile(r"(?<![\w.-])subrosa\.furetier\.com(?![\w.-])")
+# The Office add-ins' own origin (ADR-0102, addendum of 2026-10-10): Office.js
+# runs there and never on the account origin. Exact host, like the account's.
+OFFICE_HOST = re.compile(r"(?<![\w.-])office\.subrosa\.furetier\.com(?![\w.-])")
 MARKETING_URL = re.compile(r"(?<![\w.-])furetier\.com(?=/subrosa/)")
 MARKETING_HOST = re.compile(r"(?<![\w.-])furetier\.com(?![\w.-])")
 MARKETING_FILES = {
     "scripts/deploy-website-vps.sh",
+    # The site names its marketing root once, to write absolute hreflang links.
+    "website/src/lib/alternates.ts",
+    "website/README.md",
     "subrosa-cloud/deploy/nginx-marketing-bootstrap.conf",
     "subrosa-cloud/deploy/nginx-marketing.conf",
 }
@@ -23,6 +29,7 @@ EXCLUDED = [
 def forbidden(path, text):
     # Scrub only the newly authorized hostname/path, never a whole line or file.
     remaining = ACCOUNT_HOST.sub("account-host", text)
+    remaining = OFFICE_HOST.sub("office-host", remaining)
     remaining = MARKETING_URL.sub("marketing-host", remaining)
     if path in MARKETING_FILES:
         remaining = MARKETING_HOST.sub("marketing-host", remaining)
@@ -34,6 +41,10 @@ def self_test():
     assert not forbidden("HANDOFF.md", "https://furetier.com/subrosa/")
     assert forbidden("src/account.rs", "https://furetier.com/unrelated")
     assert forbidden("src/account.rs", "https://api.subrosa.furetier.com")
+    assert not forbidden("office-addins/manifests/word.xml", "https://office.subrosa.furetier.com/office/word.html")
+    assert forbidden("office-addins/manifests/word.xml", "https://evil.office.subrosa.furetier.com")
+    assert forbidden("office-addins/manifests/word.xml", "https://office.subrosa.furetier.com.evil")
+    assert forbidden("src/account.rs", "https://pages.subrosa.furetier.com")
     assert forbidden("src/account.rs", "https://subrosa.furetier.com.evil")
     assert forbidden("src/account.rs", "https://subrosa.furetier.com-evil")
     assert forbidden("src/account.rs", "https://subrosa.furetier.com https://studio.furetier.com")

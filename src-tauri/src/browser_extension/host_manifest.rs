@@ -17,11 +17,59 @@ use serde::{Deserialize, Serialize};
 /// dots only, as both browser families require.
 pub const HOST_NAME: &str = "xyz.carpediem.subrosa";
 
-/// Chromium extension ids allowed to start the host. The first is the id the
-/// `key` in `browser-extension/manifest.json` pins for an unpacked install;
-/// the stores assign their own on first upload, and each one is added here
-/// before the release that ships it (docs/browser-extension.md).
-pub const CHROMIUM_EXTENSION_IDS: &[&str] = &["aphalahbhpimjbfdkjkdfgfbohboceig"];
+/// Chromium extension ids a release build lets start the host: the ids the
+/// stores assign on first upload, each added here before the release that
+/// ships it (docs/browser-extension.md). Empty until the extension is
+/// published, so a release build answers no Chromium extension yet.
+pub const STORE_CHROMIUM_EXTENSION_IDS: &[&str] = &[];
+
+/// The id the `key` in `browser-extension/manifest.json` pins for an unpacked
+/// install. That key is public, so anyone can load an extension under this
+/// id: only a development build answers it, or one built with
+/// `SUBROSA_ALLOW_UNPACKED_EXTENSION=1` for testing the unpacked extension.
+pub const UNPACKED_CHROMIUM_EXTENSION_ID: &str = "aphalahbhpimjbfdkjkdfgfbohboceig";
+
+/// Whether this build answers the unpacked extension.
+pub fn unpacked_allowed() -> bool {
+    cfg!(debug_assertions) || option_env!("SUBROSA_ALLOW_UNPACKED_EXTENSION") == Some("1")
+}
+
+/// The Chromium ids allowed to start the host, by whether the unpacked one is.
+pub fn chromium_extension_ids_for(allow_unpacked: bool) -> Vec<&'static str> {
+    let mut ids = STORE_CHROMIUM_EXTENSION_IDS.to_vec();
+    if allow_unpacked && !ids.contains(&UNPACKED_CHROMIUM_EXTENSION_ID) {
+        ids.push(UNPACKED_CHROMIUM_EXTENSION_ID);
+    }
+    ids
+}
+
+/// The Chromium ids this build lets start the host.
+pub fn chromium_extension_ids() -> Vec<&'static str> {
+    chromium_extension_ids_for(unpacked_allowed())
+}
+
+/// The origins the relay may report for this build, exactly as it reports
+/// them (`relay::invoked_as_host`). The manifest already limits who the
+/// browser starts the host for; the app checks again when a connection
+/// names its origin, so a process that reaches the socket some other way
+/// cannot claim another one.
+pub fn allowed_origins() -> Vec<String> {
+    allowed_origins_for(&chromium_extension_ids())
+}
+
+pub fn allowed_origins_for(chromium_ids: &[&str]) -> Vec<String> {
+    chromium_ids
+        .iter()
+        .map(|id| chromium_origin(id))
+        .chain(std::iter::once(format!(
+            "moz-extension:{GECKO_EXTENSION_ID}"
+        )))
+        .collect()
+}
+
+fn chromium_origin(id: &str) -> String {
+    format!("chrome-extension://{id}/")
+}
 
 /// The Firefox add-on id, set in the extension's manifest
 /// (`browser_specific_settings.gecko.id`), so it is the same everywhere.
@@ -95,9 +143,9 @@ pub fn manifest_json(browser: Browser, exe: &Path) -> serde_json::Value {
     if browser.is_gecko() {
         manifest["allowed_extensions"] = serde_json::json!([GECKO_EXTENSION_ID]);
     } else {
-        manifest["allowed_origins"] = CHROMIUM_EXTENSION_IDS
+        manifest["allowed_origins"] = chromium_extension_ids()
             .iter()
-            .map(|id| format!("chrome-extension://{id}/"))
+            .map(|id| chromium_origin(id))
             .collect();
     }
     manifest
@@ -279,8 +327,11 @@ mod tests {
             "/Applications/Sub Rosa.app/Contents/MacOS/os-june"
         );
         assert_eq!(
-            chrome["allowed_origins"][0],
-            "chrome-extension://aphalahbhpimjbfdkjkdfgfbohboceig/"
+            chrome["allowed_origins"],
+            serde_json::json!(chromium_extension_ids()
+                .iter()
+                .map(|id| format!("chrome-extension://{id}/"))
+                .collect::<Vec<_>>())
         );
         assert!(chrome.get("allowed_extensions").is_none());
         let firefox = manifest_json(Browser::Firefox, exe);
@@ -360,11 +411,33 @@ mod tests {
             .flat_map(|byte| [byte >> 4, byte & 0x0f])
             .map(|nibble| char::from(b'a' + nibble))
             .collect();
-        assert_eq!(id, CHROMIUM_EXTENSION_IDS[0]);
+        assert_eq!(id, UNPACKED_CHROMIUM_EXTENSION_ID);
         assert_eq!(
             manifest["browser_specific_settings"]["gecko"]["id"],
             GECKO_EXTENSION_ID
         );
+    }
+
+    /// The unpacked id is derived from a public key: a release build does
+    /// not answer it, a development build does, and the stores' ids are the
+    /// release list.
+    #[test]
+    fn a_release_build_answers_only_the_store_ids() {
+        assert!(!chromium_extension_ids_for(false).contains(&UNPACKED_CHROMIUM_EXTENSION_ID));
+        assert_eq!(
+            chromium_extension_ids_for(false),
+            STORE_CHROMIUM_EXTENSION_IDS
+        );
+        assert!(chromium_extension_ids_for(true).contains(&UNPACKED_CHROMIUM_EXTENSION_ID));
+        assert_eq!(
+            unpacked_allowed(),
+            cfg!(debug_assertions) || option_env!("SUBROSA_ALLOW_UNPACKED_EXTENSION") == Some("1")
+        );
+        let release = allowed_origins_for(&chromium_extension_ids_for(false));
+        assert!(!release
+            .iter()
+            .any(|origin| origin.contains(UNPACKED_CHROMIUM_EXTENSION_ID)));
+        assert!(release.contains(&format!("moz-extension:{GECKO_EXTENSION_ID}")));
     }
 
     #[test]

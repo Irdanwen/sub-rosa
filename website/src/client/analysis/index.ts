@@ -1,17 +1,17 @@
-/** The web client's data analysis: Pyodide in a worker of the tab (ADR-0086). */
+/** The web client's data analysis: Pyodide in a worker of the tab (ADR-0086),
+ * inside an opaque-origin frame (ADR-0104 addendum of 2026-10-10). */
 import type { PythonInputFile } from "@subrosa/chat-core/python/protocol";
 import type { TurnAddition, WebFeature } from "../feature";
 import { ANALYSIS } from "./exported";
 import { createPythonEngine, type PythonEngine } from "./python";
-import { pythonWorkerUrl } from "./worker-url";
+import { createSandboxedWorker } from "./worker-url";
 
 let engine: PythonEngine | null = null;
 
 /** One engine for the page: one worker, the conversations' variables in it. */
 function pageEngine(): PythonEngine {
   engine ??= createPythonEngine({
-    createWorker: () =>
-      new Worker(pythonWorkerUrl() as unknown as string, { type: "module", name: "python" }),
+    createWorker: () => createSandboxedWorker(),
     visible: () => document.visibilityState === "visible",
     onVisibilityChange: (handler) => {
       document.addEventListener("visibilitychange", handler);

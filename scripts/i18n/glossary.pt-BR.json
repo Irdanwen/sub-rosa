@@ -48,7 +48,7 @@
     "routine": "rotina",
     "skill": "habilidade",
     "connector": "conector",
-    "assignment": "incumbência",
+    "assignment": ["missão", "missões"],
     "research": "pesquisa",
     "chapter": "capítulo",
     "long-form summary": "resumo extenso",

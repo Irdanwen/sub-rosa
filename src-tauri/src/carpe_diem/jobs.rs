@@ -251,6 +251,10 @@ pub async fn media_job_queue(
         .composite
         .as_ref()
         .and_then(|spec| serde_json::to_string(spec).ok());
+    // Protected mode refuses here, before the row exists (ADR-0084). Asked
+    // only inside `media::send`, its refusal left the pre-submit row below
+    // saying the paid submission was interrupted, when nothing had left.
+    crate::protected_mode::guard_media_request(&request.queue_path, Some(&request.queue_body))?;
     let repos = crate::commands::repositories(&app).await?;
     let now = chrono::Utc::now().to_rfc3339();
     let uncertain = "The submission was interrupted. Check your provider history before starting another generation.";

@@ -3,16 +3,27 @@
 //
 //   node office-addins/scripts/manifests.mjs            # rewrite manifests/
 //   node office-addins/scripts/manifests.mjs --check    # fail if they are stale
-//   node office-addins/scripts/manifests.mjs --origin https://localhost:1431 --out /tmp/dev
+//   node office-addins/scripts/manifests.mjs --origin https://localhost:1431 \
+//     --account-origin https://localhost:1430 --out /tmp/dev
 //
-// The committed manifests point at the production account origin; a
-// development or staging origin gets its own copies with --origin and --out.
+// The panes run on the add-ins' own origin (ADR-0102, addendum of
+// 2026-10-10), never the account's: `--origin` is that office origin, and
+// `--account-origin` the account's, which the manifest lists in AppDomains so
+// the sign-in window may go there to sign in. The committed manifests name the
+// production origins; a development or staging pair gets its own copies with
+// --origin, --account-origin and --out.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  PRODUCTION_ACCOUNT_ORIGIN,
+  PRODUCTION_OFFICE_ORIGIN,
+} from "../../scripts/office-origins.mjs";
 
-export const PRODUCTION_ORIGIN = "https://subrosa.furetier.com";
+/** Where the panes are served: the office origin. */
+export const PRODUCTION_ORIGIN = PRODUCTION_OFFICE_ORIGIN;
+export const ACCOUNT_ORIGIN = PRODUCTION_ACCOUNT_ORIGIN;
 
 /** One entry per host. The ids are fixed: Office keys a sideloaded add-in by
  * them, and a new id is a different add-in. */
@@ -43,7 +54,9 @@ export const HOSTS = [
   },
 ];
 
-export const VERSION = "1.0.0.0";
+/** 1.0.1.0: the panes moved to their own origin. Same ids, so Office takes
+ * the new manifest as an update of the same add-in. */
+export const VERSION = "1.0.1.0";
 
 const xmlEscape = (value) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -78,11 +91,19 @@ const WHAT = {
   },
 };
 
-/** The manifest of one host, for the account origin `origin`. */
-export function manifest(entry, origin = PRODUCTION_ORIGIN) {
+const httpsOrigin = (origin) => {
   const url = new URL(origin);
   if (url.protocol !== "https:" || url.origin !== origin)
     throw new Error("The origin must be an HTTPS origin without a path.");
+  return origin;
+};
+
+/** The manifest of one host, for the panes' origin `origin` and the account
+ * origin `account`. */
+export function manifest(entry, origin = PRODUCTION_ORIGIN, account = ACCOUNT_ORIGIN) {
+  httpsOrigin(origin);
+  httpsOrigin(account);
+  if (origin === account) throw new Error("The panes need an origin apart from the account's.");
   const pane = `${origin}/office/${entry.page}.html`;
   const icon = (size) => `${origin}/office/icon-${size}.png`;
   const override = (text, prefix = "") =>
@@ -104,7 +125,10 @@ export function manifest(entry, origin = PRODUCTION_ORIGIN) {
   </Description>
   <IconUrl DefaultValue="${icon(32)}"/>
   <HighResolutionIconUrl DefaultValue="${icon(64)}"/>
-  <SupportUrl DefaultValue="${origin}/help"/>
+  <SupportUrl DefaultValue="${account}/help"/>
+  <AppDomains>
+    <AppDomain>${account}</AppDomain>
+  </AppDomains>
   <Hosts>
     <Host Name="${entry.host}"/>
   </Hosts>
@@ -190,13 +214,14 @@ function main(argv) {
     return at >= 0 ? argv[at + 1] : undefined;
   };
   const origin = option("--origin") ?? PRODUCTION_ORIGIN;
+  const account = option("--account-origin") ?? ACCOUNT_ORIGIN;
   const out = option("--out") ?? join(here, "..", "manifests");
   const check = argv.includes("--check");
   let stale = 0;
   if (!check) mkdirSync(out, { recursive: true });
   for (const entry of HOSTS) {
     const path = join(out, entry.file);
-    const text = manifest(entry, origin);
+    const text = manifest(entry, origin, account);
     if (check) {
       let committed = "";
       try {

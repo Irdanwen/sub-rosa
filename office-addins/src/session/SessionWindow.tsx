@@ -1,86 +1,99 @@
-import { useEffect, useState } from "react";
-import { type Account, api } from "../../../website/src/lib/api";
+import { useEffect, useRef, useState } from "react";
 import { t } from "../../../website/src/lib/i18n";
+import { accountOrigin } from "../../../website/src/lib/office-origins";
 import type { OfficeGlobal } from "../office";
-import { SIGN_IN_PATH } from "../pane/sign-in-window";
-import { carry, csrfFromCookie, parseMessage } from "./courier";
+import { type RelayState, startRelay } from "./relay";
 
-/** Where the account service sends the window back after signing in. */
-export const SIGN_IN_URL = `/auth/login?return_to=${encodeURIComponent(SIGN_IN_PATH)}`;
+/** The account origin's page that carries the pane's calls (no Office.js). */
+export const COURIER_PATH = "/office/courier.html";
+/** The account origin's page the service returns to after sign-in; it hands
+ * the window back to this page, on the office origin. */
+export const SIGNED_IN_PATH = "/office/signed-in.html";
+
+/** Sign-in on the account origin, coming back through `SIGNED_IN_PATH`. */
+export function signInUrl(origin = accountOrigin()): string {
+  return `${origin}/auth/login?return_to=${encodeURIComponent(SIGNED_IN_PATH)}`;
+}
 
 const assign = (url: string) => location.assign(url);
+const reloadPage = () => location.reload();
 
 /**
- * The sign-in window an Office pane opens (ADR-0102). It signs in on the
- * account origin like any page of the site, then carries the pane's few
- * session calls (`courier.ts`) until the pane closes it. It holds no key and
- * shows nothing of the account but the address it is signed in as.
+ * The sign-in window an Office pane opens (ADR-0102, addendum of
+ * 2026-10-10). It runs on the office origin, with Office.js for the pane's
+ * channel, and holds no session: it embeds the account origin's courier
+ * frame, which has the account's cookie, and relays the pane's few device
+ * calls to it (`relay.ts`). Signing in is a top-level visit to the account
+ * origin, which comes back here. It holds no key and shows nothing of the
+ * account but the address it is signed in as.
  */
 export function SessionWindow({
   office,
   fresh,
   navigate = assign,
+  reload = reloadPage,
+  origin = accountOrigin(),
+  paneOrigin = location.origin,
 }: {
   office: OfficeGlobal;
   fresh: boolean;
   navigate?: (url: string) => void;
+  reload?: () => void;
+  /** The account origin (the build's). */
+  origin?: string;
+  /** The pane's origin: this window's own. */
+  paneOrigin?: string;
 }) {
-  const [state, setState] = useState<
-    { kind: "checking" } | { kind: "signed-out" } | { kind: "carrying"; account: Account }
-  >({ kind: "checking" });
+  const [state, setState] = useState<{ kind: "checking" } | RelayState>({ kind: "checking" });
+  const frame = useRef<HTMLIFrameElement>(null);
+  const relay = useRef<{ hello(): void } | null>(null);
 
   useEffect(() => {
     if (fresh) {
-      navigate(SIGN_IN_URL);
+      navigate(signInUrl(origin));
       return;
     }
-    let live = true;
-    const reply = (message: unknown) => {
-      try {
-        office.context.ui.messageParent(JSON.stringify(message));
-      } catch {
-        // Opened outside an Office dialog: there is no pane to answer.
-      }
-    };
-    api<Account>("/api/v1/me")
-      .then((account) => {
-        if (!live) return;
-        office.context.ui.addHandlerAsync(
-          office.EventType.DialogParentMessageReceived,
-          (arg) => {
-            if (arg.origin && arg.origin !== location.origin) return;
-            const request = parseMessage(arg.message);
-            if (request?.type !== "request") return;
-            void carry(
-              {
-                fetch: (...args) => fetch(...args),
-                csrf: () => csrfFromCookie(document.cookie),
-                reply,
-              },
-              request,
-            );
-          },
-          () => {
-            setState({ kind: "carrying", account });
-            reply({ v: 1, type: "ready", account: { id: account.id, email: account.email } });
-          },
-        );
-      })
-      .catch(() => {
-        if (!live) return;
-        setState({ kind: "signed-out" });
-        reply({ v: 1, type: "signed-out" });
-      });
+    const started = startRelay({
+      office,
+      courier: () => frame.current?.contentWindow ?? null,
+      target: window,
+      accountOrigin: origin,
+      paneOrigin,
+      onState: setState,
+    });
+    relay.current = started;
     return () => {
-      live = false;
+      relay.current = null;
+      started.stop();
     };
-  }, [office, fresh, navigate]);
+  }, [office, fresh, navigate, origin, paneOrigin]);
 
   return (
     <main className="office-pane office-session">
       <h1 className="office-brand">Sub Rosa</h1>
+      {!fresh && (
+        <iframe
+          ref={frame}
+          src={`${origin}${COURIER_PATH}`}
+          title="Sub Rosa"
+          hidden
+          onLoad={() => relay.current?.hello()}
+        />
+      )}
       {state.kind === "checking" ? (
         <p role="status">{t("Loading…", "Chargement…")}</p>
+      ) : state.kind === "unavailable" ? (
+        <>
+          <p role="alert">
+            {t(
+              "The Sub Rosa account site did not answer. Check your connection, then try again.",
+              "Le site du compte Sub Rosa n’a pas répondu. Vérifiez votre connexion, puis réessayez.",
+            )}
+          </p>
+          <button className="button" type="button" onClick={reload}>
+            {t("Try again", "Réessayer")}
+          </button>
+        </>
       ) : state.kind === "signed-out" ? (
         <>
           <p>
@@ -89,7 +102,11 @@ export function SessionWindow({
               "Connectez-vous à votre compte Sub Rosa pour relier le complément. Cette fenêtre se ferme d’elle-même une fois que le complément a sa clé.",
             )}
           </p>
-          <button className="button primary" type="button" onClick={() => navigate(SIGN_IN_URL)}>
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => navigate(signInUrl(origin))}
+          >
             {t("Sign in", "Se connecter")}
           </button>
         </>

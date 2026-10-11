@@ -253,7 +253,8 @@ pub async fn begin_sign_in(pool: &SqlitePool, connector: &Connector) -> Result<S
             &client_id,
             oauth::REDIRECT_URI,
             server.resource.as_deref(),
-        ),
+        )
+        .with_issuer(&server),
     )?;
     oauth::authorize_url(&oauth::AuthorizeRequest {
         authorization_endpoint: &server.authorization_endpoint,

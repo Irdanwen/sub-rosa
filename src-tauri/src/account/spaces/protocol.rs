@@ -17,6 +17,7 @@ use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
 pub const MAX_MEMBERS: usize = 50;
@@ -40,7 +41,7 @@ pub fn invalid() -> AppError {
         "This shared project's data could not be verified. Nothing was changed.",
     )
 }
-fn rollback() -> AppError {
+pub fn rollback() -> AppError {
     AppError::new(
         "space_rollback",
         "The service showed an older state of this shared project than this device has already seen. Nothing was changed.",
@@ -563,15 +564,32 @@ pub fn verify_next(prev: Option<&EpochHead>, head: &EpochHead) -> Result<(), App
     Ok(())
 }
 
+/// What a chain check leaves a device to rely on: the latest head, and every
+/// head it may use for a key's commitment, a membership or an author's
+/// signing key, by epoch. A head the service returned that is not in `heads`
+/// was refused, never merely skipped.
+#[derive(Debug)]
+pub struct VerifiedChain {
+    pub latest: EpochHead,
+    pub heads: BTreeMap<u64, EpochHead>,
+}
+
 /// Verifies the heads a service returned against what this device already
-/// trusts, and returns the latest. With nothing trusted yet, the chain must
-/// start at epoch 1 and its owner must be `anchor` (the inviter named in the
-/// link, or this account for a space it created).
-pub fn verify_chain<'a>(
+/// trusts. With nothing trusted yet, the chain must start at epoch 1 and its
+/// owner must be `anchor` (the inviter named in the link, or this account
+/// for a space it created).
+///
+/// With a trusted head, a later head must verify forward from it, and an
+/// earlier one must be the head it names, link by link
+/// (`hash(head_e) == head_{e+1}.prev`): an older head is history this
+/// device already accepted, so it is matched, not re-judged. A returned head
+/// below a missing epoch, or one that does not link, is another history and
+/// a rollback. Omitting old heads is not: they are simply not in `heads`.
+pub fn verify_chain(
     trusted: Option<&EpochHead>,
-    heads: &'a [EpochHead],
+    heads: &[EpochHead],
     anchor: Option<&IdentityBundle>,
-) -> Result<&'a EpochHead, AppError> {
+) -> Result<VerifiedChain, AppError> {
     let mut ordered: Vec<&EpochHead> = heads.iter().collect();
     ordered.sort_by_key(|head| head.epoch);
     if ordered
@@ -581,6 +599,7 @@ pub fn verify_chain<'a>(
         return Err(invalid());
     }
     let latest = *ordered.last().ok_or_else(invalid)?;
+    let mut verified = BTreeMap::new();
     match trusted {
         Some(trusted) => {
             if latest.epoch < trusted.epoch {
@@ -594,7 +613,22 @@ pub fn verify_chain<'a>(
             let mut previous = trusted;
             for head in ordered.iter().filter(|head| head.epoch > trusted.epoch) {
                 verify_next(Some(previous), head)?;
+                verified.insert(head.epoch, (*head).clone());
                 previous = head;
+            }
+            verified.insert(trusted.epoch, trusted.clone());
+            let mut link = trusted;
+            for head in ordered
+                .iter()
+                .rev()
+                .filter(|head| head.epoch < trusted.epoch)
+            {
+                if head.epoch + 1 != link.epoch || head.hash() != link.prev {
+                    return Err(rollback());
+                }
+                head.shape()?;
+                verified.insert(head.epoch, (*head).clone());
+                link = head;
             }
         }
         None => {
@@ -609,9 +643,13 @@ pub fn verify_chain<'a>(
             for pair in ordered.windows(2) {
                 verify_next(Some(pair[0]), pair[1])?;
             }
+            verified.extend(ordered.iter().map(|head| (head.epoch, (*head).clone())));
         }
     }
-    Ok(latest)
+    Ok(VerifiedChain {
+        latest: latest.clone(),
+        heads: verified,
+    })
 }
 
 // --- Wrapped keys ---------------------------------------------------------
@@ -1029,4 +1067,4 @@ pub fn parse_invitation(text: &str) -> Result<(String, Zeroizing<[u8; 32]>), App
 
 #[cfg(test)]
 #[path = "protocol_tests.rs"]
-mod tests;
+pub(crate) mod tests;
