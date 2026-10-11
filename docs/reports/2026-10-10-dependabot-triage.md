@@ -59,3 +59,27 @@ asked to rebase, and replaced by #312 and #313.
   Dependabot runs `pnpm update source-map-js@1.2.2`, which pnpm 9 does not
   apply to a transitive dependency. `fix/audit-w7` refreshes it (and
   `brace-expansion`, alerts #33, #34) in the lockfile.
+
+## Resolution, 2026-10-11
+
+Every PR above was settled; each port was checked against the version it
+replaced on real inputs, not only by CI.
+
+| PR | Outcome |
+|---|---|
+| #316 actions | merged |
+| #95 plugin-react 5, #167 jsonwebtoken 11, #97 base64 0.23 | merged after `@dependabot rebase` |
+| #96 framer-motion (rebased to 14.0.0) | merged; 14 only removes internal APIs, and the desktop shell, `?mobile=1` and `note-lab.html` render with no new console error (pixel-identical except the random suggestion chips) |
+| #306 pdfjs-dist 6 | merged; `pdfJsReader` extracts identical text from 77 pages of real PDFs on 5.7 and 6.2 |
+| #106 aes-gcm | #320: `Nonce::from` / `TryFrom`; `account-vault-v1.json` and `spaces-v1.json` (written with 0.10) still hold byte for byte |
+| #99 quick-xml | #321: ported; 10 feeds, 3 camt.053 and 11 Office files give byte-identical results; a pre-existing bug found on the way (a feed title with an entity was cut at the entity) fixed in the same PR |
+| #317 + #307 | #322: Tauri 2.12 on both sides; the Tauri JS packages take `~` ranges and `tauri-versions.test.ts` holds each npm package on its crate's minor (a caret had resolved `plugin-notification` 2.6 over a 2.5 crate); Biome kept at 2.5.11 and excluded from the group (2.5.12 to 2.5.15 widen `noDescendingSpecificity` from 98 to 386 sites on unchanged CSS); `src-tauri/Cargo.lock` follows jsonwebtoken 11 |
+| #94 typescript 7 | #328: TS 7 type-checks root, website and office-addins (same file sets as 5.9); the i18n scripts use a `typescript5` alias for the compiler API |
+| #100 vitest 4 | #331: mock typings, an `Audio` mock that must be constructible, an `agent-hud` test that counted microtasks, coverage include scoped to `src/`; frontend floor re-based to 74.7 because v4 counts lines from the AST (80.86 under v3, 74.76 under v4, same tests) |
+| #98 symphonia 0.6 | #330: ported; PCM bit-identical to 0.5 on 29 real files once `opt-simd` is left out and Vorbis keeps its trimming; AAC-LC in `.caf` now decodes |
+| #122 key pill | merged after a rebase onto the current card, with its sentences in the six catalogs |
+
+Still open: the decision on Biome 2.5.15 (re-baseline that one rule, or
+stay), and the majors Dependabot opened on 2026-10-11 (#324
+`@simplewebauthn/browser` 14, #325 vite 8, #327 `ed25519-dalek` 3).
+
