@@ -6,6 +6,17 @@ import {
 } from "@simplewebauthn/browser";
 import { api } from "./api";
 
+/**
+ * The person closed the browser's passkey prompt, or had no passkey for this
+ * site. The library hands the browser's `NotAllowedError` back wrapped in its
+ * own `WebAuthnError`, which keeps the name but is not a `DOMException`.
+ */
+export function passkeyWasDismissed(error: unknown): boolean {
+  return (
+    (error instanceof Error || error instanceof DOMException) && error.name === "NotAllowedError"
+  );
+}
+
 interface Challenge<T> {
   attempt_id: string;
   options: { publicKey: T };
