@@ -87,7 +87,7 @@ pub fn matches(pin: &str, stored: &PinHash) -> bool {
 }
 
 fn derive(pin: &str, salt: &[u8], log_n: u8, r: u32, p: u32) -> Option<[u8; HASH_BYTES]> {
-    let params = scrypt::Params::new(log_n, r, p, HASH_BYTES).ok()?;
+    let params = scrypt::Params::new(log_n, r, p).ok()?;
     let mut out = [0u8; HASH_BYTES];
     scrypt::scrypt(pin.as_bytes(), salt, &params, &mut out).ok()?;
     Some(out)
@@ -209,7 +209,7 @@ mod tests {
     fn scrypt_matches_rfc_7914() {
         // RFC 7914 section 12, first vector: the KDF itself, before any of
         // this module's choices.
-        let params = scrypt::Params::new(4, 1, 1, 64).unwrap();
+        let params = scrypt::Params::new(4, 1, 1).unwrap();
         let mut out = [0u8; 64];
         scrypt::scrypt(b"", b"", &params, &mut out).unwrap();
         let hex: String = out.iter().map(|b| format!("{b:02x}")).collect();

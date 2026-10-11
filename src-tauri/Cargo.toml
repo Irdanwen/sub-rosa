@@ -71,7 +71,7 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"]
 # X25519 and Ed25519 identity keys. Both are already in the lockfile through
 # `age` and `jsonwebtoken`, so no new crate is fetched. HPKE is written out in
 # `account/spaces/hpke.rs` and checked against the `hpke` crate in tests.
-x25519-dalek = { version = "2", features = ["static_secrets"] }
+x25519-dalek = { version = "3", features = ["static_secrets"] }
 ed25519-dalek = "3"
 # Parses podcast feeds so an enclosure can be fetched (ADR-0028). Already in
 # the tree transitively, so pinning it here adds no new crate to the lockfile.
@@ -95,7 +95,7 @@ sha2 = "0.11"
 # The protected mode PIN (ADR-0084): scrypt hashes it, subtle compares in
 # constant time. Both are already in the lockfile through `age`, so no new
 # crate is fetched; scrypt's password-hash front end stays off.
-scrypt = { version = "0.11", default-features = false }
+scrypt = { version = "0.12", default-features = false }
 subtle = "2.6"
 # Avoid the SQLx umbrella crate here. Its optional macro/database dependencies
 # put unused MySQL/Postgres packages into Cargo.lock and cargo-audit.
