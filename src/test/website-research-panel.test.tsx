@@ -39,7 +39,7 @@ function setup() {
       "/v1/augment/search": () =>
         json({ results: [{ title: "Study", url: "https://study.example/cop" }] }),
       "/v1/augment/scrape": () => json({ content: "A long field study." }),
-      "/v1/pricing": () =>
+      "/pricing": () =>
         json({
           models: [{ model: "m", inputPrice: 1, outputPrice: 2 }],
           fixedCost: [

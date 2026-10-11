@@ -320,7 +320,7 @@ describe("the research engine", () => {
 });
 
 describe("the research engine's world in the browser", () => {
-  it("searches and reads through Carpe Diem, files notes, and prices from /v1/pricing", async () => {
+  it("searches and reads through Carpe Diem, files notes, and prices from the public /pricing", async () => {
     const sync = new SyncClient(
       "0191d1a4-0000-7000-8000-00000000a11c",
       new Uint8Array(32).fill(3),
@@ -342,7 +342,7 @@ describe("the research engine's world in the browser", () => {
           ],
         }),
       "/v1/augment/scrape": () => json({ content: "The page." }),
-      "/v1/pricing": () =>
+      "/pricing": () =>
         json({
           models: [{ model: "m", inputPrice: 1, outputPrice: 2 }],
           fixedCost: [{ model: "augment-search", costUsd: 0.004 }],
@@ -376,11 +376,23 @@ describe("the research engine's world in the browser", () => {
     expect(reports).toHaveLength(1);
     expect(reports[0].row.edited_content).toBe("Body two");
 
-    expect(await researchPrices(operator, "cdm_test", "m")).toEqual({
+    const before = calls.length;
+    const sent: Headers[] = [];
+    const watched = {
+      ...operator,
+      fetch: ((input, init) => {
+        sent.push(new Headers(init?.headers));
+        return operator.fetch(input, init);
+      }) as typeof fetch,
+    };
+    expect(await researchPrices(watched, "m")).toEqual({
       inputUsdPerMtok: 1,
       outputUsdPerMtok: 2,
       searchUsd: 0.004,
     });
-    expect(await researchPrices(operator, null, "m")).toEqual({});
+    // Carpe Diem has no /v1/pricing, and a browser key may not read /pricing:
+    // the price list is asked for without one.
+    expect(calls.slice(before).map((call) => call.path)).toEqual(["/pricing"]);
+    expect(sent.map((headers) => headers.get("Authorization"))).toEqual([null]);
   });
 });

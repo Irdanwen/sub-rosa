@@ -313,11 +313,7 @@ function RunView({
   useEffect(() => {
     if (run.status !== "planned") return;
     const controller = new AbortController();
-    host
-      .openKey()
-      .catch(() => null)
-      .then((key) => researchPrices(host.operator, key, run.model, controller.signal))
-      .then(setPrices);
+    void researchPrices(host.operator, run.model, controller.signal).then(setPrices);
     return () => controller.abort();
   }, [run.status, run.model, host]);
 

@@ -1,8 +1,9 @@
 /**
  * The research engine's world in the browser: Carpe Diem's routes with the
- * browser's own key (completions, `/v1/augment/search`, `/v1/augment/scrape`,
- * `/v1/pricing`), the notes this tab decrypted, the connectors the person
- * picked for the run, and a report written as an ordinary synchronised note.
+ * browser's own key (completions, `/v1/augment/search`, `/v1/augment/scrape`),
+ * its public price list (`/pricing`, no key), the notes this tab decrypted, the
+ * connectors the person picked for the run, and a report written as an
+ * ordinary synchronised note.
  */
 import {
   CarpeDiemError,
@@ -160,18 +161,18 @@ export function liveBackend(
 }
 
 /** What a run's model, a search and a page read cost, from the operator's
- * table (`/v1/pricing`, the routes a browser key may read). Nothing known
- * when it does not answer. */
+ * public price list (`/pricing`, the one `voice/routing.ts` reads). It needs
+ * no key: Carpe Diem serves no `/v1/pricing`, and a browser key may not read
+ * `/pricing` (`BROWSER_KEY_ROUTE`), so none is sent. Nothing known when it
+ * does not answer. */
 export async function researchPrices(
   operator: Operator,
-  key: string | null,
   model: string,
   signal?: AbortSignal,
 ): Promise<ResearchPrices> {
-  if (!key) return {};
   try {
-    const response = await operator.fetch(`${operator.root}/v1/pricing`, {
-      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+    const response = await operator.fetch(`${operator.root}/pricing`, {
+      headers: { Accept: "application/json" },
       credentials: "omit",
       redirect: "error",
       referrerPolicy: "no-referrer",
