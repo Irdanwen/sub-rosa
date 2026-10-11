@@ -31,8 +31,10 @@ Legend: `[x]` done and gated · `[~]` partly done, remainder named · `[ ]` open
   (a migration). Not attempted yet: cpal 0.18, sqlx-sqlite 0.9. Gate: no
   Dependabot PR older than 14 days (open PRs are the new grouped ones).
 - [x] 1.2 iOS et Windows compilent sur chaque PR (`ios-check`, `windows-check`).
-- [~] 1.3 La couverture devient un cliquet. Frontend floor 75.83 % checked on
-  every PR (`coverage-floor.json`). The Rust floor is written after the
+- [~] 1.3 La couverture devient un cliquet. Frontend floor checked on every PR
+  (`coverage-floor.json`); re-based from 75.83 % to 74.7 % on 2026-10-11
+  because vitest 4 counts lines from the AST (the same suite measured
+  80.86 % under vitest 3 and 74.76 % under vitest 4). The Rust floor is written after the
   first scheduled macOS run; until then the check passes with "no floor".
 - [x] 1.4 Une release dit ce qu'elle change. Notes from commit subjects on the
   GitHub release and in `latest.json`; the update card shows them.

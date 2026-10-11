@@ -1,11 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, type Mock, vi } from "vitest";
 import {
   parseCompressSessionResult,
   type CompressSessionResult,
 } from "../lib/hermes-session-compress";
-import { createHermesMethods } from "../lib/hermes-control-plane";
+import { createHermesMethods, type HermesRequestFn } from "../lib/hermes-control-plane";
 import { HermesGatewayError } from "../lib/hermes-gateway";
 import { SessionCompactDialog } from "../components/agent/AgentWorkspace";
 
@@ -70,7 +70,7 @@ describe("parseCompressSessionResult", () => {
 
 /** A compress fn that routes through the real typed wrapper so the test also
  * asserts `session.compress` is the method called with the right params. */
-function compressVia(request: ReturnType<typeof vi.fn>) {
+function compressVia(request: Mock<HermesRequestFn>) {
   const methods = createHermesMethods(request);
   return vi.fn(
     async (sessionId: string): Promise<CompressSessionResult> =>
@@ -80,7 +80,7 @@ function compressVia(request: ReturnType<typeof vi.fn>) {
 
 describe("SessionCompactDialog", () => {
   it("explains compaction honestly before compressing and does not call session.compress on open", () => {
-    const request = vi.fn().mockResolvedValue(FULL_RAW);
+    const request = vi.fn<HermesRequestFn>().mockResolvedValue(FULL_RAW);
     const compress = compressVia(request);
     render(<SessionCompactDialog open sessionId="sess-1" compress={compress} onClose={() => {}} />);
 
@@ -95,7 +95,7 @@ describe("SessionCompactDialog", () => {
   });
 
   it("cancel closes without compressing (confirmation prevents accidental compaction)", async () => {
-    const request = vi.fn().mockResolvedValue(FULL_RAW);
+    const request = vi.fn<HermesRequestFn>().mockResolvedValue(FULL_RAW);
     const compress = compressVia(request);
     const onClose = vi.fn();
     render(<SessionCompactDialog open sessionId="sess-1" compress={compress} onClose={onClose} />);
@@ -107,7 +107,7 @@ describe("SessionCompactDialog", () => {
   });
 
   it("confirming calls session.compress exactly once and shows a success item", async () => {
-    const request = vi.fn().mockResolvedValue(FULL_RAW);
+    const request = vi.fn<HermesRequestFn>().mockResolvedValue(FULL_RAW);
     const compress = compressVia(request);
     render(<SessionCompactDialog open sessionId="sess-1" compress={compress} onClose={() => {}} />);
 
@@ -126,7 +126,7 @@ describe("SessionCompactDialog", () => {
   });
 
   it("renders token savings when the result reports before/after tokens", async () => {
-    const request = vi.fn().mockResolvedValue(FULL_RAW);
+    const request = vi.fn<HermesRequestFn>().mockResolvedValue(FULL_RAW);
     const compress = compressVia(request);
     render(<SessionCompactDialog open sessionId="sess-1" compress={compress} onClose={() => {}} />);
 
@@ -138,7 +138,7 @@ describe("SessionCompactDialog", () => {
   });
 
   it("still shows success when the result has no token metrics", async () => {
-    const request = vi.fn().mockResolvedValue({});
+    const request = vi.fn<HermesRequestFn>().mockResolvedValue({});
     const compress = compressVia(request);
     render(<SessionCompactDialog open sessionId="sess-1" compress={compress} onClose={() => {}} />);
 
@@ -149,7 +149,9 @@ describe("SessionCompactDialog", () => {
   });
 
   it("shows a clear message and does not crash when the session is busy (4009)", async () => {
-    const request = vi.fn().mockRejectedValue(new HermesGatewayError("session busy", 4009));
+    const request = vi
+      .fn<HermesRequestFn>()
+      .mockRejectedValue(new HermesGatewayError("session busy", 4009));
     const compress = compressVia(request);
     render(<SessionCompactDialog open sessionId="sess-1" compress={compress} onClose={() => {}} />);
 
@@ -161,7 +163,7 @@ describe("SessionCompactDialog", () => {
   });
 
   it("shows a clear message on a generic rejection without crashing", async () => {
-    const request = vi.fn().mockRejectedValue(new Error("nope"));
+    const request = vi.fn<HermesRequestFn>().mockRejectedValue(new Error("nope"));
     const compress = compressVia(request);
     render(<SessionCompactDialog open sessionId="sess-1" compress={compress} onClose={() => {}} />);
 

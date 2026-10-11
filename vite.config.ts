@@ -74,6 +74,14 @@ export default defineConfig({
       reportsDirectory: "coverage/frontend",
       include: ["src/**/*.{ts,tsx}"],
       exclude: [
+        // Vitest 4 matches these globs anywhere in a loaded file's absolute
+        // path (picomatch `contains`), so `src/**` also takes in the sibling
+        // workspace packages the website and office tests import. The floor
+        // measures the app's own `src/`, as it did under vitest 3.
+        "website/src/**",
+        "office-addins/src/**",
+        "browser-extension/src/**",
+        "packages/*/src/**",
         "src/test/**",
         "src/**/*.d.ts",
         "src/main.tsx",

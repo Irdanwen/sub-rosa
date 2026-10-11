@@ -747,9 +747,14 @@ describe("agent HUD", () => {
 
     expect(localStorage.getItem("june:agent-hud:enabled")).toBe("false");
     expect(hudElement().dataset.visible).toBe("false");
-    expect(mocks.emit).toHaveBeenCalledWith(AGENT_HUD_VISIBILITY_CHANGED_EVENT, {
-      enabled: false,
-    });
+    // The Tauri broadcast goes through a dynamic import of the event API,
+    // which settles after an unspecified number of turns: wait for it rather
+    // than count microtasks.
+    await vi.waitFor(() =>
+      expect(mocks.emit).toHaveBeenCalledWith(AGENT_HUD_VISIBILITY_CHANGED_EVENT, {
+        enabled: false,
+      }),
+    );
     expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_hide");
   });
 

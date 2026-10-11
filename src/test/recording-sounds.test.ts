@@ -19,25 +19,30 @@ describe("playRecordingSound", () => {
       play: ReturnType<typeof vi.fn>;
       volume: number;
     }> = [];
-    const audio = vi.fn().mockImplementation(() => ({
-      cloneNode: vi.fn(() => {
-        const playbackAudio = {
-          addEventListener: vi.fn(),
-          currentTime: 1,
-          pause: vi.fn(() => {
-            playbackAudio.paused = true;
-          }),
-          paused: false,
-          play,
-          volume: 1,
-        };
-        playbackElements.push(playbackAudio);
-        return playbackAudio;
-      }),
-      load,
-      preload: "",
-      volume: 1,
-    }));
+    // The code under test runs `new Audio(src)`. A mock called with `new`
+    // constructs its implementation, so it must be a class (an arrow
+    // function is not a constructor).
+    const audio = vi.fn(
+      class {
+        cloneNode = vi.fn(() => {
+          const playbackAudio = {
+            addEventListener: vi.fn(),
+            currentTime: 1,
+            pause: vi.fn(() => {
+              playbackAudio.paused = true;
+            }),
+            paused: false,
+            play,
+            volume: 1,
+          };
+          playbackElements.push(playbackAudio);
+          return playbackAudio;
+        });
+        load = load;
+        preload = "";
+        volume = 1;
+      },
+    );
 
     globalThis.Audio = audio as unknown as typeof Audio;
 
