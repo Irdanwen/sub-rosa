@@ -8,7 +8,9 @@
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url("/fonts/inter-latin.woff2") format("woff2");
+  /* Relative, so the build bundles the site's file under /office/assets/: the
+     panes' origin serves no /fonts/ of its own. */
+  src: url("../../website/public/fonts/inter-latin.woff2") format("woff2");
 }
 :root {
   --background: var(--sr-cream);
