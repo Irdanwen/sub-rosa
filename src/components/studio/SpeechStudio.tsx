@@ -4,8 +4,7 @@
 // durable job Rust polls, downloads and announces.
 
 import { t } from "../../lib/i18n";
-import { IconVoice2 } from "central-icons/IconVoice2";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { registerDownloadedArtifact, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
 import { useMediaJob } from "../../lib/studio/async-job";
 import { estimateCostCredits, speechModels } from "../../lib/studio/catalog";
@@ -27,25 +26,28 @@ import {
   speechCapabilities,
   type SpeechFormat,
 } from "../../lib/studio/speech";
-import type { MediaCatalog } from "../../lib/studio/types";
-import { EmptyState } from "../ui/EmptyState";
-import { Select } from "../ui/Select";
-import { Spinner } from "../ui/Spinner";
+import { modelSubtitle } from "../../lib/studio/model-subtitle";
+import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { ClonedVoiceDialog } from "./ClonedVoiceDialog";
-import { Darkroom } from "./Darkroom";
-import { GalleryStrip } from "./GalleryStrip";
+import { AudioScene } from "./desk/AudioScene";
+import { Filmstrip } from "./desk/Filmstrip";
+import { StudioDesk } from "./desk/StudioDesk";
+import { useJobWait } from "./desk/useDeskResult";
 import { JobFailureNotice } from "./JobFailureNotice";
-import { GenerationLayout } from "./GenerationLayout";
-import {
-  CostHint,
-  effectiveOption,
-  ModelSelect,
-  PillGroup,
-  SliderField,
-  StudioField,
-} from "./controls";
+import { effectiveOption, PillGroup, SliderField, StudioField } from "./controls";
+import { Dock, DockComposer } from "./stage/Dock";
+import { DockSelectChip } from "./stage/DockChip";
+import { ModelPickerChip } from "./stage/ModelPicker";
 
-export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
+export function SpeechStudio({
+  catalog,
+  tools,
+  onOpenGallery,
+}: {
+  catalog: MediaCatalog;
+  tools?: ReactNode;
+  onOpenGallery?: () => void;
+}) {
   const models = useMemo(() => speechModels(catalog), [catalog]);
   const [modelId, setModelId] = useState("");
   const model = models.find((entry) => entry.id === modelId) ?? defaultSpeechModel(models);
@@ -83,6 +85,13 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
+  const [narrations, setNarrations] = useState<StudioArtifact[]>([]);
+  const [landed, setLanded] = useState<{ path: string } | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
+  const land = useCallback((path: string) => {
+    setLanded({ path });
+    setReveal(true);
+  }, []);
   const abortRef = useRef<AbortController | undefined>(undefined);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const rememberedIds = useMemo(() => rememberedVoiceIds(), []);
@@ -97,6 +106,7 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
       prompt: finished.prompt,
     });
     setGalleryEpoch((epoch) => epoch + 1);
+    land(artifact.path);
   });
   const waiting =
     job.state.phase === "queueing" ||
@@ -106,6 +116,26 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
       : undefined;
   const working = busy || Boolean(waiting);
   const estimate = useMemo(() => estimateRenderMs(renderEtaKey("speech", model?.id)), [model?.id]);
+  // The one-call rail has no job row; its wait starts when the request does.
+  const [narratingSince, setNarratingSince] = useState<number | undefined>(undefined);
+  useEffect(() => setNarratingSince(busy ? Date.now() : undefined), [busy]);
+  const queuedWait = useJobWait(
+    (model?.id ?? "") + text.slice(0, 64),
+    waiting,
+    estimate,
+    t("Recording your voice-over"),
+  );
+  const wait =
+    queuedWait ??
+    (narratingSince !== undefined
+      ? {
+          seed: (model?.id ?? "") + text.slice(0, 64),
+          phase: "processing" as const,
+          startedAt: narratingSince,
+          estimateMs: estimate,
+          label: t("Narrating your text"),
+        }
+      : undefined);
 
   const input = text.trim().slice(0, caps.inputLimit);
   // No price before there is a text: "~0 credits" read as free.
@@ -146,12 +176,13 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
         format,
         signal: controller.signal,
       });
-      await saveArtifactFromBase64(base64, format, {
+      const saved = await saveArtifactFromBase64(base64, format, {
         kind: "speech",
         model: model.id,
         prompt: input,
       });
       setGalleryEpoch((epoch) => epoch + 1);
+      land(saved.path);
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
         setError(err instanceof Error ? err.message : t("The narration failed."));
@@ -159,7 +190,19 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
     } finally {
       setBusy(false);
     }
-  }, [model, input, working, caps, voiceId, job, catalog, effectiveVoice, effectiveSpeed, format]);
+  }, [
+    model,
+    input,
+    working,
+    caps,
+    voiceId,
+    job,
+    catalog,
+    effectiveVoice,
+    effectiveSpeed,
+    format,
+    land,
+  ]);
 
   const cancel = useCallback(() => abortRef.current?.abort(), []);
 
@@ -177,27 +220,8 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
     [text, caps.inputLimit],
   );
 
-  const controls = (
+  const inspector = (
     <>
-      <StudioField label={t("Model")}>
-        <ModelSelect
-          models={models}
-          value={model?.id ?? null}
-          onChange={setModelId}
-          ariaLabel={t("Speech model")}
-        />
-      </StudioField>
-      {voiceOptions.length > 0 ? (
-        <StudioField label={t("Voice")}>
-          <Select
-            value={listedVoice || null}
-            placeholder={t("Choose a voice")}
-            ariaLabel={t("Voice")}
-            onChange={setVoice}
-            options={voiceOptions}
-          />
-        </StudioField>
-      ) : null}
       {caps.cloning && model ? (
         <StudioField label={t("Your voices")} hint={t("Made from a sample of your own voice")}>
           <button type="button" className="btn btn-secondary" onClick={() => setVoicesOpen(true)}>
@@ -238,20 +262,6 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
           </datalist>
         </StudioField>
       ) : null}
-      <StudioField
-        label={t("Text")}
-        hint={`${Math.min(text.length, caps.inputLimit)} / ${caps.inputLimit}`}
-      >
-        <textarea
-          ref={textRef}
-          className="studio-textarea"
-          rows={7}
-          value={text}
-          maxLength={caps.inputLimit}
-          placeholder={t("Type or paste the text to narrate")}
-          onChange={(event) => setText(event.target.value)}
-        />
-      </StudioField>
       {caps.audioTags ? (
         <StudioField label={t("Expression")} hint={t("Performed, not read aloud")}>
           <div className="studio-pills">
@@ -287,71 +297,108 @@ export function SpeechStudio({ catalog }: { catalog: MediaCatalog }) {
     </>
   );
 
-  const action = busy ? (
-    <div className="studio-progress">
-      <Spinner aria-hidden />
-      <span>{t("Narrating your text")}</span>
-      <button type="button" className="btn btn-secondary" onClick={cancel}>
-        {t("Cancel")}
-      </button>
-    </div>
-  ) : waiting ? (
-    <button type="button" className="btn btn-secondary" onClick={job.cancel}>
-      {t("Stop waiting")}
-    </button>
-  ) : (
-    <button
-      type="button"
-      className="studio-primary-button"
-      disabled={!canSubmit}
-      onClick={() => void generate()}
-    >
-      <span>{t("Generate speech")}</span>
-      <CostHint credits={costCredits} />
-    </button>
-  );
+  const voiceLabel = (value: string) =>
+    voiceOptions.find((option) => option.value === value)?.label ?? value;
 
   return (
-    <GenerationLayout controls={controls} action={action}>
-      {waiting ? (
-        <Darkroom
-          variant="audio"
-          seed={(model?.id ?? "") + input}
-          phase={waiting.phase}
-          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
-          estimateMs={estimate}
-          label={waiting.phase === "processing" ? t("Recording your voice-over") : undefined}
-          meta={model?.id}
+    <StudioDesk
+      tools={tools}
+      scene={
+        <>
+          <AudioScene
+            landed={landed}
+            newest={narrations[0]}
+            wait={wait}
+            reveal={reveal}
+            onRevealEnd={() => setReveal(false)}
+            hint={t("Type a text. Its voice-over will play here.")}
+          />
+          {working ? (
+            <div className="studio-desk-scene-actions">
+              <button
+                type="button"
+                className="stage-dock-action"
+                onClick={busy ? cancel : job.cancel}
+              >
+                {busy ? t("Cancel") : t("Stop waiting")}
+              </button>
+            </div>
+          ) : null}
+        </>
+      }
+      notice={
+        job.state.phase === "failed" ? (
+          <JobFailureNotice
+            className="stage-notice"
+            retryClassName="stage-dock-action"
+            message={job.state.message}
+            status={job.state.status}
+            model={model?.id}
+            onRetry={job.canRetry ? job.retry : undefined}
+          />
+        ) : error ? (
+          <p className="stage-notice" data-tone="error" role="alert">
+            {error}
+          </p>
+        ) : undefined
+      }
+      dock={
+        <Dock>
+          <DockComposer
+            value={text}
+            onChange={setText}
+            maxLength={caps.inputLimit}
+            placeholder={t("Type or paste the text to narrate")}
+            ariaLabel={t("Text")}
+            cost={costCredits}
+            canSend={canSubmit}
+            busy={working}
+            onSend={() => void generate()}
+            sendLabel={t("Generate speech")}
+            fieldRef={textRef}
+            tools={
+              <>
+                <ModelPickerChip
+                  label={t("Speech model")}
+                  selectedId={model?.id ?? ""}
+                  entries={models.map((entry) => ({
+                    id: entry.id,
+                    name: entry.name,
+                    subtitle: modelSubtitle(entry),
+                  }))}
+                  onSelect={setModelId}
+                />
+                {voiceOptions.length > 0 ? (
+                  <DockSelectChip
+                    label={t("Voice")}
+                    value={listedVoice}
+                    options={voiceOptions.map((option) => option.value)}
+                    onChange={setVoice}
+                    format={voiceLabel}
+                  />
+                ) : null}
+              </>
+            }
+          >
+            {text.length > caps.inputLimit * 0.8 ? (
+              <p className="stage-dock-hint studio-desk-variant">
+                {`${Math.min(text.length, caps.inputLimit)} / ${caps.inputLimit}`}
+              </p>
+            ) : null}
+          </DockComposer>
+        </Dock>
+      }
+      inspector={inspector}
+      strip={
+        <Filmstrip
+          kinds={["speech"]}
+          epoch={galleryEpoch}
+          pending={working ? 1 : 0}
+          onArtifactsChanged={setNarrations}
+          onOpenGallery={onOpenGallery}
+          onReusePrompt={(artifact) => setText(artifact.prompt)}
         />
-      ) : null}
-      {job.state.phase === "failed" ? (
-        <JobFailureNotice
-          message={job.state.message}
-          status={job.state.status}
-          model={model?.id}
-          onRetry={job.canRetry ? job.retry : undefined}
-        />
-      ) : null}
-      {error ? <p className="studio-error">{error}</p> : null}
-      <GalleryStrip
-        kind="speech"
-        epoch={galleryEpoch}
-        empty={
-          !working ? (
-            <EmptyState
-              icon={<IconVoice2 size={22} />}
-              title={t("No narrations yet")}
-              description={
-                caps.rail === "queue"
-                  ? t(
-                      "Type some text, pick a voice, and generate. This engine takes a minute or two, and keeps going if you leave.",
-                    )
-                  : t("Type some text, pick a voice, and generate. Short texts render in seconds.")
-              }
-            />
-          ) : null
-        }
-      />
-    </GenerationLayout>
+      }
+    />
   );
 }

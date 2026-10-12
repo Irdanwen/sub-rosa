@@ -1,10 +1,11 @@
-// Audio tab: music, speech, and sound effects behind one mode switch. Each
-// mode is its own studio; this wrapper only remembers which one is active.
+// Audio tab: music, speech, and sound effects behind one mode switch, drawn
+// above each desk's scene. Each mode is its own desk; this wrapper only
+// remembers which one is active.
 
 import { t } from "../../lib/i18n";
 import { useEffect, useState } from "react";
 import type { MediaCatalog } from "../../lib/studio/types";
-import { SegmentedControl } from "../ui/SegmentedControl";
+import { DeskTools } from "./desk/StudioDesk";
 import { MusicStudio } from "./MusicStudio";
 import { SoundFxStudio } from "./SoundFxStudio";
 import { SpeechStudio } from "./SpeechStudio";
@@ -26,9 +27,11 @@ function initialMode(): AudioMode {
 export function AudioStudio({
   catalog,
   requestedMode,
+  onOpenGallery,
 }: {
   catalog: MediaCatalog;
   requestedMode?: AudioMode;
+  onOpenGallery?: () => void;
 }) {
   const [mode, setMode] = useState<AudioMode>(() => requestedMode ?? initialMode());
 
@@ -40,25 +43,24 @@ export function AudioStudio({
     }
   }, [mode]);
 
-  return (
-    <div className="studio-audio">
-      <SegmentedControl
-        value={mode}
-        onValueChange={setMode}
-        aria-label={t("Audio mode")}
-        options={[
-          { value: "music", label: t("Music") },
-          { value: "speech", label: t("Speech") },
-          { value: "sfx", label: t("Sound effects") },
-        ]}
-      />
-      {mode === "music" ? (
-        <MusicStudio catalog={catalog} />
-      ) : mode === "speech" ? (
-        <SpeechStudio catalog={catalog} />
-      ) : (
-        <SoundFxStudio catalog={catalog} />
-      )}
-    </div>
+  const tools = (
+    <DeskTools
+      value={mode}
+      onChange={setMode}
+      label={t("Audio mode")}
+      options={[
+        { value: "music", label: t("Music") },
+        { value: "speech", label: t("Speech") },
+        { value: "sfx", label: t("Sound effects") },
+      ]}
+    />
+  );
+
+  return mode === "music" ? (
+    <MusicStudio catalog={catalog} tools={tools} onOpenGallery={onOpenGallery} />
+  ) : mode === "speech" ? (
+    <SpeechStudio catalog={catalog} tools={tools} onOpenGallery={onOpenGallery} />
+  ) : (
+    <SoundFxStudio catalog={catalog} tools={tools} onOpenGallery={onOpenGallery} />
   );
 }

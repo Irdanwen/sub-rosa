@@ -25,8 +25,6 @@ import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types"
 import type { StageWait } from "../../../studio/stage/Veil";
 import { ModelSheet } from "../../ModelSheet";
 import {
-  DockChip,
-  DockSelectChip,
   formatRenderOption,
   ModelPickerButton,
   modelSubtitle,
@@ -41,9 +39,10 @@ import {
 } from "./StudioControls";
 import { TryOnPanel } from "../../../studio/TryOnPanel";
 import { RetouchLauncher } from "./RetouchLauncher";
-import { Dock, DockComposer } from "./StudioDock";
+import { Dock, DockComposer } from "../../../studio/stage/Dock";
+import { DockChip, DockSelectChip } from "../../../studio/stage/DockChip";
 import { ReferencePicker } from "./StudioLightbox";
-import { type StageResult, StudioStage } from "./StudioStage";
+import { type StageResult, StageScene as StudioStage } from "../../../studio/stage/Scene";
 
 /** Which of the four image sub-modes the form is in. */
 export type ImageMode = "generate" | "edit" | "compose" | "tryon" | "upscale" | "cutout";

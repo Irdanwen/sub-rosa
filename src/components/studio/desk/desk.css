@@ -1,0 +1,491 @@
+/* The desk (ADR-0110): a Studio generation surface on the desktop. It is a
+ * stage - dark in either theme, so a picture's blacks read as black - with the
+ * scene in the middle, the dock under it, the filmstrip below, and the
+ * inspector folded in at the right. The shared pieces (frame, veil, dock,
+ * chips) are styled in stage/stage.css; this file only lays them out. */
+
+.studio-desk {
+  --desk-height: clamp(560px, calc(100dvh - 196px), 1400px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: var(--desk-height);
+  border-radius: var(--r-2xl);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.studio-desk[data-inspector="open"] {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.studio-desk-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-width: 0;
+  padding: var(--sp-5) var(--sp-8) var(--sp-6);
+}
+
+.studio-desk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: 36px;
+}
+
+.studio-desk-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.studio-desk-segmented {
+  display: inline-flex;
+  gap: var(--sp-px);
+  padding: var(--sp-px);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: var(--stage-soft);
+}
+
+.studio-desk-segment {
+  min-height: 30px;
+  padding: 0 var(--sp-5);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--screen-muted);
+  font-size: var(--fs-md);
+  white-space: nowrap;
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.studio-desk-segment[aria-selected="true"] {
+  background: var(--stage-softer);
+  color: var(--screen-foreground);
+}
+
+@media (hover: hover) {
+  .studio-desk-segment:hover {
+    color: var(--screen-foreground);
+  }
+}
+
+/* The scene takes what the dock and the strip leave: the frame's ceiling
+ * follows the window, so a portrait never pushes the dock below the fold. */
+.studio-desk-scene {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+}
+
+.studio-desk-scene .stage-scene {
+  width: 100%;
+}
+
+.studio-desk-scene .stage-frame {
+  --stage-ceiling: max(260px, calc(var(--desk-height) - 380px));
+}
+
+.studio-desk-dock {
+  display: grid;
+  gap: var(--sp-3);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.studio-desk-strip {
+  min-width: 0;
+}
+
+/* --- the inspector: every setting that does not matter on every render ---- */
+
+.studio-inspector {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-inline-start: 1px solid var(--stage-edge);
+  background: color-mix(in oklch, var(--screen) 88%, var(--screen-foreground));
+}
+
+.studio-inspector-title {
+  margin: 0;
+  padding: var(--sp-6) var(--sp-6) var(--sp-3);
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.studio-inspector-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  min-height: 0;
+  padding: var(--sp-2) var(--sp-6) var(--sp-8);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.studio-inspector .studio-field-label {
+  color: var(--screen-foreground);
+}
+
+.studio-inspector .studio-field-hint,
+.studio-inspector .studio-field-note {
+  color: var(--screen-muted);
+}
+
+.studio-inspector .studio-textarea,
+.studio-inspector .studio-input,
+.studio-inspector .studio-native-select {
+  border-color: var(--stage-edge);
+  background: var(--stage-soft);
+  color: var(--screen-foreground);
+}
+
+.studio-inspector .studio-pill {
+  border-color: var(--stage-edge);
+  background: transparent;
+  color: var(--screen-muted);
+}
+
+.studio-inspector .studio-pill[data-active="true"] {
+  background: var(--stage-softer);
+  color: var(--screen-foreground);
+}
+
+/* --- the header pills: renders in flight and the balance ------------------ */
+
+.studio-header-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.studio-running {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-running-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  animation: studio-running-breathe 1.8s var(--ease-in-out) infinite alternate;
+}
+
+@keyframes studio-running-breathe {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-running-dot {
+    animation: none;
+  }
+}
+
+.studio-credits-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 30px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-credits-rate {
+  color: var(--brand-ink);
+}
+
+.studio-credits-card {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+}
+
+.studio-credits-card p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.studio-credits-card strong {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1100px) {
+  .studio-desk[data-inspector="open"] {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+
+  .studio-desk-main {
+    padding-inline: var(--sp-6);
+  }
+}
+
+/* --- the filmstrip: what was made here, newest first ---------------------- */
+
+.studio-filmstrip {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.studio-filmstrip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.studio-filmstrip-title {
+  margin: 0;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.studio-filmstrip-more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+}
+
+@media (hover: hover) {
+  .studio-filmstrip-more:hover {
+    color: var(--screen-foreground);
+  }
+}
+
+.studio-filmstrip-row {
+  display: flex;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0 0 var(--sp-1);
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.studio-filmstrip-cell {
+  flex-shrink: 0;
+}
+
+.studio-filmstrip-tile {
+  position: relative;
+  display: block;
+  width: 88px;
+  height: 88px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-md);
+  background: color-mix(in oklch, var(--screen) 72%, black);
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.studio-filmstrip-tile > img,
+.studio-filmstrip-tile > video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.studio-filmstrip-track {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-items: center;
+}
+
+.studio-filmstrip-track .stage-scene-wave {
+  height: 50%;
+}
+
+@media (hover: hover) {
+  button.studio-filmstrip-tile:hover {
+    border-color: var(--stage-softer);
+  }
+}
+
+button.studio-filmstrip-tile:active {
+  transform: scale(0.97);
+}
+
+/* --- the Studio around the desk ------------------------------------------- */
+
+/* The view fills the window: a compact header, then the room. The header
+ * keeps its place on every tab, so switching tabs never moves it. */
+.studio-view {
+  gap: var(--sp-5);
+  max-width: none;
+  padding: var(--sp-5) var(--sp-6) var(--sp-6);
+}
+
+.studio-view .studio-header {
+  align-items: center;
+}
+
+.studio-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-2xl);
+  line-height: var(--leading-2xl);
+}
+
+.studio-view .studio-section-nav {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+/* The room: one dark surface for every desk tab, rounded like the window's
+ * own panel, so moving between Image, Video and Audio never changes the
+ * light. */
+.studio-room {
+  border-radius: var(--r-2xl);
+  overflow: hidden;
+}
+
+.studio-room > .studio-loading,
+.studio-room > .empty-state {
+  min-height: var(--desk-height, 560px);
+}
+
+/* The gallery reads best in the same room as the work it holds. */
+.studio-room > .studio-gallery {
+  min-height: clamp(560px, calc(100dvh - 196px), 1400px);
+  padding: var(--sp-5) var(--sp-8) var(--sp-6);
+}
+
+.studio-tool-room {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: clamp(560px, calc(100dvh - 196px), 1400px);
+  padding: var(--sp-5) var(--sp-8) var(--sp-6);
+}
+
+/* Projects is a page, not a desk: it keeps a reading width. */
+.studio-projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  width: 100%;
+  max-width: calc(var(--content-max) + 280px);
+  margin: 0 auto;
+}
+
+.studio-projects > .segmented,
+.studio-projects > [role="group"] {
+  align-self: flex-start;
+}
+
+/* --- what rides with the prompt: the opening frame, the reference photos -- */
+
+.studio-desk-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-desk-attachments > li {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-md);
+}
+
+.studio-desk-attachments img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.studio-desk-attachment-tag {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 1px var(--sp-1);
+  background: color-mix(in oklch, var(--screen) 70%, transparent);
+  color: var(--screen-foreground);
+  font-size: var(--fs-xs);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.studio-desk-attachment-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklch, var(--screen) 80%, transparent);
+  color: var(--screen-foreground);
+  font-size: var(--fs-xs);
+  line-height: 1;
+}
+
+.studio-desk-variant {
+  text-align: start;
+}
+
+.studio-desk-notices {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.studio-desk-scene-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--sp-3);
+}
+
+.studio-desk-source {
+  justify-content: flex-start;
+}

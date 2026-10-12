@@ -29,6 +29,7 @@ import { StudioViewer } from "./studio/StudioViewer";
 import { StudioGallery } from "./studio/StudioGallery";
 import { RecentStrip } from "./studio/StudioLibrary";
 import { handOffImagePrompt } from "../../../lib/studio/prompt-handoff";
+import { rateBadge, rateSentence } from "../../../lib/studio/rate";
 import { EmptyState } from "../../ui/EmptyState";
 import { Spinner } from "../../ui/Spinner";
 import { StackHeader } from "../StackHeader";
@@ -371,39 +372,6 @@ export function StudioScreen() {
       ) : null}
     </div>
   );
-}
-
-/** Today's rate as a discount ("-57 %"), or nothing at the base price. */
-function rateBadge(multiplier: number | undefined): string | undefined {
-  if (typeof multiplier !== "number" || !Number.isFinite(multiplier)) return undefined;
-  const percent = Math.round((1 - multiplier) * 100);
-  if (percent === 0) return undefined;
-  return percent > 0
-    ? t("-{percent} %", { percent })
-    : t("+{percent} %", { percent: Math.abs(percent) });
-}
-
-/** What the rate means, for the sheet behind the credits pill. */
-function rateSentence(multiplier: number | undefined): string {
-  const base = t("Credits pay for renders at the provider's price.");
-  if (typeof multiplier !== "number" || !Number.isFinite(multiplier)) return base;
-  const percent = Math.round((1 - multiplier) * 100);
-  if (percent === 0) return `${base} ${t("Today's rate is the base price.")}`;
-  return `${base} ${
-    percent > 0
-      ? t(
-          "Today's rate is {percent}% below the base price. It changes every day at midnight UTC.",
-          {
-            percent,
-          },
-        )
-      : t(
-          "Today's rate is {percent}% above the base price. It changes every day at midnight UTC.",
-          {
-            percent: Math.abs(percent),
-          },
-        )
-  }`;
 }
 
 // --- Video ------------------------------------------------------------------

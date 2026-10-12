@@ -24962,3 +24962,20 @@ input:focus-visible,
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
+
+/* --- Popover: a surface anchored to the control that opened it ------------- */
+/* The desktop's answer to the phone's sheet (components/ui/Popover.tsx). It is
+   placed in fixed coordinates by the component; the stage tone lives in
+   stage.css. */
+.popover {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-lg);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-lg);
+}

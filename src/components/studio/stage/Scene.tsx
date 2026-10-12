@@ -1,15 +1,15 @@
-// The scene: what a Studio panel last made, at the top of the panel, in the
-// result's own shape - and the veil over it while the next one is made. One
-// component for the image, video and audio panels, so a wait looks like a
-// wait wherever it is met (CONTEXT.md, "Stage", "Veil").
+// The scene: what a Studio panel last made, in the result's own shape - and
+// the veil over it while the next one is made. One component for the image,
+// video and audio panels of both shells, so a wait looks like a wait wherever
+// it is met (CONTEXT.md, "Stage", "Veil").
 
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
-import { t } from "../../../../lib/i18n";
-import { darkroomWave } from "../../../../lib/studio/darkroom";
-import { IdleCanvas } from "../../../studio/stage/IdleCanvas";
-import { StageFrame, useDecodeGate } from "../../../studio/stage/StageFrame";
-import type { StageWait } from "../../../studio/stage/Veil";
-import { markMediaPlayback } from "./StudioControls";
+import { t } from "../../../lib/i18n";
+import { markMediaPlayback } from "../../../lib/media-playback";
+import { darkroomWave } from "../../../lib/studio/darkroom";
+import { IdleCanvas } from "./IdleCanvas";
+import { StageFrame, useDecodeGate } from "./StageFrame";
+import type { StageWait } from "./Veil";
 
 export type StageResult =
   | { kind: "image"; src: string; alt?: string }
@@ -23,7 +23,7 @@ export type StageResult =
 export function SceneWave({ seed }: { seed: string }) {
   const bars = useMemo(() => darkroomWave(seed, 36), [seed]);
   return (
-    <span className="mobile-studio-scene-wave" aria-hidden>
+    <span className="stage-scene-wave" aria-hidden>
       {bars.map((height, index) => (
         <span
           // Bar positions are the identity here; the heights are a seeded
@@ -37,14 +37,14 @@ export function SceneWave({ seed }: { seed: string }) {
   );
 }
 
-/** The blank canvas a panel opens on (see `StudioStage`'s `idle`). */
-export type StudioStageIdle = {
+/** The blank canvas a panel opens on (see `StageScene`'s `idle`). */
+export type StageIdle = {
   seed: string;
   hint: string;
   recall?: { label: string; thumb?: string; onRecall: () => void };
 };
 
-export function StudioStage({
+export function StageScene({
   aspect,
   result,
   wait,
@@ -72,7 +72,7 @@ export function StudioStage({
    * a panel opens on before anything is made in this session. `recall` puts
    * the last creation back on it, on request rather than by default.
    */
-  idle?: StudioStageIdle;
+  idle?: StageIdle;
 }) {
   const { dataReveal, onLoad } = useDecodeGate(result?.src, Boolean(reveal));
   // The result's own shape once it is known: a model that publishes no
@@ -83,7 +83,7 @@ export function StudioStage({
   };
   const shape = result && measured?.src === result.src ? measured.ratio : aspect;
   return (
-    <section className="mobile-studio-scene" aria-label={t("Latest result")}>
+    <section className="stage-scene" aria-label={t("Latest result")}>
       <StageFrame
         aspect={shape}
         wait={wait}
@@ -93,7 +93,7 @@ export function StudioStage({
         {result?.kind === "image" ? (
           <img
             key={result.src}
-            className="mobile-studio-scene-picture stage-reveal"
+            className="stage-scene-picture stage-reveal"
             data-reveal={dataReveal}
             src={result.src}
             alt={result.alt ?? t("Generated image")}
@@ -112,7 +112,7 @@ export function StudioStage({
           // biome-ignore lint/a11y/useMediaCaption: a generated clip has no captions to offer.
           <video
             key={result.src}
-            className="mobile-studio-scene-picture stage-reveal"
+            className="stage-scene-picture stage-reveal"
             data-reveal={dataReveal}
             src={result.src}
             poster={result.poster}
@@ -132,14 +132,14 @@ export function StudioStage({
         ) : result?.kind === "audio" ? (
           <div
             key={result.src}
-            className="mobile-studio-scene-track stage-reveal"
+            className="stage-scene-track stage-reveal"
             data-reveal={reveal ? "true" : undefined}
             onAnimationEnd={onRevealEnd}
           >
             <SceneWave seed={result.seed} />
             {/* biome-ignore lint/a11y/useMediaCaption: a generated track has no captions to offer. */}
             <audio
-              className="mobile-studio-scene-audio"
+              className="stage-scene-audio"
               src={result.src}
               controls
               preload="metadata"

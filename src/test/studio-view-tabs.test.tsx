@@ -41,14 +41,29 @@ vi.mock("../components/studio/WorkflowStudio", () => ({
 beforeEach(() => window.localStorage.clear());
 
 describe("the studio's tabs", () => {
-  it("opens projects first and keeps generation tools available", () => {
+  it("opens on the image desk, with five tabs (ADR-0110)", () => {
     render(<StudioView />);
-    expect(screen.queryByText("Films")).not.toBeInTheDocument();
-    expect(screen.getByText("Projects")).toBeInTheDocument();
-    expect(screen.getByText("Bible")).toBeInTheDocument();
-    expect(screen.getByText("project workspace")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Image" }));
     expect(screen.getByText("image tab")).toBeInTheDocument();
+    const tabs = screen.getByRole("group", { name: "Studio section" });
+    expect([...tabs.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Image",
+      "Video",
+      "Audio",
+      "Projects",
+      "Gallery",
+    ]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Projects" })[0]);
+    expect(screen.getByText("project workspace")).toBeInTheDocument();
+  });
+
+  it("finds the old Assemble and Workflows tabs inside Projects", async () => {
+    window.localStorage.setItem("os-june:studio-tab", "assemble");
+    const view = render(<StudioView />);
+    await waitFor(() => expect(screen.getByText("assemble tab")).toBeInTheDocument());
+    view.unmount();
+    window.localStorage.setItem("os-june:studio-tab", "workflows");
+    render(<StudioView />);
+    await waitFor(() => expect(screen.getByText("workflows tab")).toBeInTheDocument());
   });
 
   it("lands somebody who was last on the old Films tab where films are made now", async () => {
@@ -64,10 +79,6 @@ describe("the studio's tabs", () => {
     render(<StudioView />);
     fireEvent.click(await screen.findByRole("button", { name: "make a film" }));
     await waitFor(() => expect(screen.getByText("project workspace")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Projects" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
     expect(window.localStorage.getItem("os-june:studio-tab")).toBe("projects");
   });
 

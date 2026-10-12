@@ -1,58 +1,76 @@
-// Image studio: generate (constraint-driven), edit, and upscale. Sync
-// generation returns base64 directly; heavy models go through the async
-// queue path (their sync call 502s at the backend's ~60 s edge cap even when
-// the image rendered). Every result lands in the on-disk gallery.
+// Image on the desk (ADR-0110): make a picture, upscale one, cut one out.
+// Retouching and composing are tools of this tab too, with rooms of their
+// own (RetouchStudio, ComposeStudio); StudioView switches to them. Sync
+// generation returns base64 directly; heavy models go through the async queue
+// (see generate-image.ts). Every result lands in the on-disk gallery.
 
-import { t } from "../../lib/i18n";
-import { IconImagesSparkle } from "central-icons/IconImagesSparkle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { artifactDataUrl } from "../../lib/artifact-media";
+import { artifactDataUrl, useArtifactThumbnail } from "../../lib/artifact-media";
+import { t } from "../../lib/i18n";
 import { saveArtifactFromBase64 } from "../../lib/studio/artifacts";
 import {
-  defaultEditModel,
-  estimateCostCredits,
-  imageEditModels,
   defaultImageModel,
+  estimateCostCredits,
   imageGenerationModels,
+  PREFERRED_IMAGE_MODELS,
   rememberImageModel,
-  supportsBackgroundRemoval,
 } from "../../lib/studio/catalog";
 import { MediaError, mediaGet, mediaRaw } from "../../lib/studio/client";
-import { composeImages, MAX_COMPOSE_IMAGES, removeBackground } from "../../lib/studio/edit-image";
+import { removeBackground } from "../../lib/studio/edit-image";
 import { enhanceImagePrompt } from "../../lib/studio/enhance-prompt";
 import { compareBodies, generateImages } from "../../lib/studio/generate-image";
+import { modelSubtitle } from "../../lib/studio/model-subtitle";
+import { takeImagePrompt } from "../../lib/studio/prompt-handoff";
+import { estimateRenderMs, rememberRenderMs, renderEtaKey } from "../../lib/studio/render-eta";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
-import { EmptyState } from "../ui/EmptyState";
-import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
-import { Spinner } from "../ui/Spinner";
 import { Switch } from "../ui/Switch";
+import { Filmstrip } from "./desk/Filmstrip";
+import { StudioDesk } from "./desk/StudioDesk";
 import { GalleryPicker } from "./GalleryPicker";
-import { GalleryStrip } from "./GalleryStrip";
-import { GenerationLayout } from "./GenerationLayout";
-import {
-  CostHint,
-  effectiveOption,
-  ModelSelect,
-  PillGroup,
-  SliderField,
-  StudioField,
-} from "./controls";
+import { effectiveOption, PillGroup, SliderField, StudioField } from "./controls";
+import { Dock, DockComposer } from "./stage/Dock";
+import { DockSelectChip } from "./stage/DockChip";
+import { ModelPickerChip } from "./stage/ModelPicker";
+import { type StageResult, StageScene } from "./stage/Scene";
+import type { StageWait } from "./stage/Veil";
 
-type ImageMode = "generate" | "edit" | "upscale" | "cutout";
+/** The tools of the Image tab. Retouch and compose open rooms of their own. */
+export type ImageTool = "create" | "retouch" | "compose" | "upscale" | "cutout";
 type ImageFormat = "png" | "webp" | "jpeg";
 
-export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
-  const [mode, setMode] = useState<ImageMode>("generate");
-  const generateModels = useMemo(() => imageGenerationModels(catalog), [catalog]);
-  const editModels = useMemo(() => imageEditModels(catalog), [catalog]);
-  const cutoutAvailable = supportsBackgroundRemoval(catalog);
+/** "16:9" reads as it is; a resolution reads in capitals ("2K"). */
+function formatOption(option: string) {
+  return option.toUpperCase();
+}
 
+export function ImageStudio({
+  catalog,
+  tool,
+  tools,
+  onWorking,
+  onOpenGallery,
+}: {
+  catalog: MediaCatalog;
+  tool: "create" | "upscale" | "cutout";
+  /** The tool switch, drawn above the scene. */
+  tools: React.ReactNode;
+  /** How many renders this desk has in flight: a synchronous image writes no
+   * job row, so the header learns of it from here. */
+  onWorking?: (count: number) => void;
+  onOpenGallery?: () => void;
+}) {
+  const generateModels = useMemo(() => imageGenerationModels(catalog), [catalog]);
   const [modelId, setModelId] = useState(() => defaultImageModel(catalog)?.id ?? "");
   const model = generateModels.find((entry) => entry.id === modelId);
   const constraints = model?.constraints;
+  /** The model this app recommends, pinned first in the picker. */
+  const recommendedId = PREFERRED_IMAGE_MODELS.find((id) =>
+    generateModels.some((entry) => entry.id === id),
+  );
 
-  const [prompt, setPrompt] = useState("");
+  // Opens with what the chat handed over, when it handed something over.
+  const [prompt, setPrompt] = useState(() => takeImagePrompt() ?? "");
   const [negativePrompt, setNegativePrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("");
   const [resolution, setResolution] = useState("");
@@ -73,23 +91,21 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
   const [artifacts, setArtifacts] = useState<StudioArtifact[]>([]);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
 
-  // Edit takes one to three source images (two or more compose into one via
-  // multi-edit); upscale keeps a single source.
-  const [editSources, setEditSources] = useState<string[]>([]);
-  const [sourceDataUri, setSourceDataUri] = useState("");
-  // Empty = "Automatic": a sensible default edit model is resolved at submit.
-  const [editModelId, setEditModelId] = useState("");
-  const [editPrompt, setEditPrompt] = useState("");
-  const [upscaleScale, setUpscaleScale] = useState<"2" | "3" | "4">("2");
+  // Upscale and cutout share one source image.
+  const [source, setSource] = useState("");
+  const [upscaleScale, setUpscaleScale] = useState("2");
   const [upscaleEnhance, setUpscaleEnhance] = useState(false);
-  const editInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Which slot the gallery picker is filling, if any. One picker serves both:
-  // the slots differ only in what they do with the image they get back.
-  const [picking, setPicking] = useState<"compose" | "source" | undefined>(undefined);
+  const [picking, setPicking] = useState(false);
 
-  // Style presets are a Venice nicety the backend may not expose: hide the
-  // control when the request fails rather than surfacing an error.
+  /** The render in progress, for the veil over the scene. */
+  const [wait, setWait] = useState<StageWait | undefined>(undefined);
+  /** What was last made here, and whether its wipe has played. */
+  const [lastResult, setLastResult] = useState<StageResult | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
+
+  // Style presets are a nicety the backend may not expose: hide the control
+  // when the request fails rather than surfacing an error.
   useEffect(() => {
     let cancelled = false;
     mediaGet<{ data?: string[] }>("/image/styles")
@@ -130,6 +146,37 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
     : costCredits !== undefined
       ? costCredits * variants
       : undefined;
+  const inFlight = busy
+    ? tool === "create"
+      ? comparing
+        ? compareModels.length + 1
+        : variants
+      : 1
+    : 0;
+  useEffect(() => {
+    onWorking?.(inFlight);
+  }, [inFlight, onWorking]);
+  useEffect(() => () => onWorking?.(0), [onWorking]);
+
+  /** Start the clock: the veil shows it, and the estimate is this machine's
+   * median for this kind of render. */
+  const beginWait = useCallback((key: string, seedText: string, label?: string) => {
+    const startedAt = Date.now();
+    setWait({
+      seed: seedText,
+      phase: "processing",
+      startedAt,
+      estimateMs: estimateRenderMs(key),
+      label,
+    });
+    return { key, startedAt };
+  }, []);
+  /** A result landed: remember how long it took, put it on the scene, wipe. */
+  const landResult = useCallback((timer: { key: string; startedAt: number }, src: string) => {
+    rememberRenderMs(timer.key, Date.now() - timer.startedAt);
+    setLastResult({ kind: "image", src });
+    setReveal(true);
+  }, []);
 
   const registerResults = useCallback(
     async (images: string[], usedModel: string, usedPrompt: string, extension = "png") => {
@@ -149,6 +196,7 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
     if (!model || !prompt.trim() || busy) return;
     setBusy(true);
     setError(undefined);
+    const timer = beginWait(renderEtaKey("image", model.id), `${model.id}${prompt}`);
     try {
       // Optional AI pass that expands the prompt before generation. Best
       // effort: a failure falls back to the prompt as typed.
@@ -170,17 +218,23 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
               throw new MediaError("The backend returned no image.", { status: 200 });
             }
             await registerResults(images, target.id, usedPrompt);
-            return target.id;
+            return images[0];
           }),
         );
+        const first = settled.find(
+          (result): result is PromiseFulfilledResult<string> => result.status === "fulfilled",
+        );
+        if (first) landResult(timer, `data:image/png;base64,${first.value}`);
         const failed = settled
           .map((result, index) => (result.status === "rejected" ? runs[index].model : undefined))
           .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
         if (failed.length === settled.length) {
-          const first = settled.find(
+          const firstFailure = settled.find(
             (result): result is PromiseRejectedResult => result.status === "rejected",
           );
-          throw first?.reason ?? new MediaError(t("The generation failed."), { status: 200 });
+          throw (
+            firstFailure?.reason ?? new MediaError(t("The generation failed."), { status: 200 })
+          );
         }
         if (failed.length > 0) {
           setError(
@@ -211,11 +265,13 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
         throw new MediaError("The backend returned no image.", { status: 200 });
       }
       await registerResults(images, model.id, usedPrompt, format);
+      landResult(timer, `data:image/${format};base64,${images[0]}`);
     } catch (generateError) {
       setError(
         generateError instanceof Error ? generateError.message : t("The generation failed."),
       );
     } finally {
+      setWait(undefined);
       setBusy(false);
     }
   }, [
@@ -238,36 +294,22 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
     seed,
     stylePreset,
     registerResults,
+    beginWait,
+    landResult,
   ]);
 
-  const runEdit = useCallback(async () => {
-    const targetModel = editModelId || defaultEditModel(catalog)?.id;
-    if (editSources.length === 0 || !editPrompt.trim() || !targetModel || busy) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      // One source edits that image; two or three compose into one. composeImages
-      // routes to /image/edit or /image/multi-edit and handles the async queue.
-      const image = await composeImages(targetModel, editPrompt.trim(), editSources);
-      await registerResults([image], targetModel, editPrompt.trim());
-      // Chain: the result becomes the next source, so successive edits build
-      // on each other while every step stays in the gallery.
-      setEditSources([`data:image/png;base64,${image}`]);
-      setEditPrompt("");
-    } catch (editError) {
-      setError(editError instanceof Error ? editError.message : t("The edit failed."));
-    } finally {
-      setBusy(false);
-    }
-  }, [editSources, editPrompt, editModelId, catalog, busy, registerResults]);
-
   const runUpscale = useCallback(async () => {
-    if (!sourceDataUri || busy) return;
+    if (!source || busy) return;
     setBusy(true);
     setError(undefined);
+    const timer = beginWait(
+      renderEtaKey("upscale", `x${upscaleScale}`),
+      source.slice(-64),
+      t("Upscaling"),
+    );
     try {
       // Upscale wants raw base64, without the data-URI prefix edit uses.
-      const rawBase64 = sourceDataUri.replace(/^data:[^,]*,/, "");
+      const rawBase64 = source.replace(/^data:[^,]*,/, "");
       const response = await mediaRaw("/image/upscale", {
         image: rawBase64,
         scale: Number(upscaleScale),
@@ -279,485 +321,386 @@ export function ImageStudio({ catalog }: { catalog: MediaCatalog }) {
         });
       }
       await registerResults([response.bodyBase64], "upscaler", "Upscale");
+      landResult(timer, `data:image/png;base64,${response.bodyBase64}`);
+      setSource("");
     } catch (upscaleError) {
       setError(upscaleError instanceof Error ? upscaleError.message : t("The upscale failed."));
     } finally {
+      setWait(undefined);
       setBusy(false);
     }
-  }, [sourceDataUri, busy, upscaleScale, upscaleEnhance, registerResults]);
+  }, [source, busy, upscaleScale, upscaleEnhance, registerResults, beginWait, landResult]);
 
   const runCutout = useCallback(async () => {
-    if (!sourceDataUri || busy) return;
+    if (!source || busy) return;
     setBusy(true);
     setError(undefined);
+    const timer = beginWait(
+      renderEtaKey("cutout", "background-remover"),
+      source.slice(-64),
+      t("Removing the background"),
+    );
     try {
-      const image = await removeBackground(sourceDataUri);
+      const image = await removeBackground(source);
       await registerResults([image], "background-remover", "Background removed");
+      landResult(timer, `data:image/png;base64,${image}`);
+      setSource("");
     } catch (cutoutError) {
       setError(cutoutError instanceof Error ? cutoutError.message : t("The cutout failed."));
     } finally {
+      setWait(undefined);
       setBusy(false);
     }
-  }, [sourceDataUri, busy, registerResults]);
+  }, [source, busy, registerResults, beginWait, landResult]);
 
   const onPickFile = useCallback((file: File | undefined) => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === "string") setSourceDataUri(reader.result);
+      if (typeof reader.result === "string") setSource(reader.result);
     };
     reader.readAsDataURL(file);
   }, []);
 
-  const onAddEditFile = useCallback((file: File | undefined) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        const dataUri = reader.result;
-        setEditSources((current) => [...current, dataUri].slice(0, MAX_COMPOSE_IMAGES));
-      }
-    };
-    reader.readAsDataURL(file);
-  }, []);
+  // The scene. Nothing made in this session leaves the canvas blank: the
+  // newest picture in the gallery shown here would read as the answer to a
+  // prompt not yet written. It comes back on request.
+  const newest = artifacts[0] ?? null;
+  const newestThumb = useArtifactThumbnail(tool === "create" && !lastResult ? newest : null);
+  const recallNewest = useCallback(async () => {
+    if (!newest) return;
+    try {
+      setLastResult({ kind: "image", src: await artifactDataUrl(newest) });
+    } catch {
+      // The gallery is one tab away; a recall that cannot read is no loss.
+    }
+  }, [newest]);
+  const sceneResult: StageResult | undefined =
+    tool !== "create" && source
+      ? { kind: "image", src: source, alt: t("Picked image") }
+      : lastResult;
+  const idle =
+    tool === "create"
+      ? {
+          seed: "image-generate",
+          hint: t("Describe an image. It will appear here."),
+          recall: newest
+            ? {
+                label: t("Last creation"),
+                thumb: newestThumb?.src,
+                onRecall: () => void recallNewest(),
+              }
+            : undefined,
+        }
+      : {
+          seed: `image-${tool}`,
+          hint:
+            tool === "upscale" ? t("Pick an image to enlarge.") : t("Pick an image to cut out."),
+        };
 
-  const sendToEdit = useCallback(async (artifact: StudioArtifact) => {
-    // Through the media loader, which derives the mime from the file: this
-    // used to hardcode a PNG prefix, so a jpeg or webp gallery entry reached
-    // the edit endpoint mislabelled.
-    const dataUri = await artifactDataUrl(artifact);
-    setEditSources((current) => [...current, dataUri].slice(0, MAX_COMPOSE_IMAGES));
-    setMode("edit");
-  }, []);
+  const scene = (
+    <StageScene
+      aspect={tool === "create" ? effectiveAspect || "1:1" : "1:1"}
+      result={sceneResult}
+      wait={wait}
+      waitLabel={t("Rendering")}
+      reveal={reveal}
+      onRevealEnd={() => setReveal(false)}
+      idle={idle}
+    />
+  );
 
-  // The cutout mode disappears when the backend loses the endpoint (e.g. a
-  // settings switch from Venice to Carpe Diem); leave no orphaned selection.
-  useEffect(() => {
-    if (!cutoutAvailable && mode === "cutout") setMode("generate");
-  }, [cutoutAvailable, mode]);
-
-  const isGenerate = mode === "generate";
-  const canSubmit = isGenerate
-    ? Boolean(model && prompt.trim())
-    : mode === "edit"
-      ? Boolean(editSources.length > 0 && editPrompt.trim())
-      : Boolean(sourceDataUri);
-
-  const controls = (
-    <>
-      <SegmentedControl
-        value={mode}
-        onValueChange={setMode}
-        aria-label={t("Image tool")}
-        options={[
-          { value: "generate", label: t("Generate") },
-          { value: "edit", label: t("Edit") },
-          { value: "upscale", label: t("Upscale") },
-          ...(cutoutAvailable ? [{ value: "cutout" as const, label: t("Cutout") }] : []),
-        ]}
+  const sourceActions = (
+    <div className="stage-dock-actions studio-desk-source">
+      <button
+        type="button"
+        className="stage-dock-action"
+        onClick={() => fileInputRef.current?.click()}
+      >
+        {source ? t("Replace image") : t("Choose an image")}
+      </button>
+      <button type="button" className="stage-dock-action" onClick={() => setPicking(true)}>
+        {t("From the gallery")}
+      </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        hidden
+        onChange={(event) => {
+          onPickFile(event.target.files?.[0]);
+          event.target.value = "";
+        }}
       />
-      {isGenerate ? (
-        <>
-          <StudioField label={t("Model")}>
-            <ModelSelect
-              models={generateModels}
-              value={modelId || null}
-              onChange={(id) => {
-                setModelId(id);
-                rememberImageModel(id);
-              }}
-              ariaLabel={t("Image model")}
-            />
-          </StudioField>
-          <StudioField
-            label={t("Prompt")}
-            hint={promptLimit ? `${prompt.length}/${promptLimit}` : undefined}
-          >
-            <textarea
-              className="studio-textarea"
-              rows={4}
-              value={prompt}
-              maxLength={promptLimit}
-              placeholder={t("Describe the image you want")}
-              onChange={(event) => setPrompt(event.target.value)}
-            />
-          </StudioField>
-          <StudioField label={t("Negative prompt")}>
-            <textarea
-              className="studio-textarea"
-              rows={2}
-              value={negativePrompt}
-              placeholder={t("What to avoid (optional)")}
-              onChange={(event) => setNegativePrompt(event.target.value)}
-            />
-          </StudioField>
-          {aspectOptions.length > 0 ? (
-            <StudioField label={t("Aspect ratio")}>
-              <PillGroup
-                options={aspectOptions.map((value) => ({ value }))}
-                value={effectiveAspect}
-                onChange={setAspectRatio}
-                ariaLabel={t("Aspect ratio")}
-              />
-            </StudioField>
-          ) : null}
-          {resolutionOptions.length > 0 ? (
-            <StudioField label={t("Resolution")}>
-              <PillGroup
-                options={resolutionOptions.map((value) => ({ value }))}
-                value={effectiveResolution}
-                onChange={setResolution}
-                ariaLabel={t("Resolution")}
-              />
-            </StudioField>
-          ) : null}
-          {maxSteps > 1 ? (
-            <SliderField
-              label={t("Steps")}
-              min={1}
-              max={maxSteps}
-              step={1}
-              value={steps > 0 ? Math.min(steps, maxSteps) : (constraints?.steps?.default ?? 1)}
-              onChange={setSteps}
-            />
-          ) : null}
-          {!comparing ? (
-            <SliderField
-              label={t("Variants")}
-              min={1}
-              max={4}
-              step={1}
-              value={variants}
-              onChange={setVariants}
-            />
-          ) : null}
-          <StudioField
-            label={t("Compare models")}
-            hint={
-              comparing
-                ? t("{count} render side by side", { count: compareModels.length + 1 })
-                : t("Optional")
-            }
-          >
-            <div className="studio-upload">
-              {compareModels.length > 0 ? (
-                <div className="studio-compare-chips">
-                  {compareModels.map((entry) => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      className="studio-compare-chip"
-                      aria-label={t("Stop comparing with {model}", { model: entry.name })}
-                      onClick={() =>
-                        setCompareIds((current) => current.filter((id) => id !== entry.id))
-                      }
-                    >
-                      <span>{entry.name}</span>
-                      <span aria-hidden>x</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <Select
-                value={null}
-                placeholder={t("Add a model to compare")}
-                ariaLabel={t("Add a model to compare")}
-                onChange={(id) =>
-                  setCompareIds((current) => (current.includes(id) ? current : [...current, id]))
-                }
-                options={generateModels
-                  .filter((entry) => entry.id !== modelId && !compareIds.includes(entry.id))
-                  .map((entry) => ({ value: entry.id, label: entry.name }))}
-              />
-            </div>
-          </StudioField>
-          {styles.length > 0 ? (
-            <StudioField label={t("Style")}>
-              <select
-                className="studio-native-select"
-                value={stylePreset}
-                aria-label={t("Style preset")}
-                onChange={(event) => setStylePreset(event.target.value)}
-              >
-                <option value="">{t("None")}</option>
-                {styles.map((style) => (
-                  <option key={style} value={style}>
-                    {style}
-                  </option>
-                ))}
-              </select>
-            </StudioField>
-          ) : null}
-          <StudioField label={t("Seed")} hint={t("Blank for random")}>
-            <input
-              className="studio-input"
-              inputMode="numeric"
-              value={seed}
-              placeholder={t("Random")}
-              onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
-            />
-          </StudioField>
-          <StudioField label={t("Improve prompt")} hint={t("AI expands it first")}>
-            <Switch
-              checked={improvePrompt}
-              onCheckedChange={setImprovePrompt}
-              aria-label={t("Improve the prompt before generating")}
-            />
-          </StudioField>
-          <StudioField label={t("Format")}>
-            <PillGroup
-              options={[{ value: "png" }, { value: "webp" }, { value: "jpeg" }]}
-              value={format}
-              onChange={setFormat}
-              ariaLabel={t("Image format")}
-            />
-          </StudioField>
-          <StudioField label={t("Hide watermark")}>
-            <Switch
-              checked={hideWatermark}
-              onCheckedChange={setHideWatermark}
-              aria-label={t("Hide watermark")}
-            />
-          </StudioField>
-          <StudioField label={t("Embed metadata")} hint={t("Prompt in EXIF")}>
-            <Switch
-              checked={embedExif}
-              onCheckedChange={setEmbedExif}
-              aria-label={t("Embed prompt metadata")}
-            />
-          </StudioField>
-        </>
-      ) : mode === "edit" ? (
-        <>
-          <StudioField
-            label={t("Source images")}
-            hint={
-              editSources.length > 1
-                ? t("Combining {count}, in this order", { count: editSources.length })
-                : t("Add up to {count} to combine", { count: MAX_COMPOSE_IMAGES })
-            }
-          >
-            <div className="studio-upload">
-              {editSources.length > 0 ? (
-                <div className="studio-edit-sources">
-                  {editSources.map((source, index) => (
-                    <div key={`${index}-${source.slice(-24)}`} className="studio-edit-source">
-                      <img src={source} alt={t("Source {count}", { count: index + 1 })} />
-                      {editSources.length > 1 ? (
-                        <span className="studio-edit-source-index">
-                          {t("Image {number}", { number: index + 1 })}
-                        </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="studio-edit-source-remove"
-                        aria-label={t("Remove source {count}", { count: index + 1 })}
-                        onClick={() =>
-                          setEditSources((current) => current.filter((_, i) => i !== index))
-                        }
-                      >
-                        <span aria-hidden>x</span>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {editSources.length < MAX_COMPOSE_IMAGES ? (
-                <div className="studio-upload-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => editInputRef.current?.click()}
-                  >
-                    {editSources.length > 0 ? t("Add another image") : t("Choose an image")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setPicking("compose")}
-                  >
-                    {t("From the gallery")}
-                  </button>
-                </div>
-              ) : null}
-              <input
-                ref={editInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                hidden
-                onChange={(event) => {
-                  onAddEditFile(event.target.files?.[0]);
-                  event.target.value = "";
+    </div>
+  );
+
+  const dock =
+    tool === "create" ? (
+      <Dock>
+        <DockComposer
+          value={prompt}
+          onChange={setPrompt}
+          maxLength={promptLimit}
+          placeholder={t("Describe the image to generate")}
+          ariaLabel={t("Prompt")}
+          cost={totalCost}
+          canSend={Boolean(model && prompt.trim())}
+          busy={busy}
+          onSend={() => void generate()}
+          sendLabel={t("Generate")}
+          tools={
+            <>
+              <ModelPickerChip
+                label={t("Image model")}
+                selectedId={model?.id ?? ""}
+                pinnedId={recommendedId}
+                entries={generateModels
+                  .filter((entry) => !entry.offline)
+                  .map((entry) => ({
+                    id: entry.id,
+                    name: entry.name,
+                    subtitle: modelSubtitle(entry),
+                    tags: entry.id === recommendedId ? [{ label: t("Recommended") }] : undefined,
+                  }))}
+                onSelect={(id) => {
+                  setModelId(id);
+                  rememberImageModel(id);
                 }}
               />
-            </div>
-          </StudioField>
-          <StudioField label={t("Model")}>
+              {aspectOptions.length > 0 ? (
+                <DockSelectChip
+                  label={t("Aspect ratio")}
+                  value={effectiveAspect}
+                  options={aspectOptions}
+                  onChange={setAspectRatio}
+                />
+              ) : null}
+              {resolutionOptions.length > 0 ? (
+                <DockSelectChip
+                  label={t("Resolution")}
+                  value={effectiveResolution}
+                  options={resolutionOptions}
+                  onChange={setResolution}
+                  format={formatOption}
+                />
+              ) : null}
+            </>
+          }
+          blocker={
+            busy ? undefined : !model ? { text: t("Choose an image model first.") } : undefined
+          }
+        />
+      </Dock>
+    ) : (
+      <Dock>
+        <DockComposer
+          canSend={Boolean(source)}
+          busy={busy}
+          onSend={() => void (tool === "upscale" ? runUpscale() : runCutout())}
+          sendLabel={tool === "upscale" ? t("Upscale") : t("Remove background")}
+          tools={
+            tool === "upscale" ? (
+              <DockSelectChip
+                label={t("Upscale factor")}
+                value={upscaleScale}
+                options={["2", "3", "4"]}
+                onChange={setUpscaleScale}
+                format={(option) => `x${option}`}
+              />
+            ) : undefined
+          }
+          blocker={
+            busy || source
+              ? undefined
+              : {
+                  text:
+                    tool === "upscale"
+                      ? t("Pick an image to enlarge (at least 256 by 256 pixels).")
+                      : t("Pick an image; the background lifts out into a transparent PNG."),
+                }
+          }
+        >
+          {sourceActions}
+        </DockComposer>
+      </Dock>
+    );
+
+  const inspector =
+    tool === "create" ? (
+      <>
+        <StudioField label={t("Negative prompt")}>
+          <textarea
+            className="studio-textarea"
+            rows={2}
+            value={negativePrompt}
+            placeholder={t("What to avoid (optional)")}
+            onChange={(event) => setNegativePrompt(event.target.value)}
+          />
+        </StudioField>
+        {!comparing ? (
+          <SliderField
+            label={t("Variants")}
+            min={1}
+            max={4}
+            step={1}
+            value={variants}
+            onChange={setVariants}
+          />
+        ) : null}
+        {maxSteps > 1 ? (
+          <SliderField
+            label={t("Steps")}
+            min={1}
+            max={maxSteps}
+            step={1}
+            value={steps > 0 ? Math.min(steps, maxSteps) : (constraints?.steps?.default ?? 1)}
+            onChange={setSteps}
+          />
+        ) : null}
+        <StudioField
+          label={t("Compare models")}
+          hint={
+            comparing
+              ? t("{count} render side by side", { count: compareModels.length + 1 })
+              : t("Optional")
+          }
+        >
+          <div className="studio-upload">
+            {compareModels.length > 0 ? (
+              <div className="studio-compare-chips">
+                {compareModels.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className="studio-compare-chip"
+                    aria-label={t("Stop comparing with {model}", { model: entry.name })}
+                    onClick={() =>
+                      setCompareIds((current) => current.filter((id) => id !== entry.id))
+                    }
+                  >
+                    <span>{entry.name}</span>
+                    <span aria-hidden>x</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <Select
-              value={editModelId}
-              placeholder={t("Automatic")}
-              ariaLabel={t("Edit model")}
-              onChange={setEditModelId}
+              value={null}
+              placeholder={t("Add a model to compare")}
+              ariaLabel={t("Add a model to compare")}
+              onChange={(id) =>
+                setCompareIds((current) => (current.includes(id) ? current : [...current, id]))
+              }
+              options={generateModels
+                .filter((entry) => entry.id !== modelId && !compareIds.includes(entry.id))
+                .map((entry) => ({ value: entry.id, label: entry.name }))}
+            />
+          </div>
+        </StudioField>
+        {styles.length > 0 ? (
+          <StudioField label={t("Style")}>
+            <Select
+              value={stylePreset}
+              placeholder={t("None")}
+              ariaLabel={t("Style preset")}
+              onChange={setStylePreset}
               options={[
-                { value: "", label: t("Automatic") },
-                ...editModels.map((entry) => ({ value: entry.id, label: entry.name })),
+                { value: "", label: t("None") },
+                ...styles.map((style) => ({ value: style, label: style })),
               ]}
             />
           </StudioField>
-          <StudioField
-            label={t("Instruction")}
-            hint={t("Each result feeds the next edit; steps stay in the gallery")}
-          >
-            <textarea
-              className="studio-textarea"
-              rows={3}
-              value={editPrompt}
-              placeholder={
-                editSources.length > 1
-                  ? t(
-                      "Describe how to combine them, e.g. the jacket from image 2 on the person in image 1",
-                    )
-                  : t("Describe the change")
-              }
-              onChange={(event) => setEditPrompt(event.target.value)}
-            />
-          </StudioField>
-        </>
-      ) : (
-        <>
-          <StudioField label={t("Source image")}>
-            <div className="studio-upload">
-              {sourceDataUri ? (
-                <img src={sourceDataUri} alt={t("Source")} className="studio-upload-preview" />
-              ) : null}
-              <div className="studio-upload-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {sourceDataUri ? t("Replace image") : t("Choose an image")}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setPicking("source")}
-                >
-                  {t("From the gallery")}
-                </button>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                hidden
-                onChange={(event) => onPickFile(event.target.files?.[0])}
-              />
-            </div>
-          </StudioField>
-          {mode === "upscale" ? (
-            <>
-              <StudioField label={t("Scale")}>
-                <PillGroup
-                  options={[{ value: "2" }, { value: "3" }, { value: "4" }]}
-                  value={upscaleScale}
-                  onChange={setUpscaleScale}
-                  ariaLabel={t("Upscale factor")}
-                />
-              </StudioField>
-              <StudioField label={t("Enhance")} hint={t("AI detail pass")}>
-                <Switch
-                  checked={upscaleEnhance}
-                  onCheckedChange={setUpscaleEnhance}
-                  aria-label={t("Enhance while upscaling")}
-                />
-              </StudioField>
-            </>
-          ) : null}
-        </>
-      )}
-    </>
-  );
-
-  const action = (
-    <button
-      type="button"
-      className="studio-primary-button"
-      disabled={!canSubmit || busy}
-      onClick={
-        isGenerate
-          ? generate
-          : mode === "edit"
-            ? runEdit
-            : mode === "cutout"
-              ? runCutout
-              : runUpscale
-      }
-    >
-      {busy ? <Spinner aria-hidden /> : null}
-      <span>
-        {busy
-          ? t("Working…")
-          : isGenerate
-            ? t("Generate")
-            : mode === "edit"
-              ? editSources.length > 1
-                ? t("Combine images")
-                : t("Apply edit")
-              : mode === "cutout"
-                ? t("Remove background")
-                : t("Upscale")}
-      </span>
-      {isGenerate && !busy ? <CostHint credits={totalCost} /> : null}
-    </button>
-  );
+        ) : null}
+        <StudioField label={t("Seed")} hint={t("Blank for random")}>
+          <input
+            className="studio-input"
+            inputMode="numeric"
+            value={seed}
+            placeholder={t("Random")}
+            aria-label={t("Seed")}
+            onChange={(event) => setSeed(event.target.value.replace(/[^0-9]/g, ""))}
+          />
+        </StudioField>
+        <StudioField label={t("Improve prompt")} hint={t("AI expands it first")}>
+          <Switch
+            checked={improvePrompt}
+            onCheckedChange={setImprovePrompt}
+            aria-label={t("Improve the prompt before generating")}
+          />
+        </StudioField>
+        <StudioField label={t("Format")}>
+          <PillGroup
+            options={[{ value: "png" }, { value: "webp" }, { value: "jpeg" }]}
+            value={format}
+            onChange={setFormat}
+            ariaLabel={t("Image format")}
+          />
+        </StudioField>
+        <StudioField label={t("Hide watermark")}>
+          <Switch
+            checked={hideWatermark}
+            onCheckedChange={setHideWatermark}
+            aria-label={t("Hide watermark")}
+          />
+        </StudioField>
+        <StudioField label={t("Embed metadata")} hint={t("Prompt in EXIF")}>
+          <Switch
+            checked={embedExif}
+            onCheckedChange={setEmbedExif}
+            aria-label={t("Embed prompt metadata")}
+          />
+        </StudioField>
+      </>
+    ) : tool === "upscale" ? (
+      <StudioField label={t("Enhance")} hint={t("AI detail pass")}>
+        <Switch
+          checked={upscaleEnhance}
+          onCheckedChange={setUpscaleEnhance}
+          aria-label={t("Enhance while upscaling")}
+        />
+      </StudioField>
+    ) : undefined;
 
   return (
-    <GenerationLayout controls={controls} action={action}>
-      {picking ? (
-        <GalleryPicker
-          onClose={() => setPicking(undefined)}
-          description={
-            picking === "compose"
-              ? t(
-                  "Pick an image you have already produced. It joins the sources in the order you add them.",
-                )
-              : t("Pick an image you have already produced.")
-          }
-          onPick={(dataUri) => {
-            if (picking === "compose") {
-              setEditSources((current) => [...current, dataUri].slice(0, MAX_COMPOSE_IMAGES));
-            } else {
-              setSourceDataUri(dataUri);
-            }
-          }}
-        />
-      ) : null}
-      {error ? <p className="studio-error">{error}</p> : null}
-      {busy && isGenerate ? (
-        <div className="studio-image-grid" aria-hidden>
-          {Array.from({ length: comparing ? compareModels.length + 1 : variants }, (_, index) => (
-            // Placeholder tiles are positional and never reorder.
-            // biome-ignore lint/suspicious/noArrayIndexKey: static skeletons
-            <div key={index} className="studio-image-skeleton" />
-          ))}
-        </div>
-      ) : null}
-      <GalleryStrip
-        kind="image"
-        epoch={galleryEpoch}
-        onArtifactsChanged={setArtifacts}
-        onSendToEdit={(artifact) => void sendToEdit(artifact)}
-        empty={
-          !busy && artifacts.length === 0 ? (
-            <EmptyState
-              icon={<IconImagesSparkle size={22} />}
-              title={t("No images yet")}
-              description={t("Describe an image and generate. Results stay in your gallery.")}
-            />
-          ) : null
+    <>
+      <StudioDesk
+        tools={tools}
+        scene={scene}
+        notice={
+          error ? (
+            <div className="stage-notice" data-tone="error" role="alert">
+              <span>{error}</span>
+              <button
+                type="button"
+                className="stage-dock-action"
+                onClick={() => setError(undefined)}
+              >
+                {t("Dismiss")}
+              </button>
+            </div>
+          ) : undefined
+        }
+        dock={dock}
+        inspector={inspector}
+        strip={
+          <Filmstrip
+            kinds={["image"]}
+            epoch={galleryEpoch}
+            pending={busy && tool === "create" ? inFlight : 0}
+            onArtifactsChanged={setArtifacts}
+            onOpenGallery={onOpenGallery}
+            onReusePrompt={(artifact) => setPrompt(artifact.prompt)}
+          />
         }
       />
-    </GenerationLayout>
+      {picking ? (
+        <GalleryPicker
+          onClose={() => setPicking(false)}
+          description={t("Pick an image you have already produced.")}
+          onPick={(dataUri) => setSource(dataUri)}
+        />
+      ) : null}
+    </>
   );
 }

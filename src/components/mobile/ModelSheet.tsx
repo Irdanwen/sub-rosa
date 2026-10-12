@@ -10,48 +10,19 @@ import { createPortal } from "react-dom";
 import { hapticSelection } from "../../lib/haptics";
 import { useKeyboardInset } from "../../lib/keyboard-inset";
 import { EASE_OUT_CSS, FLICK_VELOCITY } from "../../lib/motion";
+import {
+  type ModelPickerEntry,
+  type ModelPickerFilter,
+  type ModelPickerTag,
+  readModelFavorites,
+  visibleModelEntries,
+  writeModelFavorites,
+} from "../../lib/model-picker";
 import { sheetHost } from "./sheet-host";
 
-export type ModelSheetEntry = {
-  id: string;
-  name?: string;
-  subtitle?: string;
-  /** Extra spellings this entry should be findable by, beyond what the row
-   * displays. A row can stand for several backend models (a video family is one
-   * row for up to four), and those models' own ids and names are then the very
-   * thing a user searches for while nothing on screen contains them. */
-  keywords?: string[];
-  /** Short facts shown under the subtitle as small pills, for a row that
-   * stands for several contracts at once (a video family's directions). A
-   * `note` tone marks the one that changes what the user has to supply. */
-  tags?: ModelSheetTag[];
-  /** The filter groups this entry belongs to (see `filters`). */
-  groups?: string[];
-};
-
-export type ModelSheetTag = { label: string; tone?: "note" };
-
-export type ModelSheetFilter = { id: string; label: string };
-
-const FAVORITES_STORAGE_KEY = "subrosa:mobile:model-favorites";
-
-function readFavorites(): Set<string> {
-  try {
-    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function writeFavorites(favorites: Set<string>) {
-  try {
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify([...favorites]));
-  } catch {
-    // Favorites are a convenience; losing them is harmless.
-  }
-}
+export type ModelSheetEntry = ModelPickerEntry;
+export type ModelSheetTag = ModelPickerTag;
+export type ModelSheetFilter = ModelPickerFilter;
 
 type ModelSheetProps = {
   title: string;
@@ -108,7 +79,7 @@ export function ModelSheet({
   const [filter, setFilter] = useState(() =>
     initialFilter && filters?.some((entry) => entry.id === initialFilter) ? initialFilter : "all",
   );
-  const [favorites, setFavorites] = useState<Set<string>>(readFavorites);
+  const [favorites, setFavorites] = useState<Set<string>>(readModelFavorites);
   const keyboardInset = useKeyboardInset();
 
   // Drag-to-dismiss from the grabber/title zone (the list keeps its scroll).
@@ -185,33 +156,10 @@ export function ModelSheet({
     dragStart.current = null;
   };
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const grouped =
-      filter === "all" ? entries : entries.filter((entry) => entry.groups?.includes(filter));
-    // Each term is matched whole rather than concatenated into one haystack, so
-    // a needle can never straddle two of them and match nothing real.
-    const matches = needle
-      ? grouped.filter((entry) =>
-          [
-            entry.id,
-            entry.name ?? "",
-            entry.subtitle ?? "",
-            ...(entry.tags ?? []).map((tag) => tag.label),
-            ...(entry.keywords ?? []),
-          ].some((term) => term.toLowerCase().includes(needle)),
-        )
-      : grouped;
-    return [...matches].sort((a, b) => {
-      if (!needle && pinnedId && (a.id === pinnedId) !== (b.id === pinnedId)) {
-        return a.id === pinnedId ? -1 : 1;
-      }
-      const favA = favorites.has(a.id) ? 0 : 1;
-      const favB = favorites.has(b.id) ? 0 : 1;
-      if (favA !== favB) return favA - favB;
-      return (a.name || a.id).localeCompare(b.name || b.id);
-    });
-  }, [entries, query, favorites, filter, pinnedId]);
+  const visible = useMemo(
+    () => visibleModelEntries(entries, { query, filter, favorites, pinnedId }),
+    [entries, query, favorites, filter, pinnedId],
+  );
 
   const toggleFavorite = (id: string) => {
     hapticSelection();
@@ -219,7 +167,7 @@ export function ModelSheet({
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      writeFavorites(next);
+      writeModelFavorites(next);
       return next;
     });
   };
