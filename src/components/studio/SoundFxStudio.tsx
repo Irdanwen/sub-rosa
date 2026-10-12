@@ -21,7 +21,7 @@ import { Switch } from "../ui/Switch";
 import { AudioScene } from "./desk/AudioScene";
 import { Filmstrip } from "./desk/Filmstrip";
 import { StudioDesk } from "./desk/StudioDesk";
-import { useJobWait } from "./desk/useDeskResult";
+import { useJobWait } from "./desk/useJobWait";
 import { JobFailureNotice } from "./JobFailureNotice";
 import { SliderField, StudioField } from "./controls";
 import { Dock, DockComposer } from "./stage/Dock";

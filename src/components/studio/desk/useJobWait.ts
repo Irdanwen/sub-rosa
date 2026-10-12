@@ -1,21 +1,7 @@
-// What a desk keeps about its scene: the last thing made here and whether its
-// wipe has played, and the wait of a queued render read as a veil.
+// The wait of a queued render, read as a veil over a desk's scene.
 
-import { useCallback, useRef, useState } from "react";
-import type { StageResult } from "../stage/Scene";
+import { useRef } from "react";
 import type { StageWait } from "../stage/Veil";
-
-export function useDeskResult() {
-  const [result, setResult] = useState<StageResult | undefined>(undefined);
-  const [reveal, setReveal] = useState(false);
-  /** A result landed: put it on the scene, and let it wipe in. */
-  const land = useCallback((next: StageResult) => {
-    setResult(next);
-    setReveal(true);
-  }, []);
-  const endReveal = useCallback(() => setReveal(false), []);
-  return { result, reveal, land, endReveal, setResult };
-}
 
 type JobPhase = { phase: "queueing" } | { phase: "queued" | "processing"; startedAt: number };
 

@@ -46,7 +46,13 @@ export function useRunningMediaJobs(): MediaJob[] {
         return next;
       });
     };
-    const unlisten = listen<MediaJob>(MEDIA_JOB_EVENT, (event) => ingest(event.payload));
+    // Without a native bridge (a browser preview, a test) `listen` rejects
+    // at once; caught here rather than at unmount, so no rejection is left
+    // unhandled meanwhile. The snapshot below fails quietly the same way, and
+    // the hook simply reports nothing in flight.
+    const unlisten = listen<MediaJob>(MEDIA_JOB_EVENT, (event) => ingest(event.payload)).catch(
+      () => () => undefined,
+    );
     const snapshot = () => {
       invoke<MediaJob[]>("media_job_list")
         .then((rows) => {

@@ -32,6 +32,14 @@ vi.mock("../components/studio/retouch/RetouchStudio", () => ({
     <p>{pendingArtifactId ? `retouching ${pendingArtifactId}` : "retouch tab"}</p>
   ),
 }));
+vi.mock("../components/studio/compose/ComposeStudio", () => ({
+  ComposeStudio: ({ pendingArtifactId }: { pendingArtifactId?: string }) => (
+    <p>{pendingArtifactId ? `composing from ${pendingArtifactId}` : "compose tool"}</p>
+  ),
+}));
+vi.mock("../components/studio/StudioGalleryDesktop", () => ({
+  StudioGalleryDesktop: () => <p>gallery tab</p>,
+}));
 vi.mock("../components/studio/WorkflowStudio", () => ({
   WorkflowStudio: ({ scriptRequested }: { scriptRequested?: boolean }) => (
     <p>{scriptRequested ? "workflows tab, script asked for" : "workflows tab"}</p>
@@ -100,5 +108,19 @@ describe("the studio's tabs", () => {
     act(() => requestRetouch("photo.png"));
     await waitFor(() => expect(screen.getByText("retouching photo.png")).toBeInTheDocument());
     expect(window.localStorage.getItem("os-june:studio-tab")).toBe("retouch");
+  });
+
+  it("opens an image handed over from anywhere in the compose tool", async () => {
+    render(<StudioView />);
+    const { requestCompose } = await import("../lib/studio/compose/jobs");
+    act(() => requestCompose("still.png"));
+    await waitFor(() => expect(screen.getByText("composing from still.png")).toBeInTheDocument());
+    expect(window.localStorage.getItem("os-june:studio-tab")).toBe("compose");
+  });
+
+  it("opens the gallery without waiting for the model catalog", () => {
+    window.localStorage.setItem("os-june:studio-tab", "gallery");
+    render(<StudioView />);
+    expect(screen.getByText("gallery tab")).toBeInTheDocument();
   });
 });
