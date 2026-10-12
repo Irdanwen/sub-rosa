@@ -52,6 +52,25 @@ mod fake_service {
         pub refuse_posts: bool,
         /// How long a wait holds before answering "nothing changed".
         pub wait_for: Duration,
+        /// The account's quota, as the service keeps it (ADR-0110): `None`
+        /// is unlimited. A revision costs its ciphertext and 256 bytes; files
+        /// stop `reserve` short of the quota.
+        pub quota: Option<i64>,
+        pub reserve: i64,
+        pub used: i64,
+        pub blobs: std::collections::BTreeMap<String, Blob>,
+        /// What `/api/v1/devices` lists, app versions included.
+        pub devices: Vec<Value>,
+        pub blob_gets: usize,
+        pub blob_puts: usize,
+        pub blob_deletes: usize,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Blob {
+        pub bytes: Vec<u8>,
+        pub created_at: chrono::DateTime<chrono::Utc>,
+        pub shared: bool,
     }
 
     pub struct Service {
@@ -153,6 +172,7 @@ mod fake_service {
         }
         let body = &received[header_end..header_end + length];
         let (path, query) = target.split_once('?').unwrap_or((&target, ""));
+        let mut raw: Option<Vec<u8>> = None;
         let params: std::collections::HashMap<String, String> = query
             .split('&')
             .filter_map(|pair| pair.split_once('='))
@@ -174,10 +194,10 @@ mod fake_service {
                                 ("200 OK", Ok(json!({"results":results})))
                             }
                             Err(code) => (
-                                if code == "conflict" {
-                                    "409 Conflict"
-                                } else {
-                                    "400 Bad Request"
+                                match code {
+                                    "conflict" => "409 Conflict",
+                                    "quota_exceeded" => "413 Payload Too Large",
+                                    _ => "400 Bad Request",
                                 },
                                 Err(code),
                             ),
@@ -239,8 +259,105 @@ mod fake_service {
                     }
                 }
             }
+            ("GET", "/api/v1/me") => {
+                let j = journal.lock().await;
+                let files: i64 = j.blobs.values().map(|b| b.bytes.len() as i64).sum();
+                let storage = j.quota.map(|quota| {
+                    json!({"used_bytes":j.used,"quota_bytes":quota,"file_bytes":files,"journal_reserve_bytes":j.reserve})
+                });
+                (
+                    "200 OK",
+                    Ok(
+                        json!({"id":"account-one","email":"one@example.test","created_at":"now","storage":storage}),
+                    ),
+                )
+            }
+            ("GET", "/api/v1/devices") => ("200 OK", Ok(json!(journal.lock().await.devices))),
+            ("GET", "/api/v1/blobs") => {
+                let j = journal.lock().await;
+                let limit: usize = params
+                    .get("limit")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(500);
+                let named: Option<Vec<String>> = params
+                    .get("ids")
+                    .map(|ids| ids.split(',').map(str::to_string).collect());
+                let after = params.get("after").cloned().unwrap_or_default();
+                let listed: Vec<Value> = j
+                    .blobs
+                    .iter()
+                    .filter(|(id, _)| named.as_ref().map_or(id.as_str() > after.as_str(), |n| n.contains(id)))
+                    .take(if named.is_some() { usize::MAX } else { limit })
+                    .map(|(id, b)| json!({"id":id,"bytes":b.bytes.len(),"created_at":b.created_at.to_rfc3339(),"shared":b.shared}))
+                    .collect();
+                let has_more = named.is_none() && listed.len() == limit;
+                ("200 OK", Ok(json!({"blobs":listed,"has_more":has_more})))
+            }
+            (method, blob) if blob.starts_with("/api/v1/blobs/") => {
+                let id = blob.trim_start_matches("/api/v1/blobs/").to_string();
+                let mut j = journal.lock().await;
+                match method {
+                    "GET" => {
+                        j.blob_gets += 1;
+                        match j.blobs.get(&id) {
+                            Some(b) => {
+                                raw = Some(b.bytes.clone());
+                                ("200 OK", Ok(Value::Null))
+                            }
+                            None => ("404 Not Found", Err("not_found")),
+                        }
+                    }
+                    "PUT" => {
+                        j.blob_puts += 1;
+                        let limit = j.quota.map(|q| q - j.reserve);
+                        match j.blobs.get(&id) {
+                            Some(b) if b.bytes == body => {
+                                ("200 OK", Ok(json!({"id":id,"bytes":body.len()})))
+                            }
+                            Some(_) => ("409 Conflict", Err("conflict")),
+                            None if limit.is_some_and(|l| j.used + body.len() as i64 > l) => {
+                                ("413 Payload Too Large", Err("storage_files_full"))
+                            }
+                            None => {
+                                j.used += body.len() as i64;
+                                j.blobs.insert(
+                                    id.clone(),
+                                    Blob {
+                                        bytes: body.to_vec(),
+                                        created_at: chrono::Utc::now(),
+                                        shared: false,
+                                    },
+                                );
+                                ("200 OK", Ok(json!({"id":id,"bytes":body.len()})))
+                            }
+                        }
+                    }
+                    "DELETE" => match j.blobs.get(&id).cloned() {
+                        None => ("404 Not Found", Err("not_found")),
+                        Some(b) if b.shared => ("409 Conflict", Err("conflict")),
+                        Some(b) => {
+                            j.blob_deletes += 1;
+                            j.blobs.remove(&id);
+                            j.used -= b.bytes.len() as i64;
+                            ("200 OK", Ok(json!({"id":id,"freed_bytes":b.bytes.len()})))
+                        }
+                    },
+                    _ => ("404 Not Found", Err("not_found")),
+                }
+            }
             _ => ("404 Not Found", Err("not_found")),
         };
+        if let Some(bytes) = raw {
+            let mut response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                bytes.len()
+            )
+            .into_bytes();
+            response.extend_from_slice(&bytes);
+            let _ = stream.write_all(&response).await;
+            let _ = stream.shutdown().await;
+            return;
+        }
         let body = match payload {
             Ok(data) => json!({"data":data}).to_string(),
             Err(code) => json!({"error":{"code":code,"message":code}}).to_string(),
@@ -271,6 +388,10 @@ mod fake_service {
         }
         if total > 4 * 1024 * 1024 {
             return Err("invalid_request");
+        }
+        let cost = total as i64 + 256 * ops.len() as i64;
+        if j.quota.is_some_and(|quota| j.used + cost > quota) {
+            return Err("quota_exceeded");
         }
         // The whole batch is one transaction: work on a copy, keep it on success.
         let mut revisions = j.revisions.clone();
@@ -344,6 +465,7 @@ mod fake_service {
         }
         j.revisions = revisions;
         j.next_sequence = next;
+        j.used += cost;
         Ok(results)
     }
 
@@ -1271,4 +1393,527 @@ async fn a_library_with_sync_off_reports_no_local_work() {
     assert!(has_local_work(&mac.pool).await.unwrap());
     set_enabled(&mac.pool, false).await.unwrap();
     assert!(!has_local_work(&mac.pool).await.unwrap());
+}
+
+// Keeping the account inside its quota (ADR-0110).
+
+use crate::account::{compaction, files, storage};
+use crate::app_paths::AppPaths;
+
+/// Where one device keeps its files: data, recordings and gallery.
+struct Place {
+    _dir: tempfile::TempDir,
+    paths: AppPaths,
+    gallery: std::path::PathBuf,
+}
+fn place() -> Place {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = AppPaths::from_data_dir(dir.path().join("data")).unwrap();
+    let gallery = dir.path().join("gallery");
+    std::fs::create_dir_all(&gallery).unwrap();
+    Place {
+        _dir: dir,
+        paths,
+        gallery,
+    }
+}
+fn soon() -> Instant {
+    Instant::now() + Duration::from_secs(120)
+}
+/// Bytes that do not compress and are the same on every run.
+fn content(len: usize, seed: u8) -> Vec<u8> {
+    (0..len)
+        .map(|i| (i as u32).wrapping_mul(2_654_435_761).to_le_bytes()[2] ^ seed)
+        .collect()
+}
+/// Every device on the account announces a version that reads compact copies.
+async fn every_app_is_current(service: &Service) {
+    let seen = chrono::Utc::now().to_rfc3339();
+    service.journal.lock().await.devices = ["mac", "phone"]
+        .iter()
+        .map(|name| json!({"id":name,"name":name,"kind":"native","revoked_at":null,"last_seen_at":seen,"app_version":"1.91.0"}))
+        .collect();
+}
+impl Device {
+    async fn room(&self, key: &[u8; 32], full: bool) -> i64 {
+        storage::room(&self.pool, &self.session, key, soon(), full, true)
+            .await
+            .unwrap()
+    }
+    /// A Studio file made on this device, filed for the account.
+    async fn studio_file(&self, place: &Place, len: usize, seed: u8) -> (String, Vec<u8>) {
+        let id = note();
+        let bytes = content(len, seed);
+        let path = place.gallery.join(format!("{id}.png"));
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(
+            super::super::studio::register(&self.pool, &place.gallery, &path)
+                .await
+                .unwrap()
+        );
+        (id, bytes)
+    }
+    async fn upload_all(&self, key: &[u8; 32], place: &Place) {
+        for _ in 0..100 {
+            if self
+                .count(
+                    "SELECT count(*) AS n FROM account_file_uploads WHERE completed=0 AND ?<>''",
+                    "x",
+                )
+                .await
+                == 0
+            {
+                return;
+            }
+            files::upload_one(&self.pool, &self.session, key, &place.paths, &place.gallery)
+                .await
+                .unwrap();
+        }
+        panic!("the upload never finished");
+    }
+    async fn download_all(&self, key: &[u8; 32], place: &Place) {
+        for _ in 0..50 {
+            files::download_one(
+                &self.pool,
+                &self.session,
+                key,
+                &place.paths.data_dir,
+                &place.gallery,
+            )
+            .await
+            .unwrap();
+        }
+    }
+    async fn compact(&self, key: &[u8; 32], place: &Place) {
+        for _ in 0..10 {
+            compaction::step(
+                &self.pool,
+                &self.session,
+                key,
+                &place.paths,
+                &place.gallery,
+                soon(),
+            )
+            .await
+            .unwrap();
+        }
+    }
+    async fn manifest_of(&self, artifact: &str) -> Option<(String, String)> {
+        query("SELECT id,chunks_json FROM account_file_manifests WHERE artifact_id=?")
+            .bind(artifact)
+            .fetch_optional(&self.pool)
+            .await
+            .unwrap()
+            .map(|r| (r.get("id"), r.get("chunks_json")))
+    }
+    async fn release_now(&self) {
+        query("UPDATE account_blob_releases SET not_before=0")
+            .execute(&self.pool)
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_full_account_keeps_receiving_waits_without_asking_again_and_leaves_once_room_is_back() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    every_app_is_current(&service).await;
+    let first = note();
+    phone.create_note(&first, "From the phone").await;
+    phone.sync(&key).await.unwrap();
+    // Something nobody names, stored long ago, and an account with no room
+    // left for the mac's next edit.
+    {
+        let mut j = service.journal.lock().await;
+        j.blobs.insert(
+            "0b0b0b0b-0000-4000-8000-000000000001".into(),
+            fake_service::Blob {
+                bytes: vec![1; 4096],
+                created_at: chrono::Utc::now() - chrono::Duration::days(9),
+                shared: false,
+            },
+        );
+        j.used += 4096;
+        j.quota = Some(j.used + 10);
+    }
+    let second = note();
+    mac.create_note(&second, "From the mac").await;
+    let summary = mac.sync(&key).await.unwrap();
+    assert!(summary.full);
+    assert_eq!(mac.title(&first).await.as_deref(), Some("From the phone"));
+    assert_eq!(mac.outbox(&second).await, 1);
+    // Held: the next pass asks nothing, and the tick sees no work.
+    let posts = service.posts().await;
+    assert!(mac.sync(&key).await.unwrap().full);
+    assert_eq!(service.posts().await, posts);
+    assert!(!has_local_work(&mac.pool).await.unwrap());
+    // The sweep gives the unnamed chunk back, which lifts the hold.
+    assert_eq!(mac.room(&key, true).await, 4096);
+    assert!(!storage::push_held(&mac.pool).await.unwrap());
+    assert!(!mac.sync(&key).await.unwrap().full);
+    assert_eq!(mac.outbox(&second).await, 0);
+    phone.sync(&key).await.unwrap();
+    assert_eq!(phone.title(&second).await.as_deref(), Some("From the mac"));
+}
+
+#[tokio::test]
+async fn a_file_that_does_not_fit_waits_while_a_note_still_leaves() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let mac = device(&service, "mac").await;
+    let here = place();
+    {
+        let mut j = service.journal.lock().await;
+        j.quota = Some(2 * 1024 * 1024);
+        j.reserve = 1024 * 1024;
+    }
+    mac.studio_file(&here, 1_500_000, 1).await;
+    let mut refused = None;
+    for _ in 0..3 {
+        if let Err(e) =
+            files::upload_one(&mac.pool, &mac.session, &key, &here.paths, &here.gallery).await
+        {
+            refused = Some(e.code);
+            break;
+        }
+    }
+    assert_eq!(refused.as_deref(), Some("account_storage_full"));
+    let id = note();
+    mac.create_note(&id, "Still leaves").await;
+    assert!(!mac.sync(&key).await.unwrap().full);
+    assert_eq!(mac.outbox(&id).await, 0);
+}
+
+#[tokio::test]
+async fn a_deleted_files_chunks_are_released_a_day_later_and_only_once() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    let here = place();
+    let (file, _) = mac.studio_file(&here, 2_500_000, 2).await;
+    mac.upload_all(&key, &here).await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    let stored = service.journal.lock().await.blobs.len();
+    assert_eq!(stored, 3);
+    crate::studio_library::forget_in(&mac.pool, &file)
+        .await
+        .unwrap();
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    // Planned for tomorrow: nothing goes today.
+    phone.room(&key, false).await;
+    assert_eq!(service.journal.lock().await.blobs.len(), 3);
+    assert_eq!(
+        phone
+            .count(
+                "SELECT count(*) AS n FROM account_blob_releases WHERE ?<>''",
+                "x"
+            )
+            .await,
+        3
+    );
+    phone.release_now().await;
+    assert!(phone.room(&key, false).await > 0);
+    assert!(service.journal.lock().await.blobs.is_empty());
+    // The other device plans the same chunks and finds them gone already.
+    let deletes = service.journal.lock().await.blob_deletes;
+    mac.room(&key, false).await;
+    mac.release_now().await;
+    assert_eq!(mac.room(&key, false).await, 0);
+    assert_eq!(service.journal.lock().await.blob_deletes, deletes);
+    assert_eq!(
+        mac.count(
+            "SELECT count(*) AS n FROM account_blob_releases WHERE ?<>''",
+            "x"
+        )
+        .await,
+        0
+    );
+}
+
+#[tokio::test]
+async fn the_sweep_spares_young_and_shared_chunks_and_a_manifest_it_raced_repairs_itself() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    every_app_is_current(&service).await;
+    let (on_mac, on_phone) = (place(), place());
+    // The phone sends its file's chunks, then cannot send the manifest.
+    service.journal.lock().await.refuse_posts = true;
+    let (file, bytes) = phone.studio_file(&on_phone, 1_200_000, 3).await;
+    phone.upload_all(&key, &on_phone).await;
+    assert!(phone.sync(&key).await.is_err());
+    {
+        let mut j = service.journal.lock().await;
+        for blob in j.blobs.values_mut() {
+            blob.created_at = chrono::Utc::now() - chrono::Duration::days(8);
+        }
+        let now = chrono::Utc::now();
+        let old = now - chrono::Duration::days(30);
+        j.blobs.insert(
+            "0c0c0c0c-0000-4000-8000-000000000001".into(),
+            fake_service::Blob {
+                bytes: vec![2; 10],
+                created_at: now,
+                shared: false,
+            },
+        );
+        j.blobs.insert(
+            "0c0c0c0c-0000-4000-8000-000000000002".into(),
+            fake_service::Blob {
+                bytes: vec![3; 10],
+                created_at: old,
+                shared: true,
+            },
+        );
+        j.refuse_posts = false;
+    }
+    // A week on, the mac sweeps: the phone's chunks are named nowhere it knows.
+    mac.sync(&key).await.unwrap();
+    mac.room(&key, false).await;
+    let left: Vec<String> = service.journal.lock().await.blobs.keys().cloned().collect();
+    assert_eq!(
+        left,
+        vec![
+            "0c0c0c0c-0000-4000-8000-000000000001".to_string(),
+            "0c0c0c0c-0000-4000-8000-000000000002".to_string()
+        ]
+    );
+    // The phone holds its manifest back rather than name lost chunks...
+    phone.sync(&key).await.unwrap();
+    assert_eq!(
+        phone
+            .count(
+                "SELECT count(*) AS n FROM account_chunk_repairs WHERE ?<>''",
+                "x"
+            )
+            .await,
+        1
+    );
+    // ...sends them again from its copy, and then lets it go.
+    compaction::repair(
+        &phone.pool,
+        &phone.session,
+        &key,
+        &on_phone.paths,
+        &on_phone.gallery,
+        soon(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        phone
+            .count(
+                "SELECT count(*) AS n FROM account_sync_issues WHERE ?<>''",
+                "x"
+            )
+            .await,
+        0
+    );
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    mac.download_all(&key, &on_mac).await;
+    assert_eq!(
+        std::fs::read(on_mac.gallery.join(format!("{file}.png"))).unwrap(),
+        bytes
+    );
+}
+
+#[tokio::test]
+async fn a_studio_file_is_sent_again_compact_and_a_device_that_holds_it_fetches_nothing() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    let (on_mac, on_phone) = (place(), place());
+    let (file, bytes) = mac.studio_file(&on_mac, 2_200_000, 4).await;
+    mac.upload_all(&key, &on_mac).await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    phone.download_all(&key, &on_phone).await;
+    let before = service.journal.lock().await.used;
+    // The phone is old: nothing is rewritten until it is not.
+    mac.room(&key, false).await;
+    mac.compact(&key, &on_mac).await;
+    let (old, _) = mac.manifest_of(&file).await.unwrap();
+    assert_eq!(mac.manifest_of(&file).await.unwrap().0, old);
+    every_app_is_current(&service).await;
+    query("UPDATE account_storage_state SET gate_checked_at=0")
+        .execute(&mac.pool)
+        .await
+        .unwrap();
+    mac.room(&key, false).await;
+    mac.compact(&key, &on_mac).await;
+    let (new, chunks) = mac.manifest_of(&file).await.unwrap();
+    assert_eq!(new, compaction::replacement_id(&old));
+    assert!(storage::chunk_ids(&chunks)
+        .iter()
+        .all(|id| &id[14..15] == "5"));
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    assert_eq!(phone.manifest_of(&file).await.unwrap().0, new);
+    let gets = service.journal.lock().await.blob_gets;
+    phone.download_all(&key, &on_phone).await;
+    assert_eq!(service.journal.lock().await.blob_gets, gets);
+    assert_eq!(
+        std::fs::read(on_phone.gallery.join(format!("{file}.png"))).unwrap(),
+        bytes
+    );
+    // A day later the first form goes, and the account is lighter by a quarter.
+    mac.room(&key, false).await;
+    mac.release_now().await;
+    mac.room(&key, false).await;
+    let j = service.journal.lock().await;
+    assert!(j
+        .blobs
+        .values()
+        .all(|b| b.bytes[0] == crypto::BINARY_ENVELOPE));
+    assert!(j.used < before * 80 / 100, "{} of {before}", j.used);
+}
+
+#[tokio::test]
+async fn two_devices_compacting_one_file_leave_it_to_the_first_and_free_nothing_of_its() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    every_app_is_current(&service).await;
+    let (on_mac, on_phone) = (place(), place());
+    let (file, _) = mac.studio_file(&on_mac, 2_100_000, 5).await;
+    // Sent in the first form while the gate was still closed on the mac.
+    mac.upload_all(&key, &on_mac).await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    phone.download_all(&key, &on_phone).await;
+    phone.room(&key, false).await;
+    mac.room(&key, false).await;
+    phone.compact(&key, &on_phone).await;
+    let (copy, chunks) = phone.manifest_of(&file).await.unwrap();
+    // The mac reaches the same copy's first chunk and finds it taken.
+    mac.compact(&key, &on_mac).await;
+    assert_eq!(
+        mac.count(
+            "SELECT count(*) AS n FROM account_file_compactions WHERE held_until>0 AND id=?",
+            &copy
+        )
+        .await,
+        1
+    );
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(mac.manifest_of(&file).await.unwrap().0, copy);
+    query("UPDATE account_file_compactions SET held_until=0")
+        .execute(&mac.pool)
+        .await
+        .unwrap();
+    mac.compact(&key, &on_mac).await;
+    assert_eq!(
+        mac.count(
+            "SELECT count(*) AS n FROM account_file_compactions WHERE ?<>''",
+            "x"
+        )
+        .await,
+        0
+    );
+    let releasing: Vec<String> = query("SELECT blob_id FROM account_blob_releases")
+        .fetch_all(&mac.pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|r| r.get("blob_id"))
+        .collect();
+    let blobs = service.journal.lock().await.blobs.clone();
+    for id in storage::chunk_ids(&chunks) {
+        assert!(!releasing.contains(&id));
+        assert!(blobs.contains_key(&id));
+    }
+}
+
+#[tokio::test]
+async fn a_recording_leaves_as_a_16_khz_copy_and_plays_on_the_other_device() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    every_app_is_current(&service).await;
+    let (on_mac, on_phone) = (place(), place());
+    let (id, session, artifact) = (note(), note(), note());
+    let recording = on_mac.paths.recordings_dir.join("take.wav");
+    {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&recording, spec).unwrap();
+        for i in 0..48_000 * 3 {
+            let t = i as f32 / 48_000.0;
+            writer
+                .write_sample(((t * 440.0 * std::f32::consts::TAU).sin() * 8000.0) as i16)
+                .unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+    let original = std::fs::metadata(&recording).unwrap().len();
+    mac.create_note(&id, "A meeting").await;
+    query("INSERT INTO recording_sessions(id,note_id,status,started_at) VALUES(?,?,'completed','now')")
+        .bind(&session)
+        .bind(&id)
+        .execute(&mac.pool)
+        .await
+        .unwrap();
+    query("INSERT INTO audio_artifacts(id,note_id,recording_session_id,path,format,duration_ms,size_bytes,checksum,created_at) VALUES(?,?,?,?,'wav',3000,?,'sum','now')")
+        .bind(&artifact)
+        .bind(&id)
+        .bind(&session)
+        .bind(recording.to_string_lossy().as_ref())
+        .bind(original as i64)
+        .execute(&mac.pool)
+        .await
+        .unwrap();
+    mac.room(&key, false).await;
+    mac.compact(&key, &on_mac).await;
+    let (_, chunks) = mac.manifest_of(&artifact).await.unwrap();
+    let sent: usize = {
+        let j = service.journal.lock().await;
+        storage::chunk_ids(&chunks)
+            .iter()
+            .map(|c| j.blobs[c].bytes.len())
+            .sum()
+    };
+    assert!((sent as u64) < original / 2, "{sent} of {original}");
+    // The original stays where it was recorded.
+    assert_eq!(std::fs::metadata(&recording).unwrap().len(), original);
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    phone.download_all(&key, &on_phone).await;
+    let path: String = query("SELECT path FROM audio_artifacts WHERE id=?")
+        .bind(&artifact)
+        .fetch_one(&phone.pool)
+        .await
+        .unwrap()
+        .get("path");
+    let reader = hound::WavReader::open(&path).unwrap();
+    assert_eq!(reader.spec().sample_rate, 16_000);
+    assert_eq!(reader.spec().channels, 1);
+    assert!((reader.duration() as i64 - 48_000).abs() < 1_600);
 }

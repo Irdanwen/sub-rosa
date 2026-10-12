@@ -646,6 +646,15 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         include_str!("../../migrations/076_sync_last_received.sql"),
     )
     .await?;
+    // Triggers carry semicolons of their own, so this file is split on
+    // statement boundaries rather than on every `;`.
+    replay_statements(
+        _pool,
+        "077_account_storage.sql",
+        include_str!("../../migrations/077_account_storage.sql"),
+        split_sql_statements(include_str!("../../migrations/077_account_storage.sql")),
+    )
+    .await?;
     let named = crate::connectors::assign_object_ids(_pool).await?;
     crate::account::sync::install(_pool).await?;
     // A connector that predates its object id never reached the service:
