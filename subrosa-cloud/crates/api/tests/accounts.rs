@@ -3909,7 +3909,7 @@ async fn chunks_list_by_page_or_by_name_with_age_and_share() -> Result<()> {
 
 /// A native device's announced version reaches the device list, so the other
 /// devices can tell when every app reads a newer file format; a malformed one
-/// is ignored, not refused.
+/// counts as none and is not refused.
 #[tokio::test]
 async fn a_device_announces_its_app_version() -> Result<()> {
     let f = Fixture::new().await?;
@@ -3938,10 +3938,12 @@ async fn a_device_announces_its_app_version() -> Result<()> {
     let (status, list) = devices("1.91.0").await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(list["data"][0]["app_version"], "1.91.0");
-    let (status, list) = devices("1.91.0; drop table").await?;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(list["data"][0]["app_version"], "1.91.0");
     let (_, list) = devices("1.92.3").await?;
     assert_eq!(list["data"][0]["app_version"], "1.92.3");
+    // A malformed value, or none (an app from before the header), reads as
+    // an older app, so going back to one holds newer formats back again.
+    let (status, list) = devices("1.91.0; drop table").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(list["data"][0].get("app_version").is_none());
     Ok(())
 }

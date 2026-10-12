@@ -23,6 +23,9 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 const NAMESPACE: uuid::Uuid = uuid::Uuid::from_u128(0x5b0e_3c4f_2a61_4d7e_9b3a_6f1d_0c2e_8a47);
 /// How long a file another device is compacting is left alone.
 const ELSEWHERE_SECONDS: i64 = 8 * 86_400;
+/// How long a file whose manifest another device removed is left alone,
+/// so its replacement arrives before this device sends a copy of its own.
+const WAIT_FOR_REPLACEMENT_SECONDS: i64 = 30 * 86_400;
 /// How long a copy that failed waits before it is tried again.
 const FAILED_SECONDS: i64 = 86_400;
 /// A pass's share for compaction, after the journal and the file lane.
@@ -130,7 +133,8 @@ async fn begin(
 ) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     if storage::sending(pool, "audio").await? {
-        if let Some(a) = query("SELECT a.id,a.path,a.format FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_compactions c WHERE c.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
+        if let Some(a) = query("SELECT a.id,a.path,a.format FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_compactions c WHERE c.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_manifest_waits w WHERE w.artifact_id=a.id AND w.at>?) LIMIT 1")
+            .bind(storage::now() - WAIT_FOR_REPLACEMENT_SECONDS)
             .fetch_optional(pool)
             .await?
         {
@@ -665,8 +669,9 @@ async fn release_sent(tx: &mut sqlx_sqlite::SqliteConnection, id: &str) -> Resul
             .fetch_optional(&mut *tx)
             .await?
     {
-        let mut ids = storage::chunk_ids(&row.get::<String, _>("chunks_json"));
-        ids.extend(row.get::<Option<String>, _>("pending_blob_id"));
+        // Only chunks the service confirmed. A pending one with a derived id
+        // may never have been sent, and may then be another device's.
+        let ids = storage::chunk_ids(&row.get::<String, _>("chunks_json"));
         for blob_id in ids {
             query("INSERT OR IGNORE INTO account_blob_releases(blob_id,reason,not_before) VALUES(?,'dropped copy',?)")
                 .bind(blob_id)

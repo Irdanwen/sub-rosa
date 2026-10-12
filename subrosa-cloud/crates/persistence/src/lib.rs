@@ -1058,7 +1058,7 @@ impl Repository {
     }
     /// Notes the version a device's app announced. A write only when it
     /// changed, so the request it rides on costs a lookup, not an update.
-    pub async fn note_app_version(&self, device: Uuid, version: &str) -> Result<()> {
+    pub async fn note_app_version(&self, device: Uuid, version: Option<&str>) -> Result<()> {
         sqlx::query(
             "UPDATE devices SET app_version=$2 WHERE id=$1 AND app_version IS DISTINCT FROM $2",
         )

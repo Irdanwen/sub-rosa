@@ -67,7 +67,14 @@ A higher quota was rejected by the person: the account must work inside
    - **the sweep**: a chunk no manifest names, older than seven days, never
      shared. It runs once a day, at once when the account is full or above
      90 %, and only on a device that has applied every file revision it was
-     handed.
+     handed. A candidate waits another hour and goes only from a pass that
+     has just read the whole journal.
+
+   "Named" covers every manifest the journal holds as live, not only the
+   rows on this device: two copies of a file can both be live for a while.
+   A device that has just seen a file's manifest removed by another device
+   does not send its own copy of that file as a new recording for thirty
+   days; the replacement is on its way.
 
 4. **Files are stored compact.** Once every app on the account reads it, a
    recording leaves as a **16 kHz mono WAV**, the very audio transcription
@@ -80,11 +87,14 @@ A higher quota was rejected by the person: the account must work inside
 
 5. **Nothing is written that an app on the account cannot read.** Each native
    app announces its version (`X-Subrosa-Version`, noted on the device, listed
-   by `/api/v1/devices`). Compaction, the binary envelope and the sweep wait
-   until every device that is not revoked and was seen in the last thirty days
-   announces 1.91.0 or later; the account panel names the ones it waits for. A
-   browser is left out: the site is published with every release, and it
-   reads both envelopes.
+   by `/api/v1/devices`; an app that announces nothing reads as older).
+   Compaction, the binary envelope and the sweep wait until every native
+   device that is not revoked announces 1.91.0 or later, however long ago it
+   was seen: a laptop closed for months may still hold a manifest it has not
+   sent. The account panel names the devices it waits for; revoking a lost
+   one releases the gate. An upload begun in the binary envelope starts over
+   in the text one if the gate closes. A browser is left out: the site is
+   published with every release, and it reads both envelopes.
 
 6. **Two devices never compact one file twice.** The copy that replaces a
    manifest has an id derived from it (UUID v5), and so do its chunks: the
@@ -120,8 +130,14 @@ A higher quota was rejected by the person: the account must work inside
   out for now: a new encoder on four targets for a second factor of two.
 - The service still keeps every revision of the journal (25 MB here after
   three weeks). Compacting history is a later decision.
-- A device on an older version holds compaction back for thirty days unless
-  it is updated or revoked; the panel says which one.
+- A device on an older version holds compaction and the sweep back until it
+  is updated or revoked; the panel says which one.
+- One narrow window remains: a manifest held back for more than a week on a
+  device sent in the seconds between another device's last pull and its
+  release of the same chunks. That device's check before sending runs just
+  before; the release waits an hour after the chunk was found unnamed and
+  needs a full pull in the same pass. A chunk lost that way is sent again by
+  the device that holds the file the next time its manifest is checked.
 
 ## Rejected
 

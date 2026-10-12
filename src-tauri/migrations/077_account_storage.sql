@@ -88,3 +88,21 @@ BEGIN
   INSERT INTO account_sync_removed_files(lane, path, created_at)
     VALUES ('staging', old.id || '.part', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
 END;
+
+-- A file whose manifest another device removed: its replacement is on its way,
+-- so this device does not send the file as a new recording meanwhile.
+-- at is unix seconds.
+CREATE TABLE IF NOT EXISTS account_manifest_waits (
+  artifact_id TEXT PRIMARY KEY,
+  at INTEGER NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS account_file_manifests_awaited AFTER DELETE ON account_file_manifests
+WHEN (SELECT applying FROM account_sync_control WHERE id = 1) = 1
+BEGIN
+  INSERT OR REPLACE INTO account_manifest_waits(artifact_id, at)
+    VALUES (old.artifact_id, CAST(strftime('%s', 'now') AS INTEGER));
+END;
+CREATE TRIGGER IF NOT EXISTS account_file_manifests_arrived AFTER INSERT ON account_file_manifests
+BEGIN
+  DELETE FROM account_manifest_waits WHERE artifact_id = new.artifact_id;
+END;

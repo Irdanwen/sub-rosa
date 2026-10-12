@@ -284,8 +284,13 @@ async fn session(s: &Service, h: &HeaderMap, mutating: bool) -> Result<Session> 
             .and_then(|a| a.strip_prefix("Bearer "))
             .ok_or(Error::Unauthorized)?;
         let session = assert_account(h, s.authenticate(token, false).await?)?;
-        if let (Some(device), Some(version)) = (session.device_id, app_version(h)) {
-            s.repository.note_app_version(device, version).await?;
+        // An app that announces nothing is older than the header: noted as
+        // such, so a device that went back to an older app holds newer file
+        // formats back again.
+        if let Some(device) = session.device_id {
+            s.repository
+                .note_app_version(device, app_version(h))
+                .await?;
         }
         return Ok(session);
     }
@@ -309,8 +314,8 @@ async fn session(s: &Service, h: &HeaderMap, mutating: bool) -> Result<Session> 
     assert_account(h, s.authenticate(token, true).await?)
 }
 /// The version a native app announces with `X-Subrosa-Version`: plain
-/// `major.minor.patch`, or nothing. A malformed value is ignored rather
-/// than refused, since it only ever gates a newer file format.
+/// `major.minor.patch`, or nothing. A malformed value counts as nothing
+/// rather than a refusal, since it only ever gates a newer file format.
 fn app_version(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get("x-subrosa-version")?.to_str().ok()?;
     let parts: Vec<&str> = value.split('.').collect();

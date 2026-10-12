@@ -505,12 +505,38 @@ pub(super) async fn upload_one(
     // is never half text, half binary. Binary once every app reads it
     // (ADR-0110), with chunk ids derived from the manifest.
     let mut envelope: i64 = row.get("envelope");
-    if offset == 0 && pending.is_none() && chunks.is_empty() && storage::format_v2(pool).await? {
+    // A recording never: its compact form goes through `compaction`, and a
+    // derived chunk id is what marks a file as compact.
+    if offset == 0
+        && pending.is_none()
+        && chunks.is_empty()
+        && source_kind != "audio"
+        && storage::format_v2(pool).await?
+    {
         envelope = 2;
         query("UPDATE account_file_uploads SET envelope=2 WHERE artifact_id=?")
             .bind(&artifact)
             .execute(pool)
             .await?;
+    }
+    // The gate closed under a binary upload (an older app joined): it starts
+    // over in the envelope every app reads, and what it sent is released.
+    if envelope == 2 && !storage::format_v2(pool).await? {
+        let mut tx = pool.begin().await?;
+        for blob_id in chunks.iter().map(|c| c.id.clone()) {
+            query("INSERT OR IGNORE INTO account_blob_releases(blob_id,reason,not_before) VALUES(?,'restarted upload',?)")
+                .bind(blob_id)
+                .bind(storage::now() + 3600)
+                .execute(&mut *tx)
+                .await?;
+        }
+        query("UPDATE account_file_uploads SET manifest_id=?,next_offset=0,chunks_json='[]',pending_blob_id=NULL,pending_ciphertext=NULL,pending_bytes=NULL,pending_digest=NULL,envelope=1 WHERE artifact_id=?")
+            .bind(uuid::Uuid::new_v4().to_string())
+            .bind(&artifact)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        return Ok(());
     }
     let (id, ciphertext, size, hash) = if let Some(id) = pending {
         (

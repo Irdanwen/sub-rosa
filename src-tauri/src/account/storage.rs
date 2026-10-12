@@ -16,11 +16,12 @@ const DELETION_DELAY_SECONDS: i64 = 86_400;
 /// A chunk no manifest names is left alone for this long: it may be another
 /// device's upload whose manifest has not been sent yet.
 const SWEEP_GRACE_DAYS: i64 = 7;
+/// And once found unnamed, it waits another hour, then goes only from a pass
+/// that has just read the whole journal: a manifest sent meanwhile names it.
+const SWEEP_DELAY_SECONDS: i64 = 3600;
 const SWEEP_EVERY_SECONDS: i64 = 86_400;
 const GATE_EVERY_SECONDS: i64 = 600;
 const USAGE_EVERY_SECONDS: i64 = 600;
-/// A device unseen for this long does not hold the newer format back.
-const ACTIVE_DAYS: i64 = 30;
 /// The first version that reads binary chunks and compact copies.
 const FORMAT_V2_SINCE: (u64, u64, u64) = (1, 91, 0);
 /// Above this share of the quota the sweep stops waiting for its day.
@@ -101,22 +102,14 @@ fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
 }
 
 /// The devices that hold the newer format back: native apps, not revoked,
-/// seen in the last month, that announce no version or an older one. A
+/// that announce no version or an older one, however long ago they were
+/// seen. A laptop closed for two months may still hold a manifest it has not
+/// sent, and only an app that checks its chunks first may meet the sweep. A
 /// browser is left out: the site is published with every release.
-pub(super) fn format_blockers(
-    devices: &[Value],
-    now: chrono::DateTime<chrono::Utc>,
-) -> Vec<String> {
-    let horizon = now - chrono::Duration::days(ACTIVE_DAYS);
+pub(super) fn format_blockers(devices: &[Value]) -> Vec<String> {
     devices
         .iter()
         .filter(|d| d["kind"].as_str() != Some("browser") && d["revoked_at"].is_null())
-        .filter(|d| {
-            d["last_seen_at"]
-                .as_str()
-                .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-                .is_some_and(|at| at >= horizon)
-        })
         .filter(|d| {
             !d["app_version"]
                 .as_str()
@@ -138,7 +131,7 @@ async fn refresh_gate(pool: &SqlitePool, s: &Session) -> Result<(), AppError> {
     }
     let devices = call(s, reqwest::Method::GET, "/api/v1/devices", None).await?;
     let devices = devices.as_array().cloned().unwrap_or_default();
-    let blockers = format_blockers(&devices, chrono::Utc::now());
+    let blockers = format_blockers(&devices);
     // The list always holds the device asking; empty, it says nothing.
     let open = !devices.is_empty() && blockers.is_empty();
     query(
@@ -199,6 +192,21 @@ pub(super) async fn referenced(
         .await?
     {
         kept.insert(row.get::<String, _>("pending_blob_id"));
+    }
+    // Every manifest the journal holds as live, not only the rows here: two
+    // copies of one file may both be live for a while (ADR-0110), and this
+    // device keeps one row per file.
+    for row in query("SELECT i.* FROM account_sync_heads h JOIN account_sync_inbox i ON i.revision=h.revision WHERE h.kind='artifact' AND i.deleted=0")
+        .fetch_all(pool)
+        .await?
+    {
+        let body = sync::verify(s, key, &inbox_change(&row))
+            .map_err(|_| error("sync_card_unreadable"))?;
+        if body["table"] == "account_file_manifests" {
+            if let Some(chunks) = body["row"]["chunks_json"].as_str() {
+                kept.extend(chunk_ids(chunks));
+            }
+        }
     }
     for row in query(
         "SELECT * FROM account_sync_conflicts WHERE resolved=0 AND kind='artifact' AND deleted=0",
@@ -344,7 +352,7 @@ async fn plan_sweep(
             if old && blob["shared"] != true && !kept.contains(id) {
                 planned += query("INSERT OR IGNORE INTO account_blob_releases(blob_id,reason,not_before) VALUES(?,'unnamed chunk',?)")
                     .bind(id)
-                    .bind(now())
+                    .bind(now() + SWEEP_DELAY_SECONDS)
                     .execute(&mut *tx)
                     .await?
                     .rows_affected() as usize;
@@ -504,7 +512,7 @@ pub(super) async fn room(
             plan_sweep(pool, s, key, pressing).await?;
         }
     }
-    let mut freed = if settled {
+    let mut freed = if settled && caught_up {
         drain(pool, s, key, deadline).await?
     } else {
         0
@@ -713,10 +721,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_device_holds_the_new_format_back_only_while_it_is_active_and_older() {
-        let now = chrono::Utc::now();
-        let seen = (now - chrono::Duration::days(2)).to_rfc3339();
-        let long_ago = (now - chrono::Duration::days(45)).to_rfc3339();
+    fn every_app_not_revoked_holds_the_new_format_back_until_it_is_current() {
+        let seen = chrono::Utc::now().to_rfc3339();
+        let long_ago = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
         let devices = vec![
             json!({"name":"Mac","kind":"native","revoked_at":null,"last_seen_at":seen,"app_version":"1.91.0"}),
             json!({"name":"Phone","kind":"native","revoked_at":null,"last_seen_at":seen,"app_version":"1.90.0"}),
@@ -726,8 +733,11 @@ mod tests {
             json!({"name":"Browser","kind":"browser","revoked_at":null,"last_seen_at":seen}),
             json!({"name":"Future","kind":"native","revoked_at":null,"last_seen_at":seen,"app_version":"2.0.1"}),
         ];
-        assert_eq!(format_blockers(&devices, now), vec!["Phone", "Tablet"]);
-        assert!(format_blockers(&devices[..1], now).is_empty());
+        assert_eq!(
+            format_blockers(&devices),
+            vec!["Phone", "Tablet", "Old laptop"]
+        );
+        assert!(format_blockers(&devices[..1]).is_empty());
     }
 
     #[test]
