@@ -233,7 +233,7 @@ ALTER SCHEMA public OWNER TO keycloak;
     for role, prefix in [("subrosa_runtime", "runtime"), ("subrosa_migrator", "migration")]:
         db = f"postgresql://{role}:{quote(value(prefix + '-password'), safe='')}@postgres:5432/subrosa?sslmode=verify-full&sslrootcert=/run/private/postgres-ca.crt"
         q = json.dumps
-        lines = ["bind = \"0.0.0.0:8088\"", f"public_url = {q(s['account_origin'])}", "development = false", f"database_url = {q(db)}", "account_quota_bytes = 5368709120", f"trusted_proxies = {json.dumps(proxies)}", "", "[oidc]", f"issuer = {q(s['identity_base'] + '/realms/subrosa')}", "client_id = \"subrosa-cloud\"", f"client_secret = {q(value('oidc-client-secret'))}"]
+        lines = ["bind = \"0.0.0.0:8088\"", f"public_url = {q(s['account_origin'])}", "development = false", f"database_url = {q(db)}", "account_quota_bytes = 5368709120", "journal_reserve_bytes = 268435456", f"trusted_proxies = {json.dumps(proxies)}", "", "[oidc]", f"issuer = {q(s['identity_base'] + '/realms/subrosa')}", "client_id = \"subrosa-cloud\"", f"client_secret = {q(value('oidc-client-secret'))}"]
         for section, storage in [("storage", op["storage"]), ("deletion_ledger.storage", op["deletion_ledger_storage"])]:
             if section.startswith("deletion"):
                 lines += ["", "[deletion_ledger]", 'active_key_id = "v1"', "[deletion_ledger.signing_keys]", f"v1 = {q(value('ledger-signing-key'))}"]
