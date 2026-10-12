@@ -40,7 +40,7 @@ describe("what a shared link of a public page shows", () => {
       page: "/downloads",
       locale: "fr",
       base: "/subrosa/",
-      origin: "https://furetier.com",
+      origin: siteOrigin("/subrosa/"),
       title: "Télécharger · Sub Rosa",
       description: "L’app pour Mac, Windows & Android",
     });
@@ -56,7 +56,7 @@ describe("what a shared link of a public page shows", () => {
   });
 
   it("lists every page in every language in the sitemap", () => {
-    const xml = sitemap(["/", "/downloads"], "/", "https://subrosa.furetier.com");
+    const xml = sitemap(["/", "/downloads"], "/", siteOrigin("/"));
     expect(xml).toContain("<loc>https://subrosa.furetier.com/fr/downloads</loc>");
     expect(xml.match(/<url>/g)).toHaveLength(12);
   });
