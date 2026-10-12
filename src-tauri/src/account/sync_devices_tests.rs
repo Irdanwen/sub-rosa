@@ -1917,3 +1917,35 @@ async fn a_recording_leaves_as_a_16_khz_copy_and_plays_on_the_other_device() {
     assert_eq!(reader.spec().channels, 1);
     assert!((reader.duration() as i64 - 48_000).abs() < 1_600);
 }
+
+#[tokio::test]
+async fn a_device_that_cannot_send_even_a_note_gives_back_its_own_unfinished_upload() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let mac = device(&service, "mac").await;
+    let here = place();
+    mac.studio_file(&here, 3_000_000, 6).await;
+    // Two of three chunks sent, then the account is full to the byte.
+    for _ in 0..2 {
+        files::upload_one(&mac.pool, &mac.session, &key, &here.paths, &here.gallery)
+            .await
+            .unwrap();
+    }
+    {
+        let mut j = service.journal.lock().await;
+        j.quota = Some(j.used);
+    }
+    let id = note();
+    mac.create_note(&id, "Must leave").await;
+    assert!(mac.sync(&key).await.unwrap().full);
+    assert!(mac.room(&key, true).await >= 2 * 1024 * 1024);
+    assert!(service.journal.lock().await.blobs.is_empty());
+    assert!(!mac.sync(&key).await.unwrap().full);
+    assert_eq!(mac.outbox(&id).await, 0);
+    // The upload starts over from its first byte, under a new manifest id.
+    assert_eq!(
+        mac.count("SELECT count(*) AS n FROM account_file_uploads WHERE next_offset=0 AND completed=0 AND ?<>''", "x")
+            .await,
+        1
+    );
+}

@@ -492,6 +492,8 @@ pub(super) async fn room(
     if let Err(e) = refresh_usage(pool, s, full).await {
         tracing::debug!(code=%e.code, "account storage not measured");
     }
+    // Room another device gave back lifts a hold at once, not ten minutes on.
+    lift_holds_with_room(pool).await?;
     if caught_up && files_settled(pool).await? {
         plan_deletions(pool, s, key).await?;
         if format_v2(pool).await? {
@@ -499,11 +501,74 @@ pub(super) async fn room(
             plan_sweep(pool, s, key, pressing).await?;
         }
     }
-    let freed = drain(pool, s, key, deadline).await?;
+    let mut freed = drain(pool, s, key, deadline).await?;
+    // Not even a note can leave and nothing else is ready to go: this
+    // device's own unfinished uploads are given back, and start over later.
+    // Text comes before a file half sent.
+    if freed == 0 && push_held(pool).await? && !releases_due(pool).await? {
+        freed = give_back_unfinished(pool, s, deadline).await?;
+    }
     if freed > 0 {
         release_holds(pool).await?;
         refresh_usage(pool, s, true).await.ok();
         super::poke();
+    }
+    Ok(freed)
+}
+
+/// Lifts a hold the last reading shows room for: a note needs little, a
+/// file chunk a megabyte under the file limit.
+async fn lift_holds_with_room(pool: &SqlitePool) -> Result<(), AppError> {
+    query("UPDATE account_storage_state SET push_held_until=0 WHERE id=1 AND quota_bytes>0 AND used_bytes+1048576<=quota_bytes")
+        .execute(pool)
+        .await?;
+    query("UPDATE account_storage_state SET files_held_until=0 WHERE id=1 AND quota_bytes>0 AND used_bytes+4194304<=quota_bytes-COALESCE(reserve_bytes,0)")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn releases_due(pool: &SqlitePool) -> Result<bool, AppError> {
+    Ok(
+        query("SELECT 1 FROM account_blob_releases WHERE not_before<=? LIMIT 1")
+            .bind(now())
+            .fetch_optional(pool)
+            .await?
+            .is_some(),
+    )
+}
+
+/// Releases the chunks this device's unfinished uploads sent, and starts
+/// them over under a new manifest id (so a derived chunk id is never asked
+/// for again while its release drains). No manifest names them yet, and
+/// no other device knows them.
+async fn give_back_unfinished(
+    pool: &SqlitePool,
+    s: &Session,
+    deadline: Instant,
+) -> Result<i64, AppError> {
+    let mut freed = 0;
+    for row in query("SELECT artifact_id,chunks_json,pending_blob_id FROM account_file_uploads WHERE completed=0 AND (next_offset>0 OR pending_blob_id IS NOT NULL)")
+        .fetch_all(pool)
+        .await?
+    {
+        let mut ids = chunk_ids(&row.get::<String, _>("chunks_json"));
+        ids.extend(row.get::<Option<String>, _>("pending_blob_id"));
+        for id in &ids {
+            if Instant::now() >= deadline {
+                return Ok(freed);
+            }
+            match call(s, reqwest::Method::DELETE, &format!("/api/v1/blobs/{id}"), None).await {
+                Ok(answer) => freed += answer["freed_bytes"].as_i64().unwrap_or(0),
+                Err(e) if matches!(e.code.as_str(), "vault_not_found" | "account_conflict") => {}
+                Err(e) => return Err(e),
+            }
+        }
+        query("UPDATE account_file_uploads SET manifest_id=?,next_offset=0,chunks_json='[]',pending_blob_id=NULL,pending_ciphertext=NULL,pending_bytes=NULL,pending_digest=NULL,envelope=1 WHERE artifact_id=?")
+            .bind(uuid::Uuid::new_v4().to_string())
+            .bind(row.get::<String, _>("artifact_id"))
+            .execute(pool)
+            .await?;
     }
     Ok(freed)
 }
@@ -581,7 +646,7 @@ pub(super) async fn status(pool: &SqlitePool) -> Result<StorageStatus, AppError>
             _ => {}
         }
     }
-    status.largest = query("SELECT m.artifact_id,m.source_kind,m.bytes,COALESCE(f.file_name,n.title,r.file_name) AS label,a.note_id FROM account_file_manifests m LEFT JOIN account_studio_files f ON f.id=m.artifact_id LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN notes n ON n.id=a.note_id LEFT JOIN assistant_references r ON r.id=m.artifact_id ORDER BY m.bytes DESC LIMIT 10")
+    status.largest = query("SELECT m.artifact_id,m.source_kind,m.bytes,COALESCE(n.title,substr(f.prompt,1,80),r.file_name,f.file_name) AS label,a.note_id FROM account_file_manifests m LEFT JOIN account_studio_files f ON f.id=m.artifact_id LEFT JOIN audio_artifacts a ON a.id=m.artifact_id LEFT JOIN notes n ON n.id=a.note_id LEFT JOIN assistant_references r ON r.id=m.artifact_id ORDER BY m.bytes DESC LIMIT 10")
         .fetch_all(pool)
         .await?
         .into_iter()

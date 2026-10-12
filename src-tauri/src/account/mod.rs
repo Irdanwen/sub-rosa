@@ -141,7 +141,7 @@ fn error(code: &str) -> AppError {
             "share_temporary" => "A temporary chat cannot be shared.",
             "share_empty" => "This conversation has nothing to share yet.",
             "account_storage_full" => {
-                "Your account storage is full. Your work is safe on this device and will sync once space is freed."
+                "Your account storage is full. Your changes are safe on this device and will sync once space is freed."
             }
             _ => "The account operation could not be completed.",
         },
