@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { SETTINGS_TABS } from "../components/settings/AppSettings";
-import { SETTINGS_SIDEBAR_GROUPS } from "../components/sidebar/Sidebar";
+import { SETTINGS_GROUPS as SETTINGS_SIDEBAR_GROUPS } from "../components/settings/settings-index";
 
 /**
- * Settings live in two lists that have to agree.
+ * Settings used to live in two lists that had to agree; since 2026-10-12 the
+ * flat list is derived from the groups (settings-index.tsx), and these
+ * checks keep the derivation honest.
  *
  * `SETTINGS_TABS` is what the settings page can render; `SETTINGS_SIDEBAR_GROUPS`
  * is what the sidebar offers, and it is now also what the command palette
@@ -48,6 +50,13 @@ describe("the settings index", () => {
     // that adding a tab is a decision taken here, not a number drifting.
     expect(grouped).toHaveLength(SETTINGS_TABS.length);
     expect(SETTINGS_TABS).toHaveLength(24);
+  });
+
+  it("keeps four groups a person reads, and folds only Advanced (ADR-0110)", () => {
+    expect(SETTINGS_SIDEBAR_GROUPS.filter((group) => !group.folded)).toHaveLength(4);
+    expect(
+      SETTINGS_SIDEBAR_GROUPS.filter((group) => group.folded).map((group) => group.id),
+    ).toEqual(["advanced"]);
   });
 
   it("gives every tab a label a person would type", () => {
