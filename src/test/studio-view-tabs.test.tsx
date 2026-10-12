@@ -49,7 +49,7 @@ vi.mock("../components/studio/WorkflowStudio", () => ({
 beforeEach(() => window.localStorage.clear());
 
 describe("the studio's tabs", () => {
-  it("opens on the image desk, with five tabs (ADR-0110)", () => {
+  it("opens on the image desk, with five tabs (ADR-0110), Films not Projects", () => {
     render(<StudioView />);
     expect(screen.getByText("image tab")).toBeInTheDocument();
     const tabs = screen.getByRole("group", { name: "Studio section" });
@@ -57,10 +57,10 @@ describe("the studio's tabs", () => {
       "Image",
       "Video",
       "Audio",
-      "Projects",
+      "Films",
       "Gallery",
     ]);
-    fireEvent.click(screen.getAllByRole("button", { name: "Projects" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Films" }));
     expect(screen.getByText("project workspace")).toBeInTheDocument();
   });
 

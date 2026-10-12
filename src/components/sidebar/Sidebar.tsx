@@ -29,6 +29,7 @@ import { IconToolbox } from "central-icons/IconToolbox";
 import { IconPlusMedium } from "central-icons/IconPlusMedium";
 import { IconProjects } from "central-icons/IconProjects";
 import { IconHeartBeat } from "central-icons/IconHeartBeat";
+import { IconBank } from "central-icons/IconBank";
 import { IconConnectors1 } from "central-icons/IconConnectors1";
 import { IconServer1 } from "central-icons/IconServer1";
 import { IconShield } from "central-icons/IconShield";
@@ -83,7 +84,8 @@ import type { SettingsTab } from "../settings/AppSettings";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DotSpinner } from "../DotSpinner";
 import { combineSourceAudioLevels, Waveform } from "../recorder/Waveform";
-import { PersonalDataNav } from "../personal-data/PersonalDataNav";
+import { requestStudioTab } from "../studio/studio-keys";
+import { SidebarCreateMenu } from "./SidebarCreateMenu";
 
 const NO_AGENT_SESSIONS: HermesSessionInfo[] = [];
 
@@ -122,6 +124,8 @@ type SidebarProps = {
   onOpenMoveDialog: (noteId: string) => void;
   onRemoveNoteFromFolder: (noteId: string, folderId: string) => void;
   onNewAgentSession: () => void;
+  /** Start a new note, from the New menu. */
+  onCreateNote?: () => void;
   /** Open the file picker to import a recording. Absent on shells that have
    * no picker, in which case the command is simply not offered. */
   onImportMedia?: () => void;
@@ -367,6 +371,7 @@ export function Sidebar({
   onOpenMoveDialog,
   onRemoveNoteFromFolder,
   onNewAgentSession,
+  onCreateNote,
   onImportMedia,
   onSelectAgentSession,
   archivedAgentSessionIds,
@@ -563,7 +568,7 @@ export function Sidebar({
     const quickItems: CommandPaletteItem[] = [
       {
         id: "quick:new-session",
-        label: t("New session"),
+        label: t("New chat"),
         icon: <IconPlusMedium size={15} />,
         searchText: normalizeCommandQuery("new session agent"),
         action: handleNewAgentSession,
@@ -581,11 +586,42 @@ export function Sidebar({
             },
           ]
         : []),
+      ...(onCreateNote
+        ? [
+            {
+              id: "quick:new-note",
+              label: t("New note"),
+              icon: <IconNoteText size={15} />,
+              searchText: normalizeCommandQuery("new note write create"),
+              action: onCreateNote,
+            },
+          ]
+        : []),
+      {
+        id: "quick:new-image",
+        label: t("New image"),
+        icon: <IconSparkle3 size={15} />,
+        searchText: normalizeCommandQuery("new image picture generate create studio"),
+        action: () => {
+          requestStudioTab("image");
+          onChangeView("studio");
+        },
+      },
+      {
+        id: "quick:new-video",
+        label: t("New video"),
+        icon: <IconSparkle3 size={15} />,
+        searchText: normalizeCommandQuery("new video clip shot generate create studio"),
+        action: () => {
+          requestStudioTab("video");
+          onChangeView("studio");
+        },
+      },
       {
         id: "quick:meetings",
-        label: t("Go to Meeting notes"),
+        label: t("Go to Notes"),
         icon: <IconNoteText size={15} />,
-        searchText: normalizeCommandQuery("meeting notes meetings go to"),
+        searchText: normalizeCommandQuery("notes meeting notes meetings go to"),
         action: () => onChangeView("notes"),
       },
       {
@@ -610,11 +646,39 @@ export function Sidebar({
         action: () => onChangeView("studio"),
       },
       {
+        id: "quick:library",
+        label: t("Go to Library"),
+        icon: <IconLibrary size={15} />,
+        searchText: normalizeCommandQuery("library saved images files go to"),
+        action: () => onChangeView("library"),
+      },
+      {
+        id: "quick:today",
+        label: t("Go to Today"),
+        icon: <IconSunrise size={15} />,
+        searchText: normalizeCommandQuery("today brief agenda go to"),
+        action: () => onChangeView("today"),
+      },
+      {
         id: "quick:routines",
         label: t("Go to Routines"),
         icon: <IconZap size={15} />,
-        searchText: normalizeCommandQuery("routines go to"),
+        searchText: normalizeCommandQuery("routines scheduled go to"),
         action: () => onChangeView("routines"),
+      },
+      {
+        id: "quick:health",
+        label: t("Go to Health"),
+        icon: <IconHeartBeat size={15} />,
+        searchText: normalizeCommandQuery("health personal data go to"),
+        action: () => onChangeView("health"),
+      },
+      {
+        id: "quick:finances",
+        label: t("Go to Finances"),
+        icon: <IconBank size={15} />,
+        searchText: normalizeCommandQuery("finances money bank personal data go to"),
+        action: () => onChangeView("finances"),
       },
     ].filter(matches);
 
@@ -722,6 +786,7 @@ export function Sidebar({
     searchHits,
     notes,
     onChangeView,
+    onCreateNote,
     onImportMedia,
     onSelectAgentSession,
     onSelectNote,
@@ -1106,110 +1171,88 @@ export function Sidebar({
           </label>
 
           <nav className="sidebar-nav" aria-label={t("Primary")}>
-            <button
-              type="button"
-              className="sidebar-nav-item"
-              data-active={newAgentSessionActive || undefined}
-              aria-current={newAgentSessionActive ? "page" : undefined}
-              onClick={handleNewAgentSession}
-            >
-              <span className="sidebar-nav-icon">
-                <IconPlusMedium size={15} />
-              </span>
-              <span className="sidebar-nav-label">{t("New session")}</span>
-              <kbd className="sidebar-nav-shortcut" aria-hidden="true">
-                {newSessionShortcut}
-              </kbd>
-            </button>
-            <button
-              type="button"
-              className="sidebar-nav-item"
-              data-active={activeView === "meetings" || activeView === "notes"}
-              aria-current={
-                activeView === "meetings" || activeView === "notes" ? "page" : undefined
-              }
-              onClick={() => {
-                onChangeView("notes");
-              }}
-            >
-              <span className="sidebar-nav-icon">
-                <IconNoteText size={15} />
-              </span>
-              <span className="sidebar-nav-label">{t("Meeting notes")}</span>
-            </button>
-            <button
-              type="button"
-              className="sidebar-nav-item"
-              data-active={activeView === "folders"}
-              aria-current={activeView === "folders" ? "page" : undefined}
-              onClick={() => onChangeView("folders")}
-            >
-              <span className="sidebar-nav-icon">
-                <IconProjects size={15} />
-              </span>
-              <span className="sidebar-nav-label">{t("Projects")}</span>
-            </button>
-            <button
-              type="button"
-              className="sidebar-nav-item"
-              data-active={activeView === "dictation"}
-              aria-current={activeView === "dictation" ? "page" : undefined}
-              onClick={() => onChangeView("dictation")}
-            >
-              <span className="sidebar-nav-icon">
-                <IconMicrophone size={16} />
-              </span>
-              <span className="sidebar-nav-label">{t("Dictation")}</span>
-            </button>
-            <button
-              type="button"
-              className="sidebar-nav-item"
-              data-active={activeView === "studio"}
-              aria-current={activeView === "studio" ? "page" : undefined}
-              onClick={() => onChangeView("studio")}
-            >
-              <span className="sidebar-nav-icon">
-                <IconSparkle3 size={16} />
-              </span>
-              <span className="sidebar-nav-label">{t("Studio")}</span>
-            </button>
-            <button
-              type="button"
-              className="sidebar-nav-item"
-              data-active={activeView === "library"}
-              aria-current={activeView === "library" ? "page" : undefined}
-              onClick={() => onChangeView("library")}
-            >
-              <span className="sidebar-nav-icon">
-                <IconLibrary size={16} />
-              </span>
-              <span className="sidebar-nav-label">{t("Library")}</span>
-            </button>
-            <button
-              type="button"
-              className="sidebar-nav-item"
-              data-active={activeView === "routines"}
-              aria-current={activeView === "routines" ? "page" : undefined}
-              onClick={() => onChangeView("routines")}
-            >
-              <span className="sidebar-nav-icon">
-                <IconZap size={16} />
-              </span>
-              <span className="sidebar-nav-label">{t("Routines")}</span>
-            </button>
-            <button
-              type="button"
-              className="sidebar-nav-item"
-              data-active={activeView === "today"}
-              aria-current={activeView === "today" ? "page" : undefined}
-              onClick={() => onChangeView("today")}
-            >
-              <span className="sidebar-nav-icon">
-                <IconSunrise size={16} />
-              </span>
-              <span className="sidebar-nav-label">{t("Today")}</span>
-            </button>
-            <PersonalDataNav activeView={activeView} onChangeView={onChangeView} />
+            <div className="sidebar-new">
+              <button
+                type="button"
+                className="sidebar-nav-item sidebar-new-chat"
+                data-active={newAgentSessionActive || undefined}
+                aria-current={newAgentSessionActive ? "page" : undefined}
+                onClick={handleNewAgentSession}
+              >
+                <span className="sidebar-nav-icon">
+                  <IconPlusMedium size={15} />
+                </span>
+                <span className="sidebar-nav-label">{t("New chat")}</span>
+                <kbd className="sidebar-nav-shortcut" aria-hidden="true">
+                  {newSessionShortcut}
+                </kbd>
+              </button>
+              <SidebarCreateMenu
+                onCreateNote={onCreateNote}
+                onImportMedia={onImportMedia}
+                onOpenStudio={(tab) => {
+                  requestStudioTab(tab);
+                  onChangeView("studio");
+                }}
+              />
+            </div>
+            {/* Six places, not ten (ADR-0110): Health and Finances are read from
+                the Library, and Routines, which schedule what Today shows, from Today. */}
+            {(
+              [
+                {
+                  view: "notes",
+                  label: t("Notes"),
+                  icon: <IconNoteText size={15} />,
+                  active: activeView === "meetings" || activeView === "notes",
+                },
+                {
+                  view: "folders",
+                  label: t("Projects"),
+                  icon: <IconProjects size={15} />,
+                  active: activeView === "folders",
+                },
+                {
+                  view: "dictation",
+                  label: t("Dictation"),
+                  icon: <IconMicrophone size={16} />,
+                  active: activeView === "dictation",
+                },
+                {
+                  view: "studio",
+                  label: t("Studio"),
+                  icon: <IconSparkle3 size={16} />,
+                  active: activeView === "studio",
+                },
+                {
+                  view: "library",
+                  label: t("Library"),
+                  icon: <IconLibrary size={16} />,
+                  active:
+                    activeView === "library" ||
+                    activeView === "health" ||
+                    activeView === "finances",
+                },
+                {
+                  view: "today",
+                  label: t("Today"),
+                  icon: <IconSunrise size={16} />,
+                  active: activeView === "today" || activeView === "routines",
+                },
+              ] as const
+            ).map((place) => (
+              <button
+                key={place.view}
+                type="button"
+                className="sidebar-nav-item"
+                data-active={place.active}
+                aria-current={place.active ? "page" : undefined}
+                onClick={() => onChangeView(place.view)}
+              >
+                <span className="sidebar-nav-icon">{place.icon}</span>
+                <span className="sidebar-nav-label">{place.label}</span>
+              </button>
+            ))}
           </nav>
 
           {pinnedAgentSessions.length > 0 ? (
@@ -1254,7 +1297,7 @@ export function Sidebar({
                 className="section-title-label section-title-open"
                 onClick={() => onChangeView("agent-sessions")}
               >
-                {t("Sessions")}
+                {t("Chats")}
               </button>
               {/* Same destination as the header — the hover affordance just
                * makes the "this opens a list" behavior legible. */}
@@ -1290,7 +1333,7 @@ export function Sidebar({
                 ) : (
                   <div className="sidebar-empty">
                     {agentSessions.length === 0
-                      ? t("No sessions yet. Press ⌘N to start one.")
+                      ? t("No chats yet. Press ⌘N to start one.")
                       : filteredAgentSessions.length === 0
                         ? t("No matches")
                         : t("No other sessions")}

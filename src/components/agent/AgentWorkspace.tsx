@@ -9206,7 +9206,7 @@ function AgentSessionBar({
               <span className="detail-breadcrumb-separator" aria-hidden>
                 /
               </span>
-              <span className="detail-breadcrumb-current">{t("New session")}</span>
+              <span className="detail-breadcrumb-current">{t("New chat")}</span>
             </li>
           ) : null}
         </ol>

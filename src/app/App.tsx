@@ -30,9 +30,7 @@ import { startLinkIngest } from "../lib/tauri";
 import { OPEN_NOTE_FROM_CHAT_EVENT } from "../lib/chat-blocks-nav";
 import { ASK_ABOUT_SELECTION_EVENT } from "../lib/ask-selection";
 import { CanvasHost } from "../components/canvas/CanvasHost";
-import { LibraryView } from "../components/library/LibraryView";
-import { FinancesView } from "../components/personal-data/FinancesView";
-import { HealthView } from "../components/personal-data/HealthView";
+import { LibraryPage, PersonalDataPage } from "./library-pages";
 import { FILM_FROM_NOTE_EVENT } from "../lib/film-from-note";
 import { STUDIO_FILM_NOTE_KEY, STUDIO_TAB_STORAGE_KEY } from "../components/studio/studio-keys";
 import { requestRetouch } from "../lib/studio/retouch/jobs";
@@ -117,7 +115,7 @@ import {
   type LiveTranscriptEventDto,
 } from "../lib/tauri";
 import { playRecordingSound, preloadRecordingSounds } from "../lib/recording-sounds";
-import { isMacLikePlatform, isPrimaryShortcut } from "../lib/platform";
+import { isPrimaryShortcut } from "../lib/platform";
 import { mergeSourceReadiness } from "../lib/source-readiness";
 import { MEETING_START_TRANSCRIPTION_EVENT } from "../lib/events";
 import {
@@ -259,11 +257,10 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const [sidebarTransition, setSidebarTransition] = useState<"none" | "smooth">("none");
-  // macOS launches on a fresh agent session. The Windows installer does not
-  // bundle Hermes yet, so Windows starts on meeting notes instead of promising
-  // a turnkey agent runtime.
+  // Every platform launches on a fresh chat: the Windows installer bundles
+  // Hermes too (scripts/bundle-hermes-runtime-windows.ps1), so the arrival
+  // is the same everywhere.
   const [activeView, setActiveView] = useState<SidebarView>(() => {
-    if (!isMacLikePlatform()) return "notes";
     markAgentNewSessionPending();
     return "agent";
   });
@@ -272,10 +269,8 @@ export function App() {
   // Browser-style tabs. Each tab is a saved navigation snapshot; the active tab
   // mirrors live navigation (so a single tab behaves exactly like before),
   // while switching or opening a tab restores its snapshot. The first tab
-  // matches the launch view (agent hero on mac, notes elsewhere).
-  const [tabs, setTabs] = useState<Tab[]>(() => [
-    { id: makeTabId(), nav: { view: isMacLikePlatform() ? "agent" : "notes" } },
-  ]);
+  // matches the launch view, the chat's hero.
+  const [tabs, setTabs] = useState<Tab[]>(() => [{ id: makeTabId(), nav: { view: "agent" } }]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0]!.id);
   const tabsRef = useRef(tabs);
   const activeTabIdRef = useRef(activeTabId);
@@ -2924,6 +2919,7 @@ export function App() {
           setActiveAgentSession(undefined);
           setActiveView("agent");
         }}
+        onCreateNote={() => void handleCreateNote(null)}
         onImportMedia={() =>
           // From the notes list the import lands in that list (no project);
           // from a project it lands in that project.
@@ -3074,13 +3070,11 @@ export function App() {
               ) : activeView === "studio" ? (
                 <StudioView />
               ) : activeView === "library" ? (
-                <LibraryView header={<h1 className="library-view-title">{t("Library")}</h1>} />
-              ) : activeView === "health" ? (
-                <HealthView header={<h1 className="personal-view-title">{t("Health")}</h1>} />
-              ) : activeView === "finances" ? (
-                <FinancesView header={<h1 className="personal-view-title">{t("Finances")}</h1>} />
+                <LibraryPage onOpen={setActiveView} />
+              ) : activeView === "health" || activeView === "finances" ? (
+                <PersonalDataPage view={activeView} onBack={() => setActiveView("library")} />
               ) : activeView === "today" ? (
-                <TodayView />
+                <TodayView onOpenRoutines={() => setActiveView("routines")} />
               ) : activeView === "routines" ? (
                 <RoutinesView
                   onCreateRoutine={(prompt) => {

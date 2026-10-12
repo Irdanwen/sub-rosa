@@ -247,7 +247,7 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
             onClick={onNewSession}
           >
             <IconPlusMedium size={13} />
-            {t("New session")}
+            {t("New chat")}
             <kbd className="primary-action-kbd" aria-hidden>
               {newSessionShortcut}
             </kbd>

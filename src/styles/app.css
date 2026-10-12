@@ -24979,3 +24979,116 @@ input:focus-visible,
   color: var(--popover-foreground);
   box-shadow: var(--shadow-lg);
 }
+
+/* --- The top of the sidebar: a new chat, and what else can be started ---- */
+.sidebar-new {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-px);
+}
+
+.sidebar-new-chat {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-new-more {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+
+.sidebar-new-more:hover,
+.sidebar-new-more[aria-expanded="true"] {
+  background: var(--sidebar-accent);
+  color: var(--foreground);
+}
+
+.sidebar-create-menu {
+  margin: 0;
+  padding: var(--sp-1);
+  list-style: none;
+}
+
+.sidebar-create-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 30px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--popover-foreground);
+  font-size: var(--fs-md);
+  text-align: left;
+}
+
+.sidebar-create-item:hover,
+.sidebar-create-item:focus-visible {
+  background: var(--sidebar-accent);
+}
+
+/* --- A page header's quiet links (Library → Health, Today → Routines) ---- */
+.library-view-head,
+.personal-view-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.personal-view-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+.personal-view-head .personal-view-title {
+  margin: 0;
+}
+
+.library-view-head .library-view-title {
+  flex: 1;
+}
+
+.page-header-links {
+  display: flex;
+  gap: var(--sp-1);
+  margin-inline-start: auto;
+}
+
+.page-header-links > button {
+  min-height: 28px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.page-header-links > button:hover {
+  background: var(--sidebar-accent);
+  color: var(--foreground);
+}
+
+.library-view-head .page-header-links {
+  margin-top: var(--sp-6);
+  margin-inline-end: var(--sp-4);
+}

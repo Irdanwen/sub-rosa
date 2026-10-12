@@ -6,10 +6,11 @@
 // Five tabs (ADR-0110). Image, Video and Audio render on the desk: a dark
 // room with the scene, the dock and an inspector. Retouch, Compose, Upscale
 // and Cutout are tools of Image; the Bible, the montage and the workflows
-// live in Projects.
+// live in Films. The tab says Films, not Projects: a project is a chat
+// project (ADR-0085), and the sidebar lists those under that name.
 
 import { t } from "../../lib/i18n";
-import { STUDIO_TAB_STORAGE_KEY } from "./studio-keys";
+import { OPEN_STUDIO_TAB_EVENT, STUDIO_TAB_STORAGE_KEY } from "./studio-keys";
 import { useCallback, useEffect, useState } from "react";
 import { recoverableView } from "../../app/recoverable-view";
 import type { ChainShot } from "../../lib/studio/chain";
@@ -141,6 +142,17 @@ export function StudioView() {
   const [pendingProduction, setPendingProduction] = useState<string | undefined>(undefined);
   const clearPendingProduction = useCallback(() => setPendingProduction(undefined), []);
 
+  // The shell's "New image" and "New video" open the matching desk.
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const place = studioPlaceFor((event as CustomEvent<string>).detail);
+      setTab(place.tab);
+      if (place.tab === "image") setImageTool(place.tool ?? "create");
+    };
+    window.addEventListener(OPEN_STUDIO_TAB_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_STUDIO_TAB_EVENT, onOpen);
+  }, []);
+
   // Any surface showing an image can hand it to the Retouch tool.
   const [pendingRetouch, setPendingRetouch] = useState<string | undefined>(undefined);
   const clearPendingRetouch = useCallback(() => setPendingRetouch(undefined), []);
@@ -265,7 +277,7 @@ export function StudioView() {
           onValueChange={setSection}
           aria-label={t("Projects section")}
           options={[
-            { value: "films", label: t("Projects") },
+            { value: "films", label: t("Film projects") },
             { value: "bible", label: t("Bible") },
             { value: "assemble", label: t("Assemble") },
             { value: "workflows", label: t("Workflows") },
@@ -302,7 +314,7 @@ export function StudioView() {
               { value: "image", label: t("Image") },
               { value: "video", label: t("Video") },
               { value: "audio", label: t("Audio") },
-              { value: "projects", label: t("Projects") },
+              { value: "projects", label: t("Films") },
               { value: "gallery", label: t("Gallery") },
             ]}
           />
