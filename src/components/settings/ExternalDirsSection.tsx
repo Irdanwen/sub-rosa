@@ -1,4 +1,6 @@
 import { t } from "../../lib/i18n";
+import { EmptyState, LoadFailed } from "../ui/EmptyState";
+import { ShimmerRows } from "../ui/Shimmer";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
@@ -158,21 +160,25 @@ export function ExternalDirsView({
         <div className="external-dirs-body">
           {isUnavailable ? (
             <EmptyState
+              size="compact"
+              icon={<IconFolderShared size={22} />}
               title={t("Hermes is not running")}
               description={t(
                 "Start Hermes to see and manage the external skill directories for your sessions.",
               )}
             />
           ) : isErrored ? (
-            <ErrorState
+            <LoadFailed
+              title={t("Couldn't load directories")}
               message={state.error ?? t("Could not load external directories.")}
-              retryable={state.retryable}
-              onRetry={state.refresh}
+              onRetry={state.retryable ? state.refresh : undefined}
             />
           ) : isLoadingFirst ? (
-            <Loading />
+            <ShimmerRows count={2} />
           ) : !hasRows ? (
             <EmptyState
+              size="compact"
+              icon={<IconFolderShared size={22} />}
               title={t("No external directories")}
               description={t(
                 "Add a folder of shared skills to load them alongside your installed skills.",
@@ -333,57 +339,5 @@ function DirRow({
         </button>
       </div>
     </li>
-  );
-}
-
-function Loading() {
-  return (
-    <ul className="external-dirs-list" aria-hidden>
-      {[0, 1].map((index) => (
-        <li key={index} className="external-dir-row external-dir-skeleton">
-          <div className="external-dir-main">
-            <span className="external-dir-skeleton-line external-dir-skeleton-title" />
-            <span className="external-dir-skeleton-line" />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="external-dirs-empty" role="status">
-      <span className="external-dirs-empty-icon" aria-hidden>
-        <IconFolderShared size={22} />
-      </span>
-      <p className="external-dirs-empty-title">{title}</p>
-      <p className="external-dirs-empty-description">{description}</p>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  retryable,
-  onRetry,
-}: {
-  message: string;
-  retryable: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="external-dirs-error" role="alert">
-      <span className="external-dirs-empty-icon" aria-hidden>
-        <IconExclamationCircle size={22} />
-      </span>
-      <p className="external-dirs-empty-title">{t("Couldn't load directories")}</p>
-      <p className="external-dirs-empty-description">{message}</p>
-      {retryable ? (
-        <button type="button" className="external-dirs-retry" onClick={onRetry}>
-          {t("Try again")}
-        </button>
-      ) : null}
-    </div>
   );
 }

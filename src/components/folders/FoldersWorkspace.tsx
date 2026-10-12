@@ -31,7 +31,7 @@ import { NOTE_DND_MIME } from "../../lib/dnd";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { BreadcrumbBar } from "../ui/BreadcrumbBar";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { EmptyState } from "../ui/EmptyState";
+import { EmptyState, NoMatches } from "../ui/EmptyState";
 import { AddNotesToFolderDialog } from "./AddNotesToFolderDialog";
 import { AddSessionsToProjectDialog } from "./AddSessionsToProjectDialog";
 import { CreateFolderDialog } from "./CreateFolderDialog";
@@ -214,9 +214,10 @@ function FolderList({
         }
       />
     ) : (
-      <div className="folders-empty">
-        <p>{t("No projects match “{query}”.", { query: query.trim() })}</p>
-      </div>
+      <NoMatches
+        message={t("No projects match “{query}”.", { query: query.trim() })}
+        onClear={() => setQuery("")}
+      />
     );
 
   return (

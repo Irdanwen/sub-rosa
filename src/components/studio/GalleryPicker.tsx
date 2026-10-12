@@ -12,6 +12,8 @@
 // reference picker's "From gallery" sheet); this is that idea on desktop.
 
 import { t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { artifactDataUrl } from "../../lib/artifact-media";
 import {
@@ -144,9 +146,12 @@ export function GalleryPicker({
             <Spinner aria-label={t("Loading the gallery")} />
           </div>
         ) : artifacts.length === 0 ? (
-          <p className="studio-picker-empty">
-            {t("Nothing here yet. Media you generate, edit, or capture lands in the gallery.")}
-          </p>
+          <EmptyState
+            size="compact"
+            title={t(
+              "Nothing here yet. Media you generate, edit, or capture lands in the gallery.",
+            )}
+          />
         ) : (
           <>
             {bibleSections.map((section) => (
@@ -200,7 +205,7 @@ export function GalleryPicker({
             </div>
           </>
         )}
-        {error ? <p className="studio-error">{error}</p> : null}
+        {error ? <ErrorMessage>{error}</ErrorMessage> : null}
       </div>
     </Dialog>
   );

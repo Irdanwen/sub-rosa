@@ -82,3 +82,49 @@ describe("the design ratchet", () => {
     expect(stale).toEqual([]);
   });
 });
+
+// Waiting, nothing and failure have shared answers in src/components/ui/
+// (EmptyState, LoadFailed, NoMatches, ShimmerRows, ErrorMessage). A
+// component that names its own `*-empty` or `*-skeleton` class is drawing one
+// of those states by hand; the files that still do are listed under
+// adHocStates with their count, which may only fall.
+const components = import.meta.glob(["../components/**/*.tsx", "../app/**/*.tsx"], {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
+const AD_HOC_STATE = /^[a-z0-9-]+-(?:empty|skeleton)(?:-[a-z]+)*$/;
+
+function adHocStateCount(source: string) {
+  let count = 0;
+  for (const literal of source.matchAll(/className="([^"]+)"/g)) {
+    for (const name of literal[1].split(/\s+/)) {
+      if (AD_HOC_STATE.test(name) && !name.startsWith("empty-state")) count += 1;
+    }
+  }
+  return count;
+}
+
+describe("the state ratchet", () => {
+  const allowed: Record<string, number> = ratchet.adHocStates;
+  const files = Object.entries(components).map(([key, source]) => ({
+    path: repoPath(key),
+    count: adHocStateCount(source),
+  }));
+
+  it("draws no new empty or loading state by hand", () => {
+    const offenders = files
+      .filter(({ path, count }) => count > (allowed[path] ?? 0))
+      .map(({ path, count }) => `${path}: ${count} ad hoc states (allowed ${allowed[path] ?? 0})`);
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the recorded counts honest, so a migration lowers the ceiling", () => {
+    const counts = new Map(files.map(({ path, count }) => [path, count]));
+    const stale = Object.entries(allowed)
+      .filter(([path, ceiling]) => (counts.get(path) ?? 0) < ceiling)
+      .map(([path]) => path);
+    expect(stale).toEqual([]);
+  });
+});

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { errorCode } from "../../lib/errors";
 import { intlLocale, t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import {
   buildShotList,
   createNote,
@@ -1421,14 +1422,13 @@ export function ProjectStudio({ catalog }: { catalog: MediaCatalog }) {
                   </article>
                 ))}
               {!projects.length ? (
-                <div className="project-empty">
-                  <h3>{t("Your next film starts with a project")}</h3>
-                  <p>
-                    {t(
-                      "Write a script, prepare your cast and generate shots you can refine individually.",
-                    )}
-                  </p>
-                </div>
+                <EmptyState
+                  size="compact"
+                  title={t("Your next film starts with a project")}
+                  description={t(
+                    "Write a script, prepare your cast and generate shots you can refine individually.",
+                  )}
+                />
               ) : null}
             </div>
           )}

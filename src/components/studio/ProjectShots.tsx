@@ -1,6 +1,7 @@
 import { IconExpandSimple } from "central-icons/IconExpandSimple";
 import { type CSSProperties, useState } from "react";
 import { intlLocale, t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import { acceptsOpeningFrameWithReferences, videoDirection } from "../../lib/studio/catalog";
 import { maxVideoReferences } from "../../lib/studio/seedance";
@@ -389,12 +390,13 @@ export function ProjectShots({
                   onDoubleClick={openViewer}
                 />
               ) : (
-                <div className="project-empty">
-                  <h3>{t("Your shot starts here")}</h3>
-                  <p>
-                    {t("Describe it, choose how to generate it, then compare your takes here.")}
-                  </p>
-                </div>
+                <EmptyState
+                  size="compact"
+                  title={t("Your shot starts here")}
+                  description={t(
+                    "Describe it, choose how to generate it, then compare your takes here.",
+                  )}
+                />
               )}
               {preview && !wait ? (
                 <button
@@ -903,13 +905,15 @@ export function ProjectShots({
           </aside>
         </>
       ) : (
-        <div className="project-empty">
-          <h2>{t("Build your film one shot at a time")}</h2>
-          <p>{t("Add a shot manually or break your script into shots.")}</p>
-          <button type="button" className="btn btn-primary" onClick={() => add()}>
-            {t("Add shot")}
-          </button>
-        </div>
+        <EmptyState
+          title={t("Build your film one shot at a time")}
+          description={t("Add a shot manually or break your script into shots.")}
+          action={
+            <button type="button" className="btn btn-primary" onClick={() => add()}>
+              {t("Add shot")}
+            </button>
+          }
+        />
       )}
       {viewing !== undefined && viewable.length ? (
         <MediaViewer

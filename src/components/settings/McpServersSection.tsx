@@ -1,4 +1,6 @@
 import { t } from "../../lib/i18n";
+import { EmptyState, LoadFailed } from "../ui/EmptyState";
+import { ShimmerRows } from "../ui/Shimmer";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { messageFromError } from "../../lib/errors";
 import { IconCircleCheck } from "central-icons/IconCircleCheck";
@@ -225,21 +227,25 @@ export function McpServersView({
         <div className="mcp-servers-body">
           {isUnavailable ? (
             <EmptyState
+              size="compact"
+              icon={<IconServer1 size={22} />}
               title={t("Hermes is not running")}
               description={t(
                 "Start Hermes to see and manage the MCP servers your sessions can use.",
               )}
             />
           ) : isErrored ? (
-            <ErrorState
+            <LoadFailed
+              title={t("Couldn't load MCP servers")}
               message={state.error ?? t("Could not load your MCP servers.")}
-              retryable={state.retryable}
-              onRetry={state.refresh}
+              onRetry={state.retryable ? state.refresh : undefined}
             />
           ) : isLoadingFirst ? (
-            <ServersLoading />
+            <ShimmerRows count={2} />
           ) : !hasServers ? (
             <EmptyState
+              size="compact"
+              icon={<IconServer1 size={22} />}
               title={t("No MCP servers")}
               description={t(
                 "Add a server to connect external tools. Local (stdio) servers run as subprocesses; remote servers connect over HTTP.",
@@ -247,6 +253,8 @@ export function McpServersView({
             />
           ) : visible.length === 0 ? (
             <EmptyState
+              size="compact"
+              icon={<IconServer1 size={22} />}
               title={t("No matching servers")}
               description={t("No server matches your search. Try a different term.")}
             />
@@ -1242,62 +1250,6 @@ function EnableServerDialog({
       }
       confirmLabel={t("Enable server")}
     />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Shared empty / error / loading surfaces
-// ---------------------------------------------------------------------------
-
-function ServersLoading() {
-  return (
-    <ul className="mcp-servers-list" aria-hidden>
-      {[0, 1].map((index) => (
-        <li key={index} className="mcp-server-row mcp-server-skeleton">
-          <div className="mcp-server-main">
-            <span className="mcp-server-skeleton-line mcp-server-skeleton-title" />
-            <span className="mcp-server-skeleton-line" />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="mcp-servers-empty" role="status">
-      <span className="mcp-servers-empty-icon" aria-hidden>
-        <IconServer1 size={22} />
-      </span>
-      <p className="mcp-servers-empty-title">{title}</p>
-      <p className="mcp-servers-empty-description">{description}</p>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  retryable,
-  onRetry,
-}: {
-  message: string;
-  retryable: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="mcp-servers-error" role="alert">
-      <span className="mcp-servers-empty-icon" aria-hidden>
-        <IconExclamationCircle size={22} />
-      </span>
-      <p className="mcp-servers-empty-title">{t("Couldn't load MCP servers")}</p>
-      <p className="mcp-servers-empty-description">{message}</p>
-      {retryable ? (
-        <button type="button" className="mcp-servers-retry" onClick={onRetry}>
-          {t("Try again")}
-        </button>
-      ) : null}
-    </div>
   );
 }
 

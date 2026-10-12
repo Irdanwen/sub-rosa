@@ -1,4 +1,6 @@
 import { t } from "../../lib/i18n";
+import { EmptyState, LoadFailed } from "../ui/EmptyState";
+import { ShimmerRows } from "../ui/Shimmer";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconArrowUpRight } from "central-icons/IconArrowUpRight";
@@ -262,21 +264,25 @@ export function InstalledSkillsView({
         <div className="installed-skills-body">
           {isUnavailable ? (
             <EmptyState
+              size="compact"
+              icon={<IconPlugin2 size={22} />}
               title={t("Hermes is not running")}
               description={t(
                 "Start Hermes to see and manage the skills installed for your sessions.",
               )}
             />
           ) : isErrored ? (
-            <ErrorState
+            <LoadFailed
+              title={t("Couldn't load skills")}
               message={state.error ?? t("Could not load your skills.")}
-              retryable={state.retryable}
-              onRetry={state.refresh}
+              onRetry={state.retryable ? state.refresh : undefined}
             />
           ) : isLoadingFirst ? (
-            <SkillsLoading />
+            <ShimmerRows count={3} />
           ) : !hasSkills ? (
             <EmptyState
+              size="compact"
+              icon={<IconPlugin2 size={22} />}
               title={t("No skills installed")}
               description={t(
                 "Skills you install from the Skills Hub or load from a directory will appear here.",
@@ -284,6 +290,8 @@ export function InstalledSkillsView({
             />
           ) : visible.length === 0 ? (
             <EmptyState
+              size="compact"
+              icon={<IconPlugin2 size={22} />}
               title={t("No matching skills")}
               description={t(
                 "No installed skill matches your search. Try a different term or clear the filters.",
@@ -568,58 +576,6 @@ function SourcePill({ source, label }: { source: string; label: string }) {
     <span className="installed-skill-source" data-source={source}>
       {label}
     </span>
-  );
-}
-
-function SkillsLoading() {
-  return (
-    <ul className="installed-skills-list" aria-hidden>
-      {[0, 1, 2].map((index) => (
-        <li key={index} className="installed-skill-row installed-skill-skeleton">
-          <div className="installed-skill-main">
-            <span className="installed-skill-skeleton-line installed-skill-skeleton-title" />
-            <span className="installed-skill-skeleton-line" />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="installed-skills-empty" role="status">
-      <span className="installed-skills-empty-icon" aria-hidden>
-        <IconPlugin2 size={22} />
-      </span>
-      <p className="installed-skills-empty-title">{title}</p>
-      <p className="installed-skills-empty-description">{description}</p>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  retryable,
-  onRetry,
-}: {
-  message: string;
-  retryable: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="installed-skills-error" role="alert">
-      <span className="installed-skills-empty-icon" aria-hidden>
-        <IconExclamationCircle size={22} />
-      </span>
-      <p className="installed-skills-empty-title">{t("Couldn't load skills")}</p>
-      <p className="installed-skills-empty-description">{message}</p>
-      {retryable ? (
-        <button type="button" className="installed-skills-retry" onClick={onRetry}>
-          {t("Try again")}
-        </button>
-      ) : null}
-    </div>
   );
 }
 

@@ -24,7 +24,7 @@ import type { FolderDto, NoteListItemDto } from "../../lib/tauri";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { primaryShiftShortcutLabel } from "../../lib/platform";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { EmptyState } from "../ui/EmptyState";
+import { EmptyState, NoMatches } from "../ui/EmptyState";
 
 const NO_NOTES: NoteListItemDto[] = [];
 const NO_FOLDERS: FolderDto[] = [];
@@ -351,13 +351,15 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
           }
         />
       ) : filteredNotes.length === 0 && !query.trim() ? (
-        <div className="folders-empty">
-          <p>{t("Every note is in a project. Open one from Projects, or search here.")}</p>
-        </div>
+        <EmptyState
+          size="compact"
+          title={t("Every note is in a project. Open one from Projects, or search here.")}
+        />
       ) : filteredNotes.length === 0 ? (
-        <div className="folders-empty">
-          <p>{t("No notes match “{query}”.", { query: query.trim() })}</p>
-        </div>
+        <NoMatches
+          message={t("No notes match “{query}”.", { query: query.trim() })}
+          onClear={() => setQuery("")}
+        />
       ) : (
         <ul className="folder-notes all-notes-list" role="list" data-selecting={selectedCount > 0}>
           {filteredNotes.map((note) => (

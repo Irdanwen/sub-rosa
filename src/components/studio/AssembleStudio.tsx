@@ -13,6 +13,7 @@
 // ship ffmpeg (see lib/studio/timeline/fcpxml.ts).
 
 import { t } from "../../lib/i18n";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import { IconVideo } from "central-icons/IconVideo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { artifactSrc, listArtifacts, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
@@ -994,7 +995,7 @@ export function AssembleStudio({
 
   return (
     <GenerationLayout controls={controls} action={action}>
-      {error ? <p className="studio-error">{error}</p> : null}
+      {error ? <ErrorMessage>{error}</ErrorMessage> : null}
       {notice ? <p className="studio-queue-hint">{notice}</p> : null}
       {verdict ? (
         <div className="studio-verdict" data-passes={verdict.passes}>

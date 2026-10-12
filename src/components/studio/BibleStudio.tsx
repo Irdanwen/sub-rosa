@@ -16,6 +16,7 @@
 // is the only surface where the user can do something about it.
 
 import { t } from "../../lib/i18n";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import { IconCirclePerson } from "central-icons/IconCirclePerson";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -429,7 +430,7 @@ export function BibleStudio({
 
   return (
     <GenerationLayout controls={controls} action={action}>
-      {error ? <p className="studio-error">{error}</p> : null}
+      {error ? <ErrorMessage>{error}</ErrorMessage> : null}
       {notice ? <p className="studio-queue-hint">{notice}</p> : null}
       {attaching ? (
         <GalleryPicker
@@ -525,9 +526,9 @@ export function BibleStudio({
                         <Spinner aria-label={t("Auditioning")} />
                       ) : null}
                       {queueFailure && queuedFor === entry.id ? (
-                        <p className="studio-error">
+                        <ErrorMessage>
                           {queueFailure.message ?? t("The audition failed.")}
-                        </p>
+                        </ErrorMessage>
                       ) : null}
                       {auditions.map((take) => (
                         <div key={take.artifact.id} className="bible-audition">

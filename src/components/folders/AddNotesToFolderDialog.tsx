@@ -1,4 +1,5 @@
 import { t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
 import { IconNoteText } from "central-icons/IconNoteText";
@@ -144,11 +145,14 @@ export function AddNotesToFolderDialog({
             })}
           </ul>
         ) : (
-          <p className="add-notes-empty">
-            {notes.some((note) => !note.folderIds.includes(folder.id))
-              ? t("No meeting notes match that search.")
-              : t("Every meeting note already lives in this project.")}
-          </p>
+          <EmptyState
+            size="compact"
+            title={
+              notes.some((note) => !note.folderIds.includes(folder.id))
+                ? t("No notes match that search.")
+                : t("Every note already lives in this project.")
+            }
+          />
         )}
       </div>
     </Dialog>

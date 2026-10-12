@@ -1,6 +1,7 @@
 // A technical input example, preserved verbatim in every language.
 const SNAPSHOT_EXAMPLE = '{ "schemaVersion": 1, ... }';
 import { t } from "../../lib/i18n";
+import { EmptyState, LoadFailed } from "../ui/EmptyState";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { messageFromError } from "../../lib/errors";
 import { IconArrowOutOfBox } from "central-icons/IconArrowOutOfBox";
@@ -101,16 +102,18 @@ export function SetupSnapshotView({
       {isUnavailable ? (
         <div className="settings-card setup-snapshot-card">
           <EmptyState
+            size="compact"
+            icon={<IconBox2 size={22} />}
             title={t("Hermes is not running")}
             description={t("Start Hermes to export or import a setup snapshot.")}
           />
         </div>
       ) : isErrored ? (
         <div className="settings-card setup-snapshot-card">
-          <ErrorState
+          <LoadFailed
+            title={t("Couldn't load your setup")}
             message={state.error ?? t("Could not load your setup.")}
-            retryable={state.retryable}
-            onRetry={state.refresh}
+            onRetry={state.retryable ? state.refresh : undefined}
           />
         </div>
       ) : (
@@ -404,47 +407,6 @@ function StepIcon({ status }: { status: ImportStepResult["status"] }) {
   if (status === "applied") return <IconCircleCheck size={13} ariaHidden />;
   if (status === "failed") return <IconCircleX size={13} ariaHidden />;
   return <IconCircleInfo size={13} ariaHidden />;
-}
-
-// ---------------------------------------------------------------------------
-// Shared empty / error surfaces
-// ---------------------------------------------------------------------------
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="setup-snapshot-empty" role="status">
-      <span className="setup-snapshot-empty-icon" aria-hidden>
-        <IconBox2 size={22} />
-      </span>
-      <p className="setup-snapshot-empty-title">{title}</p>
-      <p className="setup-snapshot-empty-description">{description}</p>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  retryable,
-  onRetry,
-}: {
-  message: string;
-  retryable: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="setup-snapshot-error" role="alert">
-      <span className="setup-snapshot-empty-icon" aria-hidden>
-        <IconExclamationCircle size={22} />
-      </span>
-      <p className="setup-snapshot-empty-title">{t("Couldn't load your setup")}</p>
-      <p className="setup-snapshot-empty-description">{message}</p>
-      {retryable ? (
-        <button type="button" className="setup-snapshot-retry" onClick={onRetry}>
-          {t("Try again")}
-        </button>
-      ) : null}
-    </div>
-  );
 }
 
 /** Triggers a client-side download of a text file. Guarded so a non-browser

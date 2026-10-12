@@ -6,6 +6,7 @@
 // gallery on its own — the job list here is a view of those durable rows.
 
 import { t } from "../../lib/i18n";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactSrc,
@@ -882,7 +883,7 @@ export function VideoStudio({
                 </p>
               ) : null}
               {handoffNote ? <p className="studio-field-note">{handoffNote}</p> : null}
-              {handoffError ? <p className="studio-error">{handoffError}</p> : null}
+              {handoffError ? <ErrorMessage>{handoffError}</ErrorMessage> : null}
               <div className="studio-upload-actions">
                 <button
                   type="button"
@@ -1092,7 +1093,7 @@ export function VideoStudio({
                   );
                 })()
               : null}
-            {referenceError ? <p className="studio-error">{referenceError}</p> : null}
+            {referenceError ? <ErrorMessage>{referenceError}</ErrorMessage> : null}
             {references.length < referenceCap ? (
               <div className="studio-upload-actions">
                 <button
@@ -1152,7 +1153,7 @@ export function VideoStudio({
                 ))}
               </ul>
             ) : null}
-            {clipError ? <p className="studio-error">{clipError}</p> : null}
+            {clipError ? <ErrorMessage>{clipError}</ErrorMessage> : null}
             <div className="studio-upload-actions">
               {referenceClips.length < maxReferenceVideos(family?.referenceModel) ? (
                 <button
@@ -1230,7 +1231,7 @@ export function VideoStudio({
                 ))}
               </ul>
             ) : null}
-            {audioError ? <p className="studio-error">{audioError}</p> : null}
+            {audioError ? <ErrorMessage>{audioError}</ErrorMessage> : null}
             {referenceAudio.length < maxReferenceAudio(family?.referenceModel) ? (
               <div className="studio-upload-actions">
                 <button
@@ -1327,7 +1328,7 @@ export function VideoStudio({
                 }}
               />
             </div>
-            {sourceVideoError ? <p className="studio-error">{sourceVideoError}</p> : null}
+            {sourceVideoError ? <ErrorMessage>{sourceVideoError}</ErrorMessage> : null}
           </StudioField>
           {isUpscale ? (
             <StudioField label={t("Upscale")} hint={t("x1 enhances without resizing")}>
