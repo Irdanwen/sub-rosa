@@ -494,14 +494,21 @@ pub(super) async fn room(
     }
     // Room another device gave back lifts a hold at once, not ten minutes on.
     lift_holds_with_room(pool).await?;
-    if caught_up && files_settled(pool).await? {
+    // A file revision still waiting to apply may name a candidate: nothing
+    // is planned or released until every one this device holds is applied.
+    let settled = files_settled(pool).await?;
+    if caught_up && settled {
         plan_deletions(pool, s, key).await?;
         if format_v2(pool).await? {
             let pressing = full || urgent(pool).await?;
             plan_sweep(pool, s, key, pressing).await?;
         }
     }
-    let mut freed = drain(pool, s, key, deadline).await?;
+    let mut freed = if settled {
+        drain(pool, s, key, deadline).await?
+    } else {
+        0
+    };
     // Not even a note can leave and nothing else is ready to go: this
     // device's own unfinished uploads are given back, and start over later.
     // Text comes before a file half sent.
