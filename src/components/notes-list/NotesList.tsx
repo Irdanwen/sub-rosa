@@ -241,7 +241,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
   return (
     <section
       className="all-notes-workspace"
-      aria-label={t("Meeting notes")}
+      aria-label={t("Notes")}
       data-drop-active={importEnabled && dragDepth > 0 ? "true" : undefined}
       onDragEnter={(event) => {
         if (!importEnabled || !dragCarriesFiles(event)) return;
@@ -274,7 +274,7 @@ export const NotesList = forwardRef<NotesListHandle, NotesListProps>(function No
       <header className="folders-header">
         <div className="folders-heading">
           <h1>
-            {t("Meeting notes")}
+            {t("Notes")}
             {unfiledNotes.length > 0 ? (
               <span className="folders-count">{unfiledNotes.length}</span>
             ) : null}
@@ -485,12 +485,13 @@ function AllNoteRow({
   onOpenMove: () => void;
   onDelete: () => void;
 }) {
-  const title = note.title.trim() || "New note";
+  const title = note.title.trim() || t("New note");
   const liveRecording = note.id === activeRecordingNoteId;
   const effectiveStatus =
     note.processingStatus === "recording" && !liveRecording ? "draft" : note.processingStatus;
   const preview =
-    note.preview.trim() || (liveRecording ? "Recording" : statusLabel(effectiveStatus));
+    readablePreview(note.title, note.preview) ||
+    (liveRecording ? t("Recording") : statusLabel(effectiveStatus));
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -534,7 +535,7 @@ function AllNoteRow({
             preview={preview}
             status={effectiveStatus}
             liveRecording={liveRecording}
-            showingStatus={!note.preview.trim()}
+            showingStatus={!readablePreview(note.title, note.preview)}
           />
         </button>
         <span className="folder-note-time">
@@ -666,6 +667,26 @@ function meetingMenuPosition(trigger: HTMLElement): MenuPosition {
   };
 }
 
+/**
+ * A note's preview as a line a person reads: the stored preview is the start
+ * of the markdown body, so it can open with a heading that repeats the title
+ * ("# Budget review Budget review…") and carry list or quote markers. Both are
+ * taken out; what is left is the first words of the content.
+ */
+export function readablePreview(title: string, preview: string): string {
+  let text = preview
+    .replace(/(^|\s)[#>]+\s+/g, "$1")
+    .replace(/(^|\s)[-*+]\s+/g, "$1")
+    .replace(/[*_`]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const heading = title.trim();
+  if (heading && text.toLowerCase().startsWith(heading.toLowerCase())) {
+    text = text.slice(heading.length).trim();
+  }
+  return text;
+}
+
 function statusLabel(status: NoteListItemDto["processingStatus"]) {
   switch (status) {
     case "recording":
@@ -694,7 +715,9 @@ function formatNoteTime(iso: string): string {
   if (Number.isNaN(date.getTime())) return "";
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
-  if (diffMs < 0) return "Future";
+  // Dated ahead of this clock: said explicitly (and translated) rather than
+  // shown as a time that has not happened yet.
+  if (diffMs < 0) return t("Future");
   const sameDay =
     date.getFullYear() === now.getFullYear() &&
     date.getMonth() === now.getMonth() &&

@@ -3,11 +3,10 @@ import { turnIdForTime } from "../../lib/chapters";
 import { IconClapboard } from "central-icons/IconClapboard";
 import { requestFilmFromNote } from "../../lib/film-from-note";
 import { listFilms } from "../../lib/tauri";
+import { NoteExportMenu } from "./NoteExportMenu";
 import { NoteSummaryPanel } from "./NoteSummaryPanel";
 import { IconClipboard } from "central-icons/IconClipboard";
 import { IconChevronRightSmall } from "central-icons/IconChevronRightSmall";
-import { IconArrowDownWall } from "central-icons/IconArrowDownWall";
-import { IconMarkdown } from "central-icons/IconMarkdown";
 import { IconBookSimple } from "central-icons/IconBookSimple";
 import { IconChainLink1 } from "central-icons/IconChainLink1";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
@@ -495,17 +494,6 @@ export function NoteEditor({
             >
               <IconBookSimple aria-hidden="true" />
             </button>
-            {onExportPdf ? (
-              <button
-                type="button"
-                className="note-header-actions ghost-icon-button note-export-pdf"
-                onClick={onExportPdf}
-                aria-label={t("Export as PDF")}
-                title={t("Export as PDF")}
-              >
-                <IconArrowDownWall aria-hidden="true" />
-              </button>
-            ) : null}
             {onAskNote ? (
               <button
                 type="button"
@@ -528,17 +516,7 @@ export function NoteEditor({
                 <IconChainLink1 aria-hidden="true" />
               </button>
             ) : null}
-            {onExportMarkdown ? (
-              <button
-                type="button"
-                className="note-header-actions ghost-icon-button note-export-markdown"
-                onClick={onExportMarkdown}
-                aria-label={t("Export as Markdown")}
-                title={t("Export as Markdown")}
-              >
-                <IconMarkdown aria-hidden="true" />
-              </button>
-            ) : null}
+            <NoteExportMenu onExportPdf={onExportPdf} onExportMarkdown={onExportMarkdown} />
           </div>
         </div>
       </header>

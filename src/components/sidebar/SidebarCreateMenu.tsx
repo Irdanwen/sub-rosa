@@ -4,7 +4,7 @@ import { IconNoteText } from "central-icons/IconNoteText";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { useRef, useState } from "react";
 import { t } from "../../lib/i18n";
-import { isMacLikePlatform } from "../../lib/platform";
+import { primaryShiftShortcutLabel } from "../../lib/platform";
 import { Popover } from "../ui/Popover";
 
 /**
@@ -29,7 +29,7 @@ export function SidebarCreateMenu({
           {
             id: "note",
             label: t("New note"),
-            hint: isMacLikePlatform() ? "⇧⌘N" : "Ctrl+Shift+N",
+            hint: primaryShiftShortcutLabel("N"),
             icon: <IconNoteText size={15} />,
             run: onCreateNote,
           },

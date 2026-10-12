@@ -34,8 +34,10 @@ export function primaryShortcutLabel(key: string) {
   return isMacLikePlatform() ? `⌘${key}` : `Ctrl ${key}`;
 }
 
+/** Apple writes the modifiers in a fixed order (⌃⌥⇧⌘), so Shift comes
+ * before Command: ⇧⌘N, as in the menu bar. */
 export function primaryShiftShortcutLabel(key: string) {
-  return isMacLikePlatform() ? `⌘⇧${key}` : `Ctrl Shift ${key}`;
+  return isMacLikePlatform() ? `⇧⌘${key}` : `Ctrl Shift ${key}`;
 }
 
 /** The primary modifier with Shift: ⇧⌘ on a Mac, Ctrl+Shift elsewhere. Redo,
