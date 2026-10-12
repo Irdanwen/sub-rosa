@@ -6,7 +6,7 @@
   position: fixed;
   right: var(--sp-5);
   bottom: var(--sp-5);
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
