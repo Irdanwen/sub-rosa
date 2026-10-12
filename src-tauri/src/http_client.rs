@@ -77,10 +77,19 @@ pub fn loopback(timeout: Duration) -> ClientBuilder {
 pub fn account() -> &'static Client {
     static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
+        // The service notes which version of the app each device runs, so
+        // the account's apps know when all of them read a newer file format
+        // (ADR-0110). It identifies a release, never a person.
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "x-subrosa-version",
+            reqwest::header::HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
+        );
         build(
             credentialed(Duration::from_secs(60))
                 .redirect(Policy::none())
-                .tcp_keepalive(Some(Duration::from_secs(30))),
+                .tcp_keepalive(Some(Duration::from_secs(30)))
+                .default_headers(headers),
             "account service",
         )
     })

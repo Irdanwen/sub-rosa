@@ -129,6 +129,20 @@ are bounded to 2 GiB and 2048 chunks. Download progress is durable after each
 verified, flushed chunk; final rename happens only when all checks pass. Staging
 is outside the gallery. Paths are generated locally, not taken from remote
 payloads, and iOS gallery paths are reconstructed from relative filenames.
+The account keeps inside its quota (ADR-0110). Files stop short of it by a
+journal reserve, so text always leaves; a refusal for room (`account_storage_full`)
+holds sending for ten minutes or until a release frees bytes, and the pass goes
+on receiving and fetching. `storage.rs` releases chunks from a durable queue
+(`account_blob_releases`), each checked against every chunk the device still
+names (manifests, uploads, compactions, unanswered cards): a deleted file's a day
+after its tombstone, and through a daily sweep any chunk no manifest names, a
+week old and never shared. `compaction.rs` sends files again in their compact
+form (recordings at 16 kHz mono, chunks in the binary envelope, ids derived from
+the manifest they replace so a second device backs off on `409`) once every app
+announces 1.91 (`X-Subrosa-Version`, `/api/v1/devices`). A file manifest whose
+chunks are gone is held back (`account_chunk_repairs`) and its chunks are sent
+again from the local copy before it leaves.
+
 Chunks move until the lane's budget is spent (twelve seconds of a pass, two downloads in flight, newest audio first), and the first in each direction always goes. Native timers, launch,
 resume, and background sweep all resume durable work; no JavaScript polling
 promise owns long-running synchronization. Account HTTP traffic uses the shared
@@ -186,8 +200,9 @@ provider balance per device: display a recent observation, never sum balances.
 - Files above the manifest limit are excluded with a durable synchronization error.
   Individual encrypted object revisions are limited to 1 MiB by the service; an
   oversized revision remains queued and reports a size error. Removing or changing a source during
-  upload can defer its transfer. Abandoned encrypted chunks need service retention
-  maintenance; the native client does not garbage-collect server blobs.
+  upload can defer its transfer. Chunks nothing names any more are released by
+  the client (ADR-0110, `storage.rs`), never by the service, which cannot read
+  the manifests.
 - Resolved conflict ciphertext is retained locally for preservation. There is no
   account-wide automatic retention policy or multi-account profile migration UI.
 - Background delivery is subject to iOS scheduling; closing the app is not a

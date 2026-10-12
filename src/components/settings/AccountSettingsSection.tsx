@@ -3,6 +3,7 @@ import { AccountPairingSection } from "./AccountPairingSection";
 import { PublishingCard } from "../publishing/PublishingCard";
 import { SharedProjectsCard } from "../spaces/SharedProjectsCard";
 import { AccountSecurityHistory } from "./AccountSecurityHistory";
+import { AccountStorageCard } from "./AccountStorageCard";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { accountNextStep } from "../../lib/account-next-step";
@@ -1147,6 +1148,7 @@ export function AccountSettingsSection({
               </div>
             ) : null}
           </AccountCard>
+          {status.sync_enabled ? <AccountStorageCard status={status} /> : null}
 
           <AccountCard title={t("Carpe Diem on your devices")}>
             <p className="settings-row-description">
