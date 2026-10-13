@@ -55,6 +55,24 @@ pub fn decode_to_transcription_wav(
     input_path: &Path,
     output_path: &Path,
 ) -> Result<DecodedAudio, AppError> {
+    decode_to_16k_mono(input_path, output_path, true)
+}
+
+/// The same 16 kHz mono WAV, as recorded: no gain. The compact copy of a
+/// recording an account carries to the other devices (ADR-0110) is meant to
+/// be listened to, and transcription normalises on its own when it reads it.
+pub fn decode_to_compact_wav(
+    input_path: &Path,
+    output_path: &Path,
+) -> Result<DecodedAudio, AppError> {
+    decode_to_16k_mono(input_path, output_path, false)
+}
+
+fn decode_to_16k_mono(
+    input_path: &Path,
+    output_path: &Path,
+    normalise: bool,
+) -> Result<DecodedAudio, AppError> {
     let file = std::fs::File::open(input_path)
         .map_err(|error| AppError::new("media_decode_failed", error.to_string()))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
@@ -188,7 +206,7 @@ pub fn decode_to_transcription_wav(
     // Pass two, only when it buys something: a WAV-to-WAV gain rewrite, which
     // is far cheaper than decoding the container a second time.
     let gain = transcription_gain(peak);
-    if gain_is_worth_applying(gain) {
+    if normalise && gain_is_worth_applying(gain) {
         apply_gain_in_place(output_path, gain)?;
     }
 
