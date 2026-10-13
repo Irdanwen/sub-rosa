@@ -25,6 +25,9 @@ const EMITTED = [
   "sync_not_deleted",
   "sync_restore_unavailable",
   "account_invalid_request",
+  "account_storage_full",
+  "sync_chunks_missing",
+  "sync_chunk_taken",
 ];
 
 describe("what a failed synchronization says", () => {

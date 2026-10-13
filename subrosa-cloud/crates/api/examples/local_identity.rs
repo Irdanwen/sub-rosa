@@ -220,6 +220,7 @@ async fn main() -> Result<()> {
             conditional_writes: true,
         },
         account_quota_bytes: 1024 * 1024 * 1024,
+        journal_reserve_bytes: 64 * 1024 * 1024,
         trusted_proxies: Vec::new(),
         passkey_android_cert_fingerprints: Vec::new(),
         carpe_diem: match (settings.carpe_diem_audience, settings.carpe_diem_key_file) {

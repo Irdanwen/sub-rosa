@@ -1698,6 +1698,24 @@ revision back as a live child of the tombstone, on every device. Text only:
 a deleted note's recordings and transcripts do not return. _Avoid_: "trash",
 which would be a column on every table.
 
+**Account storage** (the account's room): what the account holds against its
+quota, journal and files together. Files stop short of the quota by the
+**journal reserve**, so text always has room
+([ADR-0110](docs/adr/0110-the-account-keeps-inside-its-quota-and-text-never-waits-for-files.md)).
+"Full" means the service refused something for room; the device then waits
+for room instead of asking again. _Avoid_: "disk", "cloud storage", which
+read as this device's space.
+
+**Compact copy**: the form a file is kept in by the account once every app
+reads it: a recording as a 16 kHz mono WAV (the device that recorded keeps
+its original) and every chunk in the binary envelope. _Avoid_: "compressed",
+which promises a codec the app does not use.
+
+**Release** (of a chunk): giving a stored chunk back to the service so its
+bytes leave the quota. Only a chunk nothing on the device still names is
+released, a day after its file was deleted or a week after nobody named it.
+_Avoid_: "purge", "garbage collection" in the interface.
+
 **Review card** (conflict card): a revision kept for a person to answer,
 because it crossed this device's own work. Answering it sends a resolution
 that names what it acknowledged.
