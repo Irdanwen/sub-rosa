@@ -24765,6 +24765,80 @@ input:focus-visible,
   background: var(--popover);
   color: var(--popover-foreground);
   box-shadow: var(--shadow-lg);
+  /* Occasional, opened by a press: a short entrance from the control that
+   * opened it (review-animations: small popovers 125-200ms, ease-out, never
+   * from scale 0). It leaves without one, so closing never waits. */
+  transform-origin: top left;
+  animation: popover-in var(--t-med) var(--ease-out);
+}
+
+.popover[data-side="top"] {
+  transform-origin: bottom left;
+  animation-name: popover-in-above;
+}
+
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+
+@keyframes popover-in-above {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover,
+  .popover[data-side="top"] {
+    animation: popover-fade var(--t-fast) linear;
+  }
+}
+
+@keyframes popover-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* --- The shortcuts sheet (?): every key the window answers to ----------- */
+.shortcuts-sheet-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-6) var(--sp-8);
+}
+
+.shortcuts-sheet-group h3 {
+  margin: 0 0 var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.shortcuts-sheet-group dl {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.shortcuts-sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: var(--control-sm);
+}
+
+.shortcuts-sheet-row dt {
+  font-size: var(--fs-md);
+}
+
+.shortcuts-sheet-row dd {
+  flex: none;
+  margin: 0;
 }
 
 /* --- The top of the sidebar: a new chat, and what else can be started ---- */

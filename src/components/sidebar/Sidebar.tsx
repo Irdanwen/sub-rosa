@@ -66,6 +66,8 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DotSpinner } from "../DotSpinner";
 import { combineSourceAudioLevels, Waveform } from "../recorder/Waveform";
 import { requestStudioTab } from "../studio/studio-keys";
+import { requestShortcutsSheet } from "../shortcuts/ShortcutsSheet";
+import { IconShortcut } from "central-icons/IconShortcut";
 import { SidebarCreateMenu } from "./SidebarCreateMenu";
 
 const NO_AGENT_SESSIONS: HermesSessionInfo[] = [];
@@ -486,6 +488,13 @@ export function Sidebar({
           requestStudioTab("video");
           onChangeView("studio");
         },
+      },
+      {
+        id: "quick:shortcuts",
+        label: t("Keyboard shortcuts"),
+        icon: <IconShortcut size={15} />,
+        searchText: normalizeCommandQuery("keyboard shortcuts keys hotkeys help"),
+        action: requestShortcutsSheet,
       },
       {
         id: "quick:meetings",

@@ -16,6 +16,7 @@ import "./styles/carpe-diem.css";
 import "./styles/studio.css";
 import "./styles/council.css";
 import "./styles/mobile.css";
+import "./styles/preferences.css";
 
 declare global {
   interface Window {

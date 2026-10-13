@@ -75,6 +75,7 @@ import { agentSessionTabTitle, tabMeta } from "./tab-meta";
 import { AgentBrowserIndicator } from "../components/agent-browser/AgentBrowserIndicator";
 import { AskNoteOverlay } from "../components/ask/AskNoteOverlay";
 import { ShareNoteDialog } from "../components/share/ShareNoteDialog";
+import { ShortcutsSheetHost } from "../components/shortcuts/ShortcutsSheet";
 import {
   AssistantImportHost,
   requestAssistantImport,
@@ -3473,6 +3474,7 @@ export function App() {
       </div>
       <AgentBrowserIndicator />
       <AssistantImportHost onImported={() => openAssistants()} />
+      <ShortcutsSheetHost onSettingsTab={setSettingsTab} onOpenSettings={openSettings} />
       {shareNoteId ? (
         <ShareNoteDialog noteId={shareNoteId} open={true} onClose={() => setShareNoteId(null)} />
       ) : null}
