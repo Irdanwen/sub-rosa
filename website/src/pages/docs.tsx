@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { t, type SiteLocale } from "../lib/i18n";
+import { useActiveSection } from "../lib/section-spy";
+import { t, type SiteLocale, websiteLocale } from "../lib/i18n";
 import { localizedSiteHref, siteHref } from "../lib/paths";
 import { categories, guideBySlug, guides, read, searchGuides } from "./docs-content";
 
@@ -11,6 +12,7 @@ export function Documentation({ path, locale }: { path: string; locale: SiteLoca
   const guide = slug ? guideBySlug(slug) : null;
   const [query, setQuery] = useState("");
   const results = searchGuides(query);
+  const activeSection = useActiveSection(guide?.sections.map((section) => section.id) ?? []);
 
   if (slug && !guide)
     return (
@@ -82,7 +84,9 @@ export function Documentation({ path, locale }: { path: string; locale: SiteLoca
           {guide.image && (
             <figure className="docs-figure">
               <img
-                src={siteHref(`/docs/${guide.image.file}`)}
+                src={siteHref(guideImagePath(guide.image.file))}
+                width={guide.image.width}
+                height={guide.image.height}
                 alt={read(guide.image.alt)}
                 loading="lazy"
               />
@@ -132,7 +136,11 @@ export function Documentation({ path, locale }: { path: string; locale: SiteLoca
         <nav className="docs-toc" aria-label={t("On this page", "Sur cette page")}>
           <p>{t("On this page", "Sur cette page")}</p>
           {guide.sections.map((section) => (
-            <a href={`#${section.id}`} key={section.id}>
+            <a
+              href={`#${section.id}`}
+              key={section.id}
+              aria-current={section.id === activeSection ? "location" : undefined}
+            >
               {read(section.title)}
             </a>
           ))}
@@ -266,4 +274,10 @@ function GuideCard({ slug, locale }: { slug: string; locale: SiteLocale }) {
       </span>
     </a>
   );
+}
+
+/** The capture in the reader's language, from the site root or from /docs. */
+function guideImagePath(file: string | { en: string; fr: string }) {
+  const chosen = typeof file === "string" ? file : websiteLocale() === "fr" ? file.fr : file.en;
+  return chosen.startsWith("/") ? chosen : `/docs/${chosen}`;
 }

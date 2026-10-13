@@ -34,6 +34,7 @@ import {
   checkedOn,
   standingLine,
 } from "./shared";
+import { useActiveSection } from "../../lib/section-spy";
 
 const modality: Record<string, [string, string]> = {
   text: ["text", "texte"],
@@ -225,6 +226,7 @@ export function FamilyPage({ family, locale }: { family: Family; locale: SiteLoc
     ["models", t("Every model", "Tous les modèles")],
     ["sources", t("Sources", "Sources")],
   ];
+  const activeSection = useActiveSection(toc.map(([id]) => id));
 
   return (
     <div className="wrap family-shell">
@@ -553,16 +555,23 @@ export function FamilyPage({ family, locale }: { family: Family; locale: SiteLoc
               `Tout ce qui figure sur cette page vient de ces pages, lues le ${checkedOn()} ou à la date indiquée sur chaque score.`,
             )}
           </p>
-          <ul className="sources">
-            {sources.map((url) => (
-              <li key={url}>
-                <a href={url} rel="noopener noreferrer">
-                  {new URL(url).hostname.replace(/^www\./, "")}
-                  <span>{new URL(url).pathname.replace(/\/$/, "") || "/"}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
+          {/* Reference material, folded: it is what a reader checks, not
+              what they read, and the page is long enough without it open. */}
+          <details className="sources-fold">
+            <summary>
+              {t(`Show the ${sources.length} sources`, `Afficher les ${sources.length} sources`)}
+            </summary>
+            <ul className="sources">
+              {sources.map((url) => (
+                <li key={url}>
+                  <a href={url} rel="noopener noreferrer">
+                    {new URL(url).hostname.replace(/^www\./, "")}
+                    <span>{new URL(url).pathname.replace(/\/$/, "") || "/"}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </details>
           {family.url && (
             <a className="button" href={family.url} rel="noopener noreferrer">
               {t(`Learn more about ${family.name}`, `En savoir plus sur ${familyName(family)}`)} ↗
@@ -574,7 +583,7 @@ export function FamilyPage({ family, locale }: { family: Family; locale: SiteLoc
       <nav className="family-toc" aria-label={t("On this page", "Sur cette page")}>
         <p>{t("On this page", "Sur cette page")}</p>
         {toc.map(([id, label]) => (
-          <a href={`#${id}`} key={id}>
+          <a href={`#${id}`} key={id} aria-current={id === activeSection ? "location" : undefined}>
             {label}
           </a>
         ))}

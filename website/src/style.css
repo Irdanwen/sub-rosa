@@ -5630,3 +5630,121 @@ button.chart-hit {
 .chat-block-missing {
   color: var(--muted);
 }
+
+/* --- Page templates (S4) ----------------------------------------------- */
+
+/* The footer sits at the bottom of a short page instead of floating above
+ * an empty band. */
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+#root > main {
+  flex: 1 0 auto;
+}
+
+/* Privacy, security and the legal notice: one set, joined by a short list,
+ * in the reading column the documentation uses. */
+.trust-layout {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 720px);
+  gap: 60px;
+  justify-content: center;
+}
+.trust-nav {
+  position: sticky;
+  top: 100px;
+  align-self: start;
+  display: grid;
+  gap: 4px;
+  padding-top: 14px;
+}
+.trust-nav a {
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  text-decoration: none;
+}
+.trust-nav a:hover {
+  color: var(--foreground);
+  background: var(--surface);
+}
+.trust-nav a[aria-current="page"] {
+  color: var(--foreground);
+  background: var(--surface);
+  font-weight: 600;
+}
+.trust-body {
+  max-width: none;
+  margin: 0;
+}
+
+/* Download cards: the description takes the same room in every card, so
+ * the buttons line up across a row. */
+.download-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-content: start;
+}
+.download-card > details {
+  margin-top: auto;
+}
+.grid .download-card > p.muted {
+  min-height: 3.2lh;
+}
+.grid .download-card > .button {
+  align-self: flex-start;
+  /* Not `auto` (.grid .card .button): that pushed each button down by the
+   * room left under it, which differs from card to card. */
+  margin-top: 0;
+}
+.download-status {
+  flex: none;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .trust-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .trust-nav {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-top: 0;
+  }
+  .grid .download-card > p.muted {
+    min-height: 0;
+  }
+}
+
+/* The section being read, marked in its table of contents. */
+.docs-toc a[aria-current="location"],
+.family-toc a[aria-current="location"] {
+  color: var(--brand);
+  font-weight: 600;
+}
+.docs-toc a[aria-current="location"] {
+  background: var(--accent-faint);
+}
+.sources-fold {
+  margin-bottom: 20px;
+}
+.sources-fold summary {
+  color: var(--brand);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sources-fold[open] summary {
+  margin-bottom: 12px;
+}
