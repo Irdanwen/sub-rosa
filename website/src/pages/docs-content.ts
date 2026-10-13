@@ -16,7 +16,18 @@ export type Guide = {
   title: Copy;
   summary: Copy;
   sections: Section[];
-  image?: { file: string; alt: Copy; caption: Copy };
+  /**
+   * A capture of the app. One file for every language, or one per language
+   * (English and French; the other languages read the English one). A path
+   * that starts with "/" is from the site root, otherwise from /docs.
+   */
+  image?: {
+    file: string | { en: string; fr: string };
+    width?: number;
+    height?: number;
+    alt: Copy;
+    caption: Copy;
+  };
   related?: string[];
 };
 
@@ -367,6 +378,19 @@ export const guides: Guide[] = [
         ],
       },
     ],
+    image: {
+      file: { en: "/home/home-en-light.webp", fr: "/home/home-fr-light.webp" },
+      width: 1600,
+      height: 1000,
+      alt: [
+        "A new chat in Sub Rosa, with suggestions and the model under the message field",
+        "Un nouveau chat dans Sub Rosa, avec des suggestions et le modèle sous le champ de message",
+      ],
+      caption: [
+        "A new chat: the model and the workspace sit under the message field.",
+        "Un nouveau chat : le modèle et l’espace de travail se trouvent sous le champ de message.",
+      ],
+    },
     related: ["memory", "find-notes"],
   },
   {
@@ -434,12 +458,17 @@ export const guides: Guide[] = [
       "Générez des images, des vidéos, de la parole, de la musique et des sons.",
     ],
     image: {
-      file: "studio-fr.png",
+      file: { en: "/home/studio-en.webp", fr: "/home/studio-fr.webp" },
+      width: 1600,
+      height: 1000,
       alt: [
-        "Studio start screen with media choices in French",
-        "Écran d’accueil de Studio avec les choix de médias",
+        "Studio with an image made in it on the stage, the prompt below and the recent creations",
+        "Le Studio avec une image créée sur la scène, le prompt dessous et les créations récentes",
       ],
-      caption: ["Studio on desktop, shown in French.", "Studio sur ordinateur."],
+      caption: [
+        "Studio on a computer: the result appears on the stage, where you are looking.",
+        "Le Studio sur ordinateur : le résultat apparaît sur la scène, là où vous regardez.",
+      ],
     },
     sections: [
       {

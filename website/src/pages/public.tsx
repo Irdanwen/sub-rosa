@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { t, number, websiteLocale } from "../lib/i18n";
 import releases from "../releases.json";
 import { accountsUnavailable, localizedSiteHref } from "../lib/paths";
@@ -46,7 +47,7 @@ export function Downloads() {
       </nav>
       <div className="grid">
         {releases.assets.map((asset) => (
-          <article className="card" id={asset.platform} key={asset.platform}>
+          <article className="card download-card" id={asset.platform} key={asset.platform}>
             <h2>{titles[asset.platform]}</h2>
             <p className="muted">
               {asset.platform === "mac-arm"
@@ -85,7 +86,7 @@ export function Downloads() {
           </article>
         ))}
         {android ? (
-          <article className="card" id="android" key="android">
+          <article className="card download-card" id="android" key="android">
             <h2>Android · 64 bits</h2>
             <p className="muted">
               {t(
@@ -126,7 +127,7 @@ export function Downloads() {
             )}
           </p>
         </div>
-        <span className="notice">{t("TestFlight access", "Accès TestFlight")}</span>
+        <span className="download-status">{t("In testing", "En test")}</span>
       </article>
       <p className="quiet">
         <a href={releases.release_url}>
@@ -191,7 +192,7 @@ export function Information({ path }: { path: string }) {
     );
   if (path === "/security")
     return (
-      <section className="page wrap prose">
+      <TrustLayout current="/security">
         <h1>{t("Security, explained.", "La sécurité, expliquée.")}</h1>
         <h2>{t("Your vault", "Votre coffre")}</h2>
         <p>
@@ -230,11 +231,11 @@ export function Information({ path }: { path: string }) {
         <a className="text-link" href="https://github.com/Irdanwen/sub-rosa/security/policy">
           {t("Security policy", "Politique de sécurité")} ↗
         </a>
-      </section>
+      </TrustLayout>
     );
   if (path === "/legal")
     return (
-      <section className="page wrap prose">
+      <TrustLayout current="/legal">
         <h1>{t("Legal notice", "Mentions légales")}</h1>
         <h2>{t("Publisher", "Éditeur")}</h2>
         <address className="legal-address">
@@ -289,11 +290,11 @@ export function Information({ path }: { path: string }) {
             {t("Source code", "Code source")} ↗
           </a>
         </p>
-      </section>
+      </TrustLayout>
     );
   if (path === "/privacy")
     return (
-      <section className="page wrap prose">
+      <TrustLayout current="/privacy">
         <h1>{t("Your information stays yours.", "Vos informations restent les vôtres.")}</h1>
         <p className="lede">
           {t(
@@ -347,7 +348,7 @@ export function Information({ path }: { path: string }) {
             "Les durées de conservation seront publiées sur cette page.",
           )}
         </p>
-      </section>
+      </TrustLayout>
     );
   return (
     <section className="page wrap">
@@ -362,5 +363,32 @@ export function Information({ path }: { path: string }) {
         {t("Back to home", "Retour à l’accueil")}
       </a>
     </section>
+  );
+}
+
+/** The pages a person reads to decide whether to trust the app, as one set:
+ * the same column, and a short list that joins them. */
+function TrustLayout({ current, children }: { current: string; children: ReactNode }) {
+  const locale = websiteLocale();
+  const pages = [
+    { path: "/privacy", label: t("Privacy", "Confidentialité") },
+    { path: "/security", label: t("Security", "Sécurité") },
+    { path: "/legal", label: t("Legal notice", "Mentions légales") },
+  ];
+  return (
+    <div className="page wrap trust-layout">
+      <nav className="trust-nav" aria-label={t("Trust and legal", "Confiance et mentions")}>
+        {pages.map((page) => (
+          <a
+            key={page.path}
+            href={localizedSiteHref(page.path, locale)}
+            aria-current={page.path === current ? "page" : undefined}
+          >
+            {page.label}
+          </a>
+        ))}
+      </nav>
+      <section className="prose trust-body">{children}</section>
+    </div>
   );
 }
