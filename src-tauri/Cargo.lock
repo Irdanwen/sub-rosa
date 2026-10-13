@@ -4507,7 +4507,7 @@ dependencies = [
  "urlencoding",
  "uuid",
  "window-vibrancy",
- "windows 0.61.3",
+ "windows 0.62.2",
  "x25519-dalek 3.0.0",
  "zeroize",
  "zip 8.6.0",
