@@ -5,28 +5,28 @@ use super::*;
 use crate::app_paths::{app_data_dir, AppPaths};
 use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-const CHUNK_BYTES: usize = 1024 * 1024;
+pub(super) const CHUNK_BYTES: usize = 1024 * 1024;
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const ASSISTANT_SCAN_LIMIT: usize = 256;
 const ASSISTANT_STAGE_LIMIT: usize = 20;
 static ASSISTANT_SCAN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Chunk {
-    id: String,
-    bytes: u64,
-    sha256: String,
+pub(super) struct Chunk {
+    pub(super) id: String,
+    pub(super) bytes: u64,
+    pub(super) sha256: String,
 }
 fn file_error() -> AppError {
     error("sync_file_unavailable")
 }
-fn blob_aad(s: &Session, id: &str) -> String {
+pub(super) fn blob_aad(s: &Session, id: &str) -> String {
     format!("subrosa:blob:v1:{}:{id}", s.account.id)
 }
-fn digest(bytes: &[u8]) -> String {
+pub(super) fn digest(bytes: &[u8]) -> String {
     crypto::encode(&Sha256::digest(bytes))
 }
-fn modified(meta: &std::fs::Metadata) -> Result<String, AppError> {
+pub(super) fn modified(meta: &std::fs::Metadata) -> Result<String, AppError> {
     Ok(meta
         .modified()
         .map_err(|_| file_error())?
@@ -121,6 +121,10 @@ async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, 
     }
     Ok(output)
 }
+/// Sends one sealed chunk.
+pub(super) async fn put_chunk(s: &Session, id: &str, sealed: Vec<u8>) -> Result<(), AppError> {
+    blob(s, id, Some(sealed)).await.map(|_| ())
+}
 /// What a refused chunk means to the lane. The service answers 404 when it has
 /// no record of the blob, and 503 when object storage would not serve it,
 /// which in practice is a storage allowance spent for the day; 429 and 403
@@ -128,6 +132,11 @@ async fn blob(s: &Session, id: &str, bytes: Option<Vec<u8>>) -> Result<Vec<u8>, 
 fn blob_failure_code(status: u16) -> &'static str {
     match status {
         404 => "sync_blob_missing",
+        // The account is full for files (ADR-0110): the lane waits for room
+        // rather than parking each file in turn.
+        413 => "account_storage_full",
+        // The id holds other bytes: another device's copy of the same file.
+        409 => "sync_chunk_taken",
         403 | 429 | 503 => "sync_storage_limited",
         _ => "sync_blob_request_failed",
     }
@@ -150,9 +159,17 @@ pub(super) async fn step(
     let paths = AppPaths::from_data_dir(root.clone()).map_err(|_| file_error())?;
     sync::reconcile_issues(pool).await?;
     query("DELETE FROM account_file_uploads WHERE source_kind='audio' AND NOT EXISTS(SELECT 1 FROM audio_artifacts a WHERE a.id=artifact_id)").execute(pool).await?;
+    // Once every app reads compact copies, a recording leaves in its compact
+    // form through `compaction`, not here (ADR-0110); and a person may keep
+    // this device's recordings on it.
+    let stage_audio = !storage::format_v2(pool).await? && storage::sending(pool, "audio").await?;
     // Existing remote metadata has an empty path. A local valid artifact is an
     // immutable finalized recording, never the file currently being recorded.
-    let rows=query("SELECT a.id,a.path FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 20").fetch_all(pool).await?;
+    let rows = if !stage_audio {
+        Vec::new()
+    } else {
+        query("SELECT a.id,a.path FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 20").fetch_all(pool).await?
+    };
     for row in rows {
         let artifact: String = row.get("id");
         let path: String = row.get("path");
@@ -190,13 +207,19 @@ pub(super) async fn step(
     // and the deadline test between two of them is honest.
     let mut upload_turn = true;
     let mut idle_turns = 0;
+    // A full account stops sending, not fetching: the downloads go on.
+    let mut sending = !storage::files_held(pool).await?;
     loop {
         let mut moved = false;
-        if upload_turn {
+        if upload_turn && sending {
             if let Some(row) = next_upload(pool).await? {
                 let artifact: String = row.get("artifact_id");
                 match upload_one(pool, s, key, &paths, &gallery).await {
                     Ok(()) => moved = true,
+                    Err(failure) if failure.code == "account_storage_full" => {
+                        storage::hold_files(pool).await?;
+                        sending = false;
+                    }
                     Err(failure) if sync::isolatable_file_error(&failure.code) => {
                         sync::record_issue(pool, "upload", &artifact, &failure.code).await?;
                     }
@@ -394,7 +417,7 @@ pub(super) async fn pending_transfers(pool: &SqlitePool) -> Result<i64, AppError
 /// Whether the lane has anything to do: a recording not yet staged, a chunk
 /// to send or fetch, a file to remove. Read by the tick that wakes the
 /// driver, so it costs four indexed queries and no network.
-pub(super) async fn has_work(pool: &SqlitePool) -> Result<bool, AppError> {
+pub(super) async fn has_work(pool: &SqlitePool, sending: bool) -> Result<bool, AppError> {
     if query("SELECT 1 FROM account_sync_removed_files WHERE lane<>'hermes-session' LIMIT 1")
         .fetch_optional(pool)
         .await?
@@ -402,14 +425,16 @@ pub(super) async fn has_work(pool: &SqlitePool) -> Result<bool, AppError> {
     {
         return Ok(true);
     }
-    if query("SELECT 1 FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
-        .fetch_optional(pool)
-        .await?
-        .is_some()
+    if sending
+        && storage::sending(pool, "audio").await?
+        && query("SELECT 1 FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
+            .fetch_optional(pool)
+            .await?
+            .is_some()
     {
         return Ok(true);
     }
-    Ok(next_upload(pool).await?.is_some() || next_download(pool).await?.is_some())
+    Ok((sending && next_upload(pool).await?.is_some()) || next_download(pool).await?.is_some())
 }
 
 /// Bytes still to move in either direction, for the status line.
@@ -474,10 +499,53 @@ pub(super) async fn upload_one(
         return Err(error("sync_file_changed"));
     }
     let pending: Option<String> = row.get("pending_blob_id");
+    let mut chunks: Vec<Chunk> =
+        serde_json::from_str(&row.get::<String, _>("chunks_json")).map_err(|_| file_error())?;
+    // The envelope is chosen once, before the first chunk, and kept: a file
+    // is never half text, half binary. Binary once every app reads it
+    // (ADR-0110), with chunk ids derived from the manifest.
+    let mut envelope: i64 = row.get("envelope");
+    // A recording never: its compact form goes through `compaction`, and a
+    // derived chunk id is what marks a file as compact.
+    if offset == 0
+        && pending.is_none()
+        && chunks.is_empty()
+        && source_kind != "audio"
+        && storage::format_v2(pool).await?
+    {
+        envelope = 2;
+        query("UPDATE account_file_uploads SET envelope=2 WHERE artifact_id=?")
+            .bind(&artifact)
+            .execute(pool)
+            .await?;
+    }
+    // The gate closed under a binary upload (an older app joined): it starts
+    // over in the envelope every app reads, and what it sent is released.
+    if envelope == 2 && !storage::format_v2(pool).await? {
+        let mut tx = pool.begin().await?;
+        for blob_id in chunks.iter().map(|c| c.id.clone()) {
+            query("INSERT OR IGNORE INTO account_blob_releases(blob_id,reason,not_before) VALUES(?,'restarted upload',?)")
+                .bind(blob_id)
+                .bind(storage::now() + 3600)
+                .execute(&mut *tx)
+                .await?;
+        }
+        query("UPDATE account_file_uploads SET manifest_id=?,next_offset=0,chunks_json='[]',pending_blob_id=NULL,pending_ciphertext=NULL,pending_bytes=NULL,pending_digest=NULL,envelope=1 WHERE artifact_id=?")
+            .bind(uuid::Uuid::new_v4().to_string())
+            .bind(&artifact)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
     let (id, ciphertext, size, hash) = if let Some(id) = pending {
         (
             id,
-            row.get::<String, _>("pending_ciphertext"),
+            if envelope == 2 {
+                row.get::<Vec<u8>, _>("pending_ciphertext")
+            } else {
+                row.get::<String, _>("pending_ciphertext").into_bytes()
+            },
             row.get::<i64, _>("pending_bytes"),
             row.get::<String, _>("pending_digest"),
         )
@@ -492,16 +560,23 @@ pub(super) async fn upload_one(
         file.read_exact(&mut clear)
             .await
             .map_err(|_| file_error())?;
-        let id = uuid::Uuid::new_v4().to_string();
-        let ciphertext = crypto::seal(key, &blob_aad(s, &id), &clear)?;
         let hash = digest(&clear);
         let size = clear.len() as i64;
-        query("UPDATE account_file_uploads SET pending_blob_id=?,pending_ciphertext=?,pending_bytes=?,pending_digest=? WHERE artifact_id=?").bind(&id).bind(&ciphertext).bind(size).bind(&hash).bind(&artifact).execute(pool).await?;
+        let (id, ciphertext) = if envelope == 2 {
+            let id =
+                super::compaction::chunk_id(&row.get::<String, _>("manifest_id"), chunks.len());
+            let sealed = crypto::seal_binary(key, &blob_aad(s, &id), &clear)?;
+            query("UPDATE account_file_uploads SET pending_blob_id=?,pending_ciphertext=?,pending_bytes=?,pending_digest=? WHERE artifact_id=?").bind(&id).bind(&sealed).bind(size).bind(&hash).bind(&artifact).execute(pool).await?;
+            (id, sealed)
+        } else {
+            let id = uuid::Uuid::new_v4().to_string();
+            let sealed = crypto::seal(key, &blob_aad(s, &id), &clear)?;
+            query("UPDATE account_file_uploads SET pending_blob_id=?,pending_ciphertext=?,pending_bytes=?,pending_digest=? WHERE artifact_id=?").bind(&id).bind(&sealed).bind(size).bind(&hash).bind(&artifact).execute(pool).await?;
+            (id, sealed.into_bytes())
+        };
         (id, ciphertext, size, hash)
     };
-    blob(s, &id, Some(ciphertext.into_bytes())).await?;
-    let mut chunks: Vec<Chunk> =
-        serde_json::from_str(&row.get::<String, _>("chunks_json")).map_err(|_| file_error())?;
+    put_chunk(s, &id, ciphertext).await?;
     chunks.push(Chunk {
         id,
         bytes: size as u64,
@@ -564,6 +639,28 @@ pub(super) async fn download_one(
     if current < 0 || current as usize >= chunks.len() {
         return Err(error("sync_blob_invalid"));
     }
+    // A Studio file this device already holds, under a manifest that was
+    // replaced by its compact copy (ADR-0110): the bytes are the same, so
+    // nothing is fetched twice.
+    if current == 0 && row.get::<String, _>("source_kind") == "studio" {
+        let format: String = row.get("format");
+        let artifact: String = row.get("artifact_id");
+        if let Ok(extension) = super::studio::extension(&format) {
+            let held =
+                super::studio::folder(gallery, &format).join(format!("{artifact}.{extension}"));
+            if tokio::fs::metadata(&held)
+                .await
+                .is_ok_and(|m| m.len() == row.get::<i64, _>("bytes") as u64)
+            {
+                query("INSERT INTO account_file_downloads(manifest_id,next_chunk,completed) VALUES(?,?,1) ON CONFLICT(manifest_id) DO UPDATE SET next_chunk=excluded.next_chunk,completed=1")
+                    .bind(&id)
+                    .bind(chunks.len() as i64)
+                    .execute(pool)
+                    .await?;
+                return Ok(());
+            }
+        }
+    }
     // Two chunks in flight (ADR-0109): the second is fetched while the first
     // travels, and written only when the first was good, so progress stays
     // contiguous. Not more: the service holds a request slot for the whole
@@ -577,8 +674,7 @@ pub(super) async fn download_one(
         }
     });
     let open = |piece: &Chunk, encrypted: Vec<u8>| -> Result<Zeroizing<Vec<u8>>, AppError> {
-        let envelope = std::str::from_utf8(&encrypted).map_err(|_| error("sync_blob_invalid"))?;
-        let clear = crypto::open(key, &blob_aad(s, &piece.id), envelope)?;
+        let clear = crypto::open_chunk(key, &blob_aad(s, &piece.id), &encrypted)?;
         if clear.len() as u64 != piece.bytes || digest(&clear) != piece.sha256 {
             return Err(error("sync_blob_invalid"));
         }
