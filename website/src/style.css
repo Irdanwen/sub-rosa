@@ -1372,11 +1372,6 @@ th {
 .account-quick-grid .card a {
   margin-top: auto;
 }
-.account-intro {
-  margin-bottom: 26px;
-  color: var(--muted);
-  max-width: 600px;
-}
 .account-signin {
   max-width: 790px;
   margin: 30px auto 50px;
@@ -5747,4 +5742,56 @@ button.chart-hit {
 }
 .sources-fold[open] summary {
   margin-bottom: 12px;
+}
+
+/* --- The account at a glance (S5) -------------------------------------- */
+.account-status {
+  display: grid;
+  margin-bottom: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.account-status-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: baseline;
+  padding: 16px 20px;
+}
+.account-status-row + .account-status-row {
+  border-top: 1px solid var(--border);
+}
+.account-status-label {
+  color: var(--muted);
+  font-size: 14px;
+}
+.account-status-value {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.account-status-detail {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+}
+.vault-purpose {
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .account-status-row {
+    grid-template-columns: 1fr auto;
+  }
+  .account-status-label {
+    grid-column: 1 / -1;
+  }
+}
+/* The way in through another device is a second option, not a footnote to
+ * the form above it: it gets a divider and air. */
+.card .form + .pairing {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
 }
