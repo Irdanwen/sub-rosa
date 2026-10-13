@@ -2806,7 +2806,7 @@ export function App() {
     (selectedNote?.id === recordingNoteId
       ? selectedNote?.title
       : state.notes.find((note) => note.id === recordingNoteId)?.title
-    )?.trim() || "New note";
+    )?.trim() || t("New note");
   // The dev console demo (window.__globalRecorderPill) force-shows the recorder
   // presence with synthetic status; otherwise it tracks the real recording.
   const recorderPresenceStatus =
@@ -3317,7 +3317,7 @@ export function App() {
                           },
                         },
                         {
-                          label: selectedNote.title.trim() || "New note",
+                          label: selectedNote.title.trim() || t("New note"),
                         },
                       ]}
                     />
@@ -3330,14 +3330,14 @@ export function App() {
                       }}
                       items={[
                         {
-                          label: t("Meeting notes"),
+                          label: t("Notes"),
                           onClick: () => {
                             setActiveView("all-notes");
                             setOriginAllNotes(false);
                           },
                         },
                         {
-                          label: selectedNote.title.trim() || "New note",
+                          label: selectedNote.title.trim() || t("New note"),
                         },
                       ]}
                     />
@@ -3422,7 +3422,7 @@ export function App() {
                         dispatch({ type: "folderSelected", folderId });
                         setFolderReturnTarget({
                           noteId: selectedNote.id,
-                          label: selectedNote.title.trim() || "New note",
+                          label: selectedNote.title.trim() || t("New note"),
                         });
                         setOriginFolderId(undefined);
                       }}

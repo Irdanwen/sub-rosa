@@ -803,7 +803,7 @@ function FolderDetail({
             {folderNotes.length > 0 ? (
               <>
                 <div className="folder-actions-row">
-                  <h2 className="folder-notes-title">{t("Meeting notes")}</h2>
+                  <h2 className="folder-notes-title">{t("Notes")}</h2>
                 </div>
                 <FolderNoteList
                   folder={folder}

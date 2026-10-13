@@ -250,7 +250,7 @@ export function Sidebar({
   onSelectFolder,
   recoverableNoteIds,
   recordingStatus,
-  recordingTitle = "New note",
+  recordingTitle = t("New note"),
   onOpenRecording,
   collapsed = false,
   footerAccessory,
@@ -407,7 +407,7 @@ export function Sidebar({
 
     const recentItems: CommandPaletteItem[] = [
       ...notes.slice(0, 5).map((note) => {
-        const title = note.title.trim() || "New note";
+        const title = note.title.trim() || t("New note");
         return {
           id: `note:${note.id}`,
           label: title,
@@ -640,7 +640,7 @@ export function Sidebar({
         default:
           return {
             id: `note:${hit.targetId}`,
-            label: hit.title.trim() || "New note",
+            label: hit.title.trim() || t("New note"),
             meta: excerpt || (hit.kind === "transcript" ? "Transcript" : "Meeting note"),
             icon: <IconNoteText size={15} />,
             searchText: "",
@@ -1363,7 +1363,7 @@ function NoteRow({
   onSelect: () => void;
   onOpenMenu: (anchor: HTMLElement) => void;
 }) {
-  const title = note.title.trim() || "New note";
+  const title = note.title.trim() || t("New note");
   const menuRef = useRef<HTMLButtonElement>(null);
   const [dragging, setDragging] = useState(false);
 
