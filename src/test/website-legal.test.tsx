@@ -19,6 +19,7 @@ describe("the legal notice", () => {
     ])
       expect(html).toContain(line);
     expect(html).toContain("Hetzner Online GmbH");
+    expect(html).toContain('href="mailto:info@lumen-labs.ch"');
     expect(html).not.toMatch(/style="/);
   });
 
