@@ -1,0 +1,18 @@
+{
+  "rawHex": {
+    "src/styles/agent-hud.css": 1,
+    "src/styles/app.css": 25,
+    "src/styles/hud.css": 1,
+    "src/styles/meeting-hud.css": 1,
+    "src/styles/mobile.css": 9,
+    "src/styles/studio.css": 1
+  },
+  "rawLayers": {
+    "src/components/assistants/assistants.css": 1,
+    "src/components/studio/media-viewer.css": 1,
+    "src/components/studio/project-studio.css": 1,
+    "src/styles/app.css": 17,
+    "src/styles/mobile.css": 3,
+    "src/styles/voice.css": 1
+  }
+}

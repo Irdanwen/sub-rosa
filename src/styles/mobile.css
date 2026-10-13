@@ -5179,7 +5179,7 @@
   --viewer-danger: color-mix(in oklch, var(--destructive) 70%, white);
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   color: var(--viewer-paper);

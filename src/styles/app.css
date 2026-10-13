@@ -3082,7 +3082,7 @@ input:focus-visible,
 .agent-usage-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3356,7 +3356,7 @@ input:focus-visible,
   position: absolute;
   top: var(--sp-4);
   left: var(--sp-4);
-  z-index: 20;
+  z-index: var(--z-sticky);
   width: min(380px, calc(100vw - 32px));
   max-height: min(70vh, 520px);
   display: flex;
@@ -4470,7 +4470,7 @@ input:focus-visible,
 .hermes-trace-panel {
   position: fixed;
   inset: auto 0 0 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -4722,7 +4722,7 @@ input:focus-visible,
   position: absolute;
   right: max(0px, calc(50% - 320px));
   bottom: calc(100% + var(--sp-1));
-  z-index: 130;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   width: 200px;
@@ -5411,7 +5411,7 @@ input:focus-visible,
 /* "/" suggestion palette + "+" popover share the floating-menu look. */
 .agent-category-menu-host {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   width: var(--agent-category-menu-width, auto);
 }
 
@@ -6116,7 +6116,7 @@ input:focus-visible,
   left: 0;
   right: 0;
   height: var(--titlebar-h);
-  z-index: 100;
+  z-index: var(--z-modal);
   background: transparent;
   -webkit-app-region: drag;
 }
@@ -6129,7 +6129,7 @@ input:focus-visible,
   /* Anchored just past the green control (see the token notes) rather than a
    * bare pixel offset. */
   left: calc(var(--titlebar-controls-end) + var(--titlebar-controls-gap));
-  z-index: 110;
+  z-index: var(--z-popover);
   display: inline-grid;
   place-items: center;
   width: var(--control-md);
@@ -7694,7 +7694,7 @@ input:focus-visible,
   position: absolute;
   top: calc(100% + 2px);
   right: var(--sp-3);
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -8053,7 +8053,7 @@ input:focus-visible,
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   min-width: 180px;
   padding: var(--sp-1);
   border: 1px solid var(--border);
@@ -9201,7 +9201,7 @@ input:focus-visible,
  */
 .selection-toolbar {
   position: fixed;
-  z-index: 80;
+  z-index: var(--z-overlay);
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -9650,7 +9650,7 @@ input:focus-visible,
  * same place and the same moment. */
 .rewrite-panel {
   position: fixed;
-  z-index: 80;
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -10449,7 +10449,7 @@ input:focus-visible,
   top: var(--sp-3);
   left: 0;
   right: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   justify-content: center;
   pointer-events: none;
@@ -11289,7 +11289,7 @@ input:focus-visible,
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  z-index: 60;
+  z-index: var(--z-dropdown);
   /* No CSS filter here on purpose — the wheel's shadow is an SVG feDropShadow
      on the disc. A parent filter over a will-change'd animating child flashes
      white on repaint in WebKit. */
@@ -15623,7 +15623,7 @@ input:focus-visible,
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   margin: 0;
   /* sp-1 horizontal + sp-1 vertical padding gives the same inset feel as
    * the context menu, so item hover wash has a rounded border-radius
@@ -19399,7 +19399,7 @@ input:focus-visible,
   position: absolute;
   top: calc(100% + var(--sp-2));
   right: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   min-width: 178px;
   padding: var(--sp-1);
   border: 1px solid var(--popover-border);
@@ -20356,7 +20356,7 @@ input:focus-visible,
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   width: 280px;
   padding: var(--sp-1);
   border: 1px solid var(--popover-border);
@@ -21944,7 +21944,7 @@ input:focus-visible,
 .skills-hub-drawer-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   justify-content: flex-end;
   background: color-mix(in oklch, var(--foreground) 28%, transparent);
