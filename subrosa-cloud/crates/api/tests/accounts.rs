@@ -113,6 +113,7 @@ impl Fixture {
                 conditional_writes: true,
             },
             account_quota_bytes: 1024 * 1024,
+            journal_reserve_bytes: 64 * 1024,
             trusted_proxies: Vec::new(),
             passkey_android_cert_fingerprints: vec![
                 "13:B7:E7:F8:0D:99:67:A0:02:53:C9:23:0F:89:54:B4:39:12:B2:BE:81:7D:9B:B9:F5:F7:B5:18:AD:D6:DC:49".into(),
@@ -3685,5 +3686,264 @@ async fn a_browser_device_signs_itself_out_without_a_step_up() -> Result<()> {
     )
     .await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+/// Uploads one chunk as a browser session, for the storage tests below.
+async fn put_blob(f: &Fixture, browser: &Browser, id: Uuid, data: Vec<u8>) -> Result<StatusCode> {
+    Ok(f.call(
+        Request::builder()
+            .method("PUT")
+            .uri(format!("/api/v1/blobs/{id}"))
+            .header(header::COOKIE, &browser.cookie)
+            .header(header::ORIGIN, "http://localhost:8787")
+            .header("x-csrf-token", &browser.csrf)
+            .header(header::CONTENT_TYPE, "application/octet-stream")
+            .body(Body::from(data))?,
+    )
+    .await?
+    .status())
+}
+
+/// Files stop short of the quota by the journal's reserve (ADR-0110), with a
+/// code of their own; a note still leaves; `/me` says where the account is.
+#[tokio::test]
+async fn files_stop_at_the_journal_reserve_and_a_note_still_leaves() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    // The fixture: a 1 MiB quota with 64 KiB kept for the journal.
+    let file_limit = 1024 * 1024 - 64 * 1024;
+    assert_eq!(
+        put_blob(&f, &alice, Uuid::new_v4(), vec![7; file_limit - 10]).await?,
+        StatusCode::OK
+    );
+    let r = f
+        .call(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/v1/blobs/{}", Uuid::new_v4()))
+                .header(header::COOKIE, &alice.cookie)
+                .header(header::ORIGIN, "http://localhost:8787")
+                .header("x-csrf-token", &alice.csrf)
+                .header(header::CONTENT_TYPE, "application/octet-stream")
+                .body(Body::from(vec![7; 11]))?,
+        )
+        .await?;
+    let (status, body) = decode_response(r).await?;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(body["error"]["code"], "storage_files_full");
+    let note = operation(Uuid::new_v4(), None, "a note that must leave");
+    let (status, _) = f
+        .json("POST", "/api/v1/sync", &alice, json!({"operations":[note]}))
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    let (status, me) = f.json("GET", "/api/v1/me", &alice, json!({})).await?;
+    assert_eq!(status, StatusCode::OK);
+    let storage = &me["data"]["storage"];
+    assert_eq!(storage["quota_bytes"], json!(1024 * 1024));
+    assert_eq!(storage["journal_reserve_bytes"], json!(64 * 1024));
+    assert_eq!(storage["file_bytes"], json!(file_limit - 10));
+    assert!(storage["used_bytes"].as_i64().context("used")? > i64::try_from(file_limit - 10)?);
+    // The account fields a client that predates the storage field reads.
+    assert_eq!(me["data"]["email"], "alice@example.test");
+    Ok(())
+}
+
+/// Releasing a chunk gives its bytes back at once and queues the object; it
+/// is the owner's alone, never a shared chunk, and an id waiting for the
+/// drain cannot be written again until the drain has passed.
+#[tokio::test]
+async fn releasing_a_chunk_gives_its_bytes_back_and_spares_a_share() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    let bob = f.login("bob").await?;
+    let kept = Uuid::new_v4();
+    let gone = Uuid::new_v4();
+    let shared = Uuid::new_v4();
+    for id in [kept, gone, shared] {
+        assert_eq!(
+            put_blob(&f, &alice, id, b"sealed-bytes".to_vec()).await?,
+            StatusCode::OK
+        );
+    }
+    let soon = (Utc::now() + chrono::TimeDelta::hours(24)).to_rfc3339();
+    let (status, _) = f
+        .json(
+            "POST",
+            "/api/v1/shares",
+            &alice,
+            json!({"id":Uuid::new_v4(),"expires_at":soon,"blob_ids":[shared]}),
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    let used = async || -> Result<i64> {
+        Ok(
+            sqlx::query_scalar("SELECT used_bytes FROM accounts WHERE email=$1")
+                .bind("alice@example.test")
+                .fetch_one(&f.pool)
+                .await?,
+        )
+    };
+    let before = used().await?;
+    let path = format!("/api/v1/blobs/{gone}");
+    // Another account cannot release it, nor even learn it exists.
+    assert_eq!(
+        f.json("DELETE", &path, &bob, json!({})).await?.0,
+        StatusCode::NOT_FOUND
+    );
+    let (status, body) = f.json("DELETE", &path, &alice, json!({})).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["freed_bytes"], json!(12));
+    assert_eq!(used().await?, before - 12);
+    assert_eq!(
+        f.json("GET", &path, &alice, json!({})).await?.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        f.json("DELETE", &path, &alice, json!({})).await?.0,
+        StatusCode::NOT_FOUND
+    );
+    // Written again before the drain passed, it would be the drain's.
+    assert_eq!(
+        put_blob(&f, &alice, gone, b"sealed-bytes".to_vec()).await?,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(f.service.repository.cleanup_keys().await?.len(), 1);
+    f.service.maintenance().await?;
+    assert!(f.service.repository.cleanup_keys().await?.is_empty());
+    assert_eq!(
+        put_blob(&f, &alice, gone, b"sealed-bytes".to_vec()).await?,
+        StatusCode::OK
+    );
+    // A chunk a share holds stays, and so does the share.
+    assert_eq!(
+        f.json(
+            "DELETE",
+            &format!("/api/v1/blobs/{shared}"),
+            &alice,
+            json!({})
+        )
+        .await?
+        .0,
+        StatusCode::CONFLICT
+    );
+    let r = f
+        .call(
+            Request::builder()
+                .uri(format!("/api/v1/blobs/{kept}"))
+                .header(header::COOKIE, &alice.cookie)
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(r.status(), StatusCode::OK);
+    Ok(())
+}
+
+/// The owner lists its chunks a page at a time, or exactly the ones it names,
+/// with each chunk's age and whether a share holds it.
+#[tokio::test]
+async fn chunks_list_by_page_or_by_name_with_age_and_share() -> Result<()> {
+    let f = Fixture::new().await?;
+    let alice = f.login("alice").await?;
+    let bob = f.login("bob").await?;
+    let mut ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+    ids.sort();
+    for id in &ids {
+        assert_eq!(
+            put_blob(&f, &alice, *id, b"abc".to_vec()).await?,
+            StatusCode::OK
+        );
+    }
+    assert_eq!(
+        put_blob(&f, &bob, Uuid::new_v4(), b"bobs".to_vec()).await?,
+        StatusCode::OK
+    );
+    let soon = (Utc::now() + chrono::TimeDelta::hours(24)).to_rfc3339();
+    f.json(
+        "POST",
+        "/api/v1/shares",
+        &alice,
+        json!({"id":Uuid::new_v4(),"expires_at":soon,"blob_ids":[ids[2]]}),
+    )
+    .await?;
+    let (status, first) = f
+        .json("GET", "/api/v1/blobs?limit=2", &alice, json!({}))
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first["data"]["has_more"], json!(true));
+    assert_eq!(first["data"]["blobs"][0]["id"], json!(ids[0]));
+    assert_eq!(first["data"]["blobs"][0]["bytes"], json!(3));
+    assert!(first["data"]["blobs"][0]["created_at"].is_string());
+    let (_, rest) = f
+        .json(
+            "GET",
+            &format!("/api/v1/blobs?limit=2&after={}", ids[1]),
+            &alice,
+            json!({}),
+        )
+        .await?;
+    assert_eq!(rest["data"]["has_more"], json!(false));
+    assert_eq!(rest["data"]["blobs"][0]["id"], json!(ids[2]));
+    assert_eq!(rest["data"]["blobs"][0]["shared"], json!(true));
+    let named = format!("/api/v1/blobs?ids={},{}", ids[0], Uuid::new_v4());
+    let (_, found) = f.json("GET", &named, &alice, json!({})).await?;
+    assert_eq!(found["data"]["blobs"].as_array().map(Vec::len), Some(1));
+    assert_eq!(found["data"]["blobs"][0]["shared"], json!(false));
+    let many = (0..101)
+        .map(|_| Uuid::new_v4().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    for bad in [
+        "/api/v1/blobs?ids=not-a-uuid".to_string(),
+        format!("/api/v1/blobs?ids={many}"),
+        "/api/v1/blobs?limit=0".to_string(),
+    ] {
+        assert_eq!(
+            f.json("GET", &bad, &alice, json!({})).await?.0,
+            StatusCode::BAD_REQUEST,
+            "{bad}"
+        );
+    }
+    Ok(())
+}
+
+/// A native device's announced version reaches the device list, so the other
+/// devices can tell when every app reads a newer file format; a malformed one
+/// counts as none and is not refused.
+#[tokio::test]
+async fn a_device_announces_its_app_version() -> Result<()> {
+    let f = Fixture::new().await?;
+    let token = app_device(&f, "alice", "Alice laptop").await?;
+    let devices = async |version: &str| -> Result<(StatusCode, Value)> {
+        decode_response(
+            f.app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/v1/devices")
+                        .header(
+                            header::AUTHORIZATION,
+                            format!(
+                                "Bearer {}",
+                                token["access_token"].as_str().context("access")?
+                            ),
+                        )
+                        .header("x-subrosa-version", version)
+                        .body(Body::empty())?,
+                )
+                .await?,
+        )
+        .await
+    };
+    let (status, list) = devices("1.91.0").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["data"][0]["app_version"], "1.91.0");
+    let (_, list) = devices("1.92.3").await?;
+    assert_eq!(list["data"][0]["app_version"], "1.92.3");
+    // A malformed value, or none (an app from before the header), reads as
+    // an older app, so going back to one holds newer formats back again.
+    let (status, list) = devices("1.91.0; drop table").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(list["data"][0].get("app_version").is_none());
     Ok(())
 }
