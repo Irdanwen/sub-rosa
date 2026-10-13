@@ -189,8 +189,6 @@
   "Cost is compared within one kind of work, from low to very high. One credit is one US cent; the exact price shows in the app before you start.": "Die Kosten werden innerhalb einer Art von Arbeit verglichen, von niedrig bis sehr hoch. Ein Credit ist ein US-Cent; der genaue Preis steht in der App, bevor du startest.",
   "Creates a picture from a description.": "Erstellt ein Bild aus einer Beschreibung.",
   "Creates a short sound: a door, rain, footsteps.": "Erzeugt einen kurzen Klang: eine Tür, Regen, Schritte.",
-  "credit": "Credit",
-  "credits": "Credits",
   "Credits and prices": "Credits und Preise",
   "Credits per 10 seconds of sound (log scale)": "Credits pro 10 Sekunden Ton (logarithmische Skala)",
   "Credits per edit (log scale)": "Credits pro Bearbeitung (logarithmische Skala)",
