@@ -34,6 +34,10 @@ pub enum Error {
     AccountMismatch,
     #[error("Your storage quota has been reached.")]
     Quota,
+    /// Files may not take the room kept for the journal, so a note can
+    /// always leave even when recordings have filled the account.
+    #[error("Your account storage is full. Free some space to send more files.")]
+    FilesFull,
     #[error("Please wait before trying again.")]
     RateLimited,
     #[error("Approve the request in your browser.")]
@@ -111,6 +115,27 @@ pub struct Device {
     /// absent for an app.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_key: Option<DevicePublicKey>,
+    /// The app version this device last announced, so a device can tell
+    /// whether every other one reads a newer file format yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
+}
+/// One stored file chunk, as its owner lists it to find what to release.
+#[derive(Debug, Serialize)]
+pub struct BlobInfo {
+    pub id: Uuid,
+    pub bytes: i64,
+    pub created_at: DateTime<Utc>,
+    /// Held by a share: never released through the library.
+    pub shared: bool,
+}
+/// Where an account stands against its quota.
+#[derive(Debug, Serialize)]
+pub struct StorageUse {
+    pub used_bytes: i64,
+    pub quota_bytes: i64,
+    pub file_bytes: i64,
+    pub journal_reserve_bytes: i64,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct DevicePublicKey {
@@ -593,6 +618,7 @@ mod tests {
             renew_count: 0,
             kind,
             public_key,
+            app_version: None,
         };
         let browser = serde_json::to_value(device(
             DeviceKind::Browser,

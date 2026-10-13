@@ -9,6 +9,8 @@ development = false
 # Supply the authenticated URL through SUBROSA_CLOUD_DATABASE_URL from the secret manager.
 database_url = "postgres://subrosa@database.example.invalid/subrosa?sslmode=verify-full"
 account_quota_bytes = 5368709120
+# Room only the journal may use: files stop this far below the quota.
+journal_reserve_bytes = 268435456
 
 [oidc]
 issuer = "https://identity.example.invalid"
