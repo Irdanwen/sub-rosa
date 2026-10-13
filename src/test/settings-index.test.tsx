@@ -52,7 +52,7 @@ describe("the settings index", () => {
     expect(SETTINGS_TABS).toHaveLength(24);
   });
 
-  it("keeps four groups a person reads, and folds only Advanced (ADR-0110)", () => {
+  it("keeps four groups a person reads, and folds only Advanced (ADR-0111)", () => {
     expect(SETTINGS_SIDEBAR_GROUPS.filter((group) => !group.folded)).toHaveLength(4);
     expect(
       SETTINGS_SIDEBAR_GROUPS.filter((group) => group.folded).map((group) => group.id),
