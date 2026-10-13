@@ -264,7 +264,7 @@ windows = { version = "0.61", features = [
 
 [dev-dependencies]
 # An independent RFC 9180 implementation the spaces HPKE is opened by.
-hpke = { version = "0.12", default-features = false, features = ["alloc", "x25519"] }
+hpke = { version = "0.14", default-features = false, features = ["alloc", "x25519"] }
 serde_yaml = "0.9"
 tempfile = "3.14"
 # Captures what `tracing` emits, so "the key is never logged" is a test rather

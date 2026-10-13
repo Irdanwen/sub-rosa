@@ -99,9 +99,9 @@ dependencies = [
  "chacha20poly1305",
  "cipher 0.4.4",
  "cookie-factory",
- "hkdf",
+ "hkdf 0.12.4",
  "hmac 0.12.1",
- "hpke",
+ "hpke 0.12.0",
  "i18n-embed",
  "i18n-embed-fl",
  "lazy_static",
@@ -129,8 +129,8 @@ dependencies = [
  "bech32",
  "chacha20poly1305",
  "cookie-factory",
- "hkdf",
- "hpke",
+ "hkdf 0.12.4",
+ "hpke 0.12.0",
  "io_tee",
  "nom 8.0.0",
  "rand 0.8.8",
@@ -1741,7 +1741,7 @@ dependencies = [
  "ff",
  "generic-array",
  "group",
- "hkdf",
+ "hkdf 0.12.4",
  "pem-rfc7468",
  "pkcs8",
  "rand_core 0.6.4",
@@ -2640,6 +2640,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hkdf"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4aaa26c720c68b866f2c96ef5c1264b3e6f473fe5d4ce61cd44bbe913e553018"
+dependencies = [
+ "hmac 0.13.0",
+]
+
+[[package]]
 name = "hmac"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2674,13 +2683,28 @@ dependencies = [
  "chacha20poly1305",
  "digest 0.10.7",
  "generic-array",
- "hkdf",
+ "hkdf 0.12.4",
  "hmac 0.12.1",
  "p256",
  "rand_core 0.6.4",
  "sha2 0.10.9",
  "subtle",
- "x25519-dalek 2.0.1",
+ "zeroize",
+]
+
+[[package]]
+name = "hpke"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5324110b02044183df000f0bd7d2d7e61f1000631508627e77f63983b6fdffb"
+dependencies = [
+ "aead 0.6.1",
+ "hkdf 0.13.0",
+ "hybrid-array 0.4.14",
+ "rand_core 0.10.1",
+ "sha2 0.11.0",
+ "subtle",
+ "x25519-dalek 3.0.0",
  "zeroize",
 ]
 
@@ -4454,7 +4478,7 @@ dependencies = [
  "ed25519-dalek 3.0.0",
  "encoding_rs",
  "hound",
- "hpke",
+ "hpke 0.14.1",
  "image",
  "jni 0.22.4",
  "june-embed",
@@ -7294,7 +7318,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
