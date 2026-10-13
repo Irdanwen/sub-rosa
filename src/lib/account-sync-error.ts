@@ -33,6 +33,14 @@ export function accountSyncError(code: string): string {
       return t(
         "A file is no longer available from the service. It stays on the device that made it.",
       );
+    case "account_storage_full":
+      return t(
+        "Your account storage is full. Your changes are safe on this device and will sync once space is freed.",
+      );
+    case "sync_chunks_missing":
+      return t("Parts of a file are missing from the service. This device is sending them again.");
+    case "sync_chunk_taken":
+      return t("Another device is already sending this file. It will arrive from there.");
     case "account_not_connected":
     case "account_revoked":
     case "sync_authentication_failed":

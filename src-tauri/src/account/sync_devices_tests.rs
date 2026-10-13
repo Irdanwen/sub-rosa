@@ -52,6 +52,25 @@ mod fake_service {
         pub refuse_posts: bool,
         /// How long a wait holds before answering "nothing changed".
         pub wait_for: Duration,
+        /// The account's quota, as the service keeps it (ADR-0110): `None`
+        /// is unlimited. A revision costs its ciphertext and 256 bytes; files
+        /// stop `reserve` short of the quota.
+        pub quota: Option<i64>,
+        pub reserve: i64,
+        pub used: i64,
+        pub blobs: std::collections::BTreeMap<String, Blob>,
+        /// What `/api/v1/devices` lists, app versions included.
+        pub devices: Vec<Value>,
+        pub blob_gets: usize,
+        pub blob_puts: usize,
+        pub blob_deletes: usize,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Blob {
+        pub bytes: Vec<u8>,
+        pub created_at: chrono::DateTime<chrono::Utc>,
+        pub shared: bool,
     }
 
     pub struct Service {
@@ -153,6 +172,7 @@ mod fake_service {
         }
         let body = &received[header_end..header_end + length];
         let (path, query) = target.split_once('?').unwrap_or((&target, ""));
+        let mut raw: Option<Vec<u8>> = None;
         let params: std::collections::HashMap<String, String> = query
             .split('&')
             .filter_map(|pair| pair.split_once('='))
@@ -174,10 +194,10 @@ mod fake_service {
                                 ("200 OK", Ok(json!({"results":results})))
                             }
                             Err(code) => (
-                                if code == "conflict" {
-                                    "409 Conflict"
-                                } else {
-                                    "400 Bad Request"
+                                match code {
+                                    "conflict" => "409 Conflict",
+                                    "quota_exceeded" => "413 Payload Too Large",
+                                    _ => "400 Bad Request",
                                 },
                                 Err(code),
                             ),
@@ -239,8 +259,105 @@ mod fake_service {
                     }
                 }
             }
+            ("GET", "/api/v1/me") => {
+                let j = journal.lock().await;
+                let files: i64 = j.blobs.values().map(|b| b.bytes.len() as i64).sum();
+                let storage = j.quota.map(|quota| {
+                    json!({"used_bytes":j.used,"quota_bytes":quota,"file_bytes":files,"journal_reserve_bytes":j.reserve})
+                });
+                (
+                    "200 OK",
+                    Ok(
+                        json!({"id":"account-one","email":"one@example.test","created_at":"now","storage":storage}),
+                    ),
+                )
+            }
+            ("GET", "/api/v1/devices") => ("200 OK", Ok(json!(journal.lock().await.devices))),
+            ("GET", "/api/v1/blobs") => {
+                let j = journal.lock().await;
+                let limit: usize = params
+                    .get("limit")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(500);
+                let named: Option<Vec<String>> = params
+                    .get("ids")
+                    .map(|ids| ids.split(',').map(str::to_string).collect());
+                let after = params.get("after").cloned().unwrap_or_default();
+                let listed: Vec<Value> = j
+                    .blobs
+                    .iter()
+                    .filter(|(id, _)| named.as_ref().map_or(id.as_str() > after.as_str(), |n| n.contains(id)))
+                    .take(if named.is_some() { usize::MAX } else { limit })
+                    .map(|(id, b)| json!({"id":id,"bytes":b.bytes.len(),"created_at":b.created_at.to_rfc3339(),"shared":b.shared}))
+                    .collect();
+                let has_more = named.is_none() && listed.len() == limit;
+                ("200 OK", Ok(json!({"blobs":listed,"has_more":has_more})))
+            }
+            (method, blob) if blob.starts_with("/api/v1/blobs/") => {
+                let id = blob.trim_start_matches("/api/v1/blobs/").to_string();
+                let mut j = journal.lock().await;
+                match method {
+                    "GET" => {
+                        j.blob_gets += 1;
+                        match j.blobs.get(&id) {
+                            Some(b) => {
+                                raw = Some(b.bytes.clone());
+                                ("200 OK", Ok(Value::Null))
+                            }
+                            None => ("404 Not Found", Err("not_found")),
+                        }
+                    }
+                    "PUT" => {
+                        j.blob_puts += 1;
+                        let limit = j.quota.map(|q| q - j.reserve);
+                        match j.blobs.get(&id) {
+                            Some(b) if b.bytes == body => {
+                                ("200 OK", Ok(json!({"id":id,"bytes":body.len()})))
+                            }
+                            Some(_) => ("409 Conflict", Err("conflict")),
+                            None if limit.is_some_and(|l| j.used + body.len() as i64 > l) => {
+                                ("413 Payload Too Large", Err("storage_files_full"))
+                            }
+                            None => {
+                                j.used += body.len() as i64;
+                                j.blobs.insert(
+                                    id.clone(),
+                                    Blob {
+                                        bytes: body.to_vec(),
+                                        created_at: chrono::Utc::now(),
+                                        shared: false,
+                                    },
+                                );
+                                ("200 OK", Ok(json!({"id":id,"bytes":body.len()})))
+                            }
+                        }
+                    }
+                    "DELETE" => match j.blobs.get(&id).cloned() {
+                        None => ("404 Not Found", Err("not_found")),
+                        Some(b) if b.shared => ("409 Conflict", Err("conflict")),
+                        Some(b) => {
+                            j.blob_deletes += 1;
+                            j.blobs.remove(&id);
+                            j.used -= b.bytes.len() as i64;
+                            ("200 OK", Ok(json!({"id":id,"freed_bytes":b.bytes.len()})))
+                        }
+                    },
+                    _ => ("404 Not Found", Err("not_found")),
+                }
+            }
             _ => ("404 Not Found", Err("not_found")),
         };
+        if let Some(bytes) = raw {
+            let mut response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                bytes.len()
+            )
+            .into_bytes();
+            response.extend_from_slice(&bytes);
+            let _ = stream.write_all(&response).await;
+            let _ = stream.shutdown().await;
+            return;
+        }
         let body = match payload {
             Ok(data) => json!({"data":data}).to_string(),
             Err(code) => json!({"error":{"code":code,"message":code}}).to_string(),
@@ -271,6 +388,10 @@ mod fake_service {
         }
         if total > 4 * 1024 * 1024 {
             return Err("invalid_request");
+        }
+        let cost = total as i64 + 256 * ops.len() as i64;
+        if j.quota.is_some_and(|quota| j.used + cost > quota) {
+            return Err("quota_exceeded");
         }
         // The whole batch is one transaction: work on a copy, keep it on success.
         let mut revisions = j.revisions.clone();
@@ -344,6 +465,7 @@ mod fake_service {
         }
         j.revisions = revisions;
         j.next_sequence = next;
+        j.used += cost;
         Ok(results)
     }
 
@@ -1272,3 +1394,6 @@ async fn a_library_with_sync_off_reports_no_local_work() {
     set_enabled(&mac.pool, false).await.unwrap();
     assert!(!has_local_work(&mac.pool).await.unwrap());
 }
+
+#[path = "sync_storage_tests.rs"]
+mod storage_tests;
