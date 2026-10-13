@@ -1,4 +1,6 @@
 import { t } from "../../lib/i18n";
+import { EmptyState, LoadFailed } from "../ui/EmptyState";
+import { ShimmerRows } from "../ui/Shimmer";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconExclamationCircle } from "central-icons/IconExclamationCircle";
@@ -131,19 +133,23 @@ export function ToolsetsView({
         <div className="toolsets-body">
           {isUnavailable ? (
             <EmptyState
+              size="compact"
+              icon={<IconToolbox size={22} />}
               title={t("Hermes is not running")}
               description={t("Start Hermes to see which toolsets and tools your sessions can use.")}
             />
           ) : isErrored ? (
-            <ErrorState
+            <LoadFailed
+              title={t("Couldn't load toolsets")}
               message={state.error ?? t("Could not load your toolsets.")}
-              retryable={state.retryable}
-              onRetry={state.refresh}
+              onRetry={state.retryable ? state.refresh : undefined}
             />
           ) : isLoadingFirst ? (
-            <ToolsetsLoading />
+            <ShimmerRows count={3} />
           ) : !hasToolsets ? (
             <EmptyState
+              size="compact"
+              icon={<IconToolbox size={22} />}
               title={t("No toolsets reported")}
               description={t(
                 "Hermes did not report any toolsets for this runtime. Tools from MCP servers appear here after the gateway restarts.",
@@ -151,6 +157,8 @@ export function ToolsetsView({
             />
           ) : visible.length === 0 ? (
             <EmptyState
+              size="compact"
+              icon={<IconToolbox size={22} />}
               title={t("No matching toolsets")}
               description={t(
                 "No toolset matches your search. Try a different term or clear the filter.",
@@ -322,58 +330,6 @@ function LifecycleBanner({ state }: { state: ToolsetsState }) {
         {snapshot.label}
       </span>
       <span className="toolsets-lifecycle-body">{snapshot.detail}</span>
-    </div>
-  );
-}
-
-function ToolsetsLoading() {
-  return (
-    <ul className="toolsets-list" aria-hidden>
-      {[0, 1, 2].map((index) => (
-        <li key={index} className="toolset-row toolset-skeleton">
-          <div className="toolset-main">
-            <span className="toolset-skeleton-line toolset-skeleton-title" />
-            <span className="toolset-skeleton-line" />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="toolsets-empty" role="status">
-      <span className="toolsets-empty-icon" aria-hidden>
-        <IconToolbox size={22} />
-      </span>
-      <p className="toolsets-empty-title">{title}</p>
-      <p className="toolsets-empty-description">{description}</p>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  retryable,
-  onRetry,
-}: {
-  message: string;
-  retryable: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="toolsets-error" role="alert">
-      <span className="toolsets-empty-icon" aria-hidden>
-        <IconExclamationCircle size={22} />
-      </span>
-      <p className="toolsets-empty-title">{t("Couldn't load toolsets")}</p>
-      <p className="toolsets-empty-description">{message}</p>
-      {retryable ? (
-        <button type="button" className="toolsets-retry" onClick={onRetry}>
-          {t("Try again")}
-        </button>
-      ) : null}
     </div>
   );
 }

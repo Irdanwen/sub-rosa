@@ -1,4 +1,5 @@
 import { t } from "../../lib/i18n";
+import { LoadFailed } from "../ui/EmptyState";
 import { IconCircleInfo } from "central-icons/IconCircleInfo";
 import { IconExclamationCircle } from "central-icons/IconExclamationCircle";
 import { IconShield } from "central-icons/IconShield";
@@ -101,16 +102,11 @@ export function McpSecurityView({
             {t("Start Hermes to set the default MCP exposure policy.")}
           </p>
         ) : isErrored ? (
-          <div className="mcp-security-error" role="alert">
-            <p className="mcp-servers-empty-description">
-              {state.error ?? t("Could not load the MCP exposure policy.")}
-            </p>
-            {state.retryable ? (
-              <button type="button" className="mcp-servers-retry" onClick={state.refresh}>
-                {t("Try again")}
-              </button>
-            ) : null}
-          </div>
+          <LoadFailed
+            title={t("Couldn't load the exposure policy")}
+            message={state.error ?? t("Could not load the MCP exposure policy.")}
+            onRetry={state.retryable ? state.refresh : undefined}
+          />
         ) : (
           <fieldset
             className="mcp-security-policy"

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import { artifactSrc, exportArtifact } from "../../lib/studio/artifacts";
 import type { StudioArtifact } from "../../lib/studio/types";
 import {
@@ -244,10 +245,10 @@ export function ProjectMedia({
           ))}
         </div>
       ) : (
-        <div className="project-empty">
-          <h2>{t("No matching media")}</h2>
-          <p>{t("Generate a take or add existing media from your library.")}</p>
-        </div>
+        <EmptyState
+          title={t("No matching media")}
+          description={t("Generate a take or add existing media from your library.")}
+        />
       )}
     </section>
   );

@@ -3,6 +3,7 @@
 // and a consent, made for the one engine that clones.
 
 import { t } from "../../lib/i18n";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import { useId, useState } from "react";
 import {
   type ClonedVoice,
@@ -154,7 +155,7 @@ export function ClonedVoiceDialog({
           />
           <span>{t("This is my own voice, or one I have permission to use.")}</span>
         </label>
-        {error ? <p className="studio-error">{error}</p> : null}
+        {error ? <ErrorMessage>{error}</ErrorMessage> : null}
       </div>
     </Dialog>
   );

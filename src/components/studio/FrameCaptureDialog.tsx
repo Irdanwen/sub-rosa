@@ -15,6 +15,7 @@
 // possibly into another editor.
 
 import { t } from "../../lib/i18n";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { artifactSrc, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
 import { extractFrameAt, extractHandoffFrame, lastReadableTime } from "../../lib/studio/frames";
@@ -254,7 +255,7 @@ export function FrameCaptureDialog({
             </p>
           </>
         ) : null}
-        {error ? <p className="studio-error">{error}</p> : null}
+        {error ? <ErrorMessage>{error}</ErrorMessage> : null}
       </div>
     </Dialog>
   );

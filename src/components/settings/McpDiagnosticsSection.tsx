@@ -1,4 +1,6 @@
 import { t } from "../../lib/i18n";
+import { EmptyState, LoadFailed } from "../ui/EmptyState";
+import { ShimmerRows } from "../ui/Shimmer";
 import { IconArrowInbox } from "central-icons/IconArrowInbox";
 import { messageFromError } from "../../lib/errors";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
@@ -127,19 +129,23 @@ export function McpDiagnosticsView({
       <div className="settings-card mcp-diagnostics-card">
         {isUnavailable ? (
           <EmptyState
+            size="compact"
+            icon={<IconServer1 size={22} />}
             title={t("Hermes is not running")}
             description={t("Start Hermes to diagnose the MCP servers your sessions can use.")}
           />
         ) : isErrored ? (
-          <ErrorState
+          <LoadFailed
+            title={t("Couldn't load MCP servers")}
             message={state.error ?? t("Could not load your MCP servers.")}
-            retryable={state.retryable}
-            onRetry={state.refresh}
+            onRetry={state.retryable ? state.refresh : undefined}
           />
         ) : isLoadingFirst ? (
-          <Loading />
+          <ShimmerRows count={2} />
         ) : !hasServers ? (
           <EmptyState
+            size="compact"
+            icon={<IconServer1 size={22} />}
             title={t("No MCP servers")}
             description={t("Add a server on the MCP servers page to diagnose its tools here.")}
           />
@@ -489,58 +495,4 @@ function downloadText(filename: string, text: string): void {
   anchor.click();
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
-}
-
-// ---------------------------------------------------------------------------
-// Shared empty / error / loading surfaces
-// ---------------------------------------------------------------------------
-
-function Loading() {
-  return (
-    <ul className="mcp-diagnostics-list" aria-hidden>
-      {[0, 1].map((index) => (
-        <li key={index} className="mcp-diagnostics-row mcp-diagnostics-skeleton">
-          <span className="mcp-diagnostics-skeleton-line mcp-diagnostics-skeleton-title" />
-          <span className="mcp-diagnostics-skeleton-line" />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="mcp-diagnostics-empty" role="status">
-      <span className="mcp-diagnostics-empty-icon" aria-hidden>
-        <IconServer1 size={22} />
-      </span>
-      <p className="mcp-diagnostics-empty-title">{title}</p>
-      <p className="mcp-diagnostics-empty-description">{description}</p>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  retryable,
-  onRetry,
-}: {
-  message: string;
-  retryable: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="mcp-diagnostics-error" role="alert">
-      <span className="mcp-diagnostics-empty-icon" aria-hidden>
-        <IconExclamationCircle size={22} />
-      </span>
-      <p className="mcp-diagnostics-empty-title">{t("Couldn't load MCP servers")}</p>
-      <p className="mcp-diagnostics-empty-description">{message}</p>
-      {retryable ? (
-        <button type="button" className="mcp-diagnostics-retry" onClick={onRetry}>
-          {t("Try again")}
-        </button>
-      ) : null}
-    </div>
-  );
 }

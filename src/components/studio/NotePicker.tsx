@@ -3,6 +3,7 @@
 // what it needs.
 
 import { t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import { useEffect, useMemo, useState } from "react";
 import { listNotes, type NoteListItemDto } from "../../lib/tauri";
 import { Dialog } from "../ui/Dialog";
@@ -63,13 +64,16 @@ export function NotePicker({
             <Spinner aria-label={t("Loading notes")} />
           </div>
         ) : visible.length === 0 ? (
-          <p className="studio-picker-empty">
-            {query.trim()
-              ? t("No notes match.")
-              : // Distinguishing the two matters here: somebody sent to this
-                // dialog to pick a script has quite possibly not written one.
-                t("You have no notes yet. Write one first - a note is where a film starts.")}
-          </p>
+          <EmptyState
+            size="compact"
+            title={
+              query.trim()
+                ? t("No notes match.")
+                : // Distinguishing the two matters here: somebody sent to this
+                  // dialog to pick a script has quite possibly not written one.
+                  t("You have no notes yet. Write one first - a note is where a film starts.")
+            }
+          />
         ) : (
           <ul className="studio-note-picker-list">
             {visible.map((note) => (

@@ -6,6 +6,7 @@
 // the node that made it, with real provenance and chain links.
 
 import { t } from "../../lib/i18n";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import {
   addEdge,
   applyEdgeChanges,
@@ -1842,7 +1843,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     return (
       <div className="studio-workflows">
         {productionBanners}
-        {runError ? <p className="studio-error">{runError}</p> : null}
+        {runError ? <ErrorMessage>{runError}</ErrorMessage> : null}
         <WorkflowLibrary
           catalog={catalog}
           workflows={workflows}
@@ -1950,7 +1951,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         </div>
       ) : null}
       {productionBanners}
-      {runError ? <p className="studio-error">{runError}</p> : null}
+      {runError ? <ErrorMessage>{runError}</ErrorMessage> : null}
       {validation && (validation.errors.length > 0 || validation.warnings.length > 0) ? (
         <div className="studio-validation">
           {[...validation.errors, ...validation.warnings].map((issue) => (

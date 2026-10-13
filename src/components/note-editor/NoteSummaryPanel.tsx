@@ -6,6 +6,7 @@ import { IconTrashCan } from "central-icons/IconTrashCan";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DotSpinner } from "../DotSpinner";
+import { formatClock, useNow } from "../../lib/wait-clock";
 import { messageFromError } from "../../lib/errors";
 import { parseChapters } from "../../lib/chapters";
 import { SimpleMarkdown } from "../../lib/simple-markdown";
@@ -251,16 +252,35 @@ function SummaryProgress({ summary }: { summary: NoteSummaryDto }) {
   // paragraph are the last two calls, and they are not quick on a long
   // recording. Saying so beats a progress line frozen at "part 12 of 12".
   const merging = done >= total;
+  const now = useNow(true);
+  const startedMs = Date.parse(summary.createdAt);
+  const elapsedMs = Number.isFinite(startedMs) ? Math.max(0, now - startedMs) : undefined;
+  // The parts are a real count, so the bar is determinate; the merge has no
+  // count, so it sweeps rather than sitting at full while work goes on.
+  const filled = merging || total < 2 ? undefined : done / total;
   return (
-    <div className="note-summary-progress" role="status" aria-live="polite">
-      <DotSpinner className="note-summary-spinner" />
-      <span>
-        {merging
-          ? t("Putting it together")
-          : total > 1
-            ? t("Reading part {part} of {total}", { part: done + 1, total })
-            : t("Reading the recording")}
-      </span>
+    <div className="note-summary-progress">
+      <div className="note-summary-progress-line">
+        <DotSpinner className="note-summary-spinner" />
+        <span role="status" aria-live="polite">
+          {merging
+            ? t("Putting it together")
+            : total > 1
+              ? t("Reading part {part} of {total}", { part: done + 1, total })
+              : t("Reading the recording")}
+        </span>
+        {/* Outside the live region: a clock announced every second would
+            drown the phase it sits next to. */}
+        {elapsedMs !== undefined ? (
+          <span className="note-processing-clock">{formatClock(elapsedMs)}</span>
+        ) : null}
+      </div>
+      <div className="note-processing-bar" data-indeterminate={filled === undefined || undefined}>
+        <span
+          className="note-processing-bar-fill"
+          style={filled === undefined ? undefined : { transform: `scaleX(${filled})` }}
+        />
+      </div>
     </div>
   );
 }

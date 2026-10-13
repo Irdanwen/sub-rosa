@@ -11,6 +11,7 @@ import { replayOnboarding } from "./lib/onboarding";
 import { initTheme } from "./lib/theme";
 import { initBrand } from "./lib/brand";
 import "./styles/app.css";
+import "./styles/states.css";
 import "./styles/carpe-diem.css";
 import "./styles/studio.css";
 import "./styles/council.css";

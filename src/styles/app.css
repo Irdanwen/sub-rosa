@@ -12656,49 +12656,6 @@ input:focus-visible,
   background: color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-/* Empty / error / loading states. */
-.installed-skills-empty,
-.installed-skills-error {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-10) var(--sp-6);
-  text-align: center;
-}
-
-.installed-skills-empty-icon {
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted-foreground);
-}
-
-.installed-skills-empty-title {
-  margin: 0;
-  color: var(--foreground);
-  font-size: var(--fs-md);
-  font-weight: 500;
-}
-
-.installed-skills-empty-description {
-  margin: 0;
-  max-width: 360px;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.installed-skills-retry {
-  margin-top: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
 .installed-skill-skeleton {
   grid-template-columns: 1fr;
 }
@@ -12712,17 +12669,12 @@ input:focus-visible,
  * static grey bar says "this is broken" about as readily as it says "this is
  * loading", and fixing that in five places is a change nobody makes.
  *
- * One definition, and it breathes. The per-surface class names are kept as
- * aliases rather than renamed across nine components: the point was to have
- * one rule, not to touch every file that draws a placeholder.
+ * One definition, and it breathes. The settings lists now draw it through
+ * ShimmerRows (ui/Shimmer.tsx); the two skills surfaces still alias it.
  */
 .skeleton-line,
-.installed-skill-skeleton-line,
-.mcp-server-skeleton-line,
 .skill-review-skeleton-line,
-.skills-hub-skeleton-line,
-.toolset-skeleton-line,
-.external-dir-skeleton-line {
+.skills-hub-skeleton-line {
   display: block;
   height: 12px;
   border-radius: var(--r-sm);
@@ -12737,11 +12689,8 @@ input:focus-visible,
 }
 
 .skeleton-title,
-.installed-skill-skeleton-title,
-.mcp-server-skeleton-title,
 .skill-review-skeleton-title,
-.skills-hub-skeleton-title,
-.toolset-skeleton-title {
+.skills-hub-skeleton-title {
   width: 40%;
   height: 14px;
 }
@@ -12749,10 +12698,7 @@ input:focus-visible,
 /* The second line of a placeholder is shorter, the way a second line of real
  * text usually is. */
 .skeleton-line + .skeleton-line,
-.installed-skill-skeleton-line + .installed-skill-skeleton-line,
-.mcp-server-skeleton-line + .mcp-server-skeleton-line,
-.skills-hub-skeleton-line + .skills-hub-skeleton-line,
-.toolset-skeleton-line + .toolset-skeleton-line {
+.skills-hub-skeleton-line + .skills-hub-skeleton-line {
   width: 70%;
 }
 
@@ -12767,12 +12713,8 @@ input:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton-line,
-  .installed-skill-skeleton-line,
-  .mcp-server-skeleton-line,
   .skill-review-skeleton-line,
-  .skills-hub-skeleton-line,
-  .toolset-skeleton-line,
-  .external-dir-skeleton-line {
+  .skills-hub-skeleton-line {
     background: var(--surface-subtle);
     animation: none;
   }
@@ -13043,61 +12985,6 @@ input:focus-visible,
 .external-dir-remove:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.external-dirs-empty,
-.external-dirs-error {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-7) var(--sp-5);
-  text-align: center;
-}
-
-.external-dirs-empty-icon {
-  color: var(--muted-foreground);
-}
-
-.external-dirs-empty-title {
-  margin: 0;
-  color: var(--foreground);
-  font-weight: 500;
-  font-size: var(--fs-md);
-}
-
-.external-dirs-empty-description {
-  margin: 0;
-  max-width: 42ch;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
-  line-height: 1.45;
-}
-
-.external-dirs-retry {
-  margin-top: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.external-dir-skeleton {
-  display: block;
-}
-
-/* Only what differs from the shared placeholder: this list spaces its lines
- * itself rather than through a grid gap. */
-.external-dir-skeleton-line {
-  margin-bottom: var(--sp-2);
-}
-
-.external-dir-skeleton-title {
-  width: 40%;
-  height: 14px;
 }
 
 /* Agent-managed skill write review queue (Hermes admin surface, spec 12). The
@@ -14843,53 +14730,6 @@ input:focus-visible,
   line-height: 1.45;
 }
 
-/* Empty / error / loading states. */
-.mcp-servers-empty,
-.mcp-servers-error {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-10) var(--sp-6);
-  text-align: center;
-}
-
-.mcp-servers-empty-icon {
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted-foreground);
-}
-
-.mcp-servers-empty-title {
-  margin: 0;
-  color: var(--foreground);
-  font-size: var(--fs-md);
-  font-weight: 500;
-}
-
-.mcp-servers-empty-description {
-  margin: 0;
-  max-width: 380px;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.mcp-servers-retry {
-  margin-top: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.mcp-server-skeleton {
-  grid-template-columns: 1fr;
-}
-
 /* Add-server dialog form. */
 .mcp-add-form {
   display: grid;
@@ -16513,12 +16353,19 @@ input:focus-visible,
 }
 
 .note-summary-progress {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
+  display: grid;
+  flex: 1;
+  gap: var(--sp-2);
+  min-width: 16rem;
   color: var(--muted-foreground);
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
+}
+
+.note-summary-progress-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
 }
 
 .note-summary-progress-row {
@@ -18458,15 +18305,6 @@ input:focus-visible,
   color: var(--foreground);
 }
 
-.folders-empty {
-  display: grid;
-  place-items: center;
-  gap: var(--sp-3);
-  min-height: 200px;
-  color: var(--muted-foreground);
-  text-align: center;
-}
-
 /* Folder detail ----------------------------------------------------- */
 
 .folder-detail {
@@ -19555,14 +19393,6 @@ input:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.add-notes-empty {
-  margin: 0;
-  padding: var(--sp-8) var(--sp-4);
-  color: var(--muted-foreground);
-  font-size: var(--fs-md);
-  text-align: center;
 }
 
 /* Dialog system ---------------------------------------------------- */
@@ -23175,49 +23005,6 @@ input:focus-visible,
 
 .toolsets-skill-row[data-status="missing-setup"] .toolsets-skill-explanation {
   color: var(--warm-strong);
-}
-
-/* Empty / error / loading states. */
-.toolsets-empty,
-.toolsets-error {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-10) var(--sp-6);
-  text-align: center;
-}
-
-.toolsets-empty-icon {
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted-foreground);
-}
-
-.toolsets-empty-title {
-  margin: 0;
-  color: var(--foreground);
-  font-size: var(--fs-md);
-  font-weight: 500;
-}
-
-.toolsets-empty-description {
-  margin: 0;
-  max-width: 360px;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.toolsets-retry {
-  margin-top: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  font-size: var(--fs-sm);
-  cursor: pointer;
 }
 
 /* ------------------------------------------------------------------ */

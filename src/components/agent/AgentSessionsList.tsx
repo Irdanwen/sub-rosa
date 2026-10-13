@@ -32,7 +32,7 @@ import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { primaryShortcutLabel } from "../../lib/platform";
 import type { FolderDto, HermesSessionInfo } from "../../lib/tauri";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { EmptyState } from "../ui/EmptyState";
+import { EmptyState, NoMatches } from "../ui/EmptyState";
 
 type AgentSessionsListProps = {
   sessions: HermesSessionInfo[];
@@ -297,9 +297,10 @@ export const AgentSessionsList = forwardRef<AgentSessionsListHandle, AgentSessio
             }
           />
         ) : filteredSessions.length === 0 ? (
-          <div className="folders-empty">
-            <p>{t("No sessions match “{query}”.", { query: query.trim() })}</p>
-          </div>
+          <NoMatches
+            message={t("No chats match “{query}”.", { query: query.trim() })}
+            onClear={() => setQuery("")}
+          />
         ) : (
           <ul
             className="folder-notes all-notes-list"

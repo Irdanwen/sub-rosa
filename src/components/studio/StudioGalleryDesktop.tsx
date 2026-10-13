@@ -19,6 +19,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 import { useArtifactThumbnail } from "../../lib/artifact-media";
 import { messageFromError } from "../../lib/errors";
 import { t } from "../../lib/i18n";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import {
   artifactSrc,
   deleteArtifact,
@@ -201,11 +202,7 @@ export function StudioGalleryDesktop() {
           />
         </label>
       </div>
-      {error ? (
-        <p className="studio-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorMessage>{error}</ErrorMessage> : null}
 
       {view === "collections" && !collectionId ? (
         <div className="studio-gallery-folders">

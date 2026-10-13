@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { DotSpinner } from "../DotSpinner";
 import { t } from "../../lib/i18n";
 import { EASE_OUT } from "../../lib/motion";
+import { formatClock, useNow } from "../../lib/wait-clock";
 import {
   type ProcessingPhase,
   type ProcessingProgressDto,
@@ -82,16 +83,6 @@ function stageMessage(
   }
 }
 
-/** "1:04" / "12:07" / "1:22:40". Monospaced digits keep it from twitching. */
-function formatClock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const seconds = total % 60;
-  const minutes = Math.floor(total / 60) % 60;
-  const hours = Math.floor(total / 3600);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
-}
-
 /**
  * The words beside the clock.
  *
@@ -106,19 +97,6 @@ function describeRemaining(elapsedMs: number, estimateMs: number | undefined): s
   if (left < 15_000) return t("Nearly there");
   if (left < 90_000) return t("About {seconds}s left", { seconds: Math.round(left / 10_000) * 10 });
   return t("About {minutes} min left", { minutes: Math.round(left / 60_000) });
-}
-
-/** A ticking clock, owned here rather than derived from the poll: a poll that
- * misses a beat would make the seconds stutter, which reads as a stall. */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [active]);
-  return now;
 }
 
 /**
