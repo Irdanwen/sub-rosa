@@ -114,7 +114,9 @@ export function StageScene({
             key={result.src}
             className="stage-scene-picture stage-reveal"
             data-reveal={dataReveal}
-            src={result.src}
+            // Without a poster, WKWebView paints nothing until the clip plays:
+            // the fragment makes it seek, and the seek paints the first frame.
+            src={result.poster ? result.src : `${result.src}#t=0.1`}
             poster={result.poster}
             playsInline
             controls

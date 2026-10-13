@@ -9,15 +9,30 @@ import { requestAddCredits } from "../../../lib/credits-events";
 import { usePayPolicy } from "../../../lib/credits-purchase";
 import { t } from "../../../lib/i18n";
 import { formatCredits } from "../../../lib/studio/catalog";
+import type { MediaJob } from "../../../lib/studio/async-job";
 import { isStudioOwned, useRunningMediaJobs } from "../../../lib/studio/media-jobs-live";
 import { rateBadge, rateSentence } from "../../../lib/studio/rate";
 import { Popover } from "../../ui/Popover";
 
 /** Renders the Studio queued by hand that are still running, plus the
- * synchronous ones a desk reports itself (they write no job row). */
+ * ones the image desk reports itself. */
 export function useStudioRunningCount(localWorking: number): number {
-  const running = useRunningMediaJobs();
-  return running.filter(isStudioOwned).length + localWorking;
+  return studioRunningCount(useRunningMediaJobs(), localWorking);
+}
+
+/**
+ * The image desk counts every render it waits for, and a heavy model's image
+ * also writes a job row while it waits: counting both said "2 renders in
+ * progress" for one picture. The desk's own count stands in for the image
+ * rows it covers; image rows beyond it (queued elsewhere) still count.
+ */
+export function studioRunningCount(
+  jobs: readonly Pick<MediaJob, "kind" | "source">[],
+  localWorking: number,
+): number {
+  const rows = jobs.filter(isStudioOwned);
+  const imageRows = rows.filter((job) => job.kind === "image").length;
+  return rows.length - Math.min(imageRows, localWorking) + localWorking;
 }
 
 export function StudioStatus({ running }: { running: number }) {

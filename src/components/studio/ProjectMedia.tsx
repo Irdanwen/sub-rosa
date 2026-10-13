@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../lib/i18n";
 import { EmptyState } from "../ui/EmptyState";
-import { artifactSrc, exportArtifact } from "../../lib/studio/artifacts";
+import { artifactSrc, clipThumbnailSrc, exportArtifact } from "../../lib/studio/artifacts";
 import type { StudioArtifact } from "../../lib/studio/types";
 import {
   artifactError,
@@ -146,7 +146,7 @@ export function ProjectMedia({
                 {artifact.kind === "image" ? (
                   <img src={artifactSrc(artifact)} alt="" loading="lazy" />
                 ) : artifact.kind === "video" ? (
-                  <video src={artifactSrc(artifact)} preload="metadata" muted />
+                  <video src={clipThumbnailSrc(artifact)} preload="metadata" muted />
                 ) : (
                   <span>{artifact.kind === "music" ? t("Music") : t("Audio")}</span>
                 )}

@@ -18,6 +18,7 @@ const fixtures = vi.hoisted(() => ({ invoke: vi.fn(), picked: "image-1", onChang
 vi.mock("@tauri-apps/api/core", () => ({ invoke: fixtures.invoke }));
 vi.mock("../lib/studio/artifacts", () => ({
   artifactSrc: (artifact: StudioArtifact) => `asset://${artifact.fileName}`,
+  clipThumbnailSrc: (artifact: StudioArtifact) => `asset://${artifact.fileName}#t=0.1`,
   exportArtifact: vi.fn(async () => undefined),
 }));
 vi.mock("../components/studio/MediaModelPicker", () => ({

@@ -49,6 +49,9 @@ export function Popover({
 }) {
   const surface = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<CSSProperties | undefined>(undefined);
+  // Which side of the anchor it opened on, so it grows out of the control
+  // that opened it rather than out of its own middle.
+  const [side, setSide] = useState<"top" | "bottom">("bottom");
 
   useModalFocus(surface, { open, onClose, initialFocusSelector });
 
@@ -70,6 +73,7 @@ export function Popover({
       // Below by default; above only when it is the roomier side and the
       // space below cannot hold a reasonable list.
       const flip = below < 240 && above > below;
+      setSide(flip ? "top" : "bottom");
       setPosition(
         flip
           ? {
@@ -109,10 +113,14 @@ export function Popover({
       // Spread: the role is the caller's, and every one of them takes a name.
       {...{ role, "aria-label": label }}
       tabIndex={-1}
+      data-side={side}
       className={["popover", tone === "stage" ? "stage popover-stage" : "", className]
         .filter(Boolean)
         .join(" ")}
-      style={position ?? { visibility: "hidden" }}
+      // Unplaced for one frame: transparent rather than hidden, because a
+      // hidden element cannot take focus, and focus moves in on this very
+      // frame (WebKit refuses it; jsdom never noticed).
+      style={position ?? { opacity: 0, pointerEvents: "none" }}
     >
       {children}
     </div>,

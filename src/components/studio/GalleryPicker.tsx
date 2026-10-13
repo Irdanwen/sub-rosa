@@ -22,7 +22,7 @@ import {
   BIBLE_ROLE_LABELS,
   listBibleEntries,
 } from "../../lib/studio/bible";
-import { artifactSrc, listArtifacts } from "../../lib/studio/artifacts";
+import { artifactSrc, clipThumbnailSrc, listArtifacts } from "../../lib/studio/artifacts";
 import type { ArtifactKind, StudioArtifact } from "../../lib/studio/types";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
@@ -215,7 +215,7 @@ function PickerTile({ artifact }: { artifact: StudioArtifact }) {
   if (artifact.kind === "video") {
     return (
       // biome-ignore lint/a11y/useMediaCaption: generated clips have no track
-      <video src={artifactSrc(artifact)} muted playsInline preload="metadata" />
+      <video src={clipThumbnailSrc(artifact)} muted playsInline preload="metadata" />
     );
   }
   if (artifact.kind === "image") {

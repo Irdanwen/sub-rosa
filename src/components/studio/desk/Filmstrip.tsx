@@ -11,6 +11,7 @@ import { t } from "../../../lib/i18n";
 import { messageFromError } from "../../../lib/errors";
 import {
   artifactSrc,
+  clipThumbnailSrc,
   deleteArtifact,
   exportArtifact,
   listArtifacts,
@@ -113,7 +114,7 @@ export function Filmstrip({
               {artifact.kind === "image" ? (
                 <img src={artifactSrc(artifact)} alt="" loading="lazy" draggable={false} />
               ) : artifact.kind === "video" ? (
-                <video src={artifactSrc(artifact)} preload="metadata" muted playsInline />
+                <video src={clipThumbnailSrc(artifact)} preload="metadata" muted playsInline />
               ) : (
                 <span className="studio-filmstrip-track">
                   <SceneWave seed={artifact.id} />

@@ -123,6 +123,9 @@ function ModelList({
         <IconMagnifyingGlass size={16} aria-hidden />
         <input
           type="search"
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
           value={query}
           placeholder={t("Search models")}
           aria-label={t("Search models")}

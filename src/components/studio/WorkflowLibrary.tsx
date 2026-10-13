@@ -12,7 +12,7 @@ import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifactIndex } from "../../lib/artifact-media";
 import { friendlyErrorMessage } from "../../lib/errors";
 import { formatCredits } from "../../lib/studio/catalog";
-import { artifactSrc } from "../../lib/studio/artifacts";
+import { artifactSrc, clipThumbnailSrc } from "../../lib/studio/artifacts";
 import { intlLocale, t } from "../../lib/i18n";
 import { ErrorMessage } from "../ui/ErrorMessage";
 import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
@@ -334,7 +334,7 @@ function CardPicture({
   src?: string;
 }) {
   if (artifact?.kind === "video") {
-    return <video src={artifactSrc(artifact)} muted preload="metadata" />;
+    return <video src={clipThumbnailSrc(artifact)} muted preload="metadata" />;
   }
   const picture = src ?? (artifact ? artifactSrc(artifact) : undefined);
   if (picture) return <img src={picture} alt="" loading="lazy" decoding="async" />;

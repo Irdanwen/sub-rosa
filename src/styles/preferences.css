@@ -1,0 +1,98 @@
+/* What the system asks for, honoured (D7).
+ *
+ * Loaded last, so it wins over the surfaces it adjusts. Reduced motion already
+ * lives with each animation (and in motion.ts); this file holds the two
+ * preferences that cut across every surface at once.
+ *
+ * Reduced transparency asks for frostier, not more see-through: every glass
+ * surface becomes the solid colour it was a tint of, the blur goes, and the
+ * scrims behind dialogs darken instead of blurring. The phone's glass is
+ * handled next to it in mobile.css.
+ *
+ * Increased contrast strengthens what carries structure and secondary
+ * meaning: hairlines become lines, muted text moves towards the foreground,
+ * and the focus ring stops whispering. Tokens are redeclared on :root, after
+ * both themes, so each derives from its own theme's foreground.
+ *
+ * Surface rules are prefixed with :root on purpose: the Studio's stylesheets
+ * arrive in a lazy chunk, after this file, and would win a tie. */
+
+@media (prefers-reduced-transparency: reduce) {
+  :root .stage {
+    --stage-glass: var(--screen);
+    --stage-glass-strong: var(--screen);
+  }
+
+  :root .agent-composer:not([data-hero="true"]) .agent-composer-box,
+  :root .detail-bar {
+    background: var(--card);
+  }
+
+  :root .selection-toolbar,
+  :root .rewrite-panel {
+    background: var(--popover);
+  }
+
+  :root .settings-nav,
+  :root .ask-overlay {
+    background: var(--background);
+  }
+
+  :root .stage-dock {
+    background: var(--screen);
+  }
+
+  :root .stage-idle-recall,
+  :root .stage-veil-caption,
+  :root .stage-pill,
+  :root .stage-dock,
+  :root .retouch-zone-bar,
+  :root .retouch-tools,
+  :root .retouch-menu,
+  :root .retouch-filmstrip,
+  :root .retouch-panel,
+  :root .retouch-composer,
+  :root .agent-composer:not([data-hero="true"]) .agent-composer-box,
+  :root .selection-toolbar,
+  :root .rewrite-panel,
+  :root .settings-nav,
+  :root .detail-bar,
+  :root .ask-overlay,
+  :root .dialog-backdrop,
+  :root .command-palette-backdrop,
+  :root .agent-usage-overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* Without the blur, a light tint no longer separates a dialog from the
+   * page behind it; a heavier wash does. */
+  :root .dialog-backdrop,
+  :root .command-palette-backdrop,
+  :root .agent-usage-overlay {
+    background: color-mix(in oklch, var(--foreground) 32%, transparent);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: color-mix(in oklch, var(--foreground) 42%, var(--background));
+    --border-subtle: color-mix(in oklch, var(--foreground) 30%, var(--background));
+    --input: color-mix(in oklch, var(--foreground) 42%, var(--background));
+    --muted-foreground: color-mix(in oklch, var(--foreground) 80%, var(--background));
+    --body-copy: var(--foreground);
+    --focus-ring: color-mix(in oklch, var(--foreground) 55%, transparent);
+    --popover-border: color-mix(in oklch, var(--foreground) 40%, transparent);
+  }
+
+  :root .stage {
+    --stage-edge: color-mix(in oklch, var(--screen-foreground) 40%, transparent);
+    --stage-softer: color-mix(in oklch, var(--screen-foreground) 30%, transparent);
+  }
+
+  /* A focus ring that is only a soft glow fails here; draw a line. */
+  :root :focus-visible {
+    outline: 2px solid var(--foreground);
+    outline-offset: 2px;
+  }
+}
