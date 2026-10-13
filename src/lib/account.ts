@@ -143,6 +143,37 @@ export type AccountDeletedItem = {
 };
 export const accountRecentlyDeleted = () =>
   invoke<AccountDeletedItem[]>("account_recently_deleted");
+/** Where the account stands against its quota, and what this device holds
+ * back for room (ADR-0110). */
+export type AccountStorageStatus = {
+  used_bytes: number | null;
+  quota_bytes: number | null;
+  file_bytes: number | null;
+  journal_reserve_bytes: number | null;
+  measured_at: string | null;
+  audio_bytes: number;
+  studio_bytes: number;
+  assistant_bytes: number;
+  largest: {
+    artifact_id: string;
+    kind: "audio" | "studio" | "assistant" | string;
+    label: string | null;
+    note_id: string | null;
+    bytes: number;
+  }[];
+  waiting_files: number;
+  files_held: boolean;
+  journal_held: boolean;
+  releasing_chunks: number;
+  compact_ready: boolean;
+  compact_blockers: string[];
+  compact_pending: number;
+  send_audio: boolean;
+  send_studio: boolean;
+};
+export const accountStorageStatus = () => invoke<AccountStorageStatus>("account_storage_status");
+export const accountStorageSetSending = (kind: "audio" | "studio", enabled: boolean) =>
+  invoke<AccountStorageStatus>("account_storage_set_sending", { kind, enabled });
 export const accountRestoreDeleted = (objectId: string) =>
   statusCommand("account_restore_deleted", { objectId });
 export const accountSyncRestoreConflict = (conflictId: string) =>

@@ -40,6 +40,7 @@ impl IntoResponse for ApiError {
             Error::Conflict => (409, "conflict"),
             Error::AccountMismatch => (409, "account_mismatch"),
             Error::Quota => (413, "quota_exceeded"),
+            Error::FilesFull => (413, "storage_files_full"),
             Error::RateLimited => (429, "slow_down"),
             Error::Pending => (428, "authorization_pending"),
             Error::RecentAuth => (403, "recent_auth_required"),
@@ -116,6 +117,7 @@ pub fn router(service: Service) -> Router {
         .route("/api/v1/vault", get(vault).put(save_vault))
         .route("/api/v1/shares", get(shares).post(create_share))
         .route("/api/v1/shares/{id}", axum::routing::delete(revoke_share))
+        .route("/api/v1/blobs", get(blobs))
         .layer(DefaultBodyLimit::max(5 * 1024 * 1024));
     Router::new()
         .merge(api)
@@ -133,6 +135,7 @@ pub fn router(service: Service) -> Router {
             "/api/v1/blobs/{id}",
             get(blob)
                 .put(upload_blob)
+                .delete(release_blob)
                 .layer(DefaultBodyLimit::max(32 * 1024 * 1024)),
         )
         .route("/auth/login", get(login))
@@ -280,7 +283,16 @@ async fn session(s: &Service, h: &HeaderMap, mutating: bool) -> Result<Session> 
             .ok()
             .and_then(|a| a.strip_prefix("Bearer "))
             .ok_or(Error::Unauthorized)?;
-        return assert_account(h, s.authenticate(token, false).await?);
+        let session = assert_account(h, s.authenticate(token, false).await?)?;
+        // An app that announces nothing is older than the header: noted as
+        // such, so a device that went back to an older app holds newer file
+        // formats back again.
+        if let Some(device) = session.device_id {
+            s.repository
+                .note_app_version(device, app_version(h))
+                .await?;
+        }
+        return Ok(session);
     }
     let token = cookie(h, s.config.session_cookie()).ok_or(Error::Unauthorized)?;
     if mutating {
@@ -300,6 +312,19 @@ async fn session(s: &Service, h: &HeaderMap, mutating: bool) -> Result<Session> 
         }
     }
     assert_account(h, s.authenticate(token, true).await?)
+}
+/// The version a native app announces with `X-Subrosa-Version`: plain
+/// `major.minor.patch`, or nothing. A malformed value counts as nothing
+/// rather than a refusal, since it only ever gates a newer file format.
+fn app_version(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get("x-subrosa-version")?.to_str().ok()?;
+    let parts: Vec<&str> = value.split('.').collect();
+    (value.len() <= 32
+        && parts.len() == 3
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.len() <= 6 && p.bytes().all(|b| b.is_ascii_digit())))
+    .then_some(value)
 }
 // The asserted account is a client-side context guard, never an authorization source.
 // In particular, an unlocked tab must not encrypt with A's key after another tab
@@ -452,7 +477,13 @@ async fn logout(State(s): State<Arc<Service>>, h: HeaderMap) -> Result<Response>
     Ok(r)
 }
 async fn me(State(s): State<Arc<Service>>, h: HeaderMap) -> Result<Response> {
-    Ok(ok(session(&s, &h, false).await?.account).into_response())
+    let a = session(&s, &h, false).await?;
+    let mut body = serde_json::to_value(&a.account).map_err(|_| Error::Unavailable)?;
+    // Optional and additive: a client that predates it reads the account
+    // fields it always did (ADR-0110).
+    body["storage"] =
+        serde_json::to_value(s.storage_use(&a).await?).map_err(|_| Error::Unavailable)?;
+    Ok(ok(body).into_response())
 }
 async fn delete_me(State(s): State<Arc<Service>>, h: HeaderMap) -> Result<Response> {
     let a = session(&s, &h, true).await?;
@@ -695,6 +726,42 @@ async fn blob(
         bytes,
     )
         .into_response())
+}
+async fn release_blob(
+    State(s): State<Arc<Service>>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Response> {
+    let a = session(&s, &h, true).await?;
+    let freed = s.release_blob(&a, id).await?;
+    Ok(ok(json!({"id":id,"freed_bytes":freed})).into_response())
+}
+#[derive(Deserialize)]
+struct BlobsQuery {
+    after: Option<Uuid>,
+    /// Comma-separated ids; at most a hundred.
+    ids: Option<String>,
+    limit: Option<i64>,
+}
+async fn blobs(
+    State(s): State<Arc<Service>>,
+    h: HeaderMap,
+    Query(q): Query<BlobsQuery>,
+) -> Result<Response> {
+    let a = session(&s, &h, false).await?;
+    let ids = q
+        .ids
+        .as_deref()
+        .map(|raw| {
+            raw.split(',')
+                .map(|id| Uuid::parse_str(id.trim()).map_err(|_| Error::Invalid))
+                .collect::<std::result::Result<Vec<_>, _>>()
+        })
+        .transpose()?;
+    let limit = q.limit.unwrap_or(500);
+    let page = s.blobs(&a, q.after, ids.as_deref(), limit).await?;
+    let has_more = ids.is_none() && i64::try_from(page.len()).is_ok_and(|n| n == limit);
+    Ok(ok(json!({"blobs":page,"has_more":has_more})).into_response())
 }
 async fn upload_blob(
     State(s): State<Arc<Service>>,

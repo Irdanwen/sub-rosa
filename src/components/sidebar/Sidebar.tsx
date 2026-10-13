@@ -1196,7 +1196,7 @@ export function Sidebar({
                 }}
               />
             </div>
-            {/* Six places, not ten (ADR-0110): Health and Finances are read from
+            {/* Six places, not ten (ADR-0111): Health and Finances are read from
                 the Library, and Routines, which schedule what Today shows, from Today. */}
             {(
               [

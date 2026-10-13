@@ -1,6 +1,7 @@
 //! Optional account service. Identity tokens and decryption keys never cross
 //! the webview boundary. Signing out leaves local work intact.
 pub(crate) mod carpe_diem_link;
+mod compaction;
 pub mod conversations;
 pub mod crypto;
 mod files;
@@ -12,8 +13,10 @@ pub mod security_events;
 mod session_folders;
 pub mod shares;
 pub mod spaces;
+mod storage;
 pub(crate) mod studio;
 mod summaries;
+pub use storage::StorageStatus;
 pub mod sync;
 mod sync_deletions;
 mod sync_issues;
@@ -137,6 +140,9 @@ fn error(code: &str) -> AppError {
             "share_failed" => "The link could not be created.",
             "share_temporary" => "A temporary chat cannot be shared.",
             "share_empty" => "This conversation has nothing to share yet.",
+            "account_storage_full" => {
+                "Your account storage is full. Your changes are safe on this device and will sync once space is freed."
+            }
             _ => "The account operation could not be completed.",
         },
     )
@@ -609,6 +615,9 @@ pub(super) async fn request_within(
             .unwrap_or("account_request_failed");
         return Err(error(match code {
             "authorization_pending" | "slow_down" => "authorization_pending",
+            // The account is full (ADR-0110): for the journal, or for files,
+            // which stop short of it so the journal keeps room.
+            "quota_exceeded" | "storage_files_full" => "account_storage_full",
             "recent_auth_required" | "reauthentication_required" => "recent_auth_required",
             "not_found" | "vault_not_found" => "vault_not_found",
             _ if status.as_u16() == 404 => "vault_not_found",
@@ -1543,6 +1552,27 @@ pub async fn account_hermes_session_forgotten(
     session_id: String,
 ) -> Result<(), AppError> {
     files::hermes_session_forgotten(&pool(&app).await?, &session_id).await
+}
+
+/// Where the account stands against its quota, and what this device holds
+/// back for room (ADR-0110). Read from SQLite: the passes keep it current.
+#[tauri::command]
+pub async fn account_storage_status(app: AppHandle) -> Result<StorageStatus, AppError> {
+    storage::status(&pool(&app).await?).await
+}
+
+/// Whether this device sends new recordings (`audio`) or Studio files
+/// (`studio`) to the account. Off, they stay on this device.
+#[tauri::command]
+pub async fn account_storage_set_sending(
+    app: AppHandle,
+    kind: String,
+    enabled: bool,
+) -> Result<StorageStatus, AppError> {
+    let pool = pool(&app).await?;
+    storage::set_sending(&pool, &kind, enabled).await?;
+    poke();
+    storage::status(&pool).await
 }
 
 /// Notes and memories a deletion took in the last thirty days (ADR-0108).
