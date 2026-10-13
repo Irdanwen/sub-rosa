@@ -33,7 +33,7 @@ export function createSitePaths(base = "/", accountOrigin = "") {
     if (!path) return false;
     // A public page, in English or under a language prefix (`/fr`, `/pt-br`).
     const page = splitLocalePath(path).page;
-    if (["/", "/downloads", "/privacy", "/security", "/help"].includes(page)) return true;
+    if (["/", "/downloads", "/privacy", "/legal", "/security", "/help"].includes(page)) return true;
     if (/^\/docs(?:\/[a-z0-9-]+)?$/.test(page)) return true;
     if (/^\/models(?:\/[a-z0-9-]+)?$/.test(page)) return true;
     // A share link is a fresh page load: it reads its key from the fragment,

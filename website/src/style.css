@@ -517,6 +517,11 @@ th {
   font-size: 30px;
   margin-top: 38px;
 }
+/* A postal address reads as lines, not as an italic aside. */
+.legal-address {
+  font-style: normal;
+  line-height: 1.6;
+}
 .secret {
   overflow-wrap: anywhere;
   padding: 20px;

@@ -31,6 +31,7 @@ try {
     "/",
     "/downloads",
     "/privacy",
+    "/legal",
     "/security",
     "/help",
     "/docs",

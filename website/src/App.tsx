@@ -619,12 +619,13 @@ export function App({ initialPath }: { initialPath?: string }) {
             <a href={href("/assistants")}>{t("Assistant catalog", "Catalogue d’assistants")}</a>
             <a href={href("/privacy")}>{t("Privacy", "Confidentialité")}</a>
             <a href={href("/security")}>{t("Security", "Sécurité")}</a>
+            <a href={href("/legal")}>{t("Legal notice", "Mentions légales")}</a>
             <a href="https://github.com/Irdanwen/sub-rosa-releases/releases">
               {t("Release notes", "Notes de version")}
             </a>
           </div>
           <div className="footer-bottom">
-            <span>© {new Date().getFullYear()} Sub Rosa</span>
+            <span>© {new Date().getFullYear()} Lumen Labs</span>
             <span>
               {t("Made for the moments worth keeping.", "Pour les moments qui méritent de rester.")}
             </span>
