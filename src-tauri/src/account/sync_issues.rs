@@ -151,6 +151,7 @@ pub(super) fn isolatable_file_error(code: &str) -> bool {
             | "sync_file_too_large"
             | "sync_file_type_unsupported"
             | "sync_blob_invalid"
+            | "sync_chunk_taken"
     ) || transient_file_error(code)
 }
 

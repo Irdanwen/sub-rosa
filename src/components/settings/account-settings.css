@@ -186,3 +186,31 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* The account's room (ADR-0110). */
+.account-storage-meter {
+  width: 100%;
+  height: var(--sp-4);
+}
+.account-storage-largest ul {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+.account-storage-largest li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.account-storage-largest li span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-storage-largest li span:last-child {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
