@@ -22,6 +22,7 @@ try {
   const { guides } = await server.ssrLoadModule("/src/pages/docs-content.ts");
   const { families } = await server.ssrLoadModule("/src/models/catalog.ts");
   await (await server.ssrLoadModule("/src/models/loader.ts")).loadModelCatalog();
+  await (await server.ssrLoadModule("/src/pages/docs-loader.ts")).loadDocs();
   const { categories } = await server.ssrLoadModule("/src/models/catalog.ts");
   const { loadDetails } = await server.ssrLoadModule("/src/models/details.ts");
   // Marks every kind's words as needed, so each language below loads them all.

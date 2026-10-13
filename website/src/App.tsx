@@ -15,8 +15,7 @@ import {
 } from "./lib/i18n";
 import { Downloads, Information } from "./pages/public";
 import { HomePage } from "./pages/home";
-import { Documentation, documentationPath } from "./pages/docs";
-import { guideBySlug, read } from "./pages/docs-content";
+import { documentationPath, useDocs } from "./pages/docs-loader";
 import { modelsPath, useModelCatalog } from "./models/loader";
 
 // The pages a marketing visit never opens load with their route: the account
@@ -69,6 +68,7 @@ export function App({ initialPath }: { initialPath?: string }) {
   );
   const pathname = publicRoute(rawPathname);
   const catalog = useModelCatalog(modelsPath(pathname));
+  const docs = useDocs(documentationPath(pathname));
   setWebsiteLocale(locale);
   const href = (target: string) => localizedSiteHref(target, locale);
   // `main.tsx` loads the words before the first render; this covers a
@@ -152,8 +152,8 @@ export function App({ initialPath }: { initialPath?: string }) {
           ? `${t("Assistant catalog", "Catalogue d’assistants")} · Sub Rosa`
           : accountPath
             ? `${t("Your account", "Votre compte")} · Sub Rosa`
-            : documentationPath(pathname) || pathname === "/help"
-              ? `${pathname.startsWith("/docs/") ? read(guideBySlug(pathname.slice(6))?.title ?? ["Documentation", "Documentation"]) : t("Documentation", "Documentation")} · Sub Rosa`
+            : documentationPath(pathname)
+              ? `${docs ? docs.documentationTitle(pathname) : t("Documentation", "Documentation")} · Sub Rosa`
               : modelsPath(pathname)
                 ? `${catalog ? catalog.modelCatalogTitle(pathname) : t("Model catalog", "Catalogue des modèles")} · Sub Rosa`
                 : pathname === "/downloads"
@@ -294,8 +294,17 @@ export function App({ initialPath }: { initialPath?: string }) {
             </Suspense>
           ) : accountPath ? (
             <AccountPage path={path} />
-          ) : documentationPath(pathname) || pathname === "/help" ? (
-            <Documentation path={pathname === "/help" ? "/docs" : pathname} locale={locale} />
+          ) : documentationPath(pathname) ? (
+            docs ? (
+              <docs.Documentation
+                path={pathname === "/help" ? "/docs" : pathname}
+                locale={locale}
+              />
+            ) : (
+              <section className="page wrap" aria-busy="true">
+                <p className="eyebrow">{t("Documentation", "Documentation")}</p>
+              </section>
+            )
           ) : modelsPath(pathname) ? (
             catalog ? (
               <catalog.ModelCatalog

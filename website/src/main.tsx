@@ -15,6 +15,7 @@ import {
 } from "./lib/i18n";
 import { siteHref, sitePaths } from "./lib/paths";
 import { loadModelCatalog, modelsPath } from "./models/loader";
+import { documentationPath, loadDocs } from "./pages/docs-loader";
 
 const root = document.getElementById("root");
 const route = sitePaths.route(location.pathname) ?? "/not-found";
@@ -53,5 +54,7 @@ if (!redirectTo) {
     Promise.all([loadModelCatalog(), words])
       .then(([catalog]) => catalog.prepareCatalogPath(page.split("?")[0], location.search.slice(1)))
       .then(render, render);
+  else if (documentationPath(page.split("?")[0]))
+    Promise.all([loadDocs(), words]).then(render, render);
   else words.then(render, render);
 }

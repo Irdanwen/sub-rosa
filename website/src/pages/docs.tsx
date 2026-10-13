@@ -4,8 +4,6 @@ import { t, type SiteLocale, websiteLocale } from "../lib/i18n";
 import { localizedSiteHref, siteHref } from "../lib/paths";
 import { categories, guideBySlug, guides, read, searchGuides } from "./docs-content";
 
-export const documentationPath = (path: string) => path === "/docs" || path.startsWith("/docs/");
-
 export function Documentation({ path, locale }: { path: string; locale: SiteLocale }) {
   const href = (target: string) => localizedSiteHref(target, locale);
   const slug = path === "/docs" ? null : path.slice("/docs/".length);
@@ -280,4 +278,11 @@ function GuideCard({ slug, locale }: { slug: string; locale: SiteLocale }) {
 function guideImagePath(file: string | { en: string; fr: string }) {
   const chosen = typeof file === "string" ? file : websiteLocale() === "fr" ? file.fr : file.en;
   return chosen.startsWith("/") ? chosen : `/docs/${chosen}`;
+}
+
+/** The tab title of a documentation page, once its guide is loaded. */
+export function documentationTitle(pathname: string) {
+  return pathname.startsWith("/docs/")
+    ? read(guideBySlug(pathname.slice(6))?.title ?? ["Documentation", "Documentation"])
+    : t("Documentation", "Documentation");
 }
