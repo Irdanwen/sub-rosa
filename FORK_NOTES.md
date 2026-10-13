@@ -2709,3 +2709,36 @@ s'effacent pas bien ». Deux ADR, une PR, un harnais deux appareils.
 - **À re-merger** : tout ce qui précède est fork-side ; aucun fichier
   upstream touché hormis `background.rs` (ordre du balayage) et
   `http_client.rs` (client partagé).
+
+## Le compte tient dans son quota (2026-10-12, ADR-0110)
+
+Rapporté : plus rien ne se synchronise entre les appareils d'un compte. Mesuré :
+quota de 5 Gio plein à 62 octets près depuis le 6 octobre, 413 toutes les
+5 s, fichiers à 99,5 % (audio WAV 48 kHz, enveloppe base64 +33 %, orphelins
+jamais rendus).
+
+- **Service** (`subrosa-cloud`, migration 0014) : réserve du journal
+  (`journal_reserve_bytes`, 413 `storage_files_full` pour les fichiers),
+  `DELETE /api/v1/blobs/{id}` (409 si partagé, id en attente du drain non
+  réinscriptible), `GET /api/v1/blobs` (page ou noms, âge, partage),
+  `storage` facultatif dans `/me`, `X-Subrosa-Version` noté sur l'appareil
+  (`devices.app_version`). Rétro-compatible.
+- **Client** : `account/storage.rs` (retenues, porte de version, ensemble des
+  morceaux cités, libérations planifiées depuis les tombales du journal et par
+  balayage, drain vérifié), `account/compaction.rs` (copie compacte, verrou par
+  ids v5, réparation des manifestes), `crypto::seal_binary/open_chunk`,
+  `audio::decode::decode_to_compact_wav` (16 kHz sans gain), migration 077,
+  commandes partagées `account_storage_status` / `account_storage_set_sending`
+  (les deux listes), carte `AccountStorageCard.tsx`, client web
+  (`website/src/client/gallery.ts::openChunk`).
+- **Fichiers upstream modifiés** : aucun hors du périmètre compte du fork
+  (`audio/decode.rs` gagne une variante sans gain ; `http_client.rs` un en-tête
+  par défaut pour le client du compte).
+- **Preuve** : 4 tests d'intégration serveur (Postgres réel), 7 scénarios deux
+  appareils dans `sync_devices_tests.rs` (faux service étendu : quota,
+  blobs, `/me`, `/devices`), tests unitaires crypto/porte/versions, test web
+  des deux enveloppes.
+- **Pièges** : `account_file_manifests.artifact_id` est unique (la copie
+  remplace la forme d'origine : suppression puis insertion, et l'application
+  distante remplace par `artifact_id`) ; une liste d'appareils vide ne doit pas
+  ouvrir la porte ; `compaction::step` vérifie la porte lui-même.

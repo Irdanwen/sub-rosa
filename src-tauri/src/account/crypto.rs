@@ -86,6 +86,62 @@ pub fn open(key: &[u8; 32], aad: &str, envelope: &str) -> Result<Zeroizing<Vec<u
         .map(Zeroizing::new)
         .map_err(|_| invalid())
 }
+/// The first byte of a binary chunk envelope (ADR-0110). A JSON envelope
+/// starts with `{`, so the two are told apart by their first byte.
+pub const BINARY_ENVELOPE: u8 = 2;
+/// The binary chunk envelope: `[2][nonce 12][ciphertext and tag]`. The same
+/// AES-256-GCM as `seal`, without the base64 that made every stored file
+/// chunk a third larger than its contents.
+pub fn seal_binary(key: &[u8; 32], aad: &str, bytes: &[u8]) -> Result<Vec<u8>, AppError> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| invalid())?;
+    let nonce: [u8; 12] = rand::random();
+    let ciphertext = cipher
+        .encrypt(
+            &Nonce::from(nonce),
+            Payload {
+                msg: bytes,
+                aad: aad.as_bytes(),
+            },
+        )
+        .map_err(|_| invalid())?;
+    let mut sealed = Vec::with_capacity(1 + nonce.len() + ciphertext.len());
+    sealed.push(BINARY_ENVELOPE);
+    sealed.extend_from_slice(&nonce);
+    sealed.extend_from_slice(&ciphertext);
+    Ok(sealed)
+}
+/// Opens a stored chunk in either envelope: the binary one, or the JSON
+/// text every chunk sent before ADR-0110 was sealed in.
+pub fn open_chunk(
+    key: &[u8; 32],
+    aad: &str,
+    sealed: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, AppError> {
+    match sealed.first() {
+        Some(&BINARY_ENVELOPE) => {
+            if sealed.len() < 1 + 12 + 16 || sealed.len() > 8 * 1024 * 1024 {
+                return Err(invalid());
+            }
+            let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| invalid())?;
+            cipher
+                .decrypt(
+                    &Nonce::try_from(&sealed[1..13]).map_err(|_| invalid())?,
+                    Payload {
+                        msg: &sealed[13..],
+                        aad: aad.as_bytes(),
+                    },
+                )
+                .map(Zeroizing::new)
+                .map_err(|_| invalid())
+        }
+        Some(b'{') => open(
+            key,
+            aad,
+            std::str::from_utf8(sealed).map_err(|_| invalid())?,
+        ),
+        _ => Err(invalid()),
+    }
+}
 /// What the vault stores so the recovery key can later admit a browser as a
 /// device (ADR-0096): base64url SHA-256 of
 /// `HKDF-SHA256(recovery secret, salt = empty, info = "subrosa:admission:v1:{account}")`.
@@ -131,6 +187,30 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_chunk_opens_from_either_envelope_and_the_binary_one_is_smaller() {
+        let key = random_key();
+        let clear = vec![7u8; 1024 * 1024];
+        let text = seal(&key, "subrosa:blob:v1:a:b", &clear).unwrap();
+        let binary = seal_binary(&key, "subrosa:blob:v1:a:b", &clear).unwrap();
+        assert_eq!(binary.len(), 1 + 12 + clear.len() + 16);
+        assert!(text.len() > clear.len() * 4 / 3);
+        for sealed in [text.as_bytes(), binary.as_slice()] {
+            assert_eq!(
+                open_chunk(&key, "subrosa:blob:v1:a:b", sealed)
+                    .unwrap()
+                    .as_slice(),
+                clear.as_slice()
+            );
+            // The chunk's id is in the AAD: moved under another id, it opens nowhere.
+            assert!(open_chunk(&key, "subrosa:blob:v1:a:c", sealed).is_err());
+        }
+        let mut tampered = binary.clone();
+        tampered[20] ^= 1;
+        assert!(open_chunk(&key, "subrosa:blob:v1:a:b", &tampered).is_err());
+        assert!(open_chunk(&key, "subrosa:blob:v1:a:b", &[3, 0, 0]).is_err());
+        assert!(open_chunk(&key, "subrosa:blob:v1:a:b", &[]).is_err());
+    }
     #[test]
     fn decrypts_webcrypto_interoperability_fixture() {
         let f: serde_json::Value =

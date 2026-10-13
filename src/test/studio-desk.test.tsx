@@ -1,5 +1,5 @@
 /**
- * The desktop Studio's desk (ADR-0110): the image desk end to end (idle
+ * The desktop Studio's desk (ADR-0111): the image desk end to end (idle
  * canvas, chips, a render landing on the scene and in the filmstrip, the
  * inspector folding), the shared popover and model list, the header's
  * renders-in-flight and balance, and where a saved tab from the old set

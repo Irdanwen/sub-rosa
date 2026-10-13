@@ -19,6 +19,11 @@ pub struct Config {
     pub deletion_ledger: Option<Ledger>,
     #[serde(default = "quota")]
     pub account_quota_bytes: i64,
+    /// Room under the quota that only the journal may use (ADR-0110): files
+    /// stop at `account_quota_bytes - journal_reserve_bytes`, so a recording
+    /// can never leave a note unable to leave. Must stay below the quota.
+    #[serde(default = "journal_reserve")]
+    pub journal_reserve_bytes: i64,
     /// Addresses of the reverse proxies whose `X-Forwarded-For` may be believed.
     ///
     /// Empty means the peer address *is* the client, which is right when nothing
@@ -137,6 +142,15 @@ pub fn fingerprint_bytes(value: &str) -> Option<[u8; 32]> {
 fn quota() -> i64 {
     5 * 1024 * 1024 * 1024
 }
+fn journal_reserve() -> i64 {
+    256 * 1024 * 1024
+}
+impl Config {
+    /// How far files may fill an account: the quota less the journal's room.
+    pub fn file_limit_bytes(&self) -> i64 {
+        self.account_quota_bytes - self.journal_reserve_bytes
+    }
+}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Oidc {
     pub issuer: String,
@@ -211,8 +225,9 @@ impl Config {
         if self.oidc.client_id.is_empty()
             || self.oidc.client_secret.expose().is_empty()
             || self.account_quota_bytes < 1024 * 1024
+            || !(0..self.account_quota_bytes).contains(&self.journal_reserve_bytes)
         {
-            return Err("invalid client ID or quota");
+            return Err("invalid client ID, quota or journal reserve");
         }
         // An unspecified address matches nothing in a peer comparison, so listing
         // one is never what the operator meant: it reads as "trust anybody" and
@@ -399,11 +414,27 @@ mod tests {
             },
             deletion_ledger: None,
             account_quota_bytes: 1024 * 1024,
+            journal_reserve_bytes: 64 * 1024,
             trusted_proxies: Vec::new(),
             passkey_android_cert_fingerprints: android_certificates(),
             carpe_diem: None,
             publication: None,
         }
+    }
+
+    /// Files stop below the quota by the journal's reserve, so a reserve as
+    /// large as the quota would leave files nothing, and a negative one
+    /// would let files past the quota.
+    #[test]
+    fn the_journal_reserve_stays_below_the_quota() {
+        let mut config = development();
+        assert_eq!(config.file_limit_bytes(), 1024 * 1024 - 64 * 1024);
+        for bad in [-1, 1024 * 1024, 2 * 1024 * 1024] {
+            config.journal_reserve_bytes = bad;
+            assert!(config.validate().is_err(), "{bad}");
+        }
+        config.journal_reserve_bytes = 0;
+        assert_eq!(config.validate(), Ok(()));
     }
 
     #[test]
