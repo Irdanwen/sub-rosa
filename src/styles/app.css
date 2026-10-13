@@ -25092,3 +25092,22 @@ input:focus-visible,
   margin-top: var(--sp-6);
   margin-inline-end: var(--sp-4);
 }
+
+/* --- Under the hero composer: what a new chat may touch, and where -------- */
+/* Chosen once, before the first message, so it sits under the box in the
+ * box's 640px column instead of among the controls used on every message. */
+.agent-composer-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  max-width: 640px;
+  margin: var(--sp-2) auto 0;
+}
+
+.agent-composer-scope .agent-sandbox-trigger {
+  height: var(--control-sm);
+  padding-inline: var(--sp-2);
+  font-size: var(--fs-sm);
+}
