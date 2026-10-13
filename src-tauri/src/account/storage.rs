@@ -588,7 +588,7 @@ async fn give_back_unfinished(
     Ok(freed)
 }
 
-/// Takes a recording out of the account (ADR-0111): its manifest goes, which
+/// Takes a recording out of the account (ADR-0112): its manifest goes, which
 /// leaves as a tombstone and has its chunks released a day later like any
 /// deleted file's, and so do an upload or a compact copy under way. Local
 /// rows only: with no account bound, nothing leaves.

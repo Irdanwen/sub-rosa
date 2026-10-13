@@ -30,7 +30,7 @@ function recordingsLabel(count: number) {
 
 /**
  * Settings › Storage: what the app keeps on disk, bucket by bucket, and how
- * long recordings stay once their note is transcribed (ADR-0111). The age
+ * long recordings stay once their note is transcribed (ADR-0112). The age
  * is the person's choice, made once for every device and the account; a
  * choice that deletes recordings at once says how many and asks first.
  */

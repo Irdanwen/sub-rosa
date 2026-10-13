@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { friendlyErrorMessage } from "../../lib/errors";
 import { intlLocale, t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import {
   BIBLE_KIND_LABELS,
   BIBLE_KINDS,
@@ -536,14 +537,12 @@ export function ProjectBible({
           {busy && !waits.length ? <p role="status">{t("Generating reference...")}</p> : null}
         </section>
       ) : (
-        <div className="project-empty">
-          <h2>{t("Give your film a consistent cast")}</h2>
-          <p>
-            {t(
-              "Add characters, locations, props and a visual style, or copy them from your library.",
-            )}
-          </p>
-        </div>
+        <EmptyState
+          title={t("Give your film a consistent cast")}
+          description={t(
+            "Add characters, locations, props and a visual style, or copy them from your library.",
+          )}
+        />
       )}
       {viewing !== undefined && viewable[viewing] ? (
         <MediaViewer

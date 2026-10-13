@@ -684,7 +684,7 @@ async fn release_sent(tx: &mut sqlx_sqlite::SqliteConnection, id: &str) -> Resul
 }
 
 /// Drops every copy of a recording this device was making, releasing the
-/// chunks it sent: the recording itself is going (ADR-0111).
+/// chunks it sent: the recording itself is going (ADR-0112).
 pub(super) async fn forget_copies_of(
     tx: &mut sqlx_sqlite::SqliteConnection,
     artifact_id: &str,

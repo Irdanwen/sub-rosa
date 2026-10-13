@@ -1,4 +1,5 @@
 import { t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconBubble3 } from "central-icons/IconBubble3";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -150,11 +151,14 @@ export function AddSessionsToProjectDialog({
             })}
           </ul>
         ) : (
-          <p className="add-notes-empty">
-            {sessions.some((session) => !(sessionFolderIds[session.id] ?? []).includes(folder.id))
-              ? t("No sessions match that search.")
-              : t("Every session already lives in this project.")}
-          </p>
+          <EmptyState
+            size="compact"
+            title={
+              sessions.some((session) => !(sessionFolderIds[session.id] ?? []).includes(folder.id))
+                ? t("No chats match that search.")
+                : t("Every chat already lives in this project.")
+            }
+          />
         )}
       </div>
     </Dialog>

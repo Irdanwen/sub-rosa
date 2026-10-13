@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { t, number, websiteLocale } from "../lib/i18n";
 import releases from "../releases.json";
 import { accountsUnavailable, localizedSiteHref } from "../lib/paths";
@@ -46,7 +47,7 @@ export function Downloads() {
       </nav>
       <div className="grid">
         {releases.assets.map((asset) => (
-          <article className="card" id={asset.platform} key={asset.platform}>
+          <article className="card download-card" id={asset.platform} key={asset.platform}>
             <h2>{titles[asset.platform]}</h2>
             <p className="muted">
               {asset.platform === "mac-arm"
@@ -85,7 +86,7 @@ export function Downloads() {
           </article>
         ))}
         {android ? (
-          <article className="card" id="android" key="android">
+          <article className="card download-card" id="android" key="android">
             <h2>Android · 64 bits</h2>
             <p className="muted">
               {t(
@@ -126,7 +127,7 @@ export function Downloads() {
             )}
           </p>
         </div>
-        <span className="notice">{t("TestFlight access", "Accès TestFlight")}</span>
+        <span className="download-status">{t("In testing", "En test")}</span>
       </article>
       <p className="quiet">
         <a href={releases.release_url}>
@@ -191,7 +192,7 @@ export function Information({ path }: { path: string }) {
     );
   if (path === "/security")
     return (
-      <section className="page wrap prose">
+      <TrustLayout current="/security">
         <h1>{t("Security, explained.", "La sécurité, expliquée.")}</h1>
         <h2>{t("Your vault", "Votre coffre")}</h2>
         <p>
@@ -230,11 +231,75 @@ export function Information({ path }: { path: string }) {
         <a className="text-link" href="https://github.com/Irdanwen/sub-rosa/security/policy">
           {t("Security policy", "Politique de sécurité")} ↗
         </a>
-      </section>
+      </TrustLayout>
+    );
+  if (path === "/legal")
+    return (
+      <TrustLayout current="/legal">
+        <h1>{t("Legal notice", "Mentions légales")}</h1>
+        <h2>{t("Publisher", "Éditeur")}</h2>
+        <address className="legal-address">
+          Lumen Labs
+          <br />
+          c/o Expertfid &amp; audit SA
+          <br />
+          Rue du Rhône 80
+          <br />
+          1204 Genève
+          <br />
+          {t("Switzerland", "Suisse")}
+        </address>
+        <h2>{t("Contact", "Contact")}</h2>
+        <p>
+          <a className="text-link" href="mailto:info@lumen-labs.ch">
+            info@lumen-labs.ch
+          </a>
+        </p>
+        <p>
+          {t(
+            "You can also write through the project's issue tracker. Report a vulnerability privately through the security policy.",
+            "Vous pouvez aussi écrire depuis le suivi des tickets du projet. Signalez une vulnérabilité en privé selon la politique de sécurité.",
+          )}
+        </p>
+        <p>
+          <a className="text-link" href="https://github.com/Irdanwen/sub-rosa/issues">
+            {t("Issue tracker", "Suivi des tickets")} ↗
+          </a>{" "}
+          <a className="text-link" href="https://github.com/Irdanwen/sub-rosa/security/policy">
+            {t("Security policy", "Politique de sécurité")} ↗
+          </a>
+        </p>
+        <h2>{t("Hosting", "Hébergement")}</h2>
+        <p>
+          {t(
+            "This website and the optional account service run on a server in Nuremberg, Germany, operated by Hetzner Online GmbH, Industriestr. 25, 91710 Gunzenhausen, Germany. Encrypted files from sync are stored with Cloudflare R2.",
+            "Ce site et le service de compte facultatif fonctionnent sur un serveur situé à Nuremberg, en Allemagne, exploité par Hetzner Online GmbH, Industriestr. 25, 91710 Gunzenhausen, Allemagne. Les fichiers chiffrés de la synchronisation sont stockés chez Cloudflare R2.",
+          )}
+        </p>
+        <h2>{t("Artificial intelligence", "Intelligence artificielle")}</h2>
+        <p>
+          {t(
+            "Sub Rosa does not run AI models itself. When you use an AI feature, the request goes to Carpe Diem with your own key, under Carpe Diem's terms.",
+            "Sub Rosa ne fait pas tourner de modèles d’IA lui-même. Quand vous utilisez une fonction d’IA, la requête part vers Carpe Diem avec votre propre clé, selon les conditions de Carpe Diem.",
+          )}
+        </p>
+        <h2>{t("Software", "Logiciel")}</h2>
+        <p>
+          {t(
+            "Sub Rosa is open source under the MIT license. Its source code and its signed releases are published on GitHub.",
+            "Sub Rosa est un logiciel libre sous licence MIT. Son code source et ses versions signées sont publiés sur GitHub.",
+          )}
+        </p>
+        <p>
+          <a className="text-link" href="https://github.com/Irdanwen/sub-rosa">
+            {t("Source code", "Code source")} ↗
+          </a>
+        </p>
+      </TrustLayout>
     );
   if (path === "/privacy")
     return (
-      <section className="page wrap prose">
+      <TrustLayout current="/privacy">
         <h1>{t("Your information stays yours.", "Vos informations restent les vôtres.")}</h1>
         <p className="lede">
           {t(
@@ -270,13 +335,25 @@ export function Information({ path }: { path: string }) {
             "Exportez vos notes depuis l’app. Supprimez votre compte Sub Rosa depuis ses réglages pour révoquer les sessions et retirer les données synchronisées. Les copies locales et votre compte Carpe Diem distinct ne sont pas supprimés automatiquement.",
           )}
         </p>
-        <p className="notice">
+        <h2>{t("Who runs the service", "Qui exploite le service")}</h2>
+        <p>
           {t(
-            "This service is being prepared for release. Operator details, hosting regions and retention periods must be published before public account registration opens.",
-            "Ce service est en préparation. L’identité de l’exploitant, les régions d’hébergement et les durées de conservation doivent être publiées avant l’ouverture publique des inscriptions.",
+            "Lumen Labs, in Geneva, Switzerland, runs the website and the account service. The server is in Nuremberg, Germany; encrypted files are stored with Cloudflare R2. The legal notice has the full details.",
+            "Lumen Labs, à Genève (Suisse), exploite ce site et le service de compte. Le serveur est situé à Nuremberg, en Allemagne ; les fichiers chiffrés sont stockés chez Cloudflare R2. Les mentions légales donnent tous les détails.",
           )}
         </p>
-      </section>
+        <p>
+          <a className="text-link" href={localizedSiteHref("/legal", websiteLocale())}>
+            {t("Legal notice", "Mentions légales")}
+          </a>
+        </p>
+        <p className="notice">
+          {t(
+            "Retention periods will be published on this page.",
+            "Les durées de conservation seront publiées sur cette page.",
+          )}
+        </p>
+      </TrustLayout>
     );
   return (
     <section className="page wrap">
@@ -291,5 +368,32 @@ export function Information({ path }: { path: string }) {
         {t("Back to home", "Retour à l’accueil")}
       </a>
     </section>
+  );
+}
+
+/** The pages a person reads to decide whether to trust the app, as one set:
+ * the same column, and a short list that joins them. */
+function TrustLayout({ current, children }: { current: string; children: ReactNode }) {
+  const locale = websiteLocale();
+  const pages = [
+    { path: "/privacy", label: t("Privacy", "Confidentialité") },
+    { path: "/security", label: t("Security", "Sécurité") },
+    { path: "/legal", label: t("Legal notice", "Mentions légales") },
+  ];
+  return (
+    <div className="page wrap trust-layout">
+      <nav className="trust-nav" aria-label={t("Trust and legal", "Confiance et mentions")}>
+        {pages.map((page) => (
+          <a
+            key={page.path}
+            href={localizedSiteHref(page.path, locale)}
+            aria-current={page.path === current ? "page" : undefined}
+          >
+            {page.label}
+          </a>
+        ))}
+      </nav>
+      <section className="prose trust-body">{children}</section>
+    </div>
   );
 }

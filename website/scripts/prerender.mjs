@@ -16,11 +16,13 @@ const server = await createServer({
 try {
   const { App } = await server.ssrLoadModule("/src/App.tsx");
   const i18n = await server.ssrLoadModule("/src/lib/i18n.ts");
-  const { alternateLinks, siteOrigin } = await server.ssrLoadModule("/src/lib/alternates.ts");
+  const { alternateLinks, shareTags, siteOrigin, sitemap } =
+    await server.ssrLoadModule("/src/lib/alternates.ts");
   const { pageMeta } = await server.ssrLoadModule("/src/pages/meta.ts");
   const { guides } = await server.ssrLoadModule("/src/pages/docs-content.ts");
   const { families } = await server.ssrLoadModule("/src/models/catalog.ts");
   await (await server.ssrLoadModule("/src/models/loader.ts")).loadModelCatalog();
+  await (await server.ssrLoadModule("/src/pages/docs-loader.ts")).loadDocs();
   const { categories } = await server.ssrLoadModule("/src/models/catalog.ts");
   const { loadDetails } = await server.ssrLoadModule("/src/models/details.ts");
   // Marks every kind's words as needed, so each language below loads them all.
@@ -30,6 +32,7 @@ try {
     "/",
     "/downloads",
     "/privacy",
+    "/legal",
     "/security",
     "/help",
     "/docs",
@@ -53,7 +56,9 @@ try {
       const body = renderToString(createElement(App, { initialPath: path }));
       i18n.setWebsiteLocale(locale);
       const { title, description } = pageMeta(page);
-      const alternates = alternateLinks(page, server.config.base, origin);
+      const alternates =
+        alternateLinks(page, server.config.base, origin) +
+        shareTags({ page, locale, base: server.config.base, origin, title, description });
       const html = template
         .replace('<html lang="en">', `<html lang="${locale}">`)
         .replace(
@@ -67,6 +72,13 @@ try {
       await mkdir(directory, { recursive: true });
       await writeFile(join(directory, "index.html"), html);
     }
+  }
+  // The map of what a crawler may read: every public page, in every language.
+  await writeFile(join("dist", "sitemap.xml"), sitemap(pages, server.config.base, origin));
+  const robots = await readFile(join("dist", "robots.txt"), "utf8");
+  const sitemapUrl = `${origin}${server.config.base.replace(/\/$/, "")}/sitemap.xml`;
+  if (!robots.includes("Sitemap:")) {
+    await writeFile(join("dist", "robots.txt"), `${robots.trimEnd()}\nSitemap: ${sitemapUrl}\n`);
   }
 } finally {
   await server.close();

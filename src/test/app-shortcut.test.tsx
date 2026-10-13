@@ -602,7 +602,7 @@ describe("App shortcuts", () => {
       );
 
       await user.click(screen.getByRole("button", { name: "New tab" }));
-      expect(await screen.findByRole("tab", { name: "New session" })).toHaveAttribute(
+      expect(await screen.findByRole("tab", { name: "New chat" })).toHaveAttribute(
         "data-active",
         "true",
       );
@@ -676,7 +676,7 @@ describe("App shortcuts", () => {
     await waitFor(() =>
       expect(screen.queryByRole("tab", { name: "New note" })).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("tab", { name: "New session" })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("tab", { name: "New chat" })).toHaveAttribute("data-active", "true");
   });
 
   it("closes the active tab from the native close-tab menu event", async () => {
@@ -705,7 +705,7 @@ describe("App shortcuts", () => {
     await waitFor(() =>
       expect(screen.queryByRole("tab", { name: "New note" })).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("tab", { name: "New session" })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("tab", { name: "New chat" })).toHaveAttribute("data-active", "true");
     expect(closeTabListenerCount()).toBe(1);
   });
 
@@ -1093,7 +1093,7 @@ describe("App shortcuts", () => {
     render(<App />);
 
     // The app launches on the agent view; the notes list is one hop away.
-    await user.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await user.click(await screen.findByRole("button", { name: "Notes" }));
     // The note is in a project, so the list reaches it through its search.
     await user.type(
       await waitFor(() => {

@@ -330,15 +330,6 @@
 .project-monitor-expand:active {
   transform: scale(0.96);
 }
-.project-empty {
-  padding: var(--sp-10);
-  text-align: center;
-  color: var(--muted-foreground);
-}
-.project-empty h2,
-.project-empty h3 {
-  color: var(--foreground);
-}
 .project-reference-grid,
 .project-takes {
   display: flex;
@@ -1040,4 +1031,8 @@
 .project-badge-warning,
 .project-lint {
   color: var(--warning);
+}
+/* With no project yet, the invitation is the whole list, not one card. */
+.project-cards > .empty-state {
+  grid-column: 1 / -1;
 }

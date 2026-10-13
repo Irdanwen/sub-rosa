@@ -88,6 +88,19 @@
   --sp-10: 32px;
   --sp-12: 40px;
 
+  /* Layers ----------------------------------------------------------- */
+  /* The app-wide stacking order, lowest to highest. Numbers below 10 stay
+   * local to a component's own stacking context and need no token; anything
+   * that has to sit above other surfaces names its layer here, so two
+   * surfaces never fight with neighbouring guesses (there were 25 distinct
+   * values before this scale, and design-ratchet.test.ts keeps new ones out). */
+  --z-sticky: 20;
+  --z-dropdown: 60;
+  --z-overlay: 80;
+  --z-modal: 100;
+  --z-popover: 110;
+  --z-toast: 130;
+
   /* Radii ------------------------------------------------------------ */
   --r-xs: 4px;
   --r-sm: 6px;

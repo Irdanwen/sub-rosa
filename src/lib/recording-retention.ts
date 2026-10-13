@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PurgeRecordingsResultDto } from "./tauri";
 
 /** How many days after transcription recordings are deleted, on every
- * device and in the account (ADR-0111); `null` keeps them. */
+ * device and in the account (ADR-0112); `null` keeps them. */
 export async function recordingsRetention(): Promise<number | null> {
   return invoke<number | null>("recordings_retention");
 }

@@ -1517,7 +1517,7 @@ pub fn setup(app: &AppHandle) {
                 _ = tokio::time::sleep(QUIET_PASS) => {}
             }
             sync::resume(&driver).await;
-            // Hourly at most: recordings past the chosen age (ADR-0111).
+            // Hourly at most: recordings past the chosen age (ADR-0112).
             crate::recording_retention::tick(&driver).await;
             spaces::resume(&driver).await;
             // A connector call a browser tab asked this device to make

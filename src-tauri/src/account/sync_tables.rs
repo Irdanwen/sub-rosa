@@ -213,7 +213,7 @@ pub(super) const TABLES: &[Table] = &[
             "response_bytes",
         ],
     },
-    // One row of choices that follow the account (ADR-0111).
+    // One row of choices that follow the account (ADR-0112).
     Table {
         name: "account_preferences",
         kind: "settings",

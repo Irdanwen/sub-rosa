@@ -31,7 +31,7 @@ import { NOTE_DND_MIME } from "../../lib/dnd";
 import { useForcedEmptyStates } from "../../lib/empty-states-demo";
 import { BreadcrumbBar } from "../ui/BreadcrumbBar";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { EmptyState } from "../ui/EmptyState";
+import { EmptyState, NoMatches } from "../ui/EmptyState";
 import { AddNotesToFolderDialog } from "./AddNotesToFolderDialog";
 import { AddSessionsToProjectDialog } from "./AddSessionsToProjectDialog";
 import { CreateFolderDialog } from "./CreateFolderDialog";
@@ -214,9 +214,10 @@ function FolderList({
         }
       />
     ) : (
-      <div className="folders-empty">
-        <p>{t("No projects match “{query}”.", { query: query.trim() })}</p>
-      </div>
+      <NoMatches
+        message={t("No projects match “{query}”.", { query: query.trim() })}
+        onClear={() => setQuery("")}
+      />
     );
 
   return (
@@ -803,7 +804,7 @@ function FolderDetail({
             {folderNotes.length > 0 ? (
               <>
                 <div className="folder-actions-row">
-                  <h2 className="folder-notes-title">{t("Meeting notes")}</h2>
+                  <h2 className="folder-notes-title">{t("Notes")}</h2>
                 </div>
                 <FolderNoteList
                   folder={folder}
@@ -1145,7 +1146,7 @@ function FolderAddMenu({
             }}
           >
             <IconBubble3 size={14} />
-            {t("New session")}
+            {t("New chat")}
           </button>
           <button
             type="button"
@@ -1222,7 +1223,7 @@ function FolderEmptyActions({
       ) : null}
       <button type="button" className="primary-action" onClick={onCreateSession}>
         <IconBubble3 size={13} />
-        {t("New session")}
+        {t("New chat")}
       </button>
       <button type="button" className="primary-action primary-solid" onClick={onCreateNote}>
         <IconPlusMedium size={13} />

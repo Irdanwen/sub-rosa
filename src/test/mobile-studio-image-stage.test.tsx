@@ -145,13 +145,13 @@ describe("the image panel on the stage", () => {
     await screen.findByRole("button", { name: /^Image model/ });
     const scene = screen.getByRole("region", { name: "Latest result" });
     // The storm is not shown as if it were the answer to a prompt not written.
-    expect(scene.querySelector("img.mobile-studio-scene-picture")).toBeNull();
+    expect(scene.querySelector("img.stage-scene-picture")).toBeNull();
     expect(scene.textContent).toContain("Describe an image. It will appear here.");
 
     await userEvent.click(await screen.findByRole("button", { name: /Last creation/ }));
     await waitFor(() =>
       expect(
-        (scene.querySelector("img.mobile-studio-scene-picture") as HTMLImageElement | null)?.src,
+        (scene.querySelector("img.stage-scene-picture") as HTMLImageElement | null)?.src,
       ).toContain(PNG),
     );
   });

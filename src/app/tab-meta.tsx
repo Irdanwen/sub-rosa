@@ -63,7 +63,7 @@ export function tabMeta(
         : undefined;
       const sessionId = nav.agentSessionId;
       return {
-        title: agentSessionTabTitle(session) || nav.agentSessionTitle?.trim() || t("New session"),
+        title: agentSessionTabTitle(session) || nav.agentSessionTitle?.trim() || t("New chat"),
         icon: <IconBubble3 size={TAB_ICON_SIZE} />,
         status: !sessionId
           ? undefined
@@ -82,7 +82,7 @@ export function tabMeta(
     case "all-notes":
       // The list shows the notes in no project; "All notes" would promise more.
       return {
-        title: t("Meeting notes"),
+        title: t("Notes"),
         icon: <IconNoteText size={TAB_ICON_SIZE} />,
       };
     case "routines":

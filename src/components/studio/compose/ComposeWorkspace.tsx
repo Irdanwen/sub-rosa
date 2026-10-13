@@ -8,6 +8,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { useArtifactPreview } from "../../../lib/artifact-media";
 import { friendlyErrorMessage } from "../../../lib/errors";
 import { t } from "../../../lib/i18n";
+import { ErrorMessage } from "../../ui/ErrorMessage";
 import { listArtifacts } from "../../../lib/studio/artifacts";
 import { estimateCostCredits, imageEditModels } from "../../../lib/studio/catalog";
 import {
@@ -348,11 +349,7 @@ export function ComposeWorkspace({
             {t("Compose")}
           </button>
         </div>
-        {error ? (
-          <p className="studio-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ErrorMessage>{error}</ErrorMessage> : null}
       </section>
 
       {group ? (
@@ -375,7 +372,7 @@ export function ComposeWorkspace({
             ))}
           </div>
           {failures.map((failure) => (
-            <p key={failure.jobId} className="studio-error" role="alert">
+            <ErrorMessage key={failure.jobId}>
               {failure.label ? `${failure.label}: ` : ""}
               {failure.message}
               <button
@@ -388,7 +385,7 @@ export function ComposeWorkspace({
               >
                 {t("Dismiss")}
               </button>
-            </p>
+            </ErrorMessage>
           ))}
         </section>
       ) : null}

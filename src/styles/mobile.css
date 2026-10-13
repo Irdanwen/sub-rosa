@@ -4379,213 +4379,42 @@
 }
 
 /* --- The scene and the dock -------------------------------------------------------
-   What a panel last made, at the top, in the result's own shape; and the
-   frosted card the instruction is written in, within thumb's reach. */
+   Shared with the desktop in stage.css; what is the phone's own lives here:
+   the scene's height against the screen, and the dock riding above the
+   keyboard, close to the thumb. */
 
-.mobile-studio-scene {
-  margin: 0 0 var(--sp-1);
-}
-
-.mobile-studio-scene .stage-frame {
+.mobile-studio-stage .stage-scene .stage-frame {
   --stage-ceiling: 42dvh;
 }
 
 /* Before anything is made the frame says so in a line, not a wall: the
    result's shape, at a third of its eventual height. */
-.mobile-studio-scene .stage-frame[data-empty="true"] {
+.mobile-studio-stage .stage-scene .stage-frame[data-empty="true"] {
   --stage-ceiling: 22dvh;
 }
 
-.mobile-studio-scene-picture {
-  object-fit: contain;
+.mobile-studio-stage .stage-scene {
+  margin: 0 0 var(--sp-1);
 }
 
-/* The field is the card's own; the stage's focus ring would frame it twice. */
-.mobile-studio-stage .mobile-studio-dock-field:focus-visible {
-  outline: none;
-}
-
-.mobile-studio-scene-track {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  align-items: center;
-  padding: var(--sp-4);
-}
-
-.mobile-studio-scene-audio {
-  width: 100%;
-  height: 40px;
-}
-
-/* The still silhouette of a track: the darkroom's wave, at rest. */
-.mobile-studio-scene-wave {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-px);
-  height: 44%;
-  min-height: 0;
-  padding: 0 var(--sp-3);
-}
-
-.mobile-studio-scene-wave > span {
-  flex: 1;
-  max-width: 2px;
-  height: calc(var(--scene-bar, 0.5) * 100%);
-  border-radius: 1px;
-  background: var(--screen-foreground);
-  opacity: 0.55;
-}
-
-.mobile-studio-dock {
+.mobile-studio-stage .stage-dock {
   position: sticky;
   bottom: calc(var(--keyboard-inset, 0px) + var(--sp-2));
   z-index: 2;
-  display: grid;
-  gap: var(--sp-3);
-  padding: var(--sp-4);
-  border: 1px solid var(--stage-edge);
-  border-radius: var(--r-xl);
-  /* Nearly solid: the panel scrolls under the dock, and at the stage's usual
-   * 64% the settings above showed through the prompt as ghost text. */
-  background: color-mix(in oklch, var(--screen) 90%, transparent);
-  backdrop-filter: blur(22px) saturate(1.2);
-  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  /* The panel scrolls under the dock: a fade of the screen above it keeps
+     the settings from reading through the prompt. */
   box-shadow:
     0 calc(var(--sp-6) * -1) var(--sp-6) calc(var(--sp-2) * -1) var(--screen),
     var(--shadow-lg);
 }
 
-.mobile-studio-dock-composer {
-  display: grid;
-  gap: var(--sp-3);
-}
-
-.mobile-studio-dock-field {
-  width: 100%;
-  min-height: 28px;
-  padding: 0;
-  border: 0;
-  outline: none;
-  resize: none;
-  background: transparent;
-  color: var(--screen-foreground);
-  font: inherit;
+/* 16px or more, or iOS zooms the page when the field takes focus. */
+.mobile-studio-stage .stage-dock-field {
   font-size: max(16px, var(--fs-md));
-  line-height: 1.4;
 }
 
-.mobile-studio-dock-field::placeholder {
-  color: var(--screen-muted);
-}
-
-.mobile-studio-dock-suggestions {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-inline-size: 0;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: var(--sp-2);
-  margin-inline: calc(var(--sp-4) * -1);
-  padding-inline: var(--sp-4);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.mobile-studio-dock-suggestions::-webkit-scrollbar {
-  display: none;
-}
-
-.mobile-studio-dock-suggestion {
-  flex-shrink: 0;
-  min-height: 34px;
-  padding: var(--sp-1) var(--sp-4);
-  border: 1px solid var(--stage-edge);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--screen-muted);
-  font-size: var(--fs-sm);
-  white-space: nowrap;
-}
-
-.mobile-studio-dock-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
-.mobile-studio-dock-lead {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-/* A setting riding in the dock's bar: the model, the ratio. */
-.mobile-dock-chip {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: var(--sp-1);
+.mobile-studio-stage .stage-chip {
   max-width: 46vw;
-  min-height: 32px;
-  padding: 0 var(--sp-2) 0 var(--sp-3);
-  border: 1px solid var(--stage-edge);
-  border-radius: var(--r-pill);
-  background: var(--stage-soft);
-  color: var(--screen-foreground);
-  font-size: var(--fs-sm);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mobile-dock-chip-value {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-dock-chip svg {
-  flex-shrink: 0;
-  color: var(--screen-muted);
-}
-
-.mobile-studio-dock-send {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex-shrink: 0;
-}
-
-.mobile-studio-dock-cost {
-  color: var(--screen-muted);
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.mobile-studio-send {
-  flex-shrink: 0;
-}
-
-.mobile-studio-dock-hint {
-  margin: 0;
-  color: var(--screen-muted);
-  font-size: var(--fs-sm);
-  text-align: center;
-}
-
-.mobile-studio-dock-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--sp-2);
 }
 
 /* A render not here yet, in the place it will take in Recent. */
@@ -5179,7 +5008,7 @@
   --viewer-danger: color-mix(in oklch, var(--destructive) 70%, white);
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   color: var(--viewer-paper);

@@ -72,6 +72,16 @@ export function artifactSrc(artifact: Pick<StudioArtifact, "path">): string {
   return convertFileSrc(artifact.path);
 }
 
+/**
+ * A clip's address for a still thumbnail. WKWebView loads the metadata of a
+ * `<video preload="metadata">` but paints nothing until it plays, so a tile
+ * stays black; a media fragment asks it to seek, and the seek paints the
+ * frame. The phone's library does the same (StudioLibrary).
+ */
+export function clipThumbnailSrc(artifact: Pick<StudioArtifact, "path">): string {
+  return `${artifactSrc(artifact)}#t=0.1`;
+}
+
 function readIndex(): StudioArtifact[] {
   try {
     const raw = window.localStorage.getItem(GALLERY_STORAGE_KEY);

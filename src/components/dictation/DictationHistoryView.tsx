@@ -23,7 +23,8 @@ import {
 import { friendlyErrorMessage } from "../../lib/errors";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Dialog } from "../ui/Dialog";
-import { EmptyState } from "../ui/EmptyState";
+import { EmptyState, NoMatches } from "../ui/EmptyState";
+import { ShimmerRows } from "../ui/Shimmer";
 import { KeycapShortcut } from "../shortcuts/KeycapShortcut";
 import {
   deleteDictationHistoryItem,
@@ -243,9 +244,7 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
       {error ? <p className="error-banner">{error}</p> : null}
 
       {loading ? (
-        <div className="folders-empty">
-          <p>{t("Loading dictations…")}</p>
-        </div>
+        <ShimmerRows count={3} label={t("Loading dictations…")} />
       ) : items.length === 0 ? (
         <EmptyState
           label={dictationAvailable ? t("Start dictating") : t("Dictation unavailable")}
@@ -273,9 +272,10 @@ export function DictationHistoryView({ onNavigateToSettings }: DictationHistoryV
           }
         />
       ) : groups.length === 0 ? (
-        <div className="folders-empty">
-          <p>{t("No dictations match “{query}”.", { query: query.trim() })}</p>
-        </div>
+        <NoMatches
+          message={t("No dictations match “{query}”.", { query: query.trim() })}
+          onClear={() => setQuery("")}
+        />
       ) : (
         <div className="dictation-history-groups">
           {groups.map((group) => (

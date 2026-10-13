@@ -123,7 +123,7 @@ describe("Sidebar primary navigation", () => {
     );
 
     expect(screen.queryByRole("button", { name: /Folders/ })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Meeting notes" }));
+    await user.click(screen.getByRole("button", { name: "Notes" }));
     expect(onChangeView).toHaveBeenCalledWith("notes");
     await user.click(screen.getByRole("button", { name: "Projects" }));
     expect(onChangeView).toHaveBeenCalledWith("folders");
@@ -160,7 +160,7 @@ describe("Sidebar primary navigation", () => {
     expect(within(palette).getByText("Recents")).toBeInTheDocument();
     expect(within(palette).getByText("Roadmap")).toBeInTheDocument();
     expect(within(palette).getByText("Quick actions")).toBeInTheDocument();
-    expect(within(palette).getByText("New session")).toBeInTheDocument();
+    expect(within(palette).getByText("New chat")).toBeInTheDocument();
 
     fireEvent.keyDown(search, { key: "Escape" });
 
@@ -331,9 +331,20 @@ describe("Sidebar primary navigation", () => {
     await user.click(screen.getByRole("button", { name: "Back to app" }));
     expect(onExitSettings).toHaveBeenCalledTimes(1);
 
-    expect(screen.getByRole("navigation", { name: "Personal settings" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Audio settings" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "AI settings" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "You settings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Voice and audio settings" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Assistant settings" })).toBeInTheDocument();
+    // Advanced is folded until it is opened, active or searched for.
+    expect(screen.queryByRole("navigation", { name: "Advanced settings" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Advanced" }));
+    expect(screen.getByRole("button", { name: "MCP servers" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Advanced" }));
+    await user.type(screen.getByRole("searchbox", { name: "Find a setting" }), "toolsets");
+    expect(screen.getByRole("button", { name: "Toolsets" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Shortcuts" })).toBeNull();
+    await user.clear(screen.getByRole("searchbox", { name: "Find a setting" }));
 
     const carpeDiemButton = screen.getByRole("button", { name: "Carpe Diem" });
     expect(carpeDiemButton).toHaveAttribute("data-active", "true");
@@ -542,7 +553,7 @@ describe("FoldersWorkspace — detail view", () => {
     render(<FoldersWorkspace {...props} selectedFolderId="folder-2" />);
 
     await user.click(screen.getByRole("button", { name: "Add to project" }));
-    await user.click(screen.getByRole("menuitem", { name: "New session" }));
+    await user.click(screen.getByRole("menuitem", { name: "New chat" }));
     expect(props.onCreateSession).toHaveBeenCalledWith("folder-2");
 
     await user.click(screen.getByRole("button", { name: "Add to project" }));

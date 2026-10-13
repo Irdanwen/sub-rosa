@@ -8,6 +8,7 @@ import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifactPreview } from "../../../lib/artifact-media";
 import { friendlyErrorMessage } from "../../../lib/errors";
 import { t } from "../../../lib/i18n";
+import { ErrorMessage } from "../../ui/ErrorMessage";
 import { listArtifacts, saveArtifactFromBase64 } from "../../../lib/studio/artifacts";
 import { reencodeAsJpeg } from "../../../lib/studio/retouch/canvas-io";
 import { versionTitle } from "../../../lib/studio/retouch/labels";
@@ -159,11 +160,7 @@ export function RetouchPicker({
             void importFiles(files);
           }}
         />
-        {error ? (
-          <p className="studio-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ErrorMessage>{error}</ErrorMessage> : null}
       </section>
       {showSessions && sessions.length > 0 ? (
         <section className="retouch-picker-section">

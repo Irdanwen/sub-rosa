@@ -405,3 +405,443 @@
     transition: none;
   }
 }
+
+/* --- the scene: what was last made here, in its own shape ------------------ */
+
+.stage-scene {
+  min-width: 0;
+}
+
+.stage-scene-picture {
+  object-fit: contain;
+}
+
+.stage-scene-track {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: var(--sp-4);
+}
+
+.stage-scene-audio {
+  width: 100%;
+  height: 40px;
+}
+
+/* The still silhouette of a track: the darkroom's wave, at rest. */
+.stage-scene-wave {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-px);
+  height: 44%;
+  min-height: 0;
+  padding: 0 var(--sp-3);
+}
+
+.stage-scene-wave > span {
+  flex: 1;
+  max-width: 2px;
+  height: calc(var(--scene-bar, 0.5) * 100%);
+  border-radius: 1px;
+  background: var(--screen-foreground);
+  opacity: 0.55;
+}
+
+/* --- the dock: the instruction, the tools, and the one button that spends -- */
+
+.stage-dock {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-xl);
+  /* Nearly solid: what scrolls under the dock must not read through the
+   * prompt as ghost text. */
+  background: color-mix(in oklch, var(--screen) 90%, transparent);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+}
+
+.stage-dock-composer {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.stage-dock-field {
+  width: 100%;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--screen-foreground);
+  font: inherit;
+  font-size: var(--fs-xl);
+  line-height: 1.4;
+}
+
+/* The field is the card's own; the stage's focus ring would frame it twice. */
+.stage .stage-dock-field:focus-visible {
+  outline: none;
+}
+
+.stage-dock-field::placeholder {
+  color: var(--screen-muted);
+}
+
+.stage-dock-suggestions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--sp-2);
+  margin-inline: calc(var(--sp-4) * -1);
+  padding-inline: var(--sp-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.stage-dock-suggestions::-webkit-scrollbar {
+  display: none;
+}
+
+.stage-dock-suggestion {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: var(--sp-1) var(--sp-4);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.stage-dock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.stage-dock-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.stage-dock-send {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-shrink: 0;
+}
+
+.stage-dock-send .stage-send {
+  flex-shrink: 0;
+}
+
+.stage-dock-cost {
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stage-dock-hint {
+  margin: 0;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.stage-dock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
+.stage-dock-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: var(--stage-soft);
+  color: var(--screen-foreground);
+  font-size: var(--fs-sm);
+}
+
+/* A setting riding in the dock's bar: the model, the ratio. */
+.stage-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 260px;
+  min-height: 32px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: var(--stage-soft);
+  color: var(--screen-foreground);
+  font-size: var(--fs-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stage-chip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-chip svg {
+  flex-shrink: 0;
+  color: var(--screen-muted);
+}
+
+@media (hover: hover) {
+  .stage-chip:hover,
+  .stage-dock-suggestion:hover,
+  .stage-dock-action:hover {
+    background: var(--stage-softer);
+    color: var(--screen-foreground);
+  }
+}
+
+/* --- a short menu under a chip (desktop) ----------------------------------- */
+
+.popover-stage {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-lg);
+  /* Opaque: a list over a prompt must not let the prompt read through it. */
+  background: color-mix(in oklch, var(--screen) 92%, var(--screen-foreground));
+  box-shadow: var(--shadow-lg);
+}
+
+.stage-menu {
+  margin: 0;
+  padding: var(--sp-1);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.stage-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--screen-foreground);
+  font-size: var(--fs-md);
+  text-align: start;
+}
+
+.stage-menu-item:hover,
+.stage-menu-item:focus-visible {
+  background: var(--stage-soft);
+}
+
+.stage-menu-check {
+  display: inline-grid;
+  width: 16px;
+  place-items: center;
+  color: var(--screen-foreground);
+}
+
+/* --- the model list under the model chip (desktop) ------------------------ */
+
+.stage-model-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(520px, 100%);
+}
+
+.stage-model-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) var(--sp-3) var(--sp-2);
+  padding: 0 var(--sp-3);
+  min-height: 34px;
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-md);
+  background: var(--stage-soft);
+  color: var(--screen-muted);
+}
+
+.stage-model-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--screen-foreground);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+
+.stage-model-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0 var(--sp-3) var(--sp-2);
+  border: 0;
+  min-inline-size: 0;
+}
+
+.stage-model-filter {
+  min-height: 26px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+}
+
+.stage-model-filter[aria-pressed="true"] {
+  background: var(--stage-softer);
+  color: var(--screen-foreground);
+}
+
+.stage-model-rows {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--sp-1) var(--sp-1);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.stage-model-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.stage-model-item {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--screen-foreground);
+  text-align: start;
+}
+
+.stage-model-item:hover,
+.stage-model-item:focus-visible {
+  background: var(--stage-soft);
+}
+
+.stage-model-item .stage-menu-check {
+  padding-top: 2px;
+}
+
+.stage-model-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stage-model-name {
+  font-size: var(--fs-md);
+}
+
+.stage-model-subtitle {
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+}
+
+.stage-model-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: 2px;
+}
+
+.stage-model-tag {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--stage-edge);
+  border-radius: var(--r-pill);
+  color: var(--screen-muted);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+}
+
+.stage-model-tag[data-tone="note"] {
+  border-color: color-mix(in oklch, var(--brand) 50%, transparent);
+  color: var(--screen-foreground);
+}
+
+.stage-model-star {
+  width: 30px;
+  height: 30px;
+  color: var(--screen-muted);
+}
+
+.stage-model-star[aria-pressed="true"] {
+  background: transparent;
+  color: var(--brand);
+}
+
+.stage-model-empty {
+  padding: var(--sp-4);
+  color: var(--screen-muted);
+  font-size: var(--fs-sm);
+}
+
+/* The app's tokens, read on the stage: any surface built from the shared
+ * form controls (a field, a select, a switch, a card) takes the stage's
+ * light-on-dark values when it sits in a room scoped with this class. Text
+ * colour is said again because it is inherited, not read. */
+.stage-tokens {
+  --foreground: var(--screen-foreground);
+  --muted-foreground: var(--screen-muted);
+  --border: var(--stage-edge);
+  --border-subtle: var(--stage-edge);
+  --input: var(--stage-soft);
+  --card: var(--stage-soft);
+  --muted: var(--stage-soft);
+  --accent: var(--stage-softer);
+  --secondary: var(--stage-soft);
+  --popover: var(--screen);
+  --popover-foreground: var(--screen-foreground);
+  --popover-border: var(--stage-edge);
+  --surface-subtle: var(--stage-soft);
+  --background: var(--stage-soft);
+  --secondary-foreground: var(--screen-foreground);
+  color: var(--screen-foreground);
+}
+
+.stage-tokens .btn-secondary:hover {
+  background: var(--stage-softer);
+}

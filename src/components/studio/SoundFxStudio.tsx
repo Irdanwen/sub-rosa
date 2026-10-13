@@ -1,10 +1,9 @@
-// Sound-effects studio: short foley and ambience from a one-line description.
-// Rides the same async music queue as the music studio - only the model set,
-// the input rules, and the copy differ.
+// Sound effects on the desk (ADR-0111): short foley and ambience from a
+// one-line description. Rides the same async music queue as the music desk -
+// only the model set, the input rules, and the copy differ.
 
 import { t } from "../../lib/i18n";
-import { IconSoundFx } from "central-icons/IconSoundFx";
-import { useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
 import { useMediaJob } from "../../lib/studio/async-job";
 import {
@@ -14,16 +13,19 @@ import {
   musicQueueBody,
   soundEffectsModels,
 } from "../../lib/studio/catalog";
+import { modelSubtitle } from "../../lib/studio/model-subtitle";
 import { musicPaths, retrieveBody } from "../../lib/studio/paths";
 import { estimateRenderMs, renderEtaKey } from "../../lib/studio/render-eta";
-import type { MediaCatalog } from "../../lib/studio/types";
-import { EmptyState } from "../ui/EmptyState";
+import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { Switch } from "../ui/Switch";
-import { Darkroom } from "./Darkroom";
-import { GalleryStrip } from "./GalleryStrip";
+import { AudioScene } from "./desk/AudioScene";
+import { Filmstrip } from "./desk/Filmstrip";
+import { StudioDesk } from "./desk/StudioDesk";
+import { useJobWait } from "./desk/useJobWait";
 import { JobFailureNotice } from "./JobFailureNotice";
-import { GenerationLayout } from "./GenerationLayout";
-import { CostHint, ModelSelect, SliderField, StudioField } from "./controls";
+import { SliderField, StudioField } from "./controls";
+import { Dock, DockComposer } from "./stage/Dock";
+import { ModelPickerChip } from "./stage/ModelPicker";
 
 /** Effects are described in a line, not a paragraph - and some backends cut
  * long descriptions anyway. */
@@ -31,7 +33,15 @@ export const SFX_PROMPT_LIMIT = 250;
 
 const AUDIO_URL_FIELDS = ["audio_url", "url"];
 
-export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
+export function SoundFxStudio({
+  catalog,
+  tools,
+  onOpenGallery,
+}: {
+  catalog: MediaCatalog;
+  tools?: ReactNode;
+  onOpenGallery?: () => void;
+}) {
   const models = useMemo(() => soundEffectsModels(catalog), [catalog]);
   const paths = musicPaths(catalog.backend);
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
@@ -45,6 +55,9 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
   const [durationSeconds, setDurationSeconds] = useState(5);
   const [loop, setLoop] = useState(false);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
+  const [effects, setEffects] = useState<StudioArtifact[]>([]);
+  const [landed, setLanded] = useState<{ path: string } | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
 
   // The file is already in the gallery directory (Rust downloaded it, possibly
   // while the app was closed); indexing it is all that is left.
@@ -55,6 +68,8 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
       prompt: finished.prompt,
     });
     setGalleryEpoch((epoch) => epoch + 1);
+    setLanded({ path: artifact.path });
+    setReveal(true);
   });
 
   const duration = acceptedDuration(caps, durationSeconds) ?? durationSeconds;
@@ -66,19 +81,15 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
       })
     : undefined;
 
-  const busy =
-    job.state.phase === "queueing" ||
-    job.state.phase === "queued" ||
-    job.state.phase === "processing";
-  /** The same three phases, narrowed, so the darkroom can read the clock off
-   * the ones that have one. */
   const waiting =
     job.state.phase === "queueing" ||
     job.state.phase === "queued" ||
     job.state.phase === "processing"
       ? job.state
       : undefined;
+  const busy = Boolean(waiting);
   const estimate = useMemo(() => estimateRenderMs(renderEtaKey("sfx", modelId)), [modelId]);
+  const wait = useJobWait(modelId + prompt, waiting, estimate, t("Rendering your effect"));
   const canSubmit = Boolean(model && prompt.trim()) && !busy;
 
   const start = useCallback(() => {
@@ -105,29 +116,8 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
     });
   }, [model, caps, prompt, autoDuration, duration, loopOn, job, paths]);
 
-  const controls = (
+  const inspector = (
     <>
-      <StudioField label={t("Model")}>
-        <ModelSelect
-          models={models}
-          value={model?.id ?? null}
-          onChange={setModelId}
-          ariaLabel={t("Sound effect model")}
-        />
-      </StudioField>
-      <StudioField
-        label={t("Description")}
-        hint={`${Math.min(prompt.length, SFX_PROMPT_LIMIT)} / ${SFX_PROMPT_LIMIT}`}
-      >
-        <textarea
-          className="studio-textarea"
-          rows={3}
-          value={prompt}
-          maxLength={SFX_PROMPT_LIMIT}
-          placeholder={t("A heavy wooden door creaks open")}
-          onChange={(event) => setPrompt(event.target.value)}
-        />
-      </StudioField>
       {caps.loop ? (
         <StudioField label={t("Seamless loop")} hint={t("The end flows back into the start")}>
           <Switch checked={loop} onCheckedChange={setLoop} aria-label={t("Seamless loop")} />
@@ -154,55 +144,79 @@ export function SoundFxStudio({ catalog }: { catalog: MediaCatalog }) {
     </>
   );
 
-  // While a render is in flight the wait itself is on the output side, in the
-  // darkroom, so the controls column keeps only the thing there is left to do.
-  const action = busy ? (
-    <button type="button" className="btn btn-secondary" onClick={job.cancel}>
-      {t("Stop waiting")}
-    </button>
-  ) : (
-    <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
-      <span>{t("Generate effect")}</span>
-      <CostHint credits={costCredits} />
-    </button>
-  );
-
   return (
-    <GenerationLayout controls={controls} action={action}>
-      {waiting ? (
-        <Darkroom
-          variant="audio"
-          seed={modelId + prompt}
-          phase={waiting.phase}
-          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
-          estimateMs={estimate}
-          label={waiting.phase === "processing" ? t("Rendering your effect") : undefined}
-          meta={modelId}
+    <StudioDesk
+      tools={tools}
+      scene={
+        <>
+          <AudioScene
+            landed={landed}
+            newest={effects[0]}
+            wait={wait}
+            reveal={reveal}
+            onRevealEnd={() => setReveal(false)}
+            hint={t("Describe a sound. It will play here.")}
+          />
+          {busy ? (
+            <div className="studio-desk-scene-actions">
+              <button type="button" className="stage-dock-action" onClick={job.cancel}>
+                {t("Stop waiting")}
+              </button>
+            </div>
+          ) : null}
+        </>
+      }
+      notice={
+        job.state.phase === "failed" ? (
+          <JobFailureNotice
+            className="stage-notice"
+            retryClassName="stage-dock-action"
+            message={job.state.message}
+            status={job.state.status}
+            model={modelId}
+            onRetry={job.canRetry ? job.retry : undefined}
+          />
+        ) : undefined
+      }
+      dock={
+        <Dock>
+          <DockComposer
+            value={prompt}
+            onChange={setPrompt}
+            maxLength={SFX_PROMPT_LIMIT}
+            placeholder={t("A heavy wooden door creaks open")}
+            ariaLabel={t("Description")}
+            cost={costCredits}
+            canSend={canSubmit}
+            busy={busy}
+            onSend={start}
+            sendLabel={t("Generate effect")}
+            tools={
+              <ModelPickerChip
+                label={t("Sound effect model")}
+                selectedId={model?.id ?? ""}
+                entries={models.map((entry) => ({
+                  id: entry.id,
+                  name: entry.name,
+                  subtitle: modelSubtitle(entry),
+                }))}
+                onSelect={setModelId}
+              />
+            }
+          />
+        </Dock>
+      }
+      inspector={inspector}
+      strip={
+        <Filmstrip
+          kinds={["sfx"]}
+          epoch={galleryEpoch}
+          pending={busy ? 1 : 0}
+          onArtifactsChanged={setEffects}
+          onOpenGallery={onOpenGallery}
+          onReusePrompt={(artifact) => setPrompt(artifact.prompt)}
         />
-      ) : null}
-      {job.state.phase === "failed" ? (
-        <JobFailureNotice
-          message={job.state.message}
-          status={job.state.status}
-          model={modelId}
-          onRetry={job.canRetry ? job.retry : undefined}
-        />
-      ) : null}
-      <GalleryStrip
-        kind="sfx"
-        epoch={galleryEpoch}
-        empty={
-          !busy ? (
-            <EmptyState
-              icon={<IconSoundFx size={22} />}
-              title={t("No sound effects yet")}
-              description={t(
-                "Describe a short sound: a door creak, rain on glass, a sci-fi whoosh.",
-              )}
-            />
-          ) : null
-        }
-      />
-    </GenerationLayout>
+      }
+    />
   );
 }

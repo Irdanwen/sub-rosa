@@ -3082,7 +3082,7 @@ input:focus-visible,
 .agent-usage-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3356,7 +3356,7 @@ input:focus-visible,
   position: absolute;
   top: var(--sp-4);
   left: var(--sp-4);
-  z-index: 20;
+  z-index: var(--z-sticky);
   width: min(380px, calc(100vw - 32px));
   max-height: min(70vh, 520px);
   display: flex;
@@ -4470,7 +4470,7 @@ input:focus-visible,
 .hermes-trace-panel {
   position: fixed;
   inset: auto 0 0 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -4722,7 +4722,7 @@ input:focus-visible,
   position: absolute;
   right: max(0px, calc(50% - 320px));
   bottom: calc(100% + var(--sp-1));
-  z-index: 130;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   width: 200px;
@@ -5411,7 +5411,7 @@ input:focus-visible,
 /* "/" suggestion palette + "+" popover share the floating-menu look. */
 .agent-category-menu-host {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   width: var(--agent-category-menu-width, auto);
 }
 
@@ -6116,7 +6116,7 @@ input:focus-visible,
   left: 0;
   right: 0;
   height: var(--titlebar-h);
-  z-index: 100;
+  z-index: var(--z-modal);
   background: transparent;
   -webkit-app-region: drag;
 }
@@ -6129,7 +6129,7 @@ input:focus-visible,
   /* Anchored just past the green control (see the token notes) rather than a
    * bare pixel offset. */
   left: calc(var(--titlebar-controls-end) + var(--titlebar-controls-gap));
-  z-index: 110;
+  z-index: var(--z-popover);
   display: inline-grid;
   place-items: center;
   width: var(--control-md);
@@ -7694,7 +7694,7 @@ input:focus-visible,
   position: absolute;
   top: calc(100% + 2px);
   right: var(--sp-3);
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -8053,7 +8053,7 @@ input:focus-visible,
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   min-width: 180px;
   padding: var(--sp-1);
   border: 1px solid var(--border);
@@ -9201,7 +9201,7 @@ input:focus-visible,
  */
 .selection-toolbar {
   position: fixed;
-  z-index: 80;
+  z-index: var(--z-overlay);
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -9650,7 +9650,7 @@ input:focus-visible,
  * same place and the same moment. */
 .rewrite-panel {
   position: fixed;
-  z-index: 80;
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -10449,7 +10449,7 @@ input:focus-visible,
   top: var(--sp-3);
   left: 0;
   right: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   justify-content: center;
   pointer-events: none;
@@ -11289,7 +11289,7 @@ input:focus-visible,
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  z-index: 60;
+  z-index: var(--z-dropdown);
   /* No CSS filter here on purpose — the wheel's shadow is an SVG feDropShadow
      on the disc. A parent filter over a will-change'd animating child flashes
      white on repaint in WebKit. */
@@ -12656,49 +12656,6 @@ input:focus-visible,
   background: color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-/* Empty / error / loading states. */
-.installed-skills-empty,
-.installed-skills-error {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-10) var(--sp-6);
-  text-align: center;
-}
-
-.installed-skills-empty-icon {
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted-foreground);
-}
-
-.installed-skills-empty-title {
-  margin: 0;
-  color: var(--foreground);
-  font-size: var(--fs-md);
-  font-weight: 500;
-}
-
-.installed-skills-empty-description {
-  margin: 0;
-  max-width: 360px;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.installed-skills-retry {
-  margin-top: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
 .installed-skill-skeleton {
   grid-template-columns: 1fr;
 }
@@ -12712,17 +12669,12 @@ input:focus-visible,
  * static grey bar says "this is broken" about as readily as it says "this is
  * loading", and fixing that in five places is a change nobody makes.
  *
- * One definition, and it breathes. The per-surface class names are kept as
- * aliases rather than renamed across nine components: the point was to have
- * one rule, not to touch every file that draws a placeholder.
+ * One definition, and it breathes. The settings lists now draw it through
+ * ShimmerRows (ui/Shimmer.tsx); the two skills surfaces still alias it.
  */
 .skeleton-line,
-.installed-skill-skeleton-line,
-.mcp-server-skeleton-line,
 .skill-review-skeleton-line,
-.skills-hub-skeleton-line,
-.toolset-skeleton-line,
-.external-dir-skeleton-line {
+.skills-hub-skeleton-line {
   display: block;
   height: 12px;
   border-radius: var(--r-sm);
@@ -12737,11 +12689,8 @@ input:focus-visible,
 }
 
 .skeleton-title,
-.installed-skill-skeleton-title,
-.mcp-server-skeleton-title,
 .skill-review-skeleton-title,
-.skills-hub-skeleton-title,
-.toolset-skeleton-title {
+.skills-hub-skeleton-title {
   width: 40%;
   height: 14px;
 }
@@ -12749,10 +12698,7 @@ input:focus-visible,
 /* The second line of a placeholder is shorter, the way a second line of real
  * text usually is. */
 .skeleton-line + .skeleton-line,
-.installed-skill-skeleton-line + .installed-skill-skeleton-line,
-.mcp-server-skeleton-line + .mcp-server-skeleton-line,
-.skills-hub-skeleton-line + .skills-hub-skeleton-line,
-.toolset-skeleton-line + .toolset-skeleton-line {
+.skills-hub-skeleton-line + .skills-hub-skeleton-line {
   width: 70%;
 }
 
@@ -12767,12 +12713,8 @@ input:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton-line,
-  .installed-skill-skeleton-line,
-  .mcp-server-skeleton-line,
   .skill-review-skeleton-line,
-  .skills-hub-skeleton-line,
-  .toolset-skeleton-line,
-  .external-dir-skeleton-line {
+  .skills-hub-skeleton-line {
     background: var(--surface-subtle);
     animation: none;
   }
@@ -13043,61 +12985,6 @@ input:focus-visible,
 .external-dir-remove:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.external-dirs-empty,
-.external-dirs-error {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-7) var(--sp-5);
-  text-align: center;
-}
-
-.external-dirs-empty-icon {
-  color: var(--muted-foreground);
-}
-
-.external-dirs-empty-title {
-  margin: 0;
-  color: var(--foreground);
-  font-weight: 500;
-  font-size: var(--fs-md);
-}
-
-.external-dirs-empty-description {
-  margin: 0;
-  max-width: 42ch;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
-  line-height: 1.45;
-}
-
-.external-dirs-retry {
-  margin-top: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.external-dir-skeleton {
-  display: block;
-}
-
-/* Only what differs from the shared placeholder: this list spaces its lines
- * itself rather than through a grid gap. */
-.external-dir-skeleton-line {
-  margin-bottom: var(--sp-2);
-}
-
-.external-dir-skeleton-title {
-  width: 40%;
-  height: 14px;
 }
 
 /* Agent-managed skill write review queue (Hermes admin surface, spec 12). The
@@ -14843,53 +14730,6 @@ input:focus-visible,
   line-height: 1.45;
 }
 
-/* Empty / error / loading states. */
-.mcp-servers-empty,
-.mcp-servers-error {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-10) var(--sp-6);
-  text-align: center;
-}
-
-.mcp-servers-empty-icon {
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted-foreground);
-}
-
-.mcp-servers-empty-title {
-  margin: 0;
-  color: var(--foreground);
-  font-size: var(--fs-md);
-  font-weight: 500;
-}
-
-.mcp-servers-empty-description {
-  margin: 0;
-  max-width: 380px;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.mcp-servers-retry {
-  margin-top: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.mcp-server-skeleton {
-  grid-template-columns: 1fr;
-}
-
 /* Add-server dialog form. */
 .mcp-add-form {
   display: grid;
@@ -15623,7 +15463,7 @@ input:focus-visible,
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   margin: 0;
   /* sp-1 horizontal + sp-1 vertical padding gives the same inset feel as
    * the context menu, so item hover wash has a rounded border-radius
@@ -16513,12 +16353,19 @@ input:focus-visible,
 }
 
 .note-summary-progress {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
+  display: grid;
+  flex: 1;
+  gap: var(--sp-2);
+  min-width: 16rem;
   color: var(--muted-foreground);
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
+}
+
+.note-summary-progress-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
 }
 
 .note-summary-progress-row {
@@ -18458,15 +18305,6 @@ input:focus-visible,
   color: var(--foreground);
 }
 
-.folders-empty {
-  display: grid;
-  place-items: center;
-  gap: var(--sp-3);
-  min-height: 200px;
-  color: var(--muted-foreground);
-  text-align: center;
-}
-
 /* Folder detail ----------------------------------------------------- */
 
 .folder-detail {
@@ -19399,7 +19237,7 @@ input:focus-visible,
   position: absolute;
   top: calc(100% + var(--sp-2));
   right: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   min-width: 178px;
   padding: var(--sp-1);
   border: 1px solid var(--popover-border);
@@ -19555,14 +19393,6 @@ input:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.add-notes-empty {
-  margin: 0;
-  padding: var(--sp-8) var(--sp-4);
-  color: var(--muted-foreground);
-  font-size: var(--fs-md);
-  text-align: center;
 }
 
 /* Dialog system ---------------------------------------------------- */
@@ -20356,7 +20186,7 @@ input:focus-visible,
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   width: 280px;
   padding: var(--sp-1);
   border: 1px solid var(--popover-border);
@@ -21944,7 +21774,7 @@ input:focus-visible,
 .skills-hub-drawer-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   display: flex;
   justify-content: flex-end;
   background: color-mix(in oklch, var(--foreground) 28%, transparent);
@@ -23175,49 +23005,6 @@ input:focus-visible,
 
 .toolsets-skill-row[data-status="missing-setup"] .toolsets-skill-explanation {
   color: var(--warm-strong);
-}
-
-/* Empty / error / loading states. */
-.toolsets-empty,
-.toolsets-error {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-10) var(--sp-6);
-  text-align: center;
-}
-
-.toolsets-empty-icon {
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted-foreground);
-}
-
-.toolsets-empty-title {
-  margin: 0;
-  color: var(--foreground);
-  font-size: var(--fs-md);
-  font-weight: 500;
-}
-
-.toolsets-empty-description {
-  margin: 0;
-  max-width: 360px;
-  color: var(--muted-foreground);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.toolsets-retry {
-  margin-top: var(--sp-2);
-  min-height: var(--control-sm);
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  font-size: var(--fs-sm);
-  cursor: pointer;
 }
 
 /* ------------------------------------------------------------------ */
@@ -24961,4 +24748,256 @@ input:focus-visible,
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
+}
+
+/* --- Popover: a surface anchored to the control that opened it ------------- */
+/* The desktop's answer to the phone's sheet (components/ui/Popover.tsx). It is
+   placed in fixed coordinates by the component; the stage tone lives in
+   stage.css. */
+.popover {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--popover-border);
+  border-radius: var(--r-lg);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-lg);
+  /* Occasional, opened by a press: a short entrance from the control that
+   * opened it (review-animations: small popovers 125-200ms, ease-out, never
+   * from scale 0). It leaves without one, so closing never waits. */
+  transform-origin: top left;
+  animation: popover-in var(--t-med) var(--ease-out);
+}
+
+.popover[data-side="top"] {
+  transform-origin: bottom left;
+  animation-name: popover-in-above;
+}
+
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+
+@keyframes popover-in-above {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover,
+  .popover[data-side="top"] {
+    animation: popover-fade var(--t-fast) linear;
+  }
+}
+
+@keyframes popover-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* --- The shortcuts sheet (?): every key the window answers to ----------- */
+.shortcuts-sheet-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-6) var(--sp-8);
+}
+
+.shortcuts-sheet-group h3 {
+  margin: 0 0 var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.shortcuts-sheet-group dl {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.shortcuts-sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: var(--control-sm);
+}
+
+.shortcuts-sheet-row dt {
+  font-size: var(--fs-md);
+}
+
+.shortcuts-sheet-row dd {
+  flex: none;
+  margin: 0;
+}
+
+/* --- The top of the sidebar: a new chat, and what else can be started ---- */
+.sidebar-new {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-px);
+}
+
+.sidebar-new-chat {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-new-more {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+
+.sidebar-new-more:hover,
+.sidebar-new-more[aria-expanded="true"] {
+  background: var(--sidebar-accent);
+  color: var(--foreground);
+}
+
+.sidebar-create-menu {
+  margin: 0;
+  padding: var(--sp-1);
+  list-style: none;
+}
+
+.sidebar-create-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 30px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--popover-foreground);
+  font-size: var(--fs-md);
+  text-align: left;
+}
+
+.sidebar-create-item:hover,
+.sidebar-create-item:focus-visible {
+  background: var(--sidebar-accent);
+}
+
+/* --- A page header's quiet links (Library → Health, Today → Routines) ---- */
+.library-view-head,
+.personal-view-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.personal-view-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+.personal-view-head .personal-view-title {
+  margin: 0;
+}
+
+.library-view-head .library-view-title {
+  flex: 1;
+}
+
+.page-header-links {
+  display: flex;
+  gap: var(--sp-1);
+  margin-inline-start: auto;
+}
+
+.page-header-links > button {
+  min-height: 28px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.page-header-links > button:hover {
+  background: var(--sidebar-accent);
+  color: var(--foreground);
+}
+
+.library-view-head .page-header-links {
+  margin-top: var(--sp-6);
+  margin-inline-end: var(--sp-4);
+}
+
+/* --- Under the hero composer: what a new chat may touch, and where -------- */
+/* Chosen once, before the first message, so it sits under the box in the
+ * box's 640px column instead of among the controls used on every message. */
+.agent-composer-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  max-width: 640px;
+  margin: var(--sp-2) auto 0;
+}
+
+.agent-composer-scope .agent-sandbox-trigger {
+  height: var(--control-sm);
+  padding-inline: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+/* --- Settings navigation: a filter, and the folded Advanced group --------- */
+.sidebar-settings-filter {
+  margin: var(--sp-2) 0 var(--sp-1);
+}
+
+.sidebar-settings-filter input {
+  cursor: text;
+}
+
+.sidebar-settings-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sidebar-settings-fold > svg {
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.sidebar-settings-fold[aria-expanded="false"] > svg {
+  transform: rotate(-90deg);
 }

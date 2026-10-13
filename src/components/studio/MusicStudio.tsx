@@ -1,9 +1,9 @@
-// Music studio: async queue + poll, like video, with per-model input rules
-// (lyrics required / optional / forbidden) and duration-bracket pricing.
+// Music on the desk (ADR-0111): async queue + poll, like video, with
+// per-model input rules (lyrics required / optional / forbidden) and
+// duration-bracket pricing.
 
 import { t } from "../../lib/i18n";
-import { IconAudio } from "central-icons/IconAudio";
-import { useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { registerDownloadedArtifact } from "../../lib/studio/artifacts";
 import { useMediaJob } from "../../lib/studio/async-job";
 import {
@@ -14,22 +14,33 @@ import {
   musicQueueBody,
   musicRequestMissing,
 } from "../../lib/studio/catalog";
+import { modelSubtitle } from "../../lib/studio/model-subtitle";
 import { musicPaths, retrieveBody } from "../../lib/studio/paths";
 import { estimateRenderMs, renderEtaKey } from "../../lib/studio/render-eta";
-import type { MediaCatalog } from "../../lib/studio/types";
-import { EmptyState } from "../ui/EmptyState";
+import type { MediaCatalog, StudioArtifact } from "../../lib/studio/types";
 import { Switch } from "../ui/Switch";
-import { Darkroom } from "./Darkroom";
-import { GalleryStrip } from "./GalleryStrip";
+import { AudioScene } from "./desk/AudioScene";
+import { Filmstrip } from "./desk/Filmstrip";
+import { StudioDesk } from "./desk/StudioDesk";
+import { useJobWait } from "./desk/useJobWait";
 import { JobFailureNotice } from "./JobFailureNotice";
-import { GenerationLayout } from "./GenerationLayout";
-import { CostHint, ModelSelect, SliderField, StudioField } from "./controls";
+import { SliderField, StudioField } from "./controls";
+import { Dock, DockComposer } from "./stage/Dock";
+import { ModelPickerChip } from "./stage/ModelPicker";
 
 // Carpe Diem streams the finished track as the retrieve body (one shot);
 // Venice answers JSON with an `audio_url`. Both shapes must be accepted.
 const AUDIO_URL_FIELDS = ["audio_url", "url"];
 
-export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
+export function MusicStudio({
+  catalog,
+  tools,
+  onOpenGallery,
+}: {
+  catalog: MediaCatalog;
+  tools?: ReactNode;
+  onOpenGallery?: () => void;
+}) {
   const models = useMemo(() => musicModels(catalog), [catalog]);
   const paths = musicPaths(catalog.backend);
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
@@ -42,6 +53,9 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
   const [writeLyrics, setWriteLyrics] = useState(false);
   const [durationSeconds, setDurationSeconds] = useState<number | undefined>(undefined);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
+  const [tracks, setTracks] = useState<StudioArtifact[]>([]);
+  const [landed, setLanded] = useState<{ path: string } | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
 
   // Rust already wrote the file into the gallery directory (it may have landed
   // while the app was closed); all that is left is indexing it.
@@ -52,6 +66,8 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
       prompt: finished.prompt,
     });
     setGalleryEpoch((epoch) => epoch + 1);
+    setLanded({ path: artifact.path });
+    setReveal(true);
   });
 
   // Derived, never stored: a length picked on one model is snapped to what the
@@ -72,19 +88,15 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
       instrumental: instrumentalOn,
       writeLyrics: writeLyricsOn,
     }) === "lyrics";
-  const busy =
-    job.state.phase === "queueing" ||
-    job.state.phase === "queued" ||
-    job.state.phase === "processing";
-  /** The same three phases, narrowed, so the darkroom can read the clock off
-   * the ones that have one. */
   const waiting =
     job.state.phase === "queueing" ||
     job.state.phase === "queued" ||
     job.state.phase === "processing"
       ? job.state
       : undefined;
+  const busy = Boolean(waiting);
   const estimate = useMemo(() => estimateRenderMs(renderEtaKey("music", modelId)), [modelId]);
+  const wait = useJobWait(modelId + prompt, waiting, estimate, t("Composing your track"));
   const canSubmit = Boolean(model && prompt.trim()) && !lyricsMissing && !busy;
 
   const start = useCallback(() => {
@@ -112,26 +124,8 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
     });
   }, [model, prompt, caps, instrumentalOn, writeLyricsOn, lyrics, duration, job, paths]);
 
-  const controls = (
+  const inspector = (
     <>
-      <StudioField label={t("Model")}>
-        <ModelSelect
-          models={models}
-          value={modelId || null}
-          onChange={setModelId}
-          ariaLabel={t("Music model")}
-        />
-      </StudioField>
-      <StudioField label={t("Prompt")}>
-        <textarea
-          className="studio-textarea"
-          rows={4}
-          value={prompt}
-          maxLength={caps.promptLimit}
-          placeholder={t("Genre, mood, tempo, instruments")}
-          onChange={(event) => setPrompt(event.target.value)}
-        />
-      </StudioField>
       {caps.instrumental ? (
         <StudioField label={t("Instrumental")} hint={t("No vocals")}>
           <Switch
@@ -157,7 +151,7 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
         >
           <textarea
             className="studio-textarea"
-            rows={5}
+            rows={6}
             value={lyrics}
             maxLength={caps.lyricsLimit}
             placeholder={t("Verse 1: …\nChorus: …")}
@@ -179,58 +173,89 @@ export function MusicStudio({ catalog }: { catalog: MediaCatalog }) {
     </>
   );
 
-  // While a render is in flight the wait itself is on the output side, in the
-  // darkroom, so the controls column keeps only the thing there is left to do.
-  const action = busy ? (
-    <button type="button" className="btn btn-secondary" onClick={job.cancel}>
-      {t("Stop waiting")}
-    </button>
-  ) : (
-    <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
-      <span>{t("Generate music")}</span>
-      <CostHint credits={costCredits} />
-    </button>
-  );
-
   return (
-    <GenerationLayout controls={controls} action={action}>
-      {waiting ? (
-        <Darkroom
-          variant="audio"
-          seed={modelId + prompt}
-          phase={waiting.phase}
-          elapsedMs={waiting.phase === "queueing" ? undefined : waiting.elapsedMs}
-          estimateMs={estimate}
-          label={waiting.phase === "processing" ? t("Composing your track") : undefined}
-          meta={modelId}
+    <StudioDesk
+      tools={tools}
+      scene={
+        <>
+          <AudioScene
+            landed={landed}
+            newest={tracks[0]}
+            wait={wait}
+            reveal={reveal}
+            onRevealEnd={() => setReveal(false)}
+            hint={t("Describe a track. It will play here.")}
+          />
+          {busy ? (
+            <div className="studio-desk-scene-actions">
+              <button type="button" className="stage-dock-action" onClick={job.cancel}>
+                {t("Stop waiting")}
+              </button>
+            </div>
+          ) : null}
+        </>
+      }
+      notice={
+        job.state.phase === "failed" ? (
+          <JobFailureNotice
+            className="stage-notice"
+            retryClassName="stage-dock-action"
+            message={job.state.message}
+            status={job.state.status}
+            model={modelId}
+            onRetry={job.canRetry ? job.retry : undefined}
+          />
+        ) : undefined
+      }
+      dock={
+        <Dock>
+          <DockComposer
+            value={prompt}
+            onChange={setPrompt}
+            maxLength={caps.promptLimit}
+            placeholder={t("Genre, mood, tempo, instruments")}
+            ariaLabel={t("Prompt")}
+            cost={costCredits}
+            canSend={canSubmit}
+            busy={busy}
+            onSend={start}
+            sendLabel={t("Generate music")}
+            blocker={
+              lyricsMissing && prompt.trim()
+                ? {
+                    text: t("This model needs lyrics, or switch to instrumental."),
+                    actions: caps.instrumental
+                      ? [{ label: t("Instrumental"), onAction: () => setInstrumental(true) }]
+                      : undefined,
+                  }
+                : undefined
+            }
+            tools={
+              <ModelPickerChip
+                label={t("Music model")}
+                selectedId={model?.id ?? ""}
+                entries={models.map((entry) => ({
+                  id: entry.id,
+                  name: entry.name,
+                  subtitle: modelSubtitle(entry),
+                }))}
+                onSelect={setModelId}
+              />
+            }
+          />
+        </Dock>
+      }
+      inspector={inspector}
+      strip={
+        <Filmstrip
+          kinds={["music"]}
+          epoch={galleryEpoch}
+          pending={busy ? 1 : 0}
+          onArtifactsChanged={setTracks}
+          onOpenGallery={onOpenGallery}
+          onReusePrompt={(artifact) => setPrompt(artifact.prompt)}
         />
-      ) : null}
-      {job.state.phase === "failed" ? (
-        <JobFailureNotice
-          message={job.state.message}
-          status={job.state.status}
-          model={modelId}
-          onRetry={job.canRetry ? job.retry : undefined}
-        />
-      ) : null}
-      {lyricsMissing && prompt.trim() ? (
-        <p className="studio-error">{t("This model needs lyrics, or switch to instrumental.")}</p>
-      ) : null}
-      <GalleryStrip
-        kind="music"
-        epoch={galleryEpoch}
-        empty={
-          !busy ? (
-            <EmptyState
-              icon={<IconAudio size={22} />}
-              title={t("No tracks yet")}
-              description={t(
-                "Describe a genre and mood, then generate. Tracks usually take 20 to 90 seconds.",
-              )}
-            />
-          ) : null
-        }
-      />
-    </GenerationLayout>
+      }
+    />
   );
 }

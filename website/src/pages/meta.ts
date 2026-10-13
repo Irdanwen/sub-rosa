@@ -25,6 +25,7 @@ export function pageMeta(page: string): { title: string; description: string } {
             {
               "/downloads": t("Download", "Télécharger"),
               "/privacy": t("Privacy", "Confidentialité"),
+              "/legal": t("Legal notice", "Mentions légales"),
               "/security": t("Security", "Sécurité"),
               "/help": t("Documentation", "Documentation"),
               "/docs": t("Documentation", "Documentation"),

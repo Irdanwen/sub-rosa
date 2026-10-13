@@ -1,5 +1,6 @@
 import { type CSSProperties, useId, useState } from "react";
 import { intlLocale, t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import { artifactSrc } from "../../lib/studio/artifacts";
 import { musicCapabilities, musicModels } from "../../lib/studio/catalog";
 import type { LiveRender } from "../../lib/studio/project-activity";
@@ -110,10 +111,10 @@ export function ProjectMusic({
 
   if (!shots.length)
     return (
-      <div className="project-empty">
-        <h2>{t("The music follows the shots")}</h2>
-        <p>{t("Break your script into shots first. Each cue plays under a run of them.")}</p>
-      </div>
+      <EmptyState
+        title={t("The music follows the shots")}
+        description={t("Break your script into shots first. Each cue plays under a run of them.")}
+      />
     );
 
   return (
@@ -503,14 +504,13 @@ export function ProjectMusic({
             ) : null}
           </section>
         ) : (
-          <div className="project-empty">
-            <h3>{t("No music yet")}</h3>
-            <p>
-              {t(
-                "Compose it from the script: the app reads where music helps and what it sounds like.",
-              )}
-            </p>
-          </div>
+          <EmptyState
+            size="compact"
+            title={t("No music yet")}
+            description={t(
+              "Compose it from the script: the app reads where music helps and what it sounds like.",
+            )}
+          />
         )}
 
         <aside className="project-panel project-settings">

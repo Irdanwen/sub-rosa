@@ -18,6 +18,7 @@ import { BrowserDeviceCard, deviceKindLabel, useBrowserDevice } from "./browser-
 import { Library } from "./library";
 import { PairApproval, PairReceiver } from "./pairing";
 import { SecurityHistory } from "./security-history";
+import { AccountStatus, vaultPurpose } from "./account-overview";
 
 type Key = Uint8Array<ArrayBuffer>;
 type PasskeySummary = { id: string; created_at: string; last_used_at: string | null };
@@ -283,7 +284,7 @@ export function AccountPage({ path }: { path: string }) {
               {vaultKey ? (
                 <PairApproval accountId={account.id} vaultKey={vaultKey} />
               ) : (
-                <VaultGate account={account} onOpen={open} />
+                <VaultGate account={account} onOpen={open} purpose={vaultPurpose(section)} />
               )}
             </>
           ) : section === "/account/security" ? (
@@ -300,8 +301,8 @@ export function AccountPage({ path }: { path: string }) {
           ) : (
             <>
               {section !== "/account" && !vaultKey ? (
-                <VaultGate account={account} onOpen={open} />
-              ) : vaultKey ? (
+                <VaultGate account={account} onOpen={open} purpose={vaultPurpose(section)} />
+              ) : vaultKey && section !== "/account" ? (
                 <div className="notice row">
                   <span>
                     {t(
@@ -325,12 +326,7 @@ export function AccountPage({ path }: { path: string }) {
                 <Usage account={account} vaultKey={vaultKey} />
               ) : section === "/account" ? (
                 <div>
-                  <p className="account-intro">
-                    {t(
-                      "Choose what you want to do. Your encrypted information opens only when you unlock the vault.",
-                      "Choisissez votre prochaine action. Vos informations chiffrées ne s’ouvrent qu’après le déverrouillage du coffre.",
-                    )}
-                  </p>
+                  <AccountStatus account={account} vaultOpen={!!vaultKey} onLock={lock} />
                   <div className="account-quick-grid">
                     <article className="card">
                       <h2>{t("Your chats", "Vos discussions")}</h2>
@@ -366,30 +362,6 @@ export function AccountPage({ path }: { path: string }) {
                       </p>
                       <a className="text-link" href="/account/devices">
                         {t("Manage devices", "Gérer les appareils")} →
-                      </a>
-                    </article>
-                    <article className="card">
-                      <h2>Carpe Diem</h2>
-                      <p>
-                        {t(
-                          "Keep your key in your encrypted vault.",
-                          "Gardez votre clé dans votre coffre chiffré.",
-                        )}
-                      </p>
-                      <a className="text-link" href="/account/provider">
-                        {t("Manage your key", "Gérer votre clé")} →
-                      </a>
-                    </article>
-                    <article className="card">
-                      <h2>{t("Usage", "Consommation")}</h2>
-                      <p>
-                        {t(
-                          "Review activity and available balance snapshots.",
-                          "Consultez l’activité et les relevés de solde disponibles.",
-                        )}
-                      </p>
-                      <a className="text-link" href="/account/usage">
-                        {t("View usage", "Voir la consommation")} →
                       </a>
                     </article>
                   </div>
@@ -532,7 +504,16 @@ function CardTopUp() {
   );
 }
 
-export function VaultGate({ account, onOpen }: { account: Account; onOpen: (key: Key) => void }) {
+export function VaultGate({
+  account,
+  onOpen,
+  purpose,
+}: {
+  account: Account;
+  onOpen: (key: Key) => void;
+  /** Why this page needs the vault, said before the form. */
+  purpose?: string;
+}) {
   const lifetime = useLifetime();
   const [record, setRecord] = useState<VaultRecord | null | undefined>(undefined);
   const [prepared, setPrepared] = useState<Awaited<ReturnType<typeof prepareVault>> | null>(null);
@@ -624,11 +605,18 @@ export function VaultGate({ account, onOpen }: { account: Account; onOpen: (key:
           ? t("Open your vault", "Ouvrir votre coffre")
           : t("Protect your workspace", "Protéger votre espace")}
       </h2>
+      {purpose && record ? <p className="vault-purpose">{purpose}</p> : null}
       <p>
         {t(
           "Your notes and Carpe Diem key are encrypted before they leave your device. Signing in and opening the vault are separate protections.",
           "Vos notes et votre clé Carpe Diem sont chiffrées avant de quitter votre appareil. La connexion et l’ouverture du coffre sont deux protections distinctes.",
-        )}
+        )}{" "}
+        {record
+          ? t(
+              "The vault stays open in this tab until 15 minutes without activity.",
+              "Le coffre reste ouvert dans cet onglet jusqu’à 15 minutes sans activité.",
+            )
+          : null}
       </p>
       {error && (
         <p role="alert" className="error">

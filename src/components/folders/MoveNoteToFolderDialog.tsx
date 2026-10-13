@@ -1,4 +1,5 @@
 import { t } from "../../lib/i18n";
+import { EmptyState } from "../ui/EmptyState";
 import { IconCheckmark1 } from "central-icons-filled/IconCheckmark1";
 import { IconFolder1 } from "central-icons/IconFolder1";
 import { IconMagnifyingGlass } from "central-icons/IconMagnifyingGlass";
@@ -158,13 +159,16 @@ export function MoveNoteToFolderDialog({
             })}
           </ul>
         ) : (
-          <p className="add-notes-empty">
-            {folders.length === 0
-              ? t("No projects yet. Create one from the Projects view.")
-              : query.trim()
-                ? t("No projects match that search.")
-                : t("No other projects to move to.")}
-          </p>
+          <EmptyState
+            size="compact"
+            title={
+              folders.length === 0
+                ? t("No projects yet. Create one from the Projects view.")
+                : query.trim()
+                  ? t("No projects match that search.")
+                  : t("No other projects to move to.")
+            }
+          />
         )}
       </div>
     </Dialog>

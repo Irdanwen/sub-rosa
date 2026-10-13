@@ -1,4 +1,4 @@
--- Choices that follow the account to every device (ADR-0111)
+-- Choices that follow the account to every device (ADR-0112)
 -- One row, under a fixed id. audio_retention_days is how many days after
 -- transcription a recording is deleted, on every device and in the account.
 -- NULL keeps recordings.

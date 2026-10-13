@@ -1,4 +1,4 @@
-//! Recordings leave after their note is transcribed (ADR-0111). The choice is
+//! Recordings leave after their note is transcribed (ADR-0112). The choice is
 //! one row of `account_preferences`, which travels like any synchronised
 //! object, so every device applies the same rule: it deletes its own copy of
 //! the file and takes the account's copy out, and the note keeps its

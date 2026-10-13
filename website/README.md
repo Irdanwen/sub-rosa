@@ -122,6 +122,19 @@ After refreshing the snapshot, run `pnpm vitest run src/test/website-models.test
 it fails until every new model sits in a family and every retired one is gone,
 so the page cannot quietly fall behind the app.
 
+## Checking a build under the production policy
+
+The dev server sends no Content-Security-Policy, so a `style` attribute, an
+inline script or a Trusted Types sink only fails once deployed. After
+`pnpm --filter @subrosa/website build`, run
+`node website/scripts/csp-sweep.mjs`: it serves
+`dist` with the site-wide block of `dist/_headers`, opens every URL of
+`dist/sitemap.xml` in a headless Chromium (`$CHROME`, or the Playwright
+headless shell in the cache) and lists what the console refused, what threw,
+and the accessibility basics a page must keep (one `h1`, the right `lang`,
+every image described, no unnamed link or button, no duplicate `id`). It
+exits non-zero when it finds anything; `--only=/fr` limits it to a prefix.
+
 ## Deployment
 
 The default build serves the complete website at the root of its dedicated

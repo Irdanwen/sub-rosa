@@ -153,6 +153,31 @@ describe("NoteSummaryPanel", () => {
     expect(screen.queryByText(/Reading part/)).toBeNull();
   });
 
+  it("shows how long a run has been going and how far it has read", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-08-23T09:01:05Z"));
+    mocks.noteSummary.mockResolvedValue(
+      summary({ status: "running", chunksDone: 1, chunkCount: 4, detailedSummary: null }),
+    );
+    const { container } = render(<NoteSummaryPanel noteId="note-1" />);
+
+    expect(await screen.findByText("1:05")).toBeTruthy();
+    const fill = container.querySelector<HTMLElement>(".note-processing-bar-fill");
+    expect(fill?.style.transform).toBe("scaleX(0.25)");
+    vi.useRealTimers();
+  });
+
+  it("sweeps rather than sitting at full while the parts are merged", async () => {
+    mocks.noteSummary.mockResolvedValue(
+      summary({ status: "running", chunksDone: 4, chunkCount: 4, detailedSummary: null }),
+    );
+    const { container } = render(<NoteSummaryPanel noteId="note-1" />);
+    await screen.findByText("Putting it together");
+    expect(
+      container.querySelector(".note-processing-bar")?.getAttribute("data-indeterminate"),
+    ).toBe("true");
+  });
+
   it("offers the chapters the summary wrote, and jumps on a click", async () => {
     const jumps: number[] = [];
     mocks.noteSummary.mockResolvedValue(

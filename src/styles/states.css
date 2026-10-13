@@ -1,0 +1,89 @@
+/* Waiting, nothing, and failure, in one place (D6).
+ *
+ * Every surface used to draw its own: six settings sections carried the same
+ * empty/error/loading trio under six prefixes (two of them unstyled), five
+ * lists wrote "No x match" in a bare div, and the studio wrote its failures in
+ * a red paragraph no screen reader announced. These are the shared answers:
+ * EmptyState (panel or compact, neutral or error), LoadFailed, NoMatches,
+ * ShimmerRows and ErrorMessage, in src/components/ui/. Tokens only. */
+
+/* The compact empty state: inside a frame that already exists (a settings
+ * card, a picker, a dialog list), so it brings no panel of its own. */
+.empty-state[data-size="compact"] {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  margin: 0;
+  padding: var(--sp-10) var(--sp-6);
+  border-radius: 0;
+  background: none;
+  text-align: center;
+  overflow: visible;
+}
+
+.empty-state[data-size="compact"] .empty-state-icon {
+  margin: 0;
+}
+
+.empty-state[data-size="compact"] .empty-state-title {
+  margin: 0;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.empty-state[data-size="compact"] .empty-state-description {
+  max-width: 360px;
+  font-size: var(--fs-sm);
+}
+
+.empty-state[data-tone="error"] .empty-state-icon {
+  color: var(--destructive);
+}
+
+/* The compact action is a quiet secondary button, not the large call to
+ * action of the panel (one accent per screen: the panel's is the next step,
+ * this one only recovers). */
+.empty-state[data-size="compact"] .empty-state-button {
+  min-height: var(--control-sm);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.empty-state[data-size="compact"] .empty-state-button:hover {
+  border-color: var(--border);
+  background: var(--muted);
+}
+
+/* Placeholder rows: the shape of the list to come. The line itself is the
+ * shared .skeleton-line in app.css, which already breathes and stills under
+ * reduced motion. */
+.shimmer-rows {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) 0;
+}
+
+.shimmer-row {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+/* A failure next to the control that caused it. */
+.error-message {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--destructive-soft);
+  color: color-mix(in oklch, var(--destructive) 70%, var(--foreground));
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alternateLinks, siteOrigin } from "../../website/src/lib/alternates";
+import { alternateLinks, shareTags, siteOrigin, sitemap } from "../../website/src/lib/alternates";
 
 const hrefs = (html: string) =>
   [...html.matchAll(/hreflang="([^"]+)" href="([^"]+)"/g)].map(([, lang, href]) => [lang, href]);
@@ -31,5 +31,34 @@ describe("prerendered hreflang alternates", () => {
     expect(() => siteOrigin("/docs-site/")).toThrow(/VITE_SITE_ORIGIN/);
     expect(() => siteOrigin("/", "http://example.org")).toThrow(/HTTPS origin/);
     expect(() => siteOrigin("/", "https://example.org/path")).toThrow(/HTTPS origin/);
+  });
+});
+
+describe("what a shared link of a public page shows", () => {
+  it("names the page, its words and the Studio picture, at this language's address", () => {
+    const tags = shareTags({
+      page: "/downloads",
+      locale: "fr",
+      base: "/subrosa/",
+      origin: siteOrigin("/subrosa/"),
+      title: "Télécharger · Sub Rosa",
+      description: "L’app pour Mac, Windows & Android",
+    });
+    expect(tags).toContain(
+      '<link rel="canonical" href="https://furetier.com/subrosa/fr/downloads" />',
+    );
+    expect(tags).toContain('<meta property="og:title" content="Télécharger · Sub Rosa" />');
+    expect(tags).toContain("Mac, Windows &amp; Android");
+    expect(tags).toContain(
+      '<meta property="og:image" content="https://furetier.com/subrosa/share-fr.jpg" />',
+    );
+    expect(tags).toContain('<meta property="og:image:width" content="1200" />');
+    expect(tags).toContain('<meta name="twitter:card" content="summary_large_image" />');
+  });
+
+  it("lists every page in every language in the sitemap", () => {
+    const xml = sitemap(["/", "/downloads"], "/", siteOrigin("/"));
+    expect(xml).toContain("<loc>https://subrosa.furetier.com/fr/downloads</loc>");
+    expect(xml.match(/<url>/g)).toHaveLength(12);
   });
 });

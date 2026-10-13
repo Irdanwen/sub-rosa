@@ -6,7 +6,7 @@
 // gallery on its own — the job list here is a view of those durable rows.
 
 import { t } from "../../lib/i18n";
-import { IconVideo } from "central-icons/IconVideo";
+import { ErrorMessage } from "../ui/ErrorMessage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactSrc,
@@ -88,16 +88,23 @@ import type {
   MediaModel,
   StudioArtifact,
 } from "../../lib/studio/types";
-import { EmptyState } from "../ui/EmptyState";
-import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
 import { MediaModelPicker, videoFamilyOption } from "./MediaModelPicker";
 import { withInvariant } from "../../lib/studio/bible";
-import { Darkroom } from "./Darkroom";
 import { GalleryPicker } from "./GalleryPicker";
-import { GalleryStrip } from "./GalleryStrip";
-import { GenerationLayout } from "./GenerationLayout";
+import { Filmstrip } from "./desk/Filmstrip";
+import { DeskTools, StudioDesk } from "./desk/StudioDesk";
+import { Dock, DockComposer, type DockBlocker } from "./stage/Dock";
+import { DockSelectChip } from "./stage/DockChip";
+import { ModelPickerChip } from "./stage/ModelPicker";
+import { type StageResult, StageScene } from "./stage/Scene";
+import { videoDirectionFilters, videoFamilyEntry } from "../../lib/studio/video-family-entries";
 import { effectiveOption, formatSeconds, PillGroup, SliderField, StudioField } from "./controls";
+
+/** "720p" and "1k" read in capitals in a chip. */
+function formatResolution(option: string) {
+  return option.toUpperCase();
+}
 
 const VIDEO_URL_FIELDS = ["video_url", "url"];
 
@@ -151,10 +158,12 @@ const AUDIO_KINDS: ArtifactKind[] = ["music", "speech", "sfx"];
 export function VideoStudio({
   catalog,
   onAssembleChain,
+  onOpenGallery,
 }: {
   catalog: MediaCatalog;
-  /** Hand a finished chain to the Assemble tab, trims already applied. */
+  /** Hand a finished chain to the montage, trims already applied. */
   onAssembleChain?: (cuts: ChainShot[]) => void;
+  onOpenGallery?: () => void;
 }) {
   const families = useMemo(() => videoFamilies(catalog), [catalog]);
   const availableSurfaces = useMemo<VideoSurface[]>(
@@ -248,6 +257,9 @@ export function VideoStudio({
   const [videoArtifacts, setVideoArtifacts] = useState<StudioArtifact[]>([]);
   const [galleryVideos, setGalleryVideos] = useState<StudioArtifact[]>([]);
   const [quote, setQuote] = useState<undefined | number>(undefined);
+  /** The clip last made here, for the scene, and whether its wipe has played. */
+  const [lastResult, setLastResult] = useState<StageResult | undefined>(undefined);
+  const [reveal, setReveal] = useState(false);
   const [galleryEpoch, setGalleryEpoch] = useState(0);
   const openingInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
@@ -392,6 +404,9 @@ export function VideoStudio({
       costCredits: finished.costCredits,
     });
     setGalleryEpoch((epoch) => epoch + 1);
+    // The newest clip takes the scene, and wipes in once it can play.
+    setLastResult({ kind: "video", src: artifactSrc({ path: artifact.path }) });
+    setReveal(true);
   });
   /** How long each model in the queue has taken here before. Keyed off the
    * model list rather than the jobs: the entries are rebuilt every second by
@@ -797,37 +812,8 @@ export function VideoStudio({
       !isReferenceToVideoModel(model.id),
   );
 
-  const controls = (
+  const inspector = (
     <>
-      {availableSurfaces.length > 1 ? (
-        <SegmentedControl
-          value={effectiveSurface}
-          onValueChange={(value) => {
-            setSurface(value);
-            setFamilyKey("");
-          }}
-          aria-label={t("What to build")}
-          options={availableSurfaces.map((entry) => ({
-            value: entry,
-            label: entry === "shot" ? t("New shot") : t("From video"),
-          }))}
-        />
-      ) : null}
-      <StudioField
-        label={t("Model")}
-        // The variant follows the inputs, and it changes the price, so it is
-        // named rather than left to be inferred from a checkbox label. Shared
-        // with the mobile picker so both shells name it identically.
-        hint={variantHint(family, model)}
-      >
-        <MediaModelPicker
-          value={family?.key ?? null}
-          placeholder={t("Choose a model")}
-          ariaLabel={t("Video model")}
-          onChange={setFamilyKey}
-          options={familiesForSurface.map(videoFamilyOption)}
-        />
-      </StudioField>
       {familiesForSurface.length > 1 ? (
         <StudioField
           label={t("Also render with")}
@@ -897,7 +883,7 @@ export function VideoStudio({
                 </p>
               ) : null}
               {handoffNote ? <p className="studio-field-note">{handoffNote}</p> : null}
-              {handoffError ? <p className="studio-error">{handoffError}</p> : null}
+              {handoffError ? <ErrorMessage>{handoffError}</ErrorMessage> : null}
               <div className="studio-upload-actions">
                 <button
                   type="button"
@@ -1107,7 +1093,7 @@ export function VideoStudio({
                   );
                 })()
               : null}
-            {referenceError ? <p className="studio-error">{referenceError}</p> : null}
+            {referenceError ? <ErrorMessage>{referenceError}</ErrorMessage> : null}
             {references.length < referenceCap ? (
               <div className="studio-upload-actions">
                 <button
@@ -1167,7 +1153,7 @@ export function VideoStudio({
                 ))}
               </ul>
             ) : null}
-            {clipError ? <p className="studio-error">{clipError}</p> : null}
+            {clipError ? <ErrorMessage>{clipError}</ErrorMessage> : null}
             <div className="studio-upload-actions">
               {referenceClips.length < maxReferenceVideos(family?.referenceModel) ? (
                 <button
@@ -1245,7 +1231,7 @@ export function VideoStudio({
                 ))}
               </ul>
             ) : null}
-            {audioError ? <p className="studio-error">{audioError}</p> : null}
+            {audioError ? <ErrorMessage>{audioError}</ErrorMessage> : null}
             {referenceAudio.length < maxReferenceAudio(family?.referenceModel) ? (
               <div className="studio-upload-actions">
                 <button
@@ -1342,7 +1328,7 @@ export function VideoStudio({
                 }}
               />
             </div>
-            {sourceVideoError ? <p className="studio-error">{sourceVideoError}</p> : null}
+            {sourceVideoError ? <ErrorMessage>{sourceVideoError}</ErrorMessage> : null}
           </StudioField>
           {isUpscale ? (
             <StudioField label={t("Upscale")} hint={t("x1 enhances without resizing")}>
@@ -1381,26 +1367,6 @@ export function VideoStudio({
           </span>
         </label>
       ) : null}
-      <StudioField label={t("Prompt")} hint={isUpscale ? t("Optional") : undefined}>
-        <textarea
-          className="studio-textarea"
-          rows={4}
-          value={prompt}
-          placeholder={
-            effectiveSurface === "video"
-              ? isUpscale
-                ? t("Optional note for the upscaler")
-                : t("Describe how to restyle the clip")
-              : openingFrame
-                ? t("Describe the motion")
-                : references.length > 0
-                  ? t("Describe the scene to build from the references")
-                  : t("Describe the scene and the motion")
-          }
-          onChange={(event) => setPrompt(event.target.value)}
-        />
-        {promptAdvice ? <p className="studio-hint">{promptAdvice}</p> : null}
-      </StudioField>
       <StudioField label={t("Negative prompt")}>
         <textarea
           className="studio-textarea"
@@ -1410,86 +1376,389 @@ export function VideoStudio({
           onChange={(event) => setNegativePrompt(event.target.value)}
         />
       </StudioField>
-      {durationOptions.length > 0 ? (
-        <StudioField label={t("Duration")}>
-          <PillGroup
-            options={durationOptions.map((value) => ({ value }))}
-            value={effectiveDuration}
-            onChange={setDuration}
-            ariaLabel={t("Duration")}
-          />
-        </StudioField>
-      ) : null}
-      {aspectOptions.length > 0 ? (
-        <StudioField label={t("Aspect ratio")}>
-          <PillGroup
-            options={aspectOptions.map((value) => ({ value }))}
-            value={effectiveAspect}
-            onChange={setAspectRatio}
-            ariaLabel={t("Aspect ratio")}
-          />
-        </StudioField>
-      ) : null}
-      {resolutionOptions.length > 0 ? (
-        <StudioField label={t("Resolution")}>
-          <PillGroup
-            options={resolutionOptions.map((value) => ({ value }))}
-            value={effectiveResolution}
-            onChange={setResolution}
-            ariaLabel={t("Resolution")}
-          />
-        </StudioField>
-      ) : null}
     </>
   );
 
-  const action = (
-    <>
-      {quoteCredits !== undefined ? (
-        <p className="studio-quote">
-          {t("This render will cost about {credits}.", { credits: formatCredits(quoteCredits) })}
-        </p>
-      ) : null}
-      {droppedReferences ? (
-        <p className="studio-field-note">
-          {t("{model} cannot take reference photos, so only the opening frame will be used.", {
-            model: family?.name ?? t("This model"),
-          })}
-        </p>
-      ) : null}
-      {needsOpeningFrame ? (
-        <p className="studio-error">
-          {t(
-            "{model} starts from a frame, so it needs an opening frame as well as its reference photos. The photos steer the look from there.",
-            { model: family?.name ?? t("This model") },
-          )}
-        </p>
-      ) : null}
-      {missingFields.length > 0 ? (
-        <p className="studio-error">
-          {t("This model needs {fields} before it will render.", {
+  /** Why the round button cannot be pressed, and what unblocks it. */
+  const blocker: DockBlocker | undefined = needsOpeningFrame
+    ? {
+        text: t(
+          "{model} starts from a frame, so it needs an opening frame as well as its reference photos. The photos steer the look from there.",
+          { model: family?.name ?? t("This model") },
+        ),
+        actions: [
+          {
+            label: t("Choose an image"),
+            onAction: () => {
+              setHandoff(undefined);
+              openingInputRef.current?.click();
+            },
+          },
+          { label: t("From the gallery"), onAction: () => setPicking("opening") },
+        ],
+      }
+    : missingFields.length > 0
+      ? {
+          text: t("This model needs {fields} before it will render.", {
             fields: missingFields.map((field) => field.replace(/_/g, " ")).join(", "),
-          })}
-        </p>
-      ) : null}
-      {oversize ? <p className="studio-error">{oversize}</p> : null}
-      <button type="button" className="studio-primary-button" disabled={!canSubmit} onClick={start}>
-        {t("Generate video")}
-      </button>
-      {queue.jobs.length > 0 ? (
-        <p className="studio-queue-hint">
-          {queue.jobs.length === 1
-            ? t("1 render in progress. You can queue another.")
-            : t("{count} renders in progress. You can queue another.", {
-                count: queue.jobs.length,
-              })}
-        </p>
-      ) : null}
-    </>
+          }),
+        }
+      : oversize
+        ? { text: oversize }
+        : needsConsent && !consent
+          ? {
+              text: t(
+                "I have the right to use this media and accept the model's face-media policy for anyone shown in it.",
+              ),
+              actions: [
+                {
+                  label: t("Accept"),
+                  onAction: () => {
+                    setConsent(true);
+                    rememberSeedanceConsent(true);
+                  },
+                },
+              ],
+            }
+          : undefined;
+
+  // The scene: the render on its way (the newest one still running), else
+  // the last clip made here, else the frame the next one opens on.
+  const running = queue.jobs.filter((entry) => entry.phase !== "failed");
+  const failed = queue.jobs.filter((entry) => entry.phase === "failed");
+  const onScene = running[0];
+  const sceneWait = onScene
+    ? {
+        seed: onScene.job.id + onScene.job.prompt,
+        phase: onScene.phase === "failed" ? ("processing" as const) : onScene.phase,
+        startedAt: Date.now() - onScene.elapsedMs,
+        estimateMs: estimates.get(onScene.job.model),
+      }
+    : undefined;
+  const sceneResult: StageResult | undefined =
+    lastResult ??
+    (effectiveSurface === "shot" && openingFrame
+      ? { kind: "image", src: openingFrame, alt: t("Opening frame") }
+      : undefined);
+
+  const scene = (
+    <StageScene
+      aspect={effectiveAspect || "16:9"}
+      result={sceneResult}
+      wait={sceneWait}
+      waitLabel={t("Rendering")}
+      reveal={reveal}
+      onRevealEnd={() => setReveal(false)}
+      idle={{
+        seed: "video",
+        hint:
+          effectiveSurface === "video"
+            ? t("Pick a clip to transform. The result will play here.")
+            : t("Describe a shot. It will play here."),
+      }}
+    />
   );
+
+  const attachments =
+    effectiveSurface === "shot" && (openingFrame || references.length > 0) ? (
+      <ul className="studio-desk-attachments" aria-label={t("Inputs")}>
+        {openingFrame ? (
+          <li>
+            <img src={openingFrame} alt={t("Opening frame")} />
+            <button
+              type="button"
+              className="studio-desk-attachment-remove"
+              aria-label={t("Remove the opening frame")}
+              onClick={() => {
+                setHandoff(undefined);
+                setOpeningFrame("");
+              }}
+            >
+              <span aria-hidden>x</span>
+            </button>
+          </li>
+        ) : null}
+        {references.map((reference, index) => (
+          // The same photo can be picked twice; its place is its identity.
+          // biome-ignore lint/suspicious/noArrayIndexKey: position is the identity
+          <li key={`${index}-${reference.slice(-24)}`}>
+            <img src={reference} alt={t("Reference {count}", { count: index + 1 })} />
+            <span className="studio-desk-attachment-tag">
+              {referenceMention(family?.referenceModel, "image", index + 1)}
+            </span>
+            <button
+              type="button"
+              className="studio-desk-attachment-remove"
+              aria-label={t("Remove reference {count}", { count: index + 1 })}
+              onClick={() => setReferences((current) => current.filter((_, i) => i !== index))}
+            >
+              <span aria-hidden>x</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    ) : null;
+
+  const dock = (
+    <Dock>
+      <DockComposer
+        value={prompt}
+        onChange={setPrompt}
+        placeholder={
+          effectiveSurface === "video"
+            ? isUpscale
+              ? t("Optional note for the upscaler")
+              : t("Describe how to restyle the clip")
+            : openingFrame
+              ? t("Describe the motion")
+              : references.length > 0
+                ? t("Describe the scene to build from the references")
+                : t("Describe the scene and the motion")
+        }
+        ariaLabel={t("Prompt")}
+        cost={quoteCredits}
+        canSend={canSubmit}
+        onSend={start}
+        sendLabel={t("Generate video")}
+        blocker={blocker}
+        tools={
+          <>
+            <ModelPickerChip
+              label={t("Video model")}
+              selectedId={family?.key ?? ""}
+              entries={familiesForSurface.map((entry) =>
+                videoFamilyEntry(entry, videoFamilyOption(entry).details),
+              )}
+              filters={effectiveSurface === "shot" ? videoDirectionFilters() : undefined}
+              initialFilter={
+                references.length > 0 || referenceClips.length > 0
+                  ? "reference"
+                  : openingFrame
+                    ? "image"
+                    : undefined
+              }
+              onSelect={setFamilyKey}
+            />
+            {durationOptions.length > 0 ? (
+              <DockSelectChip
+                label={t("Duration")}
+                value={effectiveDuration}
+                options={durationOptions}
+                onChange={setDuration}
+              />
+            ) : null}
+            {aspectOptions.length > 0 ? (
+              <DockSelectChip
+                label={t("Aspect ratio")}
+                value={effectiveAspect}
+                options={aspectOptions}
+                onChange={setAspectRatio}
+              />
+            ) : null}
+            {resolutionOptions.length > 0 ? (
+              <DockSelectChip
+                label={t("Resolution")}
+                value={effectiveResolution}
+                options={resolutionOptions}
+                onChange={setResolution}
+                format={formatResolution}
+              />
+            ) : null}
+          </>
+        }
+      >
+        {attachments}
+        {model && variantHint(family, model) ? (
+          <p className="stage-dock-hint studio-desk-variant">{variantHint(family, model)}</p>
+        ) : null}
+        {promptAdvice ? <p className="stage-dock-hint">{promptAdvice}</p> : null}
+        {droppedReferences ? (
+          <p className="stage-dock-hint">
+            {t("{model} cannot take reference photos, so only the opening frame will be used.", {
+              model: family?.name ?? t("This model"),
+            })}
+          </p>
+        ) : null}
+      </DockComposer>
+    </Dock>
+  );
+
+  const notices =
+    failed.length > 0 || running.length > 1 || continuingId || (handoffError && !openingFrame) ? (
+      <div className="studio-desk-notices">
+        {continuingId ? (
+          <p className="stage-notice" role="status">
+            {t("Reading the last frame of that clip.")}
+          </p>
+        ) : null}
+        {handoffError && !openingFrame ? (
+          <p className="stage-notice" data-tone="error" role="alert">
+            {handoffError}
+          </p>
+        ) : null}
+        {running.length > 1
+          ? running.slice(1).map((entry) => (
+              <div key={entry.job.id} className="stage-notice">
+                <span>
+                  {t("Rendering")} · {entry.job.model}
+                  {entry.job.prompt ? ` · "${entry.job.prompt.slice(0, 48)}"` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="stage-dock-action"
+                  onClick={() => queue.stop(entry.job.id)}
+                >
+                  {t("Stop waiting")}
+                </button>
+              </div>
+            ))
+          : null}
+        {failed.map((entry) => {
+          // A constraint error names the field to fix and is the most useful
+          // thing we can say, so it wins. Everything else goes through the
+          // failure reader, which turns a backend's own vocabulary into
+          // something to do next.
+          const constraint = explainConstraintError(entry.message ?? "");
+          const failure = constraint
+            ? undefined
+            : describeJobFailure({
+                message: entry.message,
+                status: entry.status,
+                model: entry.job.model,
+              });
+          return (
+            <div key={entry.job.id} className="stage-notice" data-tone="error" role="alert">
+              {/* The backend's own words stay reachable on hover: the summary
+               * is for acting on, the detail is for reporting. */}
+              <span title={failure?.detail}>
+                {constraint ?? failure?.text ?? t("The render failed.")}
+                {" · "}
+                {entry.job.model}
+              </span>
+              <span className="studio-card-actions">
+                {failure?.retryable && entry.canRetry ? (
+                  <button
+                    type="button"
+                    className="stage-dock-action"
+                    onClick={() => void queue.retry(entry.job.id)}
+                  >
+                    {t("Start again")}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="stage-dock-action"
+                  onClick={() => queue.dismiss(entry.job.id)}
+                >
+                  {t("Dismiss")}
+                </button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    ) : undefined;
 
   return (
-    <GenerationLayout controls={controls} action={action}>
+    <>
+      <StudioDesk
+        tools={
+          availableSurfaces.length > 1 ? (
+            <DeskTools
+              value={effectiveSurface}
+              onChange={(value) => {
+                setSurface(value);
+                setFamilyKey("");
+              }}
+              label={t("What to build")}
+              options={availableSurfaces.map((entry) => ({
+                value: entry,
+                label: entry === "shot" ? t("New shot") : t("From video"),
+              }))}
+            />
+          ) : undefined
+        }
+        scene={
+          <>
+            {scene}
+            {onScene ? (
+              <div className="studio-desk-scene-actions">
+                <button
+                  type="button"
+                  className="stage-dock-action"
+                  onClick={() => queue.stop(onScene.job.id)}
+                >
+                  {t("Stop waiting")}
+                </button>
+              </div>
+            ) : null}
+          </>
+        }
+        notice={notices}
+        dock={dock}
+        inspector={inspector}
+        strip={
+          <>
+            {activeChain.length > 1 ? (
+              <section className="studio-chain" aria-label={t("Shot chain")}>
+                <div className="studio-chain-head">
+                  <span className="studio-field-label">
+                    {t("Shot chain · {count} shots", { count: activeChain.length })}
+                    {chainSpend.known > 0
+                      ? ` · ${chainSpend.known < chainSpend.total ? t("at least ") : ""}${formatCredits(chainSpend.credits)}`
+                      : ""}
+                  </span>
+                  {onAssembleChain ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => onAssembleChain(chainCuts(activeChain))}
+                    >
+                      {t("Send to assemble")}
+                    </button>
+                  ) : null}
+                </div>
+                <ol className="studio-chain-list">
+                  {activeChain.map((shot, index) => (
+                    <li
+                      key={shot.id}
+                      className="studio-chain-shot"
+                      data-continuing={shot.id === handoff?.artifactId ? "true" : undefined}
+                    >
+                      <span className="studio-chain-index">{index + 1}</span>
+                      <span className="studio-chain-prompt" title={shot.prompt}>
+                        {shot.prompt || shot.fileName}
+                      </span>
+                      {alternativeCount(shot, activeChain, videoArtifacts) > 0 ? (
+                        <span
+                          className="studio-chain-index"
+                          title={t("Other takes continue from this shot")}
+                        >
+                          +{alternativeCount(shot, activeChain, videoArtifacts)}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+                <p className="studio-field-note">
+                  {t(
+                    "Each shot is cut where the next one took over, so the seam is not played twice.",
+                  )}
+                </p>
+              </section>
+            ) : null}
+            <Filmstrip
+              kinds={["video"]}
+              epoch={galleryEpoch}
+              pending={running.length}
+              onArtifactsChanged={setVideoArtifacts}
+              onOpenGallery={onOpenGallery}
+              onReusePrompt={(artifact) => setPrompt(artifact.prompt)}
+              onContinue={(artifact) => void continueFrom(artifact)}
+            />
+          </>
+        }
+      />
       {picking ? (
         <GalleryPicker
           onClose={() => setPicking(undefined)}
@@ -1549,145 +1818,6 @@ export function VideoStudio({
           }}
         />
       ) : null}
-      {queue.jobs.map((entry) => {
-        // A constraint error names the field to fix and is the most useful
-        // thing we can say, so it wins. Everything else goes through the
-        // failure reader, which is what turns a backend's own vocabulary into
-        // something to do next.
-        const constraint =
-          entry.phase === "failed" ? explainConstraintError(entry.message ?? "") : undefined;
-        const failure =
-          entry.phase === "failed" && !constraint
-            ? describeJobFailure({
-                message: entry.message,
-                status: entry.status,
-                model: entry.job.model,
-              })
-            : undefined;
-        if (entry.phase !== "failed") {
-          // The wait is given the shape of the clip it will become, in the
-          // place the clip will appear. The ratio is read off the form rather
-          // than the job - the durable row does not carry one - so changing
-          // the picker mid-render reshapes the frame. That is the right kind
-          // of wrong: the frame is a reservation, and the reservation should
-          // follow what the next render is being set up to be.
-          return (
-            <Darkroom
-              key={entry.job.id}
-              seed={entry.job.id + entry.job.prompt}
-              phase={entry.phase}
-              elapsedMs={entry.elapsedMs}
-              estimateMs={estimates.get(entry.job.model)}
-              aspectRatio={effectiveAspect}
-              meta={`${entry.job.model}${entry.job.prompt ? ` · "${entry.job.prompt.slice(0, 60)}"` : ""}`}
-              actions={
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => queue.stop(entry.job.id)}
-                >
-                  {t("Stop waiting")}
-                </button>
-              }
-            />
-          );
-        }
-        return (
-          <div key={entry.job.id} className="studio-resume" data-phase={entry.phase}>
-            {/* The backend's own words stay reachable on hover: the summary is
-             * for acting on, the detail is for reporting. */}
-            <span title={failure?.detail}>
-              {constraint ?? failure?.text ?? t("The render failed.")}
-              {" · "}
-              {entry.job.model}
-              {entry.job.prompt ? ` · "${entry.job.prompt.slice(0, 60)}"` : ""}
-            </span>
-            <span className="studio-card-actions">
-              {failure?.retryable && entry.canRetry ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => void queue.retry(entry.job.id)}
-                >
-                  {t("Start again")}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => queue.dismiss(entry.job.id)}
-              >
-                {t("Dismiss")}
-              </button>
-            </span>
-          </div>
-        );
-      })}
-      {handoffError && !openingFrame ? <p className="studio-error">{handoffError}</p> : null}
-      {activeChain.length > 1 ? (
-        <section className="studio-chain" aria-label={t("Shot chain")}>
-          <div className="studio-chain-head">
-            <span className="studio-field-label">
-              {t("Shot chain · {count} shots", { count: activeChain.length })}
-              {chainSpend.known > 0
-                ? ` · ${chainSpend.known < chainSpend.total ? t("at least ") : ""}${formatCredits(chainSpend.credits)}`
-                : ""}
-            </span>
-            {onAssembleChain ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => onAssembleChain(chainCuts(activeChain))}
-              >
-                {t("Send to assemble")}
-              </button>
-            ) : null}
-          </div>
-          <ol className="studio-chain-list">
-            {activeChain.map((shot, index) => (
-              <li
-                key={shot.id}
-                className="studio-chain-shot"
-                data-continuing={shot.id === handoff?.artifactId ? "true" : undefined}
-              >
-                <span className="studio-chain-index">{index + 1}</span>
-                <span className="studio-chain-prompt" title={shot.prompt}>
-                  {shot.prompt || shot.fileName}
-                </span>
-                {alternativeCount(shot, activeChain, videoArtifacts) > 0 ? (
-                  <span
-                    className="studio-chain-index"
-                    title={t("Other takes continue from this shot")}
-                  >
-                    +{alternativeCount(shot, activeChain, videoArtifacts)}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-          <p className="studio-field-note">
-            {t("Each shot is cut where the next one took over, so the seam is not played twice.")}
-          </p>
-        </section>
-      ) : null}
-      <GalleryStrip
-        kind="video"
-        epoch={galleryEpoch}
-        onArtifactsChanged={setVideoArtifacts}
-        onContinue={(artifact) => void continueFrom(artifact)}
-        continuingId={continuingId}
-        empty={
-          queue.jobs.length === 0 ? (
-            <EmptyState
-              icon={<IconVideo size={22} />}
-              title={t("No videos yet")}
-              description={t(
-                "Videos render in the background and land here when ready. Most take 30 seconds to a few minutes.",
-              )}
-            />
-          ) : null
-        }
-      />
-    </GenerationLayout>
+    </>
   );
 }

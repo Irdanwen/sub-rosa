@@ -1,4 +1,6 @@
 import { t } from "../../lib/i18n";
+import { ShimmerRows } from "../ui/Shimmer";
+import { NoMatches } from "../ui/EmptyState";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconCalendarRepeat } from "central-icons/IconCalendarRepeat";
@@ -474,17 +476,16 @@ export function RoutinesView({ onCreateRoutine, onOpenRun }: RoutinesViewProps) 
       {error ? <p className="error-banner">{error}</p> : null}
 
       {loading ? (
-        <div className="folders-empty">
-          <p>{t("Loading routines…")}</p>
-        </div>
+        <ShimmerRows count={3} label={t("Loading routines…")} />
       ) : routines.length === 0 ? (
         <div className="routines-hero">
           <TemplateGrid onPick={openCreate} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="folders-empty">
-          <p>{t("No routines match “{query}”.", { query: query.trim() })}</p>
-        </div>
+        <NoMatches
+          message={t("No routines match “{query}”.", { query: query.trim() })}
+          onClear={() => setQuery("")}
+        />
       ) : (
         <ul className="routines-list" role="list" aria-label={t("Routines")}>
           {filtered.map((routine) => (

@@ -940,6 +940,26 @@ the one round button that spends, with its price beside it. On a phone it is
 what stays within thumb's reach while the form scrolls.
 _Avoid_: composer (the chat's word), toolbar, form, bottom bar.
 
+**Desk**:
+How a desktop Studio generation surface is laid out (ADR-0111): the scene in
+the middle, the dock centred under it, the **inspector** at the right and the
+**filmstrip** below. Image, Video and Audio are desks; Projects is a page.
+_Avoid_: form, generation layout, two-column view.
+
+**Inspector**:
+The foldable column at the right of a desk holding every setting that does
+not matter on every render (negative prompt, seed, variants, format, the
+inputs of a shot). What the phone hides behind "More options" sits here,
+beside the work instead of in front of it.
+_Avoid_: sidebar (the app's navigation), settings (the app's preferences),
+panel.
+
+**Filmstrip**:
+The row of what was made on a desk, newest first, under the dock, with a
+shimmering cell for each render still in flight. Opening one shows it in the
+media viewer with what can be done next. Organising belongs to the gallery.
+_Avoid_: gallery strip, recent grid, history.
+
 ### Studio gallery (fork)
 
 **Gallery**:
@@ -1714,7 +1734,7 @@ which promises a codec the app does not use.
 **Recording retention**: how long a recording stays after its note is
 transcribed, chosen once for the account and applied by every device to its
 own copy and to the account's
-([ADR-0111](docs/adr/0111-recordings-leave-a-chosen-age-after-transcription.md)).
+([ADR-0112](docs/adr/0112-recordings-leave-a-chosen-age-after-transcription.md)).
 The note keeps its transcript. _Avoid_: "archive", which promises the audio
 is somewhere.
 

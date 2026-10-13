@@ -35,7 +35,7 @@ export function AssetPreview({
   if (artifact.kind === "video") {
     return (
       // biome-ignore lint/a11y/useMediaCaption: a gallery clip has no track
-      <video className={className} src={src} muted playsInline preload="metadata" />
+      <video className={className} src={`${src}#t=0.1`} muted playsInline preload="metadata" />
     );
   }
   if (artifact.kind !== "image") return null;

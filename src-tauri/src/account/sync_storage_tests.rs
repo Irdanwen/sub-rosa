@@ -665,7 +665,7 @@ async fn a_tombstone_that_outruns_its_replacement_starts_no_copy_elsewhere() {
     assert_eq!(service.heads(&copy).await.len(), 1);
 }
 
-/// A recording leaves N days after its note is transcribed (ADR-0111): the
+/// A recording leaves N days after its note is transcribed (ADR-0112): the
 /// choice made on one device reaches the other, each deletes its own copy,
 /// the account's copy is released, nothing is sent again, and both notes
 /// keep their transcript.

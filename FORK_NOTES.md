@@ -2743,7 +2743,7 @@ jamais rendus).
   distante remplace par `artifact_id`) ; une liste d'appareils vide ne doit pas
   ouvrir la porte ; `compaction::step` vérifie la porte lui-même.
 
-## L'audio part après la transcription (2026-10-13, ADR-0111)
+## L'audio part après la transcription (2026-10-13, ADR-0112)
 
 Demande : « puisque les audio sont retranscrits dans les notes, pourquoi les
 conserver ? » Choix : 7 jours après la transcription, partout, existants compris.
