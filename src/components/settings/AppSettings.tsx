@@ -89,6 +89,7 @@ import {
   ModelsSettingsTab,
   ShortcutsSettingsTab,
 } from "./AppSettingsTabs";
+import { SETTINGS_TABS } from "./settings-index";
 
 const DEFAULT_PROVIDER_MODELS: ProviderModelSettingsDto = {
   transcriptionProvider: "venice",
@@ -127,32 +128,8 @@ export type SettingsTab =
   | "reports"
   | "about";
 
-export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
-  { id: "general", label: t("General") },
-  { id: "account", label: t("Account and sync") },
-  { id: "carpe-diem", label: t("Carpe Diem") },
-  { id: "shortcuts", label: t("Shortcuts") },
-  { id: "dictation", label: t("Dictation") },
-  { id: "audio", label: t("Audio") },
-  { id: "models", label: t("Models") },
-  { id: "agent", label: t("Agent") },
-  { id: "personalization", label: t("Personalization") },
-  { id: "memory", label: t("Memory") },
-  { id: "privacy", label: t("Privacy") },
-  { id: "council", label: t("Council") },
-  { id: "skills", label: t("Installed skills") },
-  { id: "external-dirs", label: t("External skill directories") },
-  { id: "mcp", label: t("MCP servers") },
-  { id: "connectors", label: t("Connectors") },
-  { id: "browser-extension", label: t("Browser extension") },
-  { id: "mcp-diagnostics", label: t("MCP diagnostics") },
-  { id: "mcp-security", label: t("MCP security") },
-  { id: "toolsets", label: t("Toolsets") },
-  { id: "import-export", label: t("Import / export") },
-  { id: "storage", label: t("Storage") },
-  { id: "reports", label: t("Reports") },
-  { id: "about", label: t("About") },
-];
+/** Re-exported for the callers that read the tab list from here. */
+export { SETTINGS_TABS };
 
 type AppSettingsProps = {
   sourceMode: RecordingSourceMode;

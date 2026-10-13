@@ -25111,3 +25111,32 @@ input:focus-visible,
   padding-inline: var(--sp-2);
   font-size: var(--fs-sm);
 }
+
+/* --- Settings navigation: a filter, and the folded Advanced group --------- */
+.sidebar-settings-filter {
+  margin: var(--sp-2) 0 var(--sp-1);
+}
+
+.sidebar-settings-filter input {
+  cursor: text;
+}
+
+.sidebar-settings-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sidebar-settings-fold > svg {
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.sidebar-settings-fold[aria-expanded="false"] > svg {
+  transform: rotate(-90deg);
+}
