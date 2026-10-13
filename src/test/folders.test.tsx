@@ -82,12 +82,12 @@ describe("folders UI", () => {
     );
 
     expect(screen.getByRole("img", { name: "Sub Rosa" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Meeting notes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notes" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Folders" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Sessions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Chats" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Meeting notes" }));
-    await user.click(screen.getByRole("button", { name: "New session" }));
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    await user.click(screen.getByRole("button", { name: "New chat" }));
 
     expect(onChangeView).toHaveBeenCalledWith("notes");
     expect(onChangeView).toHaveBeenCalledWith("agent");
@@ -160,7 +160,7 @@ describe("folders UI", () => {
     );
 
     const newSessionButton = screen.getByRole("button", {
-      name: "New session",
+      name: "New chat",
     });
     expect(newSessionButton).toHaveAttribute("data-active", "true");
     expect(newSessionButton).toHaveAttribute("aria-current", "page");
@@ -348,7 +348,7 @@ describe("folders UI", () => {
       );
 
       expect(hermesMocks.listHermesSessions).toHaveBeenCalledTimes(1);
-      expect(screen.getByText(/No sessions yet/)).toBeInTheDocument();
+      expect(screen.getByText(/No chats yet/)).toBeInTheDocument();
 
       await act(async () => {
         await Promise.resolve();
@@ -450,7 +450,7 @@ describe("folders UI", () => {
       sidebarStates?.(false);
     });
 
-    await waitFor(() => expect(screen.getByText(/No sessions yet/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No chats yet/)).toBeInTheDocument());
   });
 
   it("keeps the sidebar agent session list capped after workspace refreshes", async () => {

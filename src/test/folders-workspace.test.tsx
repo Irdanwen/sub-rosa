@@ -123,7 +123,7 @@ describe("Sidebar primary navigation", () => {
     );
 
     expect(screen.queryByRole("button", { name: /Folders/ })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Meeting notes" }));
+    await user.click(screen.getByRole("button", { name: "Notes" }));
     expect(onChangeView).toHaveBeenCalledWith("notes");
     await user.click(screen.getByRole("button", { name: "Projects" }));
     expect(onChangeView).toHaveBeenCalledWith("folders");
@@ -160,7 +160,7 @@ describe("Sidebar primary navigation", () => {
     expect(within(palette).getByText("Recents")).toBeInTheDocument();
     expect(within(palette).getByText("Roadmap")).toBeInTheDocument();
     expect(within(palette).getByText("Quick actions")).toBeInTheDocument();
-    expect(within(palette).getByText("New session")).toBeInTheDocument();
+    expect(within(palette).getByText("New chat")).toBeInTheDocument();
 
     fireEvent.keyDown(search, { key: "Escape" });
 
@@ -542,7 +542,7 @@ describe("FoldersWorkspace — detail view", () => {
     render(<FoldersWorkspace {...props} selectedFolderId="folder-2" />);
 
     await user.click(screen.getByRole("button", { name: "Add to project" }));
-    await user.click(screen.getByRole("menuitem", { name: "New session" }));
+    await user.click(screen.getByRole("menuitem", { name: "New chat" }));
     expect(props.onCreateSession).toHaveBeenCalledWith("folder-2");
 
     await user.click(screen.getByRole("button", { name: "Add to project" }));

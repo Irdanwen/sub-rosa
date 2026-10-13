@@ -63,7 +63,7 @@ export function tabMeta(
         : undefined;
       const sessionId = nav.agentSessionId;
       return {
-        title: agentSessionTabTitle(session) || nav.agentSessionTitle?.trim() || t("New session"),
+        title: agentSessionTabTitle(session) || nav.agentSessionTitle?.trim() || t("New chat"),
         icon: <IconBubble3 size={TAB_ICON_SIZE} />,
         status: !sessionId
           ? undefined

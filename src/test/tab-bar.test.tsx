@@ -4,7 +4,7 @@ import { TabBar } from "../components/tabs/TabBar";
 import appCss from "../styles/app.css?raw";
 
 const tabs = [
-  { id: "tab-1", title: "New session", icon: <span aria-hidden /> },
+  { id: "tab-1", title: "New chat", icon: <span aria-hidden /> },
   { id: "tab-2", title: "Notes", icon: <span aria-hidden /> },
 ];
 
@@ -108,7 +108,7 @@ describe("TabBar", () => {
   it("does not start a window drag from tab controls", () => {
     const { props } = renderTabBar();
 
-    fireEvent.pointerDown(screen.getByRole("tab", { name: "New session" }));
+    fireEvent.pointerDown(screen.getByRole("tab", { name: "New chat" }));
     fireEvent.pointerDown(screen.getByRole("button", { name: "New tab" }));
 
     expect(props.onDragRegionPointerDown).not.toHaveBeenCalled();

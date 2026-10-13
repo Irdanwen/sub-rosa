@@ -322,15 +322,13 @@ describe("notes recording reliability", () => {
     render(<App />);
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
 
-    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     await userEvent.click(screen.getByRole("button", { name: "Actions for First note" }));
     await userEvent.click(screen.getByRole("menuitem", { name: "Delete note" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete note" }));
 
     await waitFor(() => expect(mocks.deleteNote).toHaveBeenCalledWith("note-1"));
-    expect(
-      screen.getByRole("button", { name: "Meeting notes", current: "page" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notes", current: "page" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Capture your first meeting" })).toBeInTheDocument();
   });
 
@@ -340,16 +338,14 @@ describe("notes recording reliability", () => {
     render(<App />);
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
 
-    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Select First note" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Select Second note" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete notes" }));
 
     await waitFor(() => expect(mocks.deleteNotes).toHaveBeenCalledWith(["note-1", "note-2"]));
-    expect(
-      screen.getByRole("button", { name: "Meeting notes", current: "page" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notes", current: "page" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Capture your first meeting" })).toBeInTheDocument();
   });
 
@@ -364,7 +360,7 @@ describe("notes recording reliability", () => {
     await startRecordingOnFirstNote();
 
     // Browse to another note while the recording keeps running on note-1.
-    await userEvent.click(screen.getByRole("button", { name: "Meeting notes", current: "page" }));
+    await userEvent.click(screen.getByRole("button", { name: "Notes", current: "page" }));
     await userEvent.click(screen.getByRole("button", { name: /Second note Preview/ }));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-2"));
 
@@ -380,7 +376,7 @@ describe("notes recording reliability", () => {
 
     // note-2 must not pick up note-1's optimistic "transcribing" lock.
     mocks.getNote.mockClear();
-    await userEvent.click(screen.getByRole("button", { name: "Meeting notes", current: "page" }));
+    await userEvent.click(screen.getByRole("button", { name: "Notes", current: "page" }));
     await userEvent.click(screen.getByRole("button", { name: /Second note Preview/ }));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-2"));
     expect(screen.queryByText(/Transcribing the recording/)).not.toBeInTheDocument();
@@ -390,7 +386,7 @@ describe("notes recording reliability", () => {
     await startRecordingOnFirstNote();
 
     // Browse away from the recording note while the take keeps running.
-    await userEvent.click(screen.getByRole("button", { name: "Meeting notes", current: "page" }));
+    await userEvent.click(screen.getByRole("button", { name: "Notes", current: "page" }));
     await userEvent.click(screen.getByRole("button", { name: /Second note Preview/ }));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-2"));
 
@@ -571,7 +567,7 @@ describe("notes recording reliability", () => {
 
     await startRecordingOnFirstNote();
 
-    await userEvent.click(screen.getByRole("button", { name: "Meeting notes", current: "page" }));
+    await userEvent.click(screen.getByRole("button", { name: "Notes", current: "page" }));
     await userEvent.click(screen.getByRole("button", { name: /Second note Preview/ }));
     const indicator = await screen.findByRole("button", {
       name: "Open recording: First note",
@@ -585,7 +581,7 @@ describe("notes recording reliability", () => {
     expect(screen.getByText("Recording discarded")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Retry/ })).toBeDisabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Meeting notes", current: "page" }));
+    await userEvent.click(screen.getByRole("button", { name: "Notes", current: "page" }));
     await userEvent.click(screen.getByRole("button", { name: /Second note Preview/ }));
     expect(
       screen.queryByRole("button", { name: "Open recording: First note" }),
@@ -630,7 +626,7 @@ describe("notes recording reliability", () => {
 
     const { container } = render(<App />);
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
-    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     await userEvent.click(screen.getByRole("button", { name: /First note Preview/ }));
 
     await userEvent.click(screen.getByRole("button", { name: "Recover" }));
@@ -734,7 +730,7 @@ describe("notes recording reliability", () => {
     mocks.getNote.mockImplementation(async () => pollResponse);
 
     render(<App />);
-    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     await userEvent.click(screen.getByRole("button", { name: /First note Preview/ }));
     await waitFor(() => expect(screen.getByText("Transcribing the recording")).toBeInTheDocument());
 
@@ -797,7 +793,7 @@ describe("notes recording reliability", () => {
 
     // The app launches on the agent view; open the note from the Meetings
     // list so the editor (and its failure banner) is on screen.
-    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     await userEvent.click(screen.getByRole("button", { name: /First note Preview/ }));
 
     await userEvent.click(screen.getByRole("button", { name: /Retry/ }));
@@ -848,7 +844,7 @@ describe("notes recording reliability", () => {
 
     const { container } = render(<App />);
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
-    await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     await userEvent.click(screen.getByRole("button", { name: /First note Preview/ }));
 
     await userEvent.click(screen.getByRole("button", { name: /Retry/ }));
@@ -869,7 +865,7 @@ describe("notes recording reliability", () => {
     render(<App />);
     await waitFor(() => expect(mocks.listeners.has(NOTES_CHANGED_EVENT)).toBe(true));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
-    await userEvent.click(await screen.findByRole("button", { name: /Meeting notes/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     await userEvent.click(await screen.findByRole("button", { name: /Second note Preview/ }));
     await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-2"));
     mocks.getNote.mockClear();

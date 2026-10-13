@@ -23,13 +23,18 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  max-width: var(--content-max);
   padding: var(--sp-4) var(--sp-4) 0;
 }
 
+/* The same voice as every other page title: the serif, at the title size. */
 .today-page-title {
   margin: 0;
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-medium);
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: 400;
+  line-height: var(--leading-2xl);
+  letter-spacing: var(--tracking-2xl);
   color: var(--foreground);
 }
 

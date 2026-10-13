@@ -1145,7 +1145,7 @@ function FolderAddMenu({
             }}
           >
             <IconBubble3 size={14} />
-            {t("New session")}
+            {t("New chat")}
           </button>
           <button
             type="button"
@@ -1222,7 +1222,7 @@ function FolderEmptyActions({
       ) : null}
       <button type="button" className="primary-action" onClick={onCreateSession}>
         <IconBubble3 size={13} />
-        {t("New session")}
+        {t("New chat")}
       </button>
       <button type="button" className="primary-action primary-solid" onClick={onCreateNote}>
         <IconPlusMedium size={13} />

@@ -148,7 +148,7 @@ const infra = note({
 
 /** The shell launches on the agent; the notes are one click away. */
 async function goToNotes() {
-  await userEvent.click(await screen.findByRole("button", { name: "Meeting notes" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
 }
 
 async function openPalette() {

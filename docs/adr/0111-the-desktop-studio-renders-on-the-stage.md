@@ -26,11 +26,14 @@ components for the same thing.
 
 ## Decision
 
-1. **Five tabs: Image, Video, Audio, Projects, Gallery.** Retouch, Compose,
-   Upscale and Cutout are tools of Image. Bible, Montage (what Assemble did)
-   and Workflows live in Projects. Explore is replaced by the idle canvas and
-   its suggestions. A saved tab from the old set resolves to its new home, so
-   nobody lands on nothing after the update.
+1. **Five tabs: Image, Video, Audio, Films, Gallery.** Retouch, Compose,
+   Upscale and Cutout are tools of Image. Bible, Assemble and Workflows live
+   in Films, next to the film projects. The tab says Films, not Projects: a
+   project is a chat project (ADR-0085), which the sidebar lists under that
+   name, and two "Projects" one click apart were confused in testing.
+   Explore is replaced by the idle canvas and its suggestions. A saved tab
+   from the old set resolves to its new home, so nobody lands on nothing
+   after the update.
 2. **Every generation surface is a stage, a dock and an inspector.** The
    stage holds the last result at its true ratio, the veil while the next one
    renders, and the reveal. The dock, centred under the stage, holds the
@@ -72,3 +75,15 @@ components for the same thing.
 - **Keep the form and only move the result above it.** The result would be in
   the right place, but fifteen controls would still sit in front of the one
   that matters, and the price and the wait would still be drawn four ways.
+
+## Addendum 2026-10-12: the sidebar keeps six places
+
+The same audit counted ten entries in the desktop sidebar, flat, Health and
+Finances among them, and two buttons that opened the chat list. It now holds
+a **New chat** button (⌘N) with a menu beside it for what else can be started
+(a note, an import, an image, a video), then six places: Notes, Projects,
+Dictation, Studio, Library, Today. Health and Finances are read from the
+Library's header; Routines, which schedule the work Today shows, from
+Today's. All of them stay one ⌘K away. Every platform launches on the chat's
+hero: the comment that kept Windows on the notes list predated the Windows
+installer bundling Hermes.
