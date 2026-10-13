@@ -66,7 +66,7 @@ rand = "0.9"
 # is handed to (ADR-0069, `carpe_diem::issued`). Already in the lockfile through
 # the backend's own dependencies, so no new crate is fetched; only ECDSA is
 # enabled, no PEM or JWK parsing.
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
 # Shared projects (ADR-0098, docs/security/spaces-protocol.md): per-account
 # X25519 and Ed25519 identity keys. Both are already in the lockfile through
 # `age` and `jsonwebtoken`, so no new crate is fetched. HPKE is written out in
