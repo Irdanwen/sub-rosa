@@ -34,7 +34,8 @@ export const DOCUMENT_FORMATS = ["docx", "xlsx", "pptx"] as const;
 
 export interface BlobTransport {
   put(id: string, sealed: string): Promise<void>;
-  get(id: string): Promise<string>;
+  /** The stored chunk: a JSON text envelope, or the bytes of either envelope. */
+  get(id: string): Promise<string | Uint8Array>;
 }
 
 /** The account service's blob routes, with the page's session (the same
@@ -83,10 +84,10 @@ export function serviceBlobTransport(accountId: string): BlobTransport {
         );
       if (Number(response.headers.get("content-length")) > MAX_ENVELOPE_BYTES)
         throw new ApiError("sync_blob_invalid", "The file could not be read.", 413);
-      const text = await response.text();
-      if (text.length > MAX_ENVELOPE_BYTES)
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length > MAX_ENVELOPE_BYTES)
         throw new ApiError("sync_blob_invalid", "The file could not be read.", 413);
-      return text;
+      return bytes;
     },
   };
 }
@@ -114,6 +115,34 @@ export async function sealBytes(key: Key, bytes: Uint8Array, context: string): P
     nonce: encode(nonce),
     ciphertext: encode(new Uint8Array(ciphertext)),
   });
+}
+
+/** `crypto::BINARY_ENVELOPE`: a chunk sealed as `[2][nonce 12][ciphertext]`
+ * (ADR-0110), where a JSON envelope starts with `{`. */
+const BINARY_ENVELOPE = 2;
+
+/** `crypto::open_chunk`: a stored chunk in either envelope. */
+export async function openChunk(
+  key: Key,
+  sealed: string | Uint8Array,
+  context: string,
+): Promise<Uint8Array> {
+  if (typeof sealed === "string") return openBytes(key, sealed, context);
+  if (sealed[0] !== BINARY_ENVELOPE)
+    return openBytes(key, new TextDecoder().decode(sealed), context);
+  if (sealed.length < 1 + 12 + 16) throw new Error("Invalid encrypted envelope");
+  return new Uint8Array(
+    await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: sealed.slice(1, 13),
+        additionalData: new TextEncoder().encode(context),
+        tagLength: 128,
+      },
+      await aesKey(key),
+      sealed.slice(13),
+    ),
+  );
 }
 
 /** `crypto::open`. */
@@ -267,7 +296,7 @@ async function readGalleryFile(
   const out = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks as { id: string; bytes: number; sha256: string }[]) {
-    const clear = await openBytes(
+    const clear = await openChunk(
       context.key,
       await transport.get(chunk.id),
       blobContext(context.accountId, chunk.id),
