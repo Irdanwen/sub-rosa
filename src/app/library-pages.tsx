@@ -1,6 +1,6 @@
 // The Library's desktop pages: the Library itself, and the two personal data
 // views read from it (Health, Finances). They used to be two of the sidebar's
-// ten entries; under the Library the sidebar keeps six places (ADR-0110).
+// ten entries; under the Library the sidebar keeps six places (ADR-0111).
 
 import { t } from "../lib/i18n";
 import { LibraryView } from "../components/library/LibraryView";

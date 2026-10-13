@@ -10,9 +10,9 @@ use std::{
 };
 use subrosa_config::Config;
 use subrosa_domain::{
-    BlobStore, CarpeDiemPartner, DeviceLogin, DeviceRequest, Error, IdentityProvider,
+    BlobInfo, BlobStore, CarpeDiemPartner, DeviceLogin, DeviceRequest, Error, IdentityProvider,
     IssuanceAssertion, IssuanceClaims, KINDS, Landing, LoginAttempt, NativeLogin, Operation,
-    OperationResult, Result, Secret, SecurityEventKind, Session, Share, StartedDevice,
+    OperationResult, Result, Secret, SecurityEventKind, Session, Share, StartedDevice, StorageUse,
     TokenResponse,
 };
 use subrosa_persistence::{AppendParams, BlobParams, Repository, VaultParams};
@@ -711,7 +711,7 @@ impl Service {
                 id,
                 bytes: i64::try_from(bytes).map_err(|_| Error::Invalid)?,
                 digest: &digest,
-                quota: self.config.account_quota_bytes,
+                file_limit: self.config.file_limit_bytes(),
             })
             .await?;
         self.storage
@@ -719,6 +719,37 @@ impl Service {
             .await?;
         reservation.commit().await?;
         Ok(bytes)
+    }
+    /// Gives one of the session's own chunks back (ADR-0110). Its bytes
+    /// leave the quota at once; the stored object follows with the drain.
+    pub async fn release_blob(&self, session: &Session, id: Uuid) -> Result<i64> {
+        self.repository.release_blob(session.account.id, id).await
+    }
+    /// The session's chunks, a page at a time or exactly those named.
+    pub async fn blobs(
+        &self,
+        session: &Session,
+        after: Option<Uuid>,
+        ids: Option<&[Uuid]>,
+        limit: i64,
+    ) -> Result<Vec<BlobInfo>> {
+        if !(1..=1000).contains(&limit) || ids.is_some_and(|ids| ids.is_empty() || ids.len() > 100)
+        {
+            return Err(Error::Invalid);
+        }
+        self.repository
+            .blobs(session.account.id, after, ids, limit)
+            .await
+    }
+    /// Where the session's account stands against its quota.
+    pub async fn storage_use(&self, session: &Session) -> Result<StorageUse> {
+        let (used_bytes, file_bytes) = self.repository.storage_use(session.account.id).await?;
+        Ok(StorageUse {
+            used_bytes,
+            quota_bytes: self.config.account_quota_bytes,
+            file_bytes,
+            journal_reserve_bytes: self.config.journal_reserve_bytes,
+        })
     }
     pub async fn blob(&self, session: &Session, id: Uuid) -> Result<Vec<u8>> {
         self.repository.blob_exists(session.account.id, id).await?;

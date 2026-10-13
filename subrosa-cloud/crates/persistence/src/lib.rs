@@ -3,9 +3,9 @@ use chrono::{DateTime, Utc};
 use futures_util::TryStreamExt;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use subrosa_domain::{
-    Account, Change, Device, DeviceKind, DeviceRequest, Error, Identity, JournalPage, LoginAttempt,
-    Operation, OperationResult, PendingRevocation, Result, RevocationBacklog, RevocationReason,
-    Secret, SecurityEventKind, Session, Share, SharePreview, Vault,
+    Account, BlobInfo, Change, Device, DeviceKind, DeviceRequest, Error, Identity, JournalPage,
+    LoginAttempt, Operation, OperationResult, PendingRevocation, Result, RevocationBacklog,
+    RevocationReason, Secret, SecurityEventKind, Session, Share, SharePreview, Vault,
 };
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -58,6 +58,7 @@ fn device_row(r: &sqlx::postgres::PgRow) -> Device {
             (Ok(Some(x)), Ok(Some(y))) => Some(subrosa_domain::DevicePublicKey { x, y }),
             _ => None,
         },
+        app_version: r.try_get("app_version").ok().flatten(),
     }
 }
 fn account(row: &sqlx::postgres::PgRow) -> Account {
@@ -929,19 +930,33 @@ impl Repository {
                 return Err(Error::Conflict);
             }
         } else {
+            // A released id waits in `blob_deletions` until the store drops
+            // it; writing it again before then would hand the new bytes to
+            // that deletion.
+            let releasing: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM blob_deletions WHERE key=$1)")
+                    .bind(format!("{}/{}", p.owner, p.id))
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(db)?;
+            if releasing {
+                return Err(Error::Conflict);
+            }
+            // Files stop at the file limit, below the quota, so the journal
+            // always keeps room of its own (ADR-0110).
             if sqlx::query(
                 "UPDATE accounts SET used_bytes=used_bytes+$2 WHERE id=$1 AND used_bytes+$2<=$3",
             )
             .bind(p.owner)
             .bind(p.bytes)
-            .bind(p.quota)
+            .bind(p.file_limit)
             .execute(&mut *tx)
             .await
             .map_err(db)?
             .rows_affected()
                 == 0
             {
-                return Err(Error::Quota);
+                return Err(Error::FilesFull);
             }
             sqlx::query("INSERT INTO blob_intents(account_id,id,bytes,digest) VALUES($1,$2,$3,$4)")
                 .bind(p.owner)
@@ -963,6 +978,96 @@ impl Repository {
             .await
             .map_err(db)?;
         Ok(BlobReservation { tx })
+    }
+    /// Releases one of the owner's file chunks: its bytes come back off the
+    /// quota now and the stored object joins the deletion queue the
+    /// maintenance drain empties. A chunk a share holds is refused, because
+    /// deleting it would cascade into the share and break a live link.
+    pub async fn release_blob(&self, owner: Uuid, id: Uuid) -> Result<i64> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        lock_account(&mut tx, owner).await?;
+        let shared: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM share_blobs WHERE account_id=$1 AND blob_id=$2)",
+        )
+        .bind(owner)
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?;
+        if shared {
+            return Err(Error::Conflict);
+        }
+        let freed: i64 =
+            sqlx::query_scalar("DELETE FROM blobs WHERE account_id=$1 AND id=$2 RETURNING bytes")
+                .bind(owner)
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(db)?
+                .ok_or(Error::NotFound)?;
+        sqlx::query("UPDATE accounts SET used_bytes=GREATEST(0,used_bytes-$2) WHERE id=$1")
+            .bind(owner)
+            .bind(freed)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        sqlx::query("INSERT INTO blob_deletions(key) VALUES($1) ON CONFLICT DO NOTHING")
+            .bind(format!("{owner}/{id}"))
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(freed)
+    }
+    /// The owner's file chunks, by id, a page at a time; or exactly the
+    /// ones named, so an upload can check its chunks are still there.
+    pub async fn blobs(
+        &self,
+        owner: Uuid,
+        after: Option<Uuid>,
+        ids: Option<&[Uuid]>,
+        limit: i64,
+    ) -> Result<Vec<BlobInfo>> {
+        let rows = sqlx::query("SELECT b.id,b.bytes,b.created_at,EXISTS(SELECT 1 FROM share_blobs s WHERE s.account_id=b.account_id AND s.blob_id=b.id) AS shared FROM blobs b WHERE b.account_id=$1 AND ($2::uuid IS NULL OR b.id>$2) AND ($3::uuid[] IS NULL OR b.id=ANY($3)) ORDER BY b.id LIMIT $4")
+            .bind(owner)
+            .bind(after)
+            .bind(ids)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows
+            .iter()
+            .map(|r| BlobInfo {
+                id: r.get("id"),
+                bytes: r.get("bytes"),
+                created_at: r.get("created_at"),
+                shared: r.get("shared"),
+            })
+            .collect())
+    }
+    /// What the account has used, and how much of it is files.
+    pub async fn storage_use(&self, owner: Uuid) -> Result<(i64, i64)> {
+        let r = sqlx::query("SELECT used_bytes,(SELECT COALESCE(SUM(bytes),0)::bigint FROM blobs WHERE account_id=$1)+(SELECT COALESCE(SUM(bytes),0)::bigint FROM blob_intents WHERE account_id=$1) AS file_bytes FROM accounts WHERE id=$1")
+            .bind(owner)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?
+            .ok_or(Error::NotFound)?;
+        Ok((r.get("used_bytes"), r.get("file_bytes")))
+    }
+    /// Notes the version a device's app announced. A write only when it
+    /// changed, so the request it rides on costs a lookup, not an update.
+    pub async fn note_app_version(&self, device: Uuid, version: Option<&str>) -> Result<()> {
+        sqlx::query(
+            "UPDATE devices SET app_version=$2 WHERE id=$1 AND app_version IS DISTINCT FROM $2",
+        )
+        .bind(device)
+        .bind(version)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
     }
     pub async fn blob_exists(&self, owner: Uuid, id: Uuid) -> Result<()> {
         let yes: bool =
@@ -1414,7 +1519,8 @@ pub struct BlobParams<'a> {
     pub id: Uuid,
     pub bytes: i64,
     pub digest: &'a [u8],
-    pub quota: i64,
+    /// The quota less the journal's reserve (ADR-0110).
+    pub file_limit: i64,
 }
 pub struct BlobReservation {
     tx: Transaction<'static, Postgres>,

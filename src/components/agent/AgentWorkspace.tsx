@@ -7624,7 +7624,7 @@ export function AgentWorkspace({
         {heroMode ? (
           // What a new chat may touch, and where it works: chosen once, before
           // the first message, so it sits under the box rather than among the
-          // controls used on every message (ADR-0110 addendum).
+          // controls used on every message (ADR-0111 addendum).
           <div className="agent-composer-scope">
             {heroMode ? (
               // Unrestricted only applies to the session being created, so
