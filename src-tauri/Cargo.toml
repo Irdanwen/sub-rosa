@@ -159,7 +159,7 @@ keyring = { version = "3", features = ["apple-native"] }
 # unit on iOS and macOS so the system cancels the reply's echo; cpal only
 # opens Remote I/O (iOS) or HAL output (macOS). The same coreaudio-rs cpal
 # links on both, with the same features, so nothing new is fetched.
-coreaudio-rs = { version = "0.11", default-features = false, features = ["audio_unit", "core_audio"] }
+coreaudio-rs = { version = "0.14", default-features = false, features = ["audio_unit", "core_audio"] }
 # Calendar context (crate::calendar). EventKit is the same framework on both
 # platforms, so one module serves the desktop and the phone; typed bindings
 # beat hand-rolled msg_send! for an API this shaped (dates, predicates,
