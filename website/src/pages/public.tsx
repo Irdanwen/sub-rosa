@@ -251,9 +251,14 @@ export function Information({ path }: { path: string }) {
         </address>
         <h2>{t("Contact", "Contact")}</h2>
         <p>
+          <a className="text-link" href="mailto:info@lumen-labs.ch">
+            info@lumen-labs.ch
+          </a>
+        </p>
+        <p>
           {t(
-            "Write to us through the project's issue tracker. Report a vulnerability privately through the security policy.",
-            "Écrivez-nous depuis le suivi des tickets du projet. Signalez une vulnérabilité en privé selon la politique de sécurité.",
+            "You can also write through the project's issue tracker. Report a vulnerability privately through the security policy.",
+            "Vous pouvez aussi écrire depuis le suivi des tickets du projet. Signalez une vulnérabilité en privé selon la politique de sécurité.",
           )}
         </p>
         <p>

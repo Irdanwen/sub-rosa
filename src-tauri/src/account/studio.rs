@@ -129,6 +129,10 @@ pub(super) async fn register(
     gallery: &Path,
     path: &Path,
 ) -> Result<bool, AppError> {
+    // A person may keep this device's Studio files on it (ADR-0110).
+    if !super::storage::sending(pool, "studio").await? {
+        return Ok(false);
+    }
     let bound: Option<String> = query("SELECT account_id FROM account_sync_control WHERE id=1")
         .fetch_one(pool)
         .await?

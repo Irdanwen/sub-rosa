@@ -397,12 +397,40 @@ async fn run_inner(app: &AppHandle) -> Result<(), AppError> {
             .execute(&pool)
             .await?;
     }
+    // Room before files (ADR-0110): what is released here is what lets the
+    // waiting files and the held journal leave. Best effort, never the pass.
+    if let Err(failure) = super::storage::step(
+        app,
+        &pool,
+        &s,
+        &key,
+        deadline,
+        summary.full,
+        summary.caught_up,
+    )
+    .await
+    {
+        tracing::debug!(code=%failure.code, "account storage step deferred");
+    }
     let file_result = super::files::step(app, &pool, &s, &key, deadline).await;
     capture_turn_usage(&pool).await?;
     if let Err(failure) = capture_balance(&pool).await {
         tracing::debug!(code=%failure.code,"account balance snapshot deferred");
     }
     file_result?;
+    // Received, fetched and released, but the journal could not leave: the
+    // person is told the account is full, and the next pass is not refused
+    // in a loop (the push waits for room, `storage::push_held`).
+    if summary.full {
+        query("UPDATE account_sync_control SET last_sync_error='account_storage_full' WHERE id=1")
+            .execute(&pool)
+            .await?;
+        let _ = app.emit(
+            "subrosa://sync-updated",
+            json!({"error":"account_storage_full","applied":summary.applied}),
+        );
+        return Ok(());
+    }
     query("UPDATE account_sync_control SET last_synced_at=?,last_sync_error=NULL WHERE id=1")
         .bind(chrono::Utc::now().to_rfc3339())
         .execute(&pool)
@@ -424,6 +452,12 @@ pub struct Summary {
     pub preserved: usize,
     pub parked: usize,
     pub kinds: std::collections::BTreeSet<String>,
+    /// The service refused the journal for room this pass (ADR-0110).
+    #[serde(skip)]
+    pub full: bool,
+    /// The pull reached the end of the journal this pass.
+    #[serde(skip)]
+    pub caught_up: bool,
 }
 impl Summary {
     pub fn changed(&self) -> bool {
@@ -447,7 +481,16 @@ pub(super) async fn synchronize(
     // one this device remembered, and a tombstone waiting to leave absorbs
     // the edit that arrives instead of crossing it as a sibling.
     pull(pool, s, key, &mut summary).await?;
-    push(pool, s, key, &mut summary).await?;
+    // A full account stops what leaves, not what arrives: the edits wait in
+    // the outbox and every other part of the pass still runs (ADR-0110).
+    match push(pool, s, key, &mut summary).await {
+        Ok(()) => {}
+        Err(failure) if failure.code == "account_storage_full" => {
+            super::storage::hold_push(pool).await?;
+            summary.full = true;
+        }
+        Err(failure) => return Err(failure),
+    }
     replay_pending(pool, s, key, &mut summary).await?;
     summary.applied += settle_clean_deletions(pool, s, key).await?;
     auto_merge_note_conflicts(pool, s, key).await;
@@ -507,6 +550,7 @@ async fn pull(
             .await?;
         tx.commit().await?;
         if !page.has_more {
+            summary.caught_up = true;
             break;
         }
     }
@@ -1129,6 +1173,15 @@ pub(super) async fn apply(
         }
         if t.name == "saved_items" {
             super::saved_items::make_room(conn, &row).await?;
+        }
+        // A file has one manifest. A compact copy that arrives before the
+        // tombstone of the form it replaces takes its place (ADR-0110).
+        if t.name == "account_file_manifests" {
+            query("DELETE FROM account_file_manifests WHERE artifact_id=? AND id<>?")
+                .bind(row.get("artifact_id").and_then(Value::as_str))
+                .bind(row.get("id").and_then(Value::as_str))
+                .execute(&mut *conn)
+                .await?;
         }
         let columns: Vec<_> = row.keys().cloned().collect();
         let assignments = columns
