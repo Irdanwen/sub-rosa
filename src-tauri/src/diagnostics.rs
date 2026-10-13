@@ -377,7 +377,8 @@ pub struct PurgeRecordingsResult {
     pub dry_run: bool,
 }
 
-/// Delete the audio of notes that are done with it.
+/// Delete the audio of notes that are done with it, on this device and in
+/// the account (ADR-0111): see `recording_retention::purge`.
 ///
 /// Eligible: an artifact older than the cutoff, on a note whose processing
 /// reached `ready`, that has at least one transcript row of its own, and
@@ -389,37 +390,7 @@ pub async fn purge_transcribed_recordings(
     app: AppHandle,
     request: PurgeRecordingsRequest,
 ) -> Result<PurgeRecordingsResult, AppError> {
-    let days = request.older_than_days.max(1);
-    let cutoff = (chrono::Utc::now() - chrono::Duration::days(i64::from(days))).to_rfc3339();
-    let repos = crate::commands::repositories(&app).await?;
-    let candidates = repos.purgeable_recordings(&cutoff).await?;
-    let paths = crate::commands::app_paths(&app)?;
-    let mut removed = 0u64;
-    let mut bytes = 0u64;
-    for candidate in candidates {
-        if request.dry_run {
-            removed += 1;
-            bytes = bytes.saturating_add(candidate.size_bytes.max(0) as u64);
-            continue;
-        }
-        match paths.remove_recording_file(&candidate.path) {
-            Ok(()) => {
-                repos
-                    .mark_audio_artifact_purged(&candidate.artifact_id)
-                    .await?;
-                removed += 1;
-                bytes = bytes.saturating_add(candidate.size_bytes.max(0) as u64);
-            }
-            Err(error) => {
-                tracing::warn!(artifact = %candidate.artifact_id, error = %error, "could not remove a recording");
-            }
-        }
-    }
-    Ok(PurgeRecordingsResult {
-        recordings: removed,
-        bytes,
-        dry_run: request.dry_run,
-    })
+    crate::recording_retention::purge(&app, request.older_than_days, request.dry_run).await
 }
 
 /// Strip what must never leave the machine in a bundle: Carpe Diem keys,

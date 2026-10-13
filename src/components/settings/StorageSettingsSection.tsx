@@ -7,6 +7,8 @@ import {
   purgeTranscribedRecordings,
   storageReport,
 } from "../../lib/tauri";
+import { recordingsRetention, setRecordingsRetention } from "../../lib/recording-retention";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 
 /** Megabytes with one decimal below a gigabyte, gigabytes with one above. */
 export function formatBytes(bytes: number) {
@@ -19,18 +21,27 @@ export function formatBytes(bytes: number) {
   return `${bytes} B`;
 }
 
-const RETENTION_CHOICES = [30, 90, 180, 365] as const;
+/** `recording_retention::CHOICES`. */
+const RETENTION_CHOICES = [7, 30, 90, 180, 365] as const;
+
+function recordingsLabel(count: number) {
+  return count === 1 ? t("1 recording") : t("{count} recordings", { count });
+}
 
 /**
- * Settings › Storage: what the app keeps on disk, bucket by bucket, and the
- * one action that is safe to offer. Nothing here runs on its own: a person
- * reads the numbers, picks an age, sees what would go, and then says so.
+ * Settings › Storage: what the app keeps on disk, bucket by bucket, and how
+ * long recordings stay once their note is transcribed (ADR-0111). The age
+ * is the person's choice, made once for every device and the account; a
+ * choice that deletes recordings at once says how many and asks first.
  */
 export function StorageSettingsSection() {
   const [report, setReport] = useState<StorageReportDto | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [days, setDays] = useState<number>(90);
-  const [preview, setPreview] = useState<PurgeRecordingsResultDto | null>(null);
+  const [retention, setRetention] = useState<number | null | undefined>(undefined);
+  const [pending, setPending] = useState<{
+    days: number;
+    preview: PurgeRecordingsResultDto;
+  } | null>(null);
   const [outcome, setOutcome] = useState<PurgeRecordingsResultDto | null>(null);
   const [busy, setBusy] = useState(false);
   const selectId = useId();
@@ -47,31 +58,35 @@ export function StorageSettingsSection() {
   useEffect(load, [load]);
 
   useEffect(() => {
-    let cancelled = false;
-    purgeTranscribedRecordings({ olderThanDays: days, dryRun: true })
-      .then((result) => {
-        if (!cancelled) setPreview(result);
-      })
-      .catch(() => {
-        if (!cancelled) setPreview(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [days]);
+    recordingsRetention()
+      .then(setRetention)
+      .catch(() => setRetention(null));
+  }, []);
 
-  const purge = async () => {
+  const apply = async (days: number | null) => {
     setBusy(true);
     setError(null);
     try {
-      const result = await purgeTranscribedRecordings({ olderThanDays: days });
-      setOutcome(result);
-      setPreview({ ...result, dryRun: true, recordings: 0, bytes: 0 });
+      const result = await setRecordingsRetention(days);
+      setRetention(days);
+      setOutcome(result.recordings > 0 ? result : null);
       load();
     } catch (err) {
       setError(messageFromError(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const choose = async (value: string) => {
+    const days = value === "never" ? null : Number(value);
+    if (days === null) return apply(null);
+    try {
+      const preview = await purgeTranscribedRecordings({ olderThanDays: days, dryRun: true });
+      if (preview.recordings === 0) return apply(days);
+      setPending({ days, preview });
+    } catch (err) {
+      setError(messageFromError(err));
     }
   };
 
@@ -136,53 +151,61 @@ export function StorageSettingsSection() {
           <div className="settings-row">
             <div className="settings-row-info">
               <label htmlFor={selectId} className="settings-row-title">
-                {t("Remove the audio of notes transcribed more than")}
+                {t("Delete recordings automatically")}
               </label>
               <p className="settings-row-description">
-                {t("The note keeps its transcript and its text; only the recording file goes.")}
-                {preview
-                  ? preview.recordings === 0
-                    ? ` ${t("Nothing matches right now.")}`
-                    : ` ${preview.recordings === 1 ? t("1 recording") : t("{count} recordings", { count: preview.recordings })}, ${formatBytes(preview.bytes)}.`
-                  : ""}
+                {t(
+                  "After the note is transcribed, on every device and in your account. The note keeps its transcript and its text.",
+                )}
               </p>
             </div>
             <div className="settings-row-control storage-purge">
               <select
                 id={selectId}
                 className="mcp-tools-select"
-                value={days}
-                onChange={(event) => setDays(Number(event.target.value))}
+                value={retention === undefined ? "" : (retention ?? "never")}
+                disabled={busy || retention === undefined}
+                onChange={(event) => void choose(event.target.value)}
               >
+                <option value="never">{t("Never")}</option>
                 {RETENTION_CHOICES.map((choice) => (
                   <option key={choice} value={choice}>
-                    {t("{choice} days ago", { choice })}
+                    {t("{choice} days after transcription", { choice })}
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy || !preview || preview.recordings === 0}
-                onClick={() => void purge()}
-              >
-                {busy ? t("Removing…") : t("Remove")}
-              </button>
             </div>
           </div>
-          {outcome && !outcome.dryRun ? (
+          {outcome ? (
             <p className="settings-row-description" role="status">
               {t("Removed {recordings} and freed {bytes}.", {
-                recordings:
-                  outcome.recordings === 1
-                    ? t("1 recording")
-                    : t("{count} recordings", { count: outcome.recordings }),
+                recordings: recordingsLabel(outcome.recordings),
                 bytes: formatBytes(outcome.bytes),
               })}
             </p>
           ) : null}
         </div>
       </div>
+      <ConfirmDialog
+        open={pending !== null}
+        onClose={() => setPending(null)}
+        onConfirm={() => (pending ? apply(pending.days) : undefined)}
+        title={t("Delete the recordings already older than this?")}
+        description={
+          pending
+            ? t(
+                "{recordings}, {bytes}, will be deleted on every device and in your account. Their notes keep their transcript. This cannot be undone.",
+                {
+                  recordings: recordingsLabel(pending.preview.recordings),
+                  bytes: formatBytes(pending.preview.bytes),
+                },
+              )
+            : undefined
+        }
+        confirmLabel={t("Delete")}
+        cancelLabel={t("Cancel")}
+        destructive
+      />
     </section>
   );
 }

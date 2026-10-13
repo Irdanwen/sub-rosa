@@ -655,6 +655,12 @@ pub async fn run_migrations(_pool: &SqlitePool) -> Result<(), sqlx::error::Error
         split_sql_statements(include_str!("../../migrations/077_account_storage.sql")),
     )
     .await?;
+    replay(
+        _pool,
+        "078_account_preferences.sql",
+        include_str!("../../migrations/078_account_preferences.sql"),
+    )
+    .await?;
     let named = crate::connectors::assign_object_ids(_pool).await?;
     crate::account::sync::install(_pool).await?;
     // A connector that predates its object id never reached the service:

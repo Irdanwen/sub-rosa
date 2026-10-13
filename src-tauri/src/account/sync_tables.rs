@@ -213,6 +213,12 @@ pub(super) const TABLES: &[Table] = &[
             "response_bytes",
         ],
     },
+    // One row of choices that follow the account (ADR-0111).
+    Table {
+        name: "account_preferences",
+        kind: "settings",
+        columns: &["id", "audio_retention_days", "updated_at"],
+    },
     Table {
         name: "account_file_manifests",
         kind: "artifact",

@@ -6,11 +6,17 @@ import { StorageSettingsSection, formatBytes } from "../components/settings/Stor
 const mocks = vi.hoisted(() => ({
   storageReport: vi.fn(),
   purgeTranscribedRecordings: vi.fn(),
+  recordingsRetention: vi.fn(),
+  setRecordingsRetention: vi.fn(),
 }));
 
 vi.mock("../lib/tauri", () => ({
   storageReport: mocks.storageReport,
   purgeTranscribedRecordings: mocks.purgeTranscribedRecordings,
+}));
+vi.mock("../lib/recording-retention", () => ({
+  recordingsRetention: mocks.recordingsRetention,
+  setRecordingsRetention: mocks.setRecordingsRetention,
 }));
 
 const report = {
@@ -58,11 +64,11 @@ describe("Settings › Storage", () => {
     mocks.storageReport.mockReset().mockResolvedValue(report);
     mocks.purgeTranscribedRecordings
       .mockReset()
-      .mockImplementation(async ({ dryRun }) =>
-        dryRun
-          ? { recordings: 2, bytes: 200_000_000, dryRun: true }
-          : { recordings: 2, bytes: 200_000_000, dryRun: false },
-      );
+      .mockResolvedValue({ recordings: 2, bytes: 200_000_000, dryRun: true });
+    mocks.recordingsRetention.mockReset().mockResolvedValue(null);
+    mocks.setRecordingsRetention
+      .mockReset()
+      .mockResolvedValue({ recordings: 2, bytes: 200_000_000, dryRun: false });
   });
 
   it("shows every bucket with the size the backend measured, and the total", async () => {
@@ -74,39 +80,46 @@ describe("Settings › Storage", () => {
     expect(screen.getByText("5.6 GB")).toBeInTheDocument();
   });
 
-  it("previews what a purge would remove and only removes on a click", async () => {
+  it("keeps recordings until a person chooses an age", async () => {
+    render(<StorageSettingsSection />);
+    const select = await screen.findByRole("combobox", { name: "Delete recordings automatically" });
+    await waitFor(() => expect(select).toHaveValue("never"));
+    expect(mocks.setRecordingsRetention).not.toHaveBeenCalled();
+  });
+
+  it("asks before an age that deletes recordings at once, and says what went", async () => {
     const user = userEvent.setup();
     render(<StorageSettingsSection />);
-    await screen.findByText(/2 recordings, 191 MB/);
+    const select = await screen.findByRole("combobox", { name: "Delete recordings automatically" });
+    await waitFor(() => expect(select).toBeEnabled());
+    await user.selectOptions(select, "7");
     expect(mocks.purgeTranscribedRecordings).toHaveBeenCalledWith({
-      olderThanDays: 90,
+      olderThanDays: 7,
       dryRun: true,
     });
-    expect(mocks.purgeTranscribedRecordings).not.toHaveBeenCalledWith({ olderThanDays: 90 });
-
-    await user.selectOptions(screen.getByRole("combobox"), "365");
-    await waitFor(() =>
-      expect(mocks.purgeTranscribedRecordings).toHaveBeenCalledWith({
-        olderThanDays: 365,
-        dryRun: true,
-      }),
-    );
-
-    await user.click(screen.getByRole("button", { name: "Remove" }));
-    await waitFor(() =>
-      expect(mocks.purgeTranscribedRecordings).toHaveBeenCalledWith({ olderThanDays: 365 }),
-    );
+    expect(
+      await screen.findByText(/2 recordings, 191 MB, will be deleted on every device/),
+    ).toBeInTheDocument();
+    expect(mocks.setRecordingsRetention).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(mocks.setRecordingsRetention).toHaveBeenCalledWith(7));
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Removed 2 recordings and freed 191 MB.",
     );
-    // The report is measured again after a removal.
-    expect(mocks.storageReport).toHaveBeenCalledTimes(2);
+    expect(select).toHaveValue("7");
   });
 
-  it("keeps the button off when nothing matches", async () => {
+  it("applies an age with nothing to delete, and going back to never, without asking", async () => {
     mocks.purgeTranscribedRecordings.mockResolvedValue({ recordings: 0, bytes: 0, dryRun: true });
+    mocks.setRecordingsRetention.mockResolvedValue({ recordings: 0, bytes: 0, dryRun: false });
+    const user = userEvent.setup();
     render(<StorageSettingsSection />);
-    await screen.findByText(/Nothing matches right now/);
-    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    const select = await screen.findByRole("combobox", { name: "Delete recordings automatically" });
+    await waitFor(() => expect(select).toBeEnabled());
+    await user.selectOptions(select, "365");
+    await waitFor(() => expect(mocks.setRecordingsRetention).toHaveBeenCalledWith(365));
+    await user.selectOptions(select, "never");
+    await waitFor(() => expect(mocks.setRecordingsRetention).toHaveBeenLastCalledWith(null));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

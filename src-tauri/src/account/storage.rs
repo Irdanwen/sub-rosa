@@ -588,6 +588,25 @@ async fn give_back_unfinished(
     Ok(freed)
 }
 
+/// Takes a recording out of the account (ADR-0111): its manifest goes, which
+/// leaves as a tombstone and has its chunks released a day later like any
+/// deleted file's, and so do an upload or a compact copy under way. Local
+/// rows only: with no account bound, nothing leaves.
+pub(crate) async fn forget_recording(pool: &SqlitePool, artifact_id: &str) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    super::compaction::forget_copies_of(&mut tx, artifact_id).await?;
+    query("DELETE FROM account_file_uploads WHERE artifact_id=?")
+        .bind(artifact_id)
+        .execute(&mut *tx)
+        .await?;
+    query("DELETE FROM account_file_manifests WHERE artifact_id=?")
+        .bind(artifact_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// What a person reads about the account's room.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct StorageStatus {
