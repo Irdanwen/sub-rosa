@@ -857,7 +857,9 @@ th {
   line-height: 0.99;
   letter-spacing: -0.04em;
   margin-bottom: 32px;
-  white-space: nowrap;
+  /* Never nowrap: "Verlier nicht den Faden." ran under the picture in
+   * German. Each sentence keeps its own line (<br>) and wraps evenly. */
+  text-wrap: balance;
 }
 .hero h1 em {
   color: var(--brand);
@@ -1399,9 +1401,6 @@ th {
     grid-template-columns: 1fr;
     padding-block: 75px 75px;
     gap: 25px;
-  }
-  .hero h1 {
-    white-space: normal;
   }
   .hero-visual {
     max-width: 700px;

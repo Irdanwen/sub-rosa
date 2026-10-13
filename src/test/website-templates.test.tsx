@@ -1,11 +1,15 @@
 import { act, render } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "../../website/src/App";
 import { setWebsiteLocale } from "../../website/src/lib/i18n";
 import { useActiveSection } from "../../website/src/lib/section-spy";
+import { loadDocs } from "../../website/src/pages/docs-loader";
 
 afterEach(() => setWebsiteLocale("en"));
+
+// The documentation is its own chunk; a real visit waits for it before rendering.
+beforeAll(() => loadDocs());
 
 describe("the site's page templates (S4)", () => {
   it("joins privacy, security and the legal notice, and marks the page being read", () => {
@@ -62,5 +66,22 @@ describe("the section being read", () => {
     act(() => report([{ target: a, isIntersecting: true }]));
     expect(seen.at(-1)).toBe("a");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("the home page's weight", () => {
+  it("does not pay for the documentation: no static import of the guides on the way in", async () => {
+    const sources = import.meta.glob(
+      [
+        "../../website/src/App.tsx",
+        "../../website/src/main.tsx",
+        "../../website/src/pages/home.tsx",
+      ],
+      { query: "?raw", import: "default", eager: true },
+    ) as Record<string, string>;
+    for (const [path, source] of Object.entries(sources)) {
+      expect(source, path).not.toMatch(/from "\.\/pages\/docs(-content)?"/);
+      expect(source, path).not.toMatch(/from "\.\/docs(-content)?"/);
+    }
   });
 });

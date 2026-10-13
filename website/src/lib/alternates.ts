@@ -57,7 +57,8 @@ export function shareTags({
 }): string {
   const root = `${origin}${base.replace(/\/$/, "")}`;
   const url = `${root}${localizedPublicPath(page, locale as (typeof SITE_LOCALES)[number])}`;
-  const image = `${root}/studio-preview-${locale === "fr" ? "fr" : "en"}.png`;
+  // The real Studio at the share-card size (1200 x 630), English or French.
+  const image = `${root}/share-${locale === "fr" ? "fr" : "en"}.jpg`;
   const attribute = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   return [
@@ -69,6 +70,8 @@ export function shareTags({
     `<meta property="og:title" content="${attribute(title)}" />`,
     `<meta property="og:description" content="${attribute(description)}" />`,
     `<meta property="og:image" content="${image}" />`,
+    `<meta property="og:image:width" content="1200" />`,
+    `<meta property="og:image:height" content="630" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${attribute(title)}" />`,
     `<meta name="twitter:description" content="${attribute(description)}" />`,

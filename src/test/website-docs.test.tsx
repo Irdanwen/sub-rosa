@@ -1,9 +1,13 @@
 import { renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { App } from "../../website/src/App";
 import { setWebsiteLocale } from "../../website/src/lib/i18n";
 import { createSitePaths } from "../../website/src/lib/paths";
 import { categories, guides, searchGuides } from "../../website/src/pages/docs-content";
+import { loadDocs } from "../../website/src/pages/docs-loader";
+
+// The documentation is its own chunk; a real visit waits for it before rendering.
+beforeAll(() => loadDocs());
 
 describe("public documentation", () => {
   it("has a stable route for every article in both locales", () => {

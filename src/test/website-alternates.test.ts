@@ -50,8 +50,9 @@ describe("what a shared link of a public page shows", () => {
     expect(tags).toContain('<meta property="og:title" content="Télécharger · Sub Rosa" />');
     expect(tags).toContain("Mac, Windows &amp; Android");
     expect(tags).toContain(
-      '<meta property="og:image" content="https://furetier.com/subrosa/studio-preview-fr.png" />',
+      '<meta property="og:image" content="https://furetier.com/subrosa/share-fr.jpg" />',
     );
+    expect(tags).toContain('<meta property="og:image:width" content="1200" />');
     expect(tags).toContain('<meta name="twitter:card" content="summary_large_image" />');
   });
 

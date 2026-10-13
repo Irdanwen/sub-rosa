@@ -1,7 +1,6 @@
-import { t } from "../lib/i18n";
+import { type Copy, read } from "../lib/copy";
 
-export type Copy = readonly [en: string, fr: string];
-export const read = ([en, fr]: Copy) => t(en, fr);
+export { type Copy, read };
 
 type Section = {
   id: string;
@@ -499,7 +498,9 @@ export const guides: Guide[] = [
       "Gardez ensemble une histoire, ses plans, ses prises et son montage.",
     ],
     image: {
-      file: "film-fr.png",
+      file: "film-fr.webp",
+      width: 1440,
+      height: 900,
       alt: ["Film project shot planning in French", "Planification des plans d’un projet de film"],
       caption: [
         "A film project keeps its shot plan beside the generated takes.",
