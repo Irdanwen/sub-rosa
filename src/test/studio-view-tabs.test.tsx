@@ -32,6 +32,14 @@ vi.mock("../components/studio/retouch/RetouchStudio", () => ({
     <p>{pendingArtifactId ? `retouching ${pendingArtifactId}` : "retouch tab"}</p>
   ),
 }));
+vi.mock("../components/studio/compose/ComposeStudio", () => ({
+  ComposeStudio: ({ pendingArtifactId }: { pendingArtifactId?: string }) => (
+    <p>{pendingArtifactId ? `composing from ${pendingArtifactId}` : "compose tool"}</p>
+  ),
+}));
+vi.mock("../components/studio/StudioGalleryDesktop", () => ({
+  StudioGalleryDesktop: () => <p>gallery tab</p>,
+}));
 vi.mock("../components/studio/WorkflowStudio", () => ({
   WorkflowStudio: ({ scriptRequested }: { scriptRequested?: boolean }) => (
     <p>{scriptRequested ? "workflows tab, script asked for" : "workflows tab"}</p>
@@ -41,14 +49,29 @@ vi.mock("../components/studio/WorkflowStudio", () => ({
 beforeEach(() => window.localStorage.clear());
 
 describe("the studio's tabs", () => {
-  it("opens projects first and keeps generation tools available", () => {
+  it("opens on the image desk, with five tabs (ADR-0111)", () => {
     render(<StudioView />);
-    expect(screen.queryByText("Films")).not.toBeInTheDocument();
-    expect(screen.getByText("Projects")).toBeInTheDocument();
-    expect(screen.getByText("Bible")).toBeInTheDocument();
-    expect(screen.getByText("project workspace")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Image" }));
     expect(screen.getByText("image tab")).toBeInTheDocument();
+    const tabs = screen.getByRole("group", { name: "Studio section" });
+    expect([...tabs.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Image",
+      "Video",
+      "Audio",
+      "Projects",
+      "Gallery",
+    ]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Projects" })[0]);
+    expect(screen.getByText("project workspace")).toBeInTheDocument();
+  });
+
+  it("finds the old Assemble and Workflows tabs inside Projects", async () => {
+    window.localStorage.setItem("os-june:studio-tab", "assemble");
+    const view = render(<StudioView />);
+    await waitFor(() => expect(screen.getByText("assemble tab")).toBeInTheDocument());
+    view.unmount();
+    window.localStorage.setItem("os-june:studio-tab", "workflows");
+    render(<StudioView />);
+    await waitFor(() => expect(screen.getByText("workflows tab")).toBeInTheDocument());
   });
 
   it("lands somebody who was last on the old Films tab where films are made now", async () => {
@@ -64,10 +87,6 @@ describe("the studio's tabs", () => {
     render(<StudioView />);
     fireEvent.click(await screen.findByRole("button", { name: "make a film" }));
     await waitFor(() => expect(screen.getByText("project workspace")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Projects" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
     expect(window.localStorage.getItem("os-june:studio-tab")).toBe("projects");
   });
 
@@ -89,5 +108,19 @@ describe("the studio's tabs", () => {
     act(() => requestRetouch("photo.png"));
     await waitFor(() => expect(screen.getByText("retouching photo.png")).toBeInTheDocument());
     expect(window.localStorage.getItem("os-june:studio-tab")).toBe("retouch");
+  });
+
+  it("opens an image handed over from anywhere in the compose tool", async () => {
+    render(<StudioView />);
+    const { requestCompose } = await import("../lib/studio/compose/jobs");
+    act(() => requestCompose("still.png"));
+    await waitFor(() => expect(screen.getByText("composing from still.png")).toBeInTheDocument());
+    expect(window.localStorage.getItem("os-june:studio-tab")).toBe("compose");
+  });
+
+  it("opens the gallery without waiting for the model catalog", () => {
+    window.localStorage.setItem("os-june:studio-tab", "gallery");
+    render(<StudioView />);
+    expect(screen.getByText("gallery tab")).toBeInTheDocument();
   });
 });

@@ -45,7 +45,6 @@ import { ClonedVoiceDialog } from "../../../studio/ClonedVoiceDialog";
 import { clonedVoiceRef } from "../../../../lib/studio/cloned-voices";
 import { useClonedVoices } from "../../../../lib/studio/use-cloned-voices";
 import {
-  DockSelectChip,
   ModelPickerButton,
   modelSubtitle,
   pickEffective,
@@ -53,8 +52,13 @@ import {
   SettingsCard,
   StudioToggle,
 } from "./StudioControls";
-import { Dock, DockComposer } from "./StudioDock";
-import { type StageResult, StudioStage, type StudioStageIdle } from "./StudioStage";
+import { Dock, DockComposer } from "../../../studio/stage/Dock";
+import { DockSelectChip } from "../../../studio/stage/DockChip";
+import {
+  type StageIdle as StudioStageIdle,
+  type StageResult,
+  StageScene as StudioStage,
+} from "../../../studio/stage/Scene";
 
 /** Which of the three sound panels is showing. */
 export type AudioMode = "music" | "speech" | "sfx";

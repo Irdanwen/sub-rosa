@@ -5,18 +5,14 @@ import { hapticNotify } from "../../../../lib/haptics";
 import { registerDownloadedArtifact } from "../../../../lib/studio/artifacts";
 import { useMediaJob } from "../../../../lib/studio/async-job";
 import {
-  familyDirections,
   frameFreeReferenceSibling,
   isImageToVideoModel,
   isReferenceToVideoModel,
   isSeedanceModel,
   requiresOpeningFrame,
-  type VideoDirection,
-  type VideoFamily,
   variantFor,
   variantHint,
   videoFamilies,
-  videoFamilySearchTerms,
 } from "../../../../lib/studio/catalog";
 import { mediaJson } from "../../../../lib/studio/client";
 import {
@@ -61,23 +57,26 @@ import { inlineMediaInputs, videoRequestBody } from "../../../../lib/studio/vide
 import { JobFailureNotice } from "../../../studio/JobFailureNotice";
 import type { StageWait } from "../../../studio/stage/Veil";
 import { Switch } from "../../../ui/Switch";
-import { ModelSheet, type ModelSheetTag } from "../../ModelSheet";
+import { ModelSheet } from "../../ModelSheet";
+import {
+  videoDirectionFilters,
+  videoFamilyEntry,
+} from "../../../../lib/studio/video-family-entries";
 import { videoFamilyOption } from "../../../studio/MediaModelPicker";
 import {
   formatRenderOption,
   ModelPickerButton,
-  modelSubtitle,
   MoreOptions,
   SelectRow,
   SettingsCard,
 } from "./StudioControls";
-import { Dock, DockComposer } from "./StudioDock";
+import { Dock, DockComposer } from "../../../studio/stage/Dock";
 import {
   MediaReferencePicker,
   ReferencePicker,
   type ReferencePickerHandle,
 } from "./StudioLightbox";
-import { type StageResult, StudioStage } from "./StudioStage";
+import { type StageResult, StageScene as StudioStage } from "../../../studio/stage/Scene";
 
 /** Where the finished clip's URL hides in the retrieve body. */
 const VIDEO_URL_FIELDS = ["video_url", "url"];
@@ -102,40 +101,6 @@ export interface VideoHandoff {
  * directions (text, image, reference, continuation), per-family durations, and
  * a consent gate for the families that need one.
  */
-/** The directions a family can be narrowed to in the picker, in the order the
- * form asks for their inputs. Labels are getters so they read in the language
- * chosen when the sheet opens. */
-const DIRECTION_FILTERS: { id: VideoDirection; label: () => string }[] = [
-  { id: "text", label: () => t("From a prompt") },
-  { id: "image", label: () => t("Animate an image") },
-  { id: "reference", label: () => t("From references") },
-];
-
-/**
- * What a family row says about its directions. One word each, because the row
- * is scanned, not read: "Text · Image · References". A reference variant that
- * will not start without an opening frame says so here, in the one place the
- * user is still choosing - the form can only report it after the fact.
- */
-export function familyTags(family: VideoFamily): ModelSheetTag[] {
-  const tags: ModelSheetTag[] = [];
-  if (family.textModel) tags.push({ label: t("Text") });
-  if (family.imageModel) tags.push({ label: t("Image") });
-  if (family.referenceModel) {
-    tags.push({ label: t("References") });
-    if (requiresOpeningFrame(family.referenceModel.id)) {
-      tags.push({ label: t("+ opening frame"), tone: "note" });
-    }
-  }
-  return tags;
-}
-
-/** Tier and privacy, read off the variant the family is most often run as. */
-function familySubtitle(family: VideoFamily): string {
-  const model = family.textModel ?? family.referenceModel ?? family.imageModel;
-  return model ? modelSubtitle(model) : "";
-}
-
 export function VideoPanel({
   catalog,
   galleryImages,
@@ -778,17 +743,10 @@ export function VideoPanel({
       {pickerOpen ? (
         <ModelSheet
           title={t("Video model")}
-          entries={familiesForMode.map((entry) => ({
-            id: entry.key,
-            name: entry.name,
-            subtitle: familySubtitle(entry),
-            tags: familyTags(entry),
-            groups: familyDirections(entry),
-            // One row stands for up to four backend models, so searching what
-            // the row shows cannot find a variant by its own name or id.
-            keywords: [...videoFamilySearchTerms(entry), ...videoFamilyOption(entry).details],
-          }))}
-          filters={DIRECTION_FILTERS.map((entry) => ({ id: entry.id, label: entry.label() }))}
+          entries={familiesForMode.map((entry) =>
+            videoFamilyEntry(entry, videoFamilyOption(entry).details),
+          )}
+          filters={videoDirectionFilters()}
           filtersLabel={t("Filter video models")}
           // The sheet opens on the direction the inputs already imply: with
           // reference photos picked, the families that cannot take them are

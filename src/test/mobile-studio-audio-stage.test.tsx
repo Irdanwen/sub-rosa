@@ -128,7 +128,7 @@ describe("the audio panels on the stage", () => {
     // Played from the saved file: WKWebView leaves a data: audio element silent.
     expect(track.src).not.toContain("data:");
     expect(track.src).toContain("a1.mp3");
-    expect(scene.querySelector(".mobile-studio-scene-wave")).toBeTruthy();
+    expect(scene.querySelector(".stage-scene-wave")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 });

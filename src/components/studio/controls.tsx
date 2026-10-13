@@ -3,7 +3,6 @@
 
 import { t } from "../../lib/i18n";
 import type { ReactNode } from "react";
-import { formatCredits } from "../../lib/studio/catalog";
 import type { MediaModel } from "../../lib/studio/types";
 import { MediaModelPicker, mediaModelOption } from "./MediaModelPicker";
 
@@ -80,12 +79,6 @@ export function ModelSelect({
       options={models.filter((model) => !model.offline).map(mediaModelOption)}
     />
   );
-}
-
-/** Estimated price of the next generation, when the catalog knows it. */
-export function CostHint({ credits }: { credits?: number }) {
-  if (credits === undefined) return null;
-  return <span className="studio-cost">~{formatCredits(credits)}</span>;
 }
 
 /** Range slider with the current value spelled out next to the label. */
