@@ -1,5 +1,5 @@
 // The desk: how a Studio generation surface is laid out on the desktop
-// (ADR-0110). The scene in the middle, where the eye waits for the result;
+// (ADR-0111). The scene in the middle, where the eye waits for the result;
 // the dock centred under it, with the one button that spends; the settings
 // that do not matter on every render in an inspector at the right that can
 // be folded away; and the filmstrip of what was made here under it all.

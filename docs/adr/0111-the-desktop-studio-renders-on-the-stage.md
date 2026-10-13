@@ -1,4 +1,4 @@
-# ADR-0110: The desktop Studio renders on the stage, with five tabs
+# ADR-0111: The desktop Studio renders on the stage, with five tabs
 
 Date: 2026-10-12. Status: accepted. Builds on the Stage, Veil and Dock
 entries of [CONTEXT.md](../../CONTEXT.md) (shipped on the phone in PR #254

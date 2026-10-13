@@ -1,6 +1,6 @@
 /**
  * The desktop sidebar's top and its pages under the Library and Today
- * (ADR-0110 addendum): what the New menu starts, the Library's way to Health
+ * (ADR-0111 addendum): what the New menu starts, the Library's way to Health
  * and Finances and back, and Today's way to the routines.
  */
 

@@ -24,6 +24,8 @@ struct Sealed {
     ciphertext: String,
     parent: Option<String>,
     resolved: Vec<String>,
+    /// The chunks a file manifest names, checked before it leaves (ADR-0110).
+    chunks: Vec<String>,
 }
 
 pub(super) async fn next_outbox(
@@ -124,6 +126,19 @@ async fn seal(
     if ciphertext.len() > OPERATION_BYTES {
         return Err(error("sync_object_too_large"));
     }
+    let chunks = if kind == "artifact" && !deleted {
+        serde_json::from_str::<Value>(&row.get::<String, _>("body"))
+            .ok()
+            .filter(|body| body["table"] == "account_file_manifests")
+            .and_then(|body| {
+                body["row"]["chunks_json"]
+                    .as_str()
+                    .map(super::storage::chunk_ids)
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     Ok(Some(Sealed {
         sequence,
         operation_id,
@@ -133,7 +148,37 @@ async fn seal(
         ciphertext,
         parent,
         resolved,
+        chunks,
     }))
+}
+
+/// Holds back a manifest whose chunks the service no longer has all of: sent,
+/// it would name a file no other device could fetch. The file lane sends the
+/// missing chunks again from this device's copy, then lets it go.
+async fn hold_incomplete(
+    pool: &SqlitePool,
+    s: &Session,
+    sealed: Vec<Sealed>,
+) -> Result<Vec<Sealed>, AppError> {
+    let mut ready = Vec::with_capacity(sealed.len());
+    for item in sealed {
+        if item.chunks.is_empty() {
+            ready.push(item);
+            continue;
+        }
+        match super::compaction::missing(s, &item.chunks).await? {
+            None => ready.push(item),
+            Some(_) => {
+                query("INSERT OR REPLACE INTO account_chunk_repairs(operation_id,manifest_id,missing_json) VALUES(?,?,'[]')")
+                    .bind(&item.operation_id)
+                    .bind(&item.object_id)
+                    .execute(pool)
+                    .await?;
+                record_issue(pool, "outbox", &item.operation_id, "sync_chunks_missing").await?;
+            }
+        }
+    }
+    Ok(ready)
 }
 
 /// Sends sealed rows as one push and records what the service answered:
@@ -197,6 +242,11 @@ pub(super) async fn push(
     key: &[u8; 32],
     summary: &mut Summary,
 ) -> Result<(), AppError> {
+    // The account was full a moment ago: nothing is sent until room comes
+    // back or the hold runs out, instead of a refusal every few seconds.
+    if super::storage::push_held(pool).await? {
+        return Err(error("account_storage_full"));
+    }
     for _ in 0..20 {
         let rows = next_outbox_batch(pool, None, BATCH_OPERATIONS).await?;
         if rows.is_empty() {
@@ -223,6 +273,7 @@ pub(super) async fn push(
             }
         }
         tx.commit().await?;
+        let sealed = hold_incomplete(pool, s, sealed).await?;
         if sealed.is_empty() {
             continue;
         }
@@ -269,6 +320,10 @@ pub(super) async fn push(
                     refused(&failure.code).unwrap_or_default(),
                 )
                 .await?;
+            }
+            Err(failure) if failure.code == "account_storage_full" => {
+                super::storage::hold_push(pool).await?;
+                return Err(failure);
             }
             Err(failure) => return Err(failure),
         }
@@ -318,5 +373,10 @@ pub(super) async fn has_local_work(pool: &SqlitePool) -> Result<bool, AppError> 
     if !enabled {
         return Ok(false);
     }
-    Ok(!next_outbox_batch(pool, None, 1).await?.is_empty() || super::files::has_work(pool).await?)
+    // What waits for room is not work: a full account would otherwise wake
+    // the driver every tick for a refusal (ADR-0110).
+    let outbox = !super::storage::push_held(pool).await?
+        && !next_outbox_batch(pool, None, 1).await?.is_empty();
+    let sending = !super::storage::files_held(pool).await?;
+    Ok(outbox || super::files::has_work(pool, sending).await?)
 }
