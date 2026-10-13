@@ -197,6 +197,6 @@ for (const url of urls) {
 socket.close();
 proc.kill();
 server.close();
-console.log(`${urls.length} pages swept under the production policy.`);
-for (const problem of problems) console.log(problem);
+process.stdout.write(`${urls.length} pages swept under the production policy.\n`);
+for (const problem of problems) process.stdout.write(`${problem}\n`);
 process.exit(problems.length ? 1 : 0);
