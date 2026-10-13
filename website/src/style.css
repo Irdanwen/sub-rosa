@@ -698,25 +698,95 @@ th {
   display: inline-flex;
   align-items: center;
 }
-.header-nav .account-link {
-  border: 1px solid var(--border-hover);
-  border-radius: 999px;
+/* The one filled button in the header: what this site asks of a visitor. */
+.header-nav .download-link {
+  min-height: 40px;
   padding: 0 18px;
-  gap: 15px;
-  box-shadow: 0 3px 12px rgb(20 15 9 / 4%);
+  border-radius: 999px;
+  /* The same colour as every primary button on the site. */
+  background: var(--brand);
+  color: var(--background);
   transition:
     background-color var(--sr-t-med) ease,
-    transform var(--sr-t-fast) var(--sr-ease-out),
-    box-shadow var(--sr-t-med) ease;
+    transform var(--sr-t-fast) var(--sr-ease-out);
 }
-.header-nav .account-link:hover {
-  background: var(--surface);
-  box-shadow: var(--depth-soft);
+.header-nav .download-link:hover {
+  background: var(--brand-hover);
   text-decoration: none;
 }
-.header-nav .account-link:active,
+.header-nav .header-account {
+  gap: 6px;
+  color: var(--muted);
+}
+.header-nav .download-link:active,
 .button:active {
   transform: scale(0.97);
+}
+/* On a phone the secondary links fold into a menu beside the button. */
+.header-menu {
+  display: none;
+  position: relative;
+}
+.header-menu summary {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  list-style: none;
+}
+.header-menu summary::-webkit-details-marker {
+  display: none;
+}
+.header-menu-icon,
+.header-menu-icon::before,
+.header-menu-icon::after {
+  display: block;
+  width: 16px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--foreground);
+}
+.header-menu-icon {
+  position: relative;
+}
+.header-menu-icon::before,
+.header-menu-icon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+.header-menu-icon::before {
+  top: -5px;
+}
+.header-menu-icon::after {
+  top: 5px;
+}
+.header-menu nav {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 6;
+  display: grid;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--background);
+}
+.header-menu nav a {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+.header-menu nav a:hover {
+  background: var(--surface);
+  text-decoration: none;
 }
 /* The language switch shows the current language's code; the native select
    laid over it lists the six languages by their own names. */
@@ -1388,9 +1458,26 @@ th {
   .header-nav .header-secondary {
     display: none;
   }
-  .header-nav .account-link {
-    min-height: 39px;
-    padding-inline: 14px;
+  .header-nav {
+    order: 0;
+    width: auto;
+    margin-left: auto;
+  }
+  .header-menu {
+    display: block;
+  }
+  /* One row on a phone: the brand, the button, the menu, the language. */
+  .site-header .header-inner {
+    flex-wrap: nowrap;
+  }
+  .site-header .locale-switch {
+    flex-shrink: 0;
+    margin-left: 0;
+    padding-inline: 10px;
+    white-space: nowrap;
+  }
+  .site-header .brand {
+    min-width: 0;
   }
   .locale-switch {
     margin-left: auto;
@@ -1543,7 +1630,7 @@ th {
     animation: none;
   }
   .story-card,
-  .header-nav .account-link {
+  .header-nav .download-link {
     transition:
       background-color var(--sr-t-med) ease,
       border-color var(--sr-t-med) ease;
@@ -2091,9 +2178,6 @@ th {
   }
 }
 @media (max-width: 760px) {
-  .header-nav .docs-header-link {
-    display: inline-flex;
-  }
   .docs-hero-inner {
     padding-block: 57px 59px;
   }
@@ -2143,9 +2227,12 @@ th {
     gap: 7px;
     font-size: 13px;
   }
-  .header-nav .account-link {
-    padding-inline: 10px;
-    gap: 5px;
+  /* The rose alone: the link keeps its name for a screen reader. */
+  .site-header .brand-name {
+    display: none;
+  }
+  .header-nav .download-link {
+    padding-inline: 14px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

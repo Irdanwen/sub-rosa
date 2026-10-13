@@ -13,15 +13,27 @@ import {
   t,
   type SiteLocale,
 } from "./lib/i18n";
-import { AccountPage } from "./pages/account";
-import { ReturnToApp } from "./pages/return";
 import { Downloads, Information } from "./pages/public";
 import { Documentation, documentationPath } from "./pages/docs";
 import { guideBySlug, read } from "./pages/docs-content";
 import { modelsPath, useModelCatalog } from "./models/loader";
 
-import { SharePage } from "./pages/share";
-import { AssistantCatalog } from "./pages/assistants";
+// The pages a marketing visit never opens load with their route: the account
+// (with its passkeys and QR code), a shared link, the assistant catalog and
+// the way back to the app are not prerendered, and the home page paid for all
+// of them in its first script.
+const AccountPage = lazy(() =>
+  import("./pages/account").then((module) => ({ default: module.AccountPage })),
+);
+const SharePage = lazy(() =>
+  import("./pages/share").then((module) => ({ default: module.SharePage })),
+);
+const AssistantCatalog = lazy(() =>
+  import("./pages/assistants").then((module) => ({ default: module.AssistantCatalog })),
+);
+const ReturnToApp = lazy(() =>
+  import("./pages/return").then((module) => ({ default: module.ReturnToApp })),
+);
 
 /** The web client is its own chunk, with its own words: the marketing pages never load them. */
 const WebAppPage = lazy(() =>
@@ -458,23 +470,42 @@ export function App({ initialPath }: { initialPath?: string }) {
       <header className="site-header">
         <div className="wrap header-inner">
           <a className="brand" href={href("/")} aria-label="Sub Rosa">
-            <img src={siteHref("/rose.png")} alt="" width="36" height="36" /> Sub Rosa
+            <img src={siteHref("/rose.png")} alt="" width="36" height="36" />{" "}
+            <span className="brand-name">Sub Rosa</span>
           </a>
           <nav className="header-nav" aria-label={t("Main navigation", "Navigation principale")}>
-            <a href={href("/downloads")}>{t("Download", "Télécharger")}</a>
-            <a className="header-secondary docs-header-link" href={href("/docs")}>
+            <a className="header-secondary" href={href("/docs")}>
               {t("Guides", "Guides")}
             </a>
-            <a className="header-secondary docs-header-link" href={href("/models")}>
+            <a className="header-secondary" href={href("/models")}>
               {t("Models", "Modèles")}
             </a>
             <a className="header-secondary" href={href("/privacy")}>
-              {t("Our approach", "Notre approche")}
+              {t("Privacy", "Confidentialité")}
             </a>
-            <a className="account-link" href={href("/account")}>
+            <a className="header-secondary header-account" href={href("/account")}>
               {t("Your account", "Votre compte")} <span aria-hidden="true">↗</span>
             </a>
+            {/* The one thing this site asks of a visitor, so the one filled
+                button in the header. */}
+            <a className="download-link" href={href("/downloads")}>
+              {t("Download", "Télécharger")}
+            </a>
           </nav>
+          <details className="header-menu">
+            <summary aria-label={t("Menu", "Menu")}>
+              <span aria-hidden="true" className="header-menu-icon" />
+            </summary>
+            <nav aria-label={t("Site menu", "Menu du site")}>
+              <a href={href("/docs")}>{t("Guides", "Guides")}</a>
+              <a href={href("/models")}>{t("Models", "Modèles")}</a>
+              <a href={href("/privacy")}>{t("Privacy", "Confidentialité")}</a>
+              <a href={href("/security")}>{t("Security", "Sécurité")}</a>
+              <a href={href("/account")}>
+                {t("Your account", "Votre compte")} <span aria-hidden="true">↗</span>
+              </a>
+            </nav>
+          </details>
           <label className="locale-switch">
             <span aria-hidden="true">{LOCALE_CODES[locale]}</span>
             <select
@@ -492,73 +523,81 @@ export function App({ initialPath }: { initialPath?: string }) {
         </div>
       </header>
       <main id="main" tabIndex={-1}>
-        {sharePath ? (
-          <SharePage path={path} />
-        ) : catalogPath ? (
-          <AssistantCatalog path={rawPathname} />
-        ) : returnPath ? (
-          <ReturnToApp />
-        ) : accountPath && (accountsUnavailable || !sitePaths.hostsAccounts) ? (
-          <section className="page wrap prose">
-            <p className="eyebrow">{t("Your account", "Votre compte")}</p>
-            <h1>
-              {accountsUnavailable || !sitePaths.accountOrigin
-                ? t("Accounts are coming soon.", "Les comptes seront bientôt disponibles.")
-                : t("Continue to your account.", "Accédez à votre compte.")}
-            </h1>
-            <p className="lede">
-              {accountsUnavailable || !sitePaths.accountOrigin
-                ? t(
-                    "You can download Sub Rosa and work locally today. Account registration and encrypted sync will open once setup is complete.",
-                    "Vous pouvez télécharger Sub Rosa et travailler localement dès aujourd’hui. Les inscriptions et la synchronisation chiffrée ouvriront une fois leur configuration terminée.",
-                  )
-                : t(
-                    "Sign in or create an account on the dedicated Sub Rosa account website.",
-                    "Connectez-vous ou créez un compte sur le site dédié aux comptes Sub Rosa.",
-                  )}
-            </p>
-            {!accountsUnavailable && sitePaths.accountOrigin && (
-              <a className="button primary" href={href("/account")}>
-                {t("Continue to your account", "Accéder à votre compte")}
-              </a>
-            )}
-            <a className="button" href={href("/downloads")}>
-              {t("Download the current app", "Télécharger l’app actuelle")}
-            </a>
-          </section>
-        ) : appPath ? (
-          <Suspense
-            fallback={
-              <section className="page wrap" aria-busy="true">
-                <p role="status">{t("Opening your chats…", "Ouverture de vos discussions…")}</p>
-              </section>
-            }
-          >
-            <WebAppPage />
-          </Suspense>
-        ) : accountPath ? (
-          <AccountPage path={path} />
-        ) : documentationPath(pathname) || pathname === "/help" ? (
-          <Documentation path={pathname === "/help" ? "/docs" : pathname} locale={locale} />
-        ) : modelsPath(pathname) ? (
-          catalog ? (
-            <catalog.ModelCatalog
-              path={pathname}
-              query={path.split("?")[1] ?? ""}
-              locale={locale}
-            />
-          ) : (
+        <Suspense
+          fallback={
             <section className="page wrap" aria-busy="true">
-              <p className="eyebrow">{t("Model catalog", "Catalogue des modèles")}</p>
+              <p role="status">{t("Loading…", "Chargement…")}</p>
             </section>
-          )
-        ) : pathname === "/downloads" ? (
-          <Downloads />
-        ) : pathname !== "/" ? (
-          <Information path={pathname} />
-        ) : (
-          <HomePage locale={locale} />
-        )}
+          }
+        >
+          {sharePath ? (
+            <SharePage path={path} />
+          ) : catalogPath ? (
+            <AssistantCatalog path={rawPathname} />
+          ) : returnPath ? (
+            <ReturnToApp />
+          ) : accountPath && (accountsUnavailable || !sitePaths.hostsAccounts) ? (
+            <section className="page wrap prose">
+              <p className="eyebrow">{t("Your account", "Votre compte")}</p>
+              <h1>
+                {accountsUnavailable || !sitePaths.accountOrigin
+                  ? t("Accounts are coming soon.", "Les comptes seront bientôt disponibles.")
+                  : t("Continue to your account.", "Accédez à votre compte.")}
+              </h1>
+              <p className="lede">
+                {accountsUnavailable || !sitePaths.accountOrigin
+                  ? t(
+                      "You can download Sub Rosa and work locally today. Account registration and encrypted sync will open once setup is complete.",
+                      "Vous pouvez télécharger Sub Rosa et travailler localement dès aujourd’hui. Les inscriptions et la synchronisation chiffrée ouvriront une fois leur configuration terminée.",
+                    )
+                  : t(
+                      "Sign in or create an account on the dedicated Sub Rosa account website.",
+                      "Connectez-vous ou créez un compte sur le site dédié aux comptes Sub Rosa.",
+                    )}
+              </p>
+              {!accountsUnavailable && sitePaths.accountOrigin && (
+                <a className="button primary" href={href("/account")}>
+                  {t("Continue to your account", "Accéder à votre compte")}
+                </a>
+              )}
+              <a className="button" href={href("/downloads")}>
+                {t("Download the current app", "Télécharger l’app actuelle")}
+              </a>
+            </section>
+          ) : appPath ? (
+            <Suspense
+              fallback={
+                <section className="page wrap" aria-busy="true">
+                  <p role="status">{t("Opening your chats…", "Ouverture de vos discussions…")}</p>
+                </section>
+              }
+            >
+              <WebAppPage />
+            </Suspense>
+          ) : accountPath ? (
+            <AccountPage path={path} />
+          ) : documentationPath(pathname) || pathname === "/help" ? (
+            <Documentation path={pathname === "/help" ? "/docs" : pathname} locale={locale} />
+          ) : modelsPath(pathname) ? (
+            catalog ? (
+              <catalog.ModelCatalog
+                path={pathname}
+                query={path.split("?")[1] ?? ""}
+                locale={locale}
+              />
+            ) : (
+              <section className="page wrap" aria-busy="true">
+                <p className="eyebrow">{t("Model catalog", "Catalogue des modèles")}</p>
+              </section>
+            )
+          ) : pathname === "/downloads" ? (
+            <Downloads />
+          ) : pathname !== "/" ? (
+            <Information path={pathname} />
+          ) : (
+            <HomePage locale={locale} />
+          )}
+        </Suspense>
       </main>
       <footer className="footer">
         <div className="wrap footer-inner">
@@ -574,6 +613,7 @@ export function App({ initialPath }: { initialPath?: string }) {
             </p>
           </div>
           <div className="footer-links">
+            <a href={href("/downloads")}>{t("Download", "Télécharger")}</a>
             <a href={href("/docs")}>{t("Documentation", "Documentation")}</a>
             <a href={href("/models")}>{t("Model catalog", "Catalogue des modèles")}</a>
             <a href={href("/assistants")}>{t("Assistant catalog", "Catalogue d’assistants")}</a>
