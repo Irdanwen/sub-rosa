@@ -1,4 +1,4 @@
-// Image on the desk (ADR-0110): make a picture, upscale one, cut one out.
+// Image on the desk (ADR-0111): make a picture, upscale one, cut one out.
 // Retouching and composing are tools of this tab too, with rooms of their
 // own (RetouchStudio, ComposeStudio); StudioView switches to them. Sync
 // generation returns base64 directly; heavy models go through the async queue

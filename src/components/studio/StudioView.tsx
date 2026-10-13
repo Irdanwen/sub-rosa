@@ -3,7 +3,7 @@
 // and prices all come from the merged catalog — nothing here hardcodes what
 // a backend can do today.
 //
-// Five tabs (ADR-0110). Image, Video and Audio render on the desk: a dark
+// Five tabs (ADR-0111). Image, Video and Audio render on the desk: a dark
 // room with the scene, the dock and an inspector. Retouch, Compose, Upscale
 // and Cutout are tools of Image; the Bible, the montage and the workflows
 // live in Projects.
@@ -66,7 +66,7 @@ type Place = { tab: StudioTab; tool?: ImageTool; section?: ProjectSection };
 
 /**
  * Where a saved tab opens now. The eleven tabs the Studio had before
- * ADR-0110 each still resolve to their new home, so nobody lands on nothing
+ * ADR-0111 each still resolve to their new home, so nobody lands on nothing
  * after the update.
  */
 export function studioPlaceFor(saved: string | null): Place {

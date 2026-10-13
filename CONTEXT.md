@@ -941,7 +941,7 @@ what stays within thumb's reach while the form scrolls.
 _Avoid_: composer (the chat's word), toolbar, form, bottom bar.
 
 **Desk**:
-How a desktop Studio generation surface is laid out (ADR-0110): the scene in
+How a desktop Studio generation surface is laid out (ADR-0111): the scene in
 the middle, the dock centred under it, the **inspector** at the right and the
 **filmstrip** below. Image, Video and Audio are desks; Projects is a page.
 _Avoid_: form, generation layout, two-column view.

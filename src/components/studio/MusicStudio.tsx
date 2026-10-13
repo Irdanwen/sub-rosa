@@ -1,4 +1,4 @@
-// Music on the desk (ADR-0110): async queue + poll, like video, with
+// Music on the desk (ADR-0111): async queue + poll, like video, with
 // per-model input rules (lyrics required / optional / forbidden) and
 // duration-bracket pricing.
 
