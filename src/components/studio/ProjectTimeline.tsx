@@ -5,7 +5,12 @@ import { IconSpeaker } from "central-icons/IconSpeaker";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../lib/i18n";
 import { messageFromError } from "../../lib/errors";
-import { artifactSrc, exportArtifact, saveArtifactFromBase64 } from "../../lib/studio/artifacts";
+import {
+  artifactSrc,
+  clipThumbnailSrc,
+  exportArtifact,
+  saveArtifactFromBase64,
+} from "../../lib/studio/artifacts";
 import { blobToBase64, pickRecorderMime } from "../../lib/studio/assemble";
 import { EditorCompositor, recordEditor } from "../../lib/studio/editor/compositor";
 import {
@@ -537,7 +542,7 @@ export function ProjectTimeline({
                 {artifact.kind === "image" ? (
                   <img src={artifactSrc(artifact)} alt="" loading="lazy" />
                 ) : artifact.kind === "video" ? (
-                  <video src={artifactSrc(artifact)} muted playsInline preload="metadata" />
+                  <video src={clipThumbnailSrc(artifact)} muted playsInline preload="metadata" />
                 ) : (
                   <span className="project-timeline-audio-mark">
                     <IconSpeaker size={18} aria-hidden="true" />

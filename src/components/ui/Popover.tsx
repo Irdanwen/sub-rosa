@@ -117,7 +117,10 @@ export function Popover({
       className={["popover", tone === "stage" ? "stage popover-stage" : "", className]
         .filter(Boolean)
         .join(" ")}
-      style={position ?? { visibility: "hidden" }}
+      // Unplaced for one frame: transparent rather than hidden, because a
+      // hidden element cannot take focus, and focus moves in on this very
+      // frame (WebKit refuses it; jsdom never noticed).
+      style={position ?? { opacity: 0, pointerEvents: "none" }}
     >
       {children}
     </div>,

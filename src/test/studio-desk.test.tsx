@@ -11,7 +11,7 @@ import userEvent from "@testing-library/user-event";
 import { useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageStudio } from "../components/studio/ImageStudio";
-import { StudioStatus } from "../components/studio/desk/StudioStatus";
+import { StudioStatus, studioRunningCount } from "../components/studio/desk/StudioStatus";
 import { studioPlaceFor } from "../components/studio/StudioView";
 import { DockSelectChip } from "../components/studio/stage/DockChip";
 import { ModelPickerChip } from "../components/studio/stage/ModelPicker";
@@ -391,5 +391,22 @@ describe("the audio scene", () => {
     expect(container.querySelector("audio")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Last creation" }));
     expect(container.querySelector("audio")?.getAttribute("src")).toBe("asset:///g/t.mp3");
+  });
+});
+
+describe("the renders in progress, counted once", () => {
+  it("does not count a heavy model's image twice, row and desk", () => {
+    const image = { kind: "image" as const, source: "studio" };
+    const video = { kind: "video" as const, source: undefined };
+    // One picture from a queued model: a row, and the desk waiting for it.
+    expect(studioRunningCount([image], 1)).toBe(1);
+    // A picture from a fast model: no row, only the desk.
+    expect(studioRunningCount([], 1)).toBe(1);
+    // A clip running while the desk waits for a picture.
+    expect(studioRunningCount([video, image], 1)).toBe(2);
+    // Image rows the desk is not waiting for (queued before a reload) count.
+    expect(studioRunningCount([image, image], 0)).toBe(2);
+    // A workflow's row is not the Studio's to show.
+    expect(studioRunningCount([{ kind: "image", source: "workflow" }], 0)).toBe(0);
   });
 });
