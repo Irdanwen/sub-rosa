@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CarpeDiemGate } from "../components/carpe-diem/CarpeDiemGate";
 import { CONFIRMATION_POLL_MS, DeviceKeyIssue } from "../components/carpe-diem/DeviceKeyIssue";
+import { IssuedKeyRow } from "../components/carpe-diem/IssuedKeyRow";
 import type { AccountStatus } from "../lib/account";
 
 /**
@@ -72,6 +73,8 @@ let state: AccountStatus;
 let keyIssuance: boolean;
 let issue: () => Promise<unknown>;
 let poll: () => Promise<unknown>;
+let health: string;
+let revoke: () => Promise<unknown>;
 
 const calls = (name: string) => mocks.invoke.mock.calls.filter(([command]) => command === name);
 const emit = (event: string) => act(() => mocks.listeners.get(event)?.({ payload: null }));
@@ -85,6 +88,8 @@ beforeEach(() => {
   keyIssuance = true;
   issue = async () => ({ status: "issued" });
   poll = async () => ({ status: "confirmation_required", code: "K7Q2MX" });
+  health = "accepted";
+  revoke = async () => undefined;
   mocks.invoke.mockImplementation(async (command: string) => {
     switch (command) {
       case "account_status":
@@ -107,6 +112,10 @@ beforeEach(() => {
         return issue();
       case "carpe_diem_issue_poll":
         return poll();
+      case "carpe_diem_issued_key_health":
+        return health;
+      case "carpe_diem_revoke_issued_key":
+        return revoke();
       default:
         return undefined;
     }
@@ -123,6 +132,22 @@ describe("the phone's new-person path", () => {
     fireEvent.click(await screen.findByRole("button", { name: /I am new here/ }));
     expect(await screen.findByRole("heading", { name: "Create your account" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /I already have an account/ })).toBeInTheDocument();
+  });
+
+  it("asks again when the window comes back, so an opening needs no restart", async () => {
+    keyIssuance = false;
+    render(<CarpeDiemGate reason="no-key" />);
+    await waitFor(() => expect(calls("carpe_diem_issuance_status")).toHaveLength(1));
+    keyIssuance = true;
+    const later = Date.now() + 31_000;
+    const now = vi.spyOn(Date, "now").mockReturnValue(later);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    now.mockRestore();
+    await waitFor(() => expect(calls("carpe_diem_issuance_status")).toHaveLength(2));
+    fireEvent.click(screen.getByRole("button", { name: /I am new here/ }));
+    expect(await screen.findByRole("heading", { name: "Create your account" })).toBeInTheDocument();
   });
 
   it("keeps the paste path as the new-person path when it cannot", async () => {
@@ -314,5 +339,58 @@ describe("the device key card", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Paste a key instead" }));
     expect(onUseKey).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the issued key in settings", () => {
+  it("says when Carpe Diem no longer accepts the key, and asks again on return", async () => {
+    health = "refused";
+    render(<IssuedKeyRow onChanged={() => undefined} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Carpe Diem no longer accepts this key.",
+    );
+    health = "accepted";
+    // A focus right away is ignored: only one past the interval asks again.
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(calls("carpe_diem_issued_key_health")).toHaveLength(1);
+    const later = Date.now() + 31_000;
+    const now = vi.spyOn(Date, "now").mockReturnValue(later);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    now.mockRestore();
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("never leaves a failed renewal with both buttons dead", async () => {
+    issue = async () => {
+      throw { code: "carpe_diem_issue_down", message: "Carpe Diem is unavailable right now." };
+    };
+    render(<IssuedKeyRow onChanged={() => undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Renew" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Carpe Diem is unavailable");
+    expect(screen.getByRole("button", { name: "Revoke" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByRole("button", { name: "Renew" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Revoke" })).toBeEnabled();
+    expect(calls("carpe_diem_issue_cancel")).toHaveLength(1);
+  });
+
+  it("keeps the key and says so when the revocation was not confirmed", async () => {
+    revoke = async () => {
+      throw {
+        code: "carpe_diem_revoke_unconfirmed",
+        message: "Carpe Diem could not be reached, so the key still works.",
+      };
+    };
+    const onChanged = vi.fn();
+    render(<IssuedKeyRow onChanged={onChanged} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("the key still works");
+    expect(onChanged).not.toHaveBeenCalled();
   });
 });
