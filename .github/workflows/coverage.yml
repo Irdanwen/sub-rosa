@@ -76,6 +76,7 @@ jobs:
           name: frontend-coverage
           path: coverage/frontend
           if-no-files-found: error
+          retention-days: 7
 
   rust:
     name: Tauri Rust coverage floor
@@ -123,3 +124,4 @@ jobs:
           name: rust-coverage-summary
           path: src-tauri/target/llvm-cov/summary.json
           if-no-files-found: error
+          retention-days: 7
