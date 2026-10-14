@@ -14,7 +14,12 @@ import { date, number, t, websiteLocale } from "../lib/i18n";
 import { localizedSiteHref } from "../lib/paths";
 import { passkeyWasDismissed, registerPasskey, signInWithPasskey } from "../lib/passkeys";
 import { decryptObject, prepareObject, prepareVault, sendObject, unlockVault } from "../lib/vault";
-import { BrowserDeviceCard, deviceKindLabel, useBrowserDevice } from "./browser-device";
+import {
+  BrowserDeviceCard,
+  deviceKindLabel,
+  useBrowserDevice,
+  useLiveBalance,
+} from "./browser-device";
 import { Library } from "./library";
 import { PairApproval, PairReceiver } from "./pairing";
 import { SecurityHistory } from "./security-history";
@@ -1204,6 +1209,7 @@ function Usage({ account, vaultKey }: { account: Account; vaultKey: Key }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [updated, setUpdated] = useState<string | null>(null);
+  const [live, refreshLive] = useLiveBalance(account.id);
   const refresh = useCallback(async () => {
     setBusy(true);
     setError("");
@@ -1263,7 +1269,15 @@ function Usage({ account, vaultKey }: { account: Account; vaultKey: Key }) {
     <article className="card">
       <div className="row">
         <h2>{t("Your usage", "Votre consommation")}</h2>
-        <button className="button" disabled={busy} onClick={() => void refresh()} type="button">
+        <button
+          className="button"
+          disabled={busy}
+          onClick={() => {
+            refreshLive();
+            void refresh();
+          }}
+          type="button"
+        >
           {t("Refresh", "Actualiser")}
         </button>
       </div>
@@ -1273,7 +1287,21 @@ function Usage({ account, vaultKey }: { account: Account; vaultKey: Key }) {
           "Activité reçue de vos apps. Elle peut être incomplète et ne remplace pas votre relevé Carpe Diem. Ouvrez une app pour actualiser les soldes du fournisseur.",
         )}
       </p>
-      {balance && (
+      {live.status === "ok" && (
+        <div className="notice">
+          <strong>{t("Balance now", "Solde actuel")}</strong>
+          <p>
+            {number(live.available, 2)} {t("available credits", "crédits disponibles")}
+          </p>
+          <p className="quiet">
+            {t(
+              `Read from Carpe Diem with this browser’s key, ${date(live.at)}.`,
+              `Lu chez Carpe Diem avec la clé de ce navigateur, ${date(live.at)}.`,
+            )}
+          </p>
+        </div>
+      )}
+      {balance && live.status !== "ok" && (
         <div className="notice">
           <strong>{t("Last verified balance", "Dernier solde vérifié")}</strong>
           <p>
