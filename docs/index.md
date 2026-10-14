@@ -215,6 +215,7 @@ tasks / contracts / checklists`.
 - [vps-site-delivery-2026-09-15.md](vps-site-delivery-2026-09-15.md) — public English website on the VPS, HTTPS/browser evidence, rollback and outstanding registration dependencies.
 - [vps-account-stack.md](vps-account-stack.md) — isolated account-service deployment preparation, identity, database privileges, secret handling and activation prerequisites.
 - [plan-films-locaux-2026-08-24.md](plan-films-locaux-2026-08-24.md) — design: film production becomes local, Videomaker is removed (finishes ADR-0017)
+- [plan-sources-enregistrement-2026-10-14.md](plan-sources-enregistrement-2026-10-14.md) — conception (non implémentée) : choisir ce qu'une note enregistre sur desktop (micro et ordinateur, micro seul, ordinateur seul), capture Windows par loopback, repli visible ; idée notée 6/10 puis cible 10/10, en cinq lots.
 - [IMPLEMENTATION-films-locaux-2026-08-24.md](IMPLEMENTATION-films-locaux-2026-08-24.md) — the executable spec for the above: five waves, verified seams, keyless smokes, DONE per wave
 
 ## Parity
