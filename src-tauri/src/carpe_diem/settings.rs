@@ -529,7 +529,13 @@ pub async fn carpe_diem_get_credits() -> Result<CarpeDiemCreditsDto, AppError> {
     // any other key is a Venice key pointed straight at api.venice.ai, which
     // bills at full rate — hence the fixed ×1.00 factor on that path.
     if key.expose_str().starts_with("cdm_") {
-        carpe_diem_credits(&client, &base, key.expose_str()).await
+        let credits = carpe_diem_credits(&client, &base, key.expose_str()).await;
+        // Every reading the app makes also feeds the low-balance alert, so it
+        // needs no timer of its own.
+        if let (Ok(dto), Some(app)) = (&credits, super::sidecar::app_handle()) {
+            super::low_balance::observe(&app, dto.available_credits);
+        }
+        credits
     } else {
         venice_credits(&client, &base, key.expose_str()).await
     }

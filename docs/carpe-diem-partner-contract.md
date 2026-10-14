@@ -564,6 +564,17 @@ for the `remainingUsdCents` of a checkout ticket's `403 PURCHASE_LIMIT`.
 newest first, at most 50. An account recreated at the same address does not
 see the purchases from before its deletion.
 
+### Keys and their spend (app → operator)
+
+`GET {operator root}/buyer/api-keys/usage?days=1..90` (cdm_ key or JWT; not a
+browser key, not CORS-enabled for the site origins) →
+`{"keys":[{"id","name","prefix","createdAt","revokedAt","expiresAt","partner","partnerDevice","requests","tokens","cost","lastUsedAt"}],"windowDays":30}`.
+Every key of the wallet, spend over the window in USD (`cost`). `partner` and
+`partnerDevice` name the partner and the partner's device id for a key issued
+to it (`null` for a key made on the dashboard), so the app can show which of
+the account's devices holds a key and what it spent. Sub Rosa matches on
+`partnerDevice` only, never on the key name.
+
 ### Stripe session (pay service)
 
 - `mode: payment`, one line item `price: tier.stripePriceId`,
@@ -836,6 +847,11 @@ Settled while implementing the operator; the other sides follow these.
 28. Request rate limits per client IP, and `403 DEVICE_REVOKED`,
     `403 ASSERTION_REVOKED`, `409 CONSENT_UNAVAILABLE` and the geoblock's `451`
     are listed with the other errors of section 3.
+
+### Keys per device (2026-10-14)
+
+29. `/buyer/api-keys/usage` carries `partner` and `partnerDevice` for each key
+    (section 5, "Keys and their spend").
 
 ## Operator configuration
 
