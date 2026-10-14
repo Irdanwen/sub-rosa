@@ -1,8 +1,10 @@
 # Reste à faire : compte par email, clé Carpe Diem et crédits par carte
 
-*État au 11 octobre 2026. Côté Sub Rosa, tout est livré. Ce qui reste dépend de Stripe, d'une relecture juridique, puis de Carpe Diem, **dans cet ordre**.*
+*État au 14 octobre 2026. Côté Sub Rosa, tout est livré. Ce qui reste dépend de Stripe, d'une relecture juridique, puis de Carpe Diem, **dans cet ordre**.*
 
-> **Relevé du 11 octobre.** Les PR Carpe Diem #397 et #398 sont fusionnées (7 octobre), ainsi que #464, #465 et #469 (10 et 11 octobre). Mais `GET /api/operator/partner/capabilities` répond toujours `{"keyIssuance":false,"fiat":false}` : ni la carte ni l'émission de clés ne sont armées en production, et `PARTNERS_JSON` n'y est pas (le `/readyz` du service de comptes montre encore 15 révocations en attente, toutes bloquées). La suite reste donc celle des sections 1 à 4.
+> **Relevé du 14 octobre.** `PARTNERS_JSON` contient maintenant Sub Rosa chez Carpe Diem : les 15 révocations en attente ont toutes été livrées le 11 octobre au soir (`done_at` posé, `last_error` vide, `/readyz` à `pending 0, stuck 0`). `GET /api/operator/partner/capabilities` répond toujours `{"keyIssuance":false,"fiat":false}` : en production l'émission attend la carte (`partnerIssuanceEnabled()` exige un mailer **et** `fiatArmed()`). Il ne reste donc que les sections 1 à 4, côté Stripe et déploiement, et la section 5 se réduit à l'activation de la carte sur le site.
+>
+> **Audit du 14 octobre (5,5 puis 10/10 sur le code).** Corrigé : clé émise perdue si sa vérification échouait, clé gardée après une déconnexion venue d'un autre appareil, déconnexion hors ligne jamais transmise (rejouée au lancement suivant), confirmation par code remplacée au lieu d'être reprise, erreurs mal nommées (451, appareil révoqué, horloge, limites, panne), texte de suppression du compte faux, Renouveler bloqué, clé révoquée côté Carpe Diem invisible dans l'app ; côté Carpe Diem, clé partenaire qui pouvait atteindre le prepaid d'un wallet rattaché, révocation depuis le tableau de bord refaite en silence ; et les deux copies du contrat réunifiées.
 
 ## Où on en est
 
@@ -110,7 +112,7 @@ Si `keyIssuance` reste à `false`, c'est voulu tant qu'il manque le mailer, la c
 
 **Qui :** moi.
 
-- [ ] **Vider la file des révocations.** Les révocations qui attendaient (appareils révoqués ou déconnectés depuis le 30 septembre) sont relancées avec une reprise progressive qui monte jusqu'à **6 h**. Au 10 octobre, 15 révocations (2 comptes, depuis le 4 octobre) échouaient toutes en `http 404` : l'opérateur répond `NOT_FOUND` tant que `PARTNERS_JSON` ne contient pas l'entrée `subrosa` (`prod/carpe-diem-partner.public.json`, `kid` `sr-eQvPaeyZV9pBLrdZ`). C'est le même réglage qui tient `keyIssuance` à `false`. La file se vide d'elle-même une fois l'entrée déployée ; `curl -s http://127.0.0.1:18088/readyz` sur le VPS montre `partner_revocations.pending`. Pour les envoyer tout de suite :
+- [x] **Vider la file des révocations.** Fait d'elle-même le 11 octobre, dès l'entrée `subrosa` déployée. Si elle se remplit à nouveau : les révocations qui attendaient (appareils révoqués ou déconnectés depuis le 30 septembre) sont relancées avec une reprise progressive qui monte jusqu'à **6 h**. Au 10 octobre, 15 révocations (2 comptes, depuis le 4 octobre) échouaient toutes en `http 404` : l'opérateur répond `NOT_FOUND` tant que `PARTNERS_JSON` ne contient pas l'entrée `subrosa` (`prod/carpe-diem-partner.public.json`, `kid` `sr-eQvPaeyZV9pBLrdZ`). Depuis, ce n'est plus ce réglage qui tient `keyIssuance` à `false`, c'est la carte. La file se vide d'elle-même une fois l'entrée déployée ; `curl -s http://127.0.0.1:18088/readyz` sur le VPS montre `partner_revocations.pending`. Pour les envoyer tout de suite :
 
   ```sh
   ssh -i ~/.ssh/id_ed25519 root@178.104.103.33 \
