@@ -26,14 +26,15 @@ struct AssertionRequest {
     jkt: String,
 }
 async fn assertion(State(s): State<Arc<Service>>, h: HeaderMap, body: Bytes) -> Result<Response> {
-    // Parsed first, as the `Json` extractor did, but from bytes kept whole:
-    // a browser device's proof is bound to exactly these bytes.
-    let b: AssertionRequest = super::browser_devices::json_body(&h, &body)?;
-    // Answered before any session is read, so an app can tell "this deployment
-    // does not issue keys" apart from "sign in again".
+    // Answered before anything is read, the body included, so an app can tell
+    // "this deployment does not issue keys" apart from "sign in again" or
+    // "that request was malformed" (docs/carpe-diem-partner-contract.md).
     if !s.carpe_diem_enabled() {
         return Err(Error::NotFound.into());
     }
+    // Parsed from bytes kept whole: a browser device's proof is bound to
+    // exactly these bytes.
+    let b: AssertionRequest = super::browser_devices::json_body(&h, &body)?;
     let a = session(&s, &h, true).await?;
     // Only a browser device sends a proof; an app's bearer session is enough.
     let proof = super::browser_devices::proof(&h, &body);
