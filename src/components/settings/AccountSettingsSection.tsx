@@ -1313,10 +1313,19 @@ export function AccountSettingsSection({
                     : t(
                         "Your local notes stay on this device. Your account session and access to encrypted sync will be removed.",
                       )}
-            {issuedKey &&
-            (confirmation?.kind === "logout" ||
-              confirmation?.kind === "delete" ||
-              (confirmation?.kind === "revoke" && confirmation.device.id === status?.device_id)) ? (
+            {confirmation?.kind === "delete" ? (
+              // Deleting the account retires every key it ever created, on
+              // every device, whether or not this one holds one.
+              <>
+                <br />
+                {t(
+                  "Every Carpe Diem key created from this account stops working, on every device. Your credits stay with Carpe Diem under this email address, and a new account with it asks you to confirm by email first.",
+                )}
+              </>
+            ) : issuedKey &&
+              (confirmation?.kind === "logout" ||
+                (confirmation?.kind === "revoke" &&
+                  confirmation.device.id === status?.device_id)) ? (
               <>
                 <br />
                 {t(

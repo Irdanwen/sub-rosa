@@ -342,8 +342,14 @@ async fn renew(
         Err(failure) if failure.code == "account_not_connected" => {
             // The proof was refused: this device was signed out or revoked from
             // somewhere else. Access goes, the vault key stays where it is.
+            // The Carpe Diem key issued for this device goes too: the service
+            // has already asked Carpe Diem to retire it, and keeping it here
+            // would leave Settings calling it linked to an account it left.
             let _ = remove_secret(base, &account.id, DEVICE);
             let _ = remove_secret(base, &account.id, "session");
+            if let Some(app) = crate::carpe_diem::sidecar::app_handle() {
+                tauri::async_runtime::spawn(async move { forget_issued_key(&app).await });
+            }
             return Err(error("account_revoked"));
         }
         Err(failure) => {
@@ -886,8 +892,9 @@ pub async fn account_revoke_device(app: AppHandle, device_id: String) -> Result<
             .execute(&pool)
             .await?;
         let _refresh_guard = REFRESH_LOCK.lock().await;
-        clear_all_secrets(|kind| remove_secret(&s.base, &s.account.id, kind))?;
+        let cleared = clear_all_secrets(|kind| remove_secret(&s.base, &s.account.id, kind));
         forget_issued_key(&app).await;
+        cleared?;
     }
     Ok(())
 }
@@ -932,14 +939,12 @@ pub async fn account_logout(app: AppHandle) -> Result<AccountStatus, AppError> {
         login::forget_pending(&base);
         match (device.as_deref(), proof.as_ref(), token.as_ref()) {
             (Some(device), Some(proof), _) => {
-                let _ = request(
-                    &base,
-                    None,
-                    reqwest::Method::POST,
-                    "/api/v1/session/renounce",
-                    Some(json!({"device_id":device,"device_secret":proof.expose_str()})),
-                )
-                .await;
+                // Offline, the farewell is kept and sent at the next launch:
+                // until the service hears it, this device stays listed as
+                // live and its Carpe Diem key is never retired there.
+                if !farewell_delivered(&base, device, proof).await {
+                    keep_farewell(&base, &id, device, proof);
+                }
             }
             (Some(device), None, Some(token)) => {
                 let _ = request(
@@ -953,11 +958,122 @@ pub async fn account_logout(app: AppHandle) -> Result<AccountStatus, AppError> {
             }
             _ => {}
         }
-        cleanup?;
+        // The key goes whatever the credential store said about the rest.
         forget_issued_key(&app).await;
+        cleanup?;
     }
     drop(refresh_guard);
     account_status(app).await
+}
+/// Keychain slot for a sign-out the service has not heard yet.
+const FAREWELL: &str = "farewell";
+async fn farewell_delivered(base: &str, device: &str, proof: &Redacted<String>) -> bool {
+    match request(
+        base,
+        None,
+        reqwest::Method::POST,
+        "/api/v1/session/renounce",
+        Some(json!({"device_id":device,"device_secret":proof.expose_str()})),
+    )
+    .await
+    {
+        Ok(_) => true,
+        Err(failure) => farewell_settled(&failure.code),
+    }
+}
+/// A refused proof means the device is already gone, which is what a
+/// farewell asks for. Only a failure to be heard (network, server, a reply
+/// that does not read) is worth sending again.
+fn farewell_settled(code: &str) -> bool {
+    matches!(code, "account_not_connected" | "vault_not_found")
+}
+/// Several sign-outs can wait at once (signed out offline, signed in again,
+/// signed out offline again), so the slot holds a short list.
+fn keep_farewell(base: &str, id: &str, device: &str, proof: &Redacted<String>) {
+    let mut waiting = read_farewells(base, id);
+    waiting.retain(|(other, _)| other != device);
+    waiting.push((device.to_string(), proof.clone()));
+    if write_farewells(base, id, &waiting).is_err() {
+        tracing::warn!("sign-out farewell could not be kept for a later attempt");
+    }
+}
+const MAX_FAREWELLS: usize = 8;
+fn read_farewells(base: &str, id: &str) -> Vec<(String, Redacted<String>)> {
+    let Ok(Some(stored)) = get_secret(base, id, FAREWELL) else {
+        return Vec::new();
+    };
+    parse_farewells(stored.expose_str())
+}
+fn parse_farewells(raw: &str) -> Vec<(String, Redacted<String>)> {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return Vec::new();
+    };
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let device = entry["device_id"].as_str()?;
+            let secret = entry["device_secret"].as_str()?;
+            uuid::Uuid::parse_str(device).ok()?;
+            (!secret.is_empty()).then(|| (device.to_string(), Redacted::new(secret.to_string())))
+        })
+        .take(MAX_FAREWELLS)
+        .collect()
+}
+fn write_farewells(
+    base: &str,
+    id: &str,
+    waiting: &[(String, Redacted<String>)],
+) -> Result<(), AppError> {
+    if waiting.is_empty() {
+        return remove_secret(base, id, FAREWELL);
+    }
+    let start = waiting.len().saturating_sub(MAX_FAREWELLS);
+    let list: Vec<Value> = waiting[start..]
+        .iter()
+        .map(|(device, secret)| json!({"device_id":device,"device_secret":secret.expose_str()}))
+        .collect();
+    put_secret(
+        base,
+        id,
+        FAREWELL,
+        &Zeroizing::new(Value::Array(list).to_string()),
+    )
+}
+/// Sends a sign-out that could not reach the service at the time. Part of
+/// [`crate::background::sweep`], so it runs at every launch and resume until
+/// it lands. The library keeps its account binding after a sign-out, which is
+/// how the slot is found again.
+pub(crate) async fn resume_farewell(app: &AppHandle) {
+    let Ok(pool) = pool(app).await else {
+        return;
+    };
+    let Ok(row) = query("SELECT server_url,account_id FROM account_sync_control WHERE id=1")
+        .fetch_one(&pool)
+        .await
+    else {
+        return;
+    };
+    let (Some(base), Some(id)) = (
+        row.get::<Option<String>, _>("server_url"),
+        row.get::<Option<String>, _>("account_id"),
+    ) else {
+        return;
+    };
+    let waiting = read_farewells(&base, &id);
+    if waiting.is_empty() {
+        return;
+    }
+    let mut left = Vec::new();
+    for (device, proof) in waiting {
+        if !farewell_delivered(&base, &device, &proof).await {
+            left.push((device, proof));
+        }
+    }
+    if write_farewells(&base, &id, &left).is_err() {
+        tracing::warn!("sign-out farewells could not be updated");
+    }
 }
 /// A device key is the account's, handed to this device (ADR-0069). When the
 /// device leaves the account it goes too, here at once and at Carpe Diem
@@ -997,9 +1113,9 @@ pub async fn account_delete(app: AppHandle) -> Result<(), AppError> {
         .execute(&pool)
         .await?;
     let _refresh_guard = REFRESH_LOCK.lock().await;
-    clear_all_secrets(|kind| remove_secret(&s.base, &s.account.id, kind))?;
+    let cleared = clear_all_secrets(|kind| remove_secret(&s.base, &s.account.id, kind));
     forget_issued_key(&app).await;
-    Ok(())
+    cleared
 }
 #[tauri::command]
 pub async fn account_vault_create(app: AppHandle) -> Result<RecoveryKit, AppError> {
@@ -1236,6 +1352,34 @@ pub async fn account_vault_restore_carpe_diem(app: AppHandle) -> Result<AccountS
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_farewell_is_retried_only_when_it_was_not_heard() {
+        assert!(super::farewell_settled("account_not_connected"));
+        assert!(super::farewell_settled("vault_not_found"));
+        for unheard in [
+            "account_network",
+            "account_request_failed",
+            "account_response_invalid",
+            "account_conflict",
+        ] {
+            assert!(!super::farewell_settled(unheard), "{unheard}");
+        }
+    }
+
+    #[test]
+    fn waiting_farewells_read_back_and_drop_what_does_not_parse() {
+        let device = "0192f3c4-5d6e-7f80-9123-456789abcdef";
+        let raw = format!(
+            r#"[{{"device_id":"{device}","device_secret":"s1"}},{{"device_id":"nope","device_secret":"s2"}},{{"device_id":"{device}"}}]"#
+        );
+        let parsed = super::parse_farewells(&raw);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].0, device);
+        assert_eq!(parsed[0].1.expose_str(), "s1");
+        assert!(super::parse_farewells("not json").is_empty());
+        assert!(super::parse_farewells(r#"{"device_id":"x"}"#).is_empty());
+    }
+
     use super::*;
     #[tokio::test]
     async fn explicit_login_defaults_once_and_preserves_custom_server() {
