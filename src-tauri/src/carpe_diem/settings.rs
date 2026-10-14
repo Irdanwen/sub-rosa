@@ -1375,6 +1375,69 @@ pub(crate) async fn check_credits(base_url: &str, key: &Redacted<String>) -> Cre
 
 #[cfg(test)]
 mod tests {
+    /// One canned HTTP answer per connection, on a loopback port.
+    async fn answering(status: u16, body: &'static str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/v1", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut head = [0_u8; 4096];
+                let _ = socket.read(&mut head).await;
+                let reply = format!(
+                    "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes()).await;
+            }
+        });
+        base
+    }
+
+    /// Only a refusal of the key itself may drop a key Carpe Diem just
+    /// minted; everything else is "no verdict" (a local operator answers
+    /// `/credits` with 503, a phone loses the network mid-answer).
+    #[tokio::test]
+    async fn credits_say_refused_only_for_a_refusal_of_the_key() {
+        use super::{check_credits, CreditsCheck};
+        let key = crate::redacted::Redacted::new("cdm_test".to_string());
+        let verdict = |base: String| {
+            let key = key.clone();
+            async move { check_credits(&base, &key).await }
+        };
+        assert!(matches!(
+            verdict(answering(200, r#"{"availableCredits":12.5}"#).await).await,
+            CreditsCheck::Accepted
+        ));
+        for refused in [401, 403] {
+            assert!(matches!(
+                verdict(answering(refused, r#"{"code":"AUTH_REQUIRED"}"#).await).await,
+                CreditsCheck::Refused
+            ));
+        }
+        for (status, body) in [
+            (503, "{}"),
+            (500, "{}"),
+            (429, "{}"),
+            (200, "not json"),
+            (200, "{}"),
+        ] {
+            assert!(
+                matches!(
+                    verdict(answering(status, body).await).await,
+                    CreditsCheck::Unsure(_)
+                ),
+                "{status} {body}"
+            );
+        }
+        // Nobody listening.
+        let closed = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            format!("http://{}/v1", listener.local_addr().unwrap())
+        };
+        assert!(matches!(verdict(closed).await, CreditsCheck::Unsure(_)));
+    }
+
     #[test]
     fn only_an_issued_credential_carries_provenance() {
         let issued = r#"{"base_url":"https://x.test/v1","api_key":"cdm_a","origin":"issued","key_id":"k-1"}"#;
