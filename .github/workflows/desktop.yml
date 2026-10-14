@@ -378,6 +378,7 @@ jobs:
         with:
           name: june-windows-debug-nsis
           path: src-tauri/target/debug/bundle/nsis/*-setup.exe
+          retention-days: 7
 
   # The iOS project was the one target no PR ever compiled: ios-release.yml
   # runs by hand, and CLAUDE.md asked for a manual `cargo check` that nothing

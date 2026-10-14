@@ -116,6 +116,7 @@ jobs:
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+          retention-days: 7
 
       - name: Summary
         run: |
