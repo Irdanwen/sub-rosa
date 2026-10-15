@@ -2742,3 +2742,68 @@ jamais rendus).
   remplace la forme d'origine : suppression puis insertion, et l'application
   distante remplace par `artifact_id`) ; une liste d'appareils vide ne doit pas
   ouvrir la porte ; `compaction::step` vérifie la porte lui-même.
+
+## Ce qu'une note enregistre : micro, ordinateur, ou les deux (2026-10-14, ADR-0112)
+
+Demandé : « pour les notes, enregistrer le micro ou le son de l'ordinateur
+(Zoom, Teams) ». Conception notée dans
+`docs/plan-sources-enregistrement-2026-10-14.md` (6/10 puis 10/10).
+
+- **Trois modes nommés par la situation** : « Micro et ordinateur » (appel),
+  « Micro seul » (réunion en personne), « Ordinateur seul » (`SystemOnly`,
+  webinaire ou vidéo : le micro n'est jamais ouvert). `capture.rs` porte une
+  voie micro optionnelle (`MicrophoneLane`) ; la ligne de session décrit la
+  voie principale (`RecordingSourceMode::primary_source`).
+- **Le choix est mémorisé** (`os-june:recording-source-mode`,
+  `src/lib/recording-source-mode.ts`, hook `src/app/useRecordingSources.ts`).
+  Défaut : « Micro et ordinateur ». La disponibilité ne réécrit jamais le
+  choix : chaque démarrage le résout (`resolveRecordingStart`). Repli visible
+  vers le micro seul, jamais vers le micro en « Ordinateur seul ». Une réunion
+  détectée (HUD macOS) démarre toujours en « Micro et ordinateur ».
+- **Windows** : WASAPI loopback dans le processus (`audio/system_windows.rs`),
+  rembourrage au temps mural (`audio/system_timeline.rs`, testé partout),
+  derrière la façade `audio/system.rs` partagée avec le helper macOS.
+  `diagnostics::capabilities` passe `system_audio` à vrai sur Windows.
+- **Silence** : avertissement `system_audio_silent` pendant la prise si
+  l'ordinateur n'a jamais été entendu en 20 s (le dock le traduit et permet
+  de le fermer) ; une prise « Ordinateur seul » muette échoue avant toute
+  transcription payante (`domain/silent_sources.rs`).
+- **Relance** : `retry_processing` relit le mode stocké (`retry_source_mode`)
+  au lieu de forcer `MicrophonePlusSystem` et d'envoyer une voie ordinateur
+  seule au chemin micro.
+- **Interface** : `SourceModeChoice.tsx` (panneau d'enregistrement et
+  Réglages › Audio), deux pastilles de voie dans `RecorderBar`, point
+  d'avertissement sur `GlobalRecorderPill`, libellé « Ordinateur » au lieu de
+  « Système » dans la transcription.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/audio/capture.rs` | Voie micro optionnelle (`MicrophoneLane`), statut par voie, avertissement ordinateur muet | Réappliquer |
+| `src-tauri/src/audio/system_macos.rs` | `status()` rend `SystemLaneStatus`; non compilé sur Windows | Réappliquer |
+| `src-tauri/src/audio/mod.rs` | `readiness`, `system`, `system_timeline`, `system_windows` | Réappliquer |
+| `src-tauri/src/commands.rs` | Disponibilité déplacée dans `audio/readiness.rs`, source principale à la fin, routage de la relance | Réappliquer |
+| `src-tauri/src/domain/processing.rs` | Partition des voies muettes déplacée dans `silent_sources.rs`, échec avant transcription | Réappliquer |
+| `src-tauri/src/domain/types.rs` | `SystemOnly`, `includes_microphone/system`, `primary_source` | Réappliquer |
+| `src-tauri/src/diagnostics.rs` | `system_audio: true` sur Windows | Réappliquer |
+| `src-tauri/src/voice/mod.rs` | `pub(crate) mod resample` | Réappliquer |
+| `src/app/App.tsx` | État des sources dans `useRecordingSources`, démarrage résolu, réunion détectée forcée | Réappliquer |
+| `src/components/note-editor/NoteEditor.tsx`, `NoteFailureBanner.tsx` | Choix à trois, notice de repli, avertissements traduits, « Ordinateur » | Réappliquer |
+| `src/components/settings/AppSettings.tsx`, `AppSettingsTabs.tsx` | Ligne « Ce que les notes enregistrent » | Réappliquer |
+| `src/components/recorder/RecorderBar.tsx`, `GlobalRecorderPill.tsx` | Pastilles de voie, libellés traduits, point d'avertissement | Réappliquer |
+| `src/lib/source-readiness.ts`, `recording-status.ts`, `tauri.ts` | `systemOnly`, `checkSoundOutput`, statut de départ par voie | Réappliquer |
+
+### Pièges
+
+- **Le micro ne doit jamais s'ouvrir en « Ordinateur seul »** : ni repli, ni
+  ouverture « pour rien ». C'est la seule promesse de ce mode.
+- **Le défaut a changé** : FR-002 de la spec 002 est remplacé (addendum).
+- **À valider sur machine réelle** : rien du loopback Windows ne se teste en
+  CI (seul `cargo check` y tourne). Silences longs, changement de sortie
+  (haut-parleurs vers casque USB ou Bluetooth), sorties 44,1/96 kHz et 5.1,
+  veille. Sur macOS : pas d'indicateur micro orange en « Ordinateur seul ».
+- **Contrôle local sous Linux** : le crate ne compile pas sans `keyring` pour
+  Linux ; pour vérifier dans un bac à sable, ajouter temporairement la
+  dépendance (ne pas la committer). `cargo check --target
+  x86_64-pc-windows-gnu` (mingw-w64) vérifie le code Windows.

@@ -239,6 +239,27 @@ describe("meeting start transcription event", () => {
     expect(screen.getByLabelText("Note title")).toHaveValue("New meeting");
   });
 
+  it("records the call even when the remembered choice is the microphone alone", async () => {
+    localStorage.setItem("os-june:recording-source-mode", "microphoneOnly");
+    const fresh = note({
+      id: "note-2",
+      title: "New meeting",
+      preview: "",
+      generatedContent: undefined,
+    });
+    mocks.createNote.mockResolvedValue(fresh);
+    mocks.startRecording.mockResolvedValue(recording({ noteId: "note-2" }));
+
+    render(<App />);
+
+    await waitFor(() => expect(mocks.listeners.has(MEETING_START_TRANSCRIPTION_EVENT)).toBe(true));
+    await waitFor(() => expect(mocks.getNote).toHaveBeenCalledWith("note-1"));
+
+    // A detected call is what the person wants in the note.
+    await fireMeetingStartUntilRecording();
+    expect(mocks.checkRecordingSourceReadiness).toHaveBeenCalledWith("microphonePlusSystem");
+  });
+
   it("reopens the recording HUD to the note editor for the active recording", async () => {
     const fresh = note({
       id: "note-2",

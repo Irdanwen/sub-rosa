@@ -522,8 +522,34 @@ describe("AppSettings", () => {
       expect(screen.getByText("Input device used for dictation.")).toBeInTheDocument(),
     );
 
-    await user.click(screen.getByRole("switch", { name: "Capture system audio for notes" }));
+    expect(screen.getByText("What notes record")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Microphone only/ })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: /Microphone and computer/ }));
     expect(onSourceModeChange).toHaveBeenCalledWith("microphonePlusSystem");
+    await user.click(screen.getByRole("radio", { name: /Computer only/ }));
+    expect(onSourceModeChange).toHaveBeenCalledWith("systemOnly");
+  });
+
+  it("keeps what notes record fixed while a recording runs", async () => {
+    const user = userEvent.setup();
+    render(
+      <AppSettings
+        sourceMode="microphonePlusSystem"
+        checkingSourceReadiness={false}
+        recordingActive={true}
+        onSourceModeChange={vi.fn()}
+        onEnableSystemAudio={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Audio" }));
+
+    expect(
+      screen.getByText("You can change this once the current recording ends."),
+    ).toBeInTheDocument();
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio).toBeDisabled();
+    }
   });
 
   it("records a local microphone test sample and renders playback", async () => {
@@ -872,7 +898,7 @@ describe("AppSettings", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("locks the system audio switch without offering Enable when a restart is what it needs", async () => {
+  it("explains without offering Enable when a restart is what the computer's sound needs", async () => {
     const user = userEvent.setup();
     const restoreNavigator = stubNavigatorPlatform(
       "MacIntel",
@@ -881,7 +907,7 @@ describe("AppSettings", () => {
     try {
       render(
         <AppSettings
-          sourceMode="microphoneOnly"
+          sourceMode="systemOnly"
           sourceReadiness={{
             sourceMode: "microphonePlusSystem",
             ready: false,
@@ -919,15 +945,17 @@ describe("AppSettings", () => {
       await user.click(screen.getByRole("tab", { name: "Audio" }));
 
       const sourceRow = screen
-        .getByText("Capture audio from other apps along with your microphone.")
+        .getByText("What notes record")
         .closest(".settings-row") as HTMLElement;
 
       // The grant already exists, so "Enable" would send the user to System
       // Settings to allow something they have already allowed.
       expect(within(sourceRow).queryByRole("button", { name: "Enable" })).not.toBeInTheDocument();
       expect(
-        within(sourceRow).getByRole("switch", { name: "Capture system audio for notes" }),
-      ).toBeDisabled();
+        within(sourceRow).getByText(
+          "The computer's sound is not available right now. Restart Sub Rosa, then try again.",
+        ),
+      ).toBeInTheDocument();
     } finally {
       restoreNavigator();
     }
@@ -999,11 +1027,9 @@ describe("AppSettings", () => {
       expect(onEnableSystemAudio).not.toHaveBeenCalled();
 
       await userEvent.click(screen.getByRole("tab", { name: "Audio" }));
-      expect(
-        screen.queryByRole("switch", {
-          name: "Capture system audio for notes",
-        }),
-      ).not.toBeInTheDocument();
+      // Until the capability map answers, nothing promises the computer's
+      // sound off a Mac.
+      expect(screen.queryByRole("radio", { name: /Computer only/ })).not.toBeInTheDocument();
       expect(
         screen.queryByRole("button", {
           name: "Start test",

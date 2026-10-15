@@ -2,8 +2,16 @@ import { t } from "../../lib/i18n";
 import { IconPause } from "central-icons-filled/IconPause";
 import { IconPlay } from "central-icons-filled/IconPlay";
 import { IconStop } from "central-icons-filled/IconStop";
-import type { RecordingStatusDto } from "../../lib/tauri";
-import { combineSourceAudioLevels, Waveform } from "./Waveform";
+import { IconMicrophone } from "central-icons/IconMicrophone";
+import { IconVolumeFull } from "central-icons/IconVolumeFull";
+import { scaleLiveInputPeak } from "../../lib/audio-meter";
+import type { RecordingStatusDto, SourceStatusDto } from "../../lib/tauri";
+import {
+  combineSourceAudioLevels,
+  scaleAudioLevel,
+  SOURCE_VISUAL_GAIN,
+  Waveform,
+} from "./Waveform";
 
 type RecorderBarProps = {
   status: RecordingStatusDto;
@@ -21,15 +29,18 @@ export function RecorderBar({ status, onPause, onResume, onDone }: RecorderBarPr
       ? combineSourceAudioLevels(status.sources)
       : status.level;
   const pauseLabel = paused
-    ? "Resume"
+    ? t("Resume")
     : status.state === "recording"
-      ? "Pause"
+      ? t("Pause")
       : status.state === "starting"
-        ? "Starting"
-        : "Finalizing";
+        ? t("Starting")
+        : t("Finalizing");
+  // With two lanes, each says on its own that it is being heard: the mixed
+  // waveform cannot show that the call is missing while the person talks.
+  const lanes = status.sources && status.sources.length > 1 ? status.sources : [];
 
   return (
-    <div className="recorder-bar" data-state={status.state}>
+    <div className="recorder-bar" data-state={status.state} data-lanes={lanes.length || undefined}>
       <button
         type="button"
         className="recorder-icon-button"
@@ -43,6 +54,13 @@ export function RecorderBar({ status, onPause, onResume, onDone }: RecorderBarPr
       <div className="recorder-meter">
         <span className="elapsed">{formatElapsed(status.elapsedMs)}</span>
         <Waveform level={meterLevel} active={status.state === "recording"} />
+        {lanes.length > 0 ? (
+          <span className="recorder-lanes">
+            {lanes.map((lane) => (
+              <RecorderLane key={lane.source} lane={lane} />
+            ))}
+          </span>
+        ) : null}
       </div>
       <button
         type="button"
@@ -55,6 +73,31 @@ export function RecorderBar({ status, onPause, onResume, onDone }: RecorderBarPr
         <IconStop size={14} />
       </button>
     </div>
+  );
+}
+
+function RecorderLane({ lane }: { lane: SourceStatusDto }) {
+  const level = scaleAudioLevel(lane.level, SOURCE_VISUAL_GAIN[lane.source]);
+  const recent = level.recentPeaks.length > 0 ? Math.max(...level.recentPeaks) : level.peak;
+  const heard = scaleLiveInputPeak(recent) > 0.05;
+  const name = lane.source === "system" ? t("Computer") : t("Microphone");
+  const label = lane.silenceWarning
+    ? t("{source}: no sound yet", { source: name })
+    : heard
+      ? t("{source}: sound detected", { source: name })
+      : name;
+  return (
+    <span
+      className="recorder-lane"
+      data-source={lane.source}
+      data-heard={heard || undefined}
+      data-silent={lane.silenceWarning || undefined}
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      {lane.source === "system" ? <IconVolumeFull size={12} /> : <IconMicrophone size={12} />}
+    </span>
   );
 }
 

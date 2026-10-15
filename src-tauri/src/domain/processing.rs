@@ -858,6 +858,7 @@ pub async fn process_saved_source_audio(
     let SilentSystemDropOutcome {
         kept: sources,
         dropped,
+        only_source_silent,
     } = partition_silent_system_sources(sources);
     for drop in &dropped {
         repos
@@ -875,6 +876,9 @@ pub async fn process_saved_source_audio(
                 ),
             )
             .await?;
+    }
+    if let Some(silent) = only_source_silent {
+        return Err(silent_sources::fail_silent_computer_take(repos, session_id, &silent).await?);
     }
     let detection_sources = sources
         .iter()
@@ -2183,68 +2187,6 @@ fn blocking_transcription_failure_summary(
     source_failure_summary(&blocking_failures)
 }
 
-struct DroppedSource {
-    artifact_id: String,
-    source: String,
-    max_rms: f32,
-}
-
-struct SilentSystemDropOutcome {
-    kept: Vec<(String, String, PathBuf)>,
-    dropped: Vec<DroppedSource>,
-}
-
-/// Remove system-audio sources whose track is effectively silent, but only when
-/// another source remains to carry the recording. Keeping the last source — even
-/// a silent one — preserves the "no speech" failure for system-only captures.
-///
-/// A system track is only dropped when it falls below what the system lane's
-/// turn detection could still find (`SYSTEM_DETECTION_MIN_RMS`). A higher floor
-/// would strand quiet-but-real tracks before the full-source fallback ever runs,
-/// transcribing mic-only.
-fn partition_silent_system_sources(
-    sources: Vec<(String, String, PathBuf)>,
-) -> SilentSystemDropOutcome {
-    let has_other_source = sources
-        .iter()
-        .any(|(_, source, _)| source.as_str() != "system");
-    if !has_other_source {
-        return SilentSystemDropOutcome {
-            kept: sources,
-            dropped: Vec::new(),
-        };
-    }
-    let mut kept = Vec::new();
-    let mut dropped = Vec::new();
-    for (artifact_id, source, path) in sources {
-        // Decode once: `source_max_rms` is `None` when the file can't be read,
-        // which must mean "keep" (matching the old read-failure semantics).
-        let max_rms = if source.as_str() == "system" {
-            crate::audio::turns::source_max_rms(&path)
-        } else {
-            None
-        };
-        let silent = max_rms.is_some_and(|rms| rms < crate::audio::turns::SYSTEM_DETECTION_MIN_RMS);
-        if silent {
-            let max_rms = max_rms.unwrap_or(0.0);
-            tracing::info!(
-                %source,
-                path = %path.display(),
-                max_rms,
-                "skipping silent system source — no transcribable audio"
-            );
-            dropped.push(DroppedSource {
-                artifact_id,
-                source,
-                max_rms,
-            });
-        } else {
-            kept.push((artifact_id, source, path));
-        }
-    }
-    SilentSystemDropOutcome { kept, dropped }
-}
-
 fn add_full_source_turns_for_missing_sources(
     sources: &[(String, String, PathBuf)],
     mut turns: Vec<AudioTurn>,
@@ -2431,6 +2373,10 @@ fn tail_chars(value: &str, max_chars: usize) -> String {
 
 #[path = "transcription_checkpoint.rs"]
 mod chunk_checkpoint;
+
+#[path = "silent_sources.rs"]
+mod silent_sources;
+use silent_sources::{partition_silent_system_sources, SilentSystemDropOutcome};
 
 #[cfg(test)]
 #[path = "processing_tests.rs"]

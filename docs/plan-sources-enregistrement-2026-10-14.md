@@ -1,9 +1,11 @@
 # Plan : choisir ce qu'une note enregistre (micro, ordinateur, ou les deux)
 
-> Conception. Date : 2026-10-14. **État : proposé, non implémenté.**
-> Premier jet noté 6/10, puis cible 10/10. Les décisions qui passeront le seuil
-> d'un ADR (capture Windows) seront écrites en ADR au moment du lot concerné ;
-> ce document reste le registre de la réflexion, pas la source de vérité.
+> Conception. Date : 2026-10-14. **État : implémenté le 2026-10-14**, les
+> cinq lots dans la même branche ; les décisions sont dans
+> [ADR-0112](adr/0112-windows-captures-the-computers-sound-in-process.md).
+> Premier jet noté 6/10, puis cible 10/10. Ce document reste le registre de la
+> réflexion, pas la source de vérité. Reste à valider sur matériel réel
+> (§ Vérification).
 
 ## Demande
 

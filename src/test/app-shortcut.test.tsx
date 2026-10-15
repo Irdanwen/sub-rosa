@@ -970,7 +970,11 @@ describe("App shortcuts", () => {
     mocks.checkRecordingSourceReadiness.mockImplementation(async (mode: string) => {
       if (mode === "microphoneOnly") return microphoneOnlyReadiness();
       systemReadinessCalls += 1;
-      if (systemReadinessCalls === 1) return recordingReadiness(false);
+      // Mount, then the permission poll (left pending), then the detected
+      // meeting's own check, which asks for the computer and finds it denied.
+      if (systemReadinessCalls === 1 || systemReadinessCalls === 3) {
+        return recordingReadiness(false);
+      }
       return pendingProbe;
     });
     mocks.startRecording.mockImplementation(async (noteId: string, sourceMode: string) =>
@@ -1025,11 +1029,13 @@ describe("App shortcuts", () => {
         }
         expect(mocks.startRecording).toHaveBeenCalled();
       });
+      // The computer was asked for and is not allowed: the take falls back
+      // to the microphone, and says so.
       expect(mocks.startRecording).toHaveBeenCalledWith(expect.any(String), "microphoneOnly");
 
       await new Promise((resolve) => window.setTimeout(resolve, 1_200));
 
-      expect(systemReadinessCalls).toBe(2);
+      expect(systemReadinessCalls).toBe(3);
 
       await act(async () => {
         resolveProbe(recordingReadiness(false));

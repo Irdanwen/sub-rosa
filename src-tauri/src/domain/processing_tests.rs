@@ -1365,12 +1365,30 @@ fn keeps_silent_system_source_when_it_is_the_only_one() {
     let system_path = dir.join("system.wav");
     write_test_wav(&system_path, &[0, 0, 0, 0]);
 
-    let kept =
-        drop_silent_system_sources(vec![("sys".to_string(), "system".to_string(), system_path)]);
+    let outcome = partition_silent_system_sources(vec![(
+        "sys".to_string(),
+        "system".to_string(),
+        system_path.clone(),
+    )]);
 
-    // System-only capture of silence must survive so its "no speech"
-    // failure still reaches the user.
-    assert_eq!(kept.len(), 1);
+    // The lone lane stays in place, and is reported so the pipeline fails
+    // before paying to transcribe silence.
+    assert_eq!(outcome.kept.len(), 1);
+    assert!(outcome.dropped.is_empty());
+    let silent = outcome
+        .only_source_silent
+        .expect("a lone silent computer lane is reported");
+    assert_eq!(silent.artifact_id, "sys");
+
+    // A computer lane that made a sound is not.
+    let loud = vec![(0.2 * i16::MAX as f32) as i16; 4_800];
+    write_test_wav(&system_path, &loud);
+    let outcome = partition_silent_system_sources(vec![(
+        "sys".to_string(),
+        "system".to_string(),
+        system_path,
+    )]);
+    assert!(outcome.only_source_silent.is_none());
 
     let _ = std::fs::remove_dir_all(dir);
 }

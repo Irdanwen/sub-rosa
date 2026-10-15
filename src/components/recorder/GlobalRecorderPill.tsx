@@ -33,6 +33,9 @@ export function GlobalRecorderPill({ status, title, onOpen }: GlobalRecorderPill
       type="button"
       className="global-recorder-pill"
       data-state={status.state}
+      // A take with a warning (a stalled microphone, a computer never heard)
+      // marks the pill, so the note is worth a look from wherever you are.
+      data-warning={status.warnings?.length ? true : undefined}
       onClick={onOpen}
       aria-label={t("Open recording: {name}", { name: title })}
       title={t("Open recording")}

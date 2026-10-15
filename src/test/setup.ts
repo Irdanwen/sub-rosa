@@ -118,6 +118,8 @@ function setNavigatorPlatform(platform: string, userAgent: string) {
 beforeEach(() => {
   setNavigatorPlatform("MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)");
   markOnboardingComplete();
+  // What notes record is remembered; each test starts from the default.
+  localStorage.removeItem("os-june:recording-source-mode");
 });
 
 afterEach(() => cleanup());

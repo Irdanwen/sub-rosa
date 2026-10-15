@@ -1,3 +1,4 @@
+use super::system::SystemLaneStatus;
 use crate::domain::types::{AppError, AudioLevelDto, RecordingSource, SourceReadinessDto};
 use std::{
     path::{Path, PathBuf},
@@ -134,7 +135,7 @@ impl SystemAudioCapture {
         send_signal(self.pid, "-USR2");
     }
 
-    pub fn status(&self) -> (AudioLevelDto, i64, Option<String>) {
+    pub fn status(&self) -> SystemLaneStatus {
         if let Ok(status) = read_status(&self.status_path) {
             if let Ok(mut stats) = self.stats.lock() {
                 apply_helper_status(&mut stats, &status);
@@ -151,16 +152,27 @@ impl SystemAudioCapture {
                 }
             }
         }
-        let (level, error) = self
+        let (level, max_level, last_error) = self
             .stats
             .lock()
-            .map(|stats| (stats.level.clone(), stats.last_error.clone()))
+            .map(|stats| {
+                (
+                    stats.level.clone(),
+                    stats.max_level,
+                    stats.last_error.clone(),
+                )
+            })
             .unwrap_or_default();
-        let bytes = std::fs::metadata(&self.partial_path)
+        let bytes_written = std::fs::metadata(&self.partial_path)
             .or_else(|_| std::fs::metadata(&self.final_path))
             .map(|metadata| metadata.len() as i64)
             .unwrap_or_default();
-        (level, bytes, error)
+        SystemLaneStatus {
+            level,
+            max_level,
+            bytes_written,
+            last_error,
+        }
     }
 
     pub fn stop(self) -> Result<PathBuf, AppError> {
@@ -264,7 +276,9 @@ pub fn system_audio_readiness() -> SourceReadinessDto {
             device_available: false,
             capture_available: false,
             recovery_action: None,
-            message: Some("System audio capture is only supported on macOS.".to_string()),
+            message: Some(
+                "System audio capture is only supported on macOS and Windows.".to_string(),
+            ),
         }
     }
 }

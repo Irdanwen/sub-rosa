@@ -133,7 +133,9 @@ import { messageFromError } from "../lib/errors";
 import { parseDictationHelperEvent } from "../lib/dictation-events";
 import { listHermesSessions, titleFromPrompt } from "../lib/hermes-adapter";
 import { upsertLiveTranscriptEvent } from "../lib/live-transcript-preview";
-import { recordingToStatus } from "../lib/recording-status";
+import { recordingToStatus, startingRecordingStatus } from "../lib/recording-status";
+import { resolveRecordingStart, shouldRetryWithMicrophone } from "../lib/recording-source-mode";
+import { useRecordingSources } from "./useRecordingSources";
 import {
   RECORDING_INACTIVITY_RESPONSE_MS,
   RECORDING_INACTIVITY_SNOOZE_MS,
@@ -161,11 +163,7 @@ import {
   type AgentHudVisibilityChangedDetail,
 } from "../lib/agent-hud-settings";
 import type { NoteDto, RecordingStatusDto, HermesSessionInfo } from "../lib/tauri";
-import type {
-  NoteListItemDto,
-  RecordingSourceMode,
-  RecordingSourceReadinessDto,
-} from "../lib/tauri";
+import type { NoteListItemDto, RecordingSourceMode } from "../lib/tauri";
 import { carpeDiemSidecarStatus, type CarpeDiemSidecarStatusDto } from "../lib/tauri";
 import { withTimeout } from "../lib/async-timeout";
 import { applyAutostartDefaultOnce, retryPendingAutostartDefault } from "../lib/autostart";
@@ -202,8 +200,6 @@ const AGENT_MENU_BAR_SESSION_FETCH_LIMIT = 100;
 const AGENT_MENU_BAR_SESSION_LIMIT = 6;
 const AGENT_MENU_BAR_SESSION_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 8000];
 const ACCESSIBILITY_PERMISSION_REFRESH_INTERVAL_MS = 1000;
-const SYSTEM_AUDIO_PERMISSION_REFRESH_INTERVAL_MS = 1000;
-const SYSTEM_AUDIO_PERMISSION_REFRESH_TIMEOUT_MS = 120_000;
 // Floor for the note card so the sidebar can't be dragged wide enough to
 // crush it into a sliver — it always keeps a usable width plus its gutters.
 const MAIN_PANEL_MIN_WIDTH = 420;
@@ -343,15 +339,8 @@ export function App() {
     { noteId: string; label: string } | undefined
   >();
   const [moveDialogNoteIds, setMoveDialogNoteIds] = useState<string[] | null>(null);
-  // User's intent for system audio. Defaults true ("record everything").
-  // The actual sourceMode is derived below so that granting/revoking
-  // permission in System Settings flips the toggle without losing intent.
-  const [userWantsSystemAudio, setUserWantsSystemAudio] = useState(true);
-  const [sourceReadiness, setSourceReadiness] = useState<RecordingSourceReadinessDto>();
-  const [checkingSourceReadiness, setCheckingSourceReadiness] = useState(false);
   const [accessibilityStatus, setAccessibilityStatus] = useState<string>();
   const [accessibilityBannerDismissed, setAccessibilityBannerDismissed] = useState(false);
-  const [systemAudioRefreshRequest, setSystemAudioRefreshRequest] = useState(0);
   const [microphoneStatus, setMicrophoneStatus] = useState<string>();
   const [readyUpdate, setReadyUpdate] = useState<UpdatePromptPayload<JuneUpdate> | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
@@ -362,21 +351,12 @@ export function App() {
   const [preparingUpdate, setPreparingUpdate] = useState(false);
   const [relaunchingUpdate, setRelaunchingUpdate] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<UpdateInstallProgress | null>(null);
-  // `ready` only says this Mac is capable of system capture; the grant is the
-  // permission state, which only a microphone-plus-system probe establishes.
-  const systemSourceReadiness = sourceReadiness?.sources.find(
-    (source) => source.source === "system",
-  );
-  const systemGranted =
-    systemSourceReadiness?.ready === true && systemSourceReadiness.permissionState === "granted";
   const recordingState = state.recordingStatus?.state;
   const captureActive =
     recordingState === "recording" ||
     recordingState === "paused" ||
     recordingState === "finalizing" ||
     recordingState === "validating";
-  const sourceMode: RecordingSourceMode =
-    userWantsSystemAudio && systemGranted ? "microphonePlusSystem" : "microphoneOnly";
   // The note the active recording session belongs to. recordingStatus carries
   // no noteId, so without this the finish flow could only guess from the
   // currently selected note — wrong whenever the user browsed away while
@@ -523,6 +503,17 @@ export function App() {
   // the permission prompts while it's on screen.
   const appBlocked =
     carpeDiemLoading || !!carpeDiemError || carpeDiemRequired || onboardingRequired;
+  const {
+    sourceMode,
+    sourceReadiness,
+    setSourceReadiness,
+    checkingSourceReadiness,
+    setCheckingSourceReadiness,
+    computerFallbackNoteId,
+    setComputerFallbackNoteId,
+    handleSourceModeChange,
+    handleEnableSystemAudio,
+  } = useRecordingSources({ appBlocked, captureActive });
   const { bootstrapped, bootstrapError, retryBootstrap } = useDesktopBootstrap(
     appBlocked,
     dispatch,
@@ -1675,7 +1666,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [appBlocked, refreshPermissionStatuses]);
+  }, [appBlocked, refreshPermissionStatuses, setCheckingSourceReadiness, setSourceReadiness]);
 
   // Refresh permission state whenever the app regains focus — covers the
   // common case where the user flipped a toggle in System Settings and
@@ -1692,7 +1683,7 @@ export function App() {
     }
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
-  }, [appBlocked, captureActive, refreshPermissionStatuses]);
+  }, [appBlocked, captureActive, refreshPermissionStatuses, setSourceReadiness]);
 
   // While Accessibility is missing, keep checking. macOS can leave stale
   // "June" rows from older builds in System Settings; after the current helper
@@ -1713,52 +1704,6 @@ export function App() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [accessibilityBlocked, appBlocked, refreshPermissionStatuses]);
-
-  // After the user opens System Settings for System Audio Recording, keep
-  // checking briefly while macOS is in front. This matches Accessibility's
-  // permission flow and avoids relying on a single webview focus event.
-  useEffect(() => {
-    if (appBlocked || captureActive || systemGranted || systemAudioRefreshRequest === 0) {
-      return;
-    }
-    let cancelled = false;
-    let inFlight = false;
-    function poll() {
-      if (inFlight) return;
-      inFlight = true;
-      void checkRecordingSourceReadiness("microphonePlusSystem")
-        .then((readiness) => {
-          if (!cancelled) setSourceReadiness(readiness);
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          inFlight = false;
-        });
-    }
-    poll();
-    const interval = window.setInterval(poll, SYSTEM_AUDIO_PERMISSION_REFRESH_INTERVAL_MS);
-    const timeout = window.setTimeout(() => {
-      window.clearInterval(interval);
-    }, SYSTEM_AUDIO_PERMISSION_REFRESH_TIMEOUT_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.clearTimeout(timeout);
-    };
-  }, [appBlocked, captureActive, systemAudioRefreshRequest, systemGranted]);
-
-  function handleSourceModeChange(next: RecordingSourceMode) {
-    setUserWantsSystemAudio(next === "microphonePlusSystem");
-  }
-
-  // Explicit "Enable" action when system audio is denied. Sets intent on
-  // (so the toggle auto-flips ON once permission is granted) and routes
-  // the user to the System Settings pane.
-  function handleEnableSystemAudio() {
-    setUserWantsSystemAudio(true);
-    setSystemAudioRefreshRequest((request) => request + 1);
-    void openPrivacySettings("systemAudio");
-  }
 
   function handleEnableMicrophone() {
     void openPrivacySettings("microphone");
@@ -2371,8 +2316,12 @@ export function App() {
   }
 
   const handleStartRecordingForNote = useCallback(
-    async (noteId: string, options: { startAlreadyClaimed?: boolean } = {}): Promise<boolean> => {
+    async (
+      noteId: string,
+      options: { startAlreadyClaimed?: boolean; sourceMode?: RecordingSourceMode } = {},
+    ): Promise<boolean> => {
       const startAlreadyClaimed = options.startAlreadyClaimed ?? false;
+      const requestedMode = options.sourceMode ?? sourceMode;
       if (
         recordingStatusRef.current ||
         (!startAlreadyClaimed && recordingStartInFlightRef.current)
@@ -2387,7 +2336,7 @@ export function App() {
       }
       setLiveTranscriptEvents([]);
       setRecordingNote(noteId);
-      const startingStatus = startingRecordingStatus(noteId, sourceMode);
+      const startingStatus = startingRecordingStatus(noteId, requestedMode);
       recordingStatusRef.current = startingStatus;
       dispatch({
         type: "recordingStatusChanged",
@@ -2395,29 +2344,30 @@ export function App() {
       });
       try {
         setCheckingSourceReadiness(true);
-        const readiness = await checkRecordingSourceReadiness(sourceMode);
+        const readiness = await checkRecordingSourceReadiness(requestedMode);
         setSourceReadiness((previous) => mergeSourceReadiness(previous, readiness));
-
-        const micSource = readiness.sources.find((source) => source.source === "microphone");
-        if (!micSource?.ready) {
+        const decision = resolveRecordingStart(requestedMode, readiness);
+        if (decision.kind === "blocked") {
           setRecordingNote(undefined);
           recordingStatusRef.current = undefined;
           dispatch({ type: "recordingStatusCleared" });
-          setError(micSource?.message ?? "Microphone is not ready.");
+          setError(
+            decision.source === "microphone"
+              ? (decision.message ?? t("Microphone is not ready."))
+              : t("The computer's sound is not available right now, so nothing was recorded."),
+          );
           return false;
         }
-
-        // System audio is optional. If the fresh probe shows it isn't
-        // available, fall back to mic-only for this take — the derived
-        // sourceMode will follow automatically next render via
-        // setSourceReadiness above.
-        const systemSource = readiness.sources.find((source) => source.source === "system");
-        const effectiveMode: RecordingSourceMode =
-          sourceMode === "microphonePlusSystem" && !systemSource?.ready
-            ? "microphoneOnly"
-            : sourceMode;
-
-        const recording = await startRecording(noteId, effectiveMode);
+        // Microphone and computer degrades to the microphone, visibly: the
+        // recorder says so for the whole take (computerFallbackNoteId).
+        let fellBack = decision.fellBack;
+        const recording = await startRecording(noteId, decision.mode).catch((err: unknown) => {
+          const code = err && typeof err === "object" && "code" in err ? err.code : undefined;
+          if (!shouldRetryWithMicrophone(decision.mode, code)) throw err;
+          fellBack = true;
+          return startRecording(noteId, "microphoneOnly");
+        });
+        setComputerFallbackNoteId(fellBack ? noteId : undefined);
         setRecordingNote(noteId);
         const status = recordingToStatus(recording);
         recordingStatusRef.current = status;
@@ -2451,7 +2401,13 @@ export function App() {
         setCheckingSourceReadiness(false);
       }
     },
-    [setRecordingNote, sourceMode],
+    [
+      setCheckingSourceReadiness,
+      setComputerFallbackNoteId,
+      setRecordingNote,
+      setSourceReadiness,
+      sourceMode,
+    ],
   );
 
   const handleStartRecording = useCallback(async () => {
@@ -2459,42 +2415,46 @@ export function App() {
     await handleStartRecordingForNote(selectedNoteId);
   }, [handleStartRecordingForNote, selectedNoteId]);
 
-  const handleStartMeetingDetectedRecording = useCallback(async () => {
-    if (recordingStartInFlightRef.current || recordingStatusRef.current) return;
-    recordingStartInFlightRef.current = true;
-    const previousNoteId = selectedNoteId;
-    let handedStartClaimToRecorder = false;
-    try {
-      const note = await createNote(undefined);
-      dispatch({ type: "noteLoaded", note });
-      setOriginFolderId(undefined);
-      setOriginAllNotes(false);
-      setActiveView("meetings");
-      handedStartClaimToRecorder = true;
-      const started = await handleStartRecordingForNote(note.id, {
-        startAlreadyClaimed: true,
-      });
-      if (started) return;
+  const handleStartMeetingDetectedRecording = useCallback(
+    async (sourceMode?: RecordingSourceMode) => {
+      if (recordingStartInFlightRef.current || recordingStatusRef.current) return;
+      recordingStartInFlightRef.current = true;
+      const previousNoteId = selectedNoteId;
+      let handedStartClaimToRecorder = false;
+      try {
+        const note = await createNote(undefined);
+        dispatch({ type: "noteLoaded", note });
+        setOriginFolderId(undefined);
+        setOriginAllNotes(false);
+        setActiveView("meetings");
+        handedStartClaimToRecorder = true;
+        const started = await handleStartRecordingForNote(note.id, {
+          startAlreadyClaimed: true,
+          sourceMode,
+        });
+        if (started) return;
 
-      await deleteNote(note.id);
-      const response = await listNotes();
-      dispatch({ type: "notesLoaded", notes: response.items });
-      const restoreNoteId =
-        previousNoteId && previousNoteId !== note.id ? previousNoteId : response.items[0]?.id;
-      if (restoreNoteId) {
-        const restored = await getNote(restoreNoteId);
-        dispatch({ type: "noteLoaded", note: restored });
-      } else {
-        handleEmptyNotesAfterDelete();
+        await deleteNote(note.id);
+        const response = await listNotes();
+        dispatch({ type: "notesLoaded", notes: response.items });
+        const restoreNoteId =
+          previousNoteId && previousNoteId !== note.id ? previousNoteId : response.items[0]?.id;
+        if (restoreNoteId) {
+          const restored = await getNote(restoreNoteId);
+          dispatch({ type: "noteLoaded", note: restored });
+        } else {
+          handleEmptyNotesAfterDelete();
+        }
+      } catch (err) {
+        setError(messageFromError(err));
+      } finally {
+        if (!handedStartClaimToRecorder) {
+          recordingStartInFlightRef.current = false;
+        }
       }
-    } catch (err) {
-      setError(messageFromError(err));
-    } finally {
-      if (!handedStartClaimToRecorder) {
-        recordingStartInFlightRef.current = false;
-      }
-    }
-  }, [handleStartRecordingForNote, selectedNoteId]);
+    },
+    [handleStartRecordingForNote, selectedNoteId],
+  );
 
   // Click the floating global recorder pill to jump back to the note the
   // recording belongs to (it lives wherever you started it, which may not be
@@ -2519,7 +2479,9 @@ export function App() {
     let unlisten: (() => void) | undefined;
     void listen(MEETING_START_TRANSCRIPTION_EVENT, () => {
       if (appBlocked || !bootstrapped) return;
-      void handleStartMeetingDetectedRecording();
+      // A call was detected: whatever the remembered choice, the call is
+      // what the person wants in the note.
+      void handleStartMeetingDetectedRecording("microphonePlusSystem");
     }).then((cleanup) => {
       if (aborted) cleanup();
       else unlisten = cleanup;
@@ -3041,6 +3003,7 @@ export function App() {
                   sourceMode={sourceMode}
                   sourceReadiness={sourceReadiness}
                   checkingSourceReadiness={checkingSourceReadiness}
+                  recordingActive={captureActive}
                   microphonePermissionStatus={microphoneStatus}
                   accessibilityPermissionStatus={accessibilityStatus}
                   onSourceModeChange={handleSourceModeChange}
@@ -3381,6 +3344,7 @@ export function App() {
                       onEnableSystemAudio={handleEnableSystemAudio}
                       onEnableMicrophone={handleEnableMicrophone}
                       microphoneBlocked={microphoneBlocked}
+                      computerFallback={computerFallbackNoteId === selectedNote.id}
                       onTabChange={(activeTab) =>
                         void updateNote({
                           noteId: selectedNote.id,
@@ -3816,48 +3780,6 @@ function isCreateNoteShortcut(event: KeyboardEvent) {
 
 function stringPayloadValue(value: unknown) {
   return typeof value === "string" ? value : undefined;
-}
-
-function startingRecordingStatus(
-  noteId: string,
-  sourceMode: RecordingSourceMode,
-): RecordingStatusDto {
-  const sources: RecordingStatusDto["sources"] = [
-    {
-      source: "microphone",
-      state: "starting",
-      elapsedMs: 0,
-      bytesWritten: 0,
-      level: { peak: 0, rms: 0, recentPeaks: [] },
-      silenceWarning: false,
-      pathFinalized: false,
-    },
-  ];
-  if (sourceMode === "microphonePlusSystem") {
-    sources.push({
-      source: "system",
-      state: "starting",
-      elapsedMs: 0,
-      bytesWritten: 0,
-      level: { peak: 0, rms: 0, recentPeaks: [] },
-      silenceWarning: false,
-      pathFinalized: false,
-    });
-  }
-
-  return {
-    sessionId: "",
-    noteId,
-    sourceMode,
-    state: "starting",
-    elapsedMs: 0,
-    level: { peak: 0, rms: 0, recentPeaks: [] },
-    silenceWarning: false,
-    bytesWritten: 0,
-    livePreviewEnabled: false,
-    sources,
-    warnings: [],
-  };
 }
 
 function isAppErrorCode(err: unknown, code: string) {

@@ -220,8 +220,10 @@ describe("NoteEditor", () => {
     );
 
     // Scope to the turn labels — the source filter (shown when both
-    // sources are present) also renders "System"/"Microphone" options.
-    expect(screen.getByText("System", { selector: ".transcript-turn-source" })).toBeInTheDocument();
+    // sources are present) also renders "Computer"/"Microphone" options.
+    expect(
+      screen.getByText("Computer", { selector: ".transcript-turn-source" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("Microphone", { selector: ".transcript-turn-source" }),
     ).toBeInTheDocument();
@@ -307,11 +309,13 @@ describe("NoteEditor", () => {
       />,
     );
 
-    // The system lane must surface in the live preview, labelled "System",
+    // The system lane must surface in the live preview, labelled "Computer",
     // alongside the microphone turn, not be dropped or mislabelled.
     expect(screen.getByText("What the meeting played back")).toBeInTheDocument();
     expect(screen.getByText("What I said into the mic")).toBeInTheDocument();
-    expect(screen.getByText("System", { selector: ".transcript-turn-source" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Computer", { selector: ".transcript-turn-source" }),
+    ).toBeInTheDocument();
   });
 
   it("only shows the live preview waiting state when preview is enabled", () => {
@@ -833,9 +837,15 @@ describe("NoteEditor", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Recording options" }));
-    await user.click(screen.getByRole("switch", { name: "Capture system audio" }));
+    const choice = screen.getByRole("radiogroup", { name: "What to record" });
+    expect(screen.getByRole("radio", { name: /Microphone and computer/ })).toBeChecked();
 
+    await user.click(screen.getByRole("radio", { name: /Microphone only/ }));
     expect(onSourceModeChange).toHaveBeenCalledWith("microphoneOnly");
+
+    await user.click(screen.getByRole("radio", { name: /Computer only/ }));
+    expect(onSourceModeChange).toHaveBeenCalledWith("systemOnly");
+    expect(choice).toBeInTheDocument();
   });
 
   it("routes denied system audio setup from recording options", async () => {
@@ -875,10 +885,14 @@ describe("NoteEditor", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Recording options" }));
-    const systemSwitch = screen.getByRole("switch", {
-      name: "Capture system audio",
-    });
-    expect(systemSwitch).toBeDisabled();
+    // The choice stays the person's; the sentence under it says what will
+    // happen instead, and how to fix it.
+    expect(screen.getByRole("radio", { name: /Microphone and computer/ })).toBeChecked();
+    expect(
+      screen.getByText(
+        "The computer's sound is not allowed yet, so only the microphone will record.",
+      ),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Enable" }));
     expect(onEnableSystemAudio).toHaveBeenCalledOnce();
@@ -911,18 +925,20 @@ describe("NoteEditor", () => {
 
     await user.click(screen.getByRole("button", { name: "Recording options" }));
 
-    expect(screen.getByText("System audio requires macOS 14.2 or later.")).toBeInTheDocument();
-    expect(screen.queryByRole("switch", { name: "Capture system audio" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Recording the computer's sound needs macOS 14.2 or later."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /Computer only/ })).not.toBeInTheDocument();
   });
 
-  it("does not offer the system audio switch when the grant exists but capture is unavailable", async () => {
+  it("explains, without offering Enable, when the grant exists but capture is unavailable", async () => {
     const user = userEvent.setup();
     const onSourceModeChange = vi.fn();
     render(
       <NoteEditor
         {...props}
         note={note()}
-        sourceMode="microphoneOnly"
+        sourceMode="microphonePlusSystem"
         onSourceModeChange={onSourceModeChange}
         sourceReadiness={{
           sourceMode: "microphonePlusSystem",
@@ -953,7 +969,12 @@ describe("NoteEditor", () => {
 
     await user.click(screen.getByRole("button", { name: "Recording options" }));
 
-    expect(screen.getByRole("switch", { name: "Capture system audio" })).toBeDisabled();
+    expect(
+      screen.getByText(
+        "The computer's sound is not available right now, so only the microphone will record.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enable" })).not.toBeInTheDocument();
     expect(onSourceModeChange).not.toHaveBeenCalled();
   });
 
@@ -964,12 +985,12 @@ describe("NoteEditor", () => {
     await user.click(screen.getByRole("button", { name: "Recording options" }));
 
     expect(
-      screen.queryByText("System audio requires macOS 14.2 or later."),
+      screen.queryByText("Recording the computer's sound needs macOS 14.2 or later."),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Capture system audio" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "What to record" })).toBeInTheDocument();
   });
 
-  it("hides system audio recording options on Windows", () => {
+  it("waits for the capability map before offering recording options off a Mac", () => {
     const restoreNavigator = stubNavigatorPlatform(
       "Win32",
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -1007,13 +1028,87 @@ describe("NoteEditor", () => {
 
       expect(screen.getByRole("button", { name: "Record" })).toBeEnabled();
       expect(screen.queryByRole("button", { name: "Recording options" })).not.toBeInTheDocument();
-      expect(screen.queryByText("Capture system audio")).not.toBeInTheDocument();
+      expect(screen.queryByText("Computer only")).not.toBeInTheDocument();
       expect(
-        screen.queryByText("System audio requires macOS 14.2 or later."),
+        screen.queryByText("Recording the computer's sound needs macOS 14.2 or later."),
       ).not.toBeInTheDocument();
     } finally {
       restoreNavigator();
     }
+  });
+
+  it("keeps recording available in computer-only mode when the microphone is blocked", () => {
+    render(
+      <NoteEditor {...props} note={note()} sourceMode="systemOnly" microphoneBlocked={true} />,
+    );
+
+    expect(
+      screen.queryByText("Microphone access is blocked. You can still write notes here."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record" })).toBeEnabled();
+  });
+
+  it("says so while only the microphone records a take that asked for the computer", () => {
+    render(
+      <NoteEditor
+        {...props}
+        note={note()}
+        computerFallback={true}
+        recordingStatus={{
+          sessionId: "session-1",
+          sourceMode: "microphoneOnly",
+          state: "recording",
+          elapsedMs: 2000,
+          level: { peak: 0.2, rms: 0.1, recentPeaks: [0.1] },
+          silenceWarning: false,
+          bytesWritten: 4096,
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Only the microphone is recording. The computer's sound is not available right now.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("warns, dismissibly, when the computer has not been heard yet", async () => {
+    const user = userEvent.setup();
+    render(
+      <NoteEditor
+        {...props}
+        note={note()}
+        recordingStatus={{
+          sessionId: "session-1",
+          sourceMode: "microphonePlusSystem",
+          state: "recording",
+          elapsedMs: 25_000,
+          level: { peak: 0.2, rms: 0.1, recentPeaks: [0.1] },
+          silenceWarning: false,
+          bytesWritten: 4096,
+          warnings: [
+            {
+              source: "system",
+              code: "system_audio_silent",
+              message: "Rust's own words.",
+            },
+          ],
+        }}
+      />,
+    );
+
+    const warning = screen.getByText(
+      "No sound from the computer yet. Check that the call or video plays on this computer.",
+    );
+    expect(warning).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(
+      screen.queryByText(
+        "No sound from the computer yet. Check that the call or video plays on this computer.",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("surfaces a dismissible consent reminder after the recorder settles", async () => {

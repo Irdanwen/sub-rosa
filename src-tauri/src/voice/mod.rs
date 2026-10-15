@@ -29,7 +29,7 @@ mod io_apple;
 pub mod machine;
 pub(crate) mod player;
 mod requests;
-mod resample;
+pub(crate) mod resample;
 #[cfg(target_os = "macos")]
 mod screen;
 #[cfg(any(target_os = "macos", windows, test))]

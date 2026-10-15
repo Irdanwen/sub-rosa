@@ -38,7 +38,9 @@ function friendlyFailureSegment(message: string) {
   const source = message.match(/^(Microphone|System):\s*/i)?.[1];
   const body = source ? message.replace(/^(Microphone|System):\s*/i, "") : message;
   const normalized = body.toLowerCase();
-  let friendly = body;
+  // A sentence Rust wrote is a catalog key too (pnpm i18n:extract collects
+  // `AppError::new` literals), so an unknown one still reads translated.
+  let friendly = t(body);
   if (normalized.includes("no_speech") || normalized.includes("no speech")) {
     friendly = t("No speech detected. Try speaking louder or moving closer to the microphone.");
   } else if (isInvalidJuneResponseMessage(body)) {
@@ -60,7 +62,7 @@ function friendlyFailureSegment(message: string) {
   }
   return source
     ? t("{source}: {message}", {
-        source: source.toLowerCase() === "microphone" ? t("Microphone") : t("System"),
+        source: source.toLowerCase() === "microphone" ? t("Microphone") : t("Computer"),
         message: friendly,
       })
     : friendly;

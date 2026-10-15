@@ -165,6 +165,70 @@ describe("RecorderBar", () => {
     expect(screen.getByLabelText("Audio activity")).toBeInTheDocument();
   });
 
+  it("shows each lane on its own: a heard computer, and one never heard", () => {
+    const lane = (source: "microphone" | "system", peak: number, silenceWarning: boolean) => ({
+      source,
+      state: "recording" as const,
+      elapsedMs: 25_000,
+      bytesWritten: 2048,
+      level: { peak, rms: peak, recentPeaks: [peak] },
+      silenceWarning,
+      pathFinalized: false,
+    });
+    const status = (systemPeak: number, systemSilent: boolean) => ({
+      sessionId: "session-1",
+      state: "recording" as const,
+      elapsedMs: 25_000,
+      level: { peak: 0.5, rms: 0.3, recentPeaks: [0.5] },
+      silenceWarning: false,
+      bytesWritten: 4096,
+      sources: [lane("microphone", 0.5, false), lane("system", systemPeak, systemSilent)],
+    });
+    const { rerender } = render(
+      <RecorderBar
+        status={status(0.9, false)}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Microphone: sound detected" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Computer: sound detected" })).toBeInTheDocument();
+
+    rerender(
+      <RecorderBar
+        status={status(0, true)}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Computer: no sound yet" })).toHaveAttribute(
+      "data-silent",
+      "true",
+    );
+  });
+
+  it("shows no lanes for a single-source take", () => {
+    render(
+      <RecorderBar
+        status={{
+          sessionId: "session-1",
+          state: "recording",
+          elapsedMs: 5_000,
+          level: { peak: 0.3, rms: 0.2, recentPeaks: [0.3] },
+          silenceWarning: false,
+          bytesWritten: 4096,
+        }}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("img", { name: /Computer/ })).not.toBeInTheDocument();
+  });
+
   it("folds multiple source levels into the louder envelope", () => {
     const combined = combineAudioLevels([
       { peak: 0.1, rms: 0.05, recentPeaks: [0.1, 0.2] },
