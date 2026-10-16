@@ -26,8 +26,9 @@ pub use spaces::{EpochWrite, InvitationWrite};
 
 /// Failures after which an undelivered revocation counts as stuck. The backoff
 /// below waits 1, 2, 4 … 256 minutes, then six hours a time, so twelve failures
-/// are about 26 hours of Carpe Diem refusing: long enough that it is not a
-/// blip, short enough that a live key is not left unremarked for a week.
+/// are about 21 hours of Carpe Diem refusing (eleven waits between twelve
+/// tries): long enough that it is not a blip, short enough that a live key
+/// is not left unremarked for a week.
 pub const REVOCATION_STUCK_AFTER_ATTEMPTS: i32 = 12;
 
 #[derive(Clone)]

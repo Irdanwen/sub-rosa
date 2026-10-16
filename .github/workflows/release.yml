@@ -393,6 +393,10 @@ jobs:
           name: bundle-${{ matrix.target }}
           path: dist-release/*
           if-no-files-found: error
+          # Only the publish job of this run reads them, and the binaries end
+          # up in sub-rosa-releases. Three days still covers a `rerun --failed`
+          # after a notarization timeout.
+          retention-days: 3
 
   publish:
     needs: [resolve, build]

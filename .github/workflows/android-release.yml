@@ -177,7 +177,9 @@ jobs:
           name: subrosa-android-${{ env.ANDROID_VERSION_CODE }}
           path: build/android-release/
           if-no-files-found: error
-          retention-days: 30
+          # A published build is also in sub-rosa-releases; this copy is for
+          # the unpublished ones.
+          retention-days: 14
 
       - name: Publish Android prerelease
         if: ${{ inputs.publish }}

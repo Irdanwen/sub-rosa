@@ -2518,6 +2518,12 @@ async fn a_deployment_without_a_partner_answers_not_found_before_asking_for_a_se
         .await?;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"]["code"], "not_found");
+    // Before the body too: a request this deployment could never answer is
+    // not told it was malformed.
+    let (status, body) = f
+        .public("/api/v1/carpe-diem/assertion", json!({"unexpected": true}))
+        .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     Ok(())
 }
 
