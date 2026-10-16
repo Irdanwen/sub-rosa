@@ -298,9 +298,11 @@ export function subscribeToDestinations(handle: (destination: Destination) => vo
     .then(async ({ onAction }) => {
       // onAction hands back a PluginListener (an object with `unregister`),
       // not a bare function like the deep-link plugin does.
-      const listener = await onAction((notification) => {
-        const extra = notification.extra as Record<string, unknown> | undefined;
-        dispatch(extra?.[DESTINATION_EXTRA_KEY]);
+      // The payload is the action performed; the notification it was
+      // performed on, with its `extra`, sits under `notification` (plugin 2.6
+      // types what every platform already sent).
+      const listener = await onAction((performed) => {
+        dispatch(performed.notification?.extra?.[DESTINATION_EXTRA_KEY]);
       });
       track(() => void listener.unregister());
     })
