@@ -86,6 +86,36 @@ export function request(key: string, body: unknown, signal?: AbortSignal): Reque
   };
 }
 
+/**
+ * The account's spendable balance in credits, read with this browser's key.
+ * `GET /v1/credits` is one of the routes a browser key may reach, and a read
+ * is never counted against its daily cap (ADR-0096).
+ */
+export async function readBalance(
+  key: string,
+  operator: Operator = defaultOperator(),
+  signal?: AbortSignal,
+): Promise<number> {
+  const response = await operator.fetch(`${operator.root}/v1/credits`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+    credentials: "omit",
+    redirect: "error",
+    referrerPolicy: "no-referrer",
+    signal,
+  });
+  if (!response.ok) throw await failure(response);
+  const body = (await response.json().catch(() => null)) as { availableCredits?: unknown } | null;
+  const available = body?.availableCredits;
+  if (typeof available !== "number" || !Number.isFinite(available))
+    throw new CarpeDiemError(
+      "carpe_diem_unavailable",
+      response.status,
+      "No balance in the answer.",
+    );
+  return available;
+}
+
 /** One streamed frame of a completion, folded into the reply so far. */
 export function applyFrame(reply: Completion, frame: Record<string, unknown>) {
   const choice = (frame.choices as Record<string, unknown>[] | undefined)?.[0];

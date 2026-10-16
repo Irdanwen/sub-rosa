@@ -12,7 +12,9 @@ import {
   forgetBrowser,
   indexedDbStore,
   needsRenewal,
+  openKey,
 } from "../lib/browser-device";
+import { type Operator, defaultOperator, readBalance } from "../client/carpe-diem";
 import { date, number, t } from "../lib/i18n";
 import { decode, decrypt, encode, recoveryAdmissionProof } from "../lib/vault";
 import { makePairCode } from "./pairing";
@@ -35,6 +37,51 @@ export function useBrowserDevice(accountId: string, store: DeviceStore = indexed
     };
   }, [accountId, store]);
   return [record, setRecord] as const;
+}
+
+export type LiveBalance =
+  | { status: "loading" }
+  /** This browser holds no key for the account: nothing to ask with. */
+  | { status: "none" }
+  | { status: "ok"; available: number; at: string }
+  | { status: "failed" };
+
+/**
+ * The balance Carpe Diem reports right now, read with this browser's key.
+ * Asked once when the page opens and again on `refresh`; never on a timer.
+ */
+export function useLiveBalance(
+  accountId: string,
+  store: DeviceStore = indexedDbStore,
+  /** Tests only; a default built here would change on every render. */
+  operator?: Operator,
+) {
+  const [record] = useBrowserDevice(accountId, store);
+  const [balance, setBalance] = useState<LiveBalance>({ status: "loading" });
+  const [asked, setAsked] = useState(0);
+  useEffect(() => {
+    // `asked` is the refresh counter: each new value asks Carpe Diem again.
+    if (record === undefined || asked < 0) return;
+    const controller = new AbortController();
+    (async () => {
+      const key = record ? await openKey(record).catch(() => null) : null;
+      if (controller.signal.aborted) return;
+      if (!key) {
+        setBalance({ status: "none" });
+        return;
+      }
+      try {
+        const available = await readBalance(key, operator ?? defaultOperator(), controller.signal);
+        if (!controller.signal.aborted)
+          setBalance({ status: "ok", available, at: new Date().toISOString() });
+      } catch {
+        if (!controller.signal.aborted) setBalance({ status: "failed" });
+      }
+    })();
+    return () => controller.abort();
+  }, [record, operator, asked]);
+  const refresh = useCallback(() => setAsked((n) => n + 1), []);
+  return [balance, refresh] as const;
 }
 
 function failure(error: unknown): string {
