@@ -133,7 +133,10 @@ for (const model of catalog.data) {
   if (model.carpe_diem_type === "tts" && tokens) entry.usdPerMillionCharacters = tokens.inputPrice;
   if (model.carpe_diem_type === "asr" && tokens) entry.usdPerMinute = tokens.inputPrice;
   if (model.carpe_diem_type === "music") {
-    if (list.per_second) entry.usdPerAudioSecond = round(list.per_second.usd * scale);
+    // Some voices are queued like music but priced by the text they read.
+    if (list.per_thousand_characters)
+      entry.usdPerMillionCharacters = round(list.per_thousand_characters.usd * scale * 1000);
+    else if (list.per_second) entry.usdPerAudioSecond = round(list.per_second.usd * scale);
     else if (list.generation) entry.usdPerTrack = round(list.generation.usd * scale);
     else if (list.durations?.["60"])
       entry.usdPerMinuteOfMusic = round(list.durations["60"].usd * scale);

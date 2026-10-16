@@ -11,7 +11,7 @@
           "Gemini knowledge behind every image",
           "Les connaissances de Gemini derrière chaque image"
         ],
-        ["Native 4K output on 2 and Pro", "Sortie 4K native sur la 2 et la Pro"],
+        ["Native 4K output on 2, 2.1 and Pro", "Sortie 4K native sur la 2, la 2.1 et la Pro"],
         ["Lite version for high-volume drafts", "Version Lite pour les brouillons en volume"]
       ],
       "releases": [
@@ -74,9 +74,39 @@
             ]
           ],
           "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite-image"
+        },
+        {
+          "version": "Nano Banana 2.1",
+          "date": "2026-10-06",
+          "ids": ["nano-banana-2-1"],
+          "external": false,
+          "changes": [
+            [
+              "Better visual quality, prompt adherence, multi-turn character consistency and text rendering than Nano Banana 2, at the same Flash speed and cost profile",
+              "Meilleure qualité visuelle, respect des consignes, cohérence des personnages d’un échange à l’autre et rendu du texte que la 2, à la même vitesse et au même profil de coût Flash"
+            ],
+            [
+              "Fixes tiling artifacts on wide and panoramic formats; fuses up to 14 reference images; adds configurable thinking levels",
+              "Corrige les artefacts de mosaïque sur les formats larges et panoramiques ; fusionne jusqu’à 14 images de référence ; ajoute des niveaux de réflexion réglables"
+            ]
+          ],
+          "source": "https://letsdatascience.com/news/google-rolls-out-nano-banana-21-image-model-c6ac3b89"
         }
       ],
       "specs": [
+        {
+          "version": "Nano Banana 2.1",
+          "ids": ["nano-banana-2-1"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "pdf"],
+          "outputs": ["image", "text"],
+          "languages": null,
+          "source": "https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1"
+        },
         {
           "version": "Nano Banana 2",
           "ids": ["nano-banana-2"],
@@ -183,7 +213,9 @@
         "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
         "https://deepmind.google/models/gemini-image/",
         "https://www.eesel.ai/blog/nano-banana-2-lite",
-        "https://datanorth.ai/news/google-releases-nano-banana-pro"
+        "https://datanorth.ai/news/google-releases-nano-banana-pro",
+        "https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1",
+        "https://letsdatascience.com/news/google-rolls-out-nano-banana-21-image-model-c6ac3b89"
       ],
       "strengths": [
         [
@@ -201,8 +233,8 @@
       ],
       "limits": [
         [
-          "Among the dearer families: about 5 credits for Nano Banana 2",
-          "Parmi les familles chères : environ 5 crédits pour Nano Banana 2"
+          "Among the dearer families: about 5 credits for Nano Banana 2 and 2.1",
+          "Parmi les familles chères : environ 5 crédits pour Nano Banana 2 et 2.1"
         ],
         [
           "Anonymized, not private: Google's retention policy applies",
@@ -210,7 +242,7 @@
         ]
       ],
       "facts": [
-        ["1K, 2K or 4K output (2 and Pro)", "Sortie 1K, 2K ou 4K (2 et Pro)"],
+        ["1K, 2K or 4K output (2, 2.1 and Pro)", "Sortie 1K, 2K ou 4K (2, 2.1 et Pro)"],
         [
           "Prompts up to about 32,000 characters (2 and Pro)",
           "Consignes jusqu’à environ 32 000 caractères (2 et Pro)"
@@ -399,8 +431,8 @@
       ],
       "limits": [
         [
-          "Price rises with quality and resolution: about 1.5 credits is the floor",
-          "Le prix monte avec la qualité et la résolution : environ 1,5 crédit au minimum"
+          "Price rises with quality and resolution: about 3 credits is the floor",
+          "Le prix monte avec la qualité et la résolution : environ 3 crédits au minimum"
         ],
         [
           "Anonymized, not private: OpenAI's retention policy applies",
@@ -606,12 +638,15 @@
     {
       "slug": "qwen-image",
       "differentiator": [
-        "Alibaba's family for images full of text: posters, menus, infographics. The first Qwen-Image was an open 20B model with strong Chinese and English lettering; version 3 is closed, supports 12 languages and prompts up to 4,500 tokens.",
-        "La famille d’Alibaba pour les images pleines de texte : affiches, menus, infographies. Le premier Qwen-Image était un modèle ouvert de 20 Md avec un bon rendu du chinois et de l’anglais ; la version 3 est fermée, gère 12 langues et des consignes jusqu’à 4 500 jetons."
+        "Alibaba's family for images full of text: posters, menus, infographics. The first Qwen-Image was an open 20B model with strong Chinese and English lettering; version 3 is closed, supports 12 languages and prompts up to 4,500 tokens, and version 2.1 is a 7B model whose Turbo weights are open for research only.",
+        "La famille d’Alibaba pour les images pleines de texte : affiches, menus, infographies. Le premier Qwen-Image était un modèle ouvert de 20 Md avec un bon rendu du chinois et de l’anglais ; la version 3 est fermée, gère 12 langues et des consignes jusqu’à 4 500 jetons, et la version 2.1 est un modèle de 7 Md dont les poids Turbo sont ouverts pour la recherche seulement."
       ],
       "signature": [
         ["Dense text layouts in many languages", "Mises en page denses dans de nombreuses langues"],
-        ["v1 open weights, Apache 2.0", "v1 à poids ouverts, Apache 2.0"],
+        [
+          "v1 open weights, Apache 2.0; 2.1 research licence",
+          "v1 à poids ouverts, Apache 2.0 ; 2.1 sous licence de recherche"
+        ],
         ["v3 closed, 12 languages announced", "v3 fermée, 12 langues annoncées"]
       ],
       "releases": [
@@ -670,6 +705,49 @@
             ]
           ],
           "source": "https://www.drweb.de/qwen-image-3-0-ohne-gewichte-benchmarks/"
+        },
+        {
+          "version": "Qwen-Image 2.1",
+          "date": "2026-09-20",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Unified 7B text-to-image and editing model with native transparent (RGBA) output, up to 10 reference images and local edits by circle, annotation or mask",
+              "Modèle unifié de 7 Md pour la génération et la retouche, avec sortie transparente (RGBA) native, jusqu’à 10 images de référence et retouches locales par cercle, annotation ou masque"
+            ],
+            [
+              "Open weights on Hugging Face under the Qwen Research License (non-commercial), a break from the earlier Apache 2.0 releases",
+              "Poids ouverts sur Hugging Face sous la licence de recherche Qwen (non commerciale), une rupture avec les versions antérieures sous Apache 2.0"
+            ]
+          ],
+          "source": "https://www.orcarouter.ai/blog/qwen-image-2-1"
+        },
+        {
+          "version": "Qwen-Image 2.1 Pro",
+          "date": "2026-10-02",
+          "ids": ["qwen-image-2-1-pro"],
+          "external": false,
+          "changes": [
+            [
+              "Hosted Pro tier through Qwen Cloud and Alibaba Cloud Model Studio, up to 2048 by 2048 pixels, aspect ratios from 1:8 to 8:1",
+              "Niveau Pro hébergé via Qwen Cloud et Alibaba Cloud Model Studio, jusqu’à 2048 par 2048 pixels, formats de 1:8 à 8:1"
+            ]
+          ],
+          "source": "https://www.llmreference.com/model/qwen-image-2.1-pro"
+        },
+        {
+          "version": "Qwen-Image 2.1 Turbo",
+          "date": "2026-10-09",
+          "ids": ["qwen-image-2-1-turbo"],
+          "external": false,
+          "changes": [
+            [
+              "Accelerated checkpoint that renders in 8 denoising steps instead of 40, same 7B architecture",
+              "Version accélérée qui produit l’image en 8 pas de débruitage au lieu de 40, avec la même architecture de 7 Md"
+            ]
+          ],
+          "source": "https://www.marktechpost.com/2026/10/09/alibaba-qwen-releases-qwen-image-2-1-turbo-an-8-step-7b-image-model/"
         }
       ],
       "specs": [
@@ -711,6 +789,32 @@
           "outputs": ["image"],
           "languages": null,
           "source": "https://huggingface.co/Qwen/Qwen-Image"
+        },
+        {
+          "version": "Qwen-Image 2.1 Turbo",
+          "ids": ["qwen-image-2-1-turbo"],
+          "params": "7B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Qwen Research License (non-commercial)",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo"
+        },
+        {
+          "version": "Qwen-Image 2.1 Pro",
+          "ids": ["qwen-image-2-1-pro"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://www.llmreference.com/model/qwen-image-2.1-pro"
         }
       ],
       "useCases": [
@@ -767,7 +871,12 @@
         "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
         "https://llm-stats.com/blog/research/qwen-image-3-0-launch",
         "https://www.orcarouter.ai/blog/qwen-image-3-0-ga",
-        "https://www.analyticsvidhya.com/blog/2026/02/qwen-image-2-0-is-here/"
+        "https://www.analyticsvidhya.com/blog/2026/02/qwen-image-2-0-is-here/",
+        "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo",
+        "https://huggingface.co/Qwen/Qwen-Image-2.1",
+        "https://www.orcarouter.ai/blog/qwen-image-2-1",
+        "https://www.llmreference.com/model/qwen-image-2.1-pro",
+        "https://www.marktechpost.com/2026/10/09/alibaba-qwen-releases-qwen-image-2-1-turbo-an-8-step-7b-image-model/"
       ],
       "strengths": [
         [
@@ -789,8 +898,8 @@
           "Anonymisé, pas privé : la politique d’Alibaba Cloud s’applique"
         ],
         [
-          "Five versions in the catalog: the older ones are rarely the better buy",
-          "Cinq versions au catalogue : les anciennes sont rarement le meilleur choix"
+          "Seven versions in the catalog: apart from 2.1 Turbo on price, the older ones are rarely the better buy",
+          "Sept versions au catalogue : hors la 2.1 Turbo pour le prix, les anciennes sont rarement le meilleur choix"
         ]
       ],
       "facts": [
@@ -1112,7 +1221,10 @@
           "Texte sur plusieurs lignes et polices, traité comme un élément de design"
         ],
         ["Strong layout sense for graphic work", "Bon sens de la mise en page pour le graphisme"],
-        ["About 2 credits for version 4.5", "Environ 2 crédits pour la version 4.5"]
+        [
+          "About 12 credits for version 4.5, about 3 for version 4",
+          "Environ 12 crédits pour la version 4.5, environ 3 pour la version 4"
+        ]
       ],
       "limits": [
         ["Less suited to pure photorealism", "Moins adapté au pur photoréalisme"],
@@ -2769,27 +2881,27 @@
     {
       "slug": "image-tools",
       "differentiator": [
-        "Utility models rather than generators: an upscaler that enlarges an image 2x to 4x with an optional enhance pass, and a Bria background remover. The upscaler runs in private mode.",
-        "Des modèles utilitaires plutôt que des générateurs : un agrandisseur qui augmente une image de 2 à 4 fois avec une passe d’amélioration en option, et un détoureur Bria. L’agrandisseur tourne en mode privé."
+        "A utility model rather than a generator: an upscaler that enlarges an image 2x to 4x with an optional enhance pass. It runs in private mode.",
+        "Un modèle utilitaire plutôt qu’un générateur : un agrandisseur qui augmente une image de 2 à 4 fois avec une passe d’amélioration en option. Il tourne en mode privé."
       ],
       "signature": [
         ["Upscale 2x to 4x, optional enhance", "Agrandit de 2 à 4 fois, amélioration en option"],
         ["Upscaler runs in private mode", "L’agrandisseur tourne en mode privé"],
         [
-          "Bria remover produces clean alpha mattes",
-          "Le détoureur Bria produit des masques alpha propres"
+          "Enhance pass restores fine detail while enlarging",
+          "La passe d’amélioration restaure les détails fins en agrandissant"
         ]
       ],
       "releases": [
         {
-          "version": "Upscaler and Bria background remover",
+          "version": "Upscaler",
           "date": null,
-          "ids": ["upscaler", "bria-bg-remover"],
+          "ids": ["upscaler"],
           "external": false,
           "changes": [
             [
-              "Upscaler priced at 2x $0.02 and 4x $0.08 on Venice, and a Bria background remover aimed at VFX, compositing and e-commerce",
-              "Agrandisseur facturé 0,02 $ en x2 et 0,08 $ en x4 chez Venice, et détoureur Bria destiné aux effets visuels, au compositing et au e-commerce"
+              "Upscaler that enlarges an image 2x or 4x with an optional enhance pass, listed with its price per scale on Venice",
+              "Agrandisseur qui agrandit une image en x2 ou x4 avec une passe d’amélioration en option, listé avec son prix par échelle chez Venice"
             ]
           ],
           "source": "https://docs.venice.ai/overview/models"
@@ -2797,8 +2909,8 @@
       ],
       "specs": [
         {
-          "version": "Upscaler and background remover",
-          "ids": ["upscaler", "bria-bg-remover"],
+          "version": "Upscaler",
+          "ids": ["upscaler"],
           "params": null,
           "activeParams": null,
           "openWeights": null,
@@ -2823,14 +2935,14 @@
           ]
         },
         {
-          "title": ["Cut out a product", "Détourer un produit"],
+          "title": ["Sharpen a small logo", "Agrandir un petit logo"],
           "prompt": [
-            "Remove the background from this product photo and keep a clean edge.",
-            "Retirez l’arrière-plan de cette photo produit en gardant un contour net."
+            "Upscale this 512 px logo 2x and enhance the edges.",
+            "Agrandissez ce logo de 512 px en x2 et améliorez les contours."
           ],
           "why": [
-            "The Bria model is aimed at clean alpha mattes for e-commerce.",
-            "Le modèle Bria vise des masques alpha propres pour le e-commerce."
+            "The enhance pass cleans edges while enlarging; 2x costs less than 4x.",
+            "La passe d’amélioration nettoie les contours en agrandissant ; le x2 coûte moins cher que le x4."
           ]
         }
       ],
@@ -2850,17 +2962,12 @@
           ]
         }
       ],
-      "sources": [
-        "https://venice.ai/models",
-        "https://docs.venice.ai/overview/models",
-        "https://huggingface.co/briaai/RMBG-2.0",
-        "https://github.com/Bria-AI/RMBG-2.0"
-      ],
+      "sources": ["https://venice.ai/models", "https://docs.venice.ai/overview/models"],
       "strengths": [
         ["Upscaler runs in private mode", "L’agrandisseur tourne en mode privé"],
         [
-          "Turns a small draft into a print-size file",
-          "Transforme un petit brouillon en fichier imprimable"
+          "Enhance pass restores fine detail while enlarging",
+          "La passe d’amélioration restaure les détails fins en agrandissant"
         ]
       ],
       "limits": [
@@ -2869,17 +2976,14 @@
           "Agrandir n’ajoute rien : corrigez l’image d’abord"
         ],
         [
-          "Background removal is not available in Sub Rosa yet",
-          "Le détourage n’est pas encore disponible dans Sub Rosa"
+          "Only enlarges: it does not generate or edit content",
+          "Agrandit seulement : il ne génère ni ne retouche de contenu"
         ]
       ],
       "facts": [
         ["Scale 2x to 4x, optional enhance", "Échelle x2 à x4, amélioration en option"],
         ["4x costs more than 2x", "x4 coûte plus cher que x2"],
-        [
-          "Upscaler private; background remover anonymized",
-          "Agrandisseur privé ; détourage anonymisé"
-        ]
+        ["Upscaler runs in private mode", "L’agrandisseur tourne en mode privé"]
       ]
     }
   ]

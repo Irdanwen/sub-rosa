@@ -55,10 +55,7 @@ export const defaults: Default[] = [
     task: ["Studio edit, automatic", "Retouche Studio, automatique"],
     slug: "qwen-image-edit",
     model: "qwen-image-2-edit",
-    why: [
-      "Precise changes for about 2.5 credits.",
-      "Des changements précis pour environ 2,5 crédits.",
-    ],
+    why: ["Precise changes for about 2 credits.", "Des changements précis pour environ 2 crédits."],
   },
   {
     task: ["Retouch a painted zone", "Retouche d’une zone peinte"],

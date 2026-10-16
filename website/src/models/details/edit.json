@@ -3,8 +3,8 @@
     {
       "slug": "qwen-image-edit",
       "differentiator": [
-        "Instruction-following edits from Alibaba that change what you ask for and leave the rest alone, with clean in-image text editing. The line began as an open 20B model and the current 3.0 versions are closed.",
-        "Des retouches d’Alibaba qui suivent la consigne : elles changent ce que vous demandez et laissent le reste intact, avec une édition propre du texte dans l’image. La gamme est née comme un modèle ouvert de 20 Md ; les versions 3.0 actuelles sont fermées."
+        "Instruction-following edits from Alibaba that change what you ask for and leave the rest alone, with clean in-image text editing. The line began as an open 20B model, the 3.0 versions are closed, and 2.1 is a 7B model whose Turbo weights are open for research only.",
+        "Des retouches d’Alibaba qui suivent la consigne : elles changent ce que vous demandez et laissent le reste intact, avec une édition propre du texte dans l’image. La gamme est née comme un modèle ouvert de 20 Md ; les versions 3.0 sont fermées, et la 2.1 est un modèle de 7 Md dont les poids Turbo sont ouverts pour la recherche seulement."
       ],
       "signature": [
         ["Changes what you ask, leaves the rest", "Change ce que vous demandez, pas le reste"],
@@ -12,7 +12,10 @@
           "Clean text edits in Chinese and English",
           "Édition de texte propre en chinois et en anglais"
         ],
-        ["Early versions open, Apache 2.0", "Premières versions ouvertes, Apache 2.0"]
+        [
+          "Early versions open, Apache 2.0; 2.1 research licence",
+          "Premières versions ouvertes, Apache 2.0 ; 2.1 sous licence de recherche"
+        ]
       ],
       "releases": [
         {
@@ -76,6 +79,49 @@
             ]
           ],
           "source": "https://www.drweb.de/qwen-image-3-0-ohne-gewichte-benchmarks/"
+        },
+        {
+          "version": "Qwen-Image 2.1 (edit)",
+          "date": "2026-09-20",
+          "ids": [],
+          "external": true,
+          "changes": [
+            [
+              "Unified 7B text-to-image and editing model with native transparent (RGBA) output, up to 10 reference images and local edits by circle, annotation or mask",
+              "Modèle unifié de 7 Md pour la génération et la retouche, avec sortie transparente (RGBA) native, jusqu’à 10 images de référence et retouches locales par cercle, annotation ou masque"
+            ],
+            [
+              "Open weights on Hugging Face under the Qwen Research License (non-commercial), a break from the earlier Apache 2.0 releases",
+              "Poids ouverts sur Hugging Face sous la licence de recherche Qwen (non commerciale), une rupture avec les versions antérieures sous Apache 2.0"
+            ]
+          ],
+          "source": "https://www.orcarouter.ai/blog/qwen-image-2-1"
+        },
+        {
+          "version": "Qwen-Image 2.1 Pro (edit)",
+          "date": "2026-10-02",
+          "ids": ["qwen-image-2-1-pro-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Hosted Pro tier through Qwen Cloud and Alibaba Cloud Model Studio, up to 2048 by 2048 pixels, aspect ratios from 1:8 to 8:1",
+              "Niveau Pro hébergé via Qwen Cloud et Alibaba Cloud Model Studio, jusqu’à 2048 par 2048 pixels, formats de 1:8 à 8:1"
+            ]
+          ],
+          "source": "https://www.llmreference.com/model/qwen-image-2.1-pro"
+        },
+        {
+          "version": "Qwen-Image 2.1 Turbo (edit)",
+          "date": "2026-10-09",
+          "ids": ["qwen-image-2-1-turbo-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Accelerated checkpoint that renders in 8 denoising steps instead of 40, same 7B architecture",
+              "Version accélérée qui produit l’image en 8 pas de débruitage au lieu de 40, avec la même architecture de 7 Md"
+            ]
+          ],
+          "source": "https://www.marktechpost.com/2026/10/09/alibaba-qwen-releases-qwen-image-2-1-turbo-an-8-step-7b-image-model/"
         }
       ],
       "specs": [
@@ -104,6 +150,32 @@
           "outputs": ["image"],
           "languages": null,
           "source": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image"
+        },
+        {
+          "version": "Qwen-Image 2.1 Turbo edit",
+          "ids": ["qwen-image-2-1-turbo-edit"],
+          "params": "7B",
+          "activeParams": null,
+          "openWeights": true,
+          "license": "Qwen Research License (non-commercial)",
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo"
+        },
+        {
+          "version": "Qwen-Image 2.1 Pro edit",
+          "ids": ["qwen-image-2-1-pro-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": null,
+          "maxOutput": null,
+          "inputs": ["text", "image"],
+          "outputs": ["image"],
+          "languages": null,
+          "source": "https://www.llmreference.com/model/qwen-image-2.1-pro"
         }
       ],
       "useCases": [
@@ -156,7 +228,12 @@
         "https://www.drweb.de/qwen-image-3-0-ohne-gewichte-benchmarks/",
         "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
         "https://webkul.com/blog/qwen-image-2/",
-        "https://llm-stats.com/blog/research/qwen-image-3-0-launch"
+        "https://llm-stats.com/blog/research/qwen-image-3-0-launch",
+        "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo",
+        "https://huggingface.co/Qwen/Qwen-Image-2.1",
+        "https://www.orcarouter.ai/blog/qwen-image-2-1",
+        "https://www.llmreference.com/model/qwen-image-2.1-pro",
+        "https://www.marktechpost.com/2026/10/09/alibaba-qwen-releases-qwen-image-2-1-turbo-an-8-step-7b-image-model/"
       ],
       "strengths": [
         [
@@ -181,7 +258,10 @@
           "Up to 3 images per edit in Sub Rosa, 5 MB each",
           "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
         ],
-        ["Qwen Image 3 and 3 Pro: 1K or 2K output", "Qwen Image 3 et 3 Pro : sortie 1K ou 2K"]
+        [
+          "Qwen Image 3, 3 Pro and 2.1: 1K or 2K output",
+          "Qwen Image 3, 3 Pro et 2.1 : sortie 1K ou 2K"
+        ]
       ]
     },
     {
@@ -375,7 +455,7 @@
           "Blends photos, keeps people recognizable",
           "Fusionne des photos, personnes reconnaissables"
         ],
-        ["2 and Pro edit up to 4K", "La 2 et la Pro retouchent jusqu’en 4K"]
+        ["2, 2.1 and Pro edit up to 4K", "La 2, la 2.1 et la Pro retouchent jusqu’en 4K"]
       ],
       "releases": [
         {
@@ -429,6 +509,23 @@
             ]
           ],
           "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite-image"
+        },
+        {
+          "version": "Nano Banana 2.1 (edit)",
+          "date": "2026-10-06",
+          "ids": ["nano-banana-2-1-edit"],
+          "external": false,
+          "changes": [
+            [
+              "Conversational editing with better prompt adherence, multi-turn character consistency and text rendering than Nano Banana 2",
+              "Retouche conversationnelle avec un meilleur respect des consignes, une meilleure cohérence des personnages d’un échange à l’autre et un meilleur rendu du texte que la 2"
+            ],
+            [
+              "Fuses up to 14 reference images and accepts text, image, video and PDF input",
+              "Fusionne jusqu’à 14 images de référence et accepte du texte, des images, des vidéos et des PDF en entrée"
+            ]
+          ],
+          "source": "https://letsdatascience.com/news/google-rolls-out-nano-banana-21-image-model-c6ac3b89"
         }
       ],
       "specs": [
@@ -444,6 +541,19 @@
           "outputs": ["image"],
           "languages": null,
           "source": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image"
+        },
+        {
+          "version": "Nano Banana 2.1 edit",
+          "ids": ["nano-banana-2-1-edit"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video", "pdf"],
+          "outputs": ["image", "text"],
+          "languages": null,
+          "source": "https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1"
         }
       ],
       "useCases": [
@@ -500,7 +610,9 @@
         "https://www.capcut.com/resource/google-expect-to-release-nano-banana-2-soon",
         "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
         "https://deepmind.google/models/gemini-image/",
-        "https://www.eesel.ai/blog/nano-banana-2-lite"
+        "https://www.eesel.ai/blog/nano-banana-2-lite",
+        "https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1",
+        "https://letsdatascience.com/news/google-rolls-out-nano-banana-21-image-model-c6ac3b89"
       ],
       "strengths": [
         ["Understands loose, natural instructions", "Comprend des consignes libres et naturelles"],
@@ -524,7 +636,7 @@
           "Up to 3 images per edit in Sub Rosa, 5 MB each",
           "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
         ],
-        ["1K, 2K or 4K output (2 and Pro)", "Sortie 1K, 2K ou 4K (2 et Pro)"]
+        ["1K, 2K or 4K output (2, 2.1 and Pro)", "Sortie 1K, 2K ou 4K (2, 2.1 et Pro)"]
       ]
     },
     {
@@ -633,7 +745,7 @@
         ]
       ],
       "limits": [
-        ["Dear: about 13 credits an edit", "Cher : environ 13 crédits la retouche"],
+        ["Dear: about 12 credits an edit", "Cher : environ 12 crédits la retouche"],
         [
           "Anonymized, not private: Ideogram's policy applies",
           "Anonymisé, pas privé : la politique d’Ideogram s’applique"
@@ -973,8 +1085,8 @@
           "Jusqu’à 3 images par retouche dans Sub Rosa, 5 Mo chacune"
         ],
         [
-          "FLUX 3: 1K, 2K or 4K output, about 3 credits",
-          "FLUX 3 : sortie 1K, 2K ou 4K, environ 3 crédits"
+          "FLUX 3: 1K, 2K or 4K output, about 5 credits",
+          "FLUX 3 : sortie 1K, 2K ou 4K, environ 5 crédits"
         ]
       ]
     },

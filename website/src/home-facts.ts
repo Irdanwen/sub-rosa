@@ -5,10 +5,10 @@
 // follows.
 
 /** The day the catalog snapshot was taken (snapshot.json `checkedAt`). */
-export const PRICES_CHECKED_AT = "2026-10-04";
+export const PRICES_CHECKED_AT = "2026-10-16";
 
 /** Model families a person can pick in the app (families.json). */
-export const FAMILY_COUNT = 98;
+export const FAMILY_COUNT = 100;
 
 /** The app's languages (src/locales plus English). */
 export const LANGUAGE_COUNT = 6;
@@ -16,11 +16,11 @@ export const LANGUAGE_COUNT = 6;
 /** The cheapest private model of each kind the price examples quote. */
 export const PRICE_EXAMPLES = {
   /** An hour of speech transcribed: usdPerMinute * 60. */
-  transcriptionHour: { model: "nvidia/parakeet-tdt-0.6b-v3", usd: 0.186 },
+  transcriptionHour: { model: "fal-ai/wizper", usd: 0.162 },
   /** One image. */
-  image: { model: "chroma", usd: 0.0051 },
+  image: { model: "chroma", usd: 0.0045 },
   /** A five-second clip: usdPerSecond * 5. */
-  clip: { model: "longcat-distilled-text-to-video", seconds: 5, usd: 0.09 },
+  clip: { model: "longcat-distilled-text-to-video", seconds: 5, usd: 0.0405 },
 } as const;
 
 /** The images in the Studio section, all made with Flux 2 Pro through Carpe Diem. */
@@ -42,4 +42,4 @@ export const STUDIO_CREATIONS = [
 export const STUDIO_CREATIONS_MODEL = "flux-2-pro";
 
 /** What one of those images costs (snapshot `credits` for flux-2-pro). */
-export const STUDIO_CREATION_CREDITS = 1.54;
+export const STUDIO_CREATION_CREDITS = 1.35;

@@ -813,13 +813,13 @@
     {
       "slug": "claude",
       "differentiator": [
-        "Claude pairs a 1M token window and 128K output with adaptive thinking that always runs on the top tiers, and every current model reads images. Three tiers cover the range: Sonnet 5.5 at $2 per million input tokens, Opus 5.5 at $4, and Fable 5.1 at $10.",
-        "Claude associe un contexte de 1M de jetons et 128k de sortie à une réflexion adaptative toujours active sur les paliers hauts, et tous les modèles actuels lisent les images. Trois paliers couvrent la gamme : Sonnet 5.5 à 2 $ le million de jetons en entrée, Opus 5.5 à 4 $ et Fable 5.1 à 10 $."
+        "Claude pairs a 1M token window and 128K output with adaptive thinking that always runs on the top tiers, and every current model reads images. Four tiers cover the range: Haiku 5.5 at $0.10 per million input tokens, Sonnet 5.5 at $2, Opus 5.5 at $4, and Fable 5.1 at $10.",
+        "Claude associe un contexte de 1M de jetons et 128k de sortie à une réflexion adaptative toujours active sur les paliers hauts, et tous les modèles actuels lisent les images. Quatre paliers couvrent la gamme : Haiku 5.5 à 0,10 $ le million de jetons en entrée, Sonnet 5.5 à 2 $, Opus 5.5 à 4 $ et Fable 5.1 à 10 $."
       ],
       "signature": [
         ["1M context, 128K output", "Contexte de 1M, sortie de 128k"],
         ["Adaptive thinking, effort setting", "Réflexion adaptative, réglage d’effort"],
-        ["Three tiers: Sonnet, Opus, Fable", "Trois paliers : Sonnet, Opus, Fable"]
+        ["Four tiers: Haiku, Sonnet, Opus, Fable", "Quatre paliers : Haiku, Sonnet, Opus, Fable"]
       ],
       "releases": [
         {
@@ -985,6 +985,23 @@
             ]
           ],
           "source": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview"
+        },
+        {
+          "version": "Claude Haiku 5.5",
+          "date": "2026-10-07",
+          "ids": ["claude-haiku-5-5"],
+          "external": false,
+          "changes": [
+            [
+              "Smallest and fastest current tier, with the same 1M context, 128K output and adaptive thinking as the larger models. Scores 43 on the Artificial Analysis index at its highest effort, against 56 for Sonnet 5.5.",
+              "Palier actuel le plus petit et le plus rapide, avec le même contexte de 1M, la même sortie de 128k et la réflexion adaptative que les modèles plus grands. Obtient 43 à l’indice d’Artificial Analysis à son effort maximal, contre 56 pour Sonnet 5.5."
+            ],
+            [
+              "Anthropic aims it at high-volume, latency-sensitive work such as classification, extraction, routing and subagent tasks.",
+              "Anthropic le destine au travail en volume sensible à la latence : classification, extraction, routage et sous-agents."
+            ]
+          ],
+          "source": "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
         }
       ],
       "specs": [
@@ -1026,6 +1043,19 @@
           "outputs": ["text"],
           "languages": null,
           "source": "https://platform.claude.com/docs/en/models/overview"
+        },
+        {
+          "version": "Claude Haiku 5.5",
+          "ids": ["claude-haiku-5-5"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": "Proprietary",
+          "maxOutput": 128000,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
         }
       ],
       "useCases": [
@@ -1106,7 +1136,10 @@
         "https://artificialanalysis.ai/leaderboards/models",
         "https://aiweekly.co/fr/alerts/anthropic-sort-claude-opus-55-40-moins-cher-quopus-5",
         "https://tech.ifeng.com/c/8wp16Vi4lWz",
-        "https://thezvi.substack.com/p/claude-fable-5-and-mythos-5-the-system"
+        "https://thezvi.substack.com/p/claude-fable-5-and-mythos-5-the-system",
+        "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+        "https://www.anthropic.com/claude-haiku-5-5",
+        "https://artificialanalysis.ai/models/claude-haiku-5-5"
       ],
       "strengths": [
         [
@@ -1120,6 +1153,10 @@
         [
           "Reads images, several per message, with tool calling",
           "Lit les images, plusieurs par message, avec appel d’outils"
+        ],
+        [
+          "Haiku 5.5 is the cheap, fast tier for classification and extraction",
+          "Haiku 5.5 est le palier rapide et économique pour la classification et l’extraction"
         ]
       ],
       "limits": [
@@ -1128,8 +1165,8 @@
           "Anonymisé, pas privé : la politique de conservation d’Anthropic s’applique"
         ],
         [
-          "Dear per token; Fable and Fast versions are among the dearest",
-          "Cher au jeton ; Fable et les versions Fast comptent parmi les plus chers"
+          "Dear per token apart from Haiku; Fable and Fast versions are among the dearest",
+          "Cher au jeton, sauf Haiku ; Fable et les versions Fast comptent parmi les plus chers"
         ]
       ],
       "facts": [
@@ -1275,12 +1312,16 @@
         {
           "version": "GPT-6.1 Sol",
           "date": "2026-09",
-          "ids": ["openai-gpt-61-sol"],
+          "ids": ["openai-gpt-61-sol", "openai-gpt-61-sol-ultrafast"],
           "external": false,
           "changes": [
             [
               "Sol refresh at $2 / $10 per million tokens, scoring 52 on the index against 48 for GPT-6 Sol.",
               "Mise à jour de Sol à 2 $ / 10 $ le million de jetons, score de 52 à l’indice contre 48 pour GPT-6 Sol."
+            ],
+            [
+              "Also served in Ultrafast mode: the same model, answers up to 8 times faster at about six times the price.",
+              "Aussi servi en mode Ultrafast : le même modèle, des réponses jusqu’à 8 fois plus rapides pour environ six fois le prix."
             ]
           ],
           "source": "https://artificialanalysis.ai/models/gpt-6-1-sol"
@@ -1289,16 +1330,16 @@
       "specs": [
         {
           "version": "GPT-6.1 Sol",
-          "ids": ["openai-gpt-61-sol"],
+          "ids": ["openai-gpt-61-sol", "openai-gpt-61-sol-ultrafast"],
           "params": null,
           "activeParams": null,
           "openWeights": false,
           "license": "Proprietary",
-          "maxOutput": null,
+          "maxOutput": 128000,
           "inputs": ["text", "image"],
           "outputs": ["text"],
           "languages": null,
-          "source": "https://artificialanalysis.ai/models/gpt-6-1-sol"
+          "source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
         },
         {
           "version": "GPT-6 Astra",
@@ -1463,6 +1504,10 @@
         [
           "GPT-4o and GPT-5.2 are older: prefer GPT-6",
           "GPT-4o et GPT-5.2 sont anciens : préférez GPT-6"
+        ],
+        [
+          "Ultrafast mode answers faster but costs about six times standard Sol",
+          "Le mode Ultrafast répond plus vite mais coûte environ six fois Sol standard"
         ]
       ],
       "facts": [
@@ -1590,8 +1635,8 @@
     {
       "slug": "gemini",
       "differentiator": [
-        "Gemini’s Flash line is the fast, low-priced end of the market: Gemini 3.8 Flash outputs over 230 tokens per second at $0.75 per million input tokens, with a 1M window that takes text, images, speech and video. Output is text only.",
-        "La gamme Flash de Gemini occupe le bout rapide et économique du marché : Gemini 3.8 Flash sort plus de 230 jetons par seconde à 0,75 $ le million en entrée, avec une fenêtre de 1M qui accepte texte, images, parole et vidéo. La sortie est du texte seul."
+        "Gemini 4 Argon is Google's flagship reasoning model, scoring 53 on the index with a 1M window; below it, Gemini’s Flash line is the fast, low-priced end of the market: Gemini 3.8 Flash outputs over 230 tokens per second at $0.75 per million input tokens, with a 1M window that takes text, images, speech and video. Output is text only.",
+        "Gemini 4 Argon est le modèle de raisonnement phare de Google, avec 53 à l’indice et une fenêtre de 1M ; en dessous, la gamme Flash de Gemini occupe le bout rapide et économique du marché : Gemini 3.8 Flash sort plus de 230 jetons par seconde à 0,75 $ le million en entrée, avec une fenêtre de 1M qui accepte texte, images, parole et vidéo. La sortie est du texte seul."
       ],
       "signature": [
         ["Flash: over 230 tokens per second", "Flash : plus de 230 jetons par seconde"],
@@ -1692,19 +1737,36 @@
         },
         {
           "version": "Gemini 4 Argon",
-          "date": "2026-09",
-          "ids": [],
-          "external": true,
+          "date": "2026-09-30",
+          "ids": ["gemini-4-argon"],
+          "external": false,
           "changes": [
             [
-              "Next-generation flagship, not in the catalog yet: 53 on the index at $2 / $10 per million tokens.",
-              "Modèle phare de la génération suivante, pas encore au catalogue : 53 à l’indice à 2 $ / 10 $ le million de jetons."
+              "Google's new flagship reasoning model: 53 on the index against 41 for Gemini 3.8 Flash, with a 1M window and long decode up to 1M output tokens.",
+              "Le nouveau modèle de raisonnement phare de Google : 53 à l’indice contre 41 pour Gemini 3.8 Flash, avec une fenêtre de 1M et un décodage long jusqu’à 1M de jetons en sortie."
+            ],
+            [
+              "Takes text, images, video, audio and PDF; Google aims it at software engineering, science and multi-step agents.",
+              "Accepte texte, images, vidéo, audio et PDF ; Google le destine à l’ingénierie logicielle, aux sciences et aux agents à plusieurs étapes."
             ]
           ],
           "source": "https://artificialanalysis.ai/models/gemini-4-argon"
         }
       ],
       "specs": [
+        {
+          "version": "Gemini 4 Argon",
+          "ids": ["gemini-4-argon"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": null,
+          "license": "Proprietary",
+          "maxOutput": 65536,
+          "inputs": ["text", "image", "audio", "video"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon"
+        },
         {
           "version": "Gemini 3.8 Flash",
           "ids": ["gemini-3-8-flash"],
@@ -1797,8 +1859,8 @@
         {
           "slug": "claude",
           "verdict": [
-            "Claude Sonnet 5.5 scores 56 against 41 for Gemini 3.8 Flash, at a higher price.",
-            "Claude Sonnet 5.5 obtient 56 contre 41 pour Gemini 3.8 Flash, à un prix plus élevé."
+            "Claude Sonnet 5.5 scores 56 against 53 for Gemini 4 Argon and 41 for Gemini 3.8 Flash.",
+            "Claude Sonnet 5.5 obtient 56 contre 53 pour Gemini 4 Argon et 41 pour Gemini 3.8 Flash."
           ]
         },
         {
@@ -1828,7 +1890,8 @@
         "https://ai.google.dev/gemini-api/docs/models",
         "https://artificialanalysis.ai/leaderboards/models",
         "https://datanorth.ai/news/google-launches-gemini-3-8-flash-gemini-3-8-flash-cyber",
-        "https://deepmind.google/models/gemini/flash/"
+        "https://deepmind.google/models/gemini/flash/",
+        "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon"
       ],
       "strengths": [
         [
@@ -1842,6 +1905,10 @@
         [
           "3.8 Flash is built for coding and agents at a moderate price",
           "3.8 Flash est conçu pour le code et les agents à prix modéré"
+        ],
+        [
+          "Argon reaches 53 on the index, 12 points above Gemini 3.8 Flash",
+          "Argon atteint 53 à l’indice, 12 points au-dessus de Gemini 3.8 Flash"
         ]
       ],
       "limits": [
@@ -1852,6 +1919,10 @@
         [
           "The Pro and 3 Flash models are previews and may change",
           "Les modèles Pro et 3 Flash sont des préversions et peuvent changer"
+        ],
+        [
+          "Argon is a slow starter: AA measures a time to first token of about 45 seconds at high effort",
+          "Argon démarre lentement : Artificial Analysis mesure environ 45 secondes avant le premier jeton à l’effort élevé"
         ]
       ],
       "facts": [
@@ -3669,8 +3740,8 @@
     {
       "slug": "nemotron",
       "differentiator": [
-        "Nemotron 3 is NVIDIA’s open family built on a hybrid Mamba and Transformer mixture-of-experts design, tuned with reinforcement learning on multi-step tool tasks. Ultra scales it to 550B parameters, and Nano keeps 3B active for speed and price.",
-        "Nemotron 3 est la famille ouverte de NVIDIA, bâtie sur une architecture hybride Mamba et Transformer à mélange d’experts, affinée par apprentissage par renforcement sur des tâches à outils. Ultra monte à 550 Md de paramètres et Nano garde 3 Md actifs pour la vitesse et le prix."
+        "Nemotron 3 is NVIDIA’s open family built on a hybrid Mamba and Transformer mixture-of-experts design, tuned with reinforcement learning on multi-step tool tasks. Ultra scales it to 550B parameters, Super VL adds image and video reading with 12B active, and Nano keeps 3B active for speed and price.",
+        "Nemotron 3 est la famille ouverte de NVIDIA, bâtie sur une architecture hybride Mamba et Transformer à mélange d’experts, affinée par apprentissage par renforcement sur des tâches à outils. Ultra monte à 550 Md de paramètres, Super VL ajoute la lecture d’images et de vidéo avec 12 Md actifs, et Nano garde 3 Md actifs pour la vitesse et le prix."
       ],
       "signature": [
         [
@@ -3711,8 +3782,8 @@
           "external": false,
           "changes": [
             [
-              "550B total and 55B active parameters, the top of the family",
-              "550 Md de paramètres au total dont 55 Md actifs, le sommet de la famille"
+              "550B total and 55B active parameters, the largest of the family",
+              "550 Md de paramètres au total dont 55 Md actifs, le plus grand de la famille"
             ],
             [
               "Intelligence Index 23 versus 7 for Nano, with reasoning and 262K context",
@@ -3720,9 +3791,42 @@
             ]
           ],
           "source": "https://artificialanalysis.ai/models/nvidia-nemotron-3-ultra-550b-a55b"
+        },
+        {
+          "version": "Nemotron 3.5 Super VL 120B A12B",
+          "date": "2026-10-15",
+          "ids": ["nvidia-nemotron-3-5-super-vl-120b-a12b"],
+          "external": false,
+          "changes": [
+            [
+              "Vision-language model with 120B total and 12B active parameters, reading text, images and video, with an optional reasoning mode.",
+              "Modèle vision-langage de 120 Md de paramètres dont 12 Md actifs, qui lit le texte, les images et la vidéo, avec un mode raisonnement optionnel."
+            ],
+            [
+              "Scores 26 on the Artificial Analysis index, against 23 for Ultra; open weights under OpenMDW-1.1.",
+              "Obtient 26 à l’indice d’Artificial Analysis, contre 23 pour Ultra ; poids ouverts sous licence OpenMDW-1.1."
+            ]
+          ],
+          "source": "https://artificialanalysis.ai/models/nemotron-3-5-super-vl"
         }
       ],
       "specs": [
+        {
+          "version": "Nemotron 3.5 Super VL",
+          "ids": ["nvidia-nemotron-3-5-super-vl-120b-a12b"],
+          "params": "120B",
+          "activeParams": "12B",
+          "openWeights": true,
+          "license": "OpenMDW-1.1",
+          "maxOutput": null,
+          "inputs": ["text", "image", "video"],
+          "outputs": ["text"],
+          "languages": [
+            "English plus 6 languages emphasized in post-training",
+            "Anglais et 6 langues privilégiées à l’affinage"
+          ],
+          "source": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16"
+        },
         {
           "version": "Nemotron 3 Ultra",
           "ids": ["nvidia-nemotron-3-ultra-550b-a55b"],
@@ -3772,6 +3876,20 @@
             "Nano is small, fast and among the cheapest models in the catalog.",
             "Nano est petit, rapide et parmi les moins chers du catalogue."
           ]
+        },
+        {
+          "title": [
+            "Reading a screenshot or a scanned page",
+            "Lire une capture d’écran ou une page numérisée"
+          ],
+          "prompt": [
+            "Here is a screenshot of an error dialog and a photo of an invoice: tell me what the error means and list the invoice lines with their totals.",
+            "Voici une capture d’une fenêtre d’erreur et la photo d’une facture : dites-moi ce que signifie l’erreur et listez les lignes de la facture avec leurs totaux."
+          ],
+          "why": [
+            "Super VL reads images, documents and GUIs, which Ultra and Nano do not.",
+            "Super VL lit les images, les documents et les interfaces, ce que ne font ni Ultra ni Nano."
+          ]
         }
       ],
       "rivals": [
@@ -3785,8 +3903,8 @@
         {
           "slug": "qwen-open",
           "verdict": [
-            "Qwen open models add image input where Nemotron stays text only.",
-            "Les modèles ouverts Qwen ajoutent l’entrée d’images là où Nemotron reste texte seul."
+            "Qwen open models also read images; in Nemotron only Super VL does, and Qwen has more sizes to choose from.",
+            "Les modèles ouverts Qwen lisent aussi les images ; chez Nemotron seul Super VL le fait, et Qwen offre plus de tailles au choix."
           ]
         },
         {
@@ -3804,20 +3922,32 @@
         "https://artificialanalysis.ai/models/nvidia-nemotron-3-nano-30b-a3b",
         "https://api.venice.ai/api/v1/models?type=text",
         "https://pasqualepillitteri.it/en/news/3924/nemotron-3-ultra-nvidia-open-model",
-        "https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/"
+        "https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/",
+        "https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+        "https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4",
+        "https://artificialanalysis.ai/models/nemotron-3-5-super-vl"
       ],
       "strengths": [
         [
           "Ultra is built for long agent runs with many tool calls",
           "Ultra est conçu pour de longues sessions d’agent avec beaucoup d’outils"
         ],
-        ["Private mode, moderate price", "Mode privé, prix modéré"]
+        ["Private mode, moderate price", "Mode privé, prix modéré"],
+        [
+          "Super VL reads images and video, has open weights and scores highest of the family on the index",
+          "Super VL lit les images et la vidéo, a des poids ouverts et obtient le meilleur score de la famille à l’indice"
+        ]
       ],
-      "limits": [["Text only, no image reading", "Texte seul, ne lit pas les images"]],
+      "limits": [
+        [
+          "Ultra and Nano read text only; images and video come with Super VL",
+          "Ultra et Nano lisent le texte seul ; les images et la vidéo viennent avec Super VL"
+        ]
+      ],
       "facts": [
         [
-          "Ultra: 550B parameters, 55B active, 256K context here",
-          "Ultra : 550 milliards de paramètres, 55 actifs, contexte de 256K ici"
+          "Ultra: 550B parameters, 55B active, 256K context here. Super VL: 120B, 12B active, 262K here",
+          "Ultra : 550 milliards de paramètres, 55 actifs, contexte de 256K ici. Super VL : 120 Md, 12 actifs, 262K ici"
         ],
         ["Open weights", "Poids ouverts"]
       ]
@@ -4615,6 +4745,306 @@
           "Gemma 4 Uncensored : contexte de 256K, vision"
         ],
         ["Abliterated Large V2: 1M context", "Abliterated Large V2 : contexte de 1M"]
+      ]
+    },
+    {
+      "slug": "hy",
+      "differentiator": [
+        "Hy is the model line of Tencent’s Hy team. Hy4 preview is a large open-weight model, text only, which Tencent itself calls an early version with known issues.",
+        "Hy est la gamme de modèles de l’équipe Hy de Tencent. Hy4 preview est un grand modèle à poids ouverts, texte seul, que Tencent présente elle-même comme une version précoce aux défauts connus."
+      ],
+      "signature": [
+        ["770B parameters, 49B active per token", "770 Md de paramètres, 49 Md actifs par jeton"],
+        ["Apache 2.0 open weights", "Poids ouverts sous Apache 2.0"],
+        [
+          "1M-token context, text in and out",
+          "Contexte de 1M de jetons, texte en entrée et en sortie"
+        ]
+      ],
+      "strengths": [
+        [
+          "Tencent trained it on work from its own engineers, game developers and analysts: software, office documents, data analysis and game prototypes.",
+          "Tencent l’a entraîné sur le travail de ses propres ingénieurs, développeurs de jeux et analystes : logiciel, documents bureautiques, analyse de données et prototypes de jeux."
+        ],
+        [
+          "Weights are free to use and modify under Apache 2.0, with an FP8 version also published.",
+          "Les poids sont libres d’usage et de modification sous Apache 2.0, avec aussi une version FP8."
+        ]
+      ],
+      "limits": [
+        [
+          "Text only: it does not read images, audio or video.",
+          "Texte seul : il ne lit ni les images, ni l’audio, ni la vidéo."
+        ],
+        [
+          "Tencent lists known issues: it can reason longer than needed on complex tasks and over-verify its own work.",
+          "Tencent signale des défauts connus : il peut raisonner plus longtemps que nécessaire sur les tâches complexes et trop vérifier son propre travail."
+        ]
+      ],
+      "facts": [
+        [
+          "Hy4 preview was published on Hugging Face in late August 2026.",
+          "Hy4 preview a été publié sur Hugging Face fin août 2026."
+        ],
+        [
+          "It writes up to 64,000 tokens per reply in this catalog and supports a reasoning effort of none, low or high.",
+          "Il écrit jusqu’à 64 000 jetons par réponse dans ce catalogue et accepte un effort de raisonnement nul, bas ou élevé."
+        ]
+      ],
+      "releases": [
+        {
+          "version": "Hy4 preview",
+          "date": "2026-08",
+          "ids": ["hy4-preview"],
+          "external": false,
+          "changes": [
+            [
+              "Open-weight 770B mixture-of-experts model with 49B active parameters and a 1M-token context",
+              "Modèle à poids ouverts, mixture d’experts de 770 Md de paramètres dont 49 Md actifs, avec un contexte de 1M de jetons"
+            ],
+            [
+              "Post-trained for software engineering, office and data analysis, game development and research",
+              "Post-entraîné pour le génie logiciel, le travail de bureau et l’analyse de données, le développement de jeux et la recherche"
+            ]
+          ],
+          "source": "https://huggingface.co/tencent/Hy4-preview"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Hy4 preview",
+          "ids": ["hy4-preview"],
+          "params": "770B",
+          "activeParams": "49B",
+          "openWeights": true,
+          "license": "Apache 2.0",
+          "maxOutput": 64000,
+          "inputs": ["text"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://huggingface.co/tencent/Hy4-preview"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Turn files into a shareable report",
+            "Transformer des fichiers en rapport partageable"
+          ],
+          "prompt": [
+            "Here are three spreadsheets and two memos. Build a one-page summary of the quarter with the main variances explained.",
+            "Voici trois tableurs et deux notes. Faites un résumé d’une page du trimestre en expliquant les principaux écarts."
+          ],
+          "why": [
+            "Tencent trained it on office and data analysis work.",
+            "Tencent l’a entraîné sur du travail de bureau et d’analyse de données."
+          ]
+        },
+        {
+          "title": ["Prototype a small game", "Prototyper un petit jeu"],
+          "prompt": [
+            "Write a playable browser version of a falling-blocks puzzle game with a score and a game-over screen.",
+            "Écrivez une version jouable dans le navigateur d’un jeu de blocs qui tombent, avec un score et un écran de fin."
+          ],
+          "why": [
+            "Game prototyping is one of the four areas Tencent names for this model.",
+            "Le prototypage de jeux est l’un des quatre domaines que Tencent cite pour ce modèle."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "glm",
+          "verdict": [
+            "In Tencent’s own blind test of 203 engineering tasks it rated Hy4 preview slightly ahead of GLM 5.3 (2.99 vs 2.92), a vendor claim.",
+            "Dans le test à l’aveugle de Tencent sur 203 tâches d’ingénierie, Hy4 preview est jugé légèrement devant GLM 5.3 (2,99 contre 2,92), selon le fournisseur."
+          ]
+        },
+        {
+          "slug": "kimi",
+          "verdict": [
+            "Tencent’s own blind test rated Hy4 preview slightly ahead of Kimi K3 (2.99 vs 2.94), a vendor claim.",
+            "Le test à l’aveugle de Tencent juge Hy4 preview légèrement devant Kimi K3 (2,99 contre 2,94), selon le fournisseur."
+          ]
+        },
+        {
+          "slug": "deepseek",
+          "verdict": [
+            "Another large open-weight family from a Chinese lab, with 1M context.",
+            "Autre grande famille à poids ouverts d’un laboratoire chinois, avec 1M de contexte."
+          ]
+        }
+      ],
+      "sources": [
+        "https://huggingface.co/tencent/Hy4-preview",
+        "https://api.venice.ai/api/v1/models?type=all"
+      ]
+    },
+    {
+      "slug": "muse",
+      "differentiator": [
+        "Muse is Meta’s current model line, separate from the older Llama family. Muse Wonder is a closed frontier model for long agentic work, and Muse Spark Open is a smaller open-weight sibling released three days later.",
+        "Muse est la gamme actuelle de modèles de Meta, distincte de l’ancienne famille Llama. Muse Wonder est un modèle de pointe fermé pour les longues tâches d’agent, et Muse Spark Open est son cadet à poids ouverts, publié trois jours plus tard."
+      ],
+      "signature": [
+        ["1M-token context on both models", "Contexte de 1M de jetons sur les deux modèles"],
+        ["Wonder reads images, video and audio", "Wonder lit les images, la vidéo et l’audio"],
+        [
+          "Spark Open ships open weights, 816B with 42B active",
+          "Spark Open sort avec des poids ouverts, 816 Md dont 42 Md actifs"
+        ]
+      ],
+      "strengths": [
+        [
+          "Muse Wonder scores 52 on the Artificial Analysis Intelligence Index and Muse Spark Open 39, the latter ranked among the open-weight models there.",
+          "Muse Wonder obtient 52 à l’indice d’intelligence d’Artificial Analysis et Muse Spark Open 39, ce dernier classé parmi les modèles à poids ouverts."
+        ],
+        [
+          "Meta presents Wonder as built to plan, recover from errors and keep a multi-step task on course, with an optional maximum reasoning effort.",
+          "Meta présente Wonder comme conçu pour planifier, se corriger après une erreur et tenir le cap d’une tâche en plusieurs étapes, avec un effort de raisonnement maximal en option."
+        ],
+        [
+          "Both models accept images, up to 10 per request, and call tools.",
+          "Les deux modèles acceptent les images, jusqu’à 10 par requête, et appellent des outils."
+        ]
+      ],
+      "limits": [
+        [
+          "Muse Wonder is proprietary: no weights to download. Spark Open’s Muse Model License asks for a “Built with Muse Spark Open” credit and a separate agreement for large model-as-a-service resellers.",
+          "Muse Wonder est propriétaire : aucun poids à télécharger. La licence Muse Model de Spark Open demande la mention « Built with Muse Spark Open » et un accord séparé pour les gros revendeurs de modèle en service."
+        ],
+        [
+          "Spark Open reads images but not video or audio in this catalog; only Wonder takes them.",
+          "Dans ce catalogue, Spark Open lit les images mais ni la vidéo ni l’audio ; seul Wonder les accepte."
+        ]
+      ],
+      "facts": [
+        [
+          "Muse Wonder was released on 12 October 2026, Muse Spark Open on 15 October 2026.",
+          "Muse Wonder est sorti le 12 octobre 2026, Muse Spark Open le 15 octobre 2026."
+        ],
+        [
+          "Both accept up to 1,048,576 tokens of context and write up to 131,072 tokens in one reply.",
+          "Les deux acceptent jusqu’à 1 048 576 jetons de contexte et écrivent jusqu’à 131 072 jetons par réponse."
+        ]
+      ],
+      "releases": [
+        {
+          "version": "Muse Wonder",
+          "date": "2026-10-12",
+          "ids": ["muse-wonder"],
+          "external": false,
+          "changes": [
+            [
+              "Meta’s first frontier model, for personal and professional agentic tasks, released with a larger Muse Wonder Full sold only to Muse Code subscribers",
+              "Premier modèle de pointe de Meta, pour les tâches d’agent personnelles et professionnelles, publié avec un Muse Wonder Full plus grand réservé aux abonnés de Muse Code"
+            ],
+            [
+              "Available through the Meta Model API and Muse Code",
+              "Disponible via l’API Meta Model et Muse Code"
+            ]
+          ],
+          "source": "https://about.fb.com/news/2026/10/introducing-muse-wonder-models"
+        },
+        {
+          "version": "Muse Spark Open",
+          "date": "2026-10-15",
+          "ids": ["muse-spark-open"],
+          "external": false,
+          "changes": [
+            [
+              "Open-weight sparse mixture-of-experts reasoning model, 816B parameters with 42B active, for coding and agent work",
+              "Modèle de raisonnement à poids ouverts, mixture d’experts creuse de 816 Md de paramètres dont 42 Md actifs, pour le code et le travail d’agent"
+            ],
+            ["Released under the Muse Model License", "Publié sous la licence Muse Model"]
+          ],
+          "source": "https://artificialanalysis.ai/models/muse-spark-open"
+        }
+      ],
+      "specs": [
+        {
+          "version": "Muse Wonder",
+          "ids": ["muse-wonder"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": 131072,
+          "inputs": ["text", "image", "video", "audio"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://api.venice.ai/api/v1/models?type=all"
+        },
+        {
+          "version": "Muse Spark Open",
+          "ids": ["muse-spark-open"],
+          "params": "816B",
+          "activeParams": "42B",
+          "openWeights": true,
+          "license": "Muse Model License",
+          "maxOutput": 131072,
+          "inputs": ["text", "image"],
+          "outputs": ["text"],
+          "languages": null,
+          "source": "https://huggingface.co/meta-models/Muse-Spark-Open-816B-A42B"
+        }
+      ],
+      "useCases": [
+        {
+          "title": [
+            "Work across a video and its documents",
+            "Travailler sur une vidéo et ses documents"
+          ],
+          "prompt": [
+            "Watch this recorded demo, read the attached spec, and list every place where the product behaves differently from the spec.",
+            "Regardez cette démonstration enregistrée, lisez le cahier des charges joint et listez chaque endroit où le produit se comporte autrement que prévu."
+          ],
+          "why": [
+            "Muse Wonder takes video, audio, images and PDFs in one request.",
+            "Muse Wonder accepte vidéo, audio, images et PDF dans une même requête."
+          ]
+        },
+        {
+          "title": ["Long coding task with tools", "Longue tâche de code avec outils"],
+          "prompt": [
+            "Find why the nightly export job times out, propose a fix, and write the test that would have caught it.",
+            "Trouvez pourquoi la tâche d’export nocturne dépasse son délai, proposez un correctif et écrivez le test qui l’aurait détecté."
+          ],
+          "why": [
+            "Both models are tuned for tool calling and multi-step agent work.",
+            "Les deux modèles sont réglés pour l’appel d’outils et le travail d’agent en plusieurs étapes."
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "slug": "claude",
+          "verdict": [
+            "Claude Opus 5.5 scores 58 on the index against 52 for Muse Wonder.",
+            "Claude Opus 5.5 obtient 58 à l’indice contre 52 pour Muse Wonder."
+          ]
+        },
+        {
+          "slug": "gpt",
+          "verdict": [
+            "GPT-6 Astra scores 53 on the index, one point above Muse Wonder.",
+            "GPT-6 Astra obtient 53 à l’indice, un point de plus que Muse Wonder."
+          ]
+        },
+        {
+          "slug": "gpt-oss",
+          "verdict": [
+            "Another open-weight family from a large lab, to compare with Muse Spark Open.",
+            "Autre famille à poids ouverts d’un grand laboratoire, à comparer à Muse Spark Open."
+          ]
+        }
+      ],
+      "sources": [
+        "https://about.fb.com/news/2026/10/introducing-muse-wonder-models",
+        "https://artificialanalysis.ai/models/muse-wonder",
+        "https://artificialanalysis.ai/models/muse-spark-open",
+        "https://huggingface.co/meta-models/Muse-Spark-Open-816B-A42B",
+        "https://api.venice.ai/api/v1/models?type=all"
       ]
     }
   ]

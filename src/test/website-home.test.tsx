@@ -81,9 +81,9 @@ describe("the home page", () => {
     expect(html).toContain("/home/home-en-light.webp");
     expect(html).toContain('media="(prefers-color-scheme: dark)"');
     expect(html).not.toContain("product-window");
-    expect(html).toContain("About 19 credits");
+    expect(html).toContain("About 16 credits");
     expect(html).toContain("From 0.5 credits");
-    expect(html).toContain("From 9 credits");
+    expect(html).toContain("From 4.1 credits");
     expect(html).toContain(`${FAMILY_COUNT} model families`);
     expect(html).toMatch(/<img[^>]+width="1600"[^>]+height="1000"/);
     expect(html).not.toMatch(/style="/);
