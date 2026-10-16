@@ -2743,7 +2743,7 @@ jamais rendus).
   distante remplace par `artifact_id`) ; une liste d'appareils vide ne doit pas
   ouvrir la porte ; `compaction::step` vérifie la porte lui-même.
 
-## Ce qu'une note enregistre : micro, ordinateur, ou les deux (2026-10-14, ADR-0112)
+## Ce qu'une note enregistre : micro, ordinateur, ou les deux (2026-10-14, ADR-0113)
 
 Demandé : « pour les notes, enregistrer le micro ou le son de l'ordinateur
 (Zoom, Teams) ». Conception notée dans

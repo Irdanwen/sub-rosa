@@ -1,5 +1,5 @@
 //! Windows: the computer's sound through WASAPI loopback, in process
-//! (ADR-0112).
+//! (ADR-0113).
 //!
 //! cpal opens a loopback stream when an input stream is built on an output
 //! device. One worker thread owns that stream (so nothing asks whether a

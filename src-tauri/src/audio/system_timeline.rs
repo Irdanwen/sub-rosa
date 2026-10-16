@@ -1,4 +1,4 @@
-//! Keeps the Windows system lane on the wall clock (ADR-0112).
+//! Keeps the Windows system lane on the wall clock (ADR-0113).
 //!
 //! WASAPI loopback delivers nothing while nothing plays, so a file written
 //! from its packets alone would be shorter than the take, and every turn

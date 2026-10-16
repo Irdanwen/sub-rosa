@@ -1,4 +1,4 @@
-# ADR-0112: Windows captures the computer's sound in process, and a note can record it alone
+# ADR-0113: Windows captures the computer's sound in process, and a note can record it alone
 
 Date: 2026-10-14. Status: accepted. Builds on
 [ADR-0004](0004-out-of-process-system-audio-helper.md) (the macOS helper),

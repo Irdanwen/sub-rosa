@@ -51,4 +51,4 @@ in process with WASAPI loopback, behind the same `audio::system` surface
 and status shape: there is no permission there to isolate and no helper to
 sign. A note can also record the computer alone (`SystemOnly`), with the
 microphone never opened. See
-[ADR-0112](0112-windows-captures-the-computers-sound-in-process.md).
+[ADR-0113](0113-windows-captures-the-computers-sound-in-process.md).

@@ -69,7 +69,7 @@ situation: `MicrophonePlusSystem` ("Microphone and computer", for a call),
 never opened). The person's choice is remembered and never rewritten by
 readiness; each start resolves it, and only "Microphone and computer" may
 fall back, visibly, to the microphone (see
-[ADR-0112](docs/adr/0112-windows-captures-the-computers-sound-in-process.md)).
+[ADR-0113](docs/adr/0113-windows-captures-the-computers-sound-in-process.md)).
 _Avoid_: recording type, meeting mode.
 
 **Source**:
@@ -141,7 +141,7 @@ _Avoid_: system driver, in-process capture (on macOS).
 The in-process WASAPI loopback capture of the default output device
 (`audio/system_windows.rs`), padded with silence to the wall clock so its
 turns line up with the microphone's
-(see [ADR-0112](docs/adr/0112-windows-captures-the-computers-sound-in-process.md)).
+(see [ADR-0113](docs/adr/0113-windows-captures-the-computers-sound-in-process.md)).
 On screen, the `System` source is "the computer" ("Computer", "the
 computer's sound") on both platforms.
 _Avoid_: system audio helper (that is the macOS `.app`), virtual driver.

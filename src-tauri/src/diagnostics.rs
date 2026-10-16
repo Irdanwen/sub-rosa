@@ -65,7 +65,7 @@ pub struct PlatformCapabilities {
     /// A name the webview can show ("macOS", "Windows", "iOS", "Android").
     pub platform: &'static str,
     /// The computer's own sound as a recording source: the out-of-process
-    /// helper on macOS (ADR-0004), WASAPI loopback on Windows (ADR-0112).
+    /// helper on macOS (ADR-0004), WASAPI loopback on Windows (ADR-0113).
     pub system_audio: bool,
     /// The floating dictation / meeting / agent HUD windows.
     pub hud: bool,

@@ -23,7 +23,7 @@ API. Global dictation shortcuts, dictation paste, and Seatbelt sandbox features
 are macOS-only.
 
 Notes record the computer's sound on Windows too, in process through WASAPI
-loopback (ADR-0112): "Microphone and computer", "Microphone only" and
+loopback (ADR-0113): "Microphone and computer", "Microphone only" and
 "Computer only" all work, with no permission to grant. Before a release, check
 on a real Windows machine that a call (Teams, Zoom, a browser) and a video are
 captured, that several minutes of silence keep the turns in order, that

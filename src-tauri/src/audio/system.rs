@@ -1,6 +1,6 @@
 //! The computer's sound (the `System` source), one surface over two
 //! backends: the out-of-process macOS helper (ADR-0004) and, on Windows,
-//! in-process WASAPI loopback (ADR-0112). Capture, readiness and the
+//! in-process WASAPI loopback (ADR-0113). Capture, readiness and the
 //! permission probe go through here so `capture.rs` and the readiness check
 //! stay free of platform `cfg`s.
 

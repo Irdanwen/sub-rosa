@@ -5,7 +5,7 @@ and transcribes into a note. It is **saved-audio-first**: the local WAV is the
 source of truth, provider speed is secondary. See
 [ADR-0005](adr/0005-source-separated-audio-capture.md) (one WAV per source),
 [ADR-0004](adr/0004-out-of-process-system-audio-helper.md) (system-audio
-helper), [ADR-0112](adr/0112-windows-captures-the-computers-sound-in-process.md)
+helper), [ADR-0113](adr/0113-windows-captures-the-computers-sound-in-process.md)
 (the three source modes and Windows loopback), and
 [ADR-0002](adr/0002-live-transcript-preview-strategy.md) (live preview).
 
@@ -75,7 +75,7 @@ The helper is controlled and observed out-of-process (see ADR-0004):
 
 ## Windows loopback
 
-The computer's sound on Windows is captured in process (see ADR-0112):
+The computer's sound on Windows is captured in process (see ADR-0113):
 
 - **Capture:** cpal builds an input stream on the default output device,
   which WASAPI opens as loopback. A dedicated worker thread owns the stream;

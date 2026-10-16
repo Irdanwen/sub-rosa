@@ -2,7 +2,7 @@
 
 > Conception. Date : 2026-10-14. **État : implémenté le 2026-10-14**, les
 > cinq lots dans la même branche ; les décisions sont dans
-> [ADR-0112](adr/0112-windows-captures-the-computers-sound-in-process.md).
+> [ADR-0113](adr/0113-windows-captures-the-computers-sound-in-process.md).
 > Premier jet noté 6/10, puis cible 10/10. Ce document reste le registre de la
 > réflexion, pas la source de vérité. Reste à valider sur matériel réel
 > (§ Vérification).
@@ -217,7 +217,7 @@ l'echo) est prête. Ce qui coûte des points :
   testé sur la CI Linux.
 - Readiness `granted` si une sortie par défaut existe, sinon
   `checkSoundOutput`. Carte des capacités : `system_audio: true` sur Windows.
-- **ADR-0112** « Windows capte le son de l'ordinateur dans le processus » :
+- **ADR-0113** « Windows capte le son de l'ordinateur dans le processus » :
   aucune permission à isoler, cpal déjà lié, pas de second binaire à signer
   dans le pipeline NSIS ; process loopback (par application) écarté pour
   l'instant ; seul le périphérique du rôle console est capté, le contenu DRM

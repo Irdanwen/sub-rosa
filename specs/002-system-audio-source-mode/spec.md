@@ -141,7 +141,7 @@ A user does not lose recoverable audio if the app closes, capture fails, or prov
 
 ## Addendum 2026-10-14: three source modes, a remembered choice, Windows
 
-Superseding where they conflict ([ADR-0112](../../docs/adr/0112-windows-captures-the-computers-sound-in-process.md)):
+Superseding where they conflict ([ADR-0113](../../docs/adr/0113-windows-captures-the-computers-sound-in-process.md)):
 
 - A third mode, **Computer only** (`SystemOnly`, stored `system_only`), records
   the computer's sound and never opens the microphone. The three modes are
