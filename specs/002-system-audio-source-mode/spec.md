@@ -138,3 +138,28 @@ A user does not lose recoverable audio if the app closes, capture fails, or prov
 - The implementation may reuse ideas from the legacy native macOS helper, but the new app should keep the current local storage, validation, retry, and recovery model.
 - Source-labeled transcripts are sufficient for this feature; perfect chronological interleaving between microphone and system audio is not required.
 - The existing local provider configuration remains the transcription and note generation path unless a later feature changes provider settings.
+
+## Addendum 2026-10-14: three source modes, a remembered choice, Windows
+
+Superseding where they conflict ([ADR-0113](../../docs/adr/0113-windows-captures-the-computers-sound-in-process.md)):
+
+- A third mode, **Computer only** (`SystemOnly`, stored `system_only`), records
+  the computer's sound and never opens the microphone. The three modes are
+  named by situation on screen: "Microphone and computer" (a call),
+  "Microphone only" (a meeting in the room), "Computer only" (a webinar or a
+  video).
+- **FR-002 is superseded:** the default for someone who never chose is
+  "Microphone and computer", and the person's choice is remembered across
+  launches. Readiness never rewrites the choice.
+- **Fallback is visible, and one-way.** "Microphone and computer" falls back
+  to the microphone when the computer is not available, and the recorder says
+  so for the whole take. "Computer only" never falls back to the microphone:
+  it refuses to start.
+- **Retry reuses the take's own mode** (FR-021), now read from the stored
+  session, including computer-only takes.
+- **Windows** records the computer's sound through WASAPI loopback, with no
+  permission step; the options are offered wherever the capability map says
+  `systemAudio`, not by platform name.
+- A computer lane never heard during the first 20 seconds raises a
+  dismissible warning; a computer-only take that stayed silent fails before
+  transcription with a sentence that says why.

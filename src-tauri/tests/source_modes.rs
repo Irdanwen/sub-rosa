@@ -46,6 +46,32 @@ async fn persists_source_mode_with_recording_session() {
 }
 
 #[tokio::test]
+async fn persists_a_computer_only_session() {
+    let repos = test_repositories().await;
+    let note = repos.create_note(None).await.expect("note should exist");
+
+    repos
+        .create_recording_session(
+            &note.id,
+            "session-computer",
+            RecordingSourceMode::SystemOnly,
+            "/tmp/system.partial.wav",
+            "/tmp/system.wav",
+            None,
+        )
+        .await
+        .expect("session should be created");
+
+    let mode = repos
+        .recording_session_source_mode("session-computer")
+        .await
+        .expect("query should succeed")
+        .expect("session should be found");
+
+    assert_eq!(mode, RecordingSourceMode::SystemOnly);
+}
+
+#[tokio::test]
 async fn stores_source_artifacts_independently() {
     let repos = test_repositories().await;
     let note = repos.create_note(None).await.expect("note should exist");

@@ -22,7 +22,6 @@ import { IconMicrophone } from "central-icons-filled/IconMicrophone";
 import { AnimatePresence, motion } from "framer-motion";
 import { EASE_OUT } from "../../lib/motion";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Switch } from "../ui/Switch";
 import type {
   FolderDto,
   LiveTranscriptEventDto,
@@ -39,6 +38,9 @@ import { ProcessingResumeNotice } from "./ProcessingResumeNotice";
 import { InlineNotice } from "../ui/InlineNotice";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { RecorderBar } from "../recorder/RecorderBar";
+import { SourceModeChoice } from "../recorder/SourceModeChoice";
+import { sourceModeIncludesMicrophone } from "../../lib/recording-source-mode";
+import { recordingWarningMessage } from "../../lib/recording-warnings";
 import { NoteRecoveryPrompt } from "../recorder/NoteRecoveryPrompt";
 import { isMacLikePlatform } from "../../lib/platform";
 import { usePlatformCapabilities } from "../../lib/platform-capabilities";
@@ -75,6 +77,9 @@ type NoteEditorProps = {
   onEnableSystemAudio: () => void;
   onEnableMicrophone: () => void;
   microphoneBlocked: boolean;
+  /** This note's take records the microphone alone although the computer
+   * was asked for; the recorder says so while it runs. */
+  computerFallback?: boolean;
   onStartRecording: () => void;
   onPauseRecording: (sessionId: string) => void;
   onResumeRecording: (sessionId: string) => void;
@@ -109,7 +114,7 @@ const BASE_TABS = [
 const SUMMARY_TAB = { value: "summary", label: t("Summary") } as const;
 
 function sourceLabel(source?: string) {
-  return source === "system" ? "System" : "Microphone";
+  return source === "system" ? t("Computer") : t("Microphone");
 }
 
 /** Normalise a turn's source to one of the two filterable buckets — an
@@ -128,7 +133,7 @@ type RenderedTranscriptTurn = TranscriptDto & {
 const SOURCE_FILTERS = [
   { value: "all", label: t("All") },
   { value: "microphone", label: t("Microphone") },
-  { value: "system", label: t("System") },
+  { value: "system", label: t("Computer") },
 ] as const;
 
 const RECORD_CONSENT_REVEAL_DELAY_MS = 420;
@@ -168,6 +173,7 @@ export function NoteEditor({
   onEnableSystemAudio,
   onEnableMicrophone,
   microphoneBlocked,
+  computerFallback = false,
   onStartRecording,
   onPauseRecording,
   onResumeRecording,
@@ -304,19 +310,25 @@ export function NoteEditor({
     if (!hasBothSources || sourceFilter === "all") return transcriptTurns;
     return transcriptTurns.filter((turn) => sourceKey(turn.source) === sourceFilter);
   }, [transcriptTurns, hasBothSources, sourceFilter]);
-  const systemOn = sourceMode === "microphonePlusSystem";
   const systemAvailability = systemAudioAvailability(sourceReadiness);
   const systemUnsupported = systemAvailability === "unsupported";
-  // Denied and granted-but-uncapturable both mean the switch must not be
-  // offered; only the recovery copy differs.
-  const systemLocked = systemAvailability === "denied" || systemAvailability === "unavailable";
-  // System audio is a capability Rust reports (diagnostics::capabilities);
-  // the platform predicate only fills the frame before that answer lands.
+  const systemRecoveryAction = sourceReadiness?.sources.find(
+    (source) => source.source === "system",
+  )?.recoveryAction;
+  // Recording the computer is a capability Rust reports
+  // (diagnostics::capabilities, true on macOS and Windows); the platform
+  // predicate only fills the frame before that answer lands.
   const capabilities = usePlatformCapabilities();
   const showRecordingOptions = capabilities?.systemAudio ?? isMacLikePlatform();
   // Mic denial is sourced from App via the dictation helper, not from
-  // sourceReadiness — the Rust cpal-based check can't see TCC denials.
-  const micDenied = microphoneBlocked;
+  // sourceReadiness — the Rust cpal-based check can't see TCC denials. It
+  // only blocks recording when the chosen mode opens the microphone.
+  const micDenied = microphoneBlocked && sourceModeIncludesMicrophone(sourceMode);
+  // A warning the person dismissed stays dismissed for that take.
+  const [dismissedWarning, setDismissedWarning] = useState<string>();
+  const visibleWarning = recordingForNote?.warnings?.find(
+    (warning) => `${recordingForNote.sessionId}:${warning.code}` !== dismissedWarning,
+  );
 
   // Auto-close the options panel whenever a recording starts so the
   // shell can transition into the recorder bar cleanly.
@@ -660,7 +672,7 @@ export function NoteEditor({
         ) : (
           <div className="record-dock">
             <AnimatePresence>
-              {recordingForNote?.warnings?.length ? (
+              {recordingForNote && visibleWarning ? (
                 <motion.div
                   key="source-warning"
                   className="record-consent-note"
@@ -670,13 +682,48 @@ export function NoteEditor({
                   transition={{ duration: 0.22, ease: "easeOut" }}
                 >
                   <InlineNotice
-                    className="record-consent-note-surface"
+                    className="record-consent-note-surface record-warning-surface"
                     aria-label={t("Recording source warning")}
-                    body={recordingForNote.warnings[0].message}
+                    body={recordingWarningMessage(visibleWarning)}
+                    actions={
+                      visibleWarning.code === "system_audio_silent" ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() =>
+                            setDismissedWarning(
+                              `${recordingForNote.sessionId}:${visibleWarning.code}`,
+                            )
+                          }
+                        >
+                          {t("Dismiss")}
+                        </button>
+                      ) : null
+                    }
+                  />
+                </motion.div>
+              ) : recordingForNote && computerFallback ? (
+                <motion.div
+                  key="computer-fallback"
+                  className="record-consent-note"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.22, ease: EASE_OUT }}
+                >
+                  <InlineNotice
+                    className="record-consent-note-surface record-warning-surface"
+                    aria-label={t("Recording source warning")}
+                    body={t(
+                      "Only the microphone is recording. The computer's sound is not available right now.",
+                    )}
                   />
                 </motion.div>
               ) : null}
-              {recordingForNote && consentReminderVisible && !recordingForNote.warnings?.length ? (
+              {recordingForNote &&
+              consentReminderVisible &&
+              !visibleWarning &&
+              !computerFallback ? (
                 <motion.div
                   key="consent"
                   className="record-consent-note"
@@ -718,31 +765,18 @@ export function NoteEditor({
                   <div className="record-options-panel-inner">
                     {systemUnsupported ? (
                       <p className="record-options-unsupported">
-                        {t("System audio requires macOS 14.2 or later.")}
+                        {t("Recording the computer's sound needs macOS 14.2 or later.")}
                       </p>
                     ) : (
-                      <div className="record-options-row" data-locked={systemLocked || undefined}>
-                        <Switch
-                          checked={systemOn}
-                          disabled={systemLocked}
-                          aria-labelledby="record-options-system"
-                          onCheckedChange={(next) =>
-                            onSourceModeChange(next ? "microphonePlusSystem" : "microphoneOnly")
-                          }
-                        />
-                        <span id="record-options-system" className="record-options-label">
-                          {t("Capture system audio")}
-                        </span>
-                        {systemAvailability === "denied" ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost record-options-enable"
-                            onClick={onEnableSystemAudio}
-                          >
-                            {t("Enable")}
-                          </button>
-                        ) : null}
-                      </div>
+                      <SourceModeChoice
+                        className="record-options-row record-options-choice"
+                        name={`record-source-${note.id}`}
+                        value={sourceMode}
+                        onChange={onSourceModeChange}
+                        availability={systemAvailability}
+                        recoveryAction={systemRecoveryAction}
+                        onEnableSystemAudio={onEnableSystemAudio}
+                      />
                     )}
                   </div>
                 </div>

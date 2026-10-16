@@ -119,6 +119,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0110](adr/0110-the-account-keeps-inside-its-quota-and-text-never-waits-for-files.md) — files stop short of the quota by a journal reserve so text always leaves; a refusal for room is not a failed pass and sending waits instead of asking every tick; chunks are released from the journal's deletions and by a sweep of unnamed ones, each checked against what the device names; once every app announces 1.91, recordings are kept as 16 kHz copies and chunks in a binary envelope; a manifest never names lost chunks (the account full on 2026-10-06)
 - [adr/0111](adr/0111-the-desktop-studio-renders-on-the-stage.md) — the desktop Studio goes from eleven tabs to five (Image, Video, Audio, Films, Gallery); every generation surface is a stage, a dock and a foldable inspector; one wait (the veil) and the renders in flight in a filmstrip; the stage and dock components are shared with the phone; addendum: the sidebar keeps six places (New chat + menu; Notes, Projects, Dictation, Studio, Library, Today)
 - [adr/0112](adr/0112-recordings-leave-a-chosen-age-after-transcription.md) — `account_preferences` carries how many days after transcription recordings go (7 to 365, or never); every device deletes its copy and takes the account's out, nothing purged is sent again, a choice that deletes now asks first; replaces the device-only manual removal
+- [adr/0113](adr/0113-windows-captures-the-computers-sound-in-process.md) — three source modes named by situation (microphone and computer, microphone only, computer only, where the microphone never opens); the choice is remembered and never silently downgraded; Windows captures the computer's sound in process with WASAPI loopback, padded to the wall clock; a silent computer lane is flagged during the take and a silent computer-only take fails before transcription
 
 Numbers 0103, 0105 and 0106 are reserved and unused: they were handed out in
 advance to parity lots that ran in parallel on 2026-10-08, and those lots
@@ -216,6 +217,7 @@ tasks / contracts / checklists`.
 - [vps-site-delivery-2026-09-15.md](vps-site-delivery-2026-09-15.md) — public English website on the VPS, HTTPS/browser evidence, rollback and outstanding registration dependencies.
 - [vps-account-stack.md](vps-account-stack.md) — isolated account-service deployment preparation, identity, database privileges, secret handling and activation prerequisites.
 - [plan-films-locaux-2026-08-24.md](plan-films-locaux-2026-08-24.md) — design: film production becomes local, Videomaker is removed (finishes ADR-0017)
+- [plan-sources-enregistrement-2026-10-14.md](plan-sources-enregistrement-2026-10-14.md) — conception (implémentée, voir ADR-0113) : choisir ce qu'une note enregistre sur desktop (micro et ordinateur, micro seul, ordinateur seul), capture Windows par loopback, repli visible ; idée notée 6/10 puis cible 10/10, en cinq lots.
 - [IMPLEMENTATION-films-locaux-2026-08-24.md](IMPLEMENTATION-films-locaux-2026-08-24.md) — the executable spec for the above: five waves, verified seams, keyless smokes, DONE per wave
 
 ## Parity

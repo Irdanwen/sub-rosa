@@ -5,14 +5,19 @@ and transcribes into a note. It is **saved-audio-first**: the local WAV is the
 source of truth, provider speed is secondary. See
 [ADR-0005](adr/0005-source-separated-audio-capture.md) (one WAV per source),
 [ADR-0004](adr/0004-out-of-process-system-audio-helper.md) (system-audio
-helper), and [ADR-0002](adr/0002-live-transcript-preview-strategy.md) (live
-preview).
+helper), [ADR-0113](adr/0113-windows-captures-the-computers-sound-in-process.md)
+(the three source modes and Windows loopback), and
+[ADR-0002](adr/0002-live-transcript-preview-strategy.md) (live preview).
 
 ## Data flow
 
-1. **`start_recording`** → `capture::start_capture` opens `microphone.partial.wav`
-   (a CPAL input stream) and, in meeting mode, starts the system-audio helper
-   writing `system.partial.wav`.
+1. **`start_recording`** → `capture::start_capture` opens the lanes the source
+   mode asks for: the microphone (`MicrophoneLane`, a CPAL input stream writing
+   `microphone.partial.wav`) unless the mode is `SystemOnly`, and the computer
+   (`audio::system::SystemAudioCapture` writing `system.partial.wav`: the macOS
+   helper, or WASAPI loopback on Windows) unless it is `MicrophoneOnly`. The
+   session row points at the primary lane: the microphone when it records, else
+   the computer.
 2. Per input callback: write 16-bit PCM, update `CaptureStats`, and
    non-blockingly feed the **live preview** sink (a bounded channel) — a worker
    transcribes ~8s chunks and emits ephemeral `live-transcript-event`s that are
@@ -21,7 +26,9 @@ preview).
    `*.partial.wav` → `*.wav` (the durability commit), stops the helper, cancels
    preview.
 4. **`process_saved_source_audio`** (`src-tauri/src/domain/processing.rs`) runs
-   the batch pipeline: `drop_silent_system_sources` → `turns::detect_turns` →
+   the batch pipeline: `partition_silent_system_sources` (a computer-only take
+   whose only lane is silent fails here with `system_audio_silent`, before any
+   paid call) → `turns::detect_turns` →
    `coalesce_turns_for_transcription` → `write_turn_wav` (seek-extract each turn)
    → `normalize_wav_for_transcription` → `split_wav_for_transcription` (≤8-min
    chunks) → `transcribe_saved_audio` (POST `/v1/notes/transcribe`, provider
@@ -30,10 +37,19 @@ preview).
 
 ## Key files
 
-- `src-tauri/src/audio/capture.rs` — mic capture, `CaptureStats`, the single
+- `src-tauri/src/audio/capture.rs` — the optional microphone lane
+  (`MicrophoneLane`), `CaptureStats`, the per-lane status and warnings (a
+  computer never heard after 20 s raises `system_audio_silent`), the single
   global `ACTIVE_RECORDING` (one recorder at a time).
+- `src-tauri/src/audio/readiness.rs` — which sources a mode requires and the
+  system-audio permission probe.
+- `src-tauri/src/audio/system.rs` — the one surface over both computer-sound
+  backends (`SystemAudioCapture`, `SystemLaneStatus`, readiness, probe).
 - `src-tauri/src/audio/system_macos.rs` + `native/mac-system-audio-recorder/
-  main.swift` — the system-audio helper and its readiness/permission probes.
+  main.swift` — the macOS system-audio helper and its readiness/permission
+  probes.
+- `src-tauri/src/audio/system_windows.rs` + `system_timeline.rs` — Windows
+  loopback and the silence padding that keeps its lane on the wall clock.
 - `src-tauri/src/audio/turns.rs` — turn detection, coalescing, WAV extraction,
   normalization, chunking, per-source configs.
 - `src-tauri/src/audio/live_preview.rs` — mic/system preview workers, the
@@ -56,6 +72,25 @@ The helper is controlled and observed out-of-process (see ADR-0004):
 - **CLI:** `--output` / `--status` / `--pid` / `--log`.
 - **Timeouts:** ~30s readiness, ~75s probe. **macOS 14.2+** required for
   CoreAudio process taps; older systems get microphone-only.
+
+## Windows loopback
+
+The computer's sound on Windows is captured in process (see ADR-0113):
+
+- **Capture:** cpal builds an input stream on the default output device,
+  which WASAPI opens as loopback. A dedicated worker thread owns the stream;
+  the audio callback only queues packets.
+- **Format:** the lane is always 16-bit mono at 48 kHz (`to_mono` and the
+  streaming `Resampler` from `voice/resample.rs`), whatever the device mixes.
+- **Clock:** loopback is silent while nothing plays, so the worker pads to the
+  wall clock: a gap over 80 ms before a packet, or no packet for 200 ms (padded
+  up to now minus 100 ms), and up to now before a pause and at the end.
+- **Devices:** the default output's name is checked every second; a change or a
+  stream error rebuilds the stream on the new device.
+- **Level:** `min(1, rms * 4)` over 80 ms windows, the helper's scale, plus the
+  maximum seen, which the never-heard warning reads.
+- **Readiness:** ready when a default output device exists; there is no
+  permission to probe.
 
 ## Turn detection
 

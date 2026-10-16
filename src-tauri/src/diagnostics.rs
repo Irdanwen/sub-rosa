@@ -64,7 +64,8 @@ pub fn startup_marks() -> Vec<(String, u64)> {
 pub struct PlatformCapabilities {
     /// A name the webview can show ("macOS", "Windows", "iOS", "Android").
     pub platform: &'static str,
-    /// System-audio capture through the out-of-process helper (ADR-0004).
+    /// The computer's own sound as a recording source: the out-of-process
+    /// helper on macOS (ADR-0004), WASAPI loopback on Windows (ADR-0113).
     pub system_audio: bool,
     /// The floating dictation / meeting / agent HUD windows.
     pub hud: bool,
@@ -120,7 +121,7 @@ pub const fn capabilities() -> PlatformCapabilities {
     {
         PlatformCapabilities {
             platform: "Windows",
-            system_audio: false,
+            system_audio: true,
             hud: false,
             dictation_hotkey: false,
             spotlight: false,

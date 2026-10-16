@@ -1162,6 +1162,10 @@ pub enum RecordingSourceMode {
     #[default]
     MicrophoneOnly,
     MicrophonePlusSystem,
+    /// The computer's sound alone: the microphone is never opened, so a
+    /// person listening to a webinar is not recorded and the OS shows no
+    /// microphone indicator.
+    SystemOnly,
 }
 
 impl RecordingSourceMode {
@@ -1169,6 +1173,7 @@ impl RecordingSourceMode {
         match self {
             Self::MicrophoneOnly => "microphone_only",
             Self::MicrophonePlusSystem => "microphone_plus_system",
+            Self::SystemOnly => "system_only",
         }
     }
 
@@ -1178,6 +1183,25 @@ impl RecordingSourceMode {
             Self::MicrophonePlusSystem => {
                 vec![RecordingSource::Microphone, RecordingSource::System]
             }
+            Self::SystemOnly => vec![RecordingSource::System],
+        }
+    }
+
+    pub fn includes_microphone(self) -> bool {
+        !matches!(self, Self::SystemOnly)
+    }
+
+    pub fn includes_system(self) -> bool {
+        !matches!(self, Self::MicrophoneOnly)
+    }
+
+    /// The source a recording session's own row (paths, duration, checksum)
+    /// describes: the microphone whenever it records, else the computer.
+    pub fn primary_source(self) -> RecordingSource {
+        if self.includes_microphone() {
+            RecordingSource::Microphone
+        } else {
+            RecordingSource::System
         }
     }
 }
@@ -1186,6 +1210,7 @@ impl From<&str> for RecordingSourceMode {
     fn from(value: &str) -> Self {
         match value {
             "microphone_plus_system" | "microphonePlusSystem" => Self::MicrophonePlusSystem,
+            "system_only" | "systemOnly" => Self::SystemOnly,
             _ => Self::MicrophoneOnly,
         }
     }

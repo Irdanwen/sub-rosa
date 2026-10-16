@@ -10012,6 +10012,19 @@ input:focus-visible,
   color: var(--foreground);
 }
 
+/* A source warning is a sentence, not a three-word reminder: it wraps inside a
+ * readable measure instead of running off the window, so its Dismiss stays
+ * reachable. */
+.record-consent-note:has(.record-warning-surface) {
+  width: min(420px, calc(100vw - var(--sp-8)));
+}
+
+.record-dock .record-warning-surface .inline-notice-message {
+  flex-wrap: wrap;
+  white-space: normal;
+  line-height: 1.35;
+}
+
 .record-options-trigger {
   display: inline-grid;
   place-items: center;
@@ -10171,6 +10184,134 @@ input:focus-visible,
   font-weight: 400;
 }
 
+/* What a note records: three situations, one per row. Shared by the record
+ * options panel and Settings > Audio. The radio is the native control,
+ * restyled, so keyboard and screen readers get a real radio group. */
+.source-mode-choice {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.source-mode-options {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.source-mode-option {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .source-mode-option:hover {
+    background: color-mix(in oklch, var(--muted) 70%, transparent);
+    color: var(--foreground);
+  }
+}
+
+.source-mode-option[data-selected="true"] {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.source-mode-option:has(.source-mode-radio:focus-visible) {
+  box-shadow: 0 0 0 2px var(--ring-focus);
+}
+
+.source-mode-option:has(.source-mode-radio:disabled) {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+/* Visually hidden, still focusable and announced. */
+.source-mode-radio {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.source-mode-icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+.source-mode-text {
+  display: grid;
+  gap: var(--sp-px);
+  min-width: 0;
+}
+
+.source-mode-label {
+  font-size: var(--fs-md);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.source-mode-hint {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.source-mode-note {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0 var(--sp-1);
+  color: var(--warm-strong);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.source-mode-note .source-mode-enable {
+  flex: 0 0 auto;
+  margin-left: auto;
+  height: var(--control-sm);
+  padding-inline: var(--sp-2);
+  color: var(--warm-strong);
+  background: transparent;
+}
+
+.source-mode-note .source-mode-enable:hover {
+  background: color-mix(in oklch, var(--warm-strong) 12%, transparent);
+}
+
+/* In the record panel the choice replaces the old single toggle row: it keeps
+ * that row's reveal and card, but stacks instead of sitting on one line. */
+.record-options-row.record-options-choice {
+  display: grid;
+  align-items: stretch;
+  padding: var(--sp-2);
+  white-space: normal;
+}
+
+.settings-row-stacked {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-3);
+}
+
+.settings-source-mode {
+  max-width: 420px;
+}
+
 /* shadcn-style switch */
 .switch {
   position: relative;
@@ -10246,7 +10387,7 @@ input:focus-visible,
 }
 
 .record-shell[data-state="idle"][data-options-open="true"] {
-  width: 320px;
+  width: min(340px, calc(100vw - var(--sp-8)));
 }
 
 .record-shell[data-state="working"] {
@@ -10372,6 +10513,48 @@ input:focus-visible,
   margin-right: var(--sp-8); /* 24px from stop */
 }
 
+/* Two lanes recording: wide enough for a small icon per lane after the
+ * waveform (238 + 2 x 16 + gaps). */
+.record-shell:has(.recorder-bar[data-lanes="2"]) {
+  width: min(284px, calc(100vw - var(--sp-8)));
+}
+
+.recorder-lanes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: var(--sp-2);
+}
+
+/* Quiet until heard: a lane brightens while it carries sound, and turns warm
+ * when it has never been heard (Rust's silence_warning for that lane). */
+.recorder-lane {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-xs);
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.recorder-lane[data-heard] {
+  color: var(--foreground);
+  opacity: 1;
+}
+
+.recorder-lane[data-silent] {
+  color: var(--warm-strong);
+  opacity: 1;
+}
+
+.recorder-bar[data-state="paused"] .recorder-lane {
+  opacity: 0.38;
+}
+
 .elapsed {
   min-width: 44px;
   color: var(--foreground);
@@ -10477,6 +10660,21 @@ input:focus-visible,
     box-shadow var(--t-fast) var(--ease-out),
     color var(--t-fast) var(--ease-out),
     opacity var(--t-fast) var(--ease-out);
+}
+
+.global-recorder-pill {
+  position: relative;
+}
+
+.global-recorder-pill[data-warning]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--warm-strong);
 }
 
 .global-recorder-pill:hover {

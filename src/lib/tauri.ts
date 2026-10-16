@@ -1,6 +1,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { safeExternalHref } from "./external-link";
 import type { ProcessingProgressDto } from "./note-processing";
+import type { RecordingSourceReadinessDto } from "./source-readiness-types";
 
 // Re-exported so modules that build their own command calls (e.g. the Hermes
 // admin Rust transport) route through the same `invoke` the rest of the app's
@@ -99,7 +100,7 @@ export type RecordingState =
   | "failed"
   | "recoverable";
 
-export type RecordingSourceMode = "microphoneOnly" | "microphonePlusSystem";
+export type RecordingSourceMode = "microphoneOnly" | "microphonePlusSystem" | "systemOnly";
 export type RecordingSource = "microphone" | "system";
 
 export type DictationShortcutModifiers = {
@@ -685,27 +686,7 @@ export type ListNotesResponse = {
   nextCursor?: string;
 };
 
-export type SourceReadinessDto = {
-  source: RecordingSource;
-  required: boolean;
-  ready: boolean;
-  permissionState: "unknown" | "granted" | "denied" | "restricted" | "unsupported";
-  deviceAvailable: boolean;
-  captureAvailable: boolean;
-  recoveryAction?:
-    | "openMicrophoneSettings"
-    | "openSystemAudioSettings"
-    | "upgradeMacos"
-    | "restartApp";
-  message?: string;
-};
-
-export type RecordingSourceReadinessDto = {
-  sourceMode: RecordingSourceMode;
-  ready: boolean;
-  checkedAt?: string;
-  sources: SourceReadinessDto[];
-};
+export type { RecordingSourceReadinessDto, SourceReadinessDto } from "./source-readiness-types";
 
 export async function bootstrapApp() {
   return invoke<BootstrapResponse>("bootstrap_app");

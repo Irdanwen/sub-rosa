@@ -62,9 +62,15 @@ artifacts, elapsed time, and status; the unit of recovery and retry.
 _Avoid_: meeting object (June deliberately has no separate "meeting" entity).
 
 **Source mode**:
-The capture scope chosen before recording starts: `MicrophoneOnly` or
-`MicrophonePlusSystem` (meeting mode).
-_Avoid_: recording type.
+The capture scope chosen before recording starts, named on screen by
+situation: `MicrophonePlusSystem` ("Microphone and computer", for a call),
+`MicrophoneOnly` ("Microphone only", for a meeting in the room) or
+`SystemOnly` ("Computer only", for a webinar or a video; the microphone is
+never opened). The person's choice is remembered and never rewritten by
+readiness; each start resolves it, and only "Microphone and computer" may
+fall back, visibly, to the microphone (see
+[ADR-0113](docs/adr/0113-windows-captures-the-computers-sound-in-process.md)).
+_Avoid_: recording type, meeting mode.
 
 **Source**:
 A single audio lane — `Microphone` or `System` — each captured to its own
@@ -129,7 +135,16 @@ _Avoid_: transcript completeness, duration coverage (wall-clock framing).
 The out-of-process macOS `.app` (`june-system-audio-recorder`) that captures
 system audio via CoreAudio process taps and reports over a `status.json` file
 (see [ADR-0004](docs/adr/0004-out-of-process-system-audio-helper.md)).
-_Avoid_: system driver, in-process capture.
+_Avoid_: system driver, in-process capture (on macOS).
+
+**System audio loopback** (Windows):
+The in-process WASAPI loopback capture of the default output device
+(`audio/system_windows.rs`), padded with silence to the wall clock so its
+turns line up with the microphone's
+(see [ADR-0113](docs/adr/0113-windows-captures-the-computers-sound-in-process.md)).
+On screen, the `System` source is "the computer" ("Computer", "the
+computer's sound") on both platforms.
+_Avoid_: system audio helper (that is the macOS `.app`), virtual driver.
 
 ### Writing a note (fork)
 

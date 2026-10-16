@@ -19,8 +19,17 @@ Windows assets to the existing `open-software-network/os-june-releases` release.
 
 The Windows installer supports the app shell, OS Accounts sign-in, microphone
 recording, note generation, folders, and settings backed by the production June
-API. Global dictation shortcuts, dictation paste, macOS system-audio capture, and
-Seatbelt sandbox features are macOS-only.
+API. Global dictation shortcuts, dictation paste, and Seatbelt sandbox features
+are macOS-only.
+
+Notes record the computer's sound on Windows too, in process through WASAPI
+loopback (ADR-0113): "Microphone and computer", "Microphone only" and
+"Computer only" all work, with no permission to grant. Before a release, check
+on a real Windows machine that a call (Teams, Zoom, a browser) and a video are
+captured, that several minutes of silence keep the turns in order, that
+switching speakers to a USB or Bluetooth headset mid-take keeps recording, and
+that a call app sent to a non-default output raises the "No sound from the
+computer yet" warning.
 
 Production Windows builds bundle the pinned Hermes runtime under `native/hermes`,
 so June can start the agent on a clean machine without Python, GitHub downloads,

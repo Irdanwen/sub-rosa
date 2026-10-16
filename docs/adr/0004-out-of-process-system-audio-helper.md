@@ -43,3 +43,12 @@ plus `--pid` / `--log`). The helper writes system audio to its own growing WAV.
   timeouts (30s / 75s) gate whether system capture is offered.
 - **macOS 14.2+** is required for process-tap capture; older systems fall back
   to microphone-only (`system-audio-min-macos-version.txt`).
+
+## Addendum 2026-10-14: Windows and computer-only recordings
+
+This decision stays the macOS one. Windows captures the computer's sound
+in process with WASAPI loopback, behind the same `audio::system` surface
+and status shape: there is no permission there to isolate and no helper to
+sign. A note can also record the computer alone (`SystemOnly`), with the
+microphone never opened. See
+[ADR-0113](0113-windows-captures-the-computers-sound-in-process.md).

@@ -22,6 +22,7 @@ import type {
   ProviderModelSettingsDto,
   RecordingSourceMode,
   RecordingSourceReadinessDto,
+  SourceReadinessDto,
   VeniceModelDto,
 } from "../../lib/tauri";
 import { LANGUAGE_OPTIONS, languageLabel } from "../../lib/dictation-languages";
@@ -47,6 +48,8 @@ import { IMAGE_GENERATION_ENABLED } from "../../lib/feature-flags";
 import { DictionarySettingsSection } from "./DictionarySettingsSection";
 import { ImportSettingsSection } from "./ImportSettingsSection";
 import { MicTestControl, type MicTestState } from "./MicTestControl";
+import { SourceModeChoice } from "../recorder/SourceModeChoice";
+import type { SystemAudioAvailability } from "../../lib/source-readiness";
 import { StyleSettingsSection } from "./StyleSettingsSection";
 import { THEME_OPTIONS, UI_LANGUAGE_OPTIONS } from "./appearance-options";
 
@@ -408,10 +411,10 @@ export function AudioSettingsTab({
   onMicTestPlaybackError,
   setMicTestPlaying,
   systemUnavailable,
-  systemDenied,
-  systemLocked,
-  systemOn,
-  checkingSourceReadiness,
+  sourceMode,
+  systemAvailability,
+  systemRecoveryAction,
+  recordingActive,
   onEnableSystemAudio,
   onSourceModeChange,
 }: {
@@ -438,10 +441,10 @@ export function AudioSettingsTab({
   onMicTestPlaybackError: () => void;
   setMicTestPlaying: (playing: boolean) => void;
   systemUnavailable: boolean;
-  systemDenied: boolean;
-  systemLocked: boolean;
-  systemOn: boolean;
-  checkingSourceReadiness: boolean;
+  sourceMode: RecordingSourceMode;
+  systemAvailability: SystemAudioAvailability;
+  systemRecoveryAction?: SourceReadinessDto["recoveryAction"];
+  recordingActive: boolean;
   onEnableSystemAudio: () => void;
   onSourceModeChange: (mode: RecordingSourceMode) => void;
 }) {
@@ -524,32 +527,27 @@ export function AudioSettingsTab({
             ) : null}
 
             {systemUnavailable ? null : (
-              <div className="settings-row">
+              <div className="settings-row settings-row-stacked">
                 <div className="settings-row-info">
-                  <h3 className="settings-row-title">{t("System audio")}</h3>
+                  <h3 className="settings-row-title">{t("What notes record")}</h3>
                   <p className="settings-row-description">
-                    {t("Capture audio from other apps along with your microphone.")}
+                    {recordingActive
+                      ? t("You can change this once the current recording ends.")
+                      : t(
+                          "Used each time you record a note. You can also change it next to the record button.",
+                        )}
                   </p>
                 </div>
-                <div className="settings-row-control">
-                  {systemDenied ? (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={onEnableSystemAudio}
-                    >
-                      {t("Enable")}
-                    </button>
-                  ) : null}
-                  <Switch
-                    checked={systemOn}
-                    disabled={checkingSourceReadiness || systemLocked}
-                    aria-label={t("Capture system audio for notes")}
-                    onCheckedChange={(next) =>
-                      onSourceModeChange(next ? "microphonePlusSystem" : "microphoneOnly")
-                    }
-                  />
-                </div>
+                <SourceModeChoice
+                  className="settings-source-mode"
+                  name="settings-record-source"
+                  value={sourceMode}
+                  onChange={onSourceModeChange}
+                  availability={systemAvailability}
+                  recoveryAction={systemRecoveryAction}
+                  onEnableSystemAudio={onEnableSystemAudio}
+                  disabled={recordingActive}
+                />
               </div>
             )}
           </div>

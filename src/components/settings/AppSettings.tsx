@@ -135,6 +135,8 @@ type AppSettingsProps = {
   sourceMode: RecordingSourceMode;
   sourceReadiness?: RecordingSourceReadinessDto;
   checkingSourceReadiness: boolean;
+  /** A take is running: what it records cannot change under it. */
+  recordingActive?: boolean;
   microphonePermissionStatus?: string;
   accessibilityPermissionStatus?: string;
   onSourceModeChange: (mode: RecordingSourceMode) => void;
@@ -160,7 +162,7 @@ type AppSettingsProps = {
 export function AppSettings({
   sourceMode,
   sourceReadiness,
-  checkingSourceReadiness,
+  recordingActive = false,
   microphonePermissionStatus,
   accessibilityPermissionStatus,
   onSourceModeChange,
@@ -230,19 +232,17 @@ export function AppSettings({
   };
   const micWrapRef = useRef<HTMLDivElement>(null);
   const languageWrapRef = useRef<HTMLDivElement>(null);
-  const systemOn = sourceMode === "microphonePlusSystem";
   const systemReadiness = sourceReadiness?.sources.find((source) => source.source === "system");
   const microphoneReadiness = sourceReadiness?.sources.find(
     (source) => source.source === "microphone",
   );
   const systemAvailability = systemAudioAvailability(sourceReadiness);
-  // Denied and granted-but-uncapturable both lock the switch, but only a real
-  // denial is fixable in System Settings: the uncapturable helper recovers on
-  // restart, so sending the user to grant an already-granted permission would
-  // be a dead end. The status label tells the two apart.
-  const systemDenied = systemAvailability === "denied";
-  const systemLocked = systemDenied || systemAvailability === "unavailable";
-  const systemUnavailable = !macLikePlatform || systemAvailability === "unsupported";
+  // Only a real denial is fixable in System Settings: an uncapturable helper
+  // recovers on restart, so sending the user to grant an already-granted
+  // permission would be a dead end. The choice's sentence tells them apart.
+  // Whether the computer can be recorded at all is a capability Rust reports.
+  const systemUnavailable =
+    !(capabilities?.systemAudio ?? macLikePlatform) || systemAvailability === "unsupported";
 
   useEffect(() => {
     capturingShortcutRef.current = capturingShortcut;
@@ -880,10 +880,10 @@ export function AppSettings({
             }}
             setMicTestPlaying={setMicTestPlaying}
             systemUnavailable={systemUnavailable}
-            systemDenied={systemDenied}
-            systemLocked={systemLocked}
-            systemOn={systemOn}
-            checkingSourceReadiness={checkingSourceReadiness}
+            sourceMode={sourceMode}
+            systemAvailability={systemAvailability}
+            systemRecoveryAction={systemReadiness?.recoveryAction}
+            recordingActive={recordingActive}
             onEnableSystemAudio={onEnableSystemAudio}
             onSourceModeChange={onSourceModeChange}
           />

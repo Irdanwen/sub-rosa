@@ -4,8 +4,8 @@ use crate::{
     audio::{
         capture::{
             capture_status_for_recovery, finish_active_capture, finish_capture,
-            microphone_device_available, microphone_device_hint, microphone_permission_state,
-            pause_capture, resume_capture, start_capture, CaptureRecoverySnapshot,
+            microphone_permission_state, pause_capture, resume_capture, start_capture,
+            CaptureRecoverySnapshot,
         },
         recovery::scan_recoverable_recordings,
         validation::{
@@ -34,7 +34,7 @@ use crate::{
             RecordingStatusDto, RemoveNoteFromFolderRequest, RemoveSessionFromFolderRequest,
             RenameFolderRequest, RetryProcessingRequest, SaveAgentAssistantMessageRequest,
             SaveAgentHermesSessionRequest, SendAgentMessageRequest, SessionFolderDto,
-            SessionRequest, SetAgentTaskModelRequest, SourceReadinessDto, StartRecordingRequest,
+            SessionRequest, SetAgentTaskModelRequest, StartRecordingRequest,
             SubmitIssueReportRequest, SubmitIssueReportResponse, SuggestAgentSessionTitleRequest,
             SuggestAgentSessionTitleResponse, UpdateDictionaryEntryRequest, UpdateNoteRequest,
         },
@@ -619,9 +619,11 @@ pub async fn check_recording_source_readiness(
     // The system-audio permission probe can block for over a minute while the
     // helper waits on a CoreAudio permission grant; keep that work off the
     // async runtime so other commands stay responsive.
-    tokio::task::spawn_blocking(move || recording_source_readiness(request.source_mode))
-        .await
-        .map_err(|error| AppError::new("readiness_check_failed", error.to_string()))
+    tokio::task::spawn_blocking(move || {
+        crate::audio::readiness::recording_source_readiness(request.source_mode)
+    })
+    .await
+    .map_err(|error| AppError::new("readiness_check_failed", error.to_string()))
 }
 
 /// Opens the local backend's `/verify` page (what the backend does with the
@@ -717,7 +719,7 @@ pub async fn start_recording(
     let source_mode = request.source_mode.unwrap_or_default();
     // iOS cannot tap other apps' audio (sandbox); only the microphone records.
     #[cfg(mobile)]
-    if source_mode == RecordingSourceMode::MicrophonePlusSystem {
+    if source_mode.includes_system() {
         return Err(AppError::new(
             "source_mode_unsupported",
             "System audio capture is not available on this device; record with the microphone.",
@@ -725,9 +727,11 @@ pub async fn start_recording(
     }
     // Readiness probing and capture startup both wait on the system-audio
     // helper (up to tens of seconds); run them off the async runtime.
-    let readiness = tokio::task::spawn_blocking(move || recording_source_readiness(source_mode))
-        .await
-        .map_err(|error| AppError::new("readiness_check_failed", error.to_string()))?;
+    let readiness = tokio::task::spawn_blocking(move || {
+        crate::audio::readiness::recording_source_readiness(source_mode)
+    })
+    .await
+    .map_err(|error| AppError::new("readiness_check_failed", error.to_string()))?;
     if !readiness.ready {
         let message = readiness
             .sources
@@ -908,6 +912,7 @@ async fn finish_recording_session(
     let mut primary_checksum = String::new();
     let mut primary_file_size = 0;
     let validation_started = Instant::now();
+    let primary_source = finished.source_mode.primary_source();
     for source in &finished.sources {
         let source_artifact = source_artifacts
             .iter()
@@ -939,7 +944,7 @@ async fn finish_recording_session(
         let file_size = std::fs::metadata(&source.final_path)
             .map(|metadata| metadata.len() as i64)
             .unwrap_or_default();
-        if source.source == RecordingSource::Microphone {
+        if source.source == primary_source {
             primary_validation = Some(validation.clone());
             primary_checksum = checksum.clone();
             primary_file_size = file_size;
@@ -1013,9 +1018,12 @@ async fn finish_recording_session(
             non_silent_signal: false,
             peak_amplitude: 0.0,
             rms_amplitude: 0.0,
-            warnings: vec!["No microphone validation was available.".to_string()],
+            warnings: vec![format!(
+                "No {} validation was available.",
+                primary_source.as_db()
+            )],
         });
-    let primary_valid = source_audio_passes_validation(RecordingSource::Microphone, &validation);
+    let primary_valid = source_audio_passes_validation(primary_source, &validation);
     repos
         .update_recording_session(
             &finished.session_id,
@@ -1571,129 +1579,6 @@ pub(crate) async fn import_media_from_path_with_captions(
     Ok(note)
 }
 
-fn recording_source_readiness(source_mode: RecordingSourceMode) -> RecordingSourceReadinessDto {
-    let (microphone_state, microphone_hint) = microphone_permission_state();
-    // iOS reports "unknown" before the first prompt; keep it startable so the
-    // record attempt can raise the system permission prompt (blocking here
-    // would make it unreachable). Desktop gates on device availability because
-    // macOS 14.0/14.1 can report a stale TCC permission state (JUN-223); an
-    // explicit denied/restricted still blocks.
-    let microphone_permission_blocked =
-        matches!(microphone_state.as_str(), "denied" | "restricted");
-    let microphone_device_available = microphone_device_available();
-    let microphone_ready = microphone_state == "unknown"
-        || (!microphone_permission_blocked && microphone_device_available);
-    let microphone_message = if microphone_permission_blocked {
-        microphone_hint.clone()
-    } else if !microphone_device_available && microphone_state != "unknown" {
-        Some(microphone_device_hint())
-    } else {
-        None
-    };
-    let microphone = SourceReadinessDto {
-        source: RecordingSource::Microphone,
-        required: true,
-        ready: microphone_ready,
-        permission_state: microphone_state.clone(),
-        device_available: microphone_ready,
-        capture_available: microphone_ready,
-        recovery_action: microphone_permission_blocked
-            .then(|| "openMicrophoneSettings".to_string()),
-        message: microphone_message,
-    };
-    #[cfg(desktop)]
-    let system = {
-        let mut system = crate::audio::system_macos::system_audio_readiness();
-        let capture_active = crate::audio::capture::is_capture_active();
-        if should_probe_system_audio_permission(source_mode, system.ready, capture_active) {
-            system = apply_system_audio_permission_probe_result(
-                system,
-                crate::audio::system_macos::helper_permission_check(),
-            );
-        }
-        system
-    };
-    // Mobile: system audio never becomes ready; report it as unsupported so
-    // the UI can hide the option instead of dangling a probe.
-    #[cfg(mobile)]
-    let system = SourceReadinessDto {
-        source: RecordingSource::System,
-        required: true,
-        ready: false,
-        permission_state: "unsupported".to_string(),
-        device_available: false,
-        capture_available: false,
-        recovery_action: None,
-        message: Some("System audio capture is not available on this device.".to_string()),
-    };
-    assemble_recording_source_readiness(microphone, system, source_mode)
-}
-
-/// Readiness describes the machine, not the request: the system source is
-/// always reported so callers can explain why it is unavailable. Only
-/// `required` follows the requested mode, keeping the `start_recording` gate
-/// from blocking a microphone-only take on a Mac that cannot capture system
-/// audio at all.
-fn assemble_recording_source_readiness(
-    microphone: SourceReadinessDto,
-    mut system: SourceReadinessDto,
-    source_mode: RecordingSourceMode,
-) -> RecordingSourceReadinessDto {
-    system.required = source_mode == RecordingSourceMode::MicrophonePlusSystem;
-    let sources = vec![microphone, system];
-    let ready = sources
-        .iter()
-        .all(|source| !source.required || source.ready);
-    RecordingSourceReadinessDto {
-        source_mode,
-        ready,
-        checked_at: crate::db::repositories::timestamp(),
-        sources,
-    }
-}
-
-// System audio is desktop-only; mobile compiles these for nothing.
-#[cfg_attr(mobile, allow(dead_code))]
-fn should_probe_system_audio_permission(
-    source_mode: RecordingSourceMode,
-    system_ready: bool,
-    capture_active: bool,
-) -> bool {
-    source_mode == RecordingSourceMode::MicrophonePlusSystem && system_ready && !capture_active
-}
-
-#[cfg_attr(mobile, allow(dead_code))]
-fn apply_system_audio_permission_probe_result(
-    mut system: SourceReadinessDto,
-    result: Result<(), AppError>,
-) -> SourceReadinessDto {
-    match result {
-        Ok(()) => {
-            system.permission_state = "granted".to_string();
-        }
-        Err(error) => {
-            system.ready = false;
-            system.capture_available = false;
-            match error.code.as_str() {
-                "system_audio_permission_denied" => {
-                    system.permission_state = "denied".to_string();
-                    system.recovery_action = Some("openSystemAudioSettings".to_string());
-                }
-                "system_audio_capture_unavailable" => {
-                    system.permission_state = "granted".to_string();
-                    system.recovery_action = Some("restartApp".to_string());
-                }
-                _ => {
-                    system.permission_state = "unknown".to_string();
-                    system.recovery_action = Some("restartApp".to_string());
-                }
-            }
-            system.message = Some(error.message);
-        }
-    }
-    system
-}
-
 /// Notes whose processing failed on the network (the request never reached
 /// the endpoint), as opposed to being refused by it. These are the ones a
 /// "Retry all" is worth offering once the endpoint answers again.
@@ -1713,6 +1598,12 @@ pub async fn retry_processing(
     let paths = app_paths(&app)?;
     let repos = repositories(&app).await?;
     let sources = retry_audio_sources(&repos, &paths, &request.note_id).await?;
+    let stored_mode = match sources.first() {
+        Some((_id, _source, _path, session_id)) => {
+            repos.recording_session_source_mode(session_id).await?
+        }
+        None => None,
+    };
     let (ticket, depth) = processing_queue::enqueue(&request.note_id);
     if depth <= 1 {
         repos
@@ -1741,8 +1632,28 @@ pub async fn retry_processing(
         let title = note.title.clone();
         let existing_generated_note = note.generated_content.clone();
         let manual_notes = manual_notes_for_generation(&note);
-        let result = if sources.len() == 1 {
-            // `sources.len() == 1` was tested in the condition above.
+        let result = if let Some(source_mode) = retry_source_mode(&sources, stored_mode) {
+            let session_id = sources
+                .first()
+                .map(|(_id, _source, _path, session_id)| session_id.clone())
+                .unwrap_or_default();
+            process_saved_source_audio(
+                &task_repos,
+                &task_note_id,
+                &session_id,
+                source_mode,
+                sources
+                    .into_iter()
+                    .map(|(id, source, path, _session_id)| (id, source, path))
+                    .collect(),
+                title,
+                existing_generated_note,
+                manual_notes,
+            )
+            .await
+        } else {
+            // A lone microphone take or an import: `retry_source_mode`
+            // returns `None` only for exactly one source.
             #[allow(clippy::expect_used)]
             let (audio_artifact_id, _source, audio_path, session_id) = sources
                 .into_iter()
@@ -1776,25 +1687,6 @@ pub async fn retry_processing(
                 )
                 .await
             }
-        } else {
-            let session_id = sources
-                .first()
-                .map(|(_id, _source, _path, session_id)| session_id.clone())
-                .unwrap_or_default();
-            process_saved_source_audio(
-                &task_repos,
-                &task_note_id,
-                &session_id,
-                RecordingSourceMode::MicrophonePlusSystem,
-                sources
-                    .into_iter()
-                    .map(|(id, source, path, _session_id)| (id, source, path))
-                    .collect(),
-                title,
-                existing_generated_note,
-                manual_notes,
-            )
-            .await
         };
         crate::note_processing::settle_run(&task_app, &task_repos, &task_note_id, result).await;
         ticket.finish();
@@ -1844,6 +1736,30 @@ pub fn resume_interrupted_processing(app: &AppHandle) {
         let _ = sweep.await;
         SWEEPING.store(false, Ordering::SeqCst);
     });
+}
+
+/// How a retry reprocesses its sources: `None` sends a lone microphone take
+/// (or an import) back through the single-file path; otherwise the
+/// source-separated path runs with the take's own mode. The stored mode wins;
+/// the sources decide only for a session that never recorded one.
+fn retry_source_mode(
+    sources: &[(String, String, PathBuf, String)],
+    stored_mode: Option<RecordingSourceMode>,
+) -> Option<RecordingSourceMode> {
+    let has_system = sources
+        .iter()
+        .any(|(_id, source, _path, _session)| source == RecordingSource::System.as_db());
+    if sources.len() == 1 && !has_system {
+        return None;
+    }
+    let has_microphone = sources
+        .iter()
+        .any(|(_id, source, _path, _session)| source != RecordingSource::System.as_db());
+    Some(match stored_mode {
+        Some(mode) if mode.includes_system() => mode,
+        _ if has_microphone => RecordingSourceMode::MicrophonePlusSystem,
+        _ => RecordingSourceMode::SystemOnly,
+    })
 }
 
 async fn retry_audio_sources(
@@ -2410,133 +2326,56 @@ pub(crate) fn app_paths(app: &AppHandle) -> Result<AppPaths, AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        apply_system_audio_permission_probe_result, assemble_recording_source_readiness,
-        recovery_validation_expected_duration_ms, should_probe_system_audio_permission,
-    };
-    use crate::domain::types::{
-        AppError, RecordingSource, RecordingSourceMode, SourceReadinessDto,
-    };
+    use super::{recovery_validation_expected_duration_ms, retry_source_mode};
+    use crate::domain::types::RecordingSourceMode;
+    use std::path::PathBuf;
 
-    #[test]
-    fn skips_system_audio_permission_probe_while_capture_is_active() {
-        assert!(!should_probe_system_audio_permission(
-            RecordingSourceMode::MicrophonePlusSystem,
-            true,
-            true
-        ));
-    }
-
-    #[test]
-    fn probes_system_audio_permission_only_when_available_and_idle() {
-        assert!(should_probe_system_audio_permission(
-            RecordingSourceMode::MicrophonePlusSystem,
-            true,
-            false
-        ));
-        assert!(!should_probe_system_audio_permission(
-            RecordingSourceMode::MicrophonePlusSystem,
-            false,
-            false
-        ));
-    }
-
-    #[test]
-    fn system_audio_permission_probe_is_skipped_for_microphone_only() {
-        assert!(!should_probe_system_audio_permission(
-            RecordingSourceMode::MicrophoneOnly,
-            true,
-            false
-        ));
-    }
-
-    #[test]
-    fn microphone_only_readiness_still_reports_the_system_source() {
-        let readiness = assemble_recording_source_readiness(
-            microphone_readiness(),
-            unsupported_system_readiness(),
-            RecordingSourceMode::MicrophoneOnly,
-        );
-        let system = readiness
-            .sources
+    fn retry_sources(names: &[&str]) -> Vec<(String, String, PathBuf, String)> {
+        names
             .iter()
-            .find(|source| source.source == RecordingSource::System)
-            .expect("system readiness");
-
-        assert_eq!(system.permission_state, "unsupported");
-        assert!(!system.required);
+            .map(|name| {
+                (
+                    format!("{name}-artifact"),
+                    name.to_string(),
+                    PathBuf::from(format!("{name}.wav")),
+                    "session".to_string(),
+                )
+            })
+            .collect()
     }
 
     #[test]
-    fn microphone_only_readiness_stays_ready_when_system_is_unsupported() {
-        let readiness = assemble_recording_source_readiness(
-            microphone_readiness(),
-            unsupported_system_readiness(),
-            RecordingSourceMode::MicrophoneOnly,
-        );
-
-        assert!(readiness.ready);
-    }
-
-    #[test]
-    fn microphone_plus_system_keeps_the_system_source_required() {
-        let readiness = assemble_recording_source_readiness(
-            microphone_readiness(),
-            unsupported_system_readiness(),
-            RecordingSourceMode::MicrophonePlusSystem,
-        );
-        let system = readiness
-            .sources
-            .iter()
-            .find(|source| source.source == RecordingSource::System)
-            .expect("system readiness");
-
-        assert!(system.required);
-        assert!(!readiness.ready);
-    }
-
-    #[test]
-    fn successful_system_audio_permission_probe_reports_granted() {
-        let readiness = apply_system_audio_permission_probe_result(system_readiness(), Ok(()));
-
-        assert!(readiness.ready);
-        assert_eq!(readiness.permission_state, "granted");
-        assert!(readiness.capture_available);
-    }
-
-    #[test]
-    fn failed_system_audio_permission_probe_blocks_capture() {
-        let readiness = apply_system_audio_permission_probe_result(
-            system_readiness(),
-            Err(AppError::new(
-                "system_audio_permission_denied",
-                "Grant access.",
-            )),
-        );
-
-        assert!(!readiness.ready);
-        assert_eq!(readiness.permission_state, "denied");
-        assert!(!readiness.capture_available);
-        assert_eq!(readiness.message.as_deref(), Some("Grant access."));
-    }
-
-    #[test]
-    fn failed_system_audio_capture_probe_keeps_permission_granted() {
-        let readiness = apply_system_audio_permission_probe_result(
-            system_readiness(),
-            Err(AppError::new(
-                "system_audio_capture_unavailable",
-                "Failed to create audio format for system tap.",
-            )),
-        );
-
-        assert!(!readiness.ready);
-        assert_eq!(readiness.permission_state, "granted");
-        assert!(!readiness.capture_available);
-        assert_eq!(readiness.recovery_action.as_deref(), Some("restartApp"));
+    fn retry_keeps_the_mode_the_take_was_recorded_in() {
         assert_eq!(
-            readiness.message.as_deref(),
-            Some("Failed to create audio format for system tap.")
+            retry_source_mode(&retry_sources(&["microphone"]), None),
+            None
+        );
+        assert_eq!(
+            retry_source_mode(
+                &retry_sources(&["system"]),
+                Some(RecordingSourceMode::SystemOnly)
+            ),
+            Some(RecordingSourceMode::SystemOnly)
+        );
+        // A computer-only take from before the mode was stored.
+        assert_eq!(
+            retry_source_mode(&retry_sources(&["system"]), None),
+            Some(RecordingSourceMode::SystemOnly)
+        );
+        assert_eq!(
+            retry_source_mode(
+                &retry_sources(&["microphone", "system"]),
+                Some(RecordingSourceMode::MicrophonePlusSystem)
+            ),
+            Some(RecordingSourceMode::MicrophonePlusSystem)
+        );
+        // Only the computer lane of a two-lane take survived validation.
+        assert_eq!(
+            retry_source_mode(
+                &retry_sources(&["system"]),
+                Some(RecordingSourceMode::MicrophonePlusSystem)
+            ),
+            Some(RecordingSourceMode::MicrophonePlusSystem)
         );
     }
 
@@ -2546,45 +2385,6 @@ mod tests {
 
         assert_eq!(recovery_validation_expected_duration_ms(&path, 0), 1_000);
         assert_eq!(recovery_validation_expected_duration_ms(&path, 1), 1_000);
-    }
-
-    fn system_readiness() -> SourceReadinessDto {
-        SourceReadinessDto {
-            source: RecordingSource::System,
-            required: true,
-            ready: true,
-            permission_state: "unknown".to_string(),
-            device_available: true,
-            capture_available: true,
-            recovery_action: Some("openSystemAudioSettings".to_string()),
-            message: None,
-        }
-    }
-
-    fn unsupported_system_readiness() -> SourceReadinessDto {
-        SourceReadinessDto {
-            source: RecordingSource::System,
-            required: true,
-            ready: false,
-            permission_state: "unsupported".to_string(),
-            device_available: false,
-            capture_available: false,
-            recovery_action: Some("upgradeMacos".to_string()),
-            message: Some("System audio capture requires macOS 14.2 or later.".to_string()),
-        }
-    }
-
-    fn microphone_readiness() -> SourceReadinessDto {
-        SourceReadinessDto {
-            source: RecordingSource::Microphone,
-            required: true,
-            ready: true,
-            permission_state: "granted".to_string(),
-            device_available: true,
-            capture_available: true,
-            recovery_action: None,
-            message: None,
-        }
     }
 
     #[test]

@@ -1,13 +1,15 @@
+import { sourceModeIncludesSystem } from "./recording-source-mode";
 import type { RecordingSourceReadinessDto } from "./tauri";
 
 export type SystemAudioAvailability =
   /** The readiness probe has not answered yet. */
   | "unknown"
-  /** This Mac cannot capture system audio at all (macOS below 14.2). */
+  /** This computer cannot capture its own sound at all (macOS below 14.2). */
   | "unsupported"
   /** The user declined the permission. */
   | "denied"
-  /** The permission is granted, but the capture helper cannot capture now. */
+  /** The permission is granted, but nothing can be captured now (the helper
+   * failed, or Windows has no sound output device). */
   | "unavailable"
   | "usable";
 
@@ -33,15 +35,15 @@ export function systemAudioAvailability(
 /**
  * A microphone-only readiness check never assesses system audio: it skips the
  * capture helper's permission preflight, so its system source reports whether
- * this Mac is *capable* rather than whether the permission was granted. Keep
- * the source last assessed by a microphone-plus-system check instead of
- * overwriting it with that weaker signal.
+ * this computer is *capable* rather than whether the permission was granted.
+ * Keep the source last assessed by a check that included the computer instead
+ * of overwriting it with that weaker signal.
  */
 export function mergeSourceReadiness(
   previous: RecordingSourceReadinessDto | undefined,
   next: RecordingSourceReadinessDto,
 ): RecordingSourceReadinessDto {
-  if (next.sourceMode === "microphonePlusSystem") return next;
+  if (sourceModeIncludesSystem(next.sourceMode)) return next;
   const assessed = previous?.sources.find((source) => source.source === "system");
   if (!assessed) return next;
   return {
