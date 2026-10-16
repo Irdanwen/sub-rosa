@@ -51,7 +51,14 @@ import {
   openExternalUrl,
 } from "../../lib/tauri";
 import { SIDECAR_STATUS_EVENT } from "./CarpeDiemSettings";
-import { keyOrigin, useIssuanceStatus, withSignupIntent } from "../../lib/carpe-diem-issue";
+import {
+  keyOrigin,
+  useDeviceKeyUsage,
+  useIssuanceStatus,
+  withSignupIntent,
+} from "../../lib/carpe-diem-issue";
+import { AccountCarpeDiemCard } from "../carpe-diem/AccountCarpeDiemCard";
+import { DeviceKeyLine } from "../carpe-diem/DeviceKeyLine";
 import { DeviceKeyIssue } from "../carpe-diem/DeviceKeyIssue";
 import { InlineNotice } from "../ui/InlineNotice";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -98,6 +105,8 @@ export function AccountSettingsSection({
   const [login, setLogin] = useState<AccountLogin | null>(null);
   const [native, setNative] = useState<AccountNativeLogin | null>(null);
   const [devices, setDevices] = useState<AccountDevice[] | null>(null);
+  // Which of these devices hold a Carpe Diem key, and what each spent.
+  const keyUsage = useDeviceKeyUsage(status?.device_id ?? null);
   const [conflicts, setConflicts] = useState<AccountConflict[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1150,6 +1159,21 @@ export function AccountSettingsSection({
           </AccountCard>
           {status.sync_enabled ? <AccountStorageCard status={status} /> : null}
 
+          {hasLocalKey ? (
+            <AccountCarpeDiemCard
+              issuedKey={issuedKey}
+              onKeyChanged={() =>
+                carpeDiemGetSettings()
+                  .then((settings) => {
+                    if (!mounted.current) return;
+                    setHasLocalKey(settings.hasApiKey);
+                    setIssuedKey(keyOrigin(settings) === "issued");
+                  })
+                  .catch(() => undefined)
+              }
+            />
+          ) : null}
+
           <AccountCard title={t("Carpe Diem on your devices")}>
             <p className="settings-row-description">
               {issuedKey
@@ -1217,6 +1241,7 @@ export function AccountSettingsSection({
                           it renewed itself is what makes a copied one visible:
                           two copies cut each other off, and the count climbs
                           on a device nobody touched (ADR 0056). */}
+                      <DeviceKeyLine usage={keyUsage.get(device.id)} />
                       {device.renewed_at ? (
                         <p className="settings-row-description">
                           {t("Reconnected on its own {count} times, last on {time}.", {

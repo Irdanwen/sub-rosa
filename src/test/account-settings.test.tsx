@@ -30,6 +30,8 @@ vi.mock("../lib/tauri", () => ({
   openExternalUrl: mocks.openExternalUrl,
   // The guided step asks whether this device already holds a key.
   carpeDiemGetSettings: mocks.carpeDiemGetSettings,
+  carpeDiemGetCredits: vi.fn(async () => ({ availableCredits: 300, escrowCredits: 300 })),
+  carpeDiemOpenDashboard: vi.fn(async () => undefined),
 }));
 
 const local: AccountStatus = {
@@ -371,6 +373,23 @@ describe("Account settings", () => {
       within(screen.getByRole("dialog")).getByRole("button", { name: "Use this key" }),
     );
     expect(mocks.invoke).toHaveBeenCalledWith("account_vault_restore_carpe_diem");
+  });
+
+  it("says which device holds a Carpe Diem key and what it spent", async () => {
+    state = { ...connected };
+    mocks.carpeDiemGetSettings.mockResolvedValue({ hasApiKey: true });
+    handlers.carpe_diem_device_key_usage = (args) => {
+      expect(args).toEqual({ deviceId: "device-1" });
+      return [
+        { deviceId: "device-1", active: true, spentCredits: 12, requests: 3, lastUsedAt: null },
+      ];
+    };
+    render(<AccountSettingsSection />);
+    expect(
+      await screen.findByText("Carpe Diem key active, 12.0 credits spent in the last 30 days."),
+    ).toBeInTheDocument();
+    // The Carpe Diem block shows once this device has a key.
+    expect(await screen.findByText(/300 credits available/)).toBeInTheDocument();
   });
 
   it("keeps a failed account deletion visible and never reports success", async () => {
