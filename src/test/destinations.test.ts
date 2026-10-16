@@ -7,7 +7,9 @@ const deepLink = vi.hoisted(() => ({
   unlisten: vi.fn(),
 }));
 const notification = vi.hoisted(() => ({
-  handlers: [] as Array<(payload: { extra?: Record<string, unknown> }) => void>,
+  handlers: [] as Array<
+    (payload: { notification: { extra?: Record<string, unknown> } | null }) => void
+  >,
   unregister: vi.fn(),
 }));
 
@@ -19,7 +21,9 @@ vi.mock("@tauri-apps/plugin-deep-link", () => ({
   },
 }));
 vi.mock("@tauri-apps/plugin-notification", () => ({
-  onAction: async (handler: (payload: { extra?: Record<string, unknown> }) => void) => {
+  onAction: async (
+    handler: (payload: { notification: { extra?: Record<string, unknown> } | null }) => void,
+  ) => {
     notification.handlers.push(handler);
     return { unregister: notification.unregister };
   },
@@ -198,7 +202,7 @@ describe("subscribeToDestinations", () => {
     expect(seen).toEqual([{ kind: "studio" }]);
 
     deepLink.handlers[0](["subrosa://note/n-1"]);
-    notification.handlers[0]({ extra: { destination: "subrosa://chat/task-2" } });
+    notification.handlers[0]({ notification: { extra: { destination: "subrosa://chat/task-2" } } });
 
     expect(seen).toEqual([
       { kind: "studio" },
@@ -212,7 +216,9 @@ describe("subscribeToDestinations", () => {
     const seen: Destination[] = [];
     const stop = subscribeToDestinations((destination) => seen.push(destination));
     await settle();
-    notification.handlers[0]({ extra: { destination: "subrosa://assistant/new-task" } });
+    notification.handlers[0]({
+      notification: { extra: { destination: "subrosa://assistant/new-task" } },
+    });
     expect(seen).toEqual([
       { kind: "assistant", taskId: "old-task" },
       { kind: "assistant", taskId: "new-task" },
@@ -225,9 +231,10 @@ describe("subscribeToDestinations", () => {
     subscribeToDestinations((destination) => seen.push(destination));
     await settle();
 
-    notification.handlers[0]({});
-    notification.handlers[0]({ extra: {} });
-    notification.handlers[0]({ extra: { destination: 42 } });
+    notification.handlers[0]({ notification: null });
+    notification.handlers[0]({ notification: {} });
+    notification.handlers[0]({ notification: { extra: {} } });
+    notification.handlers[0]({ notification: { extra: { destination: 42 } } });
     deepLink.handlers[0](["https://example.com", "subrosa://nope"]);
 
     expect(seen).toEqual([]);
