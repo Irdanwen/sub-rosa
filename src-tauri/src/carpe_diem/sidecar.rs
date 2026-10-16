@@ -55,6 +55,12 @@ const LOCAL_USER_ID: &str = "usr_local";
 /// `setup`. Same global-handle pattern as `agent_hud`.
 static APP: OnceLock<AppHandle> = OnceLock::new();
 
+/// The app handle, for work that learns of a change far from any command
+/// (the account noticing this device was signed out elsewhere).
+pub(crate) fn app_handle() -> Option<AppHandle> {
+    APP.get().cloned()
+}
+
 /// Where the running backend's pid is recorded, so a backend that outlives a
 /// crashed app is found at the next launch (see `orphan`).
 #[cfg(desktop)]

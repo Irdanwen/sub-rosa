@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { accountConfigure, accountLoginOpen, accountStatus } from "./account";
 import { t } from "./i18n";
 import { isMobilePlatform } from "./mobile";
@@ -43,6 +43,38 @@ export const carpeDiemIssuePoll = () => invoke<IssueOutcome>("carpe_diem_issue_p
 export const carpeDiemIssueCancel = () => invoke<void>("carpe_diem_issue_cancel");
 export const carpeDiemRevokeIssuedKey = () => invoke<void>("carpe_diem_revoke_issued_key");
 
+/** Whether Carpe Diem still accepts this device's issued key. It tells Sub
+ * Rosa nothing when a key is revoked from its dashboard or the account behind
+ * it is closed, so the settings ask while they are shown. */
+export type IssuedKeyHealth = "none" | "accepted" | "refused" | "unknown";
+export const carpeDiemIssuedKeyHealth = () =>
+  invoke<IssuedKeyHealth>("carpe_diem_issued_key_health");
+
+/** Runs `refresh` when the window comes back to the front, the moment an
+ * answer from Carpe Diem may have changed, at most once per `minIntervalMs`
+ * (a window gains focus far more often than Carpe Diem changes its mind). No
+ * timer: a screen nobody looks at asks nothing (ADR-0018). */
+export function useOnReturn(refresh: () => void, minIntervalMs = 30_000) {
+  useEffect(() => {
+    let last = Date.now();
+    const maybe = () => {
+      const now = Date.now();
+      if (now - last < minIntervalMs) return;
+      last = now;
+      refresh();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") maybe();
+    };
+    window.addEventListener("focus", maybe);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", maybe);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refresh, minIntervalMs]);
+}
+
 /** When Carpe Diem says the linked account was deleted, from a
  * `carpe_diem_account_closed` error; null when it gave no readable date. */
 export function accountClosedAt(cause: unknown): Date | null {
@@ -82,26 +114,34 @@ const NOT_AVAILABLE: IssuanceStatus = {
 };
 
 /**
- * Asks once whether the account can create keys here. `null` while the answer
- * is on its way, and a plain "no" when it cannot be had: before Carpe Diem
- * ships the routes, every new path simply stays hidden.
+ * Asks whether the account can create keys here, on mount and again when the
+ * window comes back to the front: Carpe Diem opening issuance should not wait
+ * for a restart. `null` while the first answer is on its way, and a plain
+ * "no" when it cannot be had: before Carpe Diem ships the routes, every new
+ * path simply stays hidden.
  */
 export function useIssuanceStatus(): IssuanceStatus | null {
   const [status, setStatus] = useState<IssuanceStatus | null>(null);
-  useEffect(() => {
-    let live = true;
+  const live = useRef(true);
+  const ask = useCallback(() => {
     carpeDiemIssuanceStatus().then(
       (next) => {
-        if (live) setStatus(next && typeof next === "object" ? next : NOT_AVAILABLE);
+        if (live.current) setStatus(next && typeof next === "object" ? next : NOT_AVAILABLE);
       },
       () => {
-        if (live) setStatus(NOT_AVAILABLE);
+        // A failed second look keeps what the first one said.
+        if (live.current) setStatus((current) => current ?? NOT_AVAILABLE);
       },
     );
-    return () => {
-      live = false;
-    };
   }, []);
+  useEffect(() => {
+    live.current = true;
+    ask();
+    return () => {
+      live.current = false;
+    };
+  }, [ask]);
+  useOnReturn(ask);
   return status;
 }
 

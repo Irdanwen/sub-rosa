@@ -1,8 +1,15 @@
-import { useState } from "react";
-import { carpeDiemRevokeIssuedKey } from "../../lib/carpe-diem-issue";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type IssuedKeyHealth,
+  carpeDiemIssueCancel,
+  carpeDiemIssuedKeyHealth,
+  carpeDiemRevokeIssuedKey,
+  useOnReturn,
+} from "../../lib/carpe-diem-issue";
 import { messageFromError } from "../../lib/errors";
 import { t } from "../../lib/i18n";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { InlineNotice } from "../ui/InlineNotice";
 import { DeviceKeyIssue } from "./DeviceKeyIssue";
 
 /**
@@ -15,6 +22,27 @@ export function IssuedKeyRow({ onChanged }: { onChanged: () => void | Promise<vo
   const [renewing, setRenewing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [health, setHealth] = useState<IssuedKeyHealth>("unknown");
+  const mounted = useRef(true);
+
+  // Carpe Diem says nothing when the key is revoked from its own dashboard or
+  // the account behind it is closed: ask while this row is in sight.
+  const check = useCallback(() => {
+    carpeDiemIssuedKeyHealth().then(
+      (next) => {
+        if (mounted.current) setHealth(next);
+      },
+      () => undefined,
+    );
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    check();
+    return () => {
+      mounted.current = false;
+    };
+  }, [check]);
+  useOnReturn(check);
 
   return (
     <div className="settings-row issued-key-row">
@@ -25,11 +53,20 @@ export function IssuedKeyRow({ onChanged }: { onChanged: () => void | Promise<vo
             "Carpe Diem created it for this device. It draws on your account's credits, and it stops working if this device leaves your account.",
           )}
         </p>
+        {health === "refused" && !renewing ? (
+          <InlineNotice
+            role="alert"
+            body={t(
+              "Carpe Diem no longer accepts this key. It may have been revoked from your Carpe Diem account. Renew it to keep going.",
+            )}
+          />
+        ) : null}
         {renewing ? (
           <DeviceKeyIssue
             autoStart
             onIssued={() => {
               setRenewing(false);
+              setHealth("accepted");
               void onChanged();
             }}
           />
@@ -45,17 +82,32 @@ export function IssuedKeyRow({ onChanged }: { onChanged: () => void | Promise<vo
         ) : null}
       </div>
       <div className="settings-row-control">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={renewing}
-          onClick={() => {
-            setError(null);
-            setRenewing(true);
-          }}
-        >
-          {t("Renew")}
-        </button>
+        {renewing ? (
+          // A renewal that failed or waits on a mail must never leave both
+          // buttons dead: closing it drops the attempt.
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              void carpeDiemIssueCancel().catch(() => undefined);
+              setRenewing(false);
+              check();
+            }}
+          >
+            {t("Close")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setError(null);
+              setRenewing(true);
+            }}
+          >
+            {t("Renew")}
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-secondary"

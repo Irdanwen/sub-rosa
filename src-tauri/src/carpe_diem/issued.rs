@@ -207,6 +207,30 @@ fn account_closed_error(body: &Value) -> AppError {
         .map(|at| json!({ "closedAt": at }));
     error
 }
+fn device_revoked_error() -> AppError {
+    AppError::new(
+        "carpe_diem_device_revoked",
+        "This device was removed from your account. Sign in again on it to create a key.",
+    )
+}
+fn region_error() -> AppError {
+    AppError::new(
+        "carpe_diem_issue_region",
+        "Carpe Diem is not available from the country your connection comes from. Nothing was created.",
+    )
+}
+fn proof_error() -> AppError {
+    AppError::new(
+        "carpe_diem_issue_clock",
+        "Carpe Diem could not check this request. Make sure this device sets its date and time automatically, then try again.",
+    )
+}
+fn assertion_error() -> AppError {
+    AppError::new(
+        "carpe_diem_issue_refused",
+        "Carpe Diem refused your account's request. Nothing was created. Try again later, or paste a key instead.",
+    )
+}
 fn expired_error() -> AppError {
     AppError::new(
         "carpe_diem_link_expired",
@@ -280,14 +304,26 @@ pub(crate) fn interpret(status: u16, body: &Value) -> Result<Answer, AppError> {
         404 => Err(unavailable_error()),
         409 if code == "ASSERTION_REPLAYED" => Ok(Answer::Replayed),
         403 if code == "ASSERTION_REVOKED" => Ok(Answer::Revoked),
-        429 => Err(AppError::new(
+        429 if code == "ISSUANCE_LIMITED" => Err(AppError::new(
             "carpe_diem_issue_limited",
             "Your account created several keys recently. Try again tomorrow, or revoke a device you no longer use.",
         )),
-        503 => Err(AppError::new(
+        429 => Err(AppError::new(
+            "carpe_diem_issue_busy",
+            "Too many attempts in a short time. Wait a minute, then try again.",
+        )),
+        503 if code == "PARTNER_SUSPENDED" => Err(AppError::new(
             "carpe_diem_issue_paused",
             "Carpe Diem has paused creating keys for a moment. Try again later.",
         )),
+        500..=599 => Err(AppError::new(
+            "carpe_diem_issue_down",
+            "Carpe Diem is unavailable right now. Try again in a few minutes.",
+        )),
+        451 => Err(region_error()),
+        403 if code == "DEVICE_REVOKED" => Err(device_revoked_error()),
+        401 if code == "PROOF_INVALID" => Err(proof_error()),
+        401 if code == "ASSERTION_INVALID" => Err(assertion_error()),
         403 if code == "LINK_DECLINED" => Err(AppError::new(
             "carpe_diem_link_declined",
             "The link was declined from the confirmation page. Nothing was created.",
@@ -434,13 +470,7 @@ pub(crate) async fn capabilities(base: &str) -> Capabilities {
 pub async fn carpe_diem_issuance_status() -> Result<IssuanceStatus, AppError> {
     let base = settings::base_url();
     let caps = capabilities(&base).await;
-    let pending = {
-        let mut guard = pending_lock();
-        if guard.as_ref().is_some_and(|p| !alive(&p.expires_at)) {
-            *guard = None;
-        }
-        guard.as_ref().map(IssueOutcome::waiting)
-    };
+    let pending = waiting_outcome();
     Ok(IssuanceStatus {
         key_issuance: caps.key_issuance,
         fiat: caps.fiat,
@@ -448,6 +478,16 @@ pub async fn carpe_diem_issuance_status() -> Result<IssuanceStatus, AppError> {
         issued: settings::issued_meta().is_some() && settings::api_key().is_some(),
         pending,
     })
+}
+
+/// The confirmation still waiting on the person's mail, if one is; a lapsed
+/// one is dropped on the way.
+fn waiting_outcome() -> Option<IssueOutcome> {
+    let mut guard = pending_lock();
+    if guard.as_ref().is_some_and(|p| !alive(&p.expires_at)) {
+        *guard = None;
+    }
+    guard.as_ref().map(IssueOutcome::waiting)
 }
 
 fn alive(at: &str) -> bool {
@@ -512,19 +552,23 @@ async fn post_poll(base: &str, pending: &Pending) -> Result<Answer, AppError> {
     interpret(status, &body)
 }
 
+/// Stores a key Carpe Diem has just minted. Only a clear refusal or a
+/// credential store that will not write loses it, and then it is retired at
+/// once so it does not hold one of the account's active-key places for
+/// nothing.
 async fn activate(
     app: &AppHandle,
     base: &str,
     key: Redacted<String>,
     key_id: String,
 ) -> Result<(), AppError> {
-    settings::activate_verified_credential(
-        app,
-        base,
-        key.expose_str(),
-        Some(&settings::IssuedMeta { key_id }),
-    )
-    .await
+    let stored =
+        settings::activate_issued_credential(app, base, &key, &settings::IssuedMeta { key_id })
+            .await;
+    if stored.is_err() {
+        let _ = self_revoke(base, &key).await;
+    }
+    stored
 }
 
 /// Creates this device's key. Needs a sign-in less than five minutes old: the
@@ -541,6 +585,14 @@ pub async fn carpe_diem_issue_key(
 ) -> Result<IssueOutcome, AppError> {
     let reactivate = reactivate == Some(true);
     let base = settings::base_url();
+    // A confirmation already waiting is the same attempt seen again (the card
+    // was closed and reopened, the window reloaded): show its code instead of
+    // sending a second mail with a different one.
+    if !reactivate {
+        if let Some(waiting) = waiting_outcome() {
+            return Ok(waiting);
+        }
+    }
     // Two tries at most: a replayed assertion (a retried request that already
     // landed), or one signed in the second Carpe Diem revoked the account's
     // keys, is answered with a fresh one, never looped on.
@@ -623,12 +675,55 @@ pub fn carpe_diem_issue_cancel() {
     *pending_lock() = None;
 }
 
-/// Revokes this device's issued key at Carpe Diem, then forgets it here.
-/// Revocation is best effort (the account service also revokes it when the
-/// device is signed out), the local clear is not.
+/// Revokes this device's issued key at Carpe Diem, then forgets it here. The
+/// screen promises the key stops working at once, so Carpe Diem has to say so
+/// first: when it cannot be reached the key is kept and the person is asked
+/// to try again, rather than told something that is not true yet.
 #[tauri::command]
 pub async fn carpe_diem_revoke_issued_key(app: AppHandle) -> Result<(), AppError> {
-    forget_issued_key(&app).await
+    *pending_lock() = None;
+    if settings::issued_meta().is_none() {
+        return Ok(());
+    }
+    if let Some((base, key)) = settings::credentials() {
+        if self_revoke(&base, &key).await == SelfRevoke::Unconfirmed {
+            return Err(AppError::new(
+                "carpe_diem_revoke_unconfirmed",
+                "Carpe Diem could not be reached, so the key still works. Check your connection and try again.",
+            ));
+        }
+    }
+    settings::carpe_diem_clear_api_key(app).await.map(|_| ())
+}
+
+/// Whether Carpe Diem still accepts this device's issued key. Carpe Diem
+/// tells partners nothing when a key is revoked from its own dashboard or the
+/// account behind it is closed, so the settings ask when they are shown.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IssuedKeyHealth {
+    /// No issued key here.
+    None,
+    Accepted,
+    /// Carpe Diem refused it: renewing makes a new one, or explains why not.
+    Refused,
+    /// No answer worth acting on (offline, a server error).
+    Unknown,
+}
+
+#[tauri::command]
+pub async fn carpe_diem_issued_key_health() -> Result<IssuedKeyHealth, AppError> {
+    if settings::issued_meta().is_none() {
+        return Ok(IssuedKeyHealth::None);
+    }
+    let Some((base, key)) = settings::credentials() else {
+        return Ok(IssuedKeyHealth::None);
+    };
+    Ok(match settings::check_credits(&base, &key).await {
+        settings::CreditsCheck::Accepted => IssuedKeyHealth::Accepted,
+        settings::CreditsCheck::Refused => IssuedKeyHealth::Refused,
+        settings::CreditsCheck::Unsure(_) => IssuedKeyHealth::Unknown,
+    })
 }
 
 /// Called on sign-out, device revocation and account deletion: an issued key
@@ -640,17 +735,34 @@ pub(crate) async fn forget_issued_key(app: &AppHandle) -> Result<(), AppError> {
         return Ok(());
     }
     if let Some((base, key)) = settings::credentials() {
-        self_revoke(&base, &key).await;
+        let _ = self_revoke(&base, &key).await;
     }
     settings::carpe_diem_clear_api_key(app.clone())
         .await
         .map(|_| ())
 }
 
-async fn self_revoke(base: &str, key: &Redacted<String>) {
+#[derive(Debug, PartialEq, Eq)]
+enum SelfRevoke {
+    /// Carpe Diem retired it, or no longer knew it.
+    Done,
+    Unconfirmed,
+}
+
+/// A refusal of the key itself (401, 403) means it already does not work,
+/// which is what was asked.
+fn self_revoke_outcome(status: u16) -> SelfRevoke {
+    if (200..300).contains(&status) || matches!(status, 401 | 403) {
+        SelfRevoke::Done
+    } else {
+        SelfRevoke::Unconfirmed
+    }
+}
+
+async fn self_revoke(base: &str, key: &Redacted<String>) -> SelfRevoke {
     let url = format!("{}/v1/keys/self/revoke", partner_root(base));
     let Ok(client) = client() else {
-        return;
+        return SelfRevoke::Unconfirmed;
     };
     let started = Instant::now();
     match client
@@ -660,8 +772,15 @@ async fn self_revoke(base: &str, key: &Redacted<String>) {
         .send()
         .await
     {
-        Ok(response) => record(&url, started, response.status().as_u16()),
-        Err(_) => tracing::warn!("issued key self revocation deferred to the account service"),
+        Ok(response) => {
+            let status = response.status().as_u16();
+            record(&url, started, status);
+            self_revoke_outcome(status)
+        }
+        Err(_) => {
+            tracing::warn!("issued key self revocation deferred to the account service");
+            SelfRevoke::Unconfirmed
+        }
     }
 }
 
@@ -817,10 +936,6 @@ mod tests {
             "carpe_diem_link_expired"
         );
         assert_eq!(
-            code(401, json!({"code":"PROOF_INVALID"})),
-            "carpe_diem_issue_rejected"
-        );
-        assert_eq!(
             interpret(409, &json!({"code":"ASSERTION_REPLAYED"})).unwrap(),
             Answer::Replayed
         );
@@ -831,8 +946,67 @@ mod tests {
         // A revoked device is not one more try away from a key.
         assert_eq!(
             code(403, json!({"code":"DEVICE_REVOKED"})),
-            "carpe_diem_issue_rejected"
+            "carpe_diem_device_revoked"
         );
+    }
+
+    #[test]
+    fn each_refusal_names_its_own_cause() {
+        let code = |status, body: Value| interpret(status, &body).unwrap_err().code;
+        // The geoblock answers without a code of its own.
+        assert_eq!(
+            code(451, json!({"error":"Unavailable For Legal Reasons"})),
+            "carpe_diem_issue_region"
+        );
+        // The proof is the one part signed by this device's clock.
+        assert_eq!(
+            code(401, json!({"code":"PROOF_INVALID"})),
+            "carpe_diem_issue_clock"
+        );
+        assert_eq!(
+            code(401, json!({"code":"ASSERTION_INVALID"})),
+            "carpe_diem_issue_refused"
+        );
+        // Only the issuance limit is a "tomorrow"; a burst is a minute.
+        assert_eq!(
+            code(429, json!({"code":"RATE_LIMITED"})),
+            "carpe_diem_issue_busy"
+        );
+        assert_eq!(code(429, json!({})), "carpe_diem_issue_busy");
+        // Only the partner switch is a pause; an outage is an outage.
+        assert_eq!(code(503, json!({})), "carpe_diem_issue_down");
+        assert_eq!(code(502, json!({})), "carpe_diem_issue_down");
+        assert_eq!(code(401, json!({})), "carpe_diem_issue_rejected");
+    }
+
+    #[test]
+    fn a_self_revocation_counts_only_when_carpe_diem_answered() {
+        assert_eq!(self_revoke_outcome(200), SelfRevoke::Done);
+        assert_eq!(self_revoke_outcome(204), SelfRevoke::Done);
+        // Already dead is what was asked.
+        assert_eq!(self_revoke_outcome(401), SelfRevoke::Done);
+        assert_eq!(self_revoke_outcome(403), SelfRevoke::Done);
+        assert_eq!(self_revoke_outcome(429), SelfRevoke::Unconfirmed);
+        assert_eq!(self_revoke_outcome(503), SelfRevoke::Unconfirmed);
+    }
+
+    #[test]
+    fn a_waiting_confirmation_is_shown_again_instead_of_replaced() {
+        *pending_lock() = Some(Pending {
+            base: "https://op.test".into(),
+            ephemeral: Ephemeral::generate(),
+            link_request_id: "0192f3c4-5d6e-7f80-9123-456789abcdef".into(),
+            code: "K7Q2MX".into(),
+            expires_at: "2099-01-01T00:00:00Z".into(),
+            email_hint: None,
+        });
+        let again = waiting_outcome().expect("still waiting");
+        assert_eq!(again.code.as_deref(), Some("K7Q2MX"));
+        assert_eq!(again.status, "confirmation_required");
+        // A lapsed one is dropped, never resumed.
+        pending_lock().as_mut().unwrap().expires_at = "2001-01-01T00:00:00Z".into();
+        assert!(waiting_outcome().is_none());
+        assert!(pending_lock().is_none());
     }
 
     #[test]

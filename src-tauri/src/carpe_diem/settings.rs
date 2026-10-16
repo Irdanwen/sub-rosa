@@ -1218,8 +1218,9 @@ pub(crate) async fn restore_account_credential(
 /// The one way a key that did not come from the person's own typing becomes
 /// the active one: it must answer an authenticated `/credits` first, then the
 /// URL, the key and its provenance are written as one keychain value, then the
-/// engine restarts on it. Vault restores and issued device keys share it, so
-/// neither can skip the check the other makes.
+/// engine restarts on it. Vault restores take this path; an issued device key
+/// takes [`activate_issued_credential`], which makes the same check but cannot
+/// afford to drop the key on a doubtful answer.
 pub(crate) async fn activate_verified_credential(
     app: &AppHandle,
     base: &str,
@@ -1228,75 +1229,215 @@ pub(crate) async fn activate_verified_credential(
 ) -> Result<(), AppError> {
     let base_url = validate_base_url(base)?;
     let key = Redacted::new(normalize_api_key(key)?);
-    if !key.expose_str().starts_with("cdm_") {
-        return Err(AppError::new(
+    require_carpe_diem_key(&key)?;
+    match check_credits(&base_url, &key).await {
+        CreditsCheck::Accepted => {}
+        CreditsCheck::Refused => return Err(key_refused_error()),
+        CreditsCheck::Unsure(failure) => return Err(failure),
+    }
+    store_and_restart(app, base_url, &key, meta)
+}
+
+/// A key Carpe Diem has just minted for this device. Unlike a restored one it
+/// cannot be fetched again: it already counts against the account's daily
+/// issuances and active keys, and minting it retired this device's previous
+/// key. So only a clear refusal from `/credits` drops it; a network failure, a
+/// server error or an unreadable answer stores it anyway, because the answer
+/// that carried it came from Carpe Diem itself on the same connection.
+pub(crate) async fn activate_issued_credential(
+    app: &AppHandle,
+    base: &str,
+    key: &Redacted<String>,
+    meta: &IssuedMeta,
+) -> Result<(), AppError> {
+    let base_url = validate_base_url(base)?;
+    let key = Redacted::new(normalize_api_key(key.expose_str())?);
+    require_carpe_diem_key(&key)?;
+    match check_credits(&base_url, &key).await {
+        CreditsCheck::Accepted => {}
+        CreditsCheck::Refused => return Err(key_refused_error()),
+        CreditsCheck::Unsure(failure) => {
+            tracing::warn!(code = %failure.code, "issued key stored before /credits could confirm it");
+        }
+    }
+    store_and_restart(app, base_url, &key, Some(meta))
+}
+
+fn require_carpe_diem_key(key: &Redacted<String>) -> Result<(), AppError> {
+    if key.expose_str().starts_with("cdm_") {
+        Ok(())
+    } else {
+        Err(AppError::new(
             "carpe_diem_verification_unsupported",
             "This vault requires a Carpe Diem key.",
-        ));
+        ))
     }
-    let client = crate::http_client::credentialed(TEST_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| {
-            AppError::new(
-                "carpe_diem_credits_unreachable",
-                "Your connection could not be verified.",
-            )
-        })?;
-    let mut response = client
-        .get(format!("{}/credits", catalog_base_url_of(&base_url)))
-        .bearer_auth(key.expose_str())
-        .send()
-        .await
-        .map_err(|_| {
-            AppError::new(
-                "carpe_diem_credits_unreachable",
-                "Your connection could not be verified.",
-            )
-        })?;
-    if !response.status().is_success() {
-        return Err(AppError::new(
-            "carpe_diem_key_invalid",
-            "The service did not accept this key. Your previous key is unchanged.",
-        ));
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| credential_error())? {
-        if bytes.len() + chunk.len() > 65_536 {
-            return Err(AppError::new(
-                "carpe_diem_credits_failed",
-                "The credits response was too large.",
-            ));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let body: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
-        AppError::new(
-            "carpe_diem_credits_failed",
-            "The service did not return a valid credits response.",
-        )
-    })?;
-    if body
-        .get("availableCredits")
-        .and_then(serde_json::Value::as_f64)
-        .is_none()
-    {
-        return Err(AppError::new(
-            "carpe_diem_credits_failed",
-            "The service did not return a valid credits response.",
-        ));
-    }
+}
+
+fn key_refused_error() -> AppError {
+    AppError::new(
+        "carpe_diem_key_invalid",
+        "The service did not accept this key. Your previous key is unchanged.",
+    )
+}
+
+fn store_and_restart(
+    app: &AppHandle,
+    base_url: String,
+    key: &Redacted<String>,
+    meta: Option<&IssuedMeta>,
+) -> Result<(), AppError> {
     {
         let _guard = CREDENTIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        store_active_credential_with(&base_url, &key, meta)?;
+        store_active_credential_with(&base_url, key, meta)?;
         replace_mirror(CarpeDiemSettings { base_url });
     }
     super::sidecar::on_settings_changed(app);
     Ok(())
 }
 
+/// What an authenticated `/credits` said about a key.
+#[derive(Debug)]
+pub(crate) enum CreditsCheck {
+    /// It answered with a balance.
+    Accepted,
+    /// It refused the key outright (401 or 403): revoked, unknown, or the
+    /// account behind it is closed.
+    Refused,
+    /// No verdict either way: the network, a server error, or an answer
+    /// that does not read. Carries the words for the caller that must stop.
+    Unsure(AppError),
+}
+
+pub(crate) async fn check_credits(base_url: &str, key: &Redacted<String>) -> CreditsCheck {
+    let unreachable = || {
+        AppError::new(
+            "carpe_diem_credits_unreachable",
+            "Your connection could not be verified.",
+        )
+    };
+    let invalid_answer = || {
+        AppError::new(
+            "carpe_diem_credits_failed",
+            "The service did not return a valid credits response.",
+        )
+    };
+    let Ok(client) = crate::http_client::credentialed(TEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    else {
+        return CreditsCheck::Unsure(unreachable());
+    };
+    let Ok(mut response) = client
+        .get(format!("{}/credits", catalog_base_url_of(base_url)))
+        .bearer_auth(key.expose_str())
+        .send()
+        .await
+    else {
+        return CreditsCheck::Unsure(unreachable());
+    };
+    let status = response.status().as_u16();
+    if matches!(status, 401 | 403) {
+        return CreditsCheck::Refused;
+    }
+    if !response.status().is_success() {
+        return CreditsCheck::Unsure(key_refused_error());
+    }
+    let mut bytes = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                if bytes.len() + chunk.len() > 65_536 {
+                    return CreditsCheck::Unsure(AppError::new(
+                        "carpe_diem_credits_failed",
+                        "The credits response was too large.",
+                    ));
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Err(_) => return CreditsCheck::Unsure(unreachable()),
+        }
+    }
+    let readable = serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()
+        .and_then(|body| {
+            body.get("availableCredits")
+                .and_then(serde_json::Value::as_f64)
+        })
+        .is_some();
+    if readable {
+        CreditsCheck::Accepted
+    } else {
+        CreditsCheck::Unsure(invalid_answer())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    /// One canned HTTP answer per connection, on a loopback port.
+    async fn answering(status: u16, body: &'static str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/v1", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut head = [0_u8; 4096];
+                let _ = socket.read(&mut head).await;
+                let reply = format!(
+                    "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes()).await;
+            }
+        });
+        base
+    }
+
+    /// Only a refusal of the key itself may drop a key Carpe Diem just
+    /// minted; everything else is "no verdict" (a local operator answers
+    /// `/credits` with 503, a phone loses the network mid-answer).
+    #[tokio::test]
+    async fn credits_say_refused_only_for_a_refusal_of_the_key() {
+        use super::{check_credits, CreditsCheck};
+        let key = crate::redacted::Redacted::new("cdm_test".to_string());
+        let verdict = |base: String| {
+            let key = key.clone();
+            async move { check_credits(&base, &key).await }
+        };
+        assert!(matches!(
+            verdict(answering(200, r#"{"availableCredits":12.5}"#).await).await,
+            CreditsCheck::Accepted
+        ));
+        for refused in [401, 403] {
+            assert!(matches!(
+                verdict(answering(refused, r#"{"code":"AUTH_REQUIRED"}"#).await).await,
+                CreditsCheck::Refused
+            ));
+        }
+        for (status, body) in [
+            (503, "{}"),
+            (500, "{}"),
+            (429, "{}"),
+            (200, "not json"),
+            (200, "{}"),
+        ] {
+            assert!(
+                matches!(
+                    verdict(answering(status, body).await).await,
+                    CreditsCheck::Unsure(_)
+                ),
+                "{status} {body}"
+            );
+        }
+        // Nobody listening.
+        let closed = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            format!("http://{}/v1", listener.local_addr().unwrap())
+        };
+        assert!(matches!(verdict(closed).await, CreditsCheck::Unsure(_)));
+    }
+
     #[test]
     fn only_an_issued_credential_carries_provenance() {
         let issued = r#"{"base_url":"https://x.test/v1","api_key":"cdm_a","origin":"issued","key_id":"k-1"}"#;

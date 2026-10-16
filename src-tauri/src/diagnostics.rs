@@ -378,7 +378,7 @@ pub struct PurgeRecordingsResult {
 }
 
 /// Delete the audio of notes that are done with it, on this device and in
-/// the account (ADR-0111): see `recording_retention::purge`.
+/// the account (ADR-0112): see `recording_retention::purge`.
 ///
 /// Eligible: an artifact older than the cutoff, on a note whose processing
 /// reached `ready`, that has at least one transcript row of its own, and

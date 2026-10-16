@@ -30,8 +30,11 @@ pub async fn sweep(app: &AppHandle) {
     // and nothing below depends on it.
     crate::account::sync::resume(app).await;
     crate::account::poke();
+    // A sign-out made offline, told to the account service now so the device
+    // stops being listed and its Carpe Diem key is retired.
+    crate::account::resume_farewell(app).await;
     // Recordings past the age the person chose, here and in the account
-    // (ADR-0111). After the pull, so a choice made on another device applies.
+    // (ADR-0112). After the pull, so a choice made on another device applies.
     crate::recording_retention::tick(app).await;
     // Notes killed in transit (recorded audio is on disk, the note row is
     // stuck in `transcribing`/`generating`). Mobile only: desktop is not

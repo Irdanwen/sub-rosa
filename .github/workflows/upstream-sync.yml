@@ -81,6 +81,7 @@ jobs:
         with:
           name: upstream-digest
           path: digest.md
+          retention-days: 14
 
       - name: File or refresh the digest issue (best effort)
         if: steps.list.outputs.count != '0'
