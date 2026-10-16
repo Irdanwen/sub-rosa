@@ -95,6 +95,7 @@ pub mod places;
 pub mod projects;
 pub mod protected_mode;
 pub mod providers;
+pub mod recording_retention;
 pub mod redacted;
 pub mod reflex;
 pub mod reply_ratings;
@@ -327,6 +328,8 @@ pub fn run() {
             diagnostics::platform_capabilities,
             diagnostics::storage_report,
             diagnostics::purge_transcribed_recordings,
+            recording_retention::recordings_retention,
+            recording_retention::set_recordings_retention,
             diagnostics::export_diagnostics,
             commands::get_note,
             commands::update_note,
@@ -904,6 +907,8 @@ pub fn run() {
         diagnostics::platform_capabilities,
         diagnostics::storage_report,
         diagnostics::purge_transcribed_recordings,
+        recording_retention::recordings_retention,
+        recording_retention::set_recordings_retention,
         commands::get_note,
         commands::update_note,
         commands::delete_note,

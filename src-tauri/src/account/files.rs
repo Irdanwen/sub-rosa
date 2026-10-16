@@ -168,7 +168,7 @@ pub(super) async fn step(
     let rows = if !stage_audio {
         Vec::new()
     } else {
-        query("SELECT a.id,a.path FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 20").fetch_all(pool).await?
+        query("SELECT a.id,a.path FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND a.purged_at IS NULL AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 20").fetch_all(pool).await?
     };
     for row in rows {
         let artifact: String = row.get("id");
@@ -427,7 +427,7 @@ pub(super) async fn has_work(pool: &SqlitePool, sending: bool) -> Result<bool, A
     }
     if sending
         && storage::sending(pool, "audio").await?
-        && query("SELECT 1 FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
+        && query("SELECT 1 FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND a.purged_at IS NULL AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) LIMIT 1")
             .fetch_optional(pool)
             .await?
             .is_some()

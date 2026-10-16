@@ -2742,3 +2742,22 @@ jamais rendus).
   remplace la forme d'origine : suppression puis insertion, et l'application
   distante remplace par `artifact_id`) ; une liste d'appareils vide ne doit pas
   ouvrir la porte ; `compaction::step` vérifie la porte lui-même.
+
+## L'audio part après la transcription (2026-10-13, ADR-0112)
+
+Demande : « puisque les audio sont retranscrits dans les notes, pourquoi les
+conserver ? » Choix : 7 jours après la transcription, partout, existants compris.
+
+- `account_preferences` (migration 078, table synchronisée, kind `settings`,
+  id fixe `recording_retention::PREFERENCES_ID`) porte `audio_retention_days`.
+- `src-tauri/src/recording_retention.rs` : `purge`/`purge_in` (la purge de
+  Réglages › Stockage, qui retire aussi la copie du compte via
+  `account::forget_recording`), `tick` horaire (pilote de synchro + sweep),
+  commandes partagées `recordings_retention` / `set_recordings_retention`
+  (les deux listes) ; `diagnostics::purge_transcribed_recordings` y délègue.
+- Exclusions `a.purged_at IS NULL` dans la voie d'envoi et la compaction.
+- Réglages › Stockage : le bouton manuel devient « Supprimer les
+  enregistrements automatiquement », avec confirmation quand des
+  enregistrements partent tout de suite.
+- Preuve : scénario deux appareils dans `sync_storage_tests.rs` (vérifié par
+  mutation), tests de l'écran.

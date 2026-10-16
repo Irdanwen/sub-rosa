@@ -33,6 +33,9 @@ pub async fn sweep(app: &AppHandle) {
     // A sign-out made offline, told to the account service now so the device
     // stops being listed and its Carpe Diem key is retired.
     crate::account::resume_farewell(app).await;
+    // Recordings past the age the person chose, here and in the account
+    // (ADR-0112). After the pull, so a choice made on another device applies.
+    crate::recording_retention::tick(app).await;
     // A reading of the balance at launch and resume feeds the low-balance
     // alert, which has no timer of its own; only when it is on.
     if crate::carpe_diem::low_balance::enabled(app) {

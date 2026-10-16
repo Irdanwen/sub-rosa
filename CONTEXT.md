@@ -1731,6 +1731,13 @@ reads it: a recording as a 16 kHz mono WAV (the device that recorded keeps
 its original) and every chunk in the binary envelope. _Avoid_: "compressed",
 which promises a codec the app does not use.
 
+**Recording retention**: how long a recording stays after its note is
+transcribed, chosen once for the account and applied by every device to its
+own copy and to the account's
+([ADR-0112](docs/adr/0112-recordings-leave-a-chosen-age-after-transcription.md)).
+The note keeps its transcript. _Avoid_: "archive", which promises the audio
+is somewhere.
+
 **Release** (of a chunk): giving a stored chunk back to the service so its
 bytes leave the quota. Only a chunk nothing on the device still names is
 released, a day after its file was deleted or a week after nobody named it.

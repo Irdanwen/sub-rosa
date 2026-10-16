@@ -664,3 +664,115 @@ async fn a_tombstone_that_outruns_its_replacement_starts_no_copy_elsewhere() {
     assert_eq!(phone.manifest_of(&artifact).await.unwrap().0, copy);
     assert_eq!(service.heads(&copy).await.len(), 1);
 }
+
+/// A recording leaves N days after its note is transcribed (ADR-0112): the
+/// choice made on one device reaches the other, each deletes its own copy,
+/// the account's copy is released, nothing is sent again, and both notes
+/// keep their transcript.
+#[tokio::test]
+async fn a_recording_past_the_chosen_age_leaves_every_device_and_the_account() {
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    let (on_mac, on_phone) = (place(), place());
+    let (id, session, artifact) = (note(), note(), note());
+    let recording = on_mac.paths.recordings_dir.join("meeting.wav");
+    std::fs::write(&recording, content(1_500_000, 9)).unwrap();
+    mac.create_note(&id, "Weekly meeting").await;
+    for sql in [
+        "UPDATE notes SET processing_status='ready' WHERE id=?1",
+        "INSERT INTO recording_sessions(id,note_id,status,started_at) VALUES(?2,?1,'completed','2026-09-18T09:00:00Z')",
+        "INSERT INTO audio_artifacts(id,note_id,recording_session_id,path,format,duration_ms,size_bytes,checksum,created_at) VALUES(?3,?1,?2,?4,'wav',60000,1500000,'sum','2026-09-18T09:00:00Z')",
+        "INSERT INTO transcripts(id,note_id,audio_artifact_id,text,provider,status,created_at,updated_at) VALUES(?5,?1,?3,'What was said','test','completed','2026-09-18T09:30:00Z','2026-09-18T09:30:00Z')",
+    ] {
+        query(sql)
+            .bind(&id)
+            .bind(&session)
+            .bind(&artifact)
+            .bind(recording.to_string_lossy().as_ref())
+            .bind(note())
+            .execute(&mac.pool)
+            .await
+            .unwrap();
+    }
+    query(
+        "INSERT INTO account_file_uploads(artifact_id,manifest_id,bytes,modified) VALUES(?,?,?,?)",
+    )
+    .bind(&artifact)
+    .bind(note())
+    .bind(1_500_000_i64)
+    .bind(files::modified(&std::fs::metadata(&recording).unwrap()).unwrap())
+    .execute(&mac.pool)
+    .await
+    .unwrap();
+    mac.upload_all(&key, &on_mac).await;
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    phone.download_all(&key, &on_phone).await;
+    let fetched: String = query("SELECT path FROM audio_artifacts WHERE id=?")
+        .bind(&artifact)
+        .fetch_one(&phone.pool)
+        .await
+        .unwrap()
+        .get("path");
+    assert!(std::path::Path::new(&fetched).is_file());
+    assert_eq!(service.journal.lock().await.blobs.len(), 2);
+
+    // Chosen on the phone, a week: the mac receives the same choice.
+    query("INSERT INTO account_preferences(id,audio_retention_days,updated_at) VALUES(?,7,'now')")
+        .bind(crate::recording_retention::PREFERENCES_ID)
+        .execute(&phone.pool)
+        .await
+        .unwrap();
+    let repos = |d: &Device| crate::db::repositories::Repositories::new(d.pool.clone());
+    let gone = crate::recording_retention::purge_in(&repos(&phone), &on_phone.paths, 7, false)
+        .await
+        .unwrap();
+    assert_eq!(gone.recordings, 1);
+    assert!(!std::path::Path::new(&fetched).exists());
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    assert_eq!(
+        crate::recording_retention::retention_days(&mac.pool)
+            .await
+            .unwrap(),
+        Some(7)
+    );
+    assert!(mac.manifest_of(&artifact).await.is_none());
+    crate::recording_retention::purge_in(&repos(&mac), &on_mac.paths, 7, false)
+        .await
+        .unwrap();
+    assert!(!recording.exists());
+    // Nothing is sent again, by either device, in either form.
+    for (dev, at) in [(&mac, &on_mac), (&phone, &on_phone)] {
+        query("UPDATE account_storage_state SET format_v2=1")
+            .execute(&dev.pool)
+            .await
+            .unwrap();
+        dev.compact(&key, at).await;
+        dev.sync(&key).await.unwrap();
+        assert!(dev.manifest_of(&artifact).await.is_none());
+        assert_eq!(
+            dev.count("SELECT count(*) AS n FROM account_file_uploads WHERE completed=0 AND artifact_id=?", &artifact)
+                .await,
+            0
+        );
+        // The note keeps what was said.
+        assert_eq!(
+            dev.count(
+                "SELECT count(*) AS n FROM transcripts WHERE audio_artifact_id=?",
+                &artifact
+            )
+            .await,
+            1
+        );
+    }
+    // A day later the account's copy goes.
+    phone.room(&key, false).await;
+    phone.release_now().await;
+    phone.room(&key, false).await;
+    assert!(service.journal.lock().await.blobs.is_empty());
+}
