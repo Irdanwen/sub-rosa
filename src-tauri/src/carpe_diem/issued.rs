@@ -64,7 +64,7 @@ impl Ephemeral {
     }
 
     fn from_key(key: SigningKey) -> Self {
-        let point = key.verifying_key().to_encoded_point(false);
+        let point = key.verifying_key().to_sec1_point(false);
         let coordinate = |c: Option<&p256::FieldBytes>| {
             c.map(|bytes| URL_SAFE_NO_PAD.encode(bytes))
                 .unwrap_or_default()
