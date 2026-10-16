@@ -52,19 +52,19 @@ export const defaults: Default[] = [
     ],
   },
   {
-    task: ["Studio edit, automatic", "Retouche Studio, automatique"],
-    slug: "qwen-image-edit",
-    model: "qwen-image-2-edit",
-    why: ["Precise changes for about 2 credits.", "Des changements précis pour environ 2 crédits."],
-  },
-  {
-    task: ["Retouch a painted zone", "Retouche d’une zone peinte"],
+    task: ["Studio’s Retouch tab", "Onglet Retouche du Studio"],
     slug: "ideogram-edit",
     model: "ideogram-v4-5-edit",
     why: [
-      "Changes only what you paint, leaves the rest intact.",
-      "Ne change que ce que vous peignez, laisse le reste intact.",
+      "Changes only what you ask or paint, and leaves the rest intact.",
+      "Ne change que ce que vous demandez ou peignez, et laisse le reste intact.",
     ],
+  },
+  {
+    task: ["Other Studio edits, automatic", "Autres retouches du Studio, automatique"],
+    slug: "qwen-image-edit",
+    model: "qwen-image-2-edit",
+    why: ["Precise changes for about 2 credits.", "Des changements précis pour environ 2 crédits."],
   },
   {
     task: ["Studio film workflows", "Workflows de film du Studio"],
