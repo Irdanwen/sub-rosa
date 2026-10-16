@@ -60,6 +60,11 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # The voice I/O unit (voice/io_apple.rs) links the coreaudio-rs that
+      # cpal links, so one copy of the bindings is built. It moves when cpal
+      # does; 0.12+ also drops `coreaudio::sys` for objc2 types (PR #377).
+      - dependency-name: "coreaudio-rs"
 
   - package-ecosystem: cargo
     directory: /june-api

@@ -16,6 +16,7 @@ pub mod spaces;
 mod storage;
 pub(crate) mod studio;
 mod summaries;
+pub(crate) use storage::forget_recording;
 pub use storage::StorageStatus;
 pub mod sync;
 mod sync_deletions;
@@ -1660,6 +1661,8 @@ pub fn setup(app: &AppHandle) {
                 _ = tokio::time::sleep(QUIET_PASS) => {}
             }
             sync::resume(&driver).await;
+            // Hourly at most: recordings past the chosen age (ADR-0112).
+            crate::recording_retention::tick(&driver).await;
             spaces::resume(&driver).await;
             // A connector call a browser tab asked this device to make
             // (ADR-0107): somebody is waiting for it, so it is looked for

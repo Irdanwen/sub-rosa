@@ -147,7 +147,7 @@ impl Browser {
                 break key;
             }
         };
-        let point = key.verifying_key().to_encoded_point(false);
+        let point = key.verifying_key().to_sec1_point(false);
         let encode = |c: Option<&p256::FieldBytes>| {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(c.unwrap())
         };

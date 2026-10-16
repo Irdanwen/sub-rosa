@@ -133,7 +133,7 @@ async fn begin(
 ) -> Result<Option<sqlx_sqlite::SqliteRow>, AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     if storage::sending(pool, "audio").await? {
-        if let Some(a) = query("SELECT a.id,a.path,a.format FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_compactions c WHERE c.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_manifest_waits w WHERE w.artifact_id=a.id AND w.at>?) LIMIT 1")
+        if let Some(a) = query("SELECT a.id,a.path,a.format FROM audio_artifacts a WHERE a.path<>'' AND a.status='valid' AND a.purged_at IS NULL AND NOT EXISTS(SELECT 1 FROM account_file_manifests m WHERE m.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_uploads u WHERE u.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_file_compactions c WHERE c.artifact_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_sync_issues i WHERE i.lane='upload' AND i.item_id=a.id) AND NOT EXISTS(SELECT 1 FROM account_manifest_waits w WHERE w.artifact_id=a.id AND w.at>?) LIMIT 1")
             .bind(storage::now() - WAIT_FOR_REPLACEMENT_SECONDS)
             .fetch_optional(pool)
             .await?
@@ -679,6 +679,29 @@ async fn release_sent(tx: &mut sqlx_sqlite::SqliteConnection, id: &str) -> Resul
                 .execute(&mut *tx)
                 .await?;
         }
+    }
+    Ok(())
+}
+
+/// Drops every copy of a recording this device was making, releasing the
+/// chunks it sent: the recording itself is going (ADR-0112).
+pub(super) async fn forget_copies_of(
+    tx: &mut sqlx_sqlite::SqliteConnection,
+    artifact_id: &str,
+) -> Result<(), AppError> {
+    let ids: Vec<String> = query("SELECT id FROM account_file_compactions WHERE artifact_id=?")
+        .bind(artifact_id)
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .map(|r| r.get("id"))
+        .collect();
+    for id in ids {
+        release_sent(&mut *tx, &id).await?;
+        query("DELETE FROM account_file_compactions WHERE id=?")
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
     }
     Ok(())
 }
