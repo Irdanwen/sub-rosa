@@ -642,15 +642,6 @@
     },
     {
       "benchmark": "aa-intelligence",
-      "model": "Gemini 4 Argon",
-      "value": 53,
-      "date": "2026-10-04",
-      "url": "https://artificialanalysis.ai/models/gemini-4-argon",
-      "kind": "independent",
-      "external": true
-    },
-    {
-      "benchmark": "aa-intelligence",
       "model": "grok-4-7",
       "value": 46,
       "date": "2026-10-04",
@@ -1069,7 +1060,7 @@
     {
       "benchmark": "aa-stt-wer",
       "model": "stt-xai-v1",
-      "value": 4.0,
+      "value": 4,
       "date": "2026-10-04",
       "url": "https://artificialanalysis.ai/speech-to-text/models/grok-stt",
       "kind": "independent"
@@ -2366,43 +2357,8 @@
     },
     {
       "benchmark": "aa-tts",
-      "model": "tts-elevenlabs-turbo-v2-5",
-      "value": 1098,
-      "date": "2026-10-04",
-      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
-      "kind": "independent"
-    },
-    {
-      "benchmark": "aa-tts",
-      "model": "Multilingual v2",
-      "value": 1097,
-      "date": "2026-10-04",
-      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
-      "kind": "independent",
-      "external": true
-    },
-    {
-      "benchmark": "aa-tts",
       "model": "Flash v2.5",
       "value": 1078,
-      "date": "2026-10-04",
-      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
-      "kind": "independent",
-      "external": true
-    },
-    {
-      "benchmark": "aa-tts",
-      "model": "Eleven v3",
-      "value": 1174,
-      "date": "2026-10-04",
-      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
-      "kind": "independent",
-      "external": true
-    },
-    {
-      "benchmark": "aa-tts",
-      "model": "Eleven v4",
-      "value": 1321,
       "date": "2026-10-04",
       "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
       "kind": "independent",
@@ -2503,6 +2459,150 @@
       "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
       "kind": "independent",
       "external": true
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "claude-haiku-5-5",
+      "value": 43,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/models/claude-haiku-5-5",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "elevenlabs-tts-v4-turbo",
+      "value": 1330,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "elevenlabs-tts-v4",
+      "value": 1329,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "elevenlabs-tts-v3",
+      "value": 1178,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "elevenlabs-tts-multilingual-v2",
+      "value": 1095,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-tts",
+      "model": "tts-elevenlabs-turbo-v2-5",
+      "value": 1097,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-speech/leaderboard",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "gemini-4-argon",
+      "value": 53,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/models/gemini-4-argon",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "muse-wonder",
+      "value": 52,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/models/muse-wonder",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "muse-spark-open",
+      "value": 39,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/models/muse-spark-open",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "nano-banana-2-1-edit",
+      "value": 1152,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "nano-banana-2-1",
+      "value": 1172,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-intelligence",
+      "model": "nvidia-nemotron-3-5-super-vl-120b-a12b",
+      "value": 26,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/models/nemotron-3-5-super-vl",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "swe-bench-verified",
+      "model": "nvidia-nemotron-3-5-super-vl-120b-a12b",
+      "value": 71.1,
+      "date": "2026-10-16",
+      "url": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "gpqa-diamond",
+      "model": "nvidia-nemotron-3-5-super-vl-120b-a12b",
+      "value": 89.52,
+      "date": "2026-10-16",
+      "url": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+      "kind": "vendor"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "qwen-image-2-1-pro-edit",
+      "value": 1069,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-image-edit",
+      "model": "qwen-image-2-1-turbo-edit",
+      "value": 1063,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-image",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "qwen-image-2-1-pro",
+      "value": 1054,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
+    },
+    {
+      "benchmark": "aa-text-to-image",
+      "model": "qwen-image-2-1-turbo",
+      "value": 1028,
+      "date": "2026-10-16",
+      "url": "https://artificialanalysis.ai/text-to-image/arena/leaderboard-text",
+      "kind": "independent"
     }
   ]
 }

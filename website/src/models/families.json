@@ -174,7 +174,8 @@
       "claude-opus-4-6",
       "claude-opus-4-5",
       "claude-fable-5",
-      "claude-fable-5-1"
+      "claude-fable-5-1",
+      "claude-haiku-5-5"
     ],
     "pick": "claude-sonnet-5-5",
     "variants": [
@@ -198,11 +199,18 @@
           "Same Opus 5.5, faster output, double the price",
           "Le même Opus 5.5, sortie plus rapide, prix doublé"
         ]
+      },
+      {
+        "id": "claude-haiku-5-5",
+        "note": [
+          "Cheapest and fastest Claude tier, for classification, extraction and routing",
+          "Le palier Claude le moins cher et le plus rapide, pour la classification, l’extraction et le routage"
+        ]
       }
     ],
     "summary": [
-      "Anthropic's models, strong at writing, code and long agent work, with vision and 1M context. Anonymized, and on the dear side.",
-      "Les modèles d’Anthropic, forts en rédaction, en code et en travail d’agent au long cours, avec vision et contexte de 1M. Anonymisés, plutôt chers."
+      "Anthropic's models, strong at writing, code and long agent work, with vision and 1M context, from the small Haiku to the top Fable. Anonymized, and mostly on the dear side.",
+      "Les modèles d’Anthropic, forts en rédaction, en code et en travail d’agent au long cours, avec vision et contexte de 1M, du petit Haiku au haut de gamme Fable. Anonymisés, plutôt chers sauf Haiku."
     ],
     "needs": ["code", "deep-reasoning", "everyday-writing", "read-image"],
     "url": "https://www.anthropic.com/claude"
@@ -232,7 +240,8 @@
       "openai-gpt-53-codex",
       "openai-gpt-52",
       "openai-gpt-4o-2024-11-20",
-      "openai-gpt-4o-mini-2024-07-18"
+      "openai-gpt-4o-mini-2024-07-18",
+      "openai-gpt-61-sol-ultrafast"
     ],
     "pick": "openai-gpt-61-sol",
     "variants": [
@@ -255,6 +264,13 @@
         "note": [
           "The dearest model in the catalog by far; rarely worth it",
           "De loin le modèle le plus cher du catalogue ; rarement justifié"
+        ]
+      },
+      {
+        "id": "openai-gpt-61-sol-ultrafast",
+        "note": [
+          "Same GPT-6.1 Sol served in OpenAI's Ultrafast mode, up to 8 times faster and about six times the price",
+          "Le même GPT-6.1 Sol servi en mode Ultrafast d’OpenAI, jusqu’à 8 fois plus rapide et environ six fois plus cher"
         ]
       }
     ],
@@ -300,9 +316,10 @@
       "gemini-3-5-flash",
       "gemini-3-5-flash-lite",
       "gemini-3-flash-preview",
-      "gemini-3-1-pro-preview"
+      "gemini-3-1-pro-preview",
+      "gemini-4-argon"
     ],
-    "pick": "gemini-3-8-flash",
+    "pick": "gemini-4-argon",
     "variants": [
       {
         "id": "gemini-3-5-flash-lite",
@@ -314,14 +331,21 @@
       {
         "id": "gemini-3-1-pro-preview",
         "note": ["Pro tier, still a preview, dearer", "Palier Pro, encore en préversion, plus cher"]
+      },
+      {
+        "id": "gemini-3-8-flash",
+        "note": [
+          "Much cheaper and faster, for everyday volume and coding agents",
+          "Bien moins cher et plus rapide, pour le volume courant et les agents de code"
+        ]
       }
     ],
     "summary": [
-      "Google's Gemini Flash models: fast, 1M context, and they take images, audio and video as input. Anonymized.",
-      "Les modèles Gemini Flash de Google : rapides, contexte de 1M, ils acceptent images, audio et vidéo en entrée. Anonymisés."
+      "Google's Gemini models: Argon, the new flagship, and the fast Flash line. 1M context, and they take images, audio and video as input. Anonymized.",
+      "Les modèles Gemini de Google : Argon, le nouveau modèle phare, et la gamme Flash, rapide. Contexte de 1M, ils acceptent images, audio et vidéo en entrée. Anonymisés."
     ],
     "needs": ["read-image", "long-documents"],
-    "url": "https://deepmind.google/models/gemini/flash/"
+    "url": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon"
   },
   {
     "slug": "grok",
@@ -591,8 +615,12 @@
     "category": "text",
     "name": "Nemotron",
     "maker": "NVIDIA",
-    "ids": ["nvidia-nemotron-3-ultra-550b-a55b", "nvidia-nemotron-3-nano-30b-a3b"],
-    "pick": "nvidia-nemotron-3-ultra-550b-a55b",
+    "ids": [
+      "nvidia-nemotron-3-ultra-550b-a55b",
+      "nvidia-nemotron-3-nano-30b-a3b",
+      "nvidia-nemotron-3-5-super-vl-120b-a12b"
+    ],
+    "pick": "nvidia-nemotron-3-5-super-vl-120b-a12b",
     "variants": [
       {
         "id": "nvidia-nemotron-3-nano-30b-a3b",
@@ -600,13 +628,20 @@
           "Small and very cheap, no reasoning mode",
           "Petit et très bon marché, sans mode raisonnement"
         ]
+      },
+      {
+        "id": "nvidia-nemotron-3-ultra-550b-a55b",
+        "note": [
+          "Largest in the family at 550B, text only, built for long tool-driven runs",
+          "Le plus grand de la famille avec 550 Md, texte seul, conçu pour les longues exécutions avec outils"
+        ]
       }
     ],
     "summary": [
-      "NVIDIA's open models for agent work: Ultra handles long tool-driven tasks, Nano is small and cheap. Private mode.",
-      "Les modèles ouverts de NVIDIA pour le travail d’agent : Ultra tient les longues tâches avec outils, Nano est petit et bon marché. Mode privé."
+      "NVIDIA's open models for agent work: Super VL reads images and video, Ultra handles long tool-driven tasks, Nano is small and cheap. Private mode.",
+      "Les modèles ouverts de NVIDIA pour le travail d’agent : Super VL lit les images et la vidéo, Ultra tient les longues tâches avec outils, Nano est petit et bon marché. Mode privé."
     ],
-    "needs": [],
+    "needs": ["read-image"],
     "url": "https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/"
   },
   {
@@ -732,6 +767,43 @@
     "nameFr": "Modèles communautaires non censurés"
   },
   {
+    "slug": "hy",
+    "category": "text",
+    "name": "Hy",
+    "maker": "Tencent",
+    "ids": ["hy4-preview"],
+    "pick": "hy4-preview",
+    "summary": [
+      "Tencent’s Hy4 preview: an open 770B mixture-of-experts model with 1M context, tuned for code, office work and agents.",
+      "Hy4 preview de Tencent : un modèle ouvert à mixture d’experts de 770 Md avec 1M de contexte, réglé pour le code, le travail de bureau et les agents."
+    ],
+    "needs": ["code", "deep-reasoning", "long-documents"],
+    "url": "https://huggingface.co/tencent/Hy4-preview"
+  },
+  {
+    "slug": "muse",
+    "category": "text",
+    "name": "Muse",
+    "maker": "Meta",
+    "ids": ["muse-wonder", "muse-spark-open"],
+    "pick": "muse-wonder",
+    "variants": [
+      {
+        "id": "muse-spark-open",
+        "note": [
+          "Open-weight sparse MoE reasoning model for code and agents, reads images",
+          "Modèle de raisonnement MoE creux à poids ouverts pour le code et les agents, lit les images"
+        ]
+      }
+    ],
+    "summary": [
+      "Meta’s text models: Muse Wonder is its first frontier model, reading text, images, audio and video over 1M tokens, and Muse Spark Open is the open-weight one.",
+      "Les modèles de texte de Meta : Muse Wonder est son premier modèle de pointe, qui lit texte, images, audio et vidéo sur 1M de jetons, et Muse Spark Open est celui à poids ouverts."
+    ],
+    "needs": ["code", "deep-reasoning", "read-image", "long-documents"],
+    "url": "https://about.fb.com/news/2026/10/introducing-muse-wonder-models"
+  },
+  {
     "slug": "parakeet",
     "category": "transcription",
     "name": "Parakeet",
@@ -801,8 +873,8 @@
     "category": "image",
     "name": "Nano Banana",
     "maker": "Google DeepMind",
-    "ids": ["nano-banana-2", "nano-banana-2-lite", "nano-banana-pro"],
-    "pick": "nano-banana-2",
+    "ids": ["nano-banana-2", "nano-banana-2-lite", "nano-banana-pro", "nano-banana-2-1"],
+    "pick": "nano-banana-2-1",
     "variants": [
       {
         "id": "nano-banana-2-lite",
@@ -817,11 +889,18 @@
           "Google's top tier, slower and dearer (about 9 credits)",
           "Le haut de gamme de Google, plus lent et plus cher (environ 9 crédits)"
         ]
+      },
+      {
+        "id": "nano-banana-2",
+        "note": [
+          "Previous version, same price (about 5 credits); 2.1 replaces it as the pick",
+          "Version précédente, au même prix (environ 5 crédits) ; la 2.1 la remplace comme choix"
+        ]
       }
     ],
     "summary": [
-      "Google's Gemini image models: strong prompt understanding and real-world knowledge. Pick Nano Banana 2 as a reliable all-rounder.",
-      "Les modèles d’image Gemini de Google : bonne compréhension des consignes et du monde réel. Prenez Nano Banana 2 comme valeur sûre."
+      "Google's Gemini image models: strong prompt understanding and real-world knowledge. Pick Nano Banana 2.1 as a reliable all-rounder.",
+      "Les modèles d’image Gemini de Google : bonne compréhension des consignes et du monde réel. Prenez Nano Banana 2.1 comme valeur sûre."
     ],
     "needs": ["photoreal", "character-consistency"],
     "url": "https://deepmind.google/models/gemini-image/"
@@ -844,15 +923,15 @@
       {
         "id": "gpt-image-2",
         "note": [
-          "Previous generation, cheapest at low settings (about 1 credit)",
-          "Génération précédente, la moins chère en réglage bas (environ 1 crédit)"
+          "Previous generation, about 12 credits: prefer 2.5",
+          "Génération précédente, environ 12 crédits : préférez 2.5"
         ]
       },
       {
         "id": "gpt-image-1-5",
         "note": [
-          "Older model, the dearest here (about 13 credits): prefer 2.5",
-          "Ancien modèle, le plus cher ici (environ 13 crédits) : préférez 2.5"
+          "Older model, about 12 credits: prefer 2.5",
+          "Ancien modèle, environ 12 crédits : préférez 2.5"
         ]
       }
     ],
@@ -874,8 +953,8 @@
       {
         "id": "flux-3-image",
         "note": [
-          "Newest (October 2026), up to 4K, about 3 credits",
-          "Le plus récent (octobre 2026), jusqu’à 4K, environ 3 crédits"
+          "Newest (October 2026), up to 4K, about 5 credits",
+          "Le plus récent (octobre 2026), jusqu’à 4K, environ 5 crédits"
         ]
       },
       {
@@ -898,7 +977,15 @@
     "category": "image",
     "name": "Qwen Image",
     "maker": "Alibaba (Qwen)",
-    "ids": ["qwen-image", "qwen-image-2", "qwen-image-2-pro", "qwen-image-3", "qwen-image-3-pro"],
+    "ids": [
+      "qwen-image",
+      "qwen-image-2",
+      "qwen-image-2-pro",
+      "qwen-image-3",
+      "qwen-image-3-pro",
+      "qwen-image-2-1-pro",
+      "qwen-image-2-1-turbo"
+    ],
     "pick": "qwen-image-3",
     "variants": [
       {
@@ -921,11 +1008,25 @@
           "Previous generation, now dearer (about 5 credits) than 3 Pro",
           "Génération précédente, désormais plus chère (environ 5 crédits) que 3 Pro"
         ]
+      },
+      {
+        "id": "qwen-image-2-1-turbo",
+        "note": [
+          "The cheapest of the family (about 1 credit), with open research weights",
+          "Le moins cher de la famille (environ 1 crédit), avec des poids de recherche ouverts"
+        ]
+      },
+      {
+        "id": "qwen-image-2-1-pro",
+        "note": [
+          "Hosted 2.1 with transparent output and up to 10 reference images, about 2 credits",
+          "2.1 hébergée avec sortie transparente et jusqu’à 10 images de référence, environ 2 crédits"
+        ]
       }
     ],
     "summary": [
-      "Alibaba's models for images full of text: posters, menus, infographics. Qwen Image 3 is the current generation.",
-      "Les modèles d’Alibaba pour les images chargées de texte : affiches, menus, infographies. Qwen Image 3 est la génération actuelle."
+      "Alibaba's models for images full of text: posters, menus, infographics. Qwen Image 3 stays the pick; 2.1 Turbo is the cheapest.",
+      "Les modèles d’Alibaba pour les images chargées de texte : affiches, menus, infographies. Qwen Image 3 reste le choix ; la 2.1 Turbo est la moins chère."
     ],
     "needs": ["text-in-image", "graphic-design"],
     "url": "https://qwen.ai"
@@ -971,8 +1072,8 @@
       {
         "id": "ideogram-v4",
         "note": [
-          "Previous version, dearer at about 3 credits",
-          "Version précédente, plus chère (environ 3 crédits)"
+          "Previous version, far cheaper at about 3 credits",
+          "Version précédente, bien moins chère (environ 3 crédits)"
         ]
       }
     ],
@@ -1233,26 +1334,18 @@
   {
     "slug": "image-tools",
     "category": "image",
-    "name": "Upscaler and background remover",
-    "maker": "Bria AI and others",
-    "ids": ["upscaler", "bria-bg-remover"],
+    "name": "Upscaler",
+    "maker": "Venice",
+    "ids": ["upscaler"],
     "pick": "upscaler",
-    "variants": [
-      {
-        "id": "bria-bg-remover",
-        "note": [
-          "Background removal: listed, but not available in Sub Rosa yet",
-          "Détourage : au catalogue, mais pas encore disponible dans Sub Rosa"
-        ]
-      }
-    ],
+    "variants": [],
     "summary": [
-      "Utility models rather than generators. The upscaler enlarges an image 2x to 4x, with an optional enhance pass.",
-      "Des outils plutôt que des générateurs. L’agrandisseur agrandit une image de x2 à x4, avec une passe d’amélioration en option."
+      "A utility model rather than a generator: the upscaler enlarges an image 2x to 4x, with an optional enhance pass, in private mode.",
+      "Un modèle utilitaire plutôt qu’un générateur : l’agrandisseur agrandit une image de x2 à x4, avec une passe d’amélioration en option, en mode privé."
     ],
     "needs": [],
-    "url": "https://www.bria.ai",
-    "nameFr": "Agrandissement et détourage"
+    "url": "https://docs.venice.ai/overview/models",
+    "nameFr": "Agrandisseur"
   },
   {
     "slug": "qwen-image-edit",
@@ -1263,22 +1356,35 @@
       "qwen-image-2-edit",
       "qwen-image-2-pro-edit",
       "qwen-image-3-edit",
-      "qwen-image-3-pro-edit"
+      "qwen-image-3-pro-edit",
+      "qwen-image-2-1-pro-edit",
+      "qwen-image-2-1-turbo-edit"
     ],
     "pick": "qwen-image-2-edit",
     "variants": [
       {
         "id": "qwen-image-3-edit",
-        "note": [
-          "Newer generation, slightly cheaper (about 2 credits)",
-          "Génération plus récente, un peu moins chère (environ 2 crédits)"
-        ]
+        "note": ["Newer generation, about 2 credits", "Génération plus récente, environ 2 crédits"]
       },
       {
         "id": "qwen-image-3-pro-edit",
         "note": [
           "Finest text and layout edits, about 2.6 credits",
           "Retouches de texte et de mise en page les plus fines, environ 2,6 crédits"
+        ]
+      },
+      {
+        "id": "qwen-image-2-1-turbo-edit",
+        "note": [
+          "Cheapest edit of the family (about 1 credit), open research weights",
+          "La retouche la moins chère de la famille (environ 1 crédit), poids de recherche ouverts"
+        ]
+      },
+      {
+        "id": "qwen-image-2-1-pro-edit",
+        "note": [
+          "Hosted 2.1: up to 10 reference images, local edits and transparent output, about 2 credits",
+          "2.1 hébergée : jusqu’à 10 images de référence, retouches locales et sortie transparente, environ 2 crédits"
         ]
       }
     ],
@@ -1326,7 +1432,12 @@
     "category": "edit",
     "name": "Nano Banana (edit)",
     "maker": "Google DeepMind",
-    "ids": ["nano-banana-2-edit", "nano-banana-2-lite-edit", "nano-banana-pro-edit"],
+    "ids": [
+      "nano-banana-2-edit",
+      "nano-banana-2-lite-edit",
+      "nano-banana-pro-edit",
+      "nano-banana-2-1-edit"
+    ],
     "pick": "nano-banana-2-edit",
     "variants": [
       {
@@ -1424,8 +1535,8 @@
       }
     ],
     "summary": [
-      "Photoreal edits that keep faces, outfits and products recognizable. FLUX 3 is the newer and cheaper of the two.",
-      "Des retouches photoréalistes qui gardent visages, tenues et produits reconnaissables. FLUX 3 est le plus récent et le moins cher des deux."
+      "Photoreal edits that keep faces, outfits and products recognizable. FLUX 3 is the newer of the two, at the same price.",
+      "Des retouches photoréalistes qui gardent visages, tenues et produits reconnaissables. FLUX 3 est le plus récent des deux, au même prix."
     ],
     "needs": ["multi-image-compose"],
     "url": "https://bfl.ai/models/flux-3",
@@ -1898,7 +2009,8 @@
       "minimax-h3-max-reference-to-video",
       "minimax-h3-max-multi-angle",
       "minimax-h3-max-turbo-text-to-video",
-      "minimax-h3-max-turbo-image-to-video"
+      "minimax-h3-max-turbo-image-to-video",
+      "minimax-h3-max-recast"
     ],
     "pick": "minimax-h3-max-image-to-video",
     "variants": [
@@ -1919,6 +2031,13 @@
       {
         "id": "minimax-h3-text-to-video",
         "note": ["Original H3: up to 2K, anonymized", "H3 d’origine : jusqu’à 2K, anonymisé"]
+      },
+      {
+        "id": "minimax-h3-max-recast",
+        "note": [
+          "Swaps the people in an existing video for those of your reference photos, keeping motion, camera and audio, private",
+          "Remplace les personnes d’une vidéo existante par celles de vos photos de référence, en gardant mouvement, caméra et audio, privé"
+        ]
       }
     ],
     "summary": [
@@ -2220,7 +2339,12 @@
     "category": "video",
     "name": "FLUX 3 video",
     "maker": "Black Forest Labs",
-    "ids": ["flux-3-text-to-video", "flux-3-image-to-video", "flux-3-first-last-frame-to-video"],
+    "ids": [
+      "flux-3-text-to-video",
+      "flux-3-image-to-video",
+      "flux-3-first-last-frame-to-video",
+      "flux-3-extend-video"
+    ],
     "pick": "flux-3-image-to-video",
     "variants": [
       {
@@ -2229,11 +2353,18 @@
           "Fixes the opening and closing frames and fills the move",
           "Fixe la première et la dernière image et remplit le mouvement"
         ]
+      },
+      {
+        "id": "flux-3-extend-video",
+        "note": [
+          "Continues an existing clip of up to 15 s with 5 to 20 s more, sound included",
+          "Prolonge un clip existant de 15 s au plus avec 5 à 20 s de plus, son compris"
+        ]
       }
     ],
     "summary": [
-      "Black Forest Labs' first video model (August 2026), with sound and clips up to 20 s. Pick it to link two images or for a long shot with sound.",
-      "Le premier modèle vidéo de Black Forest Labs (août 2026), avec son et clips jusqu’à 20 s. Choisissez-le pour relier deux images ou pour un plan long sonorisé."
+      "Black Forest Labs' first video model (August 2026), with sound and clips up to 20 s. Pick it to link two images, to extend a clip or for a long shot with sound.",
+      "Le premier modèle vidéo de Black Forest Labs (août 2026), avec son et clips jusqu’à 20 s. Choisissez-le pour relier deux images, prolonger un clip ou réaliser un plan long sonorisé."
     ],
     "needs": ["with-sound", "long-shot"],
     "url": "https://bfl.ai/models/flux-3-video",
@@ -2284,16 +2415,53 @@
   {
     "slug": "elevenlabs-tts",
     "category": "voice",
-    "name": "ElevenLabs Turbo v2.5",
+    "name": "ElevenLabs",
     "maker": "ElevenLabs",
-    "ids": ["tts-elevenlabs-turbo-v2-5"],
-    "pick": "tts-elevenlabs-turbo-v2-5",
+    "ids": [
+      "tts-elevenlabs-turbo-v2-5",
+      "elevenlabs-tts-multilingual-v2",
+      "elevenlabs-tts-v3",
+      "elevenlabs-tts-v4",
+      "elevenlabs-tts-v4-turbo"
+    ],
+    "pick": "elevenlabs-tts-v4",
     "summary": [
-      "ElevenLabs' fast multilingual voice model, with 21 polished voices. Pick it for natural narration in French or another of its 32 languages.",
-      "Le modèle de voix rapide et multilingue d’ElevenLabs, avec 21 voix soignées. Choisissez-le pour une narration naturelle dans l’une de ses 32 langues."
+      "ElevenLabs' voice models, from the fast Turbo v2.5 to the expressive Eleven v4. Pick Eleven v4 for natural narration in French or another of its 90+ languages (about 12 credits for a 3,000-character page).",
+      "Les modèles de voix d’ElevenLabs, du rapide Turbo v2.5 à l’expressif Eleven v4. Choisissez Eleven v4 pour une narration naturelle en français ou dans l’une de ses plus de 90 langues (environ 12 crédits pour une page de 3 000 caractères)."
     ],
     "needs": ["narration"],
-    "url": "https://elevenlabs.io/docs/models"
+    "url": "https://elevenlabs.io/docs/models",
+    "nameFr": "ElevenLabs",
+    "variants": [
+      {
+        "id": "elevenlabs-tts-v4-turbo",
+        "note": [
+          "Real-time v4 for voice agents, 90+ languages, about 6 credits for a page read aloud (3,000 characters)",
+          "v4 en temps réel pour les agents vocaux, plus de 90 langues, environ 6 crédits pour une page lue (3 000 caractères)"
+        ]
+      },
+      {
+        "id": "elevenlabs-tts-v3",
+        "note": [
+          "Previous generation with audio tags, 70+ languages, about 16 credits for a page read aloud",
+          "Génération précédente avec balises audio, plus de 70 langues, environ 16 crédits pour une page lue"
+        ]
+      },
+      {
+        "id": "elevenlabs-tts-multilingual-v2",
+        "note": [
+          "Stable long-form voice in 29 languages, about 16 credits for a page read aloud",
+          "Voix stable pour les textes longs en 29 langues, environ 16 crédits pour une page lue"
+        ]
+      },
+      {
+        "id": "tts-elevenlabs-turbo-v2-5",
+        "note": [
+          "Older low-latency model, 32 languages, about 8 credits for a page read aloud; ElevenLabs now steers to Flash v2.5",
+          "Ancien modèle à faible latence, 32 langues, environ 8 crédits pour une page lue ; ElevenLabs oriente désormais vers Flash v2.5"
+        ]
+      }
+    ]
   },
   {
     "slug": "gemini-flash-tts",

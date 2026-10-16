@@ -51,8 +51,8 @@ export const categoryGuides: Record<Category, CategoryGuide> = {
   },
   transcription: {
     differs: [
-      "Transcription models differ by accuracy on real recordings, language coverage, speed and privacy. Prices stay low: an hour of audio costs from about 6 to 31 credits.",
-      "Les modèles de transcription se distinguent par leur précision sur de vrais enregistrements, les langues couvertes, la vitesse et la confidentialité. Les prix restent bas : une heure d’audio coûte d’environ 6 à 31 crédits.",
+      "Transcription models differ by accuracy on real recordings, language coverage, speed and privacy. Prices stay low: an hour of audio costs from about 5 to 27 credits.",
+      "Les modèles de transcription se distinguent par leur précision sur de vrais enregistrements, les langues couvertes, la vitesse et la confidentialité. Les prix restent bas : une heure d’audio coûte d’environ 5 à 27 crédits.",
     ],
     criteria: [
       {
@@ -69,8 +69,8 @@ export const categoryGuides: Record<Category, CategoryGuide> = {
   },
   image: {
     differs: [
-      "Image models differ in look (photographic, illustrated, designed), in how literally they follow a long prompt, in whether they can write readable text, and in price, from about half a credit to 15 credits an image.",
-      "Les modèles d’image se distinguent par leur rendu (photographique, illustré, graphique), par leur fidélité à un long prompt, par leur capacité à écrire un texte lisible, et par le prix, d’environ un demi-crédit à 15 crédits l’image.",
+      "Image models differ in look (photographic, illustrated, designed), in how literally they follow a long prompt, in whether they can write readable text, and in price, from about half a credit to 13 credits an image.",
+      "Les modèles d’image se distinguent par leur rendu (photographique, illustré, graphique), par leur fidélité à un long prompt, par leur capacité à écrire un texte lisible, et par le prix, d’environ un demi-crédit à 13 crédits l’image.",
     ],
     criteria: [
       {
@@ -117,8 +117,8 @@ export const categoryGuides: Record<Category, CategoryGuide> = {
   },
   video: {
     differs: [
-      "Video models differ in realism and motion, in clip length, in whether they make their own sound, in how well they keep a character from shot to shot, and in price, from about 2 to 62 credits per second.",
-      "Les modèles vidéo se distinguent par le réalisme et le mouvement, la durée des plans, la présence d’un son natif, leur capacité à garder un personnage d’un plan à l’autre, et le prix, d’environ 2 à 62 crédits la seconde.",
+      "Video models differ in realism and motion, in clip length, in whether they make their own sound, in how well they keep a character from shot to shot, and in price, from about 1 to 28 credits per second.",
+      "Les modèles vidéo se distinguent par le réalisme et le mouvement, la durée des plans, la présence d’un son natif, leur capacité à garder un personnage d’un plan à l’autre, et le prix, d’environ 1 à 28 crédits la seconde.",
     ],
     criteria: [
       {
@@ -148,8 +148,8 @@ export const categoryGuides: Record<Category, CategoryGuide> = {
   },
   voice: {
     differs: [
-      "Voice models differ in how natural they sound, how much they act (whispers, laughter, pauses), how many languages they speak well, and price, from about half a credit to 29 credits per page read.",
-      "Les modèles de voix se distinguent par leur naturel, leur jeu (murmures, rires, pauses), le nombre de langues qu’ils parlent bien, et le prix, d’environ un demi-crédit à 29 crédits la page lue.",
+      "Voice models differ in how natural they sound, how much they act (whispers, laughter, pauses), how many languages they speak well, and price, from about half a credit to 25 credits per page read.",
+      "Les modèles de voix se distinguent par leur naturel, leur jeu (murmures, rires, pauses), le nombre de langues qu’ils parlent bien, et le prix, d’environ un demi-crédit à 25 crédits la page lue.",
     ],
     criteria: [
       {

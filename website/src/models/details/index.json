@@ -177,6 +177,11 @@
           "version": "Claude Sonnet 5.5",
           "date": "2026-09-28",
           "inCatalog": true
+        },
+        {
+          "version": "Claude Haiku 5.5",
+          "date": "2026-10-07",
+          "inCatalog": true
         }
       ]
     },
@@ -280,8 +285,8 @@
         },
         {
           "version": "Gemini 4 Argon",
-          "date": "2026-09",
-          "inCatalog": false
+          "date": "2026-09-30",
+          "inCatalog": true
         }
       ]
     },
@@ -527,6 +532,11 @@
           "version": "Nemotron 3 Ultra 550B A55B",
           "date": "2026-06-04",
           "inCatalog": true
+        },
+        {
+          "version": "Nemotron 3.5 Super VL 120B A12B",
+          "date": "2026-10-15",
+          "inCatalog": true
         }
       ]
     },
@@ -702,6 +712,11 @@
           "version": "Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
           "date": "2026-06-30",
           "inCatalog": true
+        },
+        {
+          "version": "Nano Banana 2.1",
+          "date": "2026-10-06",
+          "inCatalog": true
         }
       ]
     },
@@ -726,6 +741,11 @@
         {
           "version": "Nano Banana 2 Lite (edit)",
           "date": "2026-06-30",
+          "inCatalog": true
+        },
+        {
+          "version": "Nano Banana 2.1 (edit)",
+          "date": "2026-10-06",
           "inCatalog": true
         }
       ]
@@ -832,6 +852,21 @@
           "version": "Qwen-Image 3.0 and 3.0 Pro",
           "date": "2026-07-21",
           "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 2.1",
+          "date": "2026-09-20",
+          "inCatalog": false
+        },
+        {
+          "version": "Qwen-Image 2.1 Pro",
+          "date": "2026-10-02",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 2.1 Turbo",
+          "date": "2026-10-09",
+          "inCatalog": true
         }
       ]
     },
@@ -861,6 +896,21 @@
         {
           "version": "Qwen-Image 3.0 and 3.0 Pro (edit)",
           "date": "2026-07-21",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 2.1 (edit)",
+          "date": "2026-09-20",
+          "inCatalog": false
+        },
+        {
+          "version": "Qwen-Image 2.1 Pro (edit)",
+          "date": "2026-10-02",
+          "inCatalog": true
+        },
+        {
+          "version": "Qwen-Image 2.1 Turbo (edit)",
+          "date": "2026-10-09",
           "inCatalog": true
         }
       ]
@@ -1322,6 +1372,11 @@
           "version": "MiniMax H3",
           "date": "2026-07-31",
           "inCatalog": true
+        },
+        {
+          "version": "MiniMax H3 Max Recast",
+          "date": "2026-10",
+          "inCatalog": true
         }
       ]
     },
@@ -1505,7 +1560,7 @@
         {
           "version": "Multilingual v2",
           "date": "2023-08",
-          "inCatalog": false
+          "inCatalog": true
         },
         {
           "version": "Turbo v2.5",
@@ -1520,12 +1575,17 @@
         {
           "version": "Eleven v3",
           "date": "2025-06-03",
-          "inCatalog": false
+          "inCatalog": true
         },
         {
           "version": "Eleven v4",
           "date": "2026-09-28",
-          "inCatalog": false
+          "inCatalog": true
+        },
+        {
+          "version": "Eleven v4 Turbo",
+          "date": "2026-09-28",
+          "inCatalog": true
         }
       ]
     },
@@ -1739,6 +1799,31 @@
     {
       "slug": "sonilo-sound-effects",
       "releases": []
+    },
+    {
+      "slug": "hy",
+      "releases": [
+        {
+          "version": "Hy4 preview",
+          "date": "2026-08",
+          "inCatalog": true
+        }
+      ]
+    },
+    {
+      "slug": "muse",
+      "releases": [
+        {
+          "version": "Muse Wonder",
+          "date": "2026-10-12",
+          "inCatalog": true
+        },
+        {
+          "version": "Muse Spark Open",
+          "date": "2026-10-15",
+          "inCatalog": true
+        }
+      ]
     }
   ]
 }

@@ -38,23 +38,28 @@ export function pageMeta(page: string): { title: string; description: string } {
           "Tokens, context windows, reasoning, open weights, benchmarks and Elo ratings: what makes AI models different, explained plainly.",
           "Jetons, fenêtre de contexte, raisonnement, poids ouverts, benchmarks et classements Elo : ce qui rend les modèles d’IA différents, expliqué simplement.",
         )
-      : slug === "compare"
+      : slug === "prices"
         ? t(
-            "Compare up to three AI models side by side: scores, prices, versions, strengths and limits.",
-            "Comparez jusqu’à trois modèles d’IA côte à côte : scores, prix, versions, forces et limites.",
+            "What every AI model in Sub Rosa costs, in US dollars: text, transcription, images, editing, video, voice, music and sound, side by side.",
+            "Ce que coûte chaque modèle d’IA de Sub Rosa, en dollars américains : texte, transcription, images, retouche, vidéo, voix, musique et bruitages, côte à côte.",
           )
-        : guide
-          ? read(guide.summary)
-          : family
-            ? read(family.summary)
-            : page === "/models"
-              ? t(
-                  "What each Sub Rosa model is good at, what it costs and how to choose: text, transcription, image, editing, video, voice and music.",
-                  "Ce que chaque modèle de Sub Rosa sait faire, ce qu’il coûte et comment choisir : texte, transcription, image, retouche, vidéo, voix et musique.",
-                )
-              : t(
-                  "Sub Rosa brings conversations, notes and ideas into one personal workspace. Download the app for your device.",
-                  "Sub Rosa réunit vos conversations, vos notes et vos idées dans un espace personnel. Téléchargez l’app pour votre appareil.",
-                );
+        : slug === "compare"
+          ? t(
+              "Compare up to three AI models side by side: scores, prices, versions, strengths and limits.",
+              "Comparez jusqu’à trois modèles d’IA côte à côte : scores, prix, versions, forces et limites.",
+            )
+          : guide
+            ? read(guide.summary)
+            : family
+              ? read(family.summary)
+              : page === "/models"
+                ? t(
+                    "What each Sub Rosa model is good at, what it costs and how to choose: text, transcription, image, editing, video, voice and music.",
+                    "Ce que chaque modèle de Sub Rosa sait faire, ce qu’il coûte et comment choisir : texte, transcription, image, retouche, vidéo, voix et musique.",
+                  )
+                : t(
+                    "Sub Rosa brings conversations, notes and ideas into one personal workspace. Download the app for your device.",
+                    "Sub Rosa réunit vos conversations, vos notes et vos idées dans un espace personnel. Téléchargez l’app pour votre appareil.",
+                  );
   return { title, description };
 }

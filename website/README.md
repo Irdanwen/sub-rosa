@@ -103,9 +103,15 @@ only allows the site's own origin, so the catalog is frozen at build time.
   vocabulary every page links to; `src/models/categories.ts` says what
   separates the models of each kind (`/models/<kind>`).
 
-Pages: the hub, one page per kind (quality against price, leaderboards,
-release timeline, sortable table), one page per family, the comparator
-(`/models/compare?m=a,b,c`, the choice lives in the address) and the guide.
+Pages: the hub (what do you want to do, new releases, prices at a glance,
+every family), one page per kind (advice, quality against price,
+leaderboards, every family's price, release timeline), one page per family
+(tabs: overview, versions, scores, models and prices, sources), the price
+comparison (`/models/prices?k=video`: every model in US dollars, sortable),
+the comparator (`/models/compare?m=a,b,c`, the choice lives in the address)
+and the guide. Tables and charts price in dollars through `usdPrice`
+(`src/models/catalog.ts`); `src/test/website-models-prices.test.tsx` holds
+every price to the unit of its kind of work.
 Charts are plain HTML and CSS in `src/models/charts.tsx`: they prerender,
 work without JavaScript, keep their text legible on a phone, and every chart
 has its numbers in a table under it.

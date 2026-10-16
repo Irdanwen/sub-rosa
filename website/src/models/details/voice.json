@@ -236,27 +236,30 @@
     {
       "slug": "elevenlabs-tts",
       "differentiator": [
-        "ElevenLabs Turbo v2.5 sits in the middle of the line for quality and latency, a line that moved from Multilingual v2 to the expressive Eleven v3 and v4. ElevenLabs now lists Turbo v2.5 as deprecated in favor of Flash v2.5, so the catalog entry is a stable, lower-cost option.",
-        "ElevenLabs Turbo v2.5 occupe le milieu de la gamme, en qualité comme en latence, une gamme passée de Multilingual v2 à Eleven v3 puis v4, plus expressifs. ElevenLabs le déclare désormais obsolète au profit de Flash v2.5 : c’est une option stable et peu coûteuse."
+        "ElevenLabs' voice line runs from Multilingual v2 to the expressive Eleven v3 and v4, with audio tags and voice cloning on the newer ones, and a real-time Turbo variant of v4. ElevenLabs now lists the older Turbo v2.5 as deprecated in favor of Flash v2.5.",
+        "La gamme de voix d’ElevenLabs va de Multilingual v2 aux Eleven v3 et v4, plus expressifs, avec balises audio et clonage de voix sur les plus récents, et une variante Turbo de v4 en temps réel. ElevenLabs déclare désormais l’ancien Turbo v2.5 obsolète au profit de Flash v2.5."
       ],
       "signature": [
-        ["32 languages, French included", "32 langues, dont le français"],
+        ["Up to 90+ languages, French included", "Jusqu’à plus de 90 langues, dont le français"],
         ["Fast: Flash v2.5 reaches about 75 ms", "Rapide : Flash v2.5 atteint environ 75 ms"],
-        ["Newer v3 and v4 add audio tags", "Les v3 et v4 ajoutent des balises audio"]
+        [
+          "v3 and v4 add audio tags; v4 Turbo is real time",
+          "Les v3 et v4 ajoutent des balises audio ; la v4 Turbo est en temps réel"
+        ]
       ],
       "releases": [
         {
           "version": "Multilingual v2",
           "date": "2023-08",
-          "ids": [],
-          "external": true,
+          "ids": ["elevenlabs-tts-multilingual-v2"],
+          "external": false,
           "changes": [
             [
-              "Emotion-aware multilingual voice, 29 languages",
-              "Voix multilingue sensible aux émotions, 29 langues"
+              "Emotion-aware multilingual voice, 29 languages, stable on long-form content",
+              "Voix multilingue sensible aux émotions, 29 langues, stable sur les textes longs"
             ]
           ],
-          "source": "https://artificialanalysis.ai/text-to-speech/leaderboard"
+          "source": "https://elevenlabs.io/docs/overview/models"
         },
         {
           "version": "Turbo v2.5",
@@ -287,8 +290,8 @@
         {
           "version": "Eleven v3",
           "date": "2025-06-03",
-          "ids": [],
-          "external": true,
+          "ids": ["elevenlabs-tts-v3"],
+          "external": false,
           "changes": [
             [
               "70+ languages, inline audio tags such as [whispers], multi-speaker dialogue",
@@ -300,18 +303,48 @@
         {
           "version": "Eleven v4",
           "date": "2026-09-28",
-          "ids": [],
-          "external": true,
+          "ids": ["elevenlabs-tts-v4"],
+          "external": false,
           "changes": [
             [
-              "90+ languages, better voice cloning from 10 s of audio, a Turbo variant for real time",
-              "Plus de 90 langues, meilleur clonage dès 10 s d’audio, variante Turbo pour le temps réel"
+              "90+ languages, better voice cloning from 10 s of audio, inline audio tags, 10,000 characters per request in the API",
+              "Plus de 90 langues, meilleur clonage dès 10 s d’audio, balises audio intégrées, 10 000 caractères par requête dans l’API"
+            ]
+          ],
+          "source": "https://elevenlabs.io/blog/eleven-v4"
+        },
+        {
+          "version": "Eleven v4 Turbo",
+          "date": "2026-09-28",
+          "ids": ["elevenlabs-tts-v4-turbo"],
+          "external": false,
+          "changes": [
+            [
+              "Low-latency variant of v4 for voice agents: median inference about 100 ms, bidirectional streaming",
+              "Variante à faible latence de v4 pour les agents vocaux : inférence médiane d’environ 100 ms, flux bidirectionnel"
+            ],
+            [
+              "Same 90+ languages, voice cloning from 10 s of audio and inline audio tags as v4",
+              "Mêmes plus de 90 langues, clonage de voix dès 10 s d’audio et balises audio intégrées que v4"
             ]
           ],
           "source": "https://elevenlabs.io/blog/eleven-v4"
         }
       ],
       "specs": [
+        {
+          "version": "Eleven v4",
+          "ids": ["elevenlabs-tts-v4"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["90+ languages", "Plus de 90 langues"],
+          "source": "https://elevenlabs.io/docs/overview/models"
+        },
         {
           "version": "Turbo v2.5",
           "ids": ["tts-elevenlabs-turbo-v2-5"],
@@ -324,6 +357,45 @@
           "outputs": ["audio"],
           "languages": ["32 languages", "32 langues"],
           "source": "https://elevenlabs.io/docs/overview/models"
+        },
+        {
+          "version": "Eleven v4 Turbo",
+          "ids": ["elevenlabs-tts-v4-turbo"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["90+ languages", "Plus de 90 langues"],
+          "source": "https://elevenlabs.io/docs/overview/models"
+        },
+        {
+          "version": "Eleven v3",
+          "ids": ["elevenlabs-tts-v3"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["70+ languages", "Plus de 70 langues"],
+          "source": "https://elevenlabs.io/docs/overview/models"
+        },
+        {
+          "version": "Multilingual v2",
+          "ids": ["elevenlabs-tts-multilingual-v2"],
+          "params": null,
+          "activeParams": null,
+          "openWeights": false,
+          "license": "Proprietary",
+          "maxOutput": null,
+          "inputs": ["text"],
+          "outputs": ["audio"],
+          "languages": ["29 languages", "29 langues"],
+          "source": "https://elevenlabs.io/docs/overview/models"
         }
       ],
       "useCases": [
@@ -333,7 +405,10 @@
             "Narrate this product description in warm, clear French for a 30 second ad.",
             "Narre cette description de produit en français chaleureux et clair pour une publicité de 30 secondes."
           ],
-          "why": ["32 languages and polished voices.", "32 langues et des voix soignées."]
+          "why": [
+            "Eleven v4 covers 90+ languages with expressive voices.",
+            "Eleven v4 couvre plus de 90 langues avec des voix expressives."
+          ]
         },
         {
           "title": ["Voice replies in an app", "Réponses vocales dans une application"],
@@ -341,15 +416,18 @@
             "Say: Your appointment is confirmed for Tuesday at 3 pm.",
             "Dis : Votre rendez-vous est confirmé pour mardi à 15 h."
           ],
-          "why": ["Built for low latency.", "Conçu pour une faible latence."]
+          "why": [
+            "v4 Turbo is built for real-time voice agents.",
+            "La v4 Turbo est conçue pour les agents vocaux en temps réel."
+          ]
         }
       ],
       "rivals": [
         {
           "slug": "gemini-flash-tts",
           "verdict": [
-            "Gemini 3.1 Flash TTS scores higher on the Speech Arena and steers delivery with tags, at about three times the price.",
-            "Gemini 3.1 Flash TTS obtient un meilleur score à l’arène vocale et pilote l’interprétation par balises, pour environ trois fois le prix."
+            "Gemini Flash TTS also steers delivery with tags; Eleven v4 scores higher on the Speech Arena than the Gemini 3.8 Flash TTS entry.",
+            "Gemini Flash TTS pilote aussi l’interprétation par balises ; Eleven v4 obtient un meilleur score à l’arène vocale que l’entrée Gemini 3.8 Flash TTS."
           ]
         },
         {
@@ -377,11 +455,20 @@
         "https://docs.typingmind.com/changelog/typingmind/eleven-turbo-v2.5-and-eleven-turbo-v2"
       ],
       "strengths": [
-        ["32 languages, French included", "32 langues, dont le français"],
-        ["Built for low latency", "Conçu pour une faible latence"]
+        [
+          "29 to 90+ languages depending on the model, French included",
+          "De 29 à plus de 90 langues selon le modèle, dont le français"
+        ],
+        [
+          "v4 Turbo is built for real-time voice agents",
+          "La v4 Turbo est conçue pour les agents vocaux en temps réel"
+        ]
       ],
       "limits": [
-        ["Mid-range price per character", "Prix moyen au caractère"],
+        [
+          "About 6 to 16 credits for a 3,000-character page, depending on the model",
+          "Environ 6 à 16 crédits pour une page de 3 000 caractères selon le modèle"
+        ],
         ["Anonymized, not private", "Anonymisé, pas privé"]
       ],
       "facts": [

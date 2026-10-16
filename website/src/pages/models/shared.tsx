@@ -16,13 +16,15 @@ import {
   latestRelease,
   leaderboard,
   modelById,
+  modelsOfCategory,
+  benchmarksFor,
   priceBand,
   priceBandLabel,
   releaseDate,
   snapshot,
 } from "../../models/catalog";
 import type { ChartRow } from "../../models/charts";
-import { needs } from "../../models/needs";
+import { defaults, needs } from "../../models/needs";
 import { read } from "../docs-content";
 
 export const checkedOn = () =>
@@ -171,7 +173,43 @@ export function GuideLink({
 export const categoryOf = (slug: string): Category | undefined => familyBySlug(slug)?.category;
 
 /** The "what do you want to do" answers of one kind of work: a pick and an alternative each. */
-export function NeedList({ category, locale }: { category: Category; locale: SiteLocale }) {
+export function NeedList({
+  category,
+  locale,
+  compact = false,
+}: {
+  category: Category;
+  locale: SiteLocale;
+  compact?: boolean;
+}) {
+  if (compact)
+    return (
+      <ul className="need-grid">
+        {needs
+          .filter((need) => need.category === category)
+          .map((need) => {
+            const first = familyBySlug(need.pick);
+            const second = need.alternative ? familyBySlug(need.alternative.slug) : undefined;
+            return (
+              <li key={need.id}>
+                <span className="need-question">{read(need.question)}</span>
+                {first && (
+                  <a href={catalogHref(first.slug, locale)}>
+                    <strong>{familyName(first)}</strong>
+                  </a>
+                )}
+                <small>{read(need.why)}</small>
+                {second && (
+                  <span className="need-alt">
+                    {t("Or", "Ou")}{" "}
+                    <a href={catalogHref(second.slug, locale)}>{familyName(second)}</a>
+                  </span>
+                )}
+              </li>
+            );
+          })}
+      </ul>
+    );
   return (
     <div className="models-needs">
       {needs
@@ -202,3 +240,28 @@ export function NeedList({ category, locale }: { category: Category; locale: Sit
     </div>
   );
 }
+
+/** The model a kind of work starts on in the app. */
+export const defaultOf = (category: Category) => {
+  const item = defaults.find((entry) => familyBySlug(entry.slug)?.category === category);
+  return item ? modelById(item.model) : undefined;
+};
+
+/** The best measured model of a kind, on its first benchmark. */
+export const leaderOf = (category: Category) => {
+  const benchmark = benchmarksFor(category)[0];
+  const top = benchmark ? leaderboard(benchmark.id)[0] : undefined;
+  return top ? modelById(top.model) : undefined;
+};
+
+/** The cheapest priced model of a kind, in the unit most of that kind is sold in. */
+export const cheapestOf = (category: Category) => {
+  const rows = modelsOfCategory(category).filter((row) => row.price);
+  const units = rows.map((row) => row.price?.unit);
+  const common = units
+    .slice()
+    .sort((a, b) => units.filter((u) => u === b).length - units.filter((u) => u === a).length)[0];
+  return rows
+    .filter((row) => row.price?.unit === common)
+    .sort((a, b) => (a.price?.value ?? 0) - (b.price?.value ?? 0))[0]?.model;
+};

@@ -1621,6 +1621,20 @@
             ]
           ],
           "source": "https://www.minimax.io/blog/minimax-h3"
+        },
+        {
+          "version": "MiniMax H3 Max Recast",
+          "date": "2026-10",
+          "ids": ["minimax-h3-max-recast"],
+          "external": false,
+          "changes": [
+            [
+              "Video to video: replaces people in an existing clip with identities from reference photos, keeping the source motion, camera work, cuts and audio",
+              "Vidéo vers vidéo : remplace les personnes d’un clip existant par des identités issues de photos de référence, en gardant mouvement, caméra, coupes et audio"
+            ],
+            ["Renders at 768P or 1080P", "Rendu en 768P ou 1080P"]
+          ],
+          "source": "https://www.eachlabs.ai/fal/minimax-h3-max/minimax-h3-max-recast"
         }
       ],
       "specs": [
@@ -1715,7 +1729,8 @@
         "https://www.minimax.io/news/minimax-hailuo-02",
         "https://www.minimax.io/news/minimax-hailuo-23",
         "https://artificialanalysis.ai/video/leaderboard/image-to-video",
-        "https://openrouter.ai/minimax/hailuo-3-max"
+        "https://openrouter.ai/minimax/hailuo-3-max",
+        "https://www.eachlabs.ai/fal/minimax-h3-max/minimax-h3-max-recast"
       ],
       "strengths": [
         [
@@ -1736,10 +1751,16 @@
           "H3 Max stops at 1080p; 2K needs the anonymized H3",
           "H3 Max s’arrête à 1080p ; la 2K demande H3, anonymisé"
         ],
-        ["Clips start at 5 s", "Les clips commencent à 5 s"]
+        [
+          "Generated clips start at 5 s; Recast follows the length of your source video",
+          "Les clips générés commencent à 5 s ; Recast suit la durée de votre vidéo source"
+        ]
       ],
       "facts": [
-        ["5 to 15 s, native sound", "5 à 15 s, son natif"],
+        [
+          "5 to 15 s, native sound (Recast keeps the source audio)",
+          "5 à 15 s, son natif (Recast garde l’audio source)"
+        ],
         ["H3 Max: 480p to 1080p; H3: 768p or 2K", "H3 Max : 480p à 1080p ; H3 : 768p ou 2K"],
         ["Max versions private, plain H3 anonymized", "Versions Max privées, H3 simple anonymisé"]
       ]
@@ -3270,21 +3291,18 @@
           "ids": [
             "flux-3-text-to-video",
             "flux-3-image-to-video",
-            "flux-3-first-last-frame-to-video"
+            "flux-3-first-last-frame-to-video",
+            "flux-3-extend-video"
           ],
           "external": false,
           "changes": [
             [
-              "First BFL video model: text, image, first and last frame, keyframes and continuation.",
-              "Premier modèle vidéo de BFL : texte, image, première et dernière image, images clés et suite."
+              "First BFL video model: text, image, first and last frame, keyframes and continuation of an existing clip.",
+              "Premier modèle vidéo de BFL : texte, image, première et dernière image, images clés et prolongation d’un clip existant."
             ],
             [
-              "Native dialogue, effects and ambience, 5 to 20 s clips up to 1080p here.",
-              "Dialogues, effets et ambiances natifs, clips de 5 à 20 s jusqu’à 1080p ici."
-            ],
-            [
-              "Draft tier from $0.06 per second for quick previews.",
-              "Niveau Draft dès 0,06 $ par seconde pour des aperçus rapides."
+              "Native dialogue, effects and ambience, 5 to 20 s clips from 720p up to 2160p.",
+              "Dialogues, effets et ambiances natifs, clips de 5 à 20 s de 720p jusqu’à 2160p."
             ]
           ],
           "source": "https://pixverse.ai/en/blog/flux-3-review"
@@ -3296,7 +3314,8 @@
           "ids": [
             "flux-3-text-to-video",
             "flux-3-image-to-video",
-            "flux-3-first-last-frame-to-video"
+            "flux-3-first-last-frame-to-video",
+            "flux-3-extend-video"
           ],
           "params": null,
           "activeParams": null,
@@ -3368,7 +3387,8 @@
         "https://pixverse.ai/en/blog/flux-3-review",
         "https://help.scenario.com/articles/2415759054-flux-3-video-the-essentials",
         "https://bfl.ai/models/flux-3-video",
-        "https://artificialanalysis.ai/video/leaderboard/text-to-video"
+        "https://artificialanalysis.ai/video/leaderboard/text-to-video",
+        "https://fal.ai/models/blackforestlabs/flux-3/extend-video/api"
       ],
       "strengths": [
         [
@@ -3380,11 +3400,14 @@
       ],
       "limits": [
         ["Mid-range to high price per second", "Prix moyen à élevé à la seconde"],
-        ["1080p at most", "1080p au maximum"]
+        [
+          "Extending needs a source clip under 15 s and 50 MB",
+          "Prolonger demande un clip source de moins de 15 s et 50 Mo"
+        ]
       ],
       "facts": [
         ["5, 10, 15 or 20 s, native sound", "5, 10, 15 ou 20 s, son natif"],
-        ["720p or 1080p", "720p ou 1080p"]
+        ["720p, 1080p, 1440p or 2160p", "720p, 1080p, 1440p ou 2160p"]
       ]
     },
     {
