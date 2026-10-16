@@ -281,9 +281,10 @@ section of [FORK_NOTES.md](FORK_NOTES.md). The essentials:
 
 `website/` publishes a reference catalog of every model a person can pick in
 the app: `/models` (hub), `/models/<kind>` (eight kinds of work), one page per
-family (98), `/models/compare?m=a,b,c` and `/models/guide` ("Understanding
-models"). The how-to lives in [`website/README.md`](website/README.md) (Model
-catalog section). The essentials:
+family (100), `/models/prices?k=<kind>` (every model's price in US dollars),
+`/models/compare?m=a,b,c` and `/models/guide` ("Understanding models"). The
+how-to lives in [`website/README.md`](website/README.md) (Model catalog
+section). The essentials:
 
 - **The data is frozen, never fetched.** The site's CSP only allows its own
   origin. `pnpm website:models` writes `website/src/models/snapshot.json` from
@@ -318,6 +319,19 @@ catalog section). The essentials:
   most about 110 KB of data (gzip). `main.tsx` and the prerender load the
   chunks a page needs before its first render, because the site mounts with
   `createRoot`, not hydration.
+- **Every page answers "which one?" first (redesign 2026-10-16).** The hub
+  opens on eight "what do you want to do" tiles, a kind page on three advice
+  cards (Sub Rosa's default, the best measured, the best value) and one table,
+  a family page on tabs (overview, versions, scores, models and prices,
+  sources). Prerendered, every tab panel shows; the panels hide only once
+  mounted, so the page reads without a script. Each family appears once per
+  page: no second grid repeating a table.
+- **Prices in tables and charts are dollars, one unit per kind of price.**
+  `usdPrice` in `models/catalog.ts` is the only conversion (per million
+  tokens, image, edit, second, 1,000 characters, hour, track, minute, 10 s of
+  sound, enlargement); a provider that files a voice as `music` is priced by
+  the characters it reads (`update-models.mjs`). Prose in the data keeps its
+  "about N credits", held to the snapshot by the test.
 - **Editing the JSON by hand:** run `pnpm biome format --write` on it (CI
   fails on a long line), and never `biome check --unsafe`, which strips
   non-null assertions and breaks the typecheck.

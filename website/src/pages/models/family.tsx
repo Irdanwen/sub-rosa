@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type KeyboardEvent, useEffect, useState } from "react";
 import { number, t, type SiteLocale } from "../../lib/i18n";
 import {
   type Family,
@@ -14,8 +14,9 @@ import {
   formatScore,
   headlineBenchmark,
   modelById,
-  modelTypeLabel,
-  priceLine,
+  modelUse,
+  usdEveryday,
+  usdLine,
   privacyLabel,
   releaseDate,
   scores,
@@ -34,7 +35,6 @@ import {
   checkedOn,
   standingLine,
 } from "./shared";
-import { useActiveSection } from "../../lib/section-spy";
 
 const modality: Record<string, [string, string]> = {
   text: ["text", "texte"],
@@ -139,6 +139,16 @@ function Timeline({ releases }: { releases: Release[] }) {
   );
 }
 
+type Tab = "overview" | "versions" | "benchmarks" | "models" | "sources";
+
+/** The tab a hash belongs to, so an old link to a section still lands on it. */
+function tabOfHash(hash: string): Tab {
+  const id = hash.replace(/^#/, "").replace(/^family-panel-/, "");
+  if (["versions", "benchmarks", "models", "sources"].includes(id)) return id as Tab;
+  if (id === "specs") return "models";
+  return "overview";
+}
+
 export function FamilyPage({ family, locale }: { family: Family; locale: SiteLocale }) {
   const href = (target: string) => catalogHref(target, locale);
   const ready = useDetails([family.category]);
@@ -211,22 +221,56 @@ export function FamilyPage({ family, locale }: { family: Family; locale: SiteLoc
         ? read(specRows.find((row) => row.languages)?.languages ?? ["", ""])
         : null;
 
-  const toc: [string, string][] = [
-    ["different", t("What sets it apart", "Ce qui le distingue")],
-    ["versions", t("Version history", "Historique des versions")],
+  const tabs: [Tab, string][] = [
+    ["overview", t("Overview", "Vue d’ensemble")],
+    ["versions", t("Versions", "Versions")],
     ...(marks.length || vendor.length
-      ? [["benchmarks", t("Benchmarks", "Benchmarks")] as [string, string]]
+      ? [["benchmarks", t("Scores", "Mesures")] as [Tab, string]]
       : []),
-    ["specs", t("Specifications", "Fiche technique")],
-    ["strengths", t("Strengths and limits", "Forces et limites")],
-    ["use-cases", t("Use cases", "Cas d’usage")],
-    ...(rivals.length
-      ? [["rivals", t("Against its rivals", "Face à ses rivaux")] as [string, string]]
-      : []),
-    ["models", t("Every model", "Tous les modèles")],
+    ["models", t("Models and prices", "Modèles et prix")],
     ["sources", t("Sources", "Sources")],
   ];
-  const activeSection = useActiveSection(toc.map(([id]) => id));
+  // Prerendered, every panel shows: the page reads whole without a script.
+  // Once mounted, one panel at a time, following the address's hash.
+  const [enhanced, setEnhanced] = useState(false);
+  const [tab, setTab] = useState<Tab>("overview");
+  useEffect(() => {
+    setTab(tabOfHash(window.location.hash));
+    setEnhanced(true);
+    const follow = () => setTab(tabOfHash(window.location.hash));
+    window.addEventListener("hashchange", follow);
+    return () => window.removeEventListener("hashchange", follow);
+  }, []);
+  const open = (next: Tab) => {
+    setTab(next);
+    // From deep in a long panel, a new tab starts at its top, not mid-page.
+    const bar = document.getElementById("family-tabs");
+    if (bar && bar.getBoundingClientRect().top < 0) bar.scrollIntoView({ block: "start" });
+    history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${next === "overview" ? "" : `#${next}`}`,
+    );
+  };
+  const onTabKey = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const index = tabs.findIndex(([id]) => id === tab);
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = tabs[(index + step + tabs.length) % tabs.length][0];
+    open(next);
+    document.getElementById(`family-tab-${next}`)?.focus();
+  };
+  const panel = (id: Tab) =>
+    enhanced
+      ? {
+          id: `family-panel-${id}`,
+          role: "tabpanel",
+          "aria-labelledby": `family-tab-${id}`,
+          hidden: tab !== id,
+          className: "family-panel",
+        }
+      : { id: `family-panel-${id}`, className: "family-panel" };
 
   return (
     <div className="wrap family-shell">
@@ -258,339 +302,372 @@ export function FamilyPage({ family, locale }: { family: Family; locale: SiteLoc
               sub={standingLine(family)?.replace(/ \(.*\)$/, "") ?? undefined}
             />
           )}
-          {priceLine(pick) && (
+          {usdLine(pick) && (
             <StatTile
               label={t("Price", "Prix")}
-              value={priceLine(pick)?.replace(/^(About|Environ) /, "") ?? ""}
-              sub={pick ? displayName(pick) : undefined}
+              value={usdLine(pick) ?? ""}
+              sub={usdEveryday(pick) ?? (pick ? displayName(pick) : undefined)}
             />
           )}
           {keySpec && <StatTile label={t("Key spec", "Spec phare")} value={keySpec} />}
         </div>
 
-        <section className="family-section" id="different">
-          <h2>{t("What sets it apart", "Ce qui le distingue")}</h2>
-          {detail ? (
-            <>
-              <p className="family-lead">{read(detail.differentiator)}</p>
-              <ul className="signature">
-                {detail.signature.map((item) => (
+        <div
+          id="family-tabs"
+          className={`family-tabs${enhanced ? "" : " is-static"}`}
+          {...(enhanced
+            ? { role: "tablist", "aria-label": t("Sections of this page", "Parties de cette page") }
+            : {})}
+        >
+          {tabs.map(([id, label]) =>
+            enhanced ? (
+              <button
+                type="button"
+                role="tab"
+                key={id}
+                id={`family-tab-${id}`}
+                aria-selected={tab === id}
+                aria-controls={`family-panel-${id}`}
+                tabIndex={tab === id ? 0 : -1}
+                onClick={() => open(id)}
+                onKeyDown={onTabKey}
+              >
+                {label}
+              </button>
+            ) : (
+              <a key={id} href={`#family-panel-${id}`}>
+                {label}
+              </a>
+            ),
+          )}
+        </div>
+
+        <div {...panel("overview")}>
+          <section className="family-section" id="different">
+            <h2>{t("What sets it apart", "Ce qui le distingue")}</h2>
+            {detail ? (
+              <>
+                <p className="family-lead">{read(detail.differentiator)}</p>
+                <ul className="signature">
+                  {detail.signature.map((item) => (
+                    <li key={item[0]}>{read(item)}</li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="models-lede" aria-busy="true">
+                {t("Loading the details…", "Chargement des détails…")}
+              </p>
+            )}
+            {fitsNeeds.length > 0 && (
+              <p className="family-needs">
+                {t("Recommended for: ", "Recommandé pour : ")}
+                {fitsNeeds.map((need) => read(need.question).toLowerCase()).join(" ; ")}.
+              </p>
+            )}
+          </section>
+
+          <section className="family-section" id="strengths">
+            <h2>{t("Strengths and limits", "Forces et limites")}</h2>
+            <div className="models-family-grid">
+              <div className="models-panel">
+                <h3>{t("Where it shines", "Ses points forts")}</h3>
+                <ul>
+                  {(detail?.strengths ?? []).map((item) => (
+                    <li key={item[0]}>{read(item)}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="models-panel">
+                <h3>{t("Think twice when", "À éviter quand")}</h3>
+                <ul>
+                  {(detail?.limits ?? []).map((item) => (
+                    <li key={item[0]}>{read(item)}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            {(detail?.facts.length ?? 0) > 0 && (
+              <ul className="models-facts">
+                {(detail?.facts ?? []).map((item) => (
                   <li key={item[0]}>{read(item)}</li>
                 ))}
               </ul>
-            </>
-          ) : (
-            <p className="models-lede" aria-busy="true">
-              {t("Loading the details…", "Chargement des détails…")}
-            </p>
-          )}
-          {fitsNeeds.length > 0 && (
-            <p className="family-needs">
-              {t("Recommended for: ", "Recommandé pour : ")}
-              {fitsNeeds.map((need) => read(need.question).toLowerCase()).join(" ; ")}.
-            </p>
-          )}
-        </section>
-
-        <section className="family-section" id="versions">
-          <h2>{t("Version history", "Historique des versions")}</h2>
-          <p className="models-lede">
-            {t(
-              "Each version, dated, with what it changed over the one before.",
-              "Chaque version, datée, avec ce qu’elle a changé par rapport à la précédente.",
             )}
-          </p>
-          {headline && trend.length > 1 && (
-            <TrendChart
-              title={t(
-                `${headline.name}, version after version`,
-                `${headline.name}, version après version`,
-              )}
-              note={<SourceNote benchmark={headline} />}
-              points={trend}
-              higherIsBetter={headline.higherIsBetter}
-              valueHead={headline.unit}
-              caption={t(
-                "Hollow points are earlier versions no longer offered in Sub Rosa.",
-                "Les points creux sont des versions antérieures qui ne sont plus proposées dans Sub Rosa.",
-              )}
-            />
+          </section>
+
+          <section className="family-section" id="use-cases">
+            <h2>{t("Use cases", "Cas d’usage")}</h2>
+            <div className="use-cases">
+              {(detail?.useCases ?? []).map((useCase) => (
+                <article className="use-case" key={useCase.title[0]}>
+                  <h3>{read(useCase.title)}</h3>
+                  <CopyPrompt text={read(useCase.prompt)} />
+                  <p>{read(useCase.why)}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          {rivals.length > 0 && (
+            <section className="family-section" id="rivals">
+              <h2>{t("Against its rivals", "Face à ses rivaux")}</h2>
+              <ul className="rivals">
+                {rivals.map((rival) => (
+                  <li key={rival.slug}>
+                    <a href={href(rival.slug)}>
+                      <strong>{familyName(rival.family)}</strong>
+                    </a>
+                    <span>{read(rival.verdict)}</span>
+                    {standingLine(rival.family) && <small>{standingLine(rival.family)}</small>}
+                  </li>
+                ))}
+              </ul>
+              <a
+                className="button"
+                href={`${href("compare")}?m=${[family.slug, ...rivals.map((rival) => rival.slug)].slice(0, 3).join(",")}`}
+              >
+                {t("Compare side by side", "Comparer côte à côte")} ↗
+              </a>
+            </section>
           )}
-          {detail && <Timeline releases={detail.releases} />}
-        </section>
+        </div>
+
+        <div {...panel("versions")}>
+          <section className="family-section" id="versions">
+            <h2>{t("Version history", "Historique des versions")}</h2>
+            <p className="models-lede">
+              {t(
+                "Each version, dated, with what it changed over the one before.",
+                "Chaque version, datée, avec ce qu’elle a changé par rapport à la précédente.",
+              )}
+            </p>
+            {headline && trend.length > 1 && (
+              <TrendChart
+                title={t(
+                  `${headline.name}, version after version`,
+                  `${headline.name}, version après version`,
+                )}
+                note={<SourceNote benchmark={headline} />}
+                points={trend}
+                higherIsBetter={headline.higherIsBetter}
+                valueHead={headline.unit}
+                caption={t(
+                  "Hollow points are earlier versions no longer offered in Sub Rosa.",
+                  "Les points creux sont des versions antérieures qui ne sont plus proposées dans Sub Rosa.",
+                )}
+              />
+            )}
+            {detail && <Timeline releases={detail.releases} />}
+          </section>
+        </div>
 
         {(marks.length > 0 || vendor.length > 0) && (
-          <section className="family-section" id="benchmarks">
-            <h2>{t("Benchmarks", "Benchmarks")}</h2>
-            <p className="models-lede">
-              {t("How to read these scores: ", "Comment lire ces scores : ")}
-              <GuideLink term="why-benchmarks" locale={locale}>
-                {t("what a benchmark tells you", "ce qu’un benchmark dit")}
-              </GuideLink>
-              .
-            </p>
-            {marks.map((benchmark) => {
-              const place = familyStanding(family, benchmark.id);
-              const Chart = benchmark.unit === "Elo" ? DotChart : BarChart;
-              return (
-                <div className="family-benchmark" key={benchmark.id}>
-                  <p>
-                    <strong>{benchmark.name}</strong>
-                    {place &&
-                      t(
-                        `: #${place.rank} of ${place.of} models measured in the catalog.`,
-                        ` : ${place.rank === 1 ? "1er" : `${place.rank}e`} sur ${place.of} modèles mesurés du catalogue.`,
-                      )}{" "}
-                    {read(benchmark.measures)} {read(benchmark.howToRead)}
+          <div {...panel("benchmarks")}>
+            <section className="family-section" id="benchmarks">
+              <h2>{t("Benchmarks", "Benchmarks")}</h2>
+              <p className="models-lede">
+                {t("How to read these scores: ", "Comment lire ces scores : ")}
+                <GuideLink term="why-benchmarks" locale={locale}>
+                  {t("what a benchmark tells you", "ce qu’un benchmark dit")}
+                </GuideLink>
+                .
+              </p>
+              {marks.map((benchmark) => {
+                const place = familyStanding(family, benchmark.id);
+                const Chart = benchmark.unit === "Elo" ? DotChart : BarChart;
+                return (
+                  <div className="family-benchmark" key={benchmark.id}>
+                    <p>
+                      <strong>{benchmark.name}</strong>
+                      {place &&
+                        t(
+                          `: #${place.rank} of ${place.of} models measured in the catalog.`,
+                          ` : ${place.rank === 1 ? "1er" : `${place.rank}e`} sur ${place.of} modèles mesurés du catalogue.`,
+                        )}{" "}
+                      {read(benchmark.measures)} {read(benchmark.howToRead)}
+                    </p>
+                    <Chart
+                      title={benchmark.name}
+                      note={<SourceNote benchmark={benchmark} date={place?.score.date} />}
+                      rows={boardRows(benchmark, locale, family)}
+                      valueHead={benchmark.unit}
+                    />
+                  </div>
+                );
+              })}
+              {vendor.length > 0 && (
+                <div className="family-vendor">
+                  <h3>{t("Announced by the maker", "Annoncé par le fabricant")}</h3>
+                  <p className="models-lede">
+                    {t(
+                      "Measured by the maker with its own settings: useful, but not directly comparable with the independent scores above.",
+                      "Mesurés par le fabricant avec ses propres réglages : utiles, mais pas directement comparables aux scores indépendants ci-dessus.",
+                    )}
                   </p>
-                  <Chart
-                    title={benchmark.name}
-                    note={<SourceNote benchmark={benchmark} date={place?.score.date} />}
-                    rows={boardRows(benchmark, locale, family)}
-                    valueHead={benchmark.unit}
-                  />
+                  <div className="models-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th scope="col">{t("Benchmark", "Benchmark")}</th>
+                          <th scope="col">{t("Model", "Modèle")}</th>
+                          <th scope="col">{t("Score", "Score")}</th>
+                          <th scope="col">{t("Source", "Source")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vendor.map((score) => {
+                          const benchmark = benchmarksFor(family.category).find(
+                            (item) => item.id === score.benchmark,
+                          );
+                          const model = modelById(score.model);
+                          return (
+                            <tr key={`${score.benchmark}-${score.model}`}>
+                              <td>{benchmark?.name ?? score.benchmark}</td>
+                              <td>{model ? displayName(model) : score.model}</td>
+                              <td>
+                                {benchmark ? formatScore(benchmark, score.value) : score.value}
+                              </td>
+                              <td>
+                                <a href={score.url} rel="noopener noreferrer">
+                                  {new URL(score.url).hostname.replace(/^www\./, "")}
+                                </a>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              );
-            })}
-            {vendor.length > 0 && (
-              <div className="family-vendor">
-                <h3>{t("Announced by the maker", "Annoncé par le fabricant")}</h3>
-                <p className="models-lede">
-                  {t(
-                    "Measured by the maker with its own settings: useful, but not directly comparable with the independent scores above.",
-                    "Mesurés par le fabricant avec ses propres réglages : utiles, mais pas directement comparables aux scores indépendants ci-dessus.",
+              )}
+            </section>
+          </div>
+        )}
+
+        <div {...panel("models")}>
+          <section className="family-section" id="models">
+            <h2>
+              {family.ids.length === 1
+                ? t("The model in this family", "Le modèle de cette famille")
+                : t(
+                    `All ${family.ids.length} models in this family`,
+                    `Les ${family.ids.length} modèles de cette famille`,
                   )}
-                </p>
-                <div className="models-table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th scope="col">{t("Benchmark", "Benchmark")}</th>
-                        <th scope="col">{t("Model", "Modèle")}</th>
-                        <th scope="col">{t("Score", "Score")}</th>
-                        <th scope="col">{t("Source", "Source")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vendor.map((score) => {
-                        const benchmark = benchmarksFor(family.category).find(
-                          (item) => item.id === score.benchmark,
-                        );
-                        const model = modelById(score.model);
-                        return (
-                          <tr key={`${score.benchmark}-${score.model}`}>
-                            <td>{benchmark?.name ?? score.benchmark}</td>
-                            <td>{model ? displayName(model) : score.model}</td>
-                            <td>{benchmark ? formatScore(benchmark, score.value) : score.value}</td>
-                            <td>
-                              <a href={score.url} rel="noopener noreferrer">
-                                {new URL(score.url).hostname.replace(/^www\./, "")}
-                              </a>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </section>
-        )}
-
-        <section className="family-section" id="specs">
-          <h2>{t("Specifications", "Fiche technique")}</h2>
-          <div className="models-table-wrap spec-table">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <span className="sr-only">{t("Specification", "Caractéristique")}</span>
-                  </th>
-                  {(specRows.length
-                    ? specRows
-                    : [{ version: pick ? displayName(pick) : family.name, ids: [family.pick] }]
-                  ).map((row) => (
-                    <th scope="col" key={row.version}>
-                      {row.version}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {specLines(family, detail).map(([label, cells]) => (
-                  <tr key={label}>
-                    <th scope="row">{label}</th>
-                    {cells
-                      .map((cell, index) => ({
-                        cell,
-                        version: specRows[index]?.version ?? family.pick,
-                      }))
-                      .map(({ cell, version }) => (
-                        <td key={`${label}-${version}`}>{cell}</td>
-                      ))}
+            </h2>
+            <div className="models-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">{t("Model", "Modèle")}</th>
+                    <th scope="col">{t("Use", "Usage")}</th>
+                    <th scope="col">{t("Privacy", "Confidentialité")}</th>
+                    <th scope="col">{t("Price", "Prix")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="models-footnote">
-            {t(
-              `Prices, context and lengths from the live catalog on ${checkedOn()}; parameters and licenses from the maker.`,
-              `Prix, contexte et durées tirés du catalogue le ${checkedOn()} ; paramètres et licences selon le fabricant.`,
-            )}
-          </p>
-        </section>
-
-        <section className="family-section" id="strengths">
-          <h2>{t("Strengths and limits", "Forces et limites")}</h2>
-          <div className="models-family-grid">
-            <div className="models-panel">
-              <h3>{t("Where it shines", "Ses points forts")}</h3>
-              <ul>
-                {(detail?.strengths ?? []).map((item) => (
-                  <li key={item[0]}>{read(item)}</li>
-                ))}
-              </ul>
+                </thead>
+                <tbody>
+                  {family.ids.map((id) => {
+                    const model = modelById(id);
+                    if (!model) return null;
+                    return (
+                      <tr key={id}>
+                        <td>
+                          <strong>{displayName(model)}</strong>
+                          <code>{id}</code>
+                        </td>
+                        <td>{read(modelUse(model))}</td>
+                        <td>{read(privacyLabel(model.privacy))}</td>
+                        <td className="is-price">
+                          {usdLine(model) ?? t("Shown in the app", "Affiché dans l’app")}
+                          {usdEveryday(model) && <small>{usdEveryday(model)}</small>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-            <div className="models-panel">
-              <h3>{t("Think twice when", "À éviter quand")}</h3>
-              <ul>
-                {(detail?.limits ?? []).map((item) => (
-                  <li key={item[0]}>{read(item)}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          {(detail?.facts.length ?? 0) > 0 && (
-            <ul className="models-facts">
-              {(detail?.facts ?? []).map((item) => (
-                <li key={item[0]}>{read(item)}</li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="family-section" id="use-cases">
-          <h2>{t("Use cases", "Cas d’usage")}</h2>
-          <div className="use-cases">
-            {(detail?.useCases ?? []).map((useCase) => (
-              <article className="use-case" key={useCase.title[0]}>
-                <h3>{read(useCase.title)}</h3>
-                <CopyPrompt text={read(useCase.prompt)} />
-                <p>{read(useCase.why)}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        {rivals.length > 0 && (
-          <section className="family-section" id="rivals">
-            <h2>{t("Against its rivals", "Face à ses rivaux")}</h2>
-            <ul className="rivals">
-              {rivals.map((rival) => (
-                <li key={rival.slug}>
-                  <a href={href(rival.slug)}>
-                    <strong>{familyName(rival.family)}</strong>
-                  </a>
-                  <span>{read(rival.verdict)}</span>
-                  {standingLine(rival.family) && <small>{standingLine(rival.family)}</small>}
-                </li>
-              ))}
-            </ul>
-            <a
-              className="button"
-              href={`${href("compare")}?m=${[family.slug, ...rivals.map((rival) => rival.slug)].slice(0, 3).join(",")}`}
-            >
-              {t("Compare side by side", "Comparer côte à côte")} ↗
-            </a>
           </section>
-        )}
 
-        <section className="family-section" id="models">
-          <h2>
-            {family.ids.length === 1
-              ? t("The model in this family", "Le modèle de cette famille")
-              : t(
-                  `All ${family.ids.length} models in this family`,
-                  `Les ${family.ids.length} modèles de cette famille`,
-                )}
-          </h2>
-          <div className="models-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">{t("Model", "Modèle")}</th>
-                  <th scope="col">{t("Use", "Usage")}</th>
-                  <th scope="col">{t("Privacy", "Confidentialité")}</th>
-                  <th scope="col">{t("Price", "Prix")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {family.ids.map((id) => {
-                  const model = modelById(id);
-                  if (!model) return null;
-                  return (
-                    <tr key={id}>
-                      <td>
-                        <strong>{displayName(model)}</strong>
-                        <code>{id}</code>
-                      </td>
-                      <td>{read(modelTypeLabel[model.type] ?? [model.type, model.type])}</td>
-                      <td>{read(privacyLabel(model.privacy))}</td>
-                      <td>{priceLine(model) ?? t("Shown in the app", "Affiché dans l’app")}</td>
+          <section className="family-section" id="specs">
+            <h2>{t("Specifications", "Fiche technique")}</h2>
+            <div className="models-table-wrap spec-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      <span className="sr-only">{t("Specification", "Caractéristique")}</span>
+                    </th>
+                    {(specRows.length
+                      ? specRows
+                      : [{ version: pick ? displayName(pick) : family.name, ids: [family.pick] }]
+                    ).map((row) => (
+                      <th scope="col" key={row.version}>
+                        {row.version}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {specLines(family, detail).map(([label, cells]) => (
+                    <tr key={label}>
+                      <th scope="row">{label}</th>
+                      {cells
+                        .map((cell, index) => ({
+                          cell,
+                          version: specRows[index]?.version ?? family.pick,
+                        }))
+                        .map(({ cell, version }) => (
+                          <td key={`${label}-${version}`}>{cell}</td>
+                        ))}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="models-footnote">
+              {t(
+                `Prices, context and lengths from the live catalog on ${checkedOn()}; parameters and licenses from the maker.`,
+                `Prix, contexte et durées tirés du catalogue le ${checkedOn()} ; paramètres et licences selon le fabricant.`,
+              )}
+            </p>
+          </section>
+        </div>
 
-        <section className="family-section" id="sources">
-          <h2>{t("Sources", "Sources")}</h2>
-          <p className="models-lede">
-            {t(
-              `Everything on this page comes from these pages, read on ${checkedOn()} or as dated on each score.`,
-              `Tout ce qui figure sur cette page vient de ces pages, lues le ${checkedOn()} ou à la date indiquée sur chaque score.`,
-            )}
-          </p>
-          {/* Reference material, folded: it is what a reader checks, not
+        <div {...panel("sources")}>
+          <section className="family-section" id="sources">
+            <h2>{t("Sources", "Sources")}</h2>
+            <p className="models-lede">
+              {t(
+                `Everything on this page comes from these pages, read on ${checkedOn()} or as dated on each score.`,
+                `Tout ce qui figure sur cette page vient de ces pages, lues le ${checkedOn()} ou à la date indiquée sur chaque score.`,
+              )}
+            </p>
+            {/* Reference material, folded: it is what a reader checks, not
               what they read, and the page is long enough without it open. */}
-          <details className="sources-fold">
-            <summary>
-              {t(`Show the ${sources.length} sources`, `Afficher les ${sources.length} sources`)}
-            </summary>
-            <ul className="sources">
-              {sources.map((url) => (
-                <li key={url}>
-                  <a href={url} rel="noopener noreferrer">
-                    {new URL(url).hostname.replace(/^www\./, "")}
-                    <span>{new URL(url).pathname.replace(/\/$/, "") || "/"}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </details>
-          {family.url && (
-            <a className="button" href={family.url} rel="noopener noreferrer">
-              {t(`Learn more about ${family.name}`, `En savoir plus sur ${familyName(family)}`)} ↗
-            </a>
-          )}
-        </section>
+            <details className="sources-fold">
+              <summary>
+                {t(`Show the ${sources.length} sources`, `Afficher les ${sources.length} sources`)}
+              </summary>
+              <ul className="sources">
+                {sources.map((url) => (
+                  <li key={url}>
+                    <a href={url} rel="noopener noreferrer">
+                      {new URL(url).hostname.replace(/^www\./, "")}
+                      <span>{new URL(url).pathname.replace(/\/$/, "") || "/"}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+            {family.url && (
+              <a className="button" href={family.url} rel="noopener noreferrer">
+                {t(`Learn more about ${family.name}`, `En savoir plus sur ${familyName(family)}`)} ↗
+              </a>
+            )}
+          </section>
+        </div>
       </article>
-
-      <nav className="family-toc" aria-label={t("On this page", "Sur cette page")}>
-        <p>{t("On this page", "Sur cette page")}</p>
-        {toc.map(([id, label]) => (
-          <a href={`#${id}`} key={id} aria-current={id === activeSection ? "location" : undefined}>
-            {label}
-          </a>
-        ))}
-        <a className="family-toc-guide" href={href("guide")}>
-          {t("Understanding models", "Comprendre les modèles")} ↗
-        </a>
-      </nav>
     </div>
   );
 }
@@ -712,12 +789,7 @@ function specLines(family: Family, detail: FamilyDetail | undefined): [string, s
             .join(", ") || dash,
       ),
     ],
-    [
-      t("Price", "Prix"),
-      columns.map(
-        (column) => priceLine(model(column.ids))?.replace(/^(About|Environ) /, "") ?? dash,
-      ),
-    ],
+    [t("Price", "Prix"), columns.map((column) => usdLine(model(column.ids)) ?? dash)],
     [
       t("Privacy", "Confidentialité"),
       columns.map((column) => {

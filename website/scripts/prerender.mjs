@@ -40,6 +40,7 @@ try {
     "/models",
     "/models/guide",
     "/models/compare",
+    "/models/prices",
     ...categories.map((category) => `/models/${category.id}`),
     ...families.map((family) => `/models/${family.slug}`),
   ];

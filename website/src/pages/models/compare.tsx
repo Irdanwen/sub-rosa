@@ -15,9 +15,10 @@ import {
   formatScore,
   latestRelease,
   modelById,
-  priceLine,
   releaseDate,
   traitLabel,
+  usdEveryday,
+  usdLine,
 } from "../../models/catalog";
 import { compareSelection, detailOf, useDetails } from "../../models/details";
 import { read } from "../docs-content";
@@ -167,7 +168,20 @@ export function ComparePage({ query, locale }: { query: string; locale: SiteLoca
                     : t("Not measured", "Non mesuré");
                 }),
               )}
-              {row(t("Price", "Prix"), (family) => priceLine(modelById(family.pick)) ?? "·")}
+              {row(t("Price", "Prix"), (family) => {
+                const pick = modelById(family.pick);
+                const line = usdLine(pick);
+                if (!line) return "·";
+                const everyday = usdEveryday(pick);
+                return everyday ? (
+                  <>
+                    {line}
+                    <small>{everyday}</small>
+                  </>
+                ) : (
+                  line
+                );
+              })}
               {row(t("Our pick", "Notre choix"), (family) => {
                 const pick = modelById(family.pick);
                 return pick ? displayName(pick) : "·";

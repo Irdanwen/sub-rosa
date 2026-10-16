@@ -1,29 +1,36 @@
-import { useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { number, t, type SiteLocale } from "../../lib/i18n";
 import {
   type Category,
   type Family,
+  type PriceUnit,
+  type SnapshotModel,
   benchmarksFor,
   categories,
   categoryTitle,
-  creditsLabel,
-  creditsPerUnit,
   displayName,
   families,
   familyName,
+  familyOfModel,
   familyPrivacyLabel,
   familyReleases,
   familyStanding,
   formatScore,
-  latestRelease,
+  formatUsd,
   modelById,
+  modelsOfCategory,
+  priceUnitLabel,
   releaseDate,
+  scores,
+  usdPrice,
 } from "../../models/catalog";
 import { categoryGuides } from "../../models/categories";
-import { BarChart, DotChart, ScatterChart, StatTile } from "../../models/charts";
+import { BarChart, DotChart, ScatterChart } from "../../models/charts";
 import { read } from "../docs-content";
 import {
-  FamilyCard,
+  cheapestOf,
+  defaultOf,
+  leaderOf,
   GuideLink,
   NeedList,
   SourceNote,
@@ -36,7 +43,54 @@ import {
 export const isCategory = (value: string): value is Category =>
   categories.some((category) => category.id === value);
 
-type SortKey = "name" | "release" | "score" | "price";
+type SortKey = "name" | "score" | "price" | "spec";
+
+const nameOf = (id: string) => {
+  const model = modelById(id);
+  return model ? displayName(model) : id;
+};
+
+/** The unit most models of a kind are sold in: the one its charts and table speak. */
+function mainUnit(category: Category): PriceUnit | undefined {
+  const units = modelsOfCategory(category)
+    .map((row) => row.price?.unit)
+    .filter((unit): unit is PriceUnit => Boolean(unit));
+  return units
+    .slice()
+    .sort((a, b) => units.filter((u) => u === b).length - units.filter((u) => u === a).length)[0];
+}
+
+/** One advice card: a question answered with a model, its price and why. */
+function Advice({
+  label,
+  model,
+  reason,
+  locale,
+}: {
+  label: string;
+  model: SnapshotModel | undefined;
+  reason: ReactNode;
+  locale: SiteLocale;
+}) {
+  const family = model ? familyOfModel(model.id) : undefined;
+  if (!model || !family) return null;
+  const price = usdPrice(model);
+  return (
+    <a className="advice-card" href={catalogHref(family.slug, locale)}>
+      <span className="advice-label">{label}</span>
+      <strong>{displayName(model)}</strong>
+      <span className="advice-family">
+        {familyName(family)} · {family.maker}
+      </span>
+      <span className="advice-reason">{reason}</span>
+      {price && (
+        <span className="advice-price">
+          {formatUsd(price.value)} <small>{read(priceUnitLabel[price.unit])}</small>
+        </span>
+      )}
+    </a>
+  );
+}
 
 export function CategoryPage({ category, locale }: { category: Category; locale: SiteLocale }) {
   const href = (target: string) => catalogHref(target, locale);
@@ -45,17 +99,14 @@ export function CategoryPage({ category, locale }: { category: Category; locale:
   const models = members.reduce((count, family) => count + family.ids.length, 0);
   const marks = benchmarksFor(category);
   const headline = marks[0];
-  const releases = members
-    .flatMap((family) =>
-      familyReleases(family.slug)
-        .filter((release) => release.inCatalog && release.date)
-        .map((release) => ({ ...release, family })),
-    )
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const prices = members
-    .flatMap((family) => family.ids.map((id) => creditsPerUnit(modelById(id))))
-    .filter((value): value is number => value !== null);
-  const [sort, setSort] = useState<SortKey>(headline ? "score" : "price");
+  const unit = mainUnit(category);
+  const [enhanced, setEnhanced] = useState(false);
+  useEffect(() => setEnhanced(true), []);
+  const [board, setBoard] = useState(0);
+  const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>({
+    key: headline ? "score" : "price",
+    ascending: true,
+  });
   const [chosen, setChosen] = useState<string[]>([]);
   const toggle = (slug: string) =>
     setChosen((current) =>
@@ -64,83 +115,124 @@ export function CategoryPage({ category, locale }: { category: Category; locale:
         : [...current, slug].slice(-3),
     );
 
+  const releases = members
+    .flatMap((family) =>
+      familyReleases(family.slug)
+        .filter((release) => release.inCatalog && release.date)
+        .map((release) => ({ ...release, family })),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  // A price only compares with a price in the same unit.
+  const priceIn = (model: SnapshotModel | undefined) => {
+    const price = usdPrice(model);
+    return price && price.unit === unit ? price.value : null;
+  };
+  // The recommended version's own score when it has one, so a row's score and
+  // price speak of the same model; otherwise the family's best, named.
   const score = (family: Family) =>
-    headline ? (familyStanding(family, headline.id)?.score.value ?? null) : null;
-  const sorted = [...members].sort((a, b) => {
-    if (sort === "name") return familyName(a).localeCompare(familyName(b));
-    if (sort === "release")
-      return (latestRelease(b.slug)?.date ?? "").localeCompare(latestRelease(a.slug)?.date ?? "");
-    if (sort === "price")
-      return (
-        (creditsPerUnit(modelById(a.pick)) ?? Number.POSITIVE_INFINITY) -
-        (creditsPerUnit(modelById(b.pick)) ?? Number.POSITIVE_INFINITY)
-      );
-    const [x, y] = [score(a), score(b)];
-    if (x === null) return 1;
-    if (y === null) return -1;
-    return headline?.higherIsBetter ? y - x : x - y;
-  });
+    headline
+      ? (scores.find(
+          (entry) =>
+            entry.benchmark === headline.id && entry.model === family.pick && !entry.external,
+        ) ??
+        familyStanding(family, headline.id)?.score ??
+        null)
+      : null;
 
   const scatter = headline
     ? members.flatMap((family) => {
         const standing = familyStanding(family, headline.id);
-        const price = standing ? creditsPerUnit(modelById(standing.score.model)) : null;
-        if (!standing || price === null) return [];
-        const model = modelById(standing.score.model);
+        const model = standing ? modelById(standing.score.model) : undefined;
+        const price = priceIn(model);
+        if (!standing || !model || price === null) return [];
         return [
           {
             key: family.slug,
-            label: model ? displayName(model) : familyName(family),
+            label: displayName(model),
             x: price,
             y: standing.score.value,
-            xDisplay: creditsLabel(price),
+            xDisplay: formatUsd(price),
             yDisplay:
               `${formatScore(headline, standing.score.value)} ${headline.unit === "%" ? "" : headline.unit}`.trim(),
             href: href(family.slug),
             hollow: familyPrivacyLabel(family).kind === "anonymized",
+            model,
           },
         ];
       })
     : [];
-  // Label the best few and the cheapest few; every other point keeps its tooltip and its table row.
-  const byQuality = [...scatter]
-    .sort((a, b) => (headline?.higherIsBetter ? b.y - a.y : a.y - b.y))
-    .slice(0, 4);
-  const byPrice = [...scatter].sort((a, b) => a.x - b.x).slice(0, 2);
-  // Best first, so the leaders keep their label when two would collide.
-  const points = [...scatter]
-    .sort((a, b) => (headline?.higherIsBetter ? b.y - a.y : a.y - b.y))
-    .map((point) => ({ ...point, labelled: byQuality.includes(point) || byPrice.includes(point) }));
+  const better = (a: number, b: number) => (headline?.higherIsBetter ? b - a : a - b);
+  // Best value: the cheapest among the best third, so "value" never means "weak".
+  const topThird = [...scatter]
+    .sort((a, b) => better(a.y, b.y))
+    .slice(0, Math.max(1, Math.ceil(scatter.length / 3)));
+  const value = [...topThird].sort((a, b) => a.x - b.x)[0]?.model;
+  const leader = leaderOf(category);
+  const start = defaultOf(category);
+  const cheapest = cheapestOf(category);
 
-  const specRows = members
-    .map((family) => {
-      const pick = modelById(family.pick);
-      if (category === "text" && pick?.context)
-        return {
-          family,
-          pick,
-          value: pick.context,
-          display: `${number(pick.context / 1000, 0)} k`,
-        };
-      if (category === "video" && pick?.seconds)
-        return { family, pick, value: pick.seconds[1], display: `${pick.seconds[1]} s` };
-      return null;
-    })
-    .filter((row): row is NonNullable<typeof row> => row !== null)
-    .sort((a, b) => b.value - a.value);
+  const byQuality = [...scatter].sort((a, b) => better(a.y, b.y)).slice(0, 4);
+  const byPrice = [...scatter].sort((a, b) => a.x - b.x).slice(0, 2);
+  const highlighted = new Set([leader?.id, value?.id, start?.id].filter(Boolean));
+  const points = [...scatter]
+    .sort((a, b) => better(a.y, b.y))
+    .map((point) => ({
+      ...point,
+      focus: highlighted.has(point.model.id),
+      labelled: byQuality.includes(point) || byPrice.includes(point),
+    }));
+
+  const spec = (model: SnapshotModel | undefined) =>
+    category === "text"
+      ? (model?.context ?? null)
+      : category === "video"
+        ? (model?.seconds?.[1] ?? null)
+        : null;
+  const hasSpec = category === "text" || category === "video";
+  const sorted = [...members].sort((a, b) => {
+    const direction = sort.ascending ? 1 : -1;
+    const nullLast = (x: number | null, y: number | null, order: number) =>
+      x === null ? (y === null ? 0 : 1) : y === null ? -1 : order;
+    if (sort.key === "name") return familyName(a).localeCompare(familyName(b)) * direction;
+    if (sort.key === "price") {
+      const [x, y] = [priceIn(modelById(a.pick)), priceIn(modelById(b.pick))];
+      return nullLast(x, y, ((x ?? 0) - (y ?? 0)) * direction);
+    }
+    if (sort.key === "spec") {
+      const [x, y] = [spec(modelById(a.pick)), spec(modelById(b.pick))];
+      return nullLast(x, y, ((y ?? 0) - (x ?? 0)) * direction);
+    }
+    const [x, y] = [score(a)?.value ?? null, score(b)?.value ?? null];
+    return nullLast(x, y, better(x ?? 0, y ?? 0) * direction);
+  });
+  const choose = (key: SortKey) =>
+    setSort((current) =>
+      current.key === key ? { key, ascending: !current.ascending } : { key, ascending: true },
+    );
+  const ariaSort = (key: SortKey) =>
+    sort.key === key ? (sort.ascending ? "ascending" : "descending") : undefined;
+
+  const unitLabel = unit ? read(priceUnitLabel[unit]) : "";
+  const shownBoards = enhanced ? [marks[board] ?? marks[0]].filter(Boolean) : marks;
 
   return (
     <div className="models-category">
-      <section className="docs-hero">
-        <div className="wrap docs-hero-inner">
+      <section className="catalog-hero catalog-hero-compact">
+        <div className="wrap catalog-hero-inner">
           <nav className="docs-breadcrumb" aria-label={t("Breadcrumb", "Fil d’Ariane")}>
             <a href={href("")}>{t("Model catalog", "Catalogue des modèles")}</a>
             <span aria-hidden="true">/</span>
             <span>{read(categoryTitle(category))}</span>
           </nav>
-          <p className="eyebrow">{t("Model catalog", "Catalogue des modèles")}</p>
+          <p className="eyebrow">
+            {t(
+              `${members.length} families, ${models} models`,
+              `${members.length} familles, ${models} modèles`,
+            )}
+          </p>
           <h1>{read(categoryTitle(category))}</h1>
-          <p>{read(guide.differs)}</p>
+          <p className="catalog-lede">{read(guide.differs)}</p>
           <ul className="models-criteria">
             {guide.criteria.map((criterion) => (
               <li key={criterion.text[0]}>
@@ -158,37 +250,69 @@ export function CategoryPage({ category, locale }: { category: Category; locale:
       </section>
 
       <div className="wrap models-body">
-        <div className="stat-row">
-          <StatTile
-            label={t("Families", "Familles")}
-            value={number(members.length, 0)}
-            sub={t(`${models} models`, `${models} modèles`)}
-          />
-          {releases[0] && (
-            <StatTile
-              label={t("Newest release", "Sortie la plus récente")}
-              value={releases[0].version}
-              sub={releaseDate(releases[0].date)}
-            />
-          )}
-          {headline && boardRows(headline, locale)[0] && (
-            <StatTile
-              label={t("Leader", "En tête")}
-              value={boardRows(headline, locale)[0].label.replace(/^1\. /, "")}
-              sub={`${boardRows(headline, locale)[0].display}${headline.unit === "%" ? "" : ` ${headline.unit}`} · ${headline.name}`}
-            />
-          )}
-          {prices.length > 1 && (
-            <StatTile
-              label={t("Price range", "Fourchette de prix")}
-              value={`${number(Math.min(...prices), Math.min(...prices) < 1 ? 2 : 1)} à ${number(Math.max(...prices), 1)}`.replace(
-                " à ",
-                t(" to ", " à "),
+        <section className="models-section" aria-labelledby="category-advice">
+          <p className="eyebrow">{t("Our advice", "Notre conseil")}</p>
+          <h2 id="category-advice">{t("Which one to take.", "Lequel prendre.")}</h2>
+          <div className="advice-grid">
+            <Advice
+              label={t("To start", "Pour commencer")}
+              model={start}
+              reason={t(
+                "What Sub Rosa starts on: a balance of quality, privacy and price.",
+                "Ce sur quoi Sub Rosa démarre : un équilibre entre qualité, confidentialité et prix.",
               )}
-              sub={read(guide.priceAxis).replace(/ \(.*\)$/, "")}
+              locale={locale}
             />
-          )}
-        </div>
+            {leader && headline ? (
+              <Advice
+                label={t("For the best result", "Pour le meilleur résultat")}
+                model={leader}
+                reason={t(
+                  `First on ${headline.name}, the independent ranking of this kind.`,
+                  `Premier au ${headline.name}, le classement indépendant de ce type.`,
+                )}
+                locale={locale}
+              />
+            ) : (
+              releases[0] && (
+                <Advice
+                  label={t("The newest", "Le plus récent")}
+                  model={modelById(releases[0].family.pick)}
+                  reason={t(
+                    `${releases[0].version}, released ${releaseDate(releases[0].date)}.`,
+                    `${releases[0].version}, sorti le ${releaseDate(releases[0].date)}.`,
+                  )}
+                  locale={locale}
+                />
+              )
+            )}
+            {value && value.id !== leader?.id ? (
+              <Advice
+                label={t("For the best value", "Pour le meilleur rapport qualité-prix")}
+                model={value}
+                reason={t(
+                  "The cheapest of the best third on the ranking.",
+                  "Le moins cher du meilleur tiers du classement.",
+                )}
+                locale={locale}
+              />
+            ) : (
+              <Advice
+                label={t("For the lowest price", "Pour le prix le plus bas")}
+                model={cheapest}
+                reason={t(
+                  "The cheapest model of this kind in the catalog.",
+                  "Le modèle le moins cher de ce type dans le catalogue.",
+                )}
+                locale={locale}
+              />
+            )}
+          </div>
+          <h3 className="needs-heading">
+            {t("Or start from what you want to do", "Ou partez de ce que vous voulez faire")}
+          </h3>
+          <NeedList category={category} locale={locale} compact />
+        </section>
 
         {headline && scatter.length > 2 && (
           <section className="models-section" aria-labelledby="category-scatter">
@@ -201,11 +325,15 @@ export function CategoryPage({ category, locale }: { category: Category; locale:
               title={`${headline.name} ${t("against price", "selon le prix")}`}
               note={<SourceNote benchmark={headline} date={latestScoreDate(headline.id)} />}
               points={points}
-              xLabel={read(guide.priceAxis)}
+              xLabel={t(
+                `US dollars ${unitLabel} (log scale)`,
+                `Dollars ${unitLabel} (échelle logarithmique)`,
+              )}
               yLabel={headline.name}
               higherIsBetter={headline.higherIsBetter}
               legend={
                 <>
+                  <span className="legend-dot is-focus" /> {t("Our advice", "Notre conseil")}
                   <span className="legend-dot" /> {t("Private", "Privé")}
                   <span className="legend-dot is-hollow" /> {t("Anonymized", "Anonymisé")}
                 </>
@@ -218,32 +346,46 @@ export function CategoryPage({ category, locale }: { category: Category; locale:
           </section>
         )}
 
-        {marks.length > 0 && (
+        {marks.length > 0 ? (
           <section className="models-section" aria-labelledby="category-boards">
             <p className="eyebrow">{t("Leaderboards", "Classements")}</p>
             <h2 id="category-boards">{t("Measured side by side.", "Mesurés côte à côte.")}</h2>
-            <div className={marks.length > 1 ? "chart-grid" : undefined}>
-              {marks.map((benchmark) => {
-                const rows = boardRows(benchmark, locale);
+            {enhanced && marks.length > 1 && (
+              <fieldset className="chip-row">
+                <legend className="sr-only">{t("Benchmark", "Benchmark")}</legend>
+                {marks.map((benchmark, index) => (
+                  <button
+                    type="button"
+                    className="chip"
+                    key={benchmark.id}
+                    aria-pressed={board === index}
+                    onClick={() => setBoard(index)}
+                  >
+                    {benchmark.name}
+                  </button>
+                ))}
+              </fieldset>
+            )}
+            <div className="board-stack">
+              {shownBoards.map((benchmark) => {
                 const Chart = benchmark.unit === "Elo" ? DotChart : BarChart;
                 return (
-                  <div key={benchmark.id}>
-                    <Chart
-                      title={benchmark.name}
-                      note={
-                        <SourceNote benchmark={benchmark} date={latestScoreDate(benchmark.id)} />
-                      }
-                      rows={rows}
-                      valueHead={benchmark.unit}
-                      caption={read(benchmark.measures)}
-                    />
-                  </div>
+                  <Chart
+                    key={benchmark.id}
+                    title={benchmark.name}
+                    note={<SourceNote benchmark={benchmark} date={latestScoreDate(benchmark.id)} />}
+                    rows={boardRows(benchmark, locale).map((row) => ({
+                      ...row,
+                      focus: highlighted.has(row.key),
+                    }))}
+                    valueHead={benchmark.unit}
+                    caption={read(benchmark.measures)}
+                  />
                 );
               })}
             </div>
           </section>
-        )}
-        {marks.length === 0 && (
+        ) : (
           <section className="models-section">
             <p className="eyebrow">{t("Leaderboards", "Classements")}</p>
             <h2>
@@ -258,115 +400,106 @@ export function CategoryPage({ category, locale }: { category: Category; locale:
           </section>
         )}
 
-        {specRows.length > 2 && (
-          <section className="models-section" aria-labelledby="category-spec">
-            <p className="eyebrow">{t("Specs", "Caractéristiques")}</p>
-            <h2 id="category-spec">
-              {category === "text"
-                ? t("How much each reads at once.", "Ce que chacun lit d’un coup.")
-                : t("How long a single clip can run.", "La durée maximale d’un plan.")}
-            </h2>
-            <BarChart
-              title={
-                category === "text"
-                  ? t("Context window, in tokens", "Fenêtre de contexte, en jetons")
-                  : t("Longest clip, in seconds", "Plan le plus long, en secondes")
-              }
-              note={t(
-                `Recommended version of each family · ${checkedOn()}`,
-                `Version recommandée de chaque famille · ${checkedOn()}`,
-              )}
-              rows={specRows.map((row) => ({
-                key: row.family.slug,
-                label: displayName(row.pick),
-                sub: familyName(row.family),
-                value: row.value,
-                display: row.display,
-                href: href(row.family.slug),
-              }))}
-              valueHead={category === "text" ? t("Tokens", "Jetons") : t("Seconds", "Secondes")}
-            />
-          </section>
-        )}
-
-        {releases.length > 0 && (
-          <section className="models-section" aria-labelledby="category-recent">
-            <p className="eyebrow">{t("Release history", "Historique des sorties")}</p>
-            <h2 id="category-recent">{t("The latest versions.", "Les dernières versions.")}</h2>
-            <ol className="timeline">
-              {releases.slice(0, 8).map((release) => (
-                <li key={`${release.family.slug}-${release.version}`}>
-                  <time dateTime={release.date}>{releaseDate(release.date)}</time>
-                  <a href={href(release.family.slug)}>
-                    <strong>{release.version}</strong>
-                    <span>{familyName(release.family)}</span>
-                  </a>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
-
-        <section className="models-section" aria-labelledby="category-needs">
-          <p className="eyebrow">{t("How to choose", "Comment choisir")}</p>
-          <h2 id="category-needs">
-            {t("Start from what you want to do.", "Partez de ce que vous voulez faire.")}
-          </h2>
-          <NeedList category={category} locale={locale} />
-        </section>
-
         <section className="models-section" aria-labelledby="category-table">
-          <p className="eyebrow">{t("Every family", "Toutes les familles")}</p>
-          <h2 id="category-table">
-            {t("The whole kind, one row each.", "Tout le type, une ligne chacun.")}
-          </h2>
+          <div className="section-head">
+            <div>
+              <p className="eyebrow">{t("Prices", "Prix")}</p>
+              <h2 id="category-table">
+                {t("Every family, side by side.", "Toutes les familles, côte à côte.")}
+              </h2>
+            </div>
+            <a
+              className="text-link"
+              href={`${href("prices")}${category === "text" ? "" : `?k=${category}`}`}
+            >
+              {t(
+                `Every price, model by model (${models})`,
+                `Tous les prix, modèle par modèle (${models})`,
+              )}{" "}
+              <span aria-hidden="true">→</span>
+            </a>
+          </div>
           <p className="models-lede">
             {t(
-              "Sort by any column. Tick up to three families to compare them in detail.",
-              "Triez par n’importe quelle colonne. Cochez jusqu’à trois familles pour les comparer en détail.",
+              "One row per family, at its recommended version, in US dollars. Sort any column; tick up to three families to compare them in detail.",
+              "Une ligne par famille, à sa version recommandée, en dollars américains. Triez n’importe quelle colonne ; cochez jusqu’à trois familles pour les comparer en détail.",
             )}
           </p>
           <div className="models-compare-bar" aria-live="polite">
             {chosen.length > 0 ? (
               <a className="button primary" href={`${href("compare")}?m=${chosen.join(",")}`}>
-                {t(`Compare ${chosen.length}`, `Comparer ${chosen.length}`)} ↗
+                {t(`Compare ${chosen.length}`, `Comparer ${chosen.length}`)}{" "}
+                <span aria-hidden="true">→</span>
               </a>
             ) : (
               <span>{t("Nothing ticked yet.", "Rien de coché pour l’instant.")}</span>
             )}
           </div>
-          <div className="models-table-wrap models-compare">
-            <table>
+          <div className="models-table-wrap price-table-wrap">
+            <table className="price-table">
+              <caption className="sr-only">
+                {t(
+                  `${read(categoryTitle(category))}: every family at its recommended version`,
+                  `${read(categoryTitle(category))} : chaque famille à sa version recommandée`,
+                )}
+              </caption>
               <thead>
                 <tr>
                   <th scope="col">
                     <span className="sr-only">{t("Compare", "Comparer")}</span>
                   </th>
-                  {(
-                    [
-                      ["name", t("Family", "Famille")],
-                      ["release", t("Latest version", "Dernière version")],
-                      ...(headline ? [["score", headline.name]] : []),
-                      ["price", t("Price", "Prix")],
-                    ] as [SortKey, string][]
-                  ).map(([key, label]) => (
-                    <th scope="col" key={key} aria-sort={sort === key ? "ascending" : undefined}>
-                      <button type="button" className="sort-button" onClick={() => setSort(key)}>
-                        {label}
-                        <span aria-hidden="true">{sort === key ? " ↓" : ""}</span>
+                  <th scope="col" aria-sort={ariaSort("name")}>
+                    <button type="button" className="sort-button" onClick={() => choose("name")}>
+                      {t("Family", "Famille")}
+                    </button>
+                  </th>
+                  {headline && (
+                    <th scope="col" aria-sort={ariaSort("score")}>
+                      <button type="button" className="sort-button" onClick={() => choose("score")}>
+                        {headline.name}
                       </button>
+                      <small>
+                        {headline.unit === "Elo"
+                          ? t("Elo rating", "Classement Elo")
+                          : headline.higherIsBetter
+                            ? t("higher is better", "plus haut, mieux c’est")
+                            : t("lower is better", "plus bas, mieux c’est")}
+                      </small>
                     </th>
-                  ))}
+                  )}
+                  <th scope="col" aria-sort={ariaSort("price")}>
+                    <button type="button" className="sort-button" onClick={() => choose("price")}>
+                      {t("Price", "Prix")}
+                    </button>
+                    {unitLabel && <small>{unitLabel}</small>}
+                  </th>
+                  {hasSpec && (
+                    <th scope="col" aria-sort={ariaSort("spec")}>
+                      <button type="button" className="sort-button" onClick={() => choose("spec")}>
+                        {category === "text"
+                          ? t("Context", "Contexte")
+                          : t("Longest clip", "Plan le plus long")}
+                      </button>
+                      <small>
+                        {category === "text" ? t("tokens", "jetons") : t("seconds", "secondes")}
+                      </small>
+                    </th>
+                  )}
                   <th scope="col">{t("Privacy", "Confidentialité")}</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((family) => {
-                  const release = latestRelease(family.slug);
-                  const value = score(family);
-                  const price = creditsPerUnit(modelById(family.pick));
+                  const pick = modelById(family.pick);
+                  const place = score(family);
+                  const price = usdPrice(pick);
+                  const reach = spec(pick);
+                  const privacy = familyPrivacyLabel(family);
                   return (
-                    <tr key={family.slug}>
+                    <tr
+                      key={family.slug}
+                      className={highlighted.has(family.pick) ? "is-advised" : undefined}
+                    >
                       <td>
                         <input
                           type="checkbox"
@@ -380,20 +513,47 @@ export function CategoryPage({ category, locale }: { category: Category; locale:
                       </td>
                       <th scope="row">
                         <a href={href(family.slug)}>{familyName(family)}</a>
-                        <small>{family.maker}</small>
+                        <small>
+                          {pick ? displayName(pick) : family.pick} · {family.maker}
+                        </small>
                       </th>
-                      <td>{release ? `${release.version}, ${releaseDate(release.date)}` : "·"}</td>
                       {headline && (
                         <td>
-                          {value === null
-                            ? t("Not measured", "Non mesuré")
-                            : formatScore(headline, value)}
+                          {place ? (
+                            <>
+                              {formatScore(headline, place.value)}
+                              {place.model !== family.pick && <small>{nameOf(place.model)}</small>}
+                            </>
+                          ) : (
+                            <span className="is-empty">{t("Not measured", "Non mesuré")}</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="is-price">
+                        {price ? (
+                          price.unit === unit ? (
+                            formatUsd(price.value)
+                          ) : (
+                            `${formatUsd(price.value)} ${read(priceUnitLabel[price.unit])}`
+                          )
+                        ) : (
+                          <span className="is-empty">{t("In the app", "Dans l’app")}</span>
+                        )}
+                      </td>
+                      {hasSpec && (
+                        <td>
+                          {reach === null
+                            ? "·"
+                            : category === "text"
+                              ? t(`${number(reach / 1000, 0)}K`, `${number(reach / 1000, 0)} k`)
+                              : `${reach} s`}
                         </td>
                       )}
                       <td>
-                        {price === null ? t("In the app", "Dans l’app") : creditsLabel(price)}
+                        <span className={`models-badge models-privacy-${privacy.kind}`}>
+                          {read(privacy.label)}
+                        </span>
                       </td>
-                      <td>{read(familyPrivacyLabel(family).label)}</td>
                     </tr>
                   );
                 })}
@@ -402,26 +562,32 @@ export function CategoryPage({ category, locale }: { category: Category; locale:
           </div>
         </section>
 
-        <section className="models-section" aria-labelledby="category-cards">
-          <h2 id="category-cards" className="sr-only">
-            {t("Family cards", "Cartes des familles")}
-          </h2>
-          <div className="models-grid">
-            {headline
-              ? sorted.map((family) => (
-                  <FamilyCard family={family} locale={locale} key={family.slug} />
-                ))
-              : members.map((family) => (
-                  <FamilyCard family={family} locale={locale} key={family.slug} />
-                ))}
-          </div>
-          <p className="models-footnote">
-            {t(
-              `Prices checked on ${checkedOn()}; scores dated on each chart. Sub Rosa shows the exact price before you start.`,
-              `Prix vérifiés le ${checkedOn()} ; scores datés sur chaque graphique. Sub Rosa affiche le prix exact avant de lancer.`,
-            )}
-          </p>
-        </section>
+        {releases.length > 0 && (
+          <section className="models-section" aria-labelledby="category-recent">
+            <p className="eyebrow">{t("Release history", "Historique des sorties")}</p>
+            <h2 id="category-recent">{t("The latest versions.", "Les dernières versions.")}</h2>
+            <ol className="release-strip">
+              {releases.slice(0, 8).map((release) => (
+                <li key={`${release.family.slug}-${release.version}`}>
+                  <a href={href(release.family.slug)}>
+                    <span className="release-meta">
+                      <time dateTime={release.date}>{releaseDate(release.date)}</time>
+                    </span>
+                    <strong>{release.version}</strong>
+                    <span>{familyName(release.family)}</span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+
+        <p className="models-footnote">
+          {t(
+            `Prices read on ${checkedOn()}, in US dollars; scores dated on each chart. Sub Rosa shows the exact price before you start.`,
+            `Prix relevés le ${checkedOn()}, en dollars américains ; scores datés sur chaque graphique. Sub Rosa affiche le prix exact avant de lancer.`,
+          )}
+        </p>
       </div>
     </div>
   );

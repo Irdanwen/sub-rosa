@@ -1,5 +1,6 @@
 import { intlLocale, number, t, websiteLocale } from "../lib/i18n";
 import type { Copy } from "../pages/docs-content";
+import { read } from "../lib/copy";
 import benchmarkData from "./benchmarks.json";
 import indexData from "./details/index.json";
 import familyData from "./families.json";
@@ -565,3 +566,121 @@ export const creditsLabel = (value: number) =>
     `${number(value, value < 1 ? 2 : 1)} credits`,
     `${number(value, value < 1 ? 2 : 1)} ${value < 2 ? "crédit" : "crédits"}`,
   );
+
+// ---------------------------------------------------------------------------
+// Dollar prices: what the price table and the charts read. One unit per kind
+// of price, so two numbers side by side always mean the same thing.
+
+export type PriceUnit =
+  | "tokens"
+  | "image"
+  | "edit"
+  | "second"
+  | "characters"
+  | "hour"
+  | "track"
+  | "minute"
+  | "sound"
+  | "upscale";
+
+export type UsdPrice = {
+  /** In dollars, per `unit`. For text: per million tokens written. */
+  value: number;
+  unit: PriceUnit;
+  /** Text only: per million tokens read. */
+  input?: number;
+};
+
+/** A model's dollar price in its own unit, or null when the catalog lists none. */
+export function usdPrice(model: SnapshotModel | undefined): UsdPrice | null {
+  if (!model) return null;
+  if (model.usdPerMillion)
+    return { value: model.usdPerMillion[1], input: model.usdPerMillion[0], unit: "tokens" };
+  if (model.usdPerSecond) return { value: model.usdPerSecond, unit: "second" };
+  if (model.credits !== undefined)
+    return { value: model.credits / 100, unit: model.type === "imageEdit" ? "edit" : "image" };
+  if (model.usdPerMillionCharacters !== undefined)
+    return { value: model.usdPerMillionCharacters / 1000, unit: "characters" };
+  if (model.usdPerMinute !== undefined) return { value: model.usdPerMinute * 60, unit: "hour" };
+  if (model.usdPerTrack !== undefined) return { value: model.usdPerTrack, unit: "track" };
+  if (model.usdPerMinuteOfMusic !== undefined)
+    return { value: model.usdPerMinuteOfMusic, unit: "minute" };
+  if (model.usdPerAudioSecond !== undefined)
+    return { value: model.usdPerAudioSecond * 10, unit: "sound" };
+  if (model.usdPerUpscale !== undefined) return { value: model.usdPerUpscale, unit: "upscale" };
+  return null;
+}
+
+export const priceUnitLabel: Record<PriceUnit, Copy> = {
+  tokens: ["per million tokens written", "par million de jetons rédigés"],
+  image: ["per image", "par image"],
+  edit: ["per edit", "par retouche"],
+  second: ["per second of video", "par seconde de vidéo"],
+  characters: ["per 1,000 characters", "pour 1 000 caractères"],
+  hour: ["per hour of audio", "par heure d’audio"],
+  track: ["per track", "par morceau"],
+  minute: ["per minute of music", "par minute de musique"],
+  sound: ["per 10 seconds of sound", "pour 10 secondes de son"],
+  upscale: ["per enlargement", "par agrandissement"],
+};
+
+/** "$0.045" or "0,045 $": three significant digits, never a misleading zero. */
+export function formatUsd(value: number) {
+  return new Intl.NumberFormat(intlLocale(), {
+    style: "currency",
+    currency: "USD",
+    currencyDisplay: "narrowSymbol",
+    maximumSignificantDigits: value >= 1 ? 4 : 3,
+    minimumSignificantDigits: 1,
+  }).format(value);
+}
+
+/** "$0.045 per image": the price and its unit, in one phrase. */
+export function usdLine(model: SnapshotModel | undefined): string | null {
+  const price = usdPrice(model);
+  if (!price) return null;
+  return `${formatUsd(price.value)} ${read(priceUnitLabel[price.unit])}`;
+}
+
+/** The same price as something a person does once: a page, a clip, a page read aloud. */
+export function usdEveryday(model: SnapshotModel | undefined): string | null {
+  const price = usdPrice(model);
+  if (!price) return null;
+  if (price.unit === "tokens")
+    // A page is about 500 words, which is about 700 tokens written.
+    return t(
+      `${formatUsd((price.value * 700) / 1_000_000)} a page written`,
+      `${formatUsd((price.value * 700) / 1_000_000)} la page rédigée`,
+    );
+  if (price.unit === "characters")
+    // A page read aloud is about 3,000 characters.
+    return t(
+      `${formatUsd(price.value * 3)} a page read aloud`,
+      `${formatUsd(price.value * 3)} la page lue`,
+    );
+  if (price.unit === "second")
+    return t(
+      `${formatUsd(price.value * 5)} a 5 s clip`,
+      `${formatUsd(price.value * 5)} le plan de 5 s`,
+    );
+  return null;
+}
+
+/** What a model is for, read from its price when the provider files a voice as audio. */
+export function modelUse(model: SnapshotModel): Copy {
+  if (model.type === "music" && model.usdPerMillionCharacters !== undefined)
+    return modelTypeLabel.tts;
+  return modelTypeLabel[model.type] ?? [model.type, model.type];
+}
+
+/** Every model of one kind of work, with its family, cheapest first within each unit. */
+export function modelsOfCategory(category: Category) {
+  return families
+    .filter((family) => family.category === category)
+    .flatMap((family) =>
+      family.ids
+        .map((id) => modelById(id))
+        .filter((model): model is SnapshotModel => Boolean(model))
+        .map((model) => ({ model, family, price: usdPrice(model) })),
+    );
+}

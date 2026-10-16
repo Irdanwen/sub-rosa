@@ -7,6 +7,7 @@ import { ComparePage } from "./compare";
 import { FamilyMissing, FamilyPage } from "./family";
 import { GuidePage } from "./guide";
 import { CatalogHome } from "./hub";
+import { PricesPage } from "./prices";
 
 /** The page title for a catalog path, in the current language. */
 export function modelCatalogTitle(path: string) {
@@ -15,6 +16,7 @@ export function modelCatalogTitle(path: string) {
   if (slug === "guide")
     return `${t("Understanding models", "Comprendre les modèles")} · ${catalog}`;
   if (slug === "compare") return `${t("Compare models", "Comparer les modèles")} · ${catalog}`;
+  if (slug === "prices") return `${t("Price comparison", "Comparatif des prix")} · ${catalog}`;
   if (isCategory(slug)) return `${read(categoryTitle(slug))} · ${catalog}`;
   const family = familyBySlug(slug);
   return family ? `${familyName(family)} · ${catalog}` : catalog;
@@ -33,6 +35,7 @@ export function ModelCatalog({
   if (!slug) return <CatalogHome locale={locale} />;
   if (slug === "guide") return <GuidePage locale={locale} />;
   if (slug === "compare") return <ComparePage query={query} locale={locale} />;
+  if (slug === "prices") return <PricesPage query={query} locale={locale} />;
   if (isCategory(slug)) return <CategoryPage category={slug} locale={locale} key={slug} />;
   const family = familyBySlug(slug);
   if (!family) return <FamilyMissing locale={locale} />;
