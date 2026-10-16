@@ -36,6 +36,11 @@ pub async fn sweep(app: &AppHandle) {
     // Recordings past the age the person chose, here and in the account
     // (ADR-0112). After the pull, so a choice made on another device applies.
     crate::recording_retention::tick(app).await;
+    // A reading of the balance at launch and resume feeds the low-balance
+    // alert, which has no timer of its own; only when it is on.
+    if crate::carpe_diem::low_balance::enabled(app) {
+        let _ = crate::carpe_diem::settings::carpe_diem_get_credits().await;
+    }
     // Notes killed in transit (recorded audio is on disk, the note row is
     // stuck in `transcribing`/`generating`). Mobile only: desktop is not
     // suspended out from under a running pipeline, and auto-retrying there

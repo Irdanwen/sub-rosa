@@ -84,6 +84,55 @@ export function accountClosedAt(cause: unknown): Date | null {
   return Number.isNaN(at.getTime()) ? null : at;
 }
 
+/** What one of the account's devices does with Carpe Diem over 30 days. */
+export type DeviceKeyUsage = {
+  deviceId: string;
+  /** One of its keys still works. */
+  active: boolean;
+  spentCredits: number;
+  requests: number;
+  lastUsedAt: string | null;
+};
+export const carpeDiemDeviceKeyUsage = (deviceId: string | null) =>
+  invoke<DeviceKeyUsage[]>("carpe_diem_device_key_usage", { deviceId });
+
+/** The opt-in alert when the balance runs low; `threshold` null means off. */
+export type LowBalance = { threshold: number | null; warned: boolean };
+export const LOW_BALANCE_THRESHOLDS = [50, 100, 250, 500] as const;
+export const carpeDiemLowBalance = () => invoke<LowBalance>("carpe_diem_low_balance");
+export const carpeDiemSetLowBalance = (threshold: number | null) =>
+  invoke<LowBalance>("carpe_diem_set_low_balance", { threshold });
+
+/**
+ * Which of the account's devices hold a Carpe Diem key and what each spent,
+ * keyed by device id. Asked when the list shows and when the window comes
+ * back; empty when Carpe Diem cannot be asked (no key, offline).
+ */
+export function useDeviceKeyUsage(deviceId: string | null) {
+  const [usage, setUsage] = useState<Map<string, DeviceKeyUsage>>(new Map());
+  const live = useRef(true);
+  const ask = useCallback(() => {
+    carpeDiemDeviceKeyUsage(deviceId).then(
+      (list) => {
+        if (!live.current) return;
+        // Anything but a list is "not known", the same as no answer.
+        const entries = Array.isArray(list) ? list : [];
+        setUsage(new Map(entries.map((entry) => [entry.deviceId, entry])));
+      },
+      () => undefined,
+    );
+  }, [deviceId]);
+  useEffect(() => {
+    live.current = true;
+    ask();
+    return () => {
+      live.current = false;
+    };
+  }, [ask]);
+  useOnReturn(ask);
+  return usage;
+}
+
 /** Where the stored key came from. Only issued keys say so. */
 export function keyOrigin(settings: CarpeDiemSettingsDto | null | undefined): "issued" | null {
   return (settings as (CarpeDiemSettingsDto & { keyOrigin?: string }) | null | undefined)

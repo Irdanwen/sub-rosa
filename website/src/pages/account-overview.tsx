@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Account, type Device } from "../lib/api";
 import { date, number, t } from "../lib/i18n";
+import { useLiveBalance } from "./browser-device";
 
 /**
  * The account at a glance, before anything is unlocked: what is connected,
@@ -19,6 +20,7 @@ export function AccountStatus({
 }) {
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [live] = useLiveBalance(account.id);
   useEffect(() => {
     const controller = new AbortController();
     api<Device[]>("/api/v1/devices", { signal: controller.signal })
@@ -95,12 +97,27 @@ export function AccountStatus({
       <div className="account-status-row">
         <span className="account-status-label">{t("Credits", "Crédits")}</span>
         <span className="account-status-value">
-          {t("Bought at Carpe Diem.", "Achetés chez Carpe Diem.")}
+          {live.status === "ok"
+            ? t(
+                `${number(live.available, 2)} credits available`,
+                `${number(live.available, 2)} crédits disponibles`,
+              )
+            : t("Bought at Carpe Diem.", "Achetés chez Carpe Diem.")}
           <span className="account-status-detail">
-            {t(
-              "Your balance shows in the app and under Usage.",
-              "Votre solde s’affiche dans l’app et sous Consommation.",
-            )}
+            {live.status === "ok"
+              ? t(
+                  `Read from Carpe Diem with this browser’s key, ${date(live.at)}.`,
+                  `Lu chez Carpe Diem avec la clé de ce navigateur, ${date(live.at)}.`,
+                )
+              : live.status === "failed"
+                ? t(
+                    "Carpe Diem did not answer. Your balance also shows in the app and under Usage.",
+                    "Carpe Diem n’a pas répondu. Votre solde s’affiche aussi dans l’app et sous Consommation.",
+                  )
+                : t(
+                    "Your balance shows in the app and under Usage.",
+                    "Votre solde s’affiche dans l’app et sous Consommation.",
+                  )}
           </span>
         </span>
         <a className="text-link" href="/account/top-up">
