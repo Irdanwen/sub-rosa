@@ -25,14 +25,16 @@ import { isMobilePlatform } from "./mobile";
 let permissionRequest: Promise<boolean> | null = null;
 
 /** What the user just started; decides whether the desktop asks at all. */
-export type NotificationReason = "studio" | "dictation" | "chat";
+/** `balance` is the low-balance alert the person turned on themselves. */
+export type NotificationReason = "studio" | "dictation" | "chat" | "balance";
 
 /** Ask for notification permission once, memoised. Call it when the user starts
  * something that can finish while they are in another app. */
 export function ensureNotificationPermission(
   reason: NotificationReason = "chat",
 ): Promise<boolean> {
-  if (!isMobilePlatform() && reason !== "studio") return Promise.resolve(false);
+  if (!isMobilePlatform() && reason !== "studio" && reason !== "balance")
+    return Promise.resolve(false);
   permissionRequest ??= (async () => {
     let granted = await isPermissionGranted().catch(() => false);
     if (!granted) {
