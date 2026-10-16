@@ -19,6 +19,7 @@ pub mod issue_reports;
 pub mod issued;
 pub mod jobs;
 pub mod local_session;
+pub mod low_balance;
 pub mod media;
 pub mod media_protocol;
 #[cfg(desktop)]

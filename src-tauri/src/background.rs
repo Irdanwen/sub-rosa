@@ -33,6 +33,11 @@ pub async fn sweep(app: &AppHandle) {
     // A sign-out made offline, told to the account service now so the device
     // stops being listed and its Carpe Diem key is retired.
     crate::account::resume_farewell(app).await;
+    // A reading of the balance at launch and resume feeds the low-balance
+    // alert, which has no timer of its own; only when it is on.
+    if crate::carpe_diem::low_balance::enabled(app) {
+        let _ = crate::carpe_diem::settings::carpe_diem_get_credits().await;
+    }
     // Notes killed in transit (recorded audio is on disk, the note row is
     // stuck in `transcribing`/`generating`). Mobile only: desktop is not
     // suspended out from under a running pipeline, and auto-retrying there

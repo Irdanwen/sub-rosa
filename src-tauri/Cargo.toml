@@ -252,7 +252,7 @@ keyring = { version = "3", features = ["windows-native"] }
 # (voice/screen_windows.rs) is one BitBlt of the primary display. Security,
 # Authorization and Threading: the browser extension's pipe gets a DACL for
 # the current user only (browser_extension/pipe_security.rs).
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Security",
