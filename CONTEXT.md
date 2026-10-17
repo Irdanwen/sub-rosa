@@ -1128,7 +1128,7 @@ _Avoid_: seed, retry.
 **Step set aside (workflow)**:
 A step that stays wired but does not run. *Skipped* passes its input of the
 kind it would have made to every step it fed; *off* also removes whatever
-only it fed. Resolved away before a run (`applyModes`), so nothing priced,
+can no longer run without it (a shot with its own prompt still runs). Resolved away before a run (`applyModes`), so nothing priced,
 validated or cached ever sees it. ComfyUI's bypass and mute; its files' modes
 4 and 2 import as these. _Avoid_: disabled (in copy), deleted.
 

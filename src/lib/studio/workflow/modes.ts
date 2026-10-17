@@ -4,17 +4,18 @@
 //   straight on: its first input of the kind it would have made goes to
 //   every step it fed. A step with no such input is switched off instead.
 // - **Off** (`mute`): the step does not run, and neither does anything that
-//   only it fed.
+//   can no longer run without it.
 //
 // Both are resolved into an ordinary graph before a run, so the engine, the
 // cache, the price and the validator only ever see steps that run.
 
 import { outputKindOf, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
+import { validateWorkflow } from "./validator";
 
 export type NodeMode = NonNullable<WorkflowNode["mode"]>;
 
 /** The graph a run executes: skipped steps passed through, switched-off
- * steps and what only they fed removed. Returns the same object when no step
+ * steps and what can no longer run without them removed. Returns the same object when no step
  * is set aside. */
 export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow: W): W {
   if (!workflow.nodes.some((node) => node.mode)) return workflow;
@@ -48,28 +49,26 @@ export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow
   }
   edges = edges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target));
 
-  // A switched-off step takes down what only it fed (a skipped one passed its
-  // input on, so its consumers keep a source unless it had none).
-  const fedBy = new Map<string, Set<string>>();
-  for (const edge of workflow.edges) {
-    const set = fedBy.get(edge.target) ?? new Set<string>();
-    set.add(edge.source);
-    fedBy.set(edge.target, set);
-  }
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const node of workflow.nodes) {
-      if (removed.has(node.id)) continue;
-      const parents = fedBy.get(node.id);
-      if (!parents || parents.size === 0) continue;
-      const alive = edges.some((edge) => edge.target === node.id);
-      if (!alive && [...parents].every((parent) => removed.has(parent))) {
-        removed.add(node.id);
-        edges = edges.filter((edge) => edge.source !== node.id && edge.target !== node.id);
-        changed = true;
-      }
+  // A step that lost an input this way is taken down only if it can no
+  // longer run without it (a required input left empty, a prompt that was
+  // all it had): a shot with a prompt of its own still runs without the
+  // frame that was switched off.
+  const lostInput = new Set(
+    workflow.edges
+      .filter((edge) => removed.has(edge.source) && !removed.has(edge.target))
+      .map((edge) => edge.target),
+  );
+  for (;;) {
+    const nodes = workflow.nodes.filter((node) => !removed.has(node.id));
+    const broken = validateWorkflow({ nodes, edges })
+      .errors.map((issue) => issue.nodeId)
+      .filter((id): id is string => id !== undefined && lostInput.has(id) && !removed.has(id));
+    if (broken.length === 0) break;
+    for (const id of broken) {
+      removed.add(id);
+      for (const edge of edges) if (edge.source === id) lostInput.add(edge.target);
     }
+    edges = edges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target));
   }
   return {
     ...workflow,
