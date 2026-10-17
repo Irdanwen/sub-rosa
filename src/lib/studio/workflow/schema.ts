@@ -50,7 +50,8 @@ export interface WorkflowEdge {
   source: string;
   target: string;
   /** The input port this edge lands on. Absent on edges saved before ports
-   * existed (and on mobile's linear chains); resolved by kind affinity. */
+   * existed, and on graphs built outside the editor; resolved by kind
+   * affinity. */
   targetPort?: string;
 }
 
@@ -193,6 +194,9 @@ export interface NodeSchema {
   inputs: InputPort[];
   output: IOKind;
   params: ParamSchema[];
+  /** The node calls a paid model every time it runs. Read through
+   * {@link isPaidNode}, which also knows when a gate's judge spends. */
+  paid?: true;
 }
 
 /** The conventional single text port most generators read their prompt from. */
@@ -327,6 +331,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
   },
   chat: {
     type: "chat",
+    paid: true,
     label: "Chat",
     description: "Run a chat completion. Upstream text feeds the prompt.",
     inputs: [PROMPT_PORT],
@@ -356,6 +361,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
   },
   image: {
     type: "image",
+    paid: true,
     label: "Image",
     description: "Generate an image from a text prompt.",
     inputs: [PROMPT_PORT],
@@ -379,6 +385,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
   },
   imageEdit: {
     type: "imageEdit",
+    paid: true,
     label: "Image edit",
     description:
       "Transform or compose up to three images with a prompt: restyle a frame, or place a reference subject into a scene.",
@@ -403,6 +410,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
   },
   tts: {
     type: "tts",
+    paid: true,
     label: "Text to speech",
     description: "Narrate upstream text as speech audio.",
     inputs: [{ id: "text", label: "Text", kind: "text", multi: true }],
@@ -438,6 +446,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
   },
   music: {
     type: "music",
+    paid: true,
     label: "Music",
     description: "Generate a music track. Upstream text is the style prompt.",
     inputs: [PROMPT_PORT],
@@ -460,6 +469,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
   },
   video: {
     type: "video",
+    paid: true,
     label: "Video",
     description:
       "Generate a short video. Feed an image to start from, an image to end on, reference images that keep a subject consistent, and (on the seedance reference models that take video input) clips to edit, extend or stitch.",
@@ -654,6 +664,25 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
 
 export const NODE_TYPES: WorkflowNodeType[] = Object.keys(NODE_SCHEMAS) as WorkflowNodeType[];
 
+/**
+ * Whether running this node spends credits: every generator, and a gate whose
+ * judge reads the candidates before anyone else does. The one answer the
+ * budget check, the resume's paid-output rule and the cost estimate share, so
+ * a node added to the schema with `paid` is guarded everywhere at once.
+ */
+export function isPaidNode(node: Pick<WorkflowNode, "type" | "params">): boolean {
+  if (node.type === "gate") {
+    const mode = node.params.mode;
+    const judge = node.params.judgeModel;
+    return (
+      (mode === "judged" || mode === "judged-then-human") &&
+      typeof judge === "string" &&
+      judge !== ""
+    );
+  }
+  return maybeNodeSchema(node.type)?.paid === true;
+}
+
 export function nodeSchema(type: WorkflowNodeType): NodeSchema {
   return NODE_SCHEMAS[type];
 }
@@ -744,7 +773,7 @@ export function isIdealMatch(sourceKind: IOKind, portKind: PortKind): boolean {
  *
  * An explicit `targetPort` wins (unknown *and closed* ids resolve to undefined
  * so the validator can flag them). A portless edge — anything saved before
- * ports existed, and every edge mobile's linear editor builds — resolves by
+ * ports existed, and graphs built outside the editor — resolves by
  * kind affinity: the first port that consumes exactly the source's kind, else
  * the first port that accepts it at all. That affinity rule is what keeps an
  * old image→video edge behaving as the start frame rather than becoming a

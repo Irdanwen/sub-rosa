@@ -25,7 +25,11 @@ export async function gateDecision(
   edges: WorkflowEdge[],
   results: Map<string, NodeRunResult>,
   approvedGates?: Map<string, string | undefined>,
-  options?: { signal?: AbortSignal },
+  options?: {
+    signal?: AbortSignal;
+    /** The budget check, run just before the judge spends. */
+    beforeJudge?: () => Promise<void>;
+  },
 ): Promise<NodeOutput> {
   const inbound = edges.filter((edge) => edge.target === node.id);
   const candidates = inbound
@@ -36,7 +40,7 @@ export async function gateDecision(
     );
 
   if (!approvedGates?.has(node.id)) {
-    const verdict = await gateVerdict(node, candidates, options?.signal);
+    const verdict = await gateVerdict(node, candidates, options);
     const mode = stringParam(node.params, "mode") ?? "human";
     if (verdict && mode === "judged" && verdict.passes && candidates[0]) {
       return candidates[0].output;
@@ -58,7 +62,7 @@ export async function gateDecision(
 async function gateVerdict(
   node: WorkflowNode,
   candidates: ReadonlyArray<{ source: string; output: NodeOutput }>,
-  signal?: AbortSignal,
+  options?: { signal?: AbortSignal; beforeJudge?: () => Promise<void> },
 ): Promise<JudgeVerdict | undefined> {
   const mode = stringParam(node.params, "mode") ?? "human";
   if (mode === "human") return undefined;
@@ -74,6 +78,9 @@ async function gateVerdict(
     }))
     .filter((subject) => Boolean(subject.imageDataUri));
   if (subjects.length === 0) return undefined;
+  // Unlike a judge that cannot answer, a refused budget is not something to
+  // degrade past: it stops the run, the way it stops any paid node.
+  await options?.beforeJudge?.();
   return judge(
     {
       subjects,
@@ -81,6 +88,6 @@ async function gateVerdict(
       lens: "continuity and composition",
     },
     model,
-    signal,
+    options?.signal,
   );
 }

@@ -1,5 +1,4 @@
 import { t } from "../i18n";
-import { carpeDiemGetCredits } from "../tauri";
 import { defaultEditModel, imageEditModels, musicCapabilities, videoDirection } from "./catalog";
 import type { MediaCatalog } from "./types";
 import type { ProjectDocument, ProjectShot } from "./projects";
@@ -27,9 +26,9 @@ import {
 import {
   estimateWorkflowCost,
   fetchVideoQuotes,
-  nodeCostMap,
   type WorkflowCostEstimate,
 } from "./workflow/cost";
+import { spendGuard } from "./workflow/spend";
 import { validateWorkflow } from "./workflow/validator";
 import type { FilmDirection } from "./direction/types";
 import { type ComposedPrompt, composeShotPrompt, resolveDialogue } from "./prompt/compose";
@@ -433,34 +432,7 @@ export async function quoteProject(
   return estimateWorkflowCost(workflow, catalog, await fetchVideoQuotes(workflow, catalog));
 }
 
-/** Reserve against one opening balance snapshot before parallel jobs start.
- * Fresh balance checks catch spending outside this run, without subtracting
- * already charged reservations from the current balance a second time. */
+/** A production's ceiling is a promise: a node it cannot price is refused. */
 export function productionBudget(estimate: WorkflowCostEstimate, ceiling: number) {
-  const costs = nodeCostMap(estimate);
-  let reserved = 0;
-  let openingBalance: ReturnType<typeof carpeDiemGetCredits> | undefined;
-  return async (node: WorkflowNode) => {
-    const item = estimate.nodes.find((entry) => entry.nodeId === node.id);
-    if (item?.kind === "free") return;
-    const cost = costs[node.id];
-    if (cost === undefined || !Number.isFinite(cost) || cost < 0)
-      throw new Error(t("Price unavailable. Choose another model or try quoting again."));
-    if (!Number.isFinite(ceiling) || ceiling < 0 || reserved + cost > ceiling)
-      throw new Error(t("This generation exceeds the spend ceiling."));
-    reserved += cost;
-    const allocation = reserved;
-    openingBalance ??= carpeDiemGetCredits();
-    try {
-      const initial = await openingBalance;
-      if (!Number.isFinite(initial.availableCredits) || initial.availableCredits < allocation)
-        throw new Error(t("You do not have enough credits for this generation."));
-      const current = await carpeDiemGetCredits();
-      if (!Number.isFinite(current.availableCredits) || current.availableCredits < cost)
-        throw new Error(t("You do not have enough credits for this generation."));
-    } catch (error) {
-      reserved -= cost;
-      throw error;
-    }
-  };
+  return spendGuard(estimate, { ceiling, unpriced: "refuse" });
 }

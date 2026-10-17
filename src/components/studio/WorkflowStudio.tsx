@@ -31,6 +31,7 @@ import {
   listResumableRuns,
   resumeWorkflowRun,
   runAndSaveWorkflow,
+  runDefinition,
   type WorkflowRunSummary,
 } from "../../lib/studio/workflow-run";
 import {
@@ -66,6 +67,11 @@ import {
   type WorkflowNodeType,
 } from "../../lib/studio/workflow";
 import { invoke } from "@tauri-apps/api/core";
+import { nodeEtaKey } from "../../lib/studio/workflow/eta";
+import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
+import { spendGuard } from "../../lib/studio/workflow/spend";
+import { rememberRenderMs } from "../../lib/studio/render-eta";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { workflowFileText } from "../../lib/studio/workflow/comfy/file";
 import {
   coverArtifactOf,
@@ -91,8 +97,8 @@ import {
   toFlowEdges,
   toWorkflowEdge,
   fromFlow,
-  strandedPorts,
-  strandedWhat,
+  modelChangeNotice,
+  openNotice,
 } from "./workflow/flow";
 import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
 import { NODE_TYPES } from "./workflow/StudioNode";
@@ -177,8 +183,26 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   );
   /** The last run's results as they arrive, read once the run is over. */
   const runResultsRef = useRef<Map<string, NodeRunResult>>(new Map());
+  /** When each render of a run started here began. Only a run started on
+   * this canvas is timed: a resumed node re-attaches to a job that began
+   * earlier, and filing its shorter wait would teach every estimate a lie. */
+  const renderStartsRef = useRef<Map<string, number> | undefined>(undefined);
   const mirrorUpdate = useCallback((result: NodeRunResult) => {
     runResultsRef.current.set(result.nodeId, result);
+    const starts = renderStartsRef.current;
+    if (starts) {
+      if (result.status === "running") {
+        if (!starts.has(result.nodeId)) starts.set(result.nodeId, Date.now());
+      } else {
+        const startedAt = starts.get(result.nodeId);
+        starts.delete(result.nodeId);
+        const node = flowNodesRef.current.find((entry) => entry.id === result.nodeId)?.data.wfNode;
+        const etaKey = node ? nodeEtaKey(node) : undefined;
+        if (result.status === "done" && startedAt !== undefined && etaKey) {
+          rememberRenderMs(etaKey, Date.now() - startedAt);
+        }
+      }
+    }
     setResults((currentResults) => {
       const next = new Map(currentResults);
       next.set(result.nodeId, result);
@@ -225,10 +249,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     const dropped = new Set(stranded.map((entry) => entry.edge.id));
     setFlowEdges((edges) => edges.filter((edge) => !dropped.has(edge.id)));
     const modelName =
-      catalogRef.current.models.find((model) => model.id === params.model)?.name ?? "This model";
-    setPortNotice(
-      `${modelName} takes no ${strandedPorts(stranded)}, so ${strandedWhat(stranded, nodes)} removed.`,
-    );
+      catalogRef.current.models.find((model) => model.id === params.model)?.name ?? t("This model");
+    setPortNotice(modelChangeNotice(modelName, stranded, nodes));
   }, []);
 
   /** Naming a node is naming it everywhere: the connection lists, the gate
@@ -281,16 +303,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           : [],
       );
       setFlowEdges(opened ? toFlowEdges(opened) : []);
-      if (stranded.length > 0) {
-        const ports = strandedPorts(stranded);
-        setPortNotice(
-          `${stranded.length === 1 ? "A connection" : `${stranded.length} connections`} landed on ${
-            stranded.length === 1 ? "an input" : "inputs"
-          } the chosen models do not have (${ports}), so ${
-            stranded.length === 1 ? "it was" : "they were"
-          } removed.`,
-        );
-      }
+      if (stranded.length > 0) setPortNotice(openNotice(stranded));
     },
     [catalog, artifacts, onParamsChange, onRename, onRemove, onApproveGate],
   );
@@ -580,13 +593,6 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     [hydrate],
   );
 
-  /**
-   * Adopt a compiled production as a new workflow.
-   *
-   * Same shape as applying a template, on purpose: a compiled film is not a
-   * special kind of run, it is a graph somebody did not have to draw. From
-   * here on it is edited, priced, gated and resumed exactly like one that was.
-   */
   const serialized = current ? fromFlow(current, flowNodes, flowEdges) : undefined;
   const validation = useMemo(
     () => (serialized ? validateWorkflow(serialized) : undefined),
@@ -670,9 +676,15 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     };
   }, []);
 
+  /** The figures the run on screen was started or resumed with, so a gate
+   * approved later is held to the same budget check. */
+  const runEstimateRef = useRef<WorkflowCostEstimate | undefined>(undefined);
+
   const run = useCallback(
-    async (nodeCosts?: Record<string, number>) => {
+    async (priced: WorkflowCostEstimate) => {
       if (!serialized || running || !validation?.ok) return;
+      runEstimateRef.current = priced;
+      renderStartsRef.current = new Map();
       const controller = new AbortController();
       abortRef.current?.abort();
       abortRef.current = controller;
@@ -686,7 +698,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         // the node that made it, with provenance and chain links.
         await runAndSaveWorkflow(serialized, {
           signal: controller.signal,
-          nodeCosts,
+          nodeCosts: nodeCostMap(priced),
+          beforeNode: spendGuard(priced, { unpriced: "allow" }),
           onRunRecorded: (runId) => {
             runIdRef.current = runId;
           },
@@ -706,7 +719,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         } else if (error instanceof WorkflowRunError) {
           setRunError(error.message);
         } else {
-          setRunError(error instanceof Error ? error.message : "The run failed.");
+          setRunError(error instanceof Error ? error.message : t("The run failed."));
         }
       } finally {
         setRunning(false);
@@ -729,10 +742,18 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       setResults(new Map());
       runIdRef.current = entry.id;
       runResultsRef.current = new Map();
+      renderStartsRef.current = undefined;
       const mirrorsCanvas = current?.id === entry.workflowId;
+      // Held to the same check as a fresh run: a resume that would spend past
+      // what the account holds stops at the step, not after ten minutes of
+      // payment refusals.
+      const definition = runDefinition(entry);
+      const priced = definition ? estimateWorkflowCost(definition, catalog) : undefined;
+      runEstimateRef.current = priced;
       try {
         await resumeWorkflowRun(entry.id, {
           signal: controller.signal,
+          beforeNode: priced ? spendGuard(priced, { unpriced: "allow" }) : undefined,
           onUpdate: mirrorsCanvas ? mirrorUpdate : undefined,
         });
         // A resumed run's result is the card's picture too.
@@ -748,14 +769,14 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         if (error instanceof DOMException && error.name === "AbortError") {
           // Cancelled on purpose; the run stays resumable.
         } else {
-          setRunError(error instanceof Error ? error.message : "The resume failed.");
+          setRunError(error instanceof Error ? error.message : t("The resume failed."));
           setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
         }
       } finally {
         setRunning(false);
       }
     },
-    [running, current, mirrorUpdate],
+    [running, current, mirrorUpdate, catalog],
   );
 
   /** Decide one gate and continue the held production. Gates left undecided
@@ -764,14 +785,17 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     async (gateId: string, choice: string | undefined) => {
       const runId = runIdRef.current;
       if (!runId || running) return;
+      renderStartsRef.current = undefined;
       const controller = new AbortController();
       abortRef.current?.abort();
       abortRef.current = controller;
       setRunning(true);
       setRunError(undefined);
       try {
+        const priced = runEstimateRef.current;
         await resumeWorkflowRun(runId, {
           signal: controller.signal,
+          beforeNode: priced ? spendGuard(priced, { unpriced: "allow" }) : undefined,
           approvedGates: new Map([[gateId, choice]]),
           onUpdate: mirrorUpdate,
         });
@@ -780,7 +804,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         if (error instanceof DOMException && error.name === "AbortError") {
           // Cancelled on purpose; the gate holds.
         } else {
-          setRunError(error instanceof Error ? error.message : "The approval failed.");
+          setRunError(error instanceof Error ? error.message : t("The approval failed."));
         }
       } finally {
         setRunning(false);
@@ -806,7 +830,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     if (!serialized || running || quoting || !validation?.ok) return;
     const staticEstimate = estimateWorkflowCost(serialized, catalog);
     if (!needsRunConfirmation(staticEstimate)) {
-      void run(nodeCostMap(staticEstimate));
+      void run(staticEstimate);
       return;
     }
     setQuoting(true);
@@ -820,6 +844,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const removeCurrent = useCallback(() => {
     if (!current) return;
     deleteWorkflow(current.id);
@@ -914,6 +939,12 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
                     <strong>{entry.name || t("Untitled workflow")}</strong>.{" "}
                     {entry.error || t("A step failed.")}{" "}
                     {t("Finished steps are kept; resuming retries the one that failed.")}
+                  </>
+                ) : entry.status === "cancelled" ? (
+                  <>
+                    {t("A production you stopped:")}{" "}
+                    <strong>{entry.name || t("Untitled workflow")}</strong>
+                    {t(". Finished steps are kept; resuming only runs what is left.")}
                   </>
                 ) : entry.status === "awaitingGate" ? (
                   <>
@@ -1011,12 +1042,16 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           onChange={(type) => addNode(type as WorkflowNodeType)}
           options={Object.values(NODE_SCHEMAS).map((schema) => ({
             value: schema.type,
-            label: schema.label,
+            label: nodeTypeLabel(schema.type),
           }))}
         />
         <span className="studio-spacer" />
         {current ? (
-          <button type="button" className="btn btn-secondary" onClick={removeCurrent}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setConfirmingDelete(true)}
+          >
             {t("Delete")}
           </button>
         ) : null}
@@ -1041,13 +1076,25 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           </button>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        title={t("Delete this workflow?")}
+        description={t("Its results stay in the gallery.")}
+        confirmLabel={t("Delete")}
+        destructive
+        onConfirm={() => {
+          setConfirmingDelete(false);
+          removeCurrent();
+        }}
+      />
       {pendingRun ? (
         <RunCostDialog
           estimate={pendingRun}
           onConfirm={() => {
-            const costs = nodeCostMap(pendingRun);
+            const priced = pendingRun;
             setPendingRun(undefined);
-            void run(costs);
+            void run(priced);
           }}
           onClose={() => setPendingRun(undefined)}
         />

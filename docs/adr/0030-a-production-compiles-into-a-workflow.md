@@ -64,3 +64,13 @@ production that was never affordable.
 - The engine's limits are the production's limits. Stitching between renders
   needs a foreground session; that is stated in
   [ADR-0029](0029-film-production-is-local.md) and not worked around here.
+
+## Addendum 2026-10-17: no guided Flows on the phone
+
+The context above says a compiled production "renders as guided Flows on the
+phone for free". That stopped being true on 2026-09-22, when the phone's
+linear workflow editor was removed because it was unusable at that size
+(commit 48beb7c6e). The decision itself is unchanged: a production is still a
+workflow run by the one engine, and a production started on a phone before
+the removal resumes on the desktop. Running workflows from the phone comes
+back as a form, never as a canvas (ADR-0119, planned).

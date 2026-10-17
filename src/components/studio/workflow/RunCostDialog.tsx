@@ -7,10 +7,10 @@ import { Dialog } from "../../ui/Dialog";
 
 export function costSummary(estimate: WorkflowCostEstimate): string {
   if (estimate.credits > 0 && estimate.metered > 0) {
-    return `~${formatCredits(estimate.credits)} + usage`;
+    return t("~{credits} + usage", { credits: formatCredits(estimate.credits) });
   }
   if (estimate.credits > 0) return `~${formatCredits(estimate.credits)}`;
-  return "Usage priced";
+  return t("Usage priced");
 }
 
 /** The pre-spend handshake: every paying node's figure, the total, and the

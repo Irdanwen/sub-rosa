@@ -6,6 +6,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { NodeOutputView } from "../components/studio/workflow/NodeOutputView";
 import { RunCostDialog } from "../components/studio/workflow/RunCostDialog";
 import { fromFlow, toFlowEdges, toFlowNodes } from "../components/studio/workflow/flow";
 import type { WorkflowCostEstimate } from "../lib/studio/workflow";
@@ -121,5 +122,38 @@ describe("the pre-spend dialog", () => {
     await userEvent.click(screen.getByRole("button", { name: "Run workflow" }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("a node while it renders", () => {
+  it("waits on the Studio's veil, in the node's own shape, with the clock running", () => {
+    const { container } = render(
+      <NodeOutputView
+        node={{
+          id: "v",
+          type: "video",
+          label: "",
+          position: { x: 0, y: 0 },
+          params: { model: "kling", prompt: "A fox", aspectRatio: "16:9" },
+        }}
+        result={{ nodeId: "v", status: "running" }}
+      />,
+    );
+    const frame = container.querySelector(".stage-frame");
+    expect(frame).not.toBeNull();
+    // The shape the node will deliver (it read the wrong param name before
+    // and always waited in a square).
+    expect(frame?.getAttribute("style")).toContain("16 / 9");
+    expect(screen.getByText("Rendering")).toBeInTheDocument();
+  });
+
+  it("shows nothing for a step that answers in seconds", () => {
+    const { container } = render(
+      <NodeOutputView
+        node={{ id: "c", type: "chat", label: "", position: { x: 0, y: 0 }, params: {} }}
+        result={{ nodeId: "c", status: "running" }}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

@@ -3,6 +3,7 @@
 
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import type { useArtifactIndex } from "../../../lib/artifact-media";
+import { t } from "../../../lib/i18n";
 import type { MediaCatalog } from "../../../lib/studio/types";
 import {
   nodeLabel,
@@ -151,15 +152,44 @@ export function stringOr(value: unknown, fallback: string): string {
 }
 
 /** The closed inputs behind a set of dropped connections, named once each. */
-export function strandedPorts(stranded: StrandedEdge[]): string {
-  const labels = [...new Set(stranded.map((entry) => entry.port.label.toLowerCase()))];
-  return labels.length > 1 ? `${labels.slice(0, -1).join(", ")} or ${labels.at(-1)}` : labels[0];
+function strandedPorts(stranded: StrandedEdge[]): string {
+  return [...new Set(stranded.map((entry) => entry.port.label.toLowerCase()))].join(", ");
 }
 
-/** What was let go, named when there is one of it and counted when there are
- * several - a list of five node names in a one-line notice reads as noise. */
-export function strandedWhat(stranded: StrandedEdge[], nodes: StudioFlowNode[]): string {
-  if (stranded.length > 1) return `${stranded.length} connections were`;
+/** What a model change let go, said once: named when it is one connection,
+ * counted when it is several (five names in a one-line notice read as noise). */
+export function modelChangeNotice(
+  modelName: string,
+  stranded: StrandedEdge[],
+  nodes: StudioFlowNode[],
+): string {
+  if (stranded.length > 1) {
+    return t("{model} does not take {ports}, so {count} connections were removed.", {
+      model: modelName,
+      ports: strandedPorts(stranded),
+      count: stranded.length,
+    });
+  }
   const source = nodes.find((node) => node.id === stranded[0].sourceId)?.data.wfNode;
-  return `the connection from "${source ? nodeLabel(source) : "an upstream node"}" was`;
+  return t("{model} does not take {ports}, so the connection from {source} was removed.", {
+    model: modelName,
+    ports: strandedPorts(stranded),
+    source: source ? nodeLabel(source) : t("an upstream node"),
+  });
+}
+
+/** What opening a workflow let go: connections saved on inputs the chosen
+ * models no longer draw. */
+export function openNotice(stranded: StrandedEdge[]): string {
+  return stranded.length === 1
+    ? t(
+        "A connection landed on an input the chosen models do not have ({ports}), so it was removed.",
+        {
+          ports: strandedPorts(stranded),
+        },
+      )
+    : t(
+        "{count} connections landed on inputs the chosen models do not have ({ports}), so they were removed.",
+        { count: stranded.length, ports: strandedPorts(stranded) },
+      );
 }

@@ -6,6 +6,7 @@ export {
   isIdealMatch,
   isInputCompatible,
   isPortOpen,
+  isPaidNode,
   maybeNodeSchema,
   NODE_SCHEMAS,
   NODE_TYPES,
