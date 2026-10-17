@@ -4275,7 +4275,7 @@
   "Skip for now": "Skip for now",
   "Skip, decide for me": "Skip, decide for me",
   "Skipped": "Skipped",
-  "Skipped, passes its input on": "Skipped, passes its input on",
+  "Skipped passes its input on; off also stops what cannot run without it.": "Skipped passes its input on; off also stops what cannot run without it.",
   "Sleep": "Sleep",
   "Slow": "Slow",
   "Slow delivery": "Slow delivery",

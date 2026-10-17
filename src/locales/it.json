@@ -4275,7 +4275,7 @@
   "Skip for now": "Salta per ora",
   "Skip, decide for me": "Salta, decidi tu",
   "Skipped": "Saltato",
-  "Skipped, passes its input on": "Saltato, passa oltre il suo ingresso",
+  "Skipped passes its input on; off also stops what cannot run without it.": "Saltato passa oltre il suo ingresso; spento ferma anche ciò che non può funzionare senza.",
   "Sleep": "Sonno",
   "Slow": "Lento",
   "Slow delivery": "Ritmo lento",

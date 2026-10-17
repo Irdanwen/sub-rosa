@@ -4275,7 +4275,7 @@
   "Skip for now": "Pular por enquanto",
   "Skip, decide for me": "Pular, decida por mim",
   "Skipped": "Ignorado",
-  "Skipped, passes its input on": "Pulada, repassa a entrada",
+  "Skipped passes its input on; off also stops what cannot run without it.": "Pulada repassa a entrada; desligada também para o que não roda sem ela.",
   "Sleep": "Sono",
   "Slow": "Lento",
   "Slow delivery": "Fala lenta",

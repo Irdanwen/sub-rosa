@@ -4275,7 +4275,7 @@
   "Skip for now": "Omitir por ahora",
   "Skip, decide for me": "Omitir, decide tú",
   "Skipped": "Omitido",
-  "Skipped, passes its input on": "Omitido, pasa su entrada",
+  "Skipped passes its input on; off also stops what cannot run without it.": "Omitido pasa su entrada; apagado también detiene lo que no puede funcionar sin él.",
   "Sleep": "Sueño",
   "Slow": "Lento",
   "Slow delivery": "Ritmo lento",

@@ -4275,7 +4275,7 @@
   "Skip for now": "Vorerst überspringen",
   "Skip, decide for me": "Überspringen, entscheide du",
   "Skipped": "Übersprungen",
-  "Skipped, passes its input on": "Übersprungen, gibt die Eingabe weiter",
+  "Skipped passes its input on; off also stops what cannot run without it.": "Übersprungen gibt die Eingabe weiter; aus stoppt auch, was ohne den Schritt nicht laufen kann.",
   "Sleep": "Schlaf",
   "Slow": "Langsam",
   "Slow delivery": "Langsames Sprechtempo",

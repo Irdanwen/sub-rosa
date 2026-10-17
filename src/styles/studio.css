@@ -954,11 +954,30 @@
   opacity: 0.6;
 }
 
-.studio-node-mode {
+.studio-node-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: var(--sp-2);
+  margin-top: calc(var(--sp-1) * -1);
+}
+
+/* How a step runs, said quietly at the end of its second line: the choice
+   is there on every step, and most steps never change it. */
+.studio-node-mode {
+  margin-inline-start: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.studio-node[data-mode] .studio-node-mode {
+  color: var(--foreground);
+  font-weight: 500;
 }
 
 /* A step the validator refuses: ringed, and its reasons written on it. */
