@@ -4,7 +4,9 @@
 // block is copied into a workflow by value: changing the library copy never
 // changes a workflow that already uses it, mid-run or not.
 
+import { builtInBlocks } from "./block-templates";
 import { blocksUsed } from "./blocks";
+import { listLibraryBlocks } from "./store";
 import type { BlockInput, BlockOutput, BlockSetting, Workflow, WorkflowBlock } from "./schema";
 
 interface Face {
@@ -70,4 +72,15 @@ export function blocksForLibraryBlock(
   const known = new Set(blocks.map((entry) => entry.id));
   const nested = (row.blocks ?? []).filter((entry) => !known.has(entry.id));
   return { blocks: [...blocks, ...nested, block], blockId: block.id };
+}
+
+/** The blocks the step search offers: the person's own, newest first, then
+ * the ones Sub Rosa ships with. */
+export function offeredBlocks(): Workflow[] {
+  return [...listLibraryBlocks(), ...builtInBlocks()];
+}
+
+/** A block offered by the step search, by id. */
+export function findOfferedBlock(id: string): Workflow | undefined {
+  return offeredBlocks().find((entry) => entry.id === id);
 }

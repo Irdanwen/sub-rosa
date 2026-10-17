@@ -134,7 +134,11 @@ import { SelectionToolbar } from "./workflow/SelectionToolbar";
 import { useCanvasEditing } from "./workflow/useCanvasEditing";
 import { stepBoxes, useFrames } from "./workflow/useFrames";
 import { useNodeDataSync } from "./workflow/useNodeDataSync";
-import { blockToLibrary, blocksForLibraryBlock } from "../../lib/studio/workflow/library-blocks";
+import {
+  blockToLibrary,
+  blocksForLibraryBlock,
+  findOfferedBlock,
+} from "../../lib/studio/workflow/library-blocks";
 import { listLibraryBlocks } from "../../lib/studio/workflow/store";
 import { BlockBreadcrumb } from "./workflow/BlockBreadcrumb";
 import { BlockPanel } from "./workflow/BlockPanel";
@@ -1296,7 +1300,7 @@ function WorkflowEditor({
       if (!opened) return;
       if (hit.libraryId) {
         // A library block comes in by value, beside the workflow's own blocks.
-        const row = listLibraryBlocks().find((entry) => entry.id === hit.libraryId);
+        const row = findOfferedBlock(hit.libraryId);
         const base = currentRef.current;
         if (!row || !base) return;
         const { blocks, blockId } = blocksForLibraryBlock(row, base.blocks ?? []);
