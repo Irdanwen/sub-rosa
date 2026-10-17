@@ -27,7 +27,7 @@ function row(overrides: Record<string, unknown> = {}) {
     definition: JSON.stringify({
       nodes: [{ id: "t", type: "textInput", label: "", position: { x: 0, y: 0 }, params: {} }],
       edges: [],
-      blocks: [{ id: "b", label: "Act one" }],
+      app: { id: "b", label: "Act one" },
     }),
     formatVersion: 2,
     origin: "mine",
@@ -58,11 +58,11 @@ describe("the stored graph", () => {
     resetWorkflowLibraryForTests();
     await loadWorkflowLibrary();
     const [loaded] = listWorkflows();
-    expect(loaded.extra).toEqual({ blocks: [{ id: "b", label: "Act one" }] });
+    expect(loaded.extra).toEqual({ app: { id: "b", label: "Act one" } });
     saveWorkflow({ ...loaded, name: "Renamed" });
     await vi.waitFor(() => expect(table[0].name).toBe("Renamed"));
     const definition = JSON.parse(String(table[0].definition));
-    expect(definition.blocks).toEqual([{ id: "b", label: "Act one" }]);
+    expect(definition.app).toEqual({ id: "b", label: "Act one" });
     expect(definition.nodes).toHaveLength(1);
     expect(table[0].formatVersion).toBe(WORKFLOW_FILE_VERSION);
   });
@@ -175,7 +175,7 @@ describe("the exported file", () => {
     edges: [],
     createdAt: 1,
     updatedAt: 1,
-    extra: { blocks: [{ id: "b" }] },
+    extra: { app: { id: "b" } },
   };
 
   it("writes version 2 with what it carries, and reads it back", () => {
@@ -183,7 +183,7 @@ describe("the exported file", () => {
     expect(JSON.parse(text).version).toBe(2);
     const read = readWorkflowFile(text, catalog);
     expect(read.kind).toBe("subrosa");
-    if (read.kind === "subrosa") expect(read.workflow.extra).toEqual({ blocks: [{ id: "b" }] });
+    if (read.kind === "subrosa") expect(read.workflow.extra).toEqual({ app: { id: "b" } });
   });
 
   it("still reads a version 1 file", () => {

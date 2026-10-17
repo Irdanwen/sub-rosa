@@ -14,10 +14,23 @@ import {
   type NodeRunResult,
   type StrandedEdge,
   type ValidationIssue,
+  type InputPort,
+  isInputCompatible,
+  maybeNodeSchema,
+  openInputPorts,
+  portCapacity,
   type Workflow,
+  type WorkflowBlock,
+  type WorkflowEdge,
   type WorkflowFrame,
   type WorkflowNode,
 } from "../../../lib/studio/workflow";
+import {
+  type BlockGraph,
+  blockOf,
+  blockPorts,
+  edgeSourceKind,
+} from "../../../lib/studio/workflow/blocks";
 
 /** One connection into a multi port, as the ordering list shows it. */
 export interface PortSourceEntry {
@@ -78,6 +91,10 @@ export interface StudioNodeData extends Record<string, unknown> {
   ) => void;
   /** Set the step aside, or back to running (see `modes.ts`). */
   onModeChange?: (nodeId: string, mode: "bypass" | "mute" | undefined) => void;
+  /** Block steps only: the workflow's blocks, to draw this one's ports. */
+  blocks?: WorkflowBlock[];
+  /** Block steps only: put its steps back in its place. */
+  onUngroup?: (nodeId: string) => void;
 }
 
 export type StudioFlowNode = FlowNode<StudioNodeData, "studio">;
@@ -145,17 +162,66 @@ export function toFlowEdges(workflow: Workflow): FlowEdge[] {
       source: edge.source,
       target: edge.target,
       targetHandle: port,
+      // A block's outputs are handles of their own.
+      ...(edge.sourcePort ? { sourceHandle: edge.sourcePort } : {}),
     };
   });
 }
 
-export function toWorkflowEdge(edge: FlowEdge) {
+export function toWorkflowEdge(edge: FlowEdge): WorkflowEdge {
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
     targetPort: edge.targetHandle ?? undefined,
+    ...(edge.sourceHandle ? { sourcePort: edge.sourceHandle } : {}),
   };
+}
+
+/** Whether a connection may be made: it must land on an open port that
+ * takes what the source gives and still has room. What this refuses, the
+ * validator would flag anyway; refusing the drop is the kinder place. */
+export function canConnect(
+  graph: BlockGraph,
+  connection: {
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  },
+): boolean {
+  const source = graph.nodes.find((node) => node.id === connection.source);
+  const target = graph.nodes.find((node) => node.id === connection.target);
+  if (!source || !target || source.id === target.id) return false;
+  // Graph context so a gate's output resolves to what it passes through,
+  // and a block's to the output the wire leaves from.
+  const sourceKind = edgeSourceKind(
+    { source: source.id, sourcePort: connection.sourceHandle ?? undefined },
+    graph,
+  );
+  const block = blockOf(target, graph.blocks);
+  let port: InputPort | undefined;
+  if (block) {
+    port = blockPorts(block, graph.blocks).inputs.find(
+      (entry) => entry.id === connection.targetHandle,
+    );
+  } else {
+    const schema = maybeNodeSchema(target.type);
+    if (!schema || openInputPorts(schema, target.params).length === 0) return false;
+    port = resolveInputPort(
+      target,
+      { targetPort: connection.targetHandle ?? undefined },
+      sourceKind,
+    );
+  }
+  if (!port || !isInputCompatible(sourceKind, port.kind)) return false;
+  const landing = graph.edges.filter(
+    (edge) => edge.target === target.id && edge.targetPort === port.id,
+  ).length;
+  // The cap can be per model (seedance 2.0 takes 9 reference photos, 2.5
+  // takes 30), so ask the port with the node's own params.
+  const capacity = portCapacity(port, block ? {} : target.params) ?? Number.POSITIVE_INFINITY;
+  return landing < capacity;
 }
 
 export function fromFlow(

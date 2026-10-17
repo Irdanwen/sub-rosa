@@ -4,7 +4,7 @@
 // connections that came into the copied steps from steps still on the
 // canvas.
 
-import type { Workflow, WorkflowEdge, WorkflowNode } from "./schema";
+import type { Workflow, WorkflowBlock, WorkflowEdge, WorkflowNode } from "./schema";
 
 const FORMAT = "subrosa-workflow-steps";
 const VERSION = 1;
@@ -19,16 +19,38 @@ export interface StepClip {
   edges: WorkflowEdge[];
   /** From a step that was not copied into one that was. */
   incoming: WorkflowEdge[];
+  /** The blocks the copied block steps are instances of, and the blocks
+   * inside those: a block step pasted elsewhere brings its steps. */
+  blocks?: WorkflowBlock[];
+}
+
+/** The blocks these steps need, nested ones included. */
+function blocksUsed(nodes: WorkflowNode[], blocks: readonly WorkflowBlock[]): WorkflowBlock[] {
+  const used = new Map<string, WorkflowBlock>();
+  const visit = (steps: WorkflowNode[]) => {
+    for (const step of steps) {
+      if (step.type !== "block") continue;
+      const block = blocks.find((entry) => entry.id === step.params.blockId);
+      if (!block || used.has(block.id)) continue;
+      used.set(block.id, block);
+      visit(block.nodes);
+    }
+  };
+  visit(nodes);
+  return [...used.values()];
 }
 
 export function copySteps(
-  graph: Pick<Workflow, "nodes" | "edges">,
+  graph: Pick<Workflow, "nodes" | "edges" | "blocks">,
   ids: ReadonlySet<string>,
 ): string {
+  const nodes = graph.nodes.filter((node) => ids.has(node.id));
+  const blocks = blocksUsed(nodes, graph.blocks ?? []);
   const clip: StepClip = {
     format: FORMAT,
     version: VERSION,
-    nodes: graph.nodes.filter((node) => ids.has(node.id)),
+    nodes,
+    ...(blocks.length > 0 ? { blocks } : {}),
     edges: graph.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
     incoming: graph.edges.filter((edge) => !ids.has(edge.source) && ids.has(edge.target)),
   };
@@ -55,7 +77,7 @@ export function pasteSteps(
   existing: ReadonlySet<string>,
   withConnections: boolean,
   newId: () => string = () => crypto.randomUUID(),
-): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+): { nodes: WorkflowNode[]; edges: WorkflowEdge[]; blocks?: WorkflowBlock[] } {
   const ids = new Map(clip.nodes.map((node) => [node.id, newId()]));
   const nodes = clip.nodes.map((node) => ({
     ...node,
@@ -75,5 +97,5 @@ export function pasteSteps(
       edges.push({ ...edge, id: newId(), target: ids.get(edge.target) as string });
     }
   }
-  return { nodes, edges };
+  return { nodes, edges, ...(clip.blocks?.length ? { blocks: clip.blocks } : {}) };
 }

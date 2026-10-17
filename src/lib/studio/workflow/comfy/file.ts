@@ -11,6 +11,7 @@ import {
   type WorkflowNode,
   WORKFLOW_FILE_VERSION,
 } from "../schema";
+import { cleanBlocks } from "../blocks";
 import { cleanFrames } from "../frames";
 import { migrateWorkflow } from "../migrate";
 import { type ComfyImport, detectWorkflowFile, translateComfy } from "./translate";
@@ -21,7 +22,10 @@ export const MAX_WORKFLOW_FILE_BYTES = 5 * 1024 * 1024;
 export interface WorkflowFile {
   format: "subrosa-workflow";
   version: number;
-  workflow: Pick<Workflow, "name" | "description" | "nodes" | "edges" | "frames" | "extra">;
+  workflow: Pick<
+    Workflow,
+    "name" | "description" | "nodes" | "edges" | "frames" | "blocks" | "extra"
+  >;
 }
 
 /** The file Sub Rosa writes for a workflow; compact when it goes inside
@@ -36,6 +40,7 @@ export function workflowFileText(workflow: Workflow, options: { compact?: boolea
       nodes: workflow.nodes,
       edges: workflow.edges,
       ...(workflow.frames?.length ? { frames: workflow.frames } : {}),
+      ...(workflow.blocks?.length ? { blocks: workflow.blocks } : {}),
       ...(workflow.extra ? { extra: workflow.extra } : {}),
     },
   };
@@ -99,6 +104,7 @@ function cleanGraph(nodes: unknown[], edges: unknown[]): Pick<Workflow, "nodes" 
       source,
       target,
       ...(typeof edge.targetPort === "string" ? { targetPort: edge.targetPort } : {}),
+      ...(typeof edge.sourcePort === "string" ? { sourcePort: edge.sourcePort } : {}),
     });
   }
   return { nodes: cleanNodes, edges: cleanEdges };
@@ -131,7 +137,13 @@ export function readWorkflowFile(text: string, catalog: MediaCatalog, fileName =
         (node): node is WorkflowNode => Boolean(node) && typeof node === "object",
       ),
     });
-    const unknown = workflow.nodes.find((node) => !maybeNodeSchema(String(node?.type)));
+    // A block's steps too: one it cannot run is refused, not dropped.
+    const inner = Array.isArray(workflow.blocks)
+      ? workflow.blocks.flatMap((block) => (Array.isArray(block?.nodes) ? block.nodes : []))
+      : [];
+    const unknown = [...workflow.nodes, ...inner].find(
+      (node) => !maybeNodeSchema(String(node?.type)),
+    );
     if (unknown)
       throw new WorkflowFileError(
         t("This workflow uses a step this version does not know: {step}.", {
@@ -154,6 +166,9 @@ export function readWorkflowFile(text: string, catalog: MediaCatalog, fileName =
                 id: crypto.randomUUID(),
               })),
             }
+          : {}),
+        ...(cleanBlocks(workflow.blocks).length > 0
+          ? { blocks: cleanBlocks(workflow.blocks) }
           : {}),
         ...(workflow.extra && typeof workflow.extra === "object" && !Array.isArray(workflow.extra)
           ? { extra: workflow.extra }

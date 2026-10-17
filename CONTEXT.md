@@ -1140,6 +1140,16 @@ dragged out simply leaves. Layout only: a run never sees frames. ComfyUI's
 groups import as frames. _Avoid_: group (in copy), section, block (a **block**
 will be a reusable set of steps that runs as one).
 
+**Block (workflow)**:
+Several steps that run as one step: defined once in the workflow, with its
+own inputs (each an inner step's input), outputs (each an inner step's
+result) and the settings it shows on every instance. A **block step** is
+one instance of it; editing the block edits them all, and each instance
+keeps its own values for what the block shows. A run never sees a block:
+its steps are put in its place first. ComfyUI's subgraph. See
+[ADR-0116](docs/adr/0116-a-block-runs-as-its-steps.md).
+_Avoid_: group (in copy), subgraph (in copy), macro, component.
+
 **Note (workflow)**:
 A step that holds words for whoever reads the workflow and never runs: removed
 with the steps set aside before anything is priced, validated or run. A

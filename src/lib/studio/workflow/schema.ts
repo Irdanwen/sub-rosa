@@ -38,7 +38,8 @@ export type WorkflowNodeType =
   | "assemble"
   | "output"
   | "relay"
-  | "note";
+  | "note"
+  | "block";
 
 export interface WorkflowNode {
   id: string;
@@ -71,6 +72,10 @@ export interface WorkflowEdge {
    * existed, and on graphs built outside the editor; resolved by kind
    * affinity. */
   targetPort?: string;
+  /** Which of a block's outputs the edge leaves from (see `blocks.ts`).
+   * Only a block has several; `flatten.ts` resolves it, and the engine
+   * never sees it. */
+  sourcePort?: string;
 }
 
 export interface Workflow {
@@ -97,6 +102,49 @@ export interface Workflow {
   readOnly?: true;
   /** Titled rectangles behind steps that belong together (frames.ts). */
   frames?: WorkflowFrame[];
+  /** The blocks this workflow's block steps are instances of (blocks.ts). */
+  blocks?: WorkflowBlock[];
+}
+
+/** A set of steps that runs as one step (ComfyUI's subgraph). Defined once
+ * in the workflow; every block step is an instance of one, and editing it
+ * edits them all. A run never sees it: `flatten.ts` puts its steps in its
+ * place first (ADR-0116). */
+export interface WorkflowBlock {
+  id: string;
+  name: string;
+  description?: string;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  /** What the block takes: each is one inner step's input. */
+  inputs: BlockInput[];
+  /** What the block gives: each is one inner step's result. */
+  outputs: BlockOutput[];
+  /** Inner settings every instance shows, and may set for itself. */
+  promoted: BlockSetting[];
+  /** The library block this one was copied from. */
+  source?: { id: string; updatedAt: number };
+}
+
+export interface BlockInput {
+  id: string;
+  label: string;
+  nodeId: string;
+  port: string;
+}
+
+export interface BlockOutput {
+  id: string;
+  label: string;
+  nodeId: string;
+  /** When the inner step is itself a block: which of its outputs. */
+  port?: string;
+}
+
+export interface BlockSetting {
+  nodeId: string;
+  param: string;
+  label?: string;
 }
 
 /** A frame: where it is, how big, what it is called and its tint. */
@@ -703,6 +751,15 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     label: "Output",
     description: "Displays whatever its upstream nodes produced. Accepts any kind.",
     inputs: [{ id: "in", label: "Result", kind: "any", multi: true }],
+    output: "none",
+    params: [],
+  },
+  block: {
+    type: "block",
+    label: "Block",
+    description: "Several steps that run as one. Its inputs and outputs are its own.",
+    // A block's ports are its definition's (blocks.ts `blockPorts`).
+    inputs: [],
     output: "none",
     params: [],
   },

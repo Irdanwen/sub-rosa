@@ -9,6 +9,7 @@ import { IconColumns3 } from "central-icons/IconColumns3";
 import { IconEyeSlash } from "central-icons/IconEyeSlash";
 import { IconLayoutAlignLeft } from "central-icons/IconLayoutAlignLeft";
 import { IconLayoutAlignTop } from "central-icons/IconLayoutAlignTop";
+import { IconPackage } from "central-icons/IconPackage";
 import { IconPin } from "central-icons/IconPin";
 import { IconPlay } from "central-icons/IconPlay";
 import { IconSkip } from "central-icons/IconSkip";
@@ -69,6 +70,7 @@ export function SelectionToolbar({
   onSetAside,
   onDuplicate,
   onFrame,
+  onMakeBlock,
   onAlign,
   onDistribute,
   onDelete,
@@ -85,6 +87,8 @@ export function SelectionToolbar({
   onDuplicate: () => void;
   /** Draw a frame about the selection (⌘G). */
   onFrame: () => void;
+  /** Make one block step of the selection (⇧⌘E). */
+  onMakeBlock: () => void;
   onAlign: (to: Alignment) => void;
   onDistribute: () => void;
   onDelete: () => void;
@@ -130,6 +134,9 @@ export function SelectionToolbar({
         </ToolButton>
         <ToolButton label={t("Frame the selected steps")} onClick={onFrame}>
           <IconSquarePlaceholderDashed size={15} />
+        </ToolButton>
+        <ToolButton label={t("Make a block of the selected steps")} onClick={onMakeBlock}>
+          <IconPackage size={15} />
         </ToolButton>
         <ToolButton
           label={allPinned ? t("Unpin") : t("Pin in place")}

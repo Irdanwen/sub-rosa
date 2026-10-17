@@ -5,7 +5,7 @@
 import type { Workflow } from "./schema";
 import { stableJson } from "./stable-json";
 
-export type GraphSnapshot = Pick<Workflow, "nodes" | "edges" | "frames">;
+export type GraphSnapshot = Pick<Workflow, "nodes" | "edges" | "frames" | "blocks">;
 
 const DEPTH = 50;
 

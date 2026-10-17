@@ -122,6 +122,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0113](adr/0113-windows-captures-the-computers-sound-in-process.md) — three source modes named by situation (microphone and computer, microphone only, computer only, where the microphone never opens); the choice is remembered and never silently downgraded; Windows captures the computer's sound in process with WASAPI loopback, padded to the wall clock; a silent computer lane is flagged during the take and a silent computer-only take fails before transcription
 - [adr/0114](adr/0114-a-refused-render-is-queued-again-and-a-settling-one-is-heard.md) — a definite 429 or 402 at submission is queued again under a new job id after the provider's `Retry-After` (uncertain 5xx still never retried); paid submissions pass through one module-wide gate of two slots; a render's wait listens for the row event instead of polling the table
 - [adr/0115](adr/0115-an-unchanged-step-is-reused-never-bought-twice.md) — a paid workflow step is cached by what it was asked (runtime signature over settings, model catalog entry and inputs, no ids); the canvas predicts reused steps from a static signature and prices them free; "Make a new one next run" raises a take counter, "New result every run" skips the lookup; canvas only (productions keep their take signature); references never bytes; migration 079
+- [adr/0116](adr/0116-a-block-runs-as-its-steps.md) — a block (ComfyUI's subgraph) is defined once in the workflow and its block steps are instances; flattened before validation, price, cache and run (ids `instance/inner`), state and price lifted back onto the block step; several outputs live in the editor only (`sourcePort`); a run freezes the flat graph and the written one; no migration
 
 Numbers 0103, 0105 and 0106 are reserved and unused: they were handed out in
 advance to parity lots that ran in parallel on 2026-10-08, and those lots
@@ -129,6 +130,11 @@ made no decision that met the ADR bar. They stay empty so that no reference
 to them can ever be ambiguous; the next ADR takes the next number after the
 highest one on disk. Addenda are dated sections headed
 `## Addendum YYYY-MM-DD: <subject>`.
+
+Migration 080 is reserved and unused: it was handed to a render-duration
+journal in the 2026-10-17 workflow parity plan, and the estimate on a step
+reads the durations `render-eta.ts` already learns per model instead. As with
+ADR numbers, `src-tauri/migrations/` keeps the gap.
 
 ## Enforceable rules (spec/)
 

@@ -26,6 +26,9 @@ import { kindLabel, nodeTypeLabel, paramLabel, portLabel } from "./labels";
 /** What kind of problem an issue is, for surfaces that act on it rather
  * than only print it. */
 export type ValidationCode =
+  | "blockMissing"
+  | "blockLoop"
+  | "blockPort"
   | "empty"
   | "unknownType"
   | "pickItem"
