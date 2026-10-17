@@ -74,3 +74,24 @@ graph" would reach into every one of them.
 - **Referencing a library block by id.** An edit in the library would change
   every workflow that uses it, including ones mid-run. Blocks are copied in
   by value; the library copy can be offered as an update later.
+
+## Addendum 2026-10-17: a block is changed from inside it
+
+"Open block" on a block step shows its steps on the canvas, with a
+breadcrumb back to the workflow and the warning that a change applies to
+every step that uses the block. Three rules keep that level honest:
+
+- **Entered through one instance.** The level is a path of block steps
+  (`outer/inner`); the steps inside show *that* instance's results, prices
+  and problems. `lift.ts` became one view per level (`viewAt(flat, path)`):
+  each flat step belongs to one step at the level shown, a plain step
+  answering for itself and a block step for all of its own.
+- **Always the whole workflow.** What is saved, validated, priced, kept for
+  undo and run is the workflow; the level's steps are written back into
+  their block as they are edited (`composeRoot`, `withLevel`). Run and "Run
+  this step" work from inside a block as from the top.
+- **Its face is edited there.** The block's name, which inner inputs it
+  takes, which inner results it gives and which settings it shows are
+  chosen from inside it (`BlockPanel`). Taking away an input or a result
+  takes off the wires that used it on every instance, wherever it stands
+  (`replaceBlock`); a wire never dangles silently.

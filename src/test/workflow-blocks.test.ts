@@ -179,3 +179,83 @@ describe("a block when it runs", () => {
     expect(loop.issues.map((issue) => issue.code)).toContain("blockLoop");
   });
 });
+
+describe("a level of the workflow, seen from the flat graph", () => {
+  it("shows each step at the top, and a block's steps from inside it", async () => {
+    const { viewAt, liftResults, liftPrices, flatTargets } = await import(
+      "../lib/studio/workflow/lift"
+    );
+    const { workflow: withBlock, instanceId } = grouped();
+    const outer = blockFromSelection(withBlock, new Set([instanceId]), "Scene", ids("outer"));
+    if (!outer) throw new Error("no outer block");
+    const flat = flattenBlocks({ ...withBlock, ...outer.graph } as Workflow);
+    const shot = `${outer.instanceId}/${instanceId}/shot`;
+    const done = new Map([
+      [
+        shot,
+        { nodeId: shot, status: "done" as const, output: { kind: "text" as const, text: "x" } },
+      ],
+      ["brief", { nodeId: "brief", status: "done" as const }],
+    ]);
+    // The top: the outer block step shows its shot's result.
+    const top = viewAt(flat);
+    expect([...top.groups.keys()].sort()).toEqual(["brief", "out", outer.instanceId].sort());
+    expect(liftResults(done, top).get(outer.instanceId)).toMatchObject({
+      status: "done",
+      output: { kind: "text", text: "x" },
+    });
+    // Inside the outer block: the inner block step stands for the shot.
+    const inside = viewAt(flat, [outer.instanceId]);
+    expect([...inside.groups.keys()]).toEqual([instanceId]);
+    expect(liftResults(done, inside).get(instanceId)?.status).toBe("done");
+    // Inside both: the shot itself, by its own id.
+    const deepest = viewAt(flat, [outer.instanceId, instanceId]);
+    expect(liftResults(done, deepest).get("shot")?.nodeId).toBe("shot");
+    expect(flatTargets(["shot"], deepest)).toEqual([shot]);
+    const prices = liftPrices(
+      [{ nodeId: shot, type: "image", label: "", kind: "flat", credits: 4, quotable: false }],
+      top,
+    );
+    expect(prices.get(outer.instanceId)).toMatchObject({ kind: "flat", credits: 4 });
+  });
+});
+
+describe("the face a block shows", () => {
+  it("takes, gives and shows what is chosen, and drops the wires on what it stops giving", async () => {
+    const { toggleBlockInput, toggleBlockOutput, togglePromoted, replaceBlock } = await import(
+      "../lib/studio/workflow/blocks"
+    );
+    const { workflow: withBlock, block } = grouped();
+    const noInput = toggleBlockInput(block, "shot", "prompt", "Prompt");
+    expect(noInput.inputs).toEqual([]);
+    expect(toggleBlockInput(noInput, "shot", "prompt", "Prompt").inputs).toEqual([
+      { id: "in-1", label: "Prompt", nodeId: "shot", port: "prompt" },
+    ]);
+    expect(togglePromoted(block, "shot", "prompt").promoted).toEqual([]);
+    expect(togglePromoted(block, "shot", "model").promoted).toHaveLength(2);
+    const silent = toggleBlockOutput(block, "shot", "Image");
+    expect(silent.outputs).toEqual([]);
+    const after = replaceBlock(withBlock, silent);
+    // The wire that left the block's output is gone; the one into it stays.
+    expect(after.edges.map((edge) => edge.id)).toEqual(["e1"]);
+    const removedInput = replaceBlock(withBlock, noInput);
+    expect(removedInput.edges.map((edge) => edge.id)).toEqual(["e2"]);
+  });
+});
+
+describe("writing a level back into the workflow", () => {
+  it("puts the steps edited inside a block into the block, and leaves the rest", async () => {
+    const { withLevel } = await import("../components/studio/workflow/useBlockScope");
+    const { workflow: withBlock, block, instanceId } = grouped();
+    const edited = { ...block.nodes[0], params: { ...block.nodes[0].params, prompt: "dusk" } };
+    const root = withLevel(withBlock, [{ instanceId, blockId: block.id }], {
+      nodes: [edited],
+      edges: [],
+    });
+    expect(root.nodes).toBe(withBlock.nodes);
+    expect(root.blocks?.[0].nodes[0].params.prompt).toBe("dusk");
+    const top = withLevel(withBlock, [], { nodes: [], edges: [] });
+    expect(top.nodes).toEqual([]);
+    expect(top.blocks).toBeUndefined();
+  });
+});

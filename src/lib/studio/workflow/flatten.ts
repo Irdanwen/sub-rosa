@@ -21,7 +21,8 @@ export interface Flattened {
   display: Map<string, string>;
   /** What could not be put in place, on the block step concerned. */
   issues: ValidationIssue[];
-  /** Block step → the flat step whose result it shows (its first output). */
+  /** Block step (by its path, `outer/inner` inside a block) → the flat step
+   * whose result it shows: its first output. */
   primary: Map<string, string>;
 }
 
@@ -41,22 +42,13 @@ export function flattenBlocks(workflow: Workflow): Flattened {
     return { workflow, display: new Map(), issues: [], primary: new Map() };
   const display = new Map<string, string>();
   const issues: ValidationIssue[] = [];
-  const expanded = expand(
-    workflow.nodes,
-    workflow.edges,
-    workflow.blocks ?? [],
-    "",
-    0,
-    [],
-    undefined,
+  const primary = new Map<string, string>();
+  const expanded = expand(workflow.nodes, workflow.edges, workflow.blocks ?? [], "", 0, [], {
+    owner: undefined,
     display,
     issues,
-  );
-  const primary = new Map<string, string>();
-  for (const node of workflow.nodes) {
-    const shown = node.type === "block" ? expanded.source(node.id, undefined) : undefined;
-    if (shown) primary.set(node.id, shown);
-  }
+    primary,
+  });
   const { blocks: _blocks, ...rest } = workflow;
   return {
     workflow: {
@@ -76,6 +68,14 @@ export function flattenBlocks(workflow: Workflow): Flattened {
   };
 }
 
+interface Ledger {
+  /** The top-level block step the steps being expanded belong to. */
+  owner: string | undefined;
+  display: Map<string, string>;
+  issues: ValidationIssue[];
+  primary: Map<string, string>;
+}
+
 function expand(
   nodes: WorkflowNode[],
   edges: WorkflowEdge[],
@@ -83,17 +83,15 @@ function expand(
   prefix: string,
   depth: number,
   stack: string[],
-  owner: string | undefined,
-  display: Map<string, string>,
-  issues: ValidationIssue[],
+  record: Ledger,
 ): Expanded {
+  const { owner, display, issues, primary } = record;
   const flatNodes: WorkflowNode[] = [];
   const innerEdges: WorkflowEdge[] = [];
   const inner = new Map<string, { block: WorkflowBlock; graph: Expanded }>();
   const plain = new Set<string>();
   for (const node of nodes) {
     const id = `${prefix}${node.id}`;
-    const step = owner ?? id;
     if (node.type !== "block") {
       plain.add(node.id);
       flatNodes.push({ ...node, id });
@@ -104,7 +102,7 @@ function expand(
     if (!block) {
       issues.push({
         severity: "error",
-        nodeId: step,
+        nodeId: id,
         code: "blockMissing",
         message: t(
           "This block's steps are missing. Remove it, or paste it again from where it was copied.",
@@ -115,7 +113,7 @@ function expand(
     if (depth >= MAX_BLOCK_DEPTH || stack.includes(block.id)) {
       issues.push({
         severity: "error",
-        nodeId: step,
+        nodeId: id,
         code: "blockLoop",
         message: t("{block} sits inside itself, or too many blocks deep.", { block: block.name }),
       });
@@ -130,18 +128,14 @@ function expand(
         ...(node.mode && !entry.mode ? { mode: node.mode } : {}),
       };
     });
-    const graph = expand(
-      steps,
-      block.edges,
-      blocks,
-      `${id}/`,
-      depth + 1,
-      [...stack, block.id],
-      step,
-      display,
-      issues,
-    );
+    const graph = expand(steps, block.edges, blocks, `${id}/`, depth + 1, [...stack, block.id], {
+      ...record,
+      owner: owner ?? id,
+    });
     inner.set(node.id, { block, graph });
+    const first = block.outputs[0];
+    const shown = first ? graph.source(first.nodeId, first.port) : undefined;
+    if (shown) primary.set(id, shown);
     flatNodes.push(...graph.nodes);
     innerEdges.push(...graph.edges);
   }
@@ -171,7 +165,7 @@ function expand(
       if (inner.has(edge.source) || inner.has(edge.target))
         issues.push({
           severity: "error",
-          nodeId: owner ?? block,
+          nodeId: `${prefix}${block}`,
           code: "blockPort",
           message: t("A connection to this block reaches no step inside it."),
         });
