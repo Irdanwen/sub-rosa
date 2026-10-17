@@ -147,6 +147,7 @@ import { BlockBreadcrumb } from "./workflow/BlockBreadcrumb";
 import { BlockPanel } from "./workflow/BlockPanel";
 import { composeRoot, useBlockScope, withLevel } from "./workflow/useBlockScope";
 import { useRunPicture } from "./workflow/useRunPicture";
+import { resolveTemplateModels } from "../../lib/studio/workflow/template-models";
 import { useLibraryArrivals } from "./workflow/useLibraryArrivals";
 import { RunSessions } from "../../lib/studio/workflow/run-sessions";
 import { useWorkflowTabs } from "./workflow/useWorkflowTabs";
@@ -491,7 +492,7 @@ function WorkflowEditor({
       return;
     }
     const seeded = blankWorkflow("My first workflow");
-    const template = templateWorkflows()[0];
+    const template = resolveTemplateModels(templateWorkflows()[0], catalogRef.current).workflow;
     const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
     const workflow: Workflow = {
       ...seeded,
@@ -720,12 +721,16 @@ function WorkflowEditor({
 
   const applyTemplate = useCallback(
     (templateId: string) => {
-      const template = templateWorkflows().find((entry) => entry.id === templateId);
-      if (!template) return;
-      const workflow = blankWorkflow(template.name);
+      const shipped = templateWorkflows().find((entry) => entry.id === templateId);
+      if (!shipped) return;
+      // Pinned to what the catalog offers today; started from, remembered
+      // so the library can show what the person made from it.
+      const template = resolveTemplateModels(shipped, catalogRef.current).workflow;
+      const workflow = { ...blankWorkflow(template.name), extra: { template: shipped.id } };
       const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
       const cloned: Workflow = {
         ...workflow,
+        ...(template.description ? { description: template.description } : {}),
         nodes: template.nodes.map((node) => ({
           ...node,
           id: idMap.get(node.id) ?? node.id,

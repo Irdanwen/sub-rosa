@@ -25,6 +25,10 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { readEmbeddedWorkflow } from "../../lib/studio/workflow/comfy/embedded";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
+import { SegmentedControl } from "../ui/SegmentedControl";
+import { resolveTemplateModels } from "../../lib/studio/workflow/template-models";
+import { templateEstimate, templatePriceLabel } from "../../lib/studio/workflow/template-price";
+import { type TemplateCategory, templateCategory } from "../../lib/studio/workflow/templates";
 import "./workflow-library.css";
 
 /** Pictures made once for the built-in templates, shipped with the app. */
@@ -329,29 +333,13 @@ export function WorkflowLibrary({
         </section>
       ) : null}
 
-      <section aria-label={t("Templates")}>
-        <h3>{t("Templates")}</h3>
-        <div className="workflow-library-grid">
-          {templates.map((template) => (
-            <article key={template.id} className="workflow-card">
-              <button
-                type="button"
-                className="workflow-card-open"
-                aria-label={t("Start from {name}", { name: template.name })}
-                onClick={() => onUseTemplate(template.id)}
-              >
-                <CardPicture workflow={template} src={templateCover(template.id)} />
-              </button>
-              <div className="workflow-card-body">
-                <div className="workflow-card-title">
-                  <span>{template.name}</span>
-                </div>
-                <p className="workflow-card-meta">{workflowMakes(template)}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <TemplateGallery
+        catalog={catalog}
+        templates={templates}
+        workflows={workflows}
+        artifactsById={artifacts.byId}
+        onUseTemplate={onUseTemplate}
+      />
 
       {review ? (
         <ImportReview
@@ -498,6 +486,129 @@ function ReportList({ title, items }: { title: string; items: string[] }) {
           <li key={index}>{item}</li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+const CATEGORIES: ReadonlyArray<"all" | TemplateCategory> = [
+  "all",
+  "pictures",
+  "video",
+  "sound",
+  "retouch",
+];
+
+function categoryLabel(category: "all" | TemplateCategory): string {
+  switch (category) {
+    case "all":
+      return t("All");
+    case "pictures":
+      return t("Pictures");
+    case "video":
+      return t("Video");
+    case "sound":
+      return t("Sound");
+    case "retouch":
+      return t("Retouch");
+  }
+}
+
+/** The shipped templates: sorted by what they make, priced against today's
+ * catalog, pinned to the models it offers, and, for one the person already
+ * used, fading into what they made from it on hover. */
+function TemplateGallery({
+  catalog,
+  templates,
+  workflows,
+  artifactsById,
+  onUseTemplate,
+}: {
+  catalog: MediaCatalog;
+  templates: Workflow[];
+  workflows: Workflow[];
+  artifactsById: ReadonlyMap<string, StudioArtifact>;
+  onUseTemplate: (templateId: string) => void;
+}) {
+  const [category, setCategory] = useState<"all" | TemplateCategory>("all");
+  const cards = useMemo(
+    () =>
+      templates.map((template) => {
+        const resolved = resolveTemplateModels(template, catalog);
+        return {
+          template,
+          missing: resolved.missing,
+          estimate: templateEstimate(resolved.workflow, catalog),
+        };
+      }),
+    [templates, catalog],
+  );
+  /** The newest result the person made from each template. */
+  const made = useMemo(() => {
+    const byTemplate = new Map<string, StudioArtifact>();
+    for (const workflow of workflows) {
+      const from = workflow.extra?.template;
+      const artifact = workflow.coverArtifactId
+        ? artifactsById.get(workflow.coverArtifactId)
+        : undefined;
+      if (typeof from === "string" && artifact && !byTemplate.has(from))
+        byTemplate.set(from, artifact);
+    }
+    return byTemplate;
+  }, [workflows, artifactsById]);
+  const shown = cards.filter(
+    (card) => category === "all" || templateCategory(card.template.id) === category,
+  );
+  return (
+    <section aria-label={t("Templates")}>
+      <div className="workflow-library-templates-head">
+        <h3>{t("Templates")}</h3>
+        <SegmentedControl
+          aria-label={t("Kind of template")}
+          value={category}
+          onValueChange={setCategory}
+          options={CATEGORIES.map((value) => ({ value, label: categoryLabel(value) }))}
+        />
+      </div>
+      <div className="workflow-library-grid">
+        {shown.map(({ template, missing, estimate }) => {
+          const yours = made.get(template.id);
+          const price = estimate ? templatePriceLabel(estimate) : undefined;
+          return (
+            <article key={template.id} className="workflow-card">
+              <button
+                type="button"
+                className="workflow-card-open"
+                aria-label={t("Start from {name}", { name: template.name })}
+                disabled={missing.length > 0}
+                onClick={() => onUseTemplate(template.id)}
+              >
+                <CardPicture workflow={template} src={templateCover(template.id)} />
+                {yours ? (
+                  <span className="workflow-card-yours" aria-hidden>
+                    <CardPicture workflow={template} artifact={yours} />
+                    <span className="workflow-card-yours-tag">{t("What you made")}</span>
+                  </span>
+                ) : null}
+              </button>
+              <div className="workflow-card-body">
+                <div className="workflow-card-title">
+                  <span>{template.name}</span>
+                </div>
+                {template.description ? (
+                  <p className="workflow-card-description">{template.description}</p>
+                ) : null}
+                <p className="workflow-card-meta">
+                  {missing.length > 0
+                    ? t("Not offered today: no model for {steps}", { steps: missing.join(", ") })
+                    : price
+                      ? t("{makes}, {price}", { makes: workflowMakes(template), price })
+                      : workflowMakes(template)}
+                </p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
     </section>
   );
 }

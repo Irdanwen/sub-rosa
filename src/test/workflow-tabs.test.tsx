@@ -72,9 +72,9 @@ describe("workflow tabs", () => {
   it("keeps a run going in its tab while another is on screen", async () => {
     const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
     render(<WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />);
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     fireEvent.click(await screen.findByRole("button", { name: "Library" }));
-    await screen.findByRole("button", { name: /Trailer/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Trailer" }).then((card) => card.click());
     await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
     expect(tab("Trailer").getAttribute("aria-selected")).toBe("true");
 

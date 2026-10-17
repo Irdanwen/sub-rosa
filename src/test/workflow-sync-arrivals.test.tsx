@@ -91,7 +91,7 @@ describe("a library that hears from other devices", () => {
     state.rows = [row("a", "Cover", "Hi"), row("b", "Trailer", "Cut", 0)];
     const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
     render(<WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />);
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByDisplayValue("Hi")).toBeTruthy());
 
     state.rows = [row("a", "Cover", "Hi from the laptop", 5), row("b", "Trailer", "Cut", 0)];
