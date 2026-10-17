@@ -20,6 +20,8 @@ import {
   type NodeChange,
   type ReactFlowInstance,
 } from "@xyflow/react";
+import { IconArrowRedoDown } from "central-icons/IconArrowRedoDown";
+import { IconArrowUndoUp } from "central-icons/IconArrowUndoUp";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifactIndex } from "../../lib/artifact-media";
@@ -70,6 +72,7 @@ import {
   type ValidationIssue,
   type Workflow,
   type WorkflowCostEstimate,
+  type WorkflowEdge,
   type WorkflowNode,
   type WorkflowNodeType,
 } from "../../lib/studio/workflow";
@@ -115,6 +118,7 @@ import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
 import { NODE_TYPES } from "./workflow/StudioNode";
 import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
 import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
+import { useCanvasEditing } from "./workflow/useCanvasEditing";
 import { useLiveQuotes } from "./workflow/useLiveQuotes";
 import { useReusePrediction } from "./workflow/useReusePrediction";
 
@@ -1075,6 +1079,68 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     [hydrate],
   );
 
+  /** The canvas's own editing: undo, clipboard, shortcuts, palette. */
+  const startRunRef = useRef(startRun);
+  startRunRef.current = startRun;
+  const applyGraph = useCallback(
+    (graph: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }) => {
+      const base = currentRef.current;
+      if (!base) return;
+      const next = { ...base, nodes: graph.nodes, edges: graph.edges };
+      setFlowNodes(
+        toFlowNodes(
+          next,
+          catalogRef.current,
+          artifacts,
+          new Map(),
+          onParamsChange,
+          onRename,
+          onRemove,
+          onApproveGate,
+        ),
+      );
+      setFlowEdges(toFlowEdges(next));
+    },
+    [artifacts, onParamsChange, onRename, onRemove, onApproveGate],
+  );
+  const editing = useCanvasEditing({
+    active: view === "canvas" && current !== undefined && !current.readOnly,
+    workflowId: current?.id,
+    graph: serialized,
+    selectedIds: () =>
+      new Set(flowNodesRef.current.filter((node) => node.selected).map((node) => node.id)),
+    applyGraph,
+    addSteps: (graph) => {
+      const base = currentRef.current;
+      if (!base) return;
+      const added = toFlowNodes(
+        { ...base, nodes: graph.nodes, edges: graph.edges },
+        catalogRef.current,
+        artifacts,
+        new Map(),
+        onParamsChange,
+        onRename,
+        onRemove,
+        onApproveGate,
+      ).map((node) => ({ ...node, selected: true }));
+      setFlowNodes((nodes) => [...nodes.map((node) => ({ ...node, selected: false })), ...added]);
+      setFlowEdges((edges) => [
+        ...edges,
+        ...toFlowEdges({ ...base, nodes: [...base.nodes, ...graph.nodes], edges: graph.edges }),
+      ]);
+    },
+    selectAll: () => setFlowNodes((nodes) => nodes.map((node) => ({ ...node, selected: true }))),
+    removeSteps: (ids) => {
+      setFlowNodes((nodes) => nodes.filter((node) => !ids.has(node.id)));
+      setFlowEdges((edges) =>
+        edges.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)),
+      );
+    },
+    fitView: () => void flowRef.current?.fitView({ duration: 250 }),
+    run: () => void startRunRef.current(),
+    toggleHistory: () => setHistoryOpen((open) => !open),
+  });
+
   const productionBanners = (
     <>
       {!running && liveProductions.length > 0 ? (
@@ -1195,6 +1261,26 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         />
         <button type="button" className="btn btn-secondary" onClick={newWorkflow}>
           {t("New")}
+        </button>
+        <button
+          type="button"
+          className="studio-icon-button"
+          aria-label={t("Undo")}
+          title={t("Undo (⌘Z)")}
+          disabled={current?.readOnly === true}
+          onClick={editing.undo}
+        >
+          <IconArrowUndoUp size={16} />
+        </button>
+        <button
+          type="button"
+          className="studio-icon-button"
+          aria-label={t("Redo")}
+          title={t("Redo (⇧⌘Z)")}
+          disabled={current?.readOnly === true}
+          onClick={editing.redo}
+        >
+          <IconArrowRedoDown size={16} />
         </button>
         <Select
           value={null}

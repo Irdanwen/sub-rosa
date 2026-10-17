@@ -1,4 +1,5 @@
 import { AgentSessionContextMenu, formatSessionTime, NoteContextMenu } from "./sidebar-context";
+import { useContextualCommands } from "../../lib/contextual-commands";
 import { t } from "../../lib/i18n";
 import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { IconLibrary } from "central-icons/IconLibrary";
@@ -402,6 +403,7 @@ export function Sidebar({
     [filteredAgentSessions, pinnedAgentSessionIds],
   );
 
+  const contextualCommands = useContextualCommands();
   const commandPaletteGroups = useMemo<CommandPaletteGroup[]>(() => {
     const normalized = normalizeCommandQuery(commandQuery);
     const matches = (item: CommandPaletteItem) =>
@@ -608,8 +610,21 @@ export function Sidebar({
       .map((hit) => searchHitToPaletteItem(hit))
       .filter((item) => !recentIds.has(item.id));
 
+    // What the open screen offers (the workflow canvas: undo, run...).
+    const screenItems: CommandPaletteItem[] = contextualCommands
+      .map((command) => ({
+        id: `screen:${command.id}`,
+        label: command.label,
+        meta: command.shortcut,
+        icon: <IconSparkle3 size={15} />,
+        searchText: normalizeCommandQuery(`${command.label} ${command.keywords ?? ""}`),
+        action: command.run,
+      }))
+      .filter(matches);
+
     return [
       { title: t("Ask"), items: askPaletteItems(commandQuery, setAskQuestion) },
+      { title: t("On this screen"), items: screenItems },
       { title: t("Recents"), items: recentItems },
       { title: t("In your notes"), items: searchItems },
       { title: t("Projects"), items: folderItems },
@@ -658,6 +673,7 @@ export function Sidebar({
       }
     }
   }, [
+    contextualCommands,
     folders,
     onSelectFolder,
     agentSessions,
