@@ -137,7 +137,6 @@ export function toFlowEdges(workflow: Workflow): FlowEdge[] {
       source: edge.source,
       target: edge.target,
       targetHandle: port,
-      animated: true,
     };
   });
 }

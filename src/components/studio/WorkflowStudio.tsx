@@ -13,7 +13,9 @@ import {
   applyNodeChanges,
   Background,
   Controls,
+  MiniMap,
   ReactFlow,
+  reconnectEdge,
   type Connection,
   type Edge as FlowEdge,
   type EdgeChange,
@@ -84,6 +86,7 @@ import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
 import { applyModes } from "../../lib/studio/workflow/modes";
 import type { LinkFilter, NodeSearchHit } from "../../lib/studio/workflow/node-search";
 import { pruneToTargets } from "../../lib/studio/workflow/partial";
+import { align, distribute } from "../../lib/studio/workflow/arrange";
 import { spendGuard } from "../../lib/studio/workflow/spend";
 import { readSpendCeiling } from "../../lib/studio/workflow/spend-ceiling";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
@@ -108,6 +111,7 @@ import "@xyflow/react/dist/style.css";
 import {
   type PortSourceEntry,
   type StudioFlowNode,
+  type StudioNodeData,
   SAVE_DEBOUNCE_MS,
   toFlowNodes,
   toFlowEdges,
@@ -121,6 +125,7 @@ import { NODE_TYPES } from "./workflow/StudioNode";
 import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
 import { NodeSearch } from "./workflow/NodeSearch";
 import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
+import { SelectionToolbar } from "./workflow/SelectionToolbar";
 import { useCanvasEditing } from "./workflow/useCanvasEditing";
 import { useLiveQuotes } from "./workflow/useLiveQuotes";
 import { useReusePrediction } from "./workflow/useReusePrediction";
@@ -589,7 +594,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     [],
   );
   const onConnect = useCallback((connection: Connection) => {
-    setFlowEdges((edges) => addEdge({ ...connection, animated: true }, edges));
+    setFlowEdges((edges) => addEdge(connection, edges));
   }, []);
 
   /** Connections must land on a port that accepts the source's kind and still
@@ -718,6 +723,16 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     )
     .join("|");
 
+  /** Which steps are being made right now, as a stable key. */
+  const runningKey = [...results.values()]
+    .filter((result) => result.status === "running")
+    .map((result) => result.nodeId)
+    .sort()
+    .join("|");
+  const removeEdge = useCallback((edgeId: string) => {
+    setFlowEdges((edges) => edges.filter((edge) => edge.id !== edgeId));
+  }, []);
+
   /** Connection-order badges: edges into a multi port with two or more
    * connections carry their 1-based position; everything else stays bare. */
   const displayEdges = useMemo(() => {
@@ -747,19 +762,30 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       sourceRanks.set(edge.id, rank);
       perSource.set(edge.source, rank + 1);
     }
-    return flowEdges.map((edge) => ({
-      ...edge,
-      type: "studio" as const,
-      data: {
-        order: orders.get(edge.id),
-        sourceRank: sourceRanks.get(edge.id),
-        highlight: edge.id === highlightedEdge,
-      } satisfies StudioEdgeData,
-    }));
-    // orderGraphKey stands in for the node list: order only depends on the
-    // parts of it the key captures.
+    const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+    const kindContext = { nodeById, edges: graph.edges };
+    const runningNow = new Set(runningKey.split("|"));
+    return flowEdges.map((edge) => {
+      const source = nodeById.get(edge.source);
+      return {
+        ...edge,
+        type: "studio" as const,
+        // A wire moves only while the step it feeds is being made: an
+        // always-animated canvas is motion seen a hundred times a day.
+        animated: runningNow.has(edge.target),
+        data: {
+          order: orders.get(edge.id),
+          sourceRank: sourceRanks.get(edge.id),
+          highlight: edge.id === highlightedEdge,
+          kind: source ? outputKindOf(source, kindContext) : undefined,
+          onDelete: current?.readOnly ? undefined : removeEdge,
+        } satisfies StudioEdgeData,
+      };
+    });
+    // orderGraphKey stands in for the node list: order and kinds only depend
+    // on the parts of it the key captures.
     // biome-ignore lint/correctness/useExhaustiveDependencies: see above
-  }, [flowEdges, orderGraphKey, highlightedEdge]);
+  }, [flowEdges, orderGraphKey, highlightedEdge, runningKey, current?.readOnly, removeEdge]);
   const [pendingRun, setPendingRun] = useState<
     { estimate: WorkflowCostEstimate; targets?: string[] } | undefined
   >(undefined);
@@ -1268,6 +1294,51 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     [openSearch, isValidConnection],
   );
 
+  /** The selected steps, for the bar over them. */
+  const selectedIds = flowNodes.filter((node) => node.selected).map((node) => node.id);
+  const allSetAside =
+    selectedIds.length > 0 &&
+    flowNodes.filter((node) => node.selected).every((node) => node.data.wfNode.mode);
+  const moveNodes = useCallback((moved: Map<string, { x: number; y: number }>) => {
+    if (moved.size === 0) return;
+    setFlowNodes((nodes) =>
+      nodes.map((node) => {
+        const to = moved.get(node.id);
+        return to
+          ? {
+              ...node,
+              position: to,
+              data: { ...node.data, wfNode: { ...node.data.wfNode, position: to } },
+            }
+          : node;
+      }),
+    );
+  }, []);
+  const boxesOf = useCallback(
+    (ids: string[]) =>
+      flowNodesRef.current
+        .filter((node) => ids.includes(node.id))
+        .map((node) => ({
+          id: node.id,
+          x: node.position.x,
+          y: node.position.y,
+          width: node.measured?.width ?? 280,
+          height: node.measured?.height ?? 160,
+        })),
+    [],
+  );
+  /** Shift held while dragging snaps steps to the grid. */
+  const [snapping, setSnapping] = useState(false);
+  useEffect(() => {
+    const watch = (event: KeyboardEvent) => setSnapping(event.shiftKey);
+    window.addEventListener("keydown", watch);
+    window.addEventListener("keyup", watch);
+    return () => {
+      window.removeEventListener("keydown", watch);
+      window.removeEventListener("keyup", watch);
+    };
+  }, []);
+
   const productionBanners = (
     <>
       {!running && liveProductions.length > 0 ? (
@@ -1572,6 +1643,11 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           onConnect={onConnect}
           isValidConnection={isValidConnection}
           onConnectEnd={onConnectEnd}
+          onReconnect={(oldEdge, connection) =>
+            setFlowEdges((edges) => reconnectEdge(oldEdge, connection, edges))
+          }
+          snapToGrid={snapping}
+          snapGrid={[16, 16]}
           onPaneClick={(event) => {
             // The second click of a double-click on empty canvas opens the
             // step search there.
@@ -1592,6 +1668,50 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         >
           <Background gap={16} />
           <Controls showInteractive={false} />
+          <MiniMap
+            pannable
+            zoomable
+            ariaLabel={t("Overview of the workflow")}
+            nodeClassName={(node) => {
+              const status = results.get(node.id)?.status;
+              const mode = (node.data as StudioNodeData | undefined)?.wfNode.mode;
+              return mode
+                ? "minimap-set-aside"
+                : status === "error"
+                  ? "minimap-error"
+                  : status === "running"
+                    ? "minimap-running"
+                    : (node.data as StudioNodeData | undefined)?.willReuse ||
+                        results.get(node.id)?.reused
+                      ? "minimap-reused"
+                      : "minimap-step";
+            }}
+          />
+          <SelectionToolbar
+            selected={selectedIds}
+            allSetAside={allSetAside}
+            onRun={() => void startRun(selectedIds)}
+            onSetAside={(mode) => {
+              for (const id of selectedIds) onModeChange(id, mode);
+            }}
+            onDuplicate={editing.duplicate}
+            onAlign={(to) => moveNodes(align(boxesOf(selectedIds), to))}
+            onDistribute={() => {
+              const boxes = boxesOf(selectedIds);
+              const width =
+                Math.max(...boxes.map((box) => box.x)) - Math.min(...boxes.map((box) => box.x));
+              const height =
+                Math.max(...boxes.map((box) => box.y)) - Math.min(...boxes.map((box) => box.y));
+              moveNodes(distribute(boxes, width >= height ? "horizontal" : "vertical"));
+            }}
+            onDelete={() => {
+              const ids = new Set(selectedIds);
+              setFlowNodes((nodes) => nodes.filter((node) => !ids.has(node.id)));
+              setFlowEdges((edges) =>
+                edges.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)),
+              );
+            }}
+          />
         </ReactFlow>
       </div>
     </div>
