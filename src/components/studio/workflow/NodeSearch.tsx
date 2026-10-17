@@ -12,7 +12,7 @@ import {
   type NodeSearchHit,
   searchNodeTypes,
 } from "../../../lib/studio/workflow/node-search";
-import { listLibraryBlocks } from "../../../lib/studio/workflow/store";
+import { offeredBlocks } from "../../../lib/studio/workflow/library-blocks";
 
 export function NodeSearch({
   at,
@@ -30,7 +30,7 @@ export function NodeSearch({
   useModalFocus(surface, { onClose, initialFocusSelector: "input" });
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const hits = useMemo(() => searchNodeTypes(query, filter, listLibraryBlocks()), [query, filter]);
+  const hits = useMemo(() => searchNodeTypes(query, filter, offeredBlocks()), [query, filter]);
   const current = Math.min(active, Math.max(hits.length - 1, 0));
   const style = { "--search-x": `${at.x}px`, "--search-y": `${at.y}px` } as CSSProperties;
   return (

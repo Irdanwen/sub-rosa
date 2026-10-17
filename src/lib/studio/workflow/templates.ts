@@ -14,14 +14,14 @@ import { TRY_ON_MODEL_PREFERENCE, tryOnPrompt } from "../try-on";
 const LEVEL_X = 300;
 const ROW_Y = 220;
 
-const CHAT_MODEL = "qwen3-next-80b";
+export const CHAT_MODEL = "qwen3-next-80b";
 const IMAGE_MODEL = "seedream-v4";
-const TTS_MODEL = "tts-kokoro";
-const MUSIC_MODEL = "ace-step-15";
-const VIDEO_MODEL = "kling-2.5-turbo-pro-text-to-video";
+export const TTS_MODEL = "tts-kokoro";
+export const MUSIC_MODEL = "ace-step-15";
+export const VIDEO_MODEL = "kling-2.5-turbo-pro-text-to-video";
 /** The image-to-video half of the same family, for a shot that continues
  * another one from its handoff frame. */
-const VIDEO_FROM_IMAGE_MODEL = "kling-2.5-turbo-pro-image-to-video";
+export const VIDEO_FROM_IMAGE_MODEL = "kling-2.5-turbo-pro-image-to-video";
 
 function node(
   id: string,

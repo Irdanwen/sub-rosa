@@ -111,3 +111,9 @@ a copy with its own id, remembering the row and the version it came from
 new copy beside it. Saving a copy again updates the row it came from.
 Changing or deleting the library row never changes a workflow that already
 holds a copy, which is the reason given above for refusing references.
+
+Sub Rosa also ships eight blocks (`block-templates.ts`): rows of the same
+shape as saved ones, with stable `builtin-block-` ids, never in the store,
+offered by the step search beside the person's own and copied in by value
+like them.
+
