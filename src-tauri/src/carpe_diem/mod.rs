@@ -32,4 +32,5 @@ pub mod workflow_cache;
 pub mod workflow_embed;
 pub mod workflow_history;
 pub mod workflow_runs;
+pub mod workflow_versions;
 pub mod zone;

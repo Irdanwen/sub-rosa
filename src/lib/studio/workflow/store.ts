@@ -54,7 +54,7 @@ function writeLegacy(workflows: Workflow[]): void {
   }
 }
 
-function fromStored(row: StoredWorkflow): Workflow | undefined {
+export function fromStored(row: StoredWorkflow): Workflow | undefined {
   try {
     const parsed: unknown = JSON.parse(row.definition);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
@@ -86,7 +86,7 @@ function fromStored(row: StoredWorkflow): Workflow | undefined {
 }
 
 /** The stored graph: what this version edits, plus whatever it carried in. */
-function definitionOf(workflow: Workflow): string {
+export function definitionOf(workflow: Workflow): string {
   return JSON.stringify({
     ...workflow.extra,
     nodes: workflow.nodes,

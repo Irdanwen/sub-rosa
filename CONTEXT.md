@@ -1175,6 +1175,13 @@ in order. A split text states the most lines it may hold, and is priced for
 them. See [ADR-0117](docs/adr/0117-a-list-runs-what-it-feeds-once-per-item.md).
 _Avoid_: batch (in copy), array, loop.
 
+**Version (workflow)**:
+The whole workflow as it was, kept on purpose (⌘S, "Save a version") under
+a name, to compare with the graph as it is now and to go back to; going back
+keeps the graph it replaces as a version first. Distinct from the graph a
+**run** froze, which the run history restores. Local to the device.
+_Avoid_: snapshot (in copy), checkpoint, revision (that is the account sync's).
+
 **Note (workflow)**:
 A step that holds words for whoever reads the workflow and never runs: removed
 with the steps set aside before anything is priced, validated or run. A

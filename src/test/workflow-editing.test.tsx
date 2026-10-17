@@ -129,6 +129,14 @@ describe("the canvas's keys and clipboard", () => {
     vi.useRealTimers();
   });
 
+  it("keeps a version on ⌘S", () => {
+    const saveVersion = vi.fn();
+    const { hook, props } = setup();
+    hook.rerender({ ...props, saveVersion } as typeof props);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", metaKey: true }));
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+  });
+
   it("frames the selection on ⌘G", () => {
     const frameSelection = vi.fn();
     const { hook, props } = setup();
