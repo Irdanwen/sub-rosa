@@ -52,6 +52,8 @@ export function useCanvasEditing(options: {
   fitView: () => void;
   run: () => void;
   toggleHistory: () => void;
+  /** Open the step search ("/"). */
+  openSearch?: () => void;
 }): CanvasEditing {
   const history = useRef(new GraphHistory());
   const applying = useRef(false);
@@ -129,6 +131,9 @@ export function useCanvasEditing(options: {
         latest.current.selectAll();
       } else if (!mod && !event.altKey && key === "f") {
         latest.current.fitView();
+      } else if (!mod && !event.altKey && event.key === "/") {
+        event.preventDefault();
+        latest.current.openSearch?.();
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -198,6 +203,13 @@ export function useCanvasEditing(options: {
         label: t("Fit the workflow in view"),
         shortcut: "F",
         run: () => latest.current.fitView(),
+      },
+      {
+        id: "workflow:add-step",
+        label: t("Add a step"),
+        shortcut: "/",
+        keywords: "node search new",
+        run: () => latest.current.openSearch?.(),
       },
       {
         id: "workflow:history",

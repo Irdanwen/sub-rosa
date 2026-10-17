@@ -2274,3 +2274,58 @@
 .studio-cost-ceiling .studio-input {
   max-width: 8rem;
 }
+
+/* --- the step search ---------------------------------------------------- */
+
+.studio-node-search {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  left: min(var(--search-x), calc(100% - 17rem));
+  top: min(var(--search-y), calc(100% - 22rem));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 16rem;
+  max-height: 21rem;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+}
+
+.studio-node-search [role="listbox"] {
+  overflow-y: auto;
+}
+
+.studio-node-search-group {
+  display: block;
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.studio-node-search [role="option"] {
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--foreground);
+  text-align: start;
+  cursor: pointer;
+}
+
+.studio-node-search [role="option"][aria-selected="true"] {
+  background: var(--accent);
+}
+
+.studio-node-search-none {
+  margin: 0;
+  padding: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
