@@ -10,6 +10,7 @@ import {
   type WorkflowNode,
   WORKFLOW_FILE_VERSION,
 } from "../schema";
+import { migrateWorkflow } from "../migrate";
 import { type ComfyImport, detectWorkflowFile, translateComfy } from "./translate";
 
 /** The largest file worth reading: a real workflow is a few hundred KB. */
@@ -18,7 +19,7 @@ export const MAX_WORKFLOW_FILE_BYTES = 5 * 1024 * 1024;
 export interface WorkflowFile {
   format: "subrosa-workflow";
   version: number;
-  workflow: Pick<Workflow, "name" | "description" | "nodes" | "edges">;
+  workflow: Pick<Workflow, "name" | "description" | "nodes" | "edges" | "extra">;
 }
 
 export function workflowFileText(workflow: Workflow): string {
@@ -30,6 +31,7 @@ export function workflowFileText(workflow: Workflow): string {
       ...(workflow.description ? { description: workflow.description } : {}),
       nodes: workflow.nodes,
       edges: workflow.edges,
+      ...(workflow.extra ? { extra: workflow.extra } : {}),
     },
   };
   return `${JSON.stringify(file, null, 2)}\n`;
@@ -67,6 +69,9 @@ function cleanGraph(nodes: unknown[], edges: unknown[]): Pick<Workflow, "nodes" 
         node.params && typeof node.params === "object" && !Array.isArray(node.params)
           ? { ...(node.params as Record<string, unknown>) }
           : {},
+      ...(typeof node.v === "number" && Number.isInteger(node.v) && node.v > 1
+        ? { v: node.v }
+        : {}),
     });
   }
   const cleanEdges: WorkflowEdge[] = [];
@@ -102,9 +107,17 @@ export function readWorkflowFile(text: string, catalog: MediaCatalog, fileName =
     const file = json as Partial<WorkflowFile>;
     if (typeof file.version !== "number" || file.version > WORKFLOW_FILE_VERSION)
       throw new WorkflowFileError(t("This workflow was saved by a newer version of Sub Rosa."));
-    const workflow = file.workflow;
-    if (!workflow || !Array.isArray(workflow.nodes) || !Array.isArray(workflow.edges))
+    const raw = file.workflow;
+    if (!raw || !Array.isArray(raw.nodes) || !Array.isArray(raw.edges))
       throw new WorkflowFileError(t("This workflow file is incomplete."));
+    // A step renamed since the file was written becomes its successor here,
+    // before anything is judged unknown.
+    const workflow = migrateWorkflow({
+      ...raw,
+      nodes: raw.nodes.filter(
+        (node): node is WorkflowNode => Boolean(node) && typeof node === "object",
+      ),
+    });
     const unknown = workflow.nodes.find((node) => !maybeNodeSchema(String(node?.type)));
     if (unknown)
       throw new WorkflowFileError(
@@ -120,6 +133,9 @@ export function readWorkflowFile(text: string, catalog: MediaCatalog, fileName =
           (typeof workflow.name === "string" && workflow.name) || stem || t("Imported workflow"),
         ...(typeof workflow.description === "string" && workflow.description
           ? { description: workflow.description }
+          : {}),
+        ...(workflow.extra && typeof workflow.extra === "object" && !Array.isArray(workflow.extra)
+          ? { extra: workflow.extra }
           : {}),
       },
     };

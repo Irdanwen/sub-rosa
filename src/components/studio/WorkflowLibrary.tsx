@@ -48,7 +48,7 @@ function fileText(file: File): Promise<string> {
   });
 }
 
-export type ImportedWorkflow = Pick<Workflow, "name" | "description" | "nodes" | "edges">;
+export type ImportedWorkflow = Pick<Workflow, "name" | "description" | "nodes" | "edges" | "extra">;
 
 export function WorkflowLibrary({
   catalog,

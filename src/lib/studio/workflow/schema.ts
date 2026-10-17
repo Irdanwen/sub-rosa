@@ -44,6 +44,9 @@ export interface WorkflowNode {
   label: string;
   position: { x: number; y: number };
   params: Record<string, unknown>;
+  /** The node schema version it was saved under; absent means 1. Read by
+   * `migrate.ts` when a node's settings change shape. */
+  v?: number;
 }
 
 export interface WorkflowEdge {
@@ -71,11 +74,23 @@ export interface Workflow {
   /** The gallery file shown on its library card: its last real result, or a
    * picture made for it on request. */
   coverArtifactId?: string;
+  /** Fields of the stored graph this version does not read (frames, blocks,
+   * an app layout written by a later version), carried back unchanged on
+   * every save so nothing another device wrote is lost here. */
+  extra?: Record<string, unknown>;
+  /** Written by a newer version of the app: shown, never saved over. Known
+   * at load time only, never stored. */
+  readOnly?: true;
 }
 
-/** The version of the exported workflow file. Raise it with a reader for the
- * old one when the shape changes. */
-export const WORKFLOW_FILE_VERSION = 1;
+/**
+ * The version of the stored graph and of the exported file. Raise it with a
+ * reader for the old one when the shape changes.
+ *
+ * 2: the graph may carry fields beyond `nodes` and `edges` (kept in
+ * `Workflow.extra`), and a node may carry its schema version `v`.
+ */
+export const WORKFLOW_FILE_VERSION = 2;
 
 export type IOKind = "text" | "image" | "audio" | "video" | "none";
 
@@ -198,6 +213,9 @@ export interface NodeSchema {
   /** The node calls a paid model every time it runs. Read through
    * {@link isPaidNode}, which also knows when a gate's judge spends. */
   paid?: true;
+  /** Raised (from 1) when the node's settings change shape, with a step in
+   * `migrate.ts` that brings an older node forward. */
+  version?: number;
 }
 
 /** The conventional single text port most generators read their prompt from. */
