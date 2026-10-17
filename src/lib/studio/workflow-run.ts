@@ -353,6 +353,83 @@ export function workflowStepCache(workflowId: string): StepCache {
   };
 }
 
+/** One line of a workflow's run history (see `workflow_run_history`). */
+export interface WorkflowRunEntry {
+  id: string;
+  status: WorkflowRunSummary["status"];
+  error?: string;
+  nodeCosts?: string;
+  /** Steps that finished in this run. */
+  done: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A workflow's runs, newest first, without their frozen graphs. */
+export async function workflowRunHistory(workflowId: string): Promise<WorkflowRunEntry[]> {
+  try {
+    return (await invoke<WorkflowRunEntry[] | null>("workflow_run_history", { workflowId })) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Let go of a workflow's oldest finished runs (the newest thirty stay). */
+export function pruneWorkflowRuns(workflowId: string): Promise<void> {
+  return invoke("workflow_run_prune", { workflowId }).then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
+/** What a run credited, in credits: the figures it was confirmed at. */
+export function runCredits(entry: Pick<WorkflowRunEntry, "nodeCosts">): number | undefined {
+  if (!entry.nodeCosts) return undefined;
+  try {
+    const costs = JSON.parse(entry.nodeCosts) as Record<string, unknown>;
+    return Object.values(costs).reduce<number>(
+      (sum, value) => sum + (typeof value === "number" && Number.isFinite(value) ? value : 0),
+      0,
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What a past run left on each step: its outputs, read back from their
+ * gallery references, and its errors. A step whose file has left the
+ * gallery is simply left out. Also returns the graph the run executed.
+ */
+export async function runResults(
+  runId: string,
+): Promise<{ results: Map<string, NodeRunResult>; definition?: Workflow }> {
+  const detail = await invoke<{ run: WorkflowRunSummary; nodes: WorkflowRunNodeRow[] }>(
+    "workflow_run_get",
+    { id: runId },
+  );
+  const storage = workflowStorage();
+  const results = new Map<string, NodeRunResult>();
+  for (const node of detail.nodes) {
+    if (node.status === "error") {
+      results.set(node.nodeId, { nodeId: node.nodeId, status: "error", error: node.error });
+      continue;
+    }
+    if (node.status !== "done" || !node.output) continue;
+    try {
+      const stored = JSON.parse(node.output) as StoredOutput;
+      results.set(node.nodeId, {
+        nodeId: node.nodeId,
+        status: "done",
+        output: await rehydrate(stored, storage),
+      });
+    } catch {
+      // Gone from the gallery since, or never stored: shown as not run.
+    }
+  }
+  return { results, definition: runDefinition(detail.run) };
+}
+
 /** Which of these static keys a run would answer from the cache. */
 export async function knownStepKeys(staticKeys: string[]): Promise<Set<string>> {
   if (staticKeys.length === 0) return new Set();
