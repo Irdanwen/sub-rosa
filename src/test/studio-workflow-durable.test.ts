@@ -129,6 +129,66 @@ describe("runAndSaveWorkflow (durable)", () => {
     expect(invokeCalls("workflow_run_set_node")).toHaveLength(0);
   });
 
+  it("queues a rate-limited render again, under a new id, after the provider's wait", async () => {
+    let ids = 0;
+    vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
+      ids += 1;
+      return `id${ids}` as ReturnType<Crypto["randomUUID"]>;
+    });
+    let queued = 0;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "media_job_queue") {
+        queued += 1;
+        if (queued === 1)
+          throw {
+            code: "media_job_queue_failed",
+            message: "Too many requests.",
+            details: { status: 429, retryAfterMs: 5 },
+          };
+        return null;
+      }
+      if (command === "media_job_list") {
+        const last = invokeCalls("media_job_queue").at(-1)?.request as { jobId: string };
+        return [{ ...DELIVERED_JOB, id: last.jobId }];
+      }
+      return null;
+    });
+    const results = await runAndSaveWorkflow(
+      workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []),
+    );
+    expect(results.get("clip")?.status).toBe("done");
+    const jobIds = invokeCalls("media_job_queue").map(
+      (call) => (call.request as { jobId: string }).jobId,
+    );
+    expect(jobIds).toHaveLength(2);
+    expect(jobIds[0]).not.toBe(jobIds[1]);
+    // The refused row is let go only once its replacement is being queued.
+    expect(invokeCalls("media_job_dismiss")).toContainEqual({ id: jobIds[0] });
+    const pointers = invokeCalls("workflow_run_set_node")
+      .map((call) => call.request as { output?: { pendingJobId?: string } })
+      .map((request) => request.output?.pendingJobId)
+      .filter(Boolean);
+    expect(pointers).toContain(jobIds[1]);
+  });
+
+  it("does not wait out a refusal no wait can fix", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "media_job_queue")
+        throw {
+          code: "media_job_queue_failed",
+          message: "The prompt was refused.",
+          details: { status: 400 },
+        };
+      return null;
+    });
+    await expect(
+      runAndSaveWorkflow(
+        workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []),
+      ),
+    ).rejects.toThrow("The prompt was refused.");
+    expect(invokeCalls("media_job_queue")).toHaveLength(1);
+  });
+
   it("carries a native FLAC delivery into the persisted music output", async () => {
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "carpe_diem_media_catalog") return { backend: "carpe-diem", models: [] };

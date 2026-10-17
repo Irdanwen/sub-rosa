@@ -114,6 +114,31 @@ upscale Topaz) : `src/components/studio/VideoStudio.tsx`, contrat construit dans
 déjà ces familles du quote pour éviter le message d'erreur. On lèvera cette
 exclusion dès que le quote répondra.
 
+## 3. Une clé d'idempotence sur les requêtes payantes (2026-10-17)
+
+### Le besoin
+
+Quand une soumission payante (`POST /video/queue`, `/audio/music/queue`,
+`/image/*/queue`) reçoit une 5xx ou une coupure réseau, Sub Rosa ne sait pas si
+le travail a été accepté et facturé. Il ne réessaie donc jamais, et la personne
+doit vérifier son historique. Les refus définitifs (402, 429) sont, eux,
+désormais resoumis automatiquement (ADR-0114).
+
+### Ce qu'on demande
+
+- Accepter un en-tête `Idempotency-Key: <uuid>` sur toutes les routes payantes :
+  une seconde requête avec la même clé renvoie la réponse de la première au lieu
+  de lancer (et facturer) un second travail. Un `409` explicite si la première
+  est encore en cours.
+- Renvoyer, sur la réponse et dans le relevé d'usage, une étiquette par requête
+  (l'identifiant fourni par le client, ou celui du travail), pour que l'app
+  puisse rapprocher le prix estimé du prix facturé.
+
+### Côté Sub Rosa (prêt à brancher)
+
+L'identifiant local du job (`media_jobs.id`) est déjà unique par soumission et
+écrit avant l'envoi : il deviendrait la clé.
+
 ## Rappel de contexte
 
 Le catalogue opérateur reste un **sous-ensemble** de Venice, mais les modèles
