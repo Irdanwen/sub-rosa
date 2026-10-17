@@ -393,7 +393,7 @@ export function WorkflowLibrary({
 
 /** A card's picture: the cover, else a sketch of the graph itself, never a
  * placeholder that pretends to be a result. */
-function CardPicture({
+export function CardPicture({
   workflow,
   artifact,
   src,

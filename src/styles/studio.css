@@ -2907,3 +2907,138 @@ button.studio-block-crumb:hover {
   right: 2px;
   background: var(--card);
 }
+
+/* --- workflow tabs ------------------------------------------------------------ */
+
+/* The workflows open on the canvas. Each tab says what its run is doing while
+   another is on screen; the strip scrolls rather than squeezing names away. */
+.workflow-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.workflow-tab {
+  display: flex;
+  flex: 0 1 200px;
+  align-items: center;
+  min-width: 96px;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.workflow-tab:hover {
+  background: color-mix(in oklch, var(--card) 60%, transparent);
+  color: var(--foreground);
+}
+
+.workflow-tab[data-active] {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm), var(--shadow-inset);
+}
+
+.workflow-tab-tip {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-tab-button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-2);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.workflow-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-tab-mark {
+  flex-shrink: 0;
+}
+
+.workflow-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.workflow-tab[data-status="held"] .workflow-tab-dot {
+  background: var(--warning);
+}
+
+.workflow-tab[data-status="failed"] .workflow-tab-dot {
+  background: var(--destructive);
+}
+
+.workflow-tab[data-status="done"] .workflow-tab-dot {
+  background: var(--success);
+}
+
+.workflow-tab-close {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: var(--sp-1);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted-foreground);
+}
+
+.workflow-tab-close:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.workflow-tab-preview {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.workflow-tab-picture {
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--r-sm);
+  background: var(--muted);
+}
+
+.workflow-tab-picture img,
+.workflow-tab-picture video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.workflow-tab-preview-name {
+  font-weight: 500;
+}
+
+.workflow-tab-preview-status {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
