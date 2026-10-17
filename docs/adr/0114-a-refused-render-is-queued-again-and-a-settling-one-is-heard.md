@@ -106,3 +106,18 @@ anywhere stopped everything. ComfyUI schedules with a queue of ready nodes
 4. **Problems are said on the step.** A validation issue carries the step,
    the input and a code; the step is ringed and its reasons written on it,
    and the list above the canvas brings it into view.
+
+## Addendum 2026-10-17: a switch holds its sides
+
+A switch step (ComfyUI's lazy switch) passes on one of two inputs. Set by a
+setting, it is resolved before the run like a step switched off: the other
+side, and whatever only it needed, is neither priced nor made (`modes.ts`).
+Decided by a condition that arrives during the run, the ready scheduler
+holds every step only one side needs (`liveSwitchBranches`) until the
+condition is done, then starts the chosen side and leaves the other unmade,
+with a note saying why. The level scheduler, which productions use, does
+not hold: it makes both sides and the switch picks, which is correct and
+only more expensive, and productions do not compile switches. The bill
+counts the dearer side, since either may run; the spend guard therefore
+never under-reserves.
+

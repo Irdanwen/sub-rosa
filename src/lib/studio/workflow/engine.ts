@@ -33,7 +33,8 @@ import {
   type WorkflowStorage,
 } from "./run-types";
 import type { WorkflowOrigin } from "../types";
-import { catalogModel, executeNode } from "./execute-node";
+import { catalogModel, executeNode, joinAsText } from "./execute-node";
+import { decideSwitch, liveSwitchBranches } from "./switches";
 import { runtimeKey, staticKeys } from "./signature";
 import { withTransientTolerance } from "./transient";
 import { gateDecision } from "./gate";
@@ -206,6 +207,12 @@ async function runReady(
   workflow: Workflow,
   runNode: (nodeId: string) => Promise<NodeOutcome>,
   options: RunWorkflowOptions,
+  switching?: {
+    /** The side a switch takes, once its condition is done. */
+    decide: (switchId: string) => "a" | "b";
+    /** A step the switch's other side needed, left unmade. */
+    leaveOut: (nodeId: string) => void;
+  },
 ): Promise<void> {
   const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
   const parents = new Map<string, Set<string>>();
@@ -222,21 +229,77 @@ async function runReady(
   const waiting = new Map([...parents].map(([id, set]) => [id, set.size]));
   const running = new Set<Promise<void>>();
   let stopped = false;
+
+  // A switch decided by its condition starts neither of its sides until it
+  // knows which it takes, then only that one (switches.ts).
+  const branches = switching ? liveSwitchBranches(workflow) : [];
+  const heldBy = new Map<string, string[]>();
+  for (const branch of branches)
+    for (const id of [...branch.a, ...branch.b])
+      heldBy.set(id, [...(heldBy.get(id) ?? []), branch.switchId]);
+  const conditionOf = new Map(
+    branches.map((branch) => [
+      branch.switchId,
+      workflow.edges
+        .filter((edge) => edge.target === branch.switchId && edge.targetPort === "when")
+        .map((edge) => edge.source),
+    ]),
+  );
+  const decided = new Map<string, "a" | "b">();
+  const done = new Set<string>();
+  const parked = new Set<string>();
+  const leftOut = new Set<string>();
+  const mayStart = (id: string) =>
+    (heldBy.get(id) ?? []).every((switchId) => decided.has(switchId));
+  /** Decide every switch whose condition is now complete. */
+  const decideReady = (): string[] => {
+    const ready: string[] = [];
+    for (const branch of branches) {
+      const { switchId } = branch;
+      if (decided.has(switchId) || !switching) continue;
+      if (!(conditionOf.get(switchId) ?? []).every((id) => done.has(id))) continue;
+      const side = switching.decide(switchId);
+      decided.set(switchId, side);
+      const lost = side === "a" ? branch.b : branch.a;
+      for (const id of lost) {
+        leftOut.add(id);
+        parked.delete(id);
+        switching.leaveOut(id);
+      }
+      // The switch no longer waits for the side it does not take.
+      let left = waiting.get(switchId) ?? 0;
+      for (const parent of parents.get(switchId) ?? []) if (lost.has(parent)) left -= 1;
+      waiting.set(switchId, left);
+      if (left === 0) ready.push(switchId);
+    }
+    for (const id of [...parked]) {
+      if (!mayStart(id)) continue;
+      parked.delete(id);
+      ready.push(id);
+    }
+    return ready;
+  };
   const start = (ids: string[]) => {
     for (const id of [...ids].sort(
       (a, b) => startOrder(nodeById.get(a)) - startOrder(nodeById.get(b)),
     )) {
       if (stopped || options.signal?.aborted) return;
+      if (leftOut.has(id)) continue;
+      if (!mayStart(id)) {
+        parked.add(id);
+        continue;
+      }
       const task: Promise<void> = runNode(id).then((outcome) => {
         running.delete(task);
         if (outcome === "done") {
+          done.add(id);
           const ready: string[] = [];
           for (const child of children.get(id) ?? []) {
             const left = (waiting.get(child) ?? 1) - 1;
             waiting.set(child, left);
             if (left === 0) ready.push(child);
           }
-          start(ready);
+          start([...ready, ...decideReady()]);
         } else if (outcome === "aborted" || (outcome === "failed" && !options.isolateFailures)) {
           stopped = true;
         }
@@ -246,6 +309,16 @@ async function runReady(
   };
   start(workflow.nodes.filter((node) => waiting.get(node.id) === 0).map((node) => node.id));
   while (running.size > 0) await Promise.race(running);
+}
+
+/** The text a step's input carries, for a switch's condition. */
+function conditionText(
+  node: WorkflowNode,
+  workflow: Workflow,
+  results: Map<string, NodeRunResult>,
+  nodeById: Map<string, WorkflowNode>,
+): string {
+  return joinAsText(portInputs(node, workflow.edges, results, nodeById).get("when") ?? []);
 }
 
 /** Runs the workflow and resolves with every node's final result. Rejects
@@ -369,7 +442,18 @@ export async function runWorkflow(
 
   const cancelled = () => new DOMException("The workflow run was cancelled.", "AbortError");
   if (options.scheduling === "ready") {
-    await runReady(workflow, runNode, options);
+    await runReady(workflow, runNode, options, {
+      decide: (switchId) => {
+        const node = nodeById.get(switchId) as WorkflowNode;
+        return decideSwitch(node.params, conditionText(node, workflow, results, nodeById));
+      },
+      leaveOut: (nodeId) =>
+        update({
+          nodeId,
+          status: "pending",
+          note: t("Not made: the switch took the other side."),
+        }),
+    });
     if (options.signal?.aborted) throw cancelled();
   } else {
     for (const level of levels) {

@@ -41,6 +41,9 @@ const CATEGORY: Record<WorkflowNodeType, NodeCategory> = {
   compare: "flow",
   zoneEdit: "generate",
   sheet: "generate",
+  textTemplate: "inputs",
+  preview: "flow",
+  switch: "flow",
 };
 
 export function categoryLabel(category: NodeCategory): string {
@@ -105,6 +108,12 @@ function keywords(type: WorkflowNodeType): string {
       return t("inpaint region area fix part retouch mask");
     case "sheet":
       return t("grid nine angles expressions variations composer");
+    case "textTemplate":
+      return t("template fill blanks join combine words");
+    case "preview":
+      return t("show look view display");
+    case "switch":
+      return t("if condition choose either branch toggle");
   }
 }
 

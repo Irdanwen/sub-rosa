@@ -10,10 +10,11 @@
 // cache, the price and the validator only ever see steps that run.
 
 import { outputKindOf, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
+import { fixedSide, isDecidedLive } from "./switches";
 import { validateWorkflow } from "./validator";
 
 /** Steps that are there to be read or looked at, never run. */
-const SHOWN_ONLY = new Set<WorkflowNode["type"]>(["note", "compare"]);
+const SHOWN_ONLY = new Set<WorkflowNode["type"]>(["note", "compare", "preview"]);
 
 export type NodeMode = NonNullable<WorkflowNode["mode"]>;
 
@@ -22,13 +23,43 @@ export type NodeMode = NonNullable<WorkflowNode["mode"]>;
  * is set aside. */
 export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow: W): W {
   if (
-    !workflow.nodes.some((node) => node.mode || node.type === "relay" || SHOWN_ONLY.has(node.type))
+    !workflow.nodes.some(
+      (node) =>
+        node.mode || node.type === "relay" || node.type === "switch" || SHOWN_ONLY.has(node.type),
+    )
   )
     return workflow;
   const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
   const kindContext = { nodeById, edges: workflow.edges };
   let edges: WorkflowEdge[] = [...workflow.edges];
   const removed = new Set<string>();
+
+  // A switch set by a setting passes on its side, and what only the other
+  // side needed is not made: it was never going to be used (switches.ts).
+  for (const node of workflow.nodes) {
+    if (node.type !== "switch" || node.mode || isDecidedLive(node, edges)) continue;
+    const side = fixedSide(node.params);
+    const passing = edges.find((edge) => edge.target === node.id && edge.targetPort === side);
+    removed.add(node.id);
+    if (passing)
+      edges = edges.map((edge) =>
+        edge.source === node.id ? { ...edge, source: passing.source } : edge,
+      );
+    let orphans = edges
+      .filter((edge) => edge.target === node.id && edge.source !== passing?.source)
+      .map((edge) => edge.source);
+    edges = edges.filter((edge) => edge.target !== node.id);
+    while (orphans.length > 0) {
+      const next: string[] = [];
+      for (const id of orphans) {
+        if (removed.has(id) || edges.some((edge) => edge.source === id)) continue;
+        removed.add(id);
+        next.push(...edges.filter((edge) => edge.target === id).map((edge) => edge.source));
+        edges = edges.filter((edge) => edge.target !== id);
+      }
+      orphans = next;
+    }
+  }
 
   // Skipped steps, upstream first, so a chain of them resolves to the first
   // step that really runs.

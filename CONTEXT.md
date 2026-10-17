@@ -1155,6 +1155,18 @@ A step that shows two pictures, the second from a slider on, to see what an
 upscale, a cutout or a retouch changed. Like a note it never runs: it shows
 what reaches it once that exists. _Avoid_: diff, preview.
 
+**Switch (workflow)**:
+A step that passes on one of two inputs: the side its setting names, or the
+side a condition picks during the run (A when the condition says the words
+it waits for, else B). The other side is not made; until a condition is
+known, neither side starts. ComfyUI's lazy switch. _Avoid_: if node, router.
+
+**Setting taken from a connection (workflow)**:
+A step's setting fed by a wire instead of its own field (ComfyUI's widget
+converted to an input): words and closed choices only, never the model, a
+prompt, or an option the model's quote depends on. A closed choice is
+priced at its dearest value. _Avoid_: primitive, widget input.
+
 **Note (workflow)**:
 A step that holds words for whoever reads the workflow and never runs: removed
 with the steps set aside before anything is priced, validated or run. A

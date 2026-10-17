@@ -9,12 +9,14 @@
 // run; the confirmation handshake in the UI is what stands between the figure
 // and the spend.
 
+import { liveSwitchBranches } from "./switches";
 import { estimatedSpeechSeconds } from "../speech";
 import { estimateCostCredits } from "../catalog";
 import { mediaJson } from "../client";
 import { supportsVideoQuote, VIDEO_QUOTE_PATH } from "../paths";
 import type { MediaCatalog, MediaModel } from "../types";
 import {
+  fedParams,
   isPaidNode,
   maybeNodeSchema,
   nodeLabel,
@@ -47,6 +49,37 @@ export interface WorkflowCostEstimate {
   metered: number;
   /** Nodes whose figure a run-time quote could refine. */
   quotable: number;
+  /** The two sides of each switch decided during the run: only one is
+   * made, so the total counts the dearer one (switches.ts). */
+  alternatives?: Array<{ a: string[]; b: string[] }>;
+}
+
+/** The figures of a bill: the sum of what is known, the dearer side of each
+ * live switch only. */
+function totals(
+  nodes: NodeCostEstimate[],
+  alternatives: WorkflowCostEstimate["alternatives"],
+): Pick<WorkflowCostEstimate, "credits" | "metered" | "quotable"> {
+  const known = (estimate: NodeCostEstimate) =>
+    estimate.kind === "flat" && estimate.credits !== undefined ? estimate.credits : 0;
+  let credits = 0;
+  let metered = 0;
+  let quotable = 0;
+  for (const estimate of nodes) {
+    credits += known(estimate);
+    if (estimate.kind === "metered") metered += 1;
+    if (estimate.quotable) quotable += 1;
+  }
+  const byId = new Map(nodes.map((estimate) => [estimate.nodeId, estimate]));
+  for (const { a, b } of alternatives ?? []) {
+    const side = (ids: string[]) =>
+      ids.reduce(
+        (sum, id) => sum + (byId.has(id) ? known(byId.get(id) as NodeCostEstimate) : 0),
+        0,
+      );
+    credits -= Math.min(side(a), side(b));
+  }
+  return { credits: Math.round(credits * 100) / 100, metered, quotable };
 }
 
 /** Below this many credits a run starts without a confirmation handshake:
@@ -66,7 +99,31 @@ function flat(
   return credits !== undefined ? { ...base, kind: "flat", credits } : { ...base, kind: "metered" };
 }
 
+/** What a step costs. A closed choice it takes from a connection is
+ * priced at its dearest value: the connection may bring any of them. */
 export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): NodeCostEstimate {
+  const schema = maybeNodeSchema(node.type);
+  const choices = fedParams(node.params).flatMap((name) => {
+    const param = schema?.params.find((entry) => entry.name === name);
+    return param?.type === "enum" && param.enumValues?.length
+      ? [{ name, values: param.enumValues }]
+      : [];
+  });
+  if (choices.length === 0) return estimateOwnCost(node, catalog);
+  let variants: Array<Record<string, unknown>> = [node.params];
+  for (const { name, values } of choices) {
+    variants = variants.flatMap((params) => values.map((value) => ({ ...params, [name]: value })));
+    if (variants.length > 64) break;
+  }
+  const estimates = variants.map((params) => estimateOwnCost({ ...node, params }, catalog));
+  const metered = estimates.find((estimate) => estimate.kind === "metered");
+  if (metered) return metered;
+  return estimates.reduce((dearest, estimate) =>
+    (estimate.credits ?? 0) > (dearest.credits ?? 0) ? estimate : dearest,
+  );
+}
+
+function estimateOwnCost(node: WorkflowNode, catalog: MediaCatalog): NodeCostEstimate {
   const schema = maybeNodeSchema(node.type);
   // The node's own name ("First shot"), so two video nodes stay tellable
   // apart in a cost breakdown; the schema label is the fallback.
@@ -87,6 +144,9 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
     case "output":
     case "soundMix":
     case "compare":
+    case "textTemplate":
+    case "preview":
+    case "switch":
       return { ...base, kind: "free" };
 
     // Usage-priced per token; no per-run figure to show. An upscale and a
@@ -155,7 +215,7 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
  * node into a known one.
  */
 export function estimateWorkflowCost(
-  workflow: Pick<Workflow, "nodes">,
+  workflow: Pick<Workflow, "nodes"> & Partial<Pick<Workflow, "edges">>,
   catalog: MediaCatalog,
   overrides?: Map<string, number>,
 ): WorkflowCostEstimate {
@@ -167,15 +227,17 @@ export function estimateWorkflowCost(
     }
     return estimate;
   });
-  let credits = 0;
-  let metered = 0;
-  let quotable = 0;
-  for (const estimate of nodes) {
-    if (estimate.kind === "flat" && estimate.credits !== undefined) credits += estimate.credits;
-    if (estimate.kind === "metered") metered += 1;
-    if (estimate.quotable) quotable += 1;
-  }
-  return { nodes, credits: Math.round(credits * 100) / 100, metered, quotable };
+  const alternatives = workflow.edges
+    ? liveSwitchBranches({ nodes: workflow.nodes, edges: workflow.edges }).map((branch) => ({
+        a: [...branch.a],
+        b: [...branch.b],
+      }))
+    : [];
+  return {
+    nodes,
+    ...totals(nodes, alternatives),
+    ...(alternatives.length > 0 ? { alternatives } : {}),
+  };
 }
 
 /** The bill once the steps the cache will answer are taken out: each costs
@@ -190,15 +252,7 @@ export function withReusedSteps(
       ? { ...node, kind: "flat" as const, credits: 0, quotable: false, reused: true }
       : node,
   );
-  let credits = 0;
-  let metered = 0;
-  let quotable = 0;
-  for (const node of nodes) {
-    if (node.kind === "flat" && node.credits !== undefined) credits += node.credits;
-    if (node.kind === "metered") metered += 1;
-    if (node.quotable) quotable += 1;
-  }
-  return { nodes, credits: Math.round(credits * 100) / 100, metered, quotable };
+  return { ...estimate, nodes, ...totals(nodes, estimate.alternatives) };
 }
 
 /** The known figures per node, for stamping onto what the run produces. */

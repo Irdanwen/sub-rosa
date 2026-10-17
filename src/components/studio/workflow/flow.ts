@@ -101,6 +101,8 @@ export interface StudioNodeData extends Record<string, unknown> {
   compare?: { before?: string; after?: string };
   /** Zone retouches only: the picture the zone is drawn on. */
   zoneSource?: string;
+  /** Previews only: what the step feeding it made, once it has. */
+  preview?: { node: WorkflowNode; result: NodeRunResult };
 }
 
 export type StudioFlowNode = FlowNode<StudioNodeData, "studio">;

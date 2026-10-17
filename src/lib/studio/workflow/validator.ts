@@ -20,6 +20,7 @@ import {
   type Workflow,
   type WorkflowEdge,
   type WorkflowNode,
+  fedParams,
 } from "./schema";
 import { kindLabel, nodeTypeLabel, paramLabel, portLabel } from "./labels";
 
@@ -65,6 +66,8 @@ export interface ValidationResult {
 }
 
 function isParamMissing(node: WorkflowNode, name: string): boolean {
+  // Taken from a connection: it arrives during the run.
+  if (fedParams(node.params).includes(name)) return false;
   const value = node.params[name];
   if (value === undefined || value === null) return true;
   return typeof value === "string" && value.trim() === "";

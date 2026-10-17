@@ -25,6 +25,7 @@ import { composeImages, nativeQueuedImage, removeBackground, upscaleImage } from
 import { cropForSending, naturalSize, prepareSource, rasterizeZone } from "../retouch/canvas-io";
 import { buildEditRequest, editCaps } from "../retouch/request";
 import { strokesInCrop, type ZoneStroke, zoneBounds, zoneCrop } from "../retouch/zone";
+import { decideSwitch, fixedSide } from "./switches";
 import { zoneOf } from "./zone-param";
 import { generateImages } from "../generate-image";
 import { extractFrameAt, extractHandoffFrame, loadVideoElement } from "../frames";
@@ -34,7 +35,15 @@ import { requestSizeProblem } from "../seedance";
 import type { MediaModel } from "../types";
 import { videoRequestBody } from "../video-request";
 import { audioBufferToWav } from "../wav";
-import { nodeLabel, type WorkflowNode } from "./schema";
+import { paramLabel } from "./labels";
+import {
+  canFeedParam,
+  FED_PORT_PREFIX,
+  fedParams,
+  maybeNodeSchema,
+  nodeLabel,
+  type WorkflowNode,
+} from "./schema";
 import type {
   NodeOutput,
   WorkflowStorage,
@@ -85,7 +94,38 @@ function textualize(output: NodeOutput): string {
   }
 }
 
-function joinAsText(outputs: NodeOutput[]): string {
+/** A step with the settings it takes from a connection filled in from what
+ * arrived; one nothing arrived for keeps its own value. A closed choice must
+ * be one of its choices (any case). */
+export function withFedParams(node: WorkflowNode, ports: Map<string, NodeOutput[]>): WorkflowNode {
+  const names = fedParams(node.params);
+  if (names.length === 0) return node;
+  const schema = maybeNodeSchema(node.type);
+  const params = { ...node.params };
+  for (const name of names) {
+    const param = schema?.params.find((entry) => entry.name === name);
+    if (!param || !canFeedParam(param)) continue;
+    const text = joinAsText(ports.get(`${FED_PORT_PREFIX}${name}`) ?? []).trim();
+    if (!text) continue;
+    if (param.type === "enum") {
+      const match = param.enumValues?.find((value) => value.toLowerCase() === text.toLowerCase());
+      if (!match)
+        throw new Error(
+          t("{setting} cannot be {value}: it takes {choices}.", {
+            setting: paramLabel(param),
+            value: text,
+            choices: (param.enumValues ?? []).join(", "),
+          }),
+        );
+      params[name] = match;
+    } else {
+      params[name] = text;
+    }
+  }
+  return { ...node, params };
+}
+
+export function joinAsText(outputs: NodeOutput[]): string {
   return outputs
     .map(textualize)
     .filter((text) => text.trim() !== "")
@@ -220,10 +260,12 @@ function requireStorage(context: NodeContext, refusal: string): WorkflowStorage 
 }
 
 export async function executeNode(
-  node: WorkflowNode,
+  given: WorkflowNode,
   ports: Map<string, NodeOutput[]>,
   context: NodeContext,
 ): Promise<NodeOutput> {
+  // Settings taken from a connection are the step's own from here on.
+  const node = withFedParams(given, ports);
   const params = node.params;
   const { signal, storage } = context;
 
@@ -1023,6 +1065,30 @@ export async function executeNode(
       return { kind: "image", base64: drawn, mimeType: "image/png" };
     }
 
+    case "textTemplate": {
+      const values = (ports.get("values") ?? []).map(textualize);
+      const template = stringParam(params, "template") ?? "";
+      return {
+        kind: "text",
+        text: template.replace(
+          /\{\{(\d+)\}\}/g,
+          (_, index: string) => values[Number(index) - 1] ?? "",
+        ),
+      };
+    }
+
+    case "switch": {
+      // A switch set by a setting is resolved before the run (modes.ts);
+      // one decided by its condition reaches here with that condition, and
+      // on the canvas only with the side it takes (switches.ts).
+      const condition = ports.has("when") ? textInputOf(ports, "when") : undefined;
+      const side = condition !== undefined ? decideSwitch(params, condition) : fixedSide(params);
+      const chosen = ports.get(side)?.[0];
+      if (!chosen) throw new Error(t("Nothing reached the side this switch takes."));
+      return chosen;
+    }
+
+    case "preview":
     case "compare":
       // Canvas runs leave comparisons out (modes.ts): it shows its inputs.
       return { kind: "text", text: "" };
