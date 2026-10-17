@@ -80,8 +80,9 @@ quick-xml = "0.42"
 # engine writes them, and the encodings older bank exports use.
 regex = "1"
 encoding_rs = "0.8"
-# tauri-plugin-updater still asks for zip 4, so desktop builds compile both.
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
+# tauri-plugin-updater still asks for zip 4 on Windows, so those builds compile
+# both; the app's own reading and writing uses 9 (RUSTSEC-2026-0367 to -0369).
+zip = { version = "9", default-features = false, features = ["deflate"] }
 pdf-extract = "0.12.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "cookies"] }
 # Pure-Rust FFT for the echo-rejection similarity gate (GCC-PHAT lag estimation).

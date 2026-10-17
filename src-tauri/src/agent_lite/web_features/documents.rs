@@ -133,7 +133,7 @@ fn parts_of(bytes: &[u8]) -> Vec<Value> {
     (0..archive.len())
         .map(|index| {
             let mut file = archive.by_index(index).expect("a part");
-            let name = file.name().to_string();
+            let name = file.name().expect("a named part").into_owned();
             let mut raw = Vec::new();
             file.read_to_end(&mut raw).expect("readable");
             let text = String::from_utf8(raw).expect("XML is UTF-8");

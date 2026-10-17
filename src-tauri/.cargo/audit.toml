@@ -17,4 +17,13 @@ ignore = [
   # private-key operations, which a verifier does not perform. Revisit if the
   # backend ever signs with RSA, or when jsonwebtoken's backend moves off rsa.
   "RUSTSEC-2023-0071",
+  # zip 4 (RUSTSEC-2026-0367, -0368, -0369: symlinks and permission bits on
+  # extraction), reached only through tauri-plugin-updater, which asks for
+  # zip ^4 on Windows up to 2.14.0. It extracts only an update it downloaded
+  # from this app's release feed, after the minisign signature check passed,
+  # so no archive an attacker shaped reaches the extraction. The app's own
+  # zip is 9, which fixes all three. Drop these when the updater moves on.
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
 ]
