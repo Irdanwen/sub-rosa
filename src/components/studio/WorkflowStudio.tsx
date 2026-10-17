@@ -147,6 +147,7 @@ import { BlockBreadcrumb } from "./workflow/BlockBreadcrumb";
 import { BlockPanel } from "./workflow/BlockPanel";
 import { composeRoot, useBlockScope, withLevel } from "./workflow/useBlockScope";
 import { useRunPicture } from "./workflow/useRunPicture";
+import { useLibraryArrivals } from "./workflow/useLibraryArrivals";
 
 /**
  * The Workflows tab. The library is read before anything is drawn: an editor
@@ -560,6 +561,9 @@ function WorkflowEditor({
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(saveTimer.current);
   }, [serialized]);
+
+  // What another device changed reaches the library, and the open canvas.
+  useLibraryArrivals({ serialized, running, setWorkflows, hydrate });
   /** Bumped when a run ends, so the cache is asked again what it now holds. */
   const [runEpoch, setRunEpoch] = useState(0);
   const {

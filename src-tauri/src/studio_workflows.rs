@@ -13,10 +13,10 @@ use tauri::AppHandle;
 
 const INVALID: &str = "studio_workflow_invalid";
 const STORAGE: &str = "studio_workflow_storage_error";
-const MAX_NAME_CHARS: usize = 120;
-const MAX_DESCRIPTION_CHARS: usize = 20_000;
+pub(crate) const MAX_NAME_CHARS: usize = 120;
+pub(crate) const MAX_DESCRIPTION_CHARS: usize = 20_000;
 /// A large film compiles to a few hundred KB; this leaves ample room.
-const MAX_DEFINITION_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_DEFINITION_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

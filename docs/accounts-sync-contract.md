@@ -172,6 +172,8 @@ An object body contains `{ v: 1, operation_id, parent_revision, deleted, resolve
 
 ## Native assistant codec (21 September 2026)
 
+Studio workflows and library blocks (`studio_workflows`, [ADR 0118](adr/0118-workflows-travel-as-definitions-never-as-runs.md)) use `settings` too, one object per workflow UUID, definition columns only.
+
 Assistant definitions use the existing `settings` routing class; attached reference
 rows and encrypted files use `artifact`. Custom conversations use `conversation`
 with the authenticated body table `assistant_conversations`, containing the task

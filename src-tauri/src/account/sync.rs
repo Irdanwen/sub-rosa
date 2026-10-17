@@ -96,6 +96,9 @@ fn stays_local(t: &Table, prefix: &str) -> String {
         }
         // A connector row is named before it can leave (`object_column`).
         "connectors" => format!(" AND {prefix}object_id IS NOT NULL"),
+        // The service names objects by UUID; a workflow under any other id
+        // (none is made so, ADR-0118) stays here rather than being refused.
+        "studio_workflows" => super::studio_workflows::named_by_uuid(prefix),
         _ => String::new(),
     }
 }
@@ -266,6 +269,9 @@ pub async fn install(pool: &SqlitePool) -> Result<(), sqlx::error::Error> {
     query(&format!("CREATE TRIGGER IF NOT EXISTS account_usage_insert AFTER INSERT ON egress_ledger WHEN NEW.method='POST' AND NEW.purpose IN ('chat','transcription','embeddings','note generation','dictation','image','video','speech','music','ask') AND (SELECT account_id IS NOT NULL AND device_id IS NOT NULL AND applying=0 FROM account_sync_control WHERE id=1) BEGIN INSERT INTO account_usage(id,device_id,day,model,request_count,request_bytes,response_bytes) VALUES ({UUID_SQL},(SELECT device_id FROM account_sync_control WHERE id=1),substr(NEW.at,1,10),COALESCE(NEW.model,''),1,NEW.request_bytes,NEW.response_bytes) ON CONFLICT(device_id,day,model) DO UPDATE SET request_count=request_count+1,request_bytes=request_bytes+NEW.request_bytes,response_bytes=response_bytes+NEW.response_bytes; END")).execute(pool).await?;
     Ok(())
 }
+/// Tables added to the registry after accounts existed, inventoried again
+/// at every enable so a library bound before them sends what it held.
+const JOINED_LATE: [&str; 2] = ["saved_items", "studio_workflows"];
 pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
     if enabled {
@@ -283,10 +289,13 @@ pub async fn set_enabled(pool: &SqlitePool, enabled: bool) -> Result<(), AppErro
                 query(&sql).execute(&mut *tx).await?;
             }
         }
-        // Saved items joined the registry after most accounts took their first
-        // inventory (ADR-0088): what was saved before that leaves now.
-        let saved = table("saved_items")?;
-        query(&format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM saved_items WHERE id NOT IN (SELECT object_id FROM account_sync_outbox) AND id NOT IN (SELECT object_id FROM account_sync_heads){}",saved.kind,snapshot_body(saved,"saved_items."),stays_local(saved,"saved_items."))).execute(&mut *tx).await?;
+        // Tables that joined the registry after most accounts took their
+        // first inventory: what was there before leaves now. Saved items
+        // (ADR-0088) and the Studio's workflows (ADR-0118).
+        for name in JOINED_LATE {
+            let t = table(name)?;
+            query(&format!("INSERT INTO account_sync_outbox(operation_id,object_id,kind,body,deleted) SELECT {UUID_SQL},id,'{}',{},0 FROM {name} WHERE id NOT IN (SELECT object_id FROM account_sync_outbox) AND id NOT IN (SELECT object_id FROM account_sync_heads){}",t.kind,snapshot_body(t,&format!("{name}.")),stays_local(t,&format!("{name}.")))).execute(&mut *tx).await?;
+        }
     }
     query("UPDATE account_sync_control SET enabled=? WHERE id=1")
         .bind(enabled)
@@ -1105,6 +1114,10 @@ pub(super) async fn apply(
     if t.name == "ingests" {
         row.insert("status".into(), json!("done"));
     }
+    // A workflow is a definition, checked as this device's own save would be.
+    if t.name == "studio_workflows" {
+        super::studio_workflows::admit_row(&mut row)?;
+    }
     // The object a connector arrived under is the one it leaves under again.
     if t.name == "connectors" {
         row.insert("object_id".into(), json!(c.object_id));
@@ -1747,6 +1760,10 @@ mod web_tests;
 #[cfg(test)]
 #[path = "sync_connector_tests.rs"]
 mod connector_tests;
+
+#[cfg(test)]
+#[path = "sync_workflow_tests.rs"]
+mod workflow_tests;
 
 #[cfg(test)]
 #[path = "sync_devices_tests.rs"]

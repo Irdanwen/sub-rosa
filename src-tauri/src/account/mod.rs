@@ -15,6 +15,7 @@ pub mod shares;
 pub mod spaces;
 mod storage;
 pub(crate) mod studio;
+mod studio_workflows;
 mod summaries;
 pub(crate) use storage::forget_recording;
 pub use storage::StorageStatus;
