@@ -22,6 +22,7 @@ import { coverOffer, workflowMakes } from "../../lib/studio/workflow/library";
 import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
 import type { Workflow } from "../../lib/studio/workflow/schema";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { readEmbeddedWorkflow } from "../../lib/studio/workflow/comfy/embedded";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
 import "./workflow-library.css";
@@ -38,6 +39,16 @@ function templateCover(id: string): string | undefined {
 }
 
 /** A picked or dropped file's text. */
+/** A workflow file: Sub Rosa's own export or a ComfyUI graph. */
+function isWorkflowJson(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".json") || file.type === "application/json";
+}
+
+/** A picture or a video that may carry the ComfyUI graph that made it. */
+function isWorkflowMedia(file: File): boolean {
+  return /\.(png|webp|mp4|webm)$/i.test(file.name);
+}
+
 function fileText(file: File): Promise<string> {
   if (typeof file.text === "function") return file.text();
   return new Promise((resolve, reject) => {
@@ -93,9 +104,18 @@ export function WorkflowLibrary({
     if (!file) return;
     setError(undefined);
     try {
-      if (file.size > MAX_WORKFLOW_FILE_BYTES)
-        throw new Error(t("This file is too large to be a workflow."));
-      const read = readWorkflowFile(await fileText(file), catalog, file.name);
+      let text: string;
+      if (isWorkflowJson(file)) {
+        if (file.size > MAX_WORKFLOW_FILE_BYTES)
+          throw new Error(t("This file is too large to be a workflow."));
+        text = await fileText(file);
+      } else {
+        // A picture or a video ComfyUI made carries the graph that made it.
+        const embedded = await readEmbeddedWorkflow(file);
+        if (!embedded) throw new Error(t("This file carries no workflow."));
+        text = embedded;
+      }
+      const read = readWorkflowFile(text, catalog, file.name);
       if (read.kind === "subrosa") onImported(read.workflow);
       else setReview(read.result);
     } catch (cause) {
@@ -107,7 +127,7 @@ export function WorkflowLibrary({
     event.preventDefault();
     setDragging(false);
     void importFile(
-      [...event.dataTransfer.files].find((file) => file.name.toLowerCase().endsWith(".json")),
+      [...event.dataTransfer.files].find((file) => isWorkflowJson(file) || isWorkflowMedia(file)),
     );
   };
 
@@ -134,7 +154,7 @@ export function WorkflowLibrary({
           </h2>
           <p>
             {t(
-              "Open a workflow, start from a template, or import a file. ComfyUI files are translated.",
+              "Open a workflow, start from a template, or import a file: a workflow, or a picture or video made with ComfyUI. ComfyUI files are translated.",
             )}
           </p>
         </div>
@@ -155,7 +175,7 @@ export function WorkflowLibrary({
         <input
           ref={fileRef}
           type="file"
-          accept=".json,application/json"
+          accept=".json,application/json,image/png,image/webp,video/mp4,video/webm"
           hidden
           aria-label={t("Workflow file")}
           onChange={(event) => {
