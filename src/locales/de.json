@@ -3037,7 +3037,7 @@
   "No folder": "Kein Ordner",
   "No Google Places key is configured.": "Es ist kein Google Places-Schlüssel konfiguriert.",
   "No health data yet": "Noch keine Gesundheitsdaten",
-  "No hosted model matches {node}: pick one on the {step} step.": "Kein gehostetes Modell passt zu {node}: Wählen Sie eines im Schritt {step}.",
+  "No hosted model matches {node}: pick one on the {step} step.": "Kein gehostetes Modell passt zu {node}: Wähle eines im Schritt {step}.",
   "No hosted model matches {node}: pick one on the image node.": "Kein gehostetes Modell passt zu {node}: Wähle eines im Bildknoten.",
   "No hosted model matches {node}: pick one on the video node.": "Kein gehostetes Modell passt zu {node}: Wähle eines im Videoknoten.",
   "No image editing model is available right now.": "Gerade ist kein Modell zur Bildbearbeitung verfügbar.",
