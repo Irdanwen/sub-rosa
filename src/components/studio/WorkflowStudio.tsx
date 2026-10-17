@@ -17,6 +17,7 @@ import {
   type Connection,
   type Edge as FlowEdge,
   type EdgeChange,
+  type FinalConnectionState,
   type NodeChange,
   type ReactFlowInstance,
 } from "@xyflow/react";
@@ -81,6 +82,7 @@ import { nodeEtaKey } from "../../lib/studio/workflow/eta";
 import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
 import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
 import { applyModes } from "../../lib/studio/workflow/modes";
+import type { LinkFilter, NodeSearchHit } from "../../lib/studio/workflow/node-search";
 import { pruneToTargets } from "../../lib/studio/workflow/partial";
 import { spendGuard } from "../../lib/studio/workflow/spend";
 import { readSpendCeiling } from "../../lib/studio/workflow/spend-ceiling";
@@ -117,6 +119,7 @@ import {
 import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
 import { NODE_TYPES } from "./workflow/StudioNode";
 import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
+import { NodeSearch } from "./workflow/NodeSearch";
 import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
 import { useCanvasEditing } from "./workflow/useCanvasEditing";
 import { useLiveQuotes } from "./workflow/useLiveQuotes";
@@ -627,7 +630,11 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   );
 
   const addNode = useCallback(
-    (type: WorkflowNodeType) => {
+    (
+      type: WorkflowNodeType,
+      at?: { x: number; y: number },
+      extraParams?: Record<string, unknown>,
+    ): string => {
       const offset = flowNodes.length;
       const wfNode: WorkflowNode = {
         id: crypto.randomUUID(),
@@ -635,8 +642,10 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         // Unnamed: the type shows through as a placeholder until the user
         // gives it one, which is what keeps "never named" tellable.
         label: "",
-        position: { x: 80 + (offset % 4) * 60, y: 80 + offset * 40 },
-        params: defaultParams(type),
+        // Where it was asked for (the search opens where the pointer was);
+        // from the toolbar list, stepped down from the top left.
+        position: at ?? { x: 80 + (offset % 4) * 60, y: 80 + offset * 40 },
+        params: { ...defaultParams(type), ...extraParams },
       };
       setFlowNodes((nodes) => [
         ...nodes,
@@ -656,6 +665,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           },
         },
       ]);
+      return wfNode.id;
     },
     [
       flowNodes.length,
@@ -1103,6 +1113,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     },
     [artifacts, onParamsChange, onRename, onRemove, onApproveGate],
   );
+  const openSearchRef = useRef<(x: number, y: number) => void>(() => {});
   const editing = useCanvasEditing({
     active: view === "canvas" && current !== undefined && !current.readOnly,
     workflowId: current?.id,
@@ -1139,7 +1150,123 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     fitView: () => void flowRef.current?.fitView({ duration: 250 }),
     run: () => void startRunRef.current(),
     toggleHistory: () => setHistoryOpen((open) => !open),
+    openSearch: () => {
+      const box = canvasRef.current?.getBoundingClientRect();
+      if (box) openSearchRef.current(box.left + box.width / 2 - 128, box.top + 80);
+    },
   });
+
+  /** The step search, where it opened, and the connection it continues. */
+  const [search, setSearch] = useState<
+    | {
+        at: { x: number; y: number };
+        flow: { x: number; y: number };
+        link?: { nodeId: string; handle: "source" | "target"; port?: string; filter: LinkFilter };
+      }
+    | undefined
+  >(undefined);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const openSearch = useCallback(
+    (clientX: number, clientY: number, link?: NonNullable<typeof search>["link"]) => {
+      const box = canvasRef.current?.getBoundingClientRect();
+      const flow = flowRef.current?.screenToFlowPosition({ x: clientX, y: clientY }) ?? {
+        x: 80,
+        y: 80,
+      };
+      setSearch({
+        at: { x: clientX - (box?.left ?? 0), y: clientY - (box?.top ?? 0) },
+        flow,
+        link,
+      });
+    },
+    [],
+  );
+  const pickFromSearch = useCallback(
+    (hit: NodeSearchHit) => {
+      const opened = search;
+      setSearch(undefined);
+      if (!opened) return;
+      const id = addNode(hit.type, opened.flow, hit.params);
+      const link = opened.link;
+      if (!link) return;
+      if (link.handle === "source" && link.filter.from === "output") {
+        const created = { type: hit.type, params: { ...defaultParams(hit.type), ...hit.params } };
+        const port = resolveInputPort(created, {}, link.filter.kind);
+        if (!port) return;
+        setFlowEdges((edges) =>
+          addEdge(
+            { source: link.nodeId, target: id, sourceHandle: null, targetHandle: port.id },
+            edges,
+          ),
+        );
+      } else if (link.handle === "target") {
+        setFlowEdges((edges) =>
+          addEdge(
+            {
+              source: id,
+              target: link.nodeId,
+              sourceHandle: null,
+              targetHandle: link.port ?? null,
+            },
+            edges,
+          ),
+        );
+      }
+    },
+    [search, addNode],
+  );
+  openSearchRef.current = (x, y) => openSearch(x, y);
+  /** A connection let go over empty canvas opens the search for what fits. */
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+      if (state.isValid || !state.fromNode || !state.fromHandle) return;
+      const point = "changedTouches" in event ? event.changedTouches[0] : event;
+      const from = flowNodesRef.current.find((node) => node.id === state.fromNode?.id)?.data.wfNode;
+      if (!from || !point) return;
+      if (state.fromHandle.type === "source") {
+        const kind = outputKindOf(from, {
+          nodeById: new Map(flowNodesRef.current.map((node) => [node.id, node.data.wfNode])),
+          edges: flowEdgesRef.current.map(toWorkflowEdge),
+        });
+        // Let go on a step's body rather than on one of its inputs: it lands
+        // on the input that takes what the connection carries.
+        const onto = state.toNode
+          ? flowNodesRef.current.find((node) => node.id === state.toNode?.id)?.data.wfNode
+          : undefined;
+        if (onto && onto.id !== from.id) {
+          const port = resolveInputPort(onto, {}, kind);
+          const connection = {
+            source: from.id,
+            target: onto.id,
+            sourceHandle: null,
+            targetHandle: port?.id ?? null,
+          };
+          if (port && isValidConnection(connection)) {
+            setFlowEdges((edges) => addEdge(connection, edges));
+          }
+          return;
+        }
+        openSearch(point.clientX, point.clientY, {
+          nodeId: from.id,
+          handle: "source",
+          filter: { from: "output", kind },
+        });
+      } else {
+        const schema = maybeNodeSchema(from.type);
+        const port = schema
+          ? openInputPorts(schema, from.params).find((entry) => entry.id === state.fromHandle?.id)
+          : undefined;
+        if (!port) return;
+        openSearch(point.clientX, point.clientY, {
+          nodeId: from.id,
+          handle: "target",
+          port: port.id,
+          filter: { from: "input", kind: port.kind },
+        });
+      }
+    },
+    [openSearch, isValidConnection],
+  );
 
   const productionBanners = (
     <>
@@ -1423,9 +1550,18 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         />
       ) : null}
       <div
+        ref={canvasRef}
         className="studio-workflow-canvas"
         data-readonly={current?.readOnly ? "true" : undefined}
       >
+        {search ? (
+          <NodeSearch
+            at={search.at}
+            filter={search.link?.filter}
+            onPick={pickFromSearch}
+            onClose={() => setSearch(undefined)}
+          />
+        ) : null}
         <ReactFlow
           nodes={flowNodes}
           edges={displayEdges}
@@ -1435,6 +1571,13 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           isValidConnection={isValidConnection}
+          onConnectEnd={onConnectEnd}
+          onPaneClick={(event) => {
+            // The second click of a double-click on empty canvas opens the
+            // step search there.
+            if (event.detail === 2 && !current?.readOnly) openSearch(event.clientX, event.clientY);
+          }}
+          zoomOnDoubleClick={false}
           onInit={(instance) => {
             // The display edges carry badge data the instance's type does
             // not need to know about.
