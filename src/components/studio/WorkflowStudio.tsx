@@ -31,7 +31,10 @@ import {
   listResumableRuns,
   resumeWorkflowRun,
   runAndSaveWorkflow,
+  pruneWorkflowRuns,
   runDefinition,
+  runResults,
+  workflowRunHistory,
   workflowStepCache,
   type WorkflowRunSummary,
 } from "../../lib/studio/workflow-run";
@@ -106,6 +109,7 @@ import {
 import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
 import { NODE_TYPES } from "./workflow/StudioNode";
 import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
+import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
 import { useReusePrediction } from "./workflow/useReusePrediction";
 
 /**
@@ -311,6 +315,24 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       );
       setFlowEdges(opened ? toFlowEdges(opened) : []);
       if (stranded.length > 0) setPortNotice(openNotice(stranded));
+      // What the last run made shows again on its steps: reopening a
+      // workflow used to show none of its past results. Left alone if a run
+      // has started meanwhile.
+      if (opened) {
+        const openedId = opened.id;
+        void (async () => {
+          const last = (await workflowRunHistory(openedId)).find(
+            (entry) => entry.done > 0 && entry.status !== "running",
+          );
+          if (!last) return;
+          const { results: past } = await runResults(last.id);
+          if (currentRef.current?.id !== openedId) return;
+          const present = new Set(opened.nodes.map((node) => node.id));
+          setResults((live) =>
+            live.size > 0 ? live : new Map([...past].filter(([nodeId]) => present.has(nodeId))),
+          );
+        })().catch(() => undefined);
+      }
     },
     [catalog, artifacts, onParamsChange, onRename, onRemove, onApproveGate],
   );
@@ -720,6 +742,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           },
           onUpdate: mirrorUpdate,
         });
+        void pruneWorkflowRuns(serialized.id);
         // The run's own result becomes the library card's picture: free, and
         // true to what the workflow makes.
         const cover = coverArtifactOf(serialized, runResultsRef.current);
@@ -935,6 +958,23 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     [catalog],
   );
 
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const showRun = useCallback(async (runId: string) => {
+    const { results: past } = await runResults(runId);
+    const present = new Set(flowNodesRef.current.map((node) => node.id));
+    setResults(new Map([...past].filter(([nodeId]) => present.has(nodeId))));
+  }, []);
+  const restoreRun = useCallback(
+    async (runId: string) => {
+      const base = currentRef.current;
+      const { definition, results: past } = await runResults(runId);
+      if (!base || !definition) return;
+      hydrate({ ...base, nodes: definition.nodes, edges: definition.edges });
+      setResults(past);
+    },
+    [hydrate],
+  );
+
   const productionBanners = (
     <>
       {!running && liveProductions.length > 0 ? (
@@ -1066,6 +1106,15 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
             label: nodeTypeLabel(schema.type),
           }))}
         />
+        <button
+          type="button"
+          className="btn btn-secondary"
+          aria-pressed={historyOpen}
+          disabled={!current}
+          onClick={() => setHistoryOpen((open) => !open)}
+        >
+          {t("History")}
+        </button>
         <span className="studio-spacer" />
         {current ? (
           <button
@@ -1161,6 +1210,15 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
             </span>
           ))}
         </div>
+      ) : null}
+      {historyOpen && current ? (
+        <RunHistoryPanel
+          workflowId={current.id}
+          refreshKey={runEpoch}
+          onShow={(runId) => void showRun(runId)}
+          onRestore={(runId) => void restoreRun(runId)}
+          onClose={() => setHistoryOpen(false)}
+        />
       ) : null}
       <div
         className="studio-workflow-canvas"

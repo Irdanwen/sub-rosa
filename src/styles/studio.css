@@ -2121,3 +2121,70 @@
   font-size: var(--fs-sm);
   color: var(--foreground);
 }
+
+/* --- a workflow's run history ------------------------------------------- */
+
+.studio-run-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-height: 40dvh;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.studio-run-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.studio-run-history-head h3 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.studio-run-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-run-history-list > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.studio-run-history-list > li:first-child {
+  border-top: none;
+}
+
+.studio-run-history-line,
+.studio-run-history-meta,
+.studio-run-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.studio-run-history-when {
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.studio-run-history-meta {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
