@@ -31,6 +31,8 @@ import {
   saveArtifactFromUrl,
 } from "./artifacts";
 import type { ArtifactFile, StudioArtifact } from "./types";
+import { waitForSettledJob, withSubmissionSlot } from "./workflow/render-wait";
+import { TRANSIENT_WAIT_BUDGET_MS, transientDelays } from "./workflow/transient";
 import {
   awaitingGateIds,
   type ChainRef,
@@ -298,8 +300,6 @@ interface MediaJobRow {
   source?: string;
 }
 
-const JOB_WAIT_INTERVAL_MS = 3_000;
-
 function waitDelay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -314,22 +314,20 @@ function waitDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Wait for a durable job to settle. Rust does the real work (poll, download,
- * notify); this only reads the rows. A cancelled wait leaves the job alone —
- * the render is paid for and will still land. */
-async function waitForMediaJob(jobId: string, signal?: AbortSignal): Promise<MediaJobRow> {
-  for (;;) {
-    if (signal?.aborted) {
-      throw new DOMException("The workflow run was cancelled.", "AbortError");
-    }
-    const jobs = (await invoke<MediaJobRow[] | null>("media_job_list")) ?? [];
-    const job = jobs.find((entry) => entry.id === jobId);
-    if (!job) {
-      throw new Error(t("The render's job row is gone. Run the workflow again to redo this node."));
-    }
-    if (job.status === "completed" || job.status === "failed") return job;
-    await waitDelay(JOB_WAIT_INTERVAL_MS, signal);
-  }
+/** The longest a provider's own `Retry-After` is honoured for, per attempt. */
+const MAX_RETRY_AFTER_MS = 150_000;
+
+/** A definite, uncharged refusal the provider expects to lift on its own: a
+ * rate limit (429) or an empty payment rail (402). Read from the details the
+ * native queue command attaches; anything else is not waited out. */
+function waitableRefusal(error: unknown): { retryAfterMs?: number } | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const { code, details } = error as { code?: unknown; details?: unknown };
+  if (code !== "media_job_queue_failed" || !details || typeof details !== "object")
+    return undefined;
+  const { status, retryAfterMs } = details as { status?: unknown; retryAfterMs?: unknown };
+  if (status !== 429 && status !== 402) return undefined;
+  return typeof retryAfterMs === "number" && retryAfterMs > 0 ? { retryAfterMs } : {};
 }
 
 /**
@@ -341,17 +339,18 @@ async function waitForMediaJob(jobId: string, signal?: AbortSignal): Promise<Med
 function durableMediaRunner(
   runId: string,
   pendingJobs: Map<string, string>,
+  waitBudgetMs: number = TRANSIENT_WAIT_BUDGET_MS,
 ): NonNullable<RunWorkflowOptions["durableMedia"]> {
-  return async (nodeId, request: DurableRenderRequest, signal) => {
-    let jobId = pendingJobs.get(nodeId);
-    if (!jobId) {
-      jobId = crypto.randomUUID();
-      await invoke("workflow_run_set_node", {
-        request: { runId, nodeId, status: "running", output: { pendingJobId: jobId } },
-      });
-      pendingJobs.set(nodeId, jobId);
-      void ensureNotificationPermission("studio");
-      await invoke("media_job_queue", {
+  /** Queue the render under a fresh job id, its pointer written first. */
+  const submit = async (nodeId: string, request: DurableRenderRequest): Promise<string> => {
+    const jobId = crypto.randomUUID();
+    await invoke("workflow_run_set_node", {
+      request: { runId, nodeId, status: "running", output: { pendingJobId: jobId } },
+    });
+    pendingJobs.set(nodeId, jobId);
+    void ensureNotificationPermission("studio");
+    await withSubmissionSlot(() =>
+      invoke("media_job_queue", {
         request: {
           jobId,
           queuePath: request.queuePath,
@@ -367,24 +366,51 @@ function durableMediaRunner(
           costCredits: request.costCredits,
           source: "workflow",
         },
-      }).catch((error: unknown) => {
-        if (
-          error &&
-          typeof error === "object" &&
-          "message" in error &&
-          typeof error.message === "string"
-        )
-          throw new Error(t(error.message));
-        throw error;
-      });
-      // The pointer goes down before we wait: it is what lets the next
-      // session find this render instead of buying it twice.
-      await invoke("workflow_run_set_node", {
-        request: { runId, nodeId, status: "running", output: { pendingJobId: jobId } },
-      });
-      pendingJobs.set(nodeId, jobId);
+      }),
+    );
+    // The pointer goes down before we wait: it is what lets the next
+    // session find this render instead of buying it twice.
+    await invoke("workflow_run_set_node", {
+      request: { runId, nodeId, status: "running", output: { pendingJobId: jobId } },
+    });
+    return jobId;
+  };
+
+  return async (nodeId, request: DurableRenderRequest, signal) => {
+    let jobId = pendingJobs.get(nodeId);
+    if (!jobId) {
+      // A rate limit or an empty payment rail refuses before anything is
+      // charged, so the render is queued again, under a new id (the refused
+      // row is a definite failure the old id would only hand back), after
+      // the provider's own wait or the outage patience's next step.
+      const delays = transientDelays(waitBudgetMs);
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          jobId = await submit(nodeId, request);
+          break;
+        } catch (error) {
+          const refusal = waitableRefusal(error);
+          const delay = delays[attempt];
+          if (!refusal || delay === undefined) {
+            if (
+              error &&
+              typeof error === "object" &&
+              "message" in error &&
+              typeof error.message === "string"
+            )
+              throw new Error(t(error.message));
+            throw error;
+          }
+          // The refused row stays until the next submission replaces it: a
+          // run cancelled during the wait resumes onto that definite failure
+          // instead of a pointer to nothing.
+          await waitDelay(Math.min(refusal.retryAfterMs ?? delay, MAX_RETRY_AFTER_MS), signal);
+          const refused = pendingJobs.get(nodeId);
+          if (refused) await invoke("media_job_dismiss", { id: refused }).catch(() => undefined);
+        }
+      }
     }
-    const job = await waitForMediaJob(jobId, signal);
+    const job = await waitForSettledJob<MediaJobRow>(jobId, signal);
     if (job.status === "failed") {
       throw new Error(job.error ?? "The generation failed.");
     }
@@ -448,6 +474,9 @@ async function persistNode(
 interface DurableRunOptions {
   /** Fail closed when a finished paid output is missing instead of buying it again. */
   requireExistingOutputs?: boolean;
+  /** How long a render may wait out a rate limit or an empty payment rail
+   * before the node fails (see `RunWorkflowOptions.transientWaitMs`). */
+  transientWaitMs?: number;
   beforeNode?: RunWorkflowOptions["beforeNode"];
   signal?: AbortSignal;
   onUpdate?: (result: NodeRunResult) => void;
@@ -524,7 +553,7 @@ async function executeDurable(
       nodeCosts: options.nodeCosts,
       completed,
       approvedGates: options.approvedGates,
-      durableMedia: durableMediaRunner(runId, pendingJobs),
+      durableMedia: durableMediaRunner(runId, pendingJobs, options.transientWaitMs),
       beforeNode: async (node) => {
         await writes;
         if (!pendingJobs.has(node.id)) {

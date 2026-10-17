@@ -298,8 +298,15 @@ pub async fn media_job_queue(
     if !response.ok {
         if definite_queue_rejection(response.status) {
             let message = backend_error(&response);
-            fail(&app, &request.job_id, &message, Some(response.status)).await;
-            return Err(AppError::new("media_job_queue_failed", message));
+            // The caller is in the foreground and hears this refusal at once
+            // (and a workflow re-queues a rate limit on its own): a system
+            // notification on top would announce a failure that is not one.
+            fail_quietly(&app, &request.job_id, &message, Some(response.status)).await;
+            return Err(queue_rejection(
+                message,
+                response.status,
+                response.retry_after_ms,
+            ));
         }
         // An edge or provider may answer after accepting the paid request.
         // Keep the pre-submit row uncertain so neither the image surface nor
@@ -798,6 +805,37 @@ async fn fail(app: &AppHandle, id: &str, reason: &str, status: Option<u16>) {
     }
 }
 
+/// A refusal at submission: recorded and announced to the webview, without
+/// the system notification a render that failed later deserves.
+async fn fail_quietly(app: &AppHandle, id: &str, reason: &str, status: Option<u16>) {
+    if let Ok(repos) = crate::commands::repositories(app).await {
+        if let Ok(Some(job)) = repos
+            .set_media_job_status(
+                id,
+                MediaJobStatus::Failed,
+                Some(reason),
+                status.map(i64::from),
+            )
+            .await
+        {
+            emit(app, &repos.pool, job).await;
+        }
+    }
+}
+
+/// The error a definite queue refusal returns: nothing was charged, and the
+/// status (with the provider's own `Retry-After`, when it sent one) is what
+/// lets a caller tell a rate limit it can wait out from a request it cannot
+/// fix by waiting.
+fn queue_rejection(message: String, status: u16, retry_after_ms: Option<u64>) -> AppError {
+    let mut error = AppError::new("media_job_queue_failed", message);
+    error.details = Some(serde_json::json!({
+        "status": status,
+        "retryAfterMs": retry_after_ms,
+    }));
+    error
+}
+
 async fn emit(app: &AppHandle, pool: &sqlx_sqlite::SqlitePool, job: MediaJobDto) {
     let _ = app.emit(MEDIA_JOB_EVENT, view(pool, job).await);
 }
@@ -991,6 +1029,18 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
         }
+    }
+
+    #[test]
+    fn a_queue_refusal_carries_its_status_and_wait() {
+        let error = queue_rejection("Slow down.".into(), 429, Some(12_000));
+        assert_eq!(error.code, "media_job_queue_failed");
+        assert_eq!(error.message, "Slow down.");
+        let details = error.details.expect("details");
+        assert_eq!(details["status"], 429);
+        assert_eq!(details["retryAfterMs"], 12_000);
+        let bare = queue_rejection("No.".into(), 400, None);
+        assert!(bare.details.expect("details")["retryAfterMs"].is_null());
     }
 
     #[test]
