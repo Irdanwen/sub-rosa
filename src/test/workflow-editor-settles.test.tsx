@@ -59,7 +59,7 @@ describe("the workflow editor", () => {
     const errors = vi.spyOn(console, "error");
     const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
     render(<WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />);
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
     await new Promise((resolve) => setTimeout(resolve, 300));
     // Nothing changes from here on, so nothing is judged again.
@@ -76,7 +76,7 @@ describe("the workflow editor", () => {
     const { container } = render(
       <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
     );
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
     const frames = () => container.querySelectorAll(".react-flow__node-frame").length;
     expect(frames()).toBe(1);
@@ -105,7 +105,7 @@ describe("the workflow editor", () => {
     const { container } = render(
       <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
     );
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
     const notes = () => container.querySelectorAll('.studio-node[data-type="note"]').length;
     const before = notes();
@@ -119,7 +119,7 @@ describe("the workflow editor", () => {
   it("renames, starts a new workflow, deletes it on confirm, and goes back to the library", async () => {
     const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
     render(<WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />);
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "New" }));
     const name = screen.getByLabelText("Workflow name") as HTMLInputElement;
@@ -131,7 +131,7 @@ describe("the workflow editor", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Library" }));
-    await screen.findByRole("button", { name: /Cover/ });
+    await screen.findByRole("button", { name: "Open Cover" });
   });
 
   it("makes a block with ⇧⌘E, sets its promoted text, and puts its steps back", async () => {
@@ -139,7 +139,7 @@ describe("the workflow editor", () => {
     const { container } = render(
       <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
     );
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
     const steps = () => container.querySelectorAll(".react-flow__node-studio").length;
     const before = steps();
@@ -173,7 +173,7 @@ describe("the workflow editor", () => {
     const { container } = render(
       <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
     );
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
     const steps = () => container.querySelectorAll(".react-flow__node-studio").length;
     const before = steps();
@@ -213,7 +213,7 @@ describe("the workflow editor", () => {
     const { container } = render(
       <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
     );
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
     fireEvent.keyDown(window, { key: "a", metaKey: true });
     fireEvent.keyDown(window, { key: "e", metaKey: true, shiftKey: true });
@@ -243,7 +243,7 @@ describe("the workflow editor", () => {
     const { container } = render(
       <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
     );
-    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await screen.findByRole("button", { name: "Open Cover" }).then((card) => card.click());
     await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
     fireEvent.keyDown(window, { key: "a", metaKey: true });
     const bar = await screen.findByRole("toolbar", { name: "Selected steps" });

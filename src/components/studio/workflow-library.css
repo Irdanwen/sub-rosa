@@ -63,6 +63,7 @@
   background: var(--background);
 }
 .workflow-card-open {
+  position: relative;
   display: grid;
   place-items: center;
   aspect-ratio: 16 / 10;
@@ -191,4 +192,62 @@
   flex: 1;
   font-weight: 500;
   color: var(--foreground);
+}
+
+/* Templates: a heading with the kinds to choose from. */
+.workflow-library-templates-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.workflow-card-description {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+.workflow-card-open:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* What the person made from a template, over its shipped picture: shown on
+   hover or keyboard focus, so the card shows a real result, theirs. */
+.workflow-card-yours {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  opacity: 0;
+  transition: opacity var(--t-slow) var(--ease-out);
+}
+.workflow-card-yours > img,
+.workflow-card-yours > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.workflow-card-yours-tag {
+  position: absolute;
+  bottom: var(--sp-2);
+  left: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  background: color-mix(in oklch, var(--background) 85%, transparent);
+  color: var(--foreground);
+  font-size: var(--fs-xs);
+}
+.workflow-card-open:focus-visible .workflow-card-yours {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .workflow-card-open:hover .workflow-card-yours {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workflow-card-yours {
+    transition: none;
+  }
 }

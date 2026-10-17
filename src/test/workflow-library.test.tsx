@@ -206,6 +206,49 @@ describe("the library screen", () => {
     expect(props.onUseTemplate).toHaveBeenCalledWith("template-x");
   });
 
+  it("sorts templates by kind, says which one today's catalog cannot make, and shows what you made", async () => {
+    const { templateWorkflows } = await import("../lib/studio/workflow/templates");
+    const props = {
+      catalog,
+      workflows: [
+        workflow("mine", {
+          name: "My covers",
+          coverArtifactId: "made.png",
+          extra: { template: "template-album-cover" },
+        }),
+      ],
+      templates: templateWorkflows(),
+      onOpen: vi.fn(),
+      onUseTemplate: vi.fn(),
+      onNew: vi.fn(),
+      onImported: vi.fn(),
+      onExport: vi.fn(async () => undefined),
+      onDelete: vi.fn(),
+      onMakeCover: vi.fn(async () => undefined),
+    };
+    tauri.invoke
+      .mockReset()
+      .mockImplementation(async (command: string) =>
+        command === "carpe_diem_media_list_artifacts"
+          ? [{ path: "/gallery/made.png", fileName: "made.png", bytes: 1, modifiedMs: 1 }]
+          : [],
+      );
+    render(<WorkflowLibrary {...props} />);
+    const albumCover = screen.getByRole("button", { name: "Start from Album cover" });
+    await waitFor(() => expect(within(albumCover).getByText("What you made")).toBeInTheDocument());
+    // This catalog has no music model: the template says so and does not start.
+    const music = screen.getByRole("button", { name: "Start from Music from a mood" });
+    expect(music).toBeDisabled();
+    expect(
+      within(music.closest("article") as HTMLElement).getByText(
+        "Not offered today: no model for Music brief, Track",
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Sound", pressed: false }));
+    expect(screen.queryByRole("button", { name: "Start from Album cover" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start from Podcast intro" })).toBeInTheDocument();
+  });
+
   it("translates a ComfyUI file, shows the report, and imports only when asked", async () => {
     const props = renderLibrary();
     const file = new File([JSON.stringify(geminiOmni)], "omni.json", { type: "application/json" });

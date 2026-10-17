@@ -2,6 +2,7 @@
 // what it makes, and, on request, a picture made for it (ADR-0075).
 
 import { MAX_BLOCK_DEPTH } from "./blocks";
+import { expandLists } from "./lists";
 import { t } from "../../i18n";
 import { saveArtifactFromBase64 } from "../artifacts";
 import { defaultImageModel, estimateCostCredits } from "../catalog";
@@ -53,11 +54,17 @@ function stepsOf(
   });
 }
 
-/** "2 images, 1 video": what one run makes, for the card. */
-export function workflowMakes(workflow: Pick<Workflow, "nodes" | "blocks">): string {
-  const steps = stepsOf(workflow.nodes, workflow.blocks);
+/** "2 images, 1 video": what one run makes, for the card. A list counts
+ * every item it makes (ADR-0117). */
+export function workflowMakes(
+  workflow: Pick<Workflow, "nodes" | "blocks"> & Partial<Pick<Workflow, "edges">>,
+): string {
+  const nodes = workflow.edges
+    ? expandLists({ nodes: workflow.nodes, edges: workflow.edges }).nodes
+    : workflow.nodes;
+  const steps = stepsOf(nodes, workflow.blocks);
   const count = (types: string[]) => steps.filter((node) => types.includes(node.type)).length;
-  const images = count(["image", "imageEdit"]);
+  const images = count(["image", "imageEdit", "zoneEdit", "sheet", "upscale", "cutout"]);
   const videos = count(["video"]);
   const sounds = count(["tts", "music"]);
   const parts: string[] = [];
