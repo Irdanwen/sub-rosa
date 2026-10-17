@@ -18,18 +18,28 @@ import {
   defaultImageModel,
   imageEditModels,
   imageGenerationModels,
+  supportsBackgroundRemoval,
   videoDirection,
   type VideoDirection,
 } from "../../catalog";
+import { MAX_BLOCK_DEPTH } from "../blocks";
 import { t } from "../../../i18n";
 import type { MediaCatalog, MediaModel } from "../../types";
 import { nodeTypeLabel } from "../labels";
 import { modelParamPatch, modelsForParam } from "../models";
+import { partnerRole } from "./partners";
 import {
+  type BlockInput,
+  type BlockOutput,
+  canFeedParam,
   defaultParams,
+  FED_PARAMS_KEY,
+  FED_PORT_PREFIX,
+  fedParams,
   NODE_SCHEMAS,
   openInputPorts,
   type Workflow,
+  type WorkflowBlock,
   type WorkflowEdge,
   type WorkflowFrame,
   type WorkflowNode,
@@ -59,6 +69,8 @@ export interface ComfyImport {
 
 interface ComfyLink {
   from: string;
+  /** Which of the source's outputs it leaves from. */
+  slot: number;
   /** What the link carries, as ComfyUI types it ("IMAGE", "STRING"...), or
    * "" when the file does not say (the API format). */
   type: string;
@@ -114,13 +126,23 @@ function readUiFormat(json: Record<string, unknown>): ComfyNode[] {
   const linkById = new Map<number, ComfyLink>();
   for (const link of rawLinks) {
     if (Array.isArray(link) && link.length >= 5) {
-      linkById.set(Number(link[0]), { from: String(link[1]), type: String(link[5] ?? "") });
+      linkById.set(Number(link[0]), {
+        from: String(link[1]),
+        slot: Number(link[2]) || 0,
+        type: String(link[5] ?? ""),
+      });
     } else if (link && typeof link === "object") {
       // Newer files write links as objects.
-      const entry = link as { id?: unknown; origin_id?: unknown; type?: unknown };
+      const entry = link as {
+        id?: unknown;
+        origin_id?: unknown;
+        origin_slot?: unknown;
+        type?: unknown;
+      };
       if (entry.id !== undefined && entry.origin_id !== undefined)
         linkById.set(Number(entry.id), {
           from: String(entry.origin_id),
+          slot: Number(entry.origin_slot) || 0,
           type: String(entry.type ?? ""),
         });
     }
@@ -158,6 +180,7 @@ function readUiFormat(json: Record<string, unknown>): ComfyNode[] {
       if (source)
         links.set(shortName(String(input.name)), {
           from: source.from,
+          slot: source.slot,
           type: source.type || String(input.type ?? ""),
         });
     }
@@ -186,7 +209,7 @@ function readApiFormat(json: Record<string, unknown>): ComfyNode[] {
     const links = new Map<string, ComfyLink>();
     for (const [name, value] of Object.entries(node.inputs ?? {})) {
       if (Array.isArray(value) && value.length === 2 && typeof value[1] === "number")
-        links.set(shortName(name), { from: String(value[0]), type: "" });
+        links.set(shortName(name), { from: String(value[0]), slot: value[1], type: "" });
       else values[shortName(name)] = value;
     }
     return {
@@ -286,8 +309,9 @@ const TEXTS = new Set([
 
 const NOTES = new Set(["MarkdownNote", "Note"]);
 
-/** Plumbing a graph routes through, traversed and not reported. */
-const PASS_THROUGH = new Set(["Reroute", "PrimitiveNode"]);
+/** Plumbing a graph routes through, traversed and not reported. A reroute
+ * is a relay (it keeps the layout); a primitive holding text is a text step. */
+const PASS_THROUGH = new Set(["PrimitiveNode"]);
 
 /** The local diffusion chain: samplers and what only they consume. */
 const SAMPLERS = new Set([
@@ -439,28 +463,74 @@ interface Built {
   /** Which native port a Comfy input lands on, given what its link carries;
    * undefined leaves the link out. */
   portFor: (input: string, linkType: string) => string | undefined;
+  /** For a block: which of its outputs a Comfy output slot is. */
+  sourcePortFor?: (slot: number) => string | undefined;
 }
 
-export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImport {
-  const format = detectWorkflowFile(json);
-  const comfy =
-    format === "comfy-ui"
-      ? readUiFormat(json as Record<string, unknown>)
-      : format === "comfy-api"
-        ? readApiFormat(json as Record<string, unknown>)
-        : [];
-  const report: ImportReport = { translated: [], adjusted: [], dropped: [], missing: [] };
+/** What one file's translation shares across its graphs: the top level and
+ * every subgraph, each of which becomes a block (ADR-0116). */
+interface Context {
+  catalog: MediaCatalog;
+  report: ImportReport;
+  /** Subgraph definitions by id, as the file stores them. */
+  subgraphs: Map<string, Record<string, unknown>>;
+  /** The blocks made from them so far, by subgraph id. */
+  blocks: Map<string, WorkflowBlock>;
+  depth: number;
+}
+
+interface TranslatedGraph {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  notes: string[];
+  built: Map<string, Built>;
+  upstreamBuilt: (id: string) => Built | undefined;
+}
+
+/** The ids a subgraph's own input and output nodes have in the file. */
+const SUBGRAPH_INPUT = "-10";
+const SUBGRAPH_OUTPUT = -20;
+
+/** What a step on the canvas makes something: a file with none of them has
+ * nothing to import. */
+const MAKERS = new Set<WorkflowNodeType>([
+  "image",
+  "imageEdit",
+  "video",
+  "upscale",
+  "cutout",
+  "tts",
+  "music",
+  "chat",
+]);
+
+/** A widget a link feeds, as the native setting it becomes: ComfyUI's
+ * widget converted to an input, kept as a setting taken from a connection
+ * when the native step can take it that way. */
+function fedPort(node: WorkflowNode, input: string): string | undefined {
+  const aliases: Record<string, string> = { style: "stylePreset" };
+  const name =
+    aliases[input] ?? input.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+  const param = NODE_SCHEMAS[node.type].params.find((entry) => entry.name === name);
+  return param && canFeedParam(param) ? `${FED_PORT_PREFIX}${name}` : undefined;
+}
+
+function translateGraph(comfy: ComfyNode[], ctx: Context): TranslatedGraph {
+  const { catalog, report } = ctx;
   const notes: string[] = [];
   const built = new Map<string, Built>();
   const byId = new Map(comfy.map((node) => [node.id, node]));
   /** Text encoders a sampler took as its prompts: folded into its node. */
   const absorbed = new Set<string>();
+  /** Wires between steps made here rather than read from the file. */
+  const extraEdges: WorkflowEdge[] = [];
 
   const make = (
     source: ComfyNode,
     type: WorkflowNodeType,
     params: Record<string, unknown>,
     portFor: Built["portFor"] = () => undefined,
+    reportAs?: string | false,
   ) => {
     const node: WorkflowNode = {
       id: crypto.randomUUID(),
@@ -473,7 +543,8 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       ...(source.mode === 2 ? { mode: "mute" as const } : {}),
     };
     built.set(source.id, { node, portFor });
-    report.translated.push({ comfyType: source.type, as: nodeTypeLabel(type) });
+    if (reportAs !== false)
+      report.translated.push({ comfyType: reportAs ?? source.type, as: nodeTypeLabel(type) });
     if (source.mode === 2 || source.mode === 4)
       report.adjusted.push(
         t("{node} is set aside in the file; it stays set aside here, still wired.", {
@@ -494,6 +565,25 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
     return { ...params, ...modelParamPatch(schema, params, modelParam, model) };
   };
 
+  /** The catalog model a partner node's own words name, for a step whose
+   * model param this is; none rather than another provider's. */
+  const partnerModel = (source: ComfyNode, type: WorkflowNodeType, provider?: string) => {
+    const param = NODE_SCHEMAS[type].params.find((entry) => entry.name === "model");
+    if (!param) return undefined;
+    const model = pickModel(
+      modelsForParam(catalog, param),
+      modelHints(source.type, source.values.model, source.values.model_name, provider),
+    );
+    if (!model)
+      report.adjusted.push(
+        t("No hosted model matches {node}: pick one on the {step} step.", {
+          node: source.type,
+          step: nodeTypeLabel(type),
+        }),
+      );
+    return model;
+  };
+
   const drop = (source: ComfyNode, reason: string) =>
     report.dropped.push({ comfyType: source.title || source.type, reason });
 
@@ -502,6 +592,11 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       // An older file's shared prompt: a primitive holding text feeds the
       // nodes whose prompt was converted to an input.
       make(source, "textInput", { text: source.widgets[0] });
+      continue;
+    }
+    if (source.type === "Reroute") {
+      // A point the file routes a wire through: a relay keeps the layout.
+      make(source, "relay", {}, () => "in", false);
       continue;
     }
     if (PASS_THROUGH.has(source.type)) continue;
@@ -513,6 +608,31 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
         notes.push(body);
         make(source, "note", { text: body });
       }
+      continue;
+    }
+    if (ctx.subgraphs.has(source.type)) {
+      const definition = ctx.subgraphs.get(source.type) as Record<string, unknown>;
+      const block = blockFrom(source.type, ctx);
+      if (!block) {
+        drop(source, t("is a group of nodes nested too deep to open"));
+        continue;
+      }
+      const names = subgraphSlots(definition.inputs);
+      const node = make(
+        source,
+        "block",
+        { blockId: block.id },
+        (input) => {
+          const id = `in-${names.indexOf(input)}`;
+          return block.inputs.some((entry) => entry.id === id) ? id : undefined;
+        },
+        block.name,
+      );
+      if (!node.label) node.label = block.name;
+      (built.get(source.id) as Built).sourcePortFor = (slot) => {
+        const id = `out-${slot}`;
+        return block.outputs.some((entry) => entry.id === id) ? id : block.outputs[0]?.id;
+      };
       continue;
     }
     const loaded = LOADERS[source.type];
@@ -531,21 +651,31 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       make(source, "textInput", { text: promptOf(source, ["value", "text", "string"]) });
       continue;
     }
-    if (isVideoPartner(source.type)) {
+    // A partner node: the frozen table first, the name for one it predates.
+    const role =
+      partnerRole(source.type) ??
+      (isVideoPartner(source.type)
+        ? { kind: "video" as const, provider: partnerProvider(source.type) ?? "" }
+        : isImagePartner(source.type)
+          ? { kind: "image" as const, provider: partnerProvider(source.type) ?? "" }
+          : undefined);
+    if (role?.kind === "video") {
       const linkedImage = [...source.links.entries()].some(
         ([name, link]) => link.type === "IMAGE" || /image|frame/i.test(name),
       );
       const task = settingOf(source, "task_type", /_to_/).toLowerCase();
-      const direction: VideoDirection = task.includes("reference")
-        ? "reference"
-        : task.includes("image") || linkedImage
-          ? "image"
-          : "text";
+      const direction: VideoDirection =
+        role.direction ??
+        (task.includes("reference")
+          ? "reference"
+          : task.includes("image") || linkedImage
+            ? "image"
+            : "text");
       const hints = modelHints(
         source.type,
         source.values.model,
         source.values.model_name,
-        partnerProvider(source.type),
+        role.provider || partnerProvider(source.type),
       );
       const candidates = modelsForParam(catalog, {
         name: "model",
@@ -600,7 +730,7 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
                 : kind === "IMAGE"
                   ? /end|last/i.test(input)
                     ? "endFrame"
-                    : open.has("openingFrame")
+                    : open.has("openingFrame") && !/reference/i.test(input)
                       ? "openingFrame"
                       : "references"
                   : kind === "STRING" || /prompt|text/i.test(input)
@@ -620,7 +750,7 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       });
       continue;
     }
-    if (isImagePartner(source.type)) {
+    if (role?.kind === "image") {
       const linkedImage = [...source.links.entries()].some(
         ([name, link]) => link.type === "IMAGE" || /image/i.test(name),
       );
@@ -628,7 +758,7 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       const models = linkedImage ? imageEditModels(catalog) : imageGenerationModels(catalog);
       const model = pickModel(
         models,
-        modelHints(source.type, source.values.model, partnerProvider(source.type)),
+        modelHints(source.type, source.values.model, role.provider || partnerProvider(source.type)),
       );
       if (!model)
         report.adjusted.push(
@@ -659,6 +789,71 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       });
       continue;
     }
+    if (role?.kind === "upscale") {
+      const factor = Number(source.values.upscale_factor ?? source.values.scale ?? 2);
+      make(source, "upscale", { scale: factor > 2 ? "4" : "2" }, (input, linkType) =>
+        linkType === "IMAGE" || /image/i.test(input) ? "image" : undefined,
+      );
+      continue;
+    }
+    if (role?.kind === "cutout") {
+      if (!supportsBackgroundRemoval(catalog)) {
+        drop(source, t("removes a background, which this provider does not offer"));
+        continue;
+      }
+      make(source, "cutout", {}, (input, linkType) =>
+        linkType === "IMAGE" || /image/i.test(input) ? "image" : undefined,
+      );
+      continue;
+    }
+    if (role?.kind === "tts" || role?.kind === "music" || role?.kind === "chat") {
+      const type = role.kind;
+      const model = partnerModel(source, type, role.provider);
+      const text = promptOf(source, ["text", "prompt", "lyrics"]);
+      const params = withModel(type, type === "chat" ? { prompt: text } : {}, model);
+      // What a voice reads, a score is asked for and a chat answers arrives
+      // as text: written in the file, it becomes the step's own words.
+      const words: WorkflowNode | undefined =
+        type !== "chat" && text
+          ? make(
+              { ...source, id: `${source.id}:text`, title: t("Text"), mode: 0 },
+              "textInput",
+              { text },
+              undefined,
+              false,
+            )
+          : undefined;
+      const node = make(source, type, params, (input, linkType) =>
+        linkType === "STRING" || /prompt|text/i.test(input)
+          ? type === "tts"
+            ? "text"
+            : "prompt"
+          : undefined,
+      );
+      if (words) {
+        words.position = { x: node.position.x - 320, y: node.position.y };
+        extraEdges.push({
+          id: crypto.randomUUID(),
+          source: words.id,
+          target: node.id,
+          targetPort: type === "tts" ? "text" : "prompt",
+        });
+      }
+      continue;
+    }
+    if (role?.kind === "none") {
+      drop(
+        source,
+        role.makes === "3d"
+          ? t("makes a 3D model, which Sub Rosa does not make")
+          : role.makes === "svg"
+            ? t("makes a vector drawing, which Sub Rosa does not make")
+            : role.makes === "voice"
+              ? t("changes the voice of a recording, which Sub Rosa does not do")
+              : t("sets options of another hosted node, which are not carried over"),
+      );
+      continue;
+    }
     if (SAMPLERS.has(source.type)) {
       // A local diffusion run, rebuilt as one hosted image render.
       const encoderText = (input: string) => {
@@ -683,7 +878,7 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
     }
     if (source.type === "CLIPTextEncode") continue; // decided once the samplers are known
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(source.type)) {
-      drop(source, t("is a group of nodes, which Sub Rosa does not open"));
+      drop(source, t("is a group of nodes the file does not define"));
       continue;
     }
     drop(
@@ -707,8 +902,8 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
   // Edges: a link between two translated nodes lands on the target's port. A
   // link from a node that did not translate is followed upstream until it
   // reaches one that did (a VAE decode between a sampler and a save, a
-  // bypassed node, a reroute).
-  const edges: WorkflowEdge[] = [];
+  // bypassed node).
+  const edges: WorkflowEdge[] = [...extraEdges];
   const seen = new Set<string>();
   const upstreamBuilt = (id: string, guard = new Set<string>()): Built | undefined => {
     if (guard.has(id)) return undefined;
@@ -731,9 +926,23 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
     for (const [input, link] of target.links) {
       const from = upstreamBuilt(link.from);
       if (!from || from === to) continue;
-      const port = to.portFor(input, link.type || kindOf(from.node.type, byId.get(link.from)));
+      const linkType = link.type || kindOf(from.node.type, byId.get(link.from));
+      let port = to.portFor(input, linkType);
+      // A widget fed by a text step: a setting taken from that connection.
+      if (!port && ["textInput", "chat"].includes(from.node.type)) {
+        port = fedPort(to.node, input);
+        if (port) {
+          const name = port.slice(FED_PORT_PREFIX.length);
+          const fed = fedParams(to.node.params);
+          if (!fed.includes(name))
+            to.node.params = { ...to.node.params, [FED_PARAMS_KEY]: [...fed, name] };
+        }
+      }
       if (!port) continue;
-      const key = `${from.node.id}>${to.node.id}:${port}`;
+      // A block gives several results: the link names which one.
+      const sourcePort =
+        built.get(link.from) === from ? from.sourcePortFor?.(link.slot) : undefined;
+      const key = `${from.node.id}>${sourcePort ?? ""}>${to.node.id}:${port}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const single = NODE_SCHEMAS[to.node.type].inputs.find((entry) => entry.id === port);
@@ -754,20 +963,154 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
         source: from.node.id,
         target: to.node.id,
         targetPort: port,
+        ...(sourcePort ? { sourcePort } : {}),
       });
     }
   }
 
-  const nodes = [...built.values()].map((entry) => entry.node);
-  const frames = format === "comfy-ui" ? readGroups(json as Record<string, unknown>) : [];
-  const usable = nodes.some((node) => ["image", "imageEdit", "video"].includes(node.type));
+  return {
+    nodes: [...built.values()].map((entry) => entry.node),
+    edges,
+    notes,
+    built,
+    upstreamBuilt: (id) => upstreamBuilt(id),
+  };
+}
+
+/** A subgraph's inputs or outputs, by slot: their names. */
+function subgraphSlots(raw: unknown): string[] {
+  return Array.isArray(raw)
+    ? raw.map((entry) =>
+        entry && typeof entry === "object"
+          ? shortName(String((entry as { name?: unknown }).name ?? ""))
+          : "",
+      )
+    : [];
+}
+
+/** A subgraph as a block (ADR-0116): its nodes translated like any graph,
+ * each input the inner step it feeds (several through a relay), each output
+ * the inner step that gives it. Made once per definition, however many
+ * instances the file has. */
+function blockFrom(id: string, ctx: Context): WorkflowBlock | undefined {
+  const existing = ctx.blocks.get(id);
+  if (existing) return existing;
+  const raw = ctx.subgraphs.get(id);
+  if (!raw || ctx.depth >= MAX_BLOCK_DEPTH) return undefined;
+  const inner = readUiFormat(raw);
+  const graph = translateGraph(inner, { ...ctx, depth: ctx.depth + 1 });
+  const nodes = [...graph.nodes];
+  const edges = [...graph.edges];
+  const inputs: BlockInput[] = [];
+  subgraphSlots(raw.inputs).forEach((label, slot) => {
+    const targets: Array<{ nodeId: string; port: string }> = [];
+    for (const node of inner) {
+      const to = graph.built.get(node.id);
+      if (!to) continue;
+      for (const [name, link] of node.links) {
+        if (link.from !== SUBGRAPH_INPUT || link.slot !== slot) continue;
+        const port = to.portFor(name, link.type);
+        if (port) targets.push({ nodeId: to.node.id, port });
+      }
+    }
+    if (targets.length === 0) return;
+    const id = `in-${slot}`;
+    if (targets.length === 1) {
+      inputs.push({ id, label, ...targets[0] });
+      return;
+    }
+    // One input feeding several steps comes in through a relay.
+    const relay: WorkflowNode = {
+      id: crypto.randomUUID(),
+      type: "relay",
+      label,
+      position: { x: -320, y: slot * 160 },
+      params: defaultParams("relay"),
+    };
+    nodes.push(relay);
+    for (const target of targets)
+      edges.push({
+        id: crypto.randomUUID(),
+        source: relay.id,
+        target: target.nodeId,
+        targetPort: target.port,
+      });
+    inputs.push({ id, label, nodeId: relay.id, port: "in" });
+  });
+  const rawLinks = Array.isArray(raw.links) ? (raw.links as unknown[]) : [];
+  const toOutput = rawLinks.flatMap((link) => {
+    if (Array.isArray(link) && Number(link[3]) === SUBGRAPH_OUTPUT)
+      return [{ from: String(link[1]), slot: Number(link[2]) || 0, output: Number(link[4]) || 0 }];
+    const entry = link as {
+      origin_id?: unknown;
+      origin_slot?: unknown;
+      target_id?: unknown;
+      target_slot?: unknown;
+    };
+    if (link && typeof link === "object" && Number(entry.target_id) === SUBGRAPH_OUTPUT)
+      return [
+        {
+          from: String(entry.origin_id),
+          slot: Number(entry.origin_slot) || 0,
+          output: Number(entry.target_slot) || 0,
+        },
+      ];
+    return [];
+  });
+  const outputs: BlockOutput[] = [];
+  subgraphSlots(raw.outputs).forEach((label, slot) => {
+    const link = toOutput.find((entry) => entry.output === slot);
+    const from = link ? graph.upstreamBuilt(link.from) : undefined;
+    if (!link || !from) return;
+    const port = graph.built.get(link.from) === from ? from.sourcePortFor?.(link.slot) : undefined;
+    outputs.push({ id: `out-${slot}`, label, nodeId: from.node.id, ...(port ? { port } : {}) });
+  });
+  const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : t("Block");
+  const block: WorkflowBlock = {
+    id: crypto.randomUUID(),
+    name,
+    ...(graph.notes.length > 0 ? { description: graph.notes.join("\n\n") } : {}),
+    nodes,
+    edges,
+    inputs,
+    outputs,
+    promoted: [],
+  };
+  ctx.blocks.set(id, block);
+  return block;
+}
+
+export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImport {
+  const format = detectWorkflowFile(json);
+  const record = (json ?? {}) as Record<string, unknown>;
+  const comfy =
+    format === "comfy-ui"
+      ? readUiFormat(record)
+      : format === "comfy-api"
+        ? readApiFormat(record)
+        : [];
+  const report: ImportReport = { translated: [], adjusted: [], dropped: [], missing: [] };
+  const definitions = record.definitions as { subgraphs?: unknown } | undefined;
+  const subgraphs = new Map<string, Record<string, unknown>>();
+  if (format === "comfy-ui" && Array.isArray(definitions?.subgraphs))
+    for (const entry of definitions.subgraphs)
+      if (entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string")
+        subgraphs.set((entry as { id: string }).id, entry as Record<string, unknown>);
+  const ctx: Context = { catalog, report, subgraphs, blocks: new Map(), depth: 0 };
+  const graph = translateGraph(comfy, ctx);
+  const blocks = [...ctx.blocks.values()];
+  const frames = format === "comfy-ui" ? readGroups(record) : [];
+  const usable = [...graph.nodes, ...blocks.flatMap((block) => block.nodes)].some((node) =>
+    MAKERS.has(node.type),
+  );
   return {
     workflow: {
       name: "",
-      description: notes.join("\n\n") || undefined,
-      nodes,
-      edges,
+      description: graph.notes.join("\n\n") || undefined,
+      nodes: graph.nodes,
+      edges: graph.edges,
       ...(frames.length > 0 ? { frames } : {}),
+      ...(blocks.length > 0 ? { blocks } : {}),
     },
     report,
     usable,

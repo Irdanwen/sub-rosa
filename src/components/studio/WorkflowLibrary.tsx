@@ -63,7 +63,11 @@ function fileText(file: File): Promise<string> {
   });
 }
 
-export type ImportedWorkflow = Pick<Workflow, "name" | "description" | "nodes" | "edges" | "extra">;
+export type ImportedWorkflow = Pick<
+  Workflow,
+  "name" | "description" | "nodes" | "edges" | "extra"
+> &
+  Partial<Pick<Workflow, "frames" | "blocks">>;
 
 export function WorkflowLibrary({
   catalog,

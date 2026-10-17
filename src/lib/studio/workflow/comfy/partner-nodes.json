@@ -1,0 +1,1517 @@
+{
+  "BeebleSwitchXImageEdit": {
+    "makes": "image",
+    "provider": "Beeble",
+    "takes": []
+  },
+  "BeebleSwitchXVideoEdit": {
+    "makes": "video",
+    "provider": "Beeble",
+    "takes": []
+  },
+  "BriaAddObject": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaEraseByText": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaEraseForeground": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaEraser": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaExpandImage": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaGenFill": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaImageEditNode": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaIncreaseResolution": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaRelight": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaRemoveImageBackground": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaRemoveVideoBackground": {
+    "makes": "video",
+    "provider": "Bria",
+    "takes": ["video:video"]
+  },
+  "BriaReplaceImageBackground": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image", "image:ref_image"]
+  },
+  "BriaReplaceObject": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaReseason": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaRestorePhoto": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["image:image"]
+  },
+  "BriaTransparentVideoBackground": {
+    "makes": "image",
+    "provider": "Bria",
+    "takes": ["video:video"]
+  },
+  "BriaVideoEraser": {
+    "makes": "video",
+    "provider": "Bria",
+    "takes": ["video:video", "video:mask_video"]
+  },
+  "BriaVideoGreenScreen": {
+    "makes": "video",
+    "provider": "Bria",
+    "takes": ["video:video"]
+  },
+  "BriaVideoReplaceBackground": {
+    "makes": "video",
+    "provider": "Bria",
+    "takes": ["video:video", "image:background_image", "video:background_video"]
+  },
+  "ByteDance2DraftToFinalVideoNode": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDance2FirstLastFrameNode": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": ["image:first_frame", "image:last_frame"]
+  },
+  "ByteDance2ReferenceNode": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDance2ReferenceNodeV2": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDance2TextToVideoNode": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDanceCreateImageAsset": {
+    "makes": "text",
+    "provider": "ByteDance",
+    "takes": ["image:image"]
+  },
+  "ByteDanceCreateVideoAsset": {
+    "makes": "text",
+    "provider": "ByteDance",
+    "takes": ["video:video"]
+  },
+  "ByteDanceFirstLastFrameNode": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": ["image:first_frame", "image:last_frame"]
+  },
+  "ByteDanceImageToVideoNode": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": ["image:image"]
+  },
+  "ByteDanceSeedAudio": {
+    "makes": "audio",
+    "provider": "ByteDance",
+    "takes": [
+      "audio:reference_audio_1",
+      "audio:reference_audio_2",
+      "audio:reference_audio_3",
+      "image:reference_image"
+    ]
+  },
+  "ByteDanceSeedNode": {
+    "makes": "text",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDanceSeedreamLayerSeparationNode": {
+    "makes": "other",
+    "provider": "ByteDance",
+    "takes": ["image:image"]
+  },
+  "ByteDanceSeedreamLayerSeparationNodeV2": {
+    "makes": "other",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDanceSeedreamNode": {
+    "makes": "image",
+    "provider": "ByteDance",
+    "takes": ["image:image"]
+  },
+  "ByteDanceSeedreamNodeV2": {
+    "makes": "image",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDanceSeedreamNodeV3": {
+    "makes": "image",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDanceTextToVideoNode": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": []
+  },
+  "ByteDanceVideoEnhanceNode": {
+    "makes": "video",
+    "provider": "ByteDance",
+    "takes": ["video:video"]
+  },
+  "ClarityCrystalUpscaleNode": {
+    "makes": "image",
+    "provider": "Clarity AI",
+    "takes": ["image:image"]
+  },
+  "ClaudeNode": {
+    "makes": "text",
+    "provider": "Anthropic",
+    "takes": ["image:image"]
+  },
+  "ElevenLabsAudioIsolation": {
+    "makes": "audio",
+    "provider": "ElevenLabs",
+    "takes": ["audio:audio"]
+  },
+  "ElevenLabsInstantVoiceClone": {
+    "makes": "other",
+    "provider": "ElevenLabs",
+    "takes": ["audio:audio"]
+  },
+  "ElevenLabsSpeechToSpeech": {
+    "makes": "audio",
+    "provider": "ElevenLabs",
+    "takes": ["audio:audio"]
+  },
+  "ElevenLabsSpeechToText": {
+    "makes": "text",
+    "provider": "ElevenLabs",
+    "takes": ["audio:audio"]
+  },
+  "ElevenLabsTextToDialogue": {
+    "makes": "audio",
+    "provider": "ElevenLabs",
+    "takes": []
+  },
+  "ElevenLabsTextToSoundEffects": {
+    "makes": "audio",
+    "provider": "ElevenLabs",
+    "takes": []
+  },
+  "ElevenLabsTextToSpeech": {
+    "makes": "audio",
+    "provider": "ElevenLabs",
+    "takes": []
+  },
+  "ElevenLabsVoiceSelector": {
+    "makes": "other",
+    "provider": "ElevenLabs",
+    "takes": []
+  },
+  "FishAudioInstantVoiceClone": {
+    "makes": "other",
+    "provider": "Fish Audio",
+    "takes": ["audio:audio"]
+  },
+  "FishAudioSpeechToText": {
+    "makes": "text",
+    "provider": "Fish Audio",
+    "takes": ["audio:audio"]
+  },
+  "FishAudioTextToSpeech": {
+    "makes": "audio",
+    "provider": "Fish Audio",
+    "takes": []
+  },
+  "FishAudioVoiceSelector": {
+    "makes": "other",
+    "provider": "Fish Audio",
+    "takes": []
+  },
+  "Flux2ImageNode": {
+    "makes": "image",
+    "provider": "BFL",
+    "takes": []
+  },
+  "Flux3ImageNode": {
+    "makes": "image",
+    "provider": "BFL",
+    "takes": ["image:image"]
+  },
+  "Flux3ImageToVideoNode": {
+    "makes": "video",
+    "provider": "BFL",
+    "takes": ["image:image"]
+  },
+  "Flux3TextToVideoNode": {
+    "makes": "video",
+    "provider": "BFL",
+    "takes": []
+  },
+  "Flux3VideoContinuationNode": {
+    "makes": "video",
+    "provider": "BFL",
+    "takes": ["video:video"]
+  },
+  "FluxEraseNode": {
+    "makes": "image",
+    "provider": "BFL",
+    "takes": ["image:image"]
+  },
+  "FluxProExpandNode": {
+    "makes": "image",
+    "provider": "BFL",
+    "takes": ["image:image"]
+  },
+  "FluxProFillNode": {
+    "makes": "image",
+    "provider": "BFL",
+    "takes": ["image:image"]
+  },
+  "FluxProUltraImageNode": {
+    "makes": "image",
+    "provider": "BFL",
+    "takes": ["image:image_prompt"]
+  },
+  "FluxVTONode": {
+    "makes": "image",
+    "provider": "BFL",
+    "takes": ["image:person", "image:garment"]
+  },
+  "FluxVideoEditNode": {
+    "makes": "video",
+    "provider": "BFL",
+    "takes": ["video:video"]
+  },
+  "FluxVideoUpscaleNode": {
+    "makes": "video",
+    "provider": "BFL",
+    "takes": ["video:video"]
+  },
+  "GeminiImage2Node": {
+    "makes": "image",
+    "provider": "Gemini",
+    "takes": ["image:images"]
+  },
+  "GeminiImageNode": {
+    "makes": "image",
+    "provider": "Gemini",
+    "takes": ["image:images"]
+  },
+  "GeminiInputFiles": {
+    "makes": "other",
+    "provider": "Gemini",
+    "takes": []
+  },
+  "GeminiNanoBanana2": {
+    "makes": "image",
+    "provider": "Gemini",
+    "takes": ["image:images"]
+  },
+  "GeminiNanoBanana2V2": {
+    "makes": "image",
+    "provider": "Gemini",
+    "takes": []
+  },
+  "GeminiNode": {
+    "makes": "text",
+    "provider": "Gemini",
+    "takes": ["image:images", "audio:audio", "video:video"]
+  },
+  "GeminiNodeV2": {
+    "makes": "text",
+    "provider": "Gemini",
+    "takes": []
+  },
+  "GeminiNodeV3": {
+    "makes": "text",
+    "provider": "Gemini",
+    "takes": []
+  },
+  "GeminiVideoOmni": {
+    "makes": "video",
+    "provider": "Gemini",
+    "takes": []
+  },
+  "GeminiVideoOmniV2": {
+    "makes": "video",
+    "provider": "Gemini",
+    "takes": []
+  },
+  "GrokImageEditNode": {
+    "makes": "image",
+    "provider": "Grok",
+    "takes": ["image:image"]
+  },
+  "GrokImageEditNodeV2": {
+    "makes": "image",
+    "provider": "Grok",
+    "takes": []
+  },
+  "GrokImageNode": {
+    "makes": "image",
+    "provider": "Grok",
+    "takes": []
+  },
+  "GrokVideoEditNode": {
+    "makes": "video",
+    "provider": "Grok",
+    "takes": ["video:video"]
+  },
+  "GrokVideoExtendNode": {
+    "makes": "video",
+    "provider": "Grok",
+    "takes": ["video:video"]
+  },
+  "GrokVideoNode": {
+    "makes": "video",
+    "provider": "Grok",
+    "takes": ["image:image"]
+  },
+  "GrokVideoReferenceNode": {
+    "makes": "video",
+    "provider": "Grok",
+    "takes": ["image:image", "image:image"]
+  },
+  "HappyHorseImageToVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["image:first_frame"]
+  },
+  "HappyHorseReferenceVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["image:reference_image", "image:reference_image"]
+  },
+  "HappyHorseTextToVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": []
+  },
+  "HappyHorseVideoEditApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["image:reference_image", "video:video"]
+  },
+  "HeyGenAvatarVideoNode": {
+    "makes": "video",
+    "provider": "HeyGen",
+    "takes": ["audio:audio"]
+  },
+  "HeyGenCreateAvatarNode": {
+    "makes": "text",
+    "provider": "HeyGen",
+    "takes": ["image:ref_image", "image:identity_photo"]
+  },
+  "HeyGenImageToVideoNode": {
+    "makes": "video",
+    "provider": "HeyGen",
+    "takes": ["image:image"]
+  },
+  "HeyGenReferenceToVideoNode": {
+    "makes": "video",
+    "provider": "HeyGen",
+    "takes": ["image:reference_image", "video:reference_video", "audio:reference_audio"]
+  },
+  "HeyGenTalkingPhotoNode": {
+    "makes": "video",
+    "provider": "HeyGen",
+    "takes": ["image:image", "audio:audio"]
+  },
+  "HeyGenTextToSpeechNode": {
+    "makes": "audio",
+    "provider": "HeyGen",
+    "takes": []
+  },
+  "HeyGenVideoTranslateNode": {
+    "makes": "video",
+    "provider": "HeyGen",
+    "takes": ["video:video"]
+  },
+  "HiggsfieldMotionTransferNode": {
+    "makes": "video",
+    "provider": "Higgsfield",
+    "takes": ["video:video", "image:reference_image"]
+  },
+  "HitPawGeneralImageEnhance": {
+    "makes": "image",
+    "provider": "HitPaw",
+    "takes": ["image:image"]
+  },
+  "HitPawVideoEnhance": {
+    "makes": "video",
+    "provider": "HitPaw",
+    "takes": ["video:video"]
+  },
+  "HunyuanImageEditApi": {
+    "makes": "image",
+    "provider": "Tencent",
+    "takes": []
+  },
+  "HunyuanImageTextToImageApi": {
+    "makes": "image",
+    "provider": "Tencent",
+    "takes": []
+  },
+  "IdeogramEditApi": {
+    "makes": "image",
+    "provider": "Ideogram",
+    "takes": []
+  },
+  "IdeogramPImage": {
+    "makes": "image",
+    "provider": "Ideogram",
+    "takes": []
+  },
+  "IdeogramPreciseEditApi": {
+    "makes": "image",
+    "provider": "Ideogram",
+    "takes": []
+  },
+  "IdeogramTextToImageApi": {
+    "makes": "image",
+    "provider": "Ideogram",
+    "takes": []
+  },
+  "IdeogramV3": {
+    "makes": "image",
+    "provider": "Ideogram",
+    "takes": ["image:image", "image:character_image"]
+  },
+  "IdeogramV4": {
+    "makes": "image",
+    "provider": "Ideogram",
+    "takes": []
+  },
+  "KlingAvatarNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:image", "audio:sound_file"]
+  },
+  "KlingFirstLastFrameNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:first_frame", "image:end_frame"]
+  },
+  "KlingImage2VideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:start_frame"]
+  },
+  "KlingImageGenerationNode": {
+    "makes": "image",
+    "provider": "Kling",
+    "takes": ["image:image"]
+  },
+  "KlingImageToVideoWithAudio": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:start_frame"]
+  },
+  "KlingLipSyncAudioToVideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["video:video", "audio:audio"]
+  },
+  "KlingLipSyncTextToVideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["video:video"]
+  },
+  "KlingMotionControl": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:reference_image", "video:reference_video"]
+  },
+  "KlingOmniProEditVideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["video:video", "image:reference_images"]
+  },
+  "KlingOmniProFirstLastFrameNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:first_frame", "image:end_frame", "image:reference_images"]
+  },
+  "KlingOmniProImageNode": {
+    "makes": "image",
+    "provider": "Kling",
+    "takes": ["image:reference_images"]
+  },
+  "KlingOmniProImageToVideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:reference_images"]
+  },
+  "KlingOmniProTextToVideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": []
+  },
+  "KlingOmniProVideoToVideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["video:reference_video", "image:reference_images"]
+  },
+  "KlingStartEndFrameNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:start_frame", "image:end_frame"]
+  },
+  "KlingTextToVideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": []
+  },
+  "KlingTextToVideoWithAudio": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": []
+  },
+  "KlingTryOnNode": {
+    "makes": "image",
+    "provider": "Kling",
+    "takes": ["image:person_image", "image:garment_image"]
+  },
+  "KlingVideoNode": {
+    "makes": "video",
+    "provider": "Kling",
+    "takes": ["image:start_frame"]
+  },
+  "Krea2ImageNode": {
+    "makes": "image",
+    "provider": "Krea",
+    "takes": []
+  },
+  "Krea2StyleReferenceNode": {
+    "makes": "other",
+    "provider": "Krea",
+    "takes": ["image:image"]
+  },
+  "Krea3ImageNode": {
+    "makes": "image",
+    "provider": "Krea",
+    "takes": ["image:image"]
+  },
+  "LtxApi25AudioToVideo": {
+    "makes": "video",
+    "provider": "LTXV",
+    "takes": ["audio:audio", "image:image"]
+  },
+  "LtxApi25ImageToVideo": {
+    "makes": "video",
+    "provider": "LTXV",
+    "takes": ["image:image", "image:last_frame"]
+  },
+  "LtxApi25TextToVideo": {
+    "makes": "video",
+    "provider": "LTXV",
+    "takes": []
+  },
+  "LumaConceptsNode": {
+    "makes": "other",
+    "provider": "Luma",
+    "takes": []
+  },
+  "LumaImageEditNode2": {
+    "makes": "image",
+    "provider": "Luma",
+    "takes": ["image:source"]
+  },
+  "LumaImageModifyNode": {
+    "makes": "image",
+    "provider": "Luma",
+    "takes": ["image:image"]
+  },
+  "LumaImageNode": {
+    "makes": "image",
+    "provider": "Luma",
+    "takes": ["image:style_image", "image:character_image"]
+  },
+  "LumaImageNode2": {
+    "makes": "image",
+    "provider": "Luma",
+    "takes": []
+  },
+  "LumaImageToVideoNode": {
+    "makes": "video",
+    "provider": "Luma",
+    "takes": ["image:first_image", "image:last_image"]
+  },
+  "LumaRay32ExtendVideoNode": {
+    "makes": "video",
+    "provider": "Luma",
+    "takes": []
+  },
+  "LumaRay32ImageToVideoNode": {
+    "makes": "video",
+    "provider": "Luma",
+    "takes": ["image:start_frame", "image:end_frame"]
+  },
+  "LumaRay32KeyframeNode": {
+    "makes": "other",
+    "provider": "Luma",
+    "takes": ["image:image"]
+  },
+  "LumaRay32KeyframesToVideoNode": {
+    "makes": "video",
+    "provider": "Luma",
+    "takes": []
+  },
+  "LumaRay32TextToVideoNode": {
+    "makes": "video",
+    "provider": "Luma",
+    "takes": []
+  },
+  "LumaRay32VideoEditNode": {
+    "makes": "video",
+    "provider": "Luma",
+    "takes": ["video:video"]
+  },
+  "LumaRay32VideoReframeNode": {
+    "makes": "video",
+    "provider": "Luma",
+    "takes": ["video:video"]
+  },
+  "LumaReferenceNode": {
+    "makes": "other",
+    "provider": "Luma",
+    "takes": ["image:image"]
+  },
+  "LumaVideoNode": {
+    "makes": "video",
+    "provider": "Luma",
+    "takes": []
+  },
+  "MagnificImageRelightNode": {
+    "makes": "image",
+    "provider": "Magnific",
+    "takes": ["image:image", "image:reference_image"]
+  },
+  "MagnificImageSkinEnhancerNode": {
+    "makes": "image",
+    "provider": "Magnific",
+    "takes": ["image:image"]
+  },
+  "MagnificImageStyleTransferNode": {
+    "makes": "image",
+    "provider": "Magnific",
+    "takes": ["image:image", "image:reference_image"]
+  },
+  "MagnificImageUpscalerCreativeNode": {
+    "makes": "image",
+    "provider": "Magnific",
+    "takes": ["image:image"]
+  },
+  "MagnificImageUpscalerPreciseV2Node": {
+    "makes": "image",
+    "provider": "Magnific",
+    "takes": ["image:image"]
+  },
+  "MeshyAnimateModelNode": {
+    "makes": "3d",
+    "provider": "Meshy",
+    "takes": []
+  },
+  "MeshyImageToModelNode": {
+    "makes": "3d",
+    "provider": "Meshy",
+    "takes": ["image:image", "image:texture_image"]
+  },
+  "MeshyMultiImageToModelNode": {
+    "makes": "3d",
+    "provider": "Meshy",
+    "takes": ["image:image", "image:texture_image"]
+  },
+  "MeshyRefineNode": {
+    "makes": "3d",
+    "provider": "Meshy",
+    "takes": ["image:texture_image"]
+  },
+  "MeshyRigModelNode": {
+    "makes": "3d",
+    "provider": "Meshy",
+    "takes": ["image:texture_image"]
+  },
+  "MeshyTextToModelNode": {
+    "makes": "3d",
+    "provider": "Meshy",
+    "takes": []
+  },
+  "MeshyTextureMultiViewNode": {
+    "makes": "3d",
+    "provider": "Meshy",
+    "takes": ["image:image"]
+  },
+  "MeshyTextureNode": {
+    "makes": "3d",
+    "provider": "Meshy",
+    "takes": ["image:image_style"]
+  },
+  "MetaMuseImageEditApi": {
+    "makes": "image",
+    "provider": "Meta",
+    "takes": []
+  },
+  "MetaMuseImageTextToImageApi": {
+    "makes": "image",
+    "provider": "Meta",
+    "takes": []
+  },
+  "MinimaxHailuo03ContextIRNode": {
+    "makes": "text",
+    "provider": "MiniMax",
+    "takes": [
+      "image:reference_image",
+      "video:reference_video",
+      "audio:reference_audio",
+      "image:first_frame",
+      "image:last_frame"
+    ]
+  },
+  "MinimaxHailuo03FirstLastFrameNode": {
+    "makes": "video",
+    "provider": "MiniMax",
+    "takes": ["image:first_frame", "image:last_frame"]
+  },
+  "MinimaxHailuo03ReferenceNode": {
+    "makes": "video",
+    "provider": "MiniMax",
+    "takes": []
+  },
+  "MinimaxHailuo03RegenerateNode": {
+    "makes": "video",
+    "provider": "MiniMax",
+    "takes": [
+      "image:reference_image",
+      "video:reference_video",
+      "audio:reference_audio",
+      "video:video",
+      "image:first_frame",
+      "image:last_frame"
+    ]
+  },
+  "MinimaxHailuo03TextToVideoNode": {
+    "makes": "video",
+    "provider": "MiniMax",
+    "takes": []
+  },
+  "MinimaxHailuoVideoNode": {
+    "makes": "video",
+    "provider": "MiniMax",
+    "takes": ["image:first_frame_image"]
+  },
+  "MinimaxImageToVideoNode": {
+    "makes": "video",
+    "provider": "MiniMax",
+    "takes": ["image:image"]
+  },
+  "MinimaxSubjectToVideoNode": {
+    "makes": "video",
+    "provider": "MiniMax",
+    "takes": ["image:subject"]
+  },
+  "MinimaxTextToVideoNode": {
+    "makes": "video",
+    "provider": "MiniMax",
+    "takes": []
+  },
+  "OpenAIChatConfig": {
+    "makes": "other",
+    "provider": "OpenAI",
+    "takes": []
+  },
+  "OpenAIChatNode": {
+    "makes": "text",
+    "provider": "OpenAI",
+    "takes": ["image:images"]
+  },
+  "OpenAIGPTImage1": {
+    "makes": "image",
+    "provider": "OpenAI",
+    "takes": ["image:image"]
+  },
+  "OpenAIGPTImageNodeV2": {
+    "makes": "image",
+    "provider": "OpenAI",
+    "takes": []
+  },
+  "OpenAIInputFiles": {
+    "makes": "other",
+    "provider": "OpenAI",
+    "takes": []
+  },
+  "OpenRouterImageNode": {
+    "makes": "image",
+    "provider": "OpenRouter",
+    "takes": []
+  },
+  "OpenRouterLLMNode": {
+    "makes": "text",
+    "provider": "OpenRouter",
+    "takes": []
+  },
+  "PixverseImageToVideoNode": {
+    "makes": "video",
+    "provider": "PixVerse",
+    "takes": ["image:image"]
+  },
+  "PixverseTemplateNode": {
+    "makes": "other",
+    "provider": "PixVerse",
+    "takes": []
+  },
+  "PixverseTextToVideoNode": {
+    "makes": "video",
+    "provider": "PixVerse",
+    "takes": []
+  },
+  "PixverseTransitionVideoNode": {
+    "makes": "video",
+    "provider": "PixVerse",
+    "takes": ["image:first_frame", "image:last_frame"]
+  },
+  "PixverseV6ExtendVideoNode": {
+    "makes": "video",
+    "provider": "PixVerse",
+    "takes": ["video:video"]
+  },
+  "PixverseV6FirstLastFrameNode": {
+    "makes": "video",
+    "provider": "PixVerse",
+    "takes": ["image:first_frame", "image:last_frame"]
+  },
+  "PixverseV6FusionVideoNode": {
+    "makes": "video",
+    "provider": "PixVerse",
+    "takes": ["image:subject", "image:background", "video:video"]
+  },
+  "PixverseV6ImageToVideoNode": {
+    "makes": "video",
+    "provider": "PixVerse",
+    "takes": ["image:image"]
+  },
+  "PixverseV6TextToVideoNode": {
+    "makes": "video",
+    "provider": "PixVerse",
+    "takes": []
+  },
+  "PrunaImageToVideoNode": {
+    "makes": "video",
+    "provider": "Pruna",
+    "takes": []
+  },
+  "PrunaTextToVideoNode": {
+    "makes": "video",
+    "provider": "Pruna",
+    "takes": []
+  },
+  "QuiverImageToSVGNode": {
+    "makes": "svg",
+    "provider": "Quiver",
+    "takes": ["image:image"]
+  },
+  "QuiverImageToSVGNodeV2": {
+    "makes": "svg",
+    "provider": "Quiver",
+    "takes": []
+  },
+  "QuiverTextToSVGNode": {
+    "makes": "svg",
+    "provider": "Quiver",
+    "takes": ["image:image"]
+  },
+  "QuiverTextToSVGNodeV2": {
+    "makes": "svg",
+    "provider": "Quiver",
+    "takes": []
+  },
+  "QwenImageEditApi": {
+    "makes": "image",
+    "provider": "Qwen",
+    "takes": []
+  },
+  "QwenImageTextToImageApi": {
+    "makes": "image",
+    "provider": "Qwen",
+    "takes": []
+  },
+  "RecraftColorRGB": {
+    "makes": "other",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftControls": {
+    "makes": "other",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftCreateStyleNode": {
+    "makes": "text",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "RecraftCreativeUpscaleNode": {
+    "makes": "image",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "RecraftCrispUpscaleNode": {
+    "makes": "image",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "RecraftImageInpaintingNode": {
+    "makes": "image",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "RecraftImageToImageNode": {
+    "makes": "image",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "RecraftRemoveBackgroundNode": {
+    "makes": "image",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "RecraftReplaceBackgroundNode": {
+    "makes": "image",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "RecraftStyleV3DigitalIllustration": {
+    "makes": "other",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftStyleV3InfiniteStyleLibrary": {
+    "makes": "other",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftStyleV3LogoRaster": {
+    "makes": "other",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftStyleV3RealisticImage": {
+    "makes": "other",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftStyleV3VectorIllustrationNode": {
+    "makes": "other",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftTextToImageNode": {
+    "makes": "image",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftTextToVectorNode": {
+    "makes": "svg",
+    "provider": "Recraft",
+    "takes": []
+  },
+  "RecraftV4CreateStyleNode": {
+    "makes": "text",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "RecraftV4TextToImageNode": {
+    "makes": "image",
+    "provider": "Recraft",
+    "takes": ["image:style_reference"]
+  },
+  "RecraftV4TextToVectorNode": {
+    "makes": "svg",
+    "provider": "Recraft",
+    "takes": ["image:style_reference"]
+  },
+  "RecraftVectorizeImageNode": {
+    "makes": "svg",
+    "provider": "Recraft",
+    "takes": ["image:image"]
+  },
+  "ReveImageCreateNode": {
+    "makes": "image",
+    "provider": "Reve",
+    "takes": []
+  },
+  "ReveImageEditNode": {
+    "makes": "image",
+    "provider": "Reve",
+    "takes": ["image:image"]
+  },
+  "ReveImageRemixNode": {
+    "makes": "image",
+    "provider": "Reve",
+    "takes": ["image:image"]
+  },
+  "Rodin3D_Detail": {
+    "makes": "3d",
+    "provider": "Rodin",
+    "takes": ["image:Images"]
+  },
+  "Rodin3D_Gen2": {
+    "makes": "3d",
+    "provider": "Rodin",
+    "takes": ["image:Images"]
+  },
+  "Rodin3D_Gen25_Image": {
+    "makes": "3d",
+    "provider": "Rodin",
+    "takes": ["image:image"]
+  },
+  "Rodin3D_Gen25_Text": {
+    "makes": "3d",
+    "provider": "Rodin",
+    "takes": []
+  },
+  "Rodin3D_Regular": {
+    "makes": "3d",
+    "provider": "Rodin",
+    "takes": ["image:Images"]
+  },
+  "Rodin3D_Sketch": {
+    "makes": "3d",
+    "provider": "Rodin",
+    "takes": ["image:Images"]
+  },
+  "Rodin3D_Smooth": {
+    "makes": "3d",
+    "provider": "Rodin",
+    "takes": ["image:Images"]
+  },
+  "RunwayAleph2KeyframeNode": {
+    "makes": "other",
+    "provider": "Runway",
+    "takes": ["image:image"]
+  },
+  "RunwayAleph2PromptImageNode": {
+    "makes": "other",
+    "provider": "Runway",
+    "takes": ["image:image"]
+  },
+  "RunwayAleph2VideoToVideoNode": {
+    "makes": "video",
+    "provider": "Runway",
+    "takes": ["video:video"]
+  },
+  "RunwayFirstLastFrameNode": {
+    "makes": "video",
+    "provider": "Runway",
+    "takes": ["image:start_frame", "image:end_frame"]
+  },
+  "RunwayImageToVideoNodeGen3a": {
+    "makes": "video",
+    "provider": "Runway",
+    "takes": ["image:start_frame"]
+  },
+  "RunwayImageToVideoNodeGen4": {
+    "makes": "video",
+    "provider": "Runway",
+    "takes": ["image:start_frame"]
+  },
+  "RunwayTextToImageNode": {
+    "makes": "image",
+    "provider": "Runway",
+    "takes": ["image:reference_image"]
+  },
+  "SoniloTextToMusic": {
+    "makes": "audio",
+    "provider": "Sonilo",
+    "takes": []
+  },
+  "SoniloVideoToMusic": {
+    "makes": "audio",
+    "provider": "Sonilo",
+    "takes": ["video:video"]
+  },
+  "SyncLipSyncNode": {
+    "makes": "video",
+    "provider": "sync.so",
+    "takes": ["video:video", "audio:audio"]
+  },
+  "SyncTalkingImageNode": {
+    "makes": "video",
+    "provider": "sync.so",
+    "takes": ["image:image", "audio:audio"]
+  },
+  "Tencent3DPartNode": {
+    "makes": "3d",
+    "provider": "Tencent",
+    "takes": []
+  },
+  "Tencent3DTextureEditNode": {
+    "makes": "3d",
+    "provider": "Tencent",
+    "takes": []
+  },
+  "TencentImageToModelNode": {
+    "makes": "3d",
+    "provider": "Tencent",
+    "takes": ["image:image", "image:image_left", "image:image_right", "image:image_back"]
+  },
+  "TencentModelTo3DUVNode": {
+    "makes": "3d",
+    "provider": "Tencent",
+    "takes": []
+  },
+  "TencentSmartTopologyNode": {
+    "makes": "3d",
+    "provider": "Tencent",
+    "takes": []
+  },
+  "TencentTextToModelNode": {
+    "makes": "3d",
+    "provider": "Tencent",
+    "takes": []
+  },
+  "TopazImageEnhance": {
+    "makes": "image",
+    "provider": "Topaz",
+    "takes": ["image:image"]
+  },
+  "TopazImageEnhanceV2": {
+    "makes": "image",
+    "provider": "Topaz",
+    "takes": ["image:image"]
+  },
+  "TopazVideoEnhance": {
+    "makes": "video",
+    "provider": "Topaz",
+    "takes": ["video:video"]
+  },
+  "TopazVideoEnhanceV2": {
+    "makes": "video",
+    "provider": "Topaz",
+    "takes": ["video:video"]
+  },
+  "TripoConversionNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoEditMultiviewNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoImageToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoImageToModelNodeV2": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoImageToMultiviewNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": ["image:image"]
+  },
+  "TripoImportModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoMeshCompleteNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoMultiviewToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": ["image:image", "image:image_left", "image:image_back", "image:image_right"]
+  },
+  "TripoP1ImageToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": ["image:image"]
+  },
+  "TripoP1MultiviewToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": ["image:image", "image:image_left", "image:image_back", "image:image_right"]
+  },
+  "TripoP1TextToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoPSeriesImageToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoPSeriesMultiviewToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoPSeriesTextToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoRetargetNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoRetopologyNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoRigCheckNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoRigNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoSegmentNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoSmartSegmentNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": ["image:image"]
+  },
+  "TripoTextToModelNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoTextToModelNodeV2": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoTextureNode": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "TripoTextureNodeV2": {
+    "makes": "3d",
+    "provider": "Tripo",
+    "takes": []
+  },
+  "Veo3FirstLastFrameNode": {
+    "makes": "video",
+    "provider": "Veo",
+    "takes": ["image:first_frame", "image:last_frame"]
+  },
+  "Veo3VideoGenerationNode": {
+    "makes": "video",
+    "provider": "Veo",
+    "takes": ["image:image"]
+  },
+  "Vidu2ImageToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:image"]
+  },
+  "Vidu2ReferenceVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:reference_images"]
+  },
+  "Vidu2StartEndToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:first_frame", "image:end_frame"]
+  },
+  "Vidu2TextToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": []
+  },
+  "Vidu3ImageToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:image"]
+  },
+  "Vidu3StartEndToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:first_frame", "image:end_frame"]
+  },
+  "Vidu3TextToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": []
+  },
+  "Vidu4ImageToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:image"]
+  },
+  "Vidu4ReferenceVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:reference_image", "audio:reference_audio"]
+  },
+  "ViduExtendVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["video:video", "image:end_frame"]
+  },
+  "ViduImageToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:image"]
+  },
+  "ViduMultiFrameVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:start_image"]
+  },
+  "ViduReferenceVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:images"]
+  },
+  "ViduStartEndToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": ["image:first_frame", "image:end_frame"]
+  },
+  "ViduTextToVideoNode": {
+    "makes": "video",
+    "provider": "Vidu",
+    "takes": []
+  },
+  "Wan2ImageToVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["image:first_frame", "image:last_frame", "audio:audio"]
+  },
+  "Wan2ReferenceVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["video:reference_video", "image:reference_image"]
+  },
+  "Wan2TextToVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["audio:audio"]
+  },
+  "Wan2VideoContinuationApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["video:first_clip", "image:last_frame"]
+  },
+  "Wan2VideoEditApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["image:reference_image", "video:video"]
+  },
+  "Wan3ImageToVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["image:first_frame", "image:last_frame"]
+  },
+  "Wan3ReferenceToVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": [
+      "image:reference_image",
+      "video:reference_video",
+      "audio:reference_audio",
+      "image:reference_image",
+      "video:reference_video",
+      "audio:reference_audio"
+    ]
+  },
+  "WanImageToImageApi": {
+    "makes": "image",
+    "provider": "Wan",
+    "takes": ["image:image"]
+  },
+  "WanImageToVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["image:image", "audio:audio"]
+  },
+  "WanReferenceVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["video:reference_video"]
+  },
+  "WanTextToImageApi": {
+    "makes": "image",
+    "provider": "Wan",
+    "takes": []
+  },
+  "WanTextToVideoApi": {
+    "makes": "video",
+    "provider": "Wan",
+    "takes": ["audio:audio"]
+  },
+  "WavespeedFlashVSRNode": {
+    "makes": "video",
+    "provider": "WaveSpeed",
+    "takes": ["video:video"]
+  },
+  "WavespeedImageUpscaleNode": {
+    "makes": "image",
+    "provider": "WaveSpeed",
+    "takes": ["image:image"]
+  }
+}

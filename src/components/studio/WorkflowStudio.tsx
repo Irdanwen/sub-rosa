@@ -1151,6 +1151,9 @@ function WorkflowEditor({
         ...blankWorkflow(imported.name),
         ...(imported.description ? { description: imported.description } : {}),
         ...(imported.extra ? { extra: imported.extra } : {}),
+        // A file's groups and subgraphs come in as frames and blocks.
+        ...(imported.frames?.length ? { frames: imported.frames } : {}),
+        ...(imported.blocks?.length ? { blocks: imported.blocks } : {}),
         nodes: imported.nodes,
         edges: imported.edges,
         origin: "import",

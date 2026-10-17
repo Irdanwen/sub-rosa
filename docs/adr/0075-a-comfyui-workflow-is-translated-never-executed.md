@@ -115,3 +115,34 @@ picture ComfyUI saved opens its graph there.
 - **The graph the run froze**, which is exactly what made the file; the
   workflow as it now stands when that run has been pruned.
 
+
+## Addendum 2026-10-17: subgraphs, reroutes, shared values and partner nodes
+
+A second pass over what a ComfyUI file can hold:
+
+- A **subgraph** (`definitions.subgraphs`) becomes a **block** (ADR-0116),
+  defined once however many instances the file has. Its nodes are translated
+  like any graph; each subgraph input is the inner step it feeds (several
+  through a relay); each output the inner step that gives it, so a link that
+  leaves an instance from its second output keeps that output. A nesting
+  deeper than a block can hold is left out, said so.
+- A **reroute** becomes a **relay**, which keeps the layout the file drew,
+  instead of being traversed and lost.
+- A **value shared through a link** into a widget (a negative prompt fed by
+  one primitive string to two renders) becomes a **setting taken from a
+  connection** (`fedParams`) where the native step can take it that way.
+  The model, a prompt with its `{{input}}` marker and the settings that
+  price a render never are (`canFeedParam`).
+- **Partner nodes** are read from a **frozen table** of ComfyUI's own
+  declarations (`comfy/partner-nodes.json`, 298 nodes), regenerated with
+  `node scripts/comfy-partner-map.mjs <ComfyUI checkout>` when ComfyUI adds
+  some, rather than guessed from their names. The table says what a node
+  makes and which media it takes: an upscaler becomes an upscale step, a
+  voice a speech step whose words are a text step, a chat node a chat step
+  (it never becomes a paid image), a background remover a cutout where the
+  provider offers one. A 3D model, a vector drawing or a voice changer has no
+  step, and the report says which. The name heuristics stay for a node newer
+  than the table.
+
+The importer used to drop frames and blocks between the review and the
+save; both now reach the stored workflow.
