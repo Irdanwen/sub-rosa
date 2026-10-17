@@ -1132,6 +1132,20 @@ can no longer run without it (a shot with its own prompt still runs). Resolved a
 validated or cached ever sees it. ComfyUI's bypass and mute; its files' modes
 4 and 2 import as these. _Avoid_: disabled (in copy), deleted.
 
+**Frame (workflow)**:
+A titled, tinted rectangle drawn behind steps that belong together. A step is
+in a frame by where it stands (its centre inside), not by a link: dragging the
+frame by its title carries the steps it held when the drag began, and a step
+dragged out simply leaves. Layout only: a run never sees frames. ComfyUI's
+groups import as frames. _Avoid_: group (in copy), section, block (a **block**
+will be a reusable set of steps that runs as one).
+
+**Note (workflow)**:
+A step that holds words for whoever reads the workflow and never runs: removed
+with the steps set aside before anything is priced, validated or run. A
+ComfyUI file's notes import as notes where they were written. _Avoid_:
+comment, annotation.
+
 **Port (workflow input)**:
 A named, typed input on a workflow node — a video node's prompt, opening
 frame, end frame, and references are four ports, not one merged stream. Media

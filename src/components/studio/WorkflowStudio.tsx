@@ -76,6 +76,7 @@ import {
   type Workflow,
   type WorkflowCostEstimate,
   type WorkflowEdge,
+  type WorkflowFrame,
   type WorkflowNode,
   type WorkflowNodeType,
 } from "../../lib/studio/workflow";
@@ -88,6 +89,7 @@ import type { LinkFilter, NodeSearchHit } from "../../lib/studio/workflow/node-s
 import { pruneToTargets } from "../../lib/studio/workflow/partial";
 import { align, distribute, layered } from "../../lib/studio/workflow/arrange";
 import { spendGuard } from "../../lib/studio/workflow/spend";
+import { stableJson } from "../../lib/studio/workflow/stable-json";
 import { readSpendCeiling } from "../../lib/studio/workflow/spend-ceiling";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -121,13 +123,16 @@ import {
   openNotice,
 } from "./workflow/flow";
 import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
+import type { FrameFlowNode } from "./workflow/FrameNode";
 import { NODE_TYPES } from "./workflow/StudioNode";
 import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
 import { ARRANGE_GAP, ArrangePopover } from "./workflow/ArrangePopover";
 import { NodeSearch } from "./workflow/NodeSearch";
+import { RunBanners } from "./workflow/RunBanners";
 import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
 import { SelectionToolbar } from "./workflow/SelectionToolbar";
 import { useCanvasEditing } from "./workflow/useCanvasEditing";
+import { stepBoxes, useFrames } from "./workflow/useFrames";
 import { useLiveQuotes } from "./workflow/useLiveQuotes";
 import { useReusePrediction } from "./workflow/useReusePrediction";
 
@@ -326,6 +331,13 @@ function WorkflowEditor({
     );
   }, []);
 
+  const { frames, setFrames, frameNodes, takeFrameChanges, frameSelection } = useFrames({
+    readOnly: Boolean(current?.readOnly),
+    flowNodesRef,
+    setFlowNodes,
+    onModeChange,
+  });
+
   const onLayoutChange = useCallback(
     (id: string, change: Partial<Pick<WorkflowNode, "collapsed" | "pinned" | "color">>) => {
       setFlowNodes((nodes) =>
@@ -386,6 +398,7 @@ function WorkflowEditor({
           : [],
       );
       setFlowEdges(opened ? toFlowEdges(opened) : []);
+      setFrames(opened?.frames ?? []);
       if (stranded.length > 0) setPortNotice(openNotice(stranded));
       // What the last run made shows again on its steps: reopening a
       // workflow used to show none of its past results. Left alone if a run
@@ -406,7 +419,7 @@ function WorkflowEditor({
         })().catch(() => undefined);
       }
     },
-    [catalog, artifacts, onParamsChange, onRename, onRemove, onApproveGate],
+    [catalog, artifacts, onParamsChange, onRename, onRemove, onApproveGate, setFrames],
   );
 
   // First mount: open the most recent workflow, or seed from templates. Once:
@@ -449,7 +462,7 @@ function WorkflowEditor({
     if (!base || base.readOnly) return;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      const serialized = fromFlow(base, flowNodes, flowEdges);
+      const serialized = fromFlow(base, flowNodes, flowEdges, frames);
       // Opening a workflow redraws its canvas; that is not an edit, and
       // saving it would move the card to the top with today's date.
       const stored = listWorkflows().find((entry) => entry.id === serialized.id);
@@ -460,7 +473,7 @@ function WorkflowEditor({
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(saveTimer.current);
     // `current` is a dependency so renames persist without a canvas change.
-  }, [flowNodes, flowEdges, current]);
+  }, [flowNodes, flowEdges, frames, current]);
 
   /** Move one connection within its port's order. The engine reads edge
    * order, so this IS the reorder — nothing else changes. */
@@ -489,7 +502,13 @@ function WorkflowEditor({
     });
   }, []);
 
-  const serialized = current ? fromFlow(current, flowNodes, flowEdges) : undefined;
+  const drawn = current ? fromFlow(current, flowNodes, flowEdges, frames) : undefined;
+  const drawnKey = drawn ? stableJson(drawn) : "";
+  /** The graph as drawn, the same object for as long as it says the same
+   * thing: refreshing what the steps show (prices, issues, reuse) must not
+   * read as an edit, or that refresh would feed itself without end. */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: drawnKey stands in for the graph.
+  const serialized = useMemo(() => drawn, [drawnKey]);
   /** The graph a run executes: steps set aside resolved away (modes.ts). */
   const effective = useMemo(() => (serialized ? applyModes(serialized) : undefined), [serialized]);
   const validation = useMemo(
@@ -631,9 +650,11 @@ function WorkflowEditor({
   ]);
 
   const onNodesChange = useCallback(
-    (changes: NodeChange<StudioFlowNode>[]) =>
-      setFlowNodes((nodes) => applyNodeChanges(changes, nodes)),
-    [],
+    (changes: NodeChange<StudioFlowNode | FrameFlowNode>[]) => {
+      const steps = takeFrameChanges(changes);
+      if (steps.length > 0) setFlowNodes((nodes) => applyNodeChanges(steps, nodes));
+    },
+    [takeFrameChanges],
   );
   const onEdgesChange = useCallback(
     (changes: EdgeChange<FlowEdge>[]) => setFlowEdges((edges) => applyEdgeChanges(changes, edges)),
@@ -1174,10 +1195,11 @@ function WorkflowEditor({
   const startRunRef = useRef(startRun);
   startRunRef.current = startRun;
   const applyGraph = useCallback(
-    (graph: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }) => {
+    (graph: { nodes: WorkflowNode[]; edges: WorkflowEdge[]; frames?: WorkflowFrame[] }) => {
       const base = currentRef.current;
       if (!base) return;
       const next = { ...base, nodes: graph.nodes, edges: graph.edges };
+      setFrames(graph.frames ?? []);
       setFlowNodes(
         toFlowNodes(
           next,
@@ -1192,7 +1214,7 @@ function WorkflowEditor({
       );
       setFlowEdges(toFlowEdges(next));
     },
-    [artifacts, onParamsChange, onRename, onRemove, onApproveGate],
+    [artifacts, onParamsChange, onRename, onRemove, onApproveGate, setFrames],
   );
   const openSearchRef = useRef<(x: number, y: number) => void>(() => {});
   const editing = useCanvasEditing({
@@ -1231,6 +1253,7 @@ function WorkflowEditor({
     fitView: () => void flowRef.current?.fitView({ duration: 250 }),
     run: () => void startRunRef.current(),
     toggleHistory: () => setHistoryOpen((open) => !open),
+    frameSelection,
     openSearch: () => {
       const box = canvasRef.current?.getBoundingClientRect();
       if (box) openSearchRef.current(box.left + box.width / 2 - 128, box.top + 80);
@@ -1349,6 +1372,8 @@ function WorkflowEditor({
     [openSearch, isValidConnection],
   );
 
+  /** Frames behind, steps in front. */
+  const canvasNodes = useMemo(() => [...frameNodes, ...flowNodes], [frameNodes, flowNodes]);
   /** The selected steps, for the bar over them. */
   const selectedIds = flowNodes.filter((node) => node.selected).map((node) => node.id);
   const allSetAside =
@@ -1370,16 +1395,7 @@ function WorkflowEditor({
     );
   }, []);
   const boxesOf = useCallback(
-    (ids: string[]) =>
-      flowNodesRef.current
-        .filter((node) => ids.includes(node.id))
-        .map((node) => ({
-          id: node.id,
-          x: node.position.x,
-          y: node.position.y,
-          width: node.measured?.width ?? 280,
-          height: node.measured?.height ?? 160,
-        })),
+    (ids: string[]) => stepBoxes(flowNodesRef.current.filter((node) => ids.includes(node.id))),
     [],
   );
   /** Arrange: the positions before it started, and the gap being tried. */
@@ -1415,74 +1431,13 @@ function WorkflowEditor({
   }, []);
 
   const productionBanners = (
-    <>
-      {!running && liveProductions.length > 0 ? (
-        <div className="studio-resume-banner">
-          {liveProductions.map((entry) => (
-            <div key={entry.id} className="studio-resume-row">
-              <span>
-                {t("Still producing:")} <strong>{entry.name || t("Untitled workflow")}</strong>
-                {t(". Its media lands in the gallery as it finishes.")}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {resumable.length > 0 ? (
-        <div className="studio-resume-banner">
-          {resumable.map((entry) => (
-            <div key={entry.id} className="studio-resume-row">
-              <span>
-                {entry.status === "failed" ? (
-                  <>
-                    {t("A production that stopped:")}{" "}
-                    <strong>{entry.name || t("Untitled workflow")}</strong>.{" "}
-                    {entry.error || t("A step failed.")}{" "}
-                    {t("Finished steps are kept; resuming retries the one that failed.")}
-                  </>
-                ) : entry.status === "cancelled" ? (
-                  <>
-                    {t("A production you stopped:")}{" "}
-                    <strong>{entry.name || t("Untitled workflow")}</strong>
-                    {t(". Finished steps are kept; resuming only runs what is left.")}
-                  </>
-                ) : entry.status === "awaitingGate" ? (
-                  <>
-                    {t("A production waiting on you:")}{" "}
-                    <strong>{entry.name || t("Untitled workflow")}</strong>
-                    {t(". Resume it to reach the gate and decide.")}
-                  </>
-                ) : (
-                  <>
-                    {t("An interrupted production:")}{" "}
-                    <strong>{entry.name || t("Untitled workflow")}</strong>
-                    {t(". Finished steps are kept; resuming only runs what is left.")}
-                  </>
-                )}
-              </span>
-              <span className="studio-resume-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={running}
-                  onClick={() => void dismissResumable(entry)}
-                >
-                  {t("Dismiss")}
-                </button>
-                <button
-                  type="button"
-                  className="studio-primary-button"
-                  disabled={running}
-                  onClick={() => void resume(entry)}
-                >
-                  {t("Resume")}
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </>
+    <RunBanners
+      running={running}
+      liveProductions={liveProductions}
+      resumable={resumable}
+      dismissResumable={dismissResumable}
+      resume={resume}
+    />
   );
 
   if (view === "library") {
@@ -1731,8 +1686,10 @@ function WorkflowEditor({
             onClose={() => setSearch(undefined)}
           />
         ) : null}
-        <ReactFlow
-          nodes={flowNodes}
+        <ReactFlow<StudioFlowNode | FrameFlowNode>
+          nodes={canvasNodes}
+          // A selected frame stays behind the steps it holds.
+          elevateNodesOnSelect={false}
           edges={displayEdges}
           nodeTypes={NODE_TYPES}
           edgeTypes={EDGE_TYPES}
@@ -1774,6 +1731,7 @@ function WorkflowEditor({
             zoomable
             ariaLabel={t("Overview of the workflow")}
             nodeClassName={(node) => {
+              if (node.type === "frame") return "minimap-frame";
               const status = results.get(node.id)?.status;
               const mode = (node.data as StudioNodeData | undefined)?.wfNode.mode;
               return mode
@@ -1803,6 +1761,7 @@ function WorkflowEditor({
               for (const id of selectedIds) onModeChange(id, mode);
             }}
             onDuplicate={editing.duplicate}
+            onFrame={frameSelection}
             onAlign={(to) => moveNodes(align(boxesOf(selectedIds), to))}
             onDistribute={() => {
               const boxes = boxesOf(selectedIds);

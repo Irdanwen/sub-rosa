@@ -108,6 +108,7 @@ describe("the canvas's keys and clipboard", () => {
       fitView: vi.fn(),
       run,
       toggleHistory: vi.fn(),
+      frameSelection: vi.fn() as (() => void) | undefined,
     };
     const hook = renderHook((current) => useCanvasEditing(current), { initialProps: props });
     return { hook, props, applyGraph, addSteps, removeSteps, run };
@@ -126,6 +127,14 @@ describe("the canvas's keys and clipboard", () => {
     expect(applyGraph).toHaveBeenCalledWith(graph("a"));
     field.remove();
     vi.useRealTimers();
+  });
+
+  it("frames the selection on ⌘G", () => {
+    const frameSelection = vi.fn();
+    const { hook, props } = setup();
+    hook.rerender({ ...props, frameSelection });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", metaKey: true }));
+    expect(frameSelection).toHaveBeenCalledTimes(1);
   });
 
   it("runs on ⌘↵ even from a prompt field", () => {

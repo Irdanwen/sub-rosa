@@ -33,6 +33,7 @@ const CATEGORY: Record<WorkflowNodeType, NodeCategory> = {
   gate: "flow",
   output: "flow",
   relay: "flow",
+  note: "flow",
 };
 
 export function categoryLabel(category: NodeCategory): string {
@@ -79,6 +80,8 @@ function keywords(type: WorkflowNodeType): string {
       return t("result end");
     case "relay":
       return t("reroute point route wire");
+    case "note":
+      return t("comment text explain");
   }
 }
 

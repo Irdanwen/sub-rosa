@@ -15,6 +15,7 @@ import {
   type StrandedEdge,
   type ValidationIssue,
   type Workflow,
+  type WorkflowFrame,
   type WorkflowNode,
 } from "../../../lib/studio/workflow";
 
@@ -157,9 +158,16 @@ export function toWorkflowEdge(edge: FlowEdge) {
   };
 }
 
-export function fromFlow(base: Workflow, nodes: StudioFlowNode[], edges: FlowEdge[]): Workflow {
+export function fromFlow(
+  base: Workflow,
+  nodes: StudioFlowNode[],
+  edges: FlowEdge[],
+  frames: WorkflowFrame[] = base.frames ?? [],
+): Workflow {
+  const { frames: _previous, ...rest } = base;
   return {
-    ...base,
+    ...rest,
+    ...(frames.length > 0 ? { frames } : {}),
     nodes: nodes.map((node) => ({
       ...node.data.wfNode,
       position: { x: node.position.x, y: node.position.y },

@@ -8,6 +8,7 @@
 // first workflow over a real one. Writes update the cache at once and reach
 // the table behind it.
 
+import { cleanFrames } from "./frames";
 import { invoke } from "@tauri-apps/api/core";
 import { type Workflow, WORKFLOW_FILE_VERSION } from "./schema";
 
@@ -56,7 +57,8 @@ function fromStored(row: StoredWorkflow): Workflow | undefined {
   try {
     const parsed: unknown = JSON.parse(row.definition);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-    const { nodes, edges, ...extra } = parsed as Record<string, unknown>;
+    const { nodes, edges, frames, ...extra } = parsed as Record<string, unknown>;
+    const kept = cleanFrames(frames);
     if (!Array.isArray(nodes) || !Array.isArray(edges)) return undefined;
     return {
       id: row.id,
@@ -68,6 +70,7 @@ function fromStored(row: StoredWorkflow): Workflow | undefined {
       updatedAt: row.updatedAt,
       origin: row.origin === "import" ? "import" : "mine",
       ...(row.coverArtifactId ? { coverArtifactId: row.coverArtifactId } : {}),
+      ...(kept.length > 0 ? { frames: kept } : {}),
       ...(Object.keys(extra).length > 0 ? { extra } : {}),
       // A later version may have reshaped what it wrote; this one shows it
       // and leaves it alone, so the later device's work is never cut down
@@ -81,7 +84,12 @@ function fromStored(row: StoredWorkflow): Workflow | undefined {
 
 /** The stored graph: what this version edits, plus whatever it carried in. */
 function definitionOf(workflow: Workflow): string {
-  return JSON.stringify({ ...workflow.extra, nodes: workflow.nodes, edges: workflow.edges });
+  return JSON.stringify({
+    ...workflow.extra,
+    nodes: workflow.nodes,
+    edges: workflow.edges,
+    ...(workflow.frames?.length ? { frames: workflow.frames } : {}),
+  });
 }
 
 /** Write one workflow to the table. Resolves whether it got there. */

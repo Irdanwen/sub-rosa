@@ -57,9 +57,14 @@ describe("the Gemini Omni image-to-video template", () => {
   const { workflow, report, usable } = translateComfy(geminiOmni, catalog);
   const byType = (type: string) => workflow.nodes.filter((node) => node.type === type);
 
-  it("becomes a picture to provide, a video node and an output, wired as in Comfy", () => {
+  it("becomes a picture to provide, a video node, an output and its note, wired as in Comfy", () => {
     expect(usable).toBe(true);
-    expect(workflow.nodes.map((node) => node.type).sort()).toEqual(["asset", "output", "video"]);
+    expect(workflow.nodes.map((node) => node.type).sort()).toEqual([
+      "asset",
+      "note",
+      "output",
+      "video",
+    ]);
     const [asset] = byType("asset");
     const [video] = byType("video");
     const [output] = byType("output");

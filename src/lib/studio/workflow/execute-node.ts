@@ -825,6 +825,10 @@ export async function executeNode(
       return { kind: "video", artifactId: saved.artifactId, src: saved.src };
     }
 
+    case "note":
+      // Canvas runs leave notes out (modes.ts); nothing to make anywhere.
+      return { kind: "text", text: "" };
+
     case "relay": {
       // Canvas runs resolve relays away (modes.ts); a graph built elsewhere
       // still gets what reached it.

@@ -23,6 +23,7 @@ export {
   type PortKind,
   type Workflow,
   type WorkflowEdge,
+  type WorkflowFrame,
   type WorkflowNode,
   type WorkflowNodeType,
 } from "./schema";

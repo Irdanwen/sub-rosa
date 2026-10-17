@@ -7,9 +7,11 @@ import {
   maybeNodeSchema,
   type Workflow,
   type WorkflowEdge,
+  NODE_COLORS,
   type WorkflowNode,
   WORKFLOW_FILE_VERSION,
 } from "../schema";
+import { cleanFrames } from "../frames";
 import { migrateWorkflow } from "../migrate";
 import { type ComfyImport, detectWorkflowFile, translateComfy } from "./translate";
 
@@ -19,7 +21,7 @@ export const MAX_WORKFLOW_FILE_BYTES = 5 * 1024 * 1024;
 export interface WorkflowFile {
   format: "subrosa-workflow";
   version: number;
-  workflow: Pick<Workflow, "name" | "description" | "nodes" | "edges" | "extra">;
+  workflow: Pick<Workflow, "name" | "description" | "nodes" | "edges" | "frames" | "extra">;
 }
 
 export function workflowFileText(workflow: Workflow): string {
@@ -31,6 +33,7 @@ export function workflowFileText(workflow: Workflow): string {
       ...(workflow.description ? { description: workflow.description } : {}),
       nodes: workflow.nodes,
       edges: workflow.edges,
+      ...(workflow.frames?.length ? { frames: workflow.frames } : {}),
       ...(workflow.extra ? { extra: workflow.extra } : {}),
     },
   };
@@ -71,6 +74,14 @@ function cleanGraph(nodes: unknown[], edges: unknown[]): Pick<Workflow, "nodes" 
           : {},
       ...(typeof node.v === "number" && Number.isInteger(node.v) && node.v > 1
         ? { v: node.v }
+        : {}),
+      // Layout and modes travel with the file: an export read back is the
+      // graph that was written.
+      ...(node.mode === "bypass" || node.mode === "mute" ? { mode: node.mode } : {}),
+      ...(node.collapsed === true ? { collapsed: true } : {}),
+      ...(node.pinned === true ? { pinned: true } : {}),
+      ...((NODE_COLORS as readonly string[]).includes(String(node.color))
+        ? { color: node.color }
         : {}),
     });
   }
@@ -133,6 +144,14 @@ export function readWorkflowFile(text: string, catalog: MediaCatalog, fileName =
           (typeof workflow.name === "string" && workflow.name) || stem || t("Imported workflow"),
         ...(typeof workflow.description === "string" && workflow.description
           ? { description: workflow.description }
+          : {}),
+        ...(cleanFrames(workflow.frames).length > 0
+          ? {
+              frames: cleanFrames(workflow.frames).map((frame) => ({
+                ...frame,
+                id: crypto.randomUUID(),
+              })),
+            }
           : {}),
         ...(workflow.extra && typeof workflow.extra === "object" && !Array.isArray(workflow.extra)
           ? { extra: workflow.extra }

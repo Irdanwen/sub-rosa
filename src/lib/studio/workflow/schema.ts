@@ -37,7 +37,8 @@ export type WorkflowNodeType =
   | "gate"
   | "assemble"
   | "output"
-  | "relay";
+  | "relay"
+  | "note";
 
 export interface WorkflowNode {
   id: string;
@@ -94,6 +95,19 @@ export interface Workflow {
   /** Written by a newer version of the app: shown, never saved over. Known
    * at load time only, never stored. */
   readOnly?: true;
+  /** Titled rectangles behind steps that belong together (frames.ts). */
+  frames?: WorkflowFrame[];
+}
+
+/** A frame: where it is, how big, what it is called and its tint. */
+export interface WorkflowFrame {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
 }
 
 /**
@@ -691,6 +705,14 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     inputs: [{ id: "in", label: "Result", kind: "any", multi: true }],
     output: "none",
     params: [],
+  },
+  note: {
+    type: "note",
+    label: "Note",
+    description: "Words on the canvas for whoever reads the workflow. It never runs.",
+    inputs: [],
+    output: "none",
+    params: [{ name: "text", label: "Note", type: "text" }],
   },
   relay: {
     type: "relay",
