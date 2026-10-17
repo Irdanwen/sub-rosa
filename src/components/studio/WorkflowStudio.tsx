@@ -148,6 +148,9 @@ import { BlockPanel } from "./workflow/BlockPanel";
 import { composeRoot, useBlockScope, withLevel } from "./workflow/useBlockScope";
 import { useRunPicture } from "./workflow/useRunPicture";
 import { useLibraryArrivals } from "./workflow/useLibraryArrivals";
+import { RunSessions } from "../../lib/studio/workflow/run-sessions";
+import { useWorkflowTabs } from "./workflow/useWorkflowTabs";
+import { WorkflowTabs } from "./workflow/WorkflowTabs";
 
 /**
  * The Workflows tab. The library is read before anything is drawn: an editor
@@ -213,10 +216,14 @@ function WorkflowEditor({
   const [current, setCurrent] = useState<Workflow | undefined>(() => listWorkflows()[0]);
   const [flowNodes, setFlowNodes] = useState<StudioFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<FlowEdge[]>([]);
-  const [results, setResults] = useState<Map<string, NodeRunResult>>(new Map());
-  const [running, setRunning] = useState(false);
+  /** Each workflow's run, so one goes on while another tab is open: the
+   * canvas shows the session of the workflow it has open. */
+  const sessions = useRef(new RunSessions()).current;
+  const [, setSessionsEpoch] = useState(0);
+  const refreshSessions = useCallback(() => setSessionsEpoch((epoch) => epoch + 1), []);
+  const results = sessions.results(current?.id);
+  const running = sessions.running(current?.id);
   const [runError, setRunError] = useState<string | undefined>(undefined);
-  const abortRef = useRef<AbortController | undefined>(undefined);
   const saveTimer = useRef<number | undefined>(undefined);
   const currentRef = useRef<Workflow | undefined>(current);
   currentRef.current = current;
@@ -240,56 +247,49 @@ function WorkflowEditor({
   /** Bumped when a failed render taught us what a model accepts, so every
    * option list under it re-derives. */
   const [constraintEpoch, setConstraintEpoch] = useState(0);
-  /** The durable run this canvas is showing (started or resumed here), so a
-   * gate approval knows which run to continue. */
-  const runIdRef = useRef<string | undefined>(undefined);
   /** Stable identity for node data; retargeted once the handler exists. */
   const approveGateRef = useRef<(gateId: string, choice: string | undefined) => void>(() => {});
   const onApproveGate = useCallback(
     (gateId: string, choice: string | undefined) => approveGateRef.current(gateId, choice),
     [],
   );
-  /** The last run's results as they arrive, read once the run is over. */
-  const runResultsRef = useRef<Map<string, NodeRunResult>>(new Map());
-  /** When each render of a run started here began. Only a run started on
-   * this canvas is timed: a resumed node re-attaches to a job that began
-   * earlier, and filing its shorter wait would teach every estimate a lie. */
-  const renderStartsRef = useRef<Map<string, number> | undefined>(undefined);
-  const mirrorUpdate = useCallback((result: NodeRunResult) => {
-    runResultsRef.current.set(result.nodeId, result);
-    const starts = renderStartsRef.current;
-    if (starts) {
-      if (result.status === "running") {
-        if (!starts.has(result.nodeId)) starts.set(result.nodeId, Date.now());
-      } else {
-        const startedAt = starts.get(result.nodeId);
-        starts.delete(result.nodeId);
-        const node = flowNodesRef.current.find((entry) => entry.id === result.nodeId)?.data.wfNode;
-        const etaKey = node ? nodeEtaKey(node) : undefined;
-        if (result.status === "done" && startedAt !== undefined && etaKey) {
-          rememberRenderMs(etaKey, Date.now() - startedAt);
+  /** A run's news, filed under its workflow, whichever tab is open. Only a
+   * run started here is timed (`renderStarts`): a resumed node re-attaches
+   * to a job that began earlier, and filing its shorter wait would teach
+   * every estimate a lie. */
+  const mirrorFor = useCallback(
+    (workflowId: string) => (result: NodeRunResult) => {
+      const session = sessions.record(workflowId, result);
+      refreshSessions();
+      const node = session.graph?.nodes.find((entry) => entry.id === result.nodeId);
+      const starts = session.renderStarts;
+      if (starts) {
+        if (result.status === "running") {
+          if (!starts.has(result.nodeId)) starts.set(result.nodeId, Date.now());
+        } else {
+          const startedAt = starts.get(result.nodeId);
+          starts.delete(result.nodeId);
+          const etaKey = node ? nodeEtaKey(node) : undefined;
+          if (result.status === "done" && startedAt !== undefined && etaKey) {
+            rememberRenderMs(etaKey, Date.now() - startedAt);
+          }
         }
       }
-    }
-    setResults((currentResults) => {
-      const next = new Map(currentResults);
-      next.set(result.nodeId, result);
-      return next;
-    });
-    // A rejected render carries the provider's own account of what the model
-    // wanted, and the operator now enumerates it in full on the queue itself
-    // (`400 VIDEO_PARAM_REJECTED`, every faulty field with its accepted list).
-    // Reading it here is what makes the pickers right for the families the
-    // catalog publishes nothing about - the video studio has always done this,
-    // and a workflow that fails the same way should teach the same lesson.
-    if (result.status !== "error" || !result.error) return;
-    const model = flowNodesRef.current.find((node) => node.id === result.nodeId)?.data.wfNode.params
-      .model;
-    if (typeof model !== "string" || model === "") return;
-    if (Object.keys(rememberConstraintError(model, result.error)).length > 0) {
-      setConstraintEpoch((epoch) => epoch + 1);
-    }
-  }, []);
+      // A rejected render carries the provider's own account of what the model
+      // wanted, and the operator now enumerates it in full on the queue itself
+      // (`400 VIDEO_PARAM_REJECTED`, every faulty field with its accepted list).
+      // Reading it here is what makes the pickers right for the families the
+      // catalog publishes nothing about - the video studio has always done this,
+      // and a workflow that fails the same way should teach the same lesson.
+      if (result.status !== "error" || !result.error) return;
+      const model = node?.params.model;
+      if (typeof model !== "string" || model === "") return;
+      if (Object.keys(rememberConstraintError(model, result.error)).length > 0) {
+        setConstraintEpoch((epoch) => epoch + 1);
+      }
+    },
+    [sessions, refreshSessions],
+  );
 
   const onParamsChange = useCallback((id: string, params: Record<string, unknown>) => {
     setFlowNodes((nodes) =>
@@ -413,8 +413,10 @@ function WorkflowEditor({
       const workflow = stored && !stored.readOnly ? migrateWorkflow(stored) : stored;
       blockScope.reset();
       setCurrent(workflow);
-      setResults(new Map());
-      setRunError(undefined);
+      // Its run goes on in its session, whichever tab was open: what it
+      // ended with is seen now, and so is what it failed with.
+      if (workflow) sessions.seen(workflow.id);
+      setRunError(sessions.get(workflow?.id)?.error);
       setPortNotice(undefined);
       // A workflow saved before its models' inputs were understood can hold a
       // connection on a port the node no longer draws, which would render as a
@@ -454,11 +456,11 @@ function WorkflowEditor({
           );
           if (!last) return;
           const { results: past } = await runResults(last.id);
-          if (currentRef.current?.id !== openedId) return;
           const present = new Set(opened.nodes.map((node) => node.id));
-          setResults((live) =>
+          sessions.show(openedId, (live) =>
             live.size > 0 ? live : new Map([...past].filter(([nodeId]) => present.has(nodeId))),
           );
+          refreshSessions();
         })().catch(() => undefined);
       }
     },
@@ -471,6 +473,8 @@ function WorkflowEditor({
       onApproveGate,
       setFrames,
       blockScope.reset,
+      sessions,
+      refreshSessions,
     ],
   );
 
@@ -564,6 +568,21 @@ function WorkflowEditor({
 
   // What another device changed reaches the library, and the open canvas.
   useLibraryArrivals({ serialized, running, setWorkflows, hydrate });
+
+  /** Save now what the debounce would save in a moment: leaving a tab must
+   * not drop its last edit. */
+  const serializedRef = useRef(serialized);
+  serializedRef.current = serialized;
+  const flushSave = useCallback(() => {
+    window.clearTimeout(saveTimer.current);
+    const drawnNow = serializedRef.current;
+    if (!drawnNow || drawnNow.readOnly) return;
+    const stored = listWorkflows().find((entry) => entry.id === drawnNow.id);
+    if (stored && sameWorkflow(stored, drawnNow)) return;
+    saveWorkflow(drawnNow);
+    setWorkflows(listWorkflows());
+  }, []);
+
   /** Bumped when a run ends, so the cache is asked again what it now holds. */
   const [runEpoch, setRunEpoch] = useState(0);
   const {
@@ -837,9 +856,14 @@ function WorkflowEditor({
     };
   }, []);
 
-  /** The figures the run on screen was started or resumed with, so a gate
-   * approved later is held to the same budget check. */
-  const runEstimateRef = useRef<WorkflowCostEstimate | undefined>(undefined);
+  /** A run's failure, kept in its session and said now if its tab is open. */
+  const failRun = useCallback(
+    (workflowId: string, message: string) => {
+      sessions.fail(workflowId, message);
+      if (currentRef.current?.id === workflowId) setRunError(message);
+    },
+    [sessions],
+  );
 
   const run = useCallback(
     async (priced: WorkflowCostEstimate, targets?: string[]) => {
@@ -850,19 +874,18 @@ function WorkflowEditor({
           ? pruneToTargets(effective, flatTargets(targets, stepView))
           : effective;
       if (!runnable || running || !validateWorkflow(runnable).ok) return;
-      runEstimateRef.current = priced;
-      renderStartsRef.current = new Map();
-      const controller = new AbortController();
-      abortRef.current?.abort();
-      abortRef.current = controller;
-      setRunning(true);
-      setRunError(undefined);
+      const workflowId = runnable.id;
       // A partial run leaves what the other steps show alone.
       const inRun = new Set(runnable.nodes.map((node) => node.id));
-      setResults((live) =>
-        targets ? new Map([...live].filter(([nodeId]) => !inRun.has(nodeId))) : new Map(),
-      );
-      runResultsRef.current = new Map();
+      const controller = sessions.begin(workflowId, {
+        graph: runnable,
+        estimate: priced,
+        timed: true,
+        keep: targets ? (nodeId) => !inRun.has(nodeId) : undefined,
+      });
+      refreshSessions();
+      setRunError(undefined);
+      let outcome: "done" | "failed" | "cancelled" = "done";
       try {
         // Durable run (ADR-0021): state persists as rows, long renders ride
         // the Rust job pollers, and produced media lands in the gallery at
@@ -873,73 +896,77 @@ function WorkflowEditor({
           isolateFailures: true,
           nodeCosts: nodeCostMap(priced),
           beforeNode: spendGuard(priced, { unpriced: "allow", ceiling: readSpendCeiling() }),
-          cache: workflowStepCache(runnable.id),
-          onRunRecorded: (runId) => {
-            runIdRef.current = runId;
-          },
-          onUpdate: mirrorUpdate,
+          cache: workflowStepCache(workflowId),
+          onRunRecorded: (runId) => sessions.setRunId(workflowId, runId),
+          onUpdate: mirrorFor(workflowId),
         });
-        void pruneWorkflowRuns(runnable.id);
+        void pruneWorkflowRuns(workflowId);
         // The run's own result becomes the library card's picture: free, and
         // true to what the workflow makes.
-        const cover = coverArtifactOf(runnable, runResultsRef.current);
+        const cover = coverArtifactOf(runnable, sessions.results(workflowId));
         if (cover) {
-          void setWorkflowCover(runnable.id, cover)
+          void setWorkflowCover(workflowId, cover)
             .then(() => setWorkflows(listWorkflows()))
             .catch(() => undefined);
         }
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           // Cancelled on purpose; per-node statuses already reset.
-        } else if (error instanceof WorkflowRunError) {
-          setRunError(error.message);
+          outcome = "cancelled";
         } else {
-          setRunError(error instanceof Error ? error.message : t("The run failed."));
+          outcome = "failed";
+          failRun(
+            workflowId,
+            error instanceof WorkflowRunError || error instanceof Error
+              ? error.message
+              : t("The run failed."),
+          );
         }
       } finally {
-        setRunning(false);
+        sessions.end(workflowId, outcome);
+        refreshSessions();
         setRunEpoch((epoch) => epoch + 1);
       }
     },
-    [effective, stepView, running, mirrorUpdate],
+    [effective, stepView, running, sessions, refreshSessions, mirrorFor, failRun],
   );
 
-  /** Pick an interrupted production back up. Node states light the canvas up
-   * when the run came from the workflow currently on it; a run from another
-   * (or a deleted) workflow still resumes, reported through the banner. */
+  /** Pick an interrupted production back up. Its steps light up on its own
+   * tab; a run from a deleted workflow still resumes, reported through the
+   * banner. */
   const resume = useCallback(
     async (entry: WorkflowRunSummary) => {
-      if (running) return;
-      const controller = new AbortController();
-      abortRef.current?.abort();
-      abortRef.current = controller;
-      setRunning(true);
-      setRunError(undefined);
-      setResults(new Map());
-      runIdRef.current = entry.id;
-      runResultsRef.current = new Map();
-      renderStartsRef.current = undefined;
-      const mirrorsCanvas = current?.id === entry.workflowId;
+      const workflowId = entry.workflowId;
+      if (sessions.running(workflowId)) return;
       // Held to the same check as a fresh run: a resume that would spend past
       // what the account holds stops at the step, not after ten minutes of
       // payment refusals.
       const definition = runDefinition(entry);
       const priced = definition ? estimateWorkflowCost(definition, catalog) : undefined;
-      runEstimateRef.current = priced;
+      const controller = sessions.begin(workflowId, {
+        graph: definition,
+        estimate: priced,
+        timed: false,
+        runId: entry.id,
+      });
+      refreshSessions();
+      if (currentRef.current?.id === workflowId) setRunError(undefined);
+      let outcome: "done" | "failed" | "cancelled" = "done";
       try {
         await resumeWorkflowRun(entry.id, {
           signal: controller.signal,
           beforeNode: priced ? spendGuard(priced, { unpriced: "allow" }) : undefined,
-          cache: workflowStepCache(entry.workflowId),
+          cache: workflowStepCache(workflowId),
           scheduling: "ready",
           isolateFailures: true,
-          onUpdate: mirrorsCanvas ? mirrorUpdate : undefined,
+          onUpdate: mirrorFor(workflowId),
         });
         // A resumed run's result is the card's picture too.
-        const cover =
-          mirrorsCanvas && current ? coverArtifactOf(current, runResultsRef.current) : undefined;
+        const cover = definition
+          ? coverArtifactOf(definition, sessions.results(workflowId))
+          : undefined;
         if (cover) {
-          void setWorkflowCover(entry.workflowId, cover)
+          void setWorkflowCover(workflowId, cover)
             .then(() => setWorkflows(listWorkflows()))
             .catch(() => undefined);
         }
@@ -947,54 +974,64 @@ function WorkflowEditor({
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           // Cancelled on purpose; the run stays resumable.
+          outcome = "cancelled";
         } else {
-          setRunError(error instanceof Error ? error.message : t("The resume failed."));
+          outcome = "failed";
+          failRun(workflowId, error instanceof Error ? error.message : t("The resume failed."));
           setResumable((entries) => entries.filter((candidate) => candidate.id !== entry.id));
         }
       } finally {
-        setRunning(false);
+        sessions.end(workflowId, outcome);
+        refreshSessions();
         setRunEpoch((epoch) => epoch + 1);
       }
     },
-    [running, current, mirrorUpdate, catalog],
+    [catalog, sessions, refreshSessions, mirrorFor, failRun],
   );
 
-  /** Decide one gate and continue the held production. Gates left undecided
-   * simply hold again — approving is always one gate at a time here. */
+  /** Decide one gate and continue the held production of the open tab.
+   * Gates left undecided simply hold again: approving is always one gate at
+   * a time here. */
   const continueHeldRun = useCallback(
     async (gateId: string, choice: string | undefined) => {
-      const runId = runIdRef.current;
-      if (!runId || running) return;
-      renderStartsRef.current = undefined;
-      const controller = new AbortController();
-      abortRef.current?.abort();
-      abortRef.current = controller;
-      setRunning(true);
+      const workflowId = currentRef.current?.id;
+      const session = sessions.get(workflowId);
+      const runId = session?.runId;
+      if (!workflowId || !runId || session?.running) return;
+      const priced = session?.estimate;
+      const controller = sessions.begin(workflowId, {
+        timed: false,
+        keep: () => true,
+      });
+      refreshSessions();
       setRunError(undefined);
+      let outcome: "done" | "failed" | "cancelled" = "done";
       try {
-        const priced = runEstimateRef.current;
         await resumeWorkflowRun(runId, {
           signal: controller.signal,
           beforeNode: priced ? spendGuard(priced, { unpriced: "allow" }) : undefined,
-          cache: currentRef.current ? workflowStepCache(currentRef.current.id) : undefined,
+          cache: workflowStepCache(workflowId),
           scheduling: "ready",
           isolateFailures: true,
           approvedGates: new Map([[gateId, choice]]),
-          onUpdate: mirrorUpdate,
+          onUpdate: mirrorFor(workflowId),
         });
         setResumable((entries) => entries.filter((candidate) => candidate.id !== runId));
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           // Cancelled on purpose; the gate holds.
+          outcome = "cancelled";
         } else {
-          setRunError(error instanceof Error ? error.message : t("The approval failed."));
+          outcome = "failed";
+          failRun(workflowId, error instanceof Error ? error.message : t("The approval failed."));
         }
       } finally {
-        setRunning(false);
+        sessions.end(workflowId, outcome);
+        refreshSessions();
         setRunEpoch((epoch) => epoch + 1);
       }
     },
-    [running, mirrorUpdate],
+    [sessions, refreshSessions, mirrorFor, failRun],
   );
 
   useEffect(() => {
@@ -1052,16 +1089,17 @@ function WorkflowEditor({
   );
   runStepRef.current = (nodeId) => void startRun([nodeId]);
 
-  const stop = useCallback(() => abortRef.current?.abort(), []);
+  const stop = useCallback(() => sessions.stop(currentRef.current?.id), [sessions]);
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const removeCurrent = useCallback(() => {
     if (!current) return;
     deleteWorkflow(current.id);
+    sessions.forget(current.id);
     const remaining = listWorkflows();
     setWorkflows(remaining);
     hydrate(remaining[0]);
-  }, [current, hydrate]);
+  }, [current, hydrate, sessions]);
 
   const newWorkflow = useCallback(() => {
     const workflow = blankWorkflow("Untitled workflow");
@@ -1078,6 +1116,19 @@ function WorkflowEditor({
     },
     [hydrate],
   );
+
+  const workflowTabs = useWorkflowTabs({
+    view,
+    current,
+    workflows,
+    sessions,
+    flushSave,
+    openWorkflow,
+    toLibrary: () => {
+      setLeftCanvas(true);
+      setView("library");
+    },
+  });
 
   // Asked from elsewhere (the gallery): open that workflow, or say it is gone.
   useEffect(() => {
@@ -1116,11 +1167,12 @@ function WorkflowEditor({
   const deleteFromLibrary = useCallback(
     (workflow: Workflow) => {
       deleteWorkflow(workflow.id);
+      sessions.forget(workflow.id);
       const remaining = listWorkflows();
       setWorkflows(remaining);
       if (currentRef.current?.id === workflow.id) hydrate(remaining[0]);
     },
-    [hydrate],
+    [hydrate, sessions],
   );
 
   const makeCover = useCallback(
@@ -1149,11 +1201,17 @@ function WorkflowEditor({
       .then(() => setVersionsEpoch((epoch) => epoch + 1))
       .catch((cause) => setRunError(messageFromError(cause)));
   };
-  const showRun = useCallback(async (runId: string) => {
-    const { results: past } = await runResults(runId);
-    const present = new Set(flowNodesRef.current.map((node) => node.id));
-    setResults(new Map([...past].filter(([nodeId]) => present.has(nodeId))));
-  }, []);
+  const showRun = useCallback(
+    async (runId: string) => {
+      const { results: past } = await runResults(runId);
+      const present = new Set(flowNodesRef.current.map((node) => node.id));
+      const shownId = currentRef.current?.id;
+      if (!shownId) return;
+      sessions.show(shownId, () => new Map([...past].filter(([nodeId]) => present.has(nodeId))));
+      refreshSessions();
+    },
+    [sessions, refreshSessions],
+  );
   const restoreRun = useCallback(
     async (runId: string) => {
       const base = currentRef.current;
@@ -1167,9 +1225,10 @@ function WorkflowEditor({
         edges: (written ?? definition).edges,
         ...(written ? { blocks: written.blocks } : {}),
       });
-      setResults(past);
+      sessions.show(base.id, () => past);
+      refreshSessions();
     },
-    [hydrate],
+    [hydrate, sessions, refreshSessions],
   );
 
   /** The canvas's own editing: undo, clipboard, shortcuts, palette. */
@@ -1514,6 +1573,14 @@ function WorkflowEditor({
 
   return (
     <div className="studio-workflows">
+      <WorkflowTabs
+        tabs={workflowTabs.open}
+        activeId={current?.id}
+        statusOf={(id) => sessions.status(id)}
+        artifactsById={artifacts.byId}
+        onSelect={workflowTabs.select}
+        onClose={workflowTabs.close}
+      />
       <div className="studio-workflows-toolbar">
         <button
           ref={libraryButtonRef}
