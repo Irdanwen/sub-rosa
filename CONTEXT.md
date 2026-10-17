@@ -1175,6 +1175,15 @@ in order. A split text states the most lines it may hold, and is priced for
 them. See [ADR-0117](docs/adr/0117-a-list-runs-what-it-feeds-once-per-item.md).
 _Avoid_: batch (in copy), array, loop.
 
+**App (workflow)**:
+A workflow shown as a form: the few settings a person fills in, the results
+they get, in an order, over the same graph. Filling a field in edits that
+step's setting; running the app runs the workflow. A workflow that is an app
+opens as one, and the toolbar switches back to the graph. On the phone,
+apps are the only workflow surface. See
+[ADR-0119](docs/adr/0119-an-app-is-a-view-over-its-workflow.md).
+_Avoid_: form mode, simple mode, front end.
+
 **Version (workflow)**:
 The whole workflow as it was, kept on purpose (⌘S, "Save a version") under
 a name, to compare with the graph as it is now and to go back to; going back

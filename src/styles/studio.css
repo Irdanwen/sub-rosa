@@ -3042,3 +3042,156 @@ button.studio-block-crumb:hover {
   color: var(--muted-foreground);
   font-size: var(--fs-xs);
 }
+
+/* --- a workflow as an app (ADR-0119) ------------------------------------------ */
+
+.workflow-app {
+  display: grid;
+  gap: var(--sp-5);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--sp-5) 0;
+}
+
+.workflow-app-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.workflow-app-head h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.workflow-app-head p {
+  margin: var(--sp-2) 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.workflow-app-form {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.workflow-app-field {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.workflow-app-step {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.workflow-app-run {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+}
+
+.workflow-app-results {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.workflow-app-result {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.workflow-app-result figcaption {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.workflow-app-waiting {
+  margin: 0;
+  padding: var(--sp-5);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.app-builder {
+  display: grid;
+  gap: var(--sp-5);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.app-builder h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.app-builder-intro {
+  display: grid;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.app-builder-step {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.app-builder-step legend {
+  padding: 0 var(--sp-1);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+}
+
+.app-builder-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.app-builder-order {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding-left: var(--sp-5);
+}
+
+.app-builder-order li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.app-builder-order input {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-builder-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.app-builder-outputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+}

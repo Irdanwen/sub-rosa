@@ -41,6 +41,8 @@ export function WorkflowToolbar(props: {
   onHoverRun: (hovering: boolean) => void;
   /** Between the editing controls and the run: the graph or app switch. */
   modeSwitch?: ReactNode;
+  /** Shown as an app: the graph's tools and the run are the form's. */
+  asApp?: boolean;
 }) {
   const { estimate } = props;
   return (
@@ -83,24 +85,28 @@ export function WorkflowToolbar(props: {
       >
         <IconArrowRedoDown size={16} />
       </button>
-      <Select
-        value={null}
-        placeholder={t("Add node")}
-        ariaLabel={t("Add a node")}
-        onChange={(type) => props.onAddNode(type as WorkflowNodeType)}
-        options={Object.values(NODE_SCHEMAS)
-          .filter((schema) => schema.type !== "block" && schema.type !== "listItem")
-          .map((schema) => ({ value: schema.type, label: nodeTypeLabel(schema.type) }))}
-      />
-      <button
-        type="button"
-        className="btn btn-secondary"
-        aria-pressed={props.arranging}
-        disabled={!props.hasWorkflow || props.readOnly || !props.canArrange}
-        onClick={props.onArrange}
-      >
-        {t("Arrange")}
-      </button>
+      {props.asApp ? null : (
+        <Select
+          value={null}
+          placeholder={t("Add node")}
+          ariaLabel={t("Add a node")}
+          onChange={(type) => props.onAddNode(type as WorkflowNodeType)}
+          options={Object.values(NODE_SCHEMAS)
+            .filter((schema) => schema.type !== "block" && schema.type !== "listItem")
+            .map((schema) => ({ value: schema.type, label: nodeTypeLabel(schema.type) }))}
+        />
+      )}
+      {props.asApp ? null : (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          aria-pressed={props.arranging}
+          disabled={!props.hasWorkflow || props.readOnly || !props.canArrange}
+          onClick={props.onArrange}
+        >
+          {t("Arrange")}
+        </button>
+      )}
       <button
         type="button"
         className="btn btn-secondary"
@@ -126,12 +132,12 @@ export function WorkflowToolbar(props: {
           {t("Delete")}
         </button>
       ) : null}
-      {estimate && (estimate.credits > 0 || estimate.metered > 0) ? (
+      {!props.asApp && estimate && (estimate.credits > 0 || estimate.metered > 0) ? (
         <span className="studio-workflow-cost" title={t("Estimated cost of one run")}>
           {costSummary(estimate)}
         </span>
       ) : null}
-      <RunButton {...props} />
+      {props.asApp ? null : <RunButton {...props} />}
     </div>
   );
 }

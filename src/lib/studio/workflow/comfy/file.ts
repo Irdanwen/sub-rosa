@@ -11,6 +11,7 @@ import {
   type WorkflowNode,
   WORKFLOW_FILE_VERSION,
 } from "../schema";
+import { appWithIds, cleanApp } from "../app";
 import { cleanBlocks } from "../blocks";
 import { cleanFrames } from "../frames";
 import { migrateWorkflow } from "../migrate";
@@ -24,7 +25,7 @@ export interface WorkflowFile {
   version: number;
   workflow: Pick<
     Workflow,
-    "name" | "description" | "nodes" | "edges" | "frames" | "blocks" | "extra"
+    "name" | "description" | "nodes" | "edges" | "frames" | "blocks" | "extra" | "app"
   >;
 }
 
@@ -41,6 +42,7 @@ export function workflowFileText(workflow: Workflow, options: { compact?: boolea
       edges: workflow.edges,
       ...(workflow.frames?.length ? { frames: workflow.frames } : {}),
       ...(workflow.blocks?.length ? { blocks: workflow.blocks } : {}),
+      ...(workflow.app ? { app: workflow.app } : {}),
       ...(workflow.extra ? { extra: workflow.extra } : {}),
     },
   };
@@ -57,7 +59,10 @@ export class WorkflowFileError extends Error {}
  * fresh ids (an import must not collide with a workflow already here), and
  * only the edges between nodes that exist. A malformed file that reached the
  * canvas as it was would crash it every time the tab opened. */
-function cleanGraph(nodes: unknown[], edges: unknown[]): Pick<Workflow, "nodes" | "edges"> {
+function cleanGraph(
+  nodes: unknown[],
+  edges: unknown[],
+): Pick<Workflow, "nodes" | "edges"> & { ids: Map<string, string> } {
   const ids = new Map<string, string>();
   const cleanNodes: WorkflowNode[] = [];
   for (const raw of nodes) {
@@ -107,7 +112,7 @@ function cleanGraph(nodes: unknown[], edges: unknown[]): Pick<Workflow, "nodes" 
       ...(typeof edge.sourcePort === "string" ? { sourcePort: edge.sourcePort } : {}),
     });
   }
-  return { nodes: cleanNodes, edges: cleanEdges };
+  return { nodes: cleanNodes, edges: cleanEdges, ids };
 }
 
 /** A file's text, as a workflow ready to save, or the reason it is not one. */
@@ -150,10 +155,13 @@ export function readWorkflowFile(text: string, catalog: MediaCatalog, fileName =
           step: String(unknown.type),
         }),
       );
+    const { ids, ...graph } = cleanGraph(workflow.nodes, workflow.edges);
+    const app = appWithIds(cleanApp(workflow.app), ids);
     return {
       kind: "subrosa",
       workflow: {
-        ...cleanGraph(workflow.nodes, workflow.edges),
+        ...graph,
+        ...(app ? { app } : {}),
         name:
           (typeof workflow.name === "string" && workflow.name) || stem || t("Imported workflow"),
         ...(typeof workflow.description === "string" && workflow.description

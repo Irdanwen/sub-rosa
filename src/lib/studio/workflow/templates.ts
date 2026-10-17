@@ -10,6 +10,7 @@ import {
   type WorkflowNodeType,
 } from "./schema";
 import { t } from "../../i18n";
+import { appWithIds } from "./app";
 import { PREFERRED_RETOUCH_MODEL } from "../retouch/request";
 import { TRY_ON_MODEL_PREFERENCE, tryOnPrompt } from "../try-on";
 
@@ -72,6 +73,11 @@ function albumCover(): Workflow {
       }),
       node("out", "output", t("Cover"), 3, 0),
     ],
+    app: {
+      fields: [{ nodeId: "input", param: "text", label: t("Describe the album") }],
+      outputs: ["out"],
+      intro: t("Describe an album, get its cover."),
+    },
     edges: [edge("input", "direction"), edge("direction", "cover"), edge("cover", "out")],
   };
 }
@@ -132,6 +138,11 @@ function musicFromMood(): Workflow {
       }),
       node("out", "output", t("Track"), 3, 0),
     ],
+    app: {
+      fields: [{ nodeId: "input", param: "text", label: t("The mood") }],
+      outputs: ["out"],
+      intro: t("Describe a mood, get a track."),
+    },
     edges: [edge("input", "brief"), edge("brief", "track"), edge("track", "out")],
   };
 }
@@ -270,6 +281,14 @@ function tryItOn(): Workflow {
       node("out", "output", t("You, wearing it"), 2, 0),
     ],
     // The person first: the edit keeps image 1 and borrows from image 2.
+    app: {
+      fields: [
+        { nodeId: "person", param: "artifactId", label: t("Your photo") },
+        { nodeId: "garment", param: "artifactId", label: t("The garment") },
+      ],
+      outputs: ["out"],
+      intro: t("Pick a photo of you and a garment, see yourself wearing it."),
+    },
     edges: [
       edge("person", "fitting", "images"),
       edge("garment", "fitting", "images"),
@@ -299,6 +318,11 @@ function coversFromList(): Workflow {
       }),
       node("out", "output", t("Covers"), 2, 0),
     ],
+    app: {
+      fields: [{ nodeId: "titles", param: "items", label: t("Titles, one per line") }],
+      outputs: ["out"],
+      intro: t("Write titles, get a cover for each."),
+    },
     edges: [edge("titles", "cover", "prompt"), edge("cover", "out")],
   };
 }
@@ -319,6 +343,11 @@ function characterSheet(): Workflow {
       }),
       node("out", "output", t("Sheet"), 2, 0),
     ],
+    app: {
+      fields: [{ nodeId: "picture", param: "artifactId", label: t("The character") }],
+      outputs: ["out"],
+      intro: t("Pick a character, get nine views of it."),
+    },
     edges: [edge("picture", "sheet", "image"), edge("sheet", "out")],
   };
 }
@@ -347,6 +376,14 @@ function podcastIntro(): Workflow {
       node("mix", "soundMix", t("Mix"), 2, 0, { audioVolume: 0.5 }),
       node("out", "output", t("Intro"), 3, 0),
     ],
+    app: {
+      fields: [
+        { nodeId: "lines", param: "text", label: t("What the voice says") },
+        { nodeId: "brief", param: "text", label: t("The music") },
+      ],
+      outputs: ["out"],
+      intro: t("Write a few lines and describe the music, get the intro."),
+    },
     edges: [
       edge("lines", "voice", "text"),
       edge("brief", "score", "prompt"),
@@ -375,6 +412,14 @@ function beforeAndAfter(): Workflow {
       node("compare", "compare", t("Before and after"), 2, 0),
       node("out", "output", t("Changed"), 2, 1),
     ],
+    app: {
+      fields: [
+        { nodeId: "picture", param: "artifactId", label: t("The picture") },
+        { nodeId: "fix", param: "prompt", label: t("What to change") },
+      ],
+      outputs: ["compare"],
+      intro: t("Pick a picture and say what to change."),
+    },
     edges: [
       edge("picture", "fix", "image"),
       edge("picture", "compare", "before"),
@@ -434,6 +479,13 @@ function upscaleForPrint(): Workflow {
       node("up", "upscale", t("Upscale"), 1, 0, { scale: "4" }),
       node("out", "output", t("Large picture"), 2, 0),
     ],
+    app: {
+      fields: [
+        { nodeId: "picture", param: "artifactId", label: t("The picture") },
+        { nodeId: "up", param: "scale" },
+      ],
+      outputs: ["out"],
+    },
     edges: [edge("picture", "up", "image"), edge("up", "out")],
   };
 }
@@ -463,6 +515,11 @@ function postWithCaption(): Workflow {
       node("out-caption", "output", t("Caption"), 2, 0),
       node("out-picture", "output", t("Picture"), 2, 1),
     ],
+    app: {
+      fields: [{ nodeId: "idea", param: "text", label: t("The moment") }],
+      outputs: ["out-picture", "out-caption"],
+      intro: t("Describe a moment, get a picture and its caption."),
+    },
     edges: [
       edge("idea", "caption"),
       edge("idea", "picture", "prompt"),
@@ -492,6 +549,10 @@ function readInAnotherLanguage(): Workflow {
       node("voice", "tts", t("Voice"), 2, 0, { model: TTS_MODEL }),
       node("out", "output", t("Spoken"), 3, 0),
     ],
+    app: {
+      fields: [{ nodeId: "text", param: "text", label: t("Your text") }],
+      outputs: ["out"],
+    },
     edges: [edge("text", "translate"), edge("translate", "voice", "text"), edge("voice", "out")],
   };
 }
@@ -540,4 +601,27 @@ export function templateWorkflows(): Workflow[] {
     postWithCaption(),
     readInAnotherLanguage(),
   ];
+}
+
+/** A template copied into a workflow of its own: fresh ids for every step
+ * and wire, and its app pointing at them. */
+export function copyTemplate(template: Workflow, into: Workflow): Workflow {
+  const ids = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
+  const app = appWithIds(template.app, ids);
+  return {
+    ...into,
+    ...(template.description ? { description: template.description } : {}),
+    nodes: template.nodes.map((node) => ({
+      ...node,
+      id: ids.get(node.id) ?? node.id,
+      params: { ...node.params },
+    })),
+    edges: template.edges.map((edge) => ({
+      ...edge,
+      id: crypto.randomUUID(),
+      source: ids.get(edge.source) ?? edge.source,
+      target: ids.get(edge.target) ?? edge.target,
+    })),
+    ...(app ? { app } : {}),
+  };
 }

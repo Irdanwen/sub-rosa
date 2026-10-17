@@ -40,7 +40,7 @@ function assetPickerKinds(node: WorkflowNode): ArtifactKind[] {
   return ["image"];
 }
 
-function ParamControl({
+export function ParamControl({
   node,
   param,
   catalog,

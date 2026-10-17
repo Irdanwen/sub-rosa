@@ -59,6 +59,7 @@ import {
   resolveInputPort,
   saveWorkflow,
   strandedEdges,
+  copyTemplate,
   templateWorkflows,
   validateWorkflow,
   withReusedSteps,
@@ -148,6 +149,10 @@ import { RunSessions } from "../../lib/studio/workflow/run-sessions";
 import { useWorkflowTabs } from "./workflow/useWorkflowTabs";
 import { WorkflowTabs } from "./workflow/WorkflowTabs";
 import { WorkflowToolbar } from "./workflow/WorkflowToolbar";
+import { WorkflowAppView } from "./workflow/WorkflowAppView";
+import { AppBuilder } from "./workflow/AppBuilder";
+import { isApp } from "../../lib/studio/workflow/app";
+import { SegmentedControl } from "../ui/SegmentedControl";
 
 /**
  * The Workflows tab. The library is read before anything is drawn: an editor
@@ -489,21 +494,7 @@ function WorkflowEditor({
     }
     const seeded = blankWorkflow("My first workflow");
     const template = resolveTemplateModels(templateWorkflows()[0], catalogRef.current).workflow;
-    const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
-    const workflow: Workflow = {
-      ...seeded,
-      nodes: template.nodes.map((node) => ({
-        ...node,
-        id: idMap.get(node.id) ?? node.id,
-        params: { ...node.params },
-      })),
-      edges: template.edges.map((edge) => ({
-        ...edge,
-        id: crypto.randomUUID(),
-        source: idMap.get(edge.source) ?? edge.source,
-        target: idMap.get(edge.target) ?? edge.target,
-      })),
-    };
+    const workflow = copyTemplate(template, seeded);
     saveWorkflow(workflow);
     setWorkflows(listWorkflows());
     hydrate(workflow);
@@ -723,22 +714,7 @@ function WorkflowEditor({
       // so the library can show what the person made from it.
       const template = resolveTemplateModels(shipped, catalogRef.current).workflow;
       const workflow = { ...blankWorkflow(template.name), extra: { template: shipped.id } };
-      const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
-      const cloned: Workflow = {
-        ...workflow,
-        ...(template.description ? { description: template.description } : {}),
-        nodes: template.nodes.map((node) => ({
-          ...node,
-          id: idMap.get(node.id) ?? node.id,
-          params: { ...node.params },
-        })),
-        edges: template.edges.map((edge) => ({
-          ...edge,
-          id: crypto.randomUUID(),
-          source: idMap.get(edge.source) ?? edge.source,
-          target: idMap.get(edge.target) ?? edge.target,
-        })),
-      };
+      const cloned = copyTemplate(template, workflow);
       saveWorkflow(cloned);
       setWorkflows(listWorkflows());
       hydrate(cloned);
@@ -1150,6 +1126,7 @@ function WorkflowEditor({
         // A file's groups and subgraphs come in as frames and blocks.
         ...(imported.frames?.length ? { frames: imported.frames } : {}),
         ...(imported.blocks?.length ? { blocks: imported.blocks } : {}),
+        ...(imported.app ? { app: imported.app } : {}),
         nodes: imported.nodes,
         edges: imported.edges,
         origin: "import",
@@ -1191,6 +1168,21 @@ function WorkflowEditor({
   );
 
   const [historyOpen, setHistoryOpen] = useState(false);
+  /** The graph, or the workflow as an app (ADR-0119). */
+  const [mode, setMode] = useState<"graph" | "app">("graph");
+  const [buildingApp, setBuildingApp] = useState(false);
+  const openedId = current?.id;
+  // A workflow that is an app opens as one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when another workflow opens.
+  useEffect(() => {
+    setMode(current && isApp(current) ? "app" : "graph");
+  }, [openedId]);
+  const switchMode = (next: "graph" | "app") => {
+    // The app's fields are the workflow's own steps: shown from its top level.
+    if (next === "app" && blockScope.scope.length > 0 && serialized)
+      blockScope.leave(serialized, 0);
+    setMode(next);
+  };
   const [versionsOpen, setVersionsOpen] = useState(false);
   /** Bumped when a version is kept, so the list is read again. */
   const [versionsEpoch, setVersionsEpoch] = useState(0);
@@ -1615,6 +1607,20 @@ function WorkflowEditor({
         quoting={quoting}
         onRun={() => void startRun()}
         onHoverRun={setHoverRun}
+        asApp={mode === "app"}
+        modeSwitch={
+          current ? (
+            <SegmentedControl
+              aria-label={t("Show the workflow as")}
+              value={mode}
+              onValueChange={switchMode}
+              options={[
+                { value: "graph", label: t("Graph") },
+                { value: "app", label: t("App") },
+              ]}
+            />
+          ) : null
+        }
       />
       <ConfirmDialog
         open={confirmingDelete}
@@ -1740,8 +1746,44 @@ function WorkflowEditor({
           onClose={() => setHistoryOpen(false)}
         />
       ) : null}
+      {mode === "app" && serialized ? (
+        <WorkflowAppView
+          workflow={serialized}
+          catalog={catalog}
+          artifacts={artifacts}
+          results={shownResults}
+          constraintEpoch={constraintEpoch}
+          onParamsChange={onParamsChange}
+          estimate={estimate}
+          run={{
+            running,
+            onStop: stop,
+            canRun: Boolean(validation?.ok && serialized.nodes.length > 0),
+            readOnly: current?.readOnly === true,
+            runIssues: validation?.errors.map((issue) => issue.message).join("\n") || undefined,
+            quoting,
+            onRun: () => void startRun(),
+          }}
+          onBuild={() => setBuildingApp(true)}
+        />
+      ) : null}
+      {buildingApp && serialized ? (
+        <AppBuilder
+          workflow={serialized}
+          catalog={catalog}
+          onKeep={(app) => {
+            setBuildingApp(false);
+            const { app: _previous, ...graph } = serialized;
+            const root = app ? { ...graph, app } : graph;
+            currentRef.current = root;
+            setCurrent(root);
+          }}
+          onClose={() => setBuildingApp(false)}
+        />
+      ) : null}
       <div
         ref={canvasRef}
+        hidden={mode === "app"}
         className="studio-workflow-canvas"
         data-readonly={current?.readOnly ? "true" : undefined}
       >

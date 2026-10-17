@@ -81,4 +81,4 @@ export {
   type StrandedEdge,
 } from "./ordering";
 export { createWorkflow, deleteWorkflow, listWorkflows, saveWorkflow } from "./store";
-export { templateWorkflows } from "./templates";
+export { copyTemplate, templateWorkflows } from "./templates";
