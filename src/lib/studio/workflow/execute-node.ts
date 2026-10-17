@@ -118,7 +118,7 @@ function imageDataUri(image: Extract<NodeOutput, { kind: "image" }>): string {
 function queueId(response: Record<string, unknown>): string {
   const id = response.queue_id ?? response.id;
   if (typeof id !== "string" || id === "") {
-    throw new Error("The backend did not return a job id.");
+    throw new Error(t("The backend did not return a job id."));
   }
   return id;
 }
@@ -200,9 +200,9 @@ interface NodeContext {
   durableMedia?: RunWorkflowOptions["durableMedia"];
 }
 
-function requireStorage(context: NodeContext, what: string): WorkflowStorage {
+function requireStorage(context: NodeContext, refusal: string): WorkflowStorage {
   if (!context.storage) {
-    throw new Error(`This runner cannot ${what}.`);
+    throw new Error(refusal);
   }
   return context.storage;
 }
@@ -221,10 +221,13 @@ export async function executeNode(
 
     case "asset": {
       const artifactId = stringParam(params, "artifactId");
-      if (!artifactId) throw new Error("Pick a gallery item.");
-      const asset = await requireStorage(context, "read the gallery").loadAsset(artifactId);
+      if (!artifactId) throw new Error(t("Pick a gallery item."));
+      const asset = await requireStorage(
+        context,
+        t("This runner cannot read the gallery."),
+      ).loadAsset(artifactId);
       if (asset.kind === "image") {
-        if (!asset.base64) throw new Error("Couldn't read that image from the gallery.");
+        if (!asset.base64) throw new Error(t("Couldn't read that image from the gallery."));
         return {
           kind: "image",
           base64: asset.base64,
@@ -251,8 +254,10 @@ export async function executeNode(
 
     case "document": {
       const noteId = stringParam(params, "noteId");
-      if (!noteId) throw new Error("Pick a note.");
-      const note = await requireStorage(context, "read notes").loadNote(noteId);
+      if (!noteId) throw new Error(t("Pick a note."));
+      const note = await requireStorage(context, t("This runner cannot read notes.")).loadNote(
+        noteId,
+      );
       const text = note.text.trim();
       return { kind: "text", text: note.title ? `${note.title}\n\n${text}` : text };
     }
@@ -342,7 +347,7 @@ export async function executeNode(
       );
       if (queuedOutput) return queuedOutput;
       if (typeof first !== "string" || first === "") {
-        throw new Error("The image backend returned no image.");
+        throw new Error(t("The image backend returned no image."));
       }
       const saved = storage
         ? await storage.save({ base64: first }, "png", {
@@ -368,7 +373,7 @@ export async function executeNode(
       );
       const sources = imagesOn(ports, "images").map(imageDataUri);
       if (sources.length > 3) throw new Error(t("Choose at most three reference images."));
-      if (sources.length === 0) throw new Error("Connect at least one image to edit.");
+      if (sources.length === 0) throw new Error(t("Connect at least one image to edit."));
       // A format goes through multi-edit even for one image: see composeImages.
       const aspectRatio = stringParam(params, "aspectRatio") || undefined;
       const multi = sources.length > 1 || aspectRatio !== undefined;
@@ -596,10 +601,10 @@ export async function executeNode(
       const referenceVideos: string[] = [];
       const referenceVideoSeconds: number[] = [];
       if (clipInputs.length > 0) {
-        const clipStorage = requireStorage(context, "read reference clips");
+        const clipStorage = requireStorage(context, t("This runner cannot read reference clips."));
         for (const clip of clipInputs) {
           if (!clip.artifactId) {
-            throw new Error("A reference clip must come from the gallery.");
+            throw new Error(t("A reference clip must come from the gallery."));
           }
           referenceVideos.push(await clipStorage.readMedia(clip.artifactId));
           // The quote only matches the queue charge when it knows the
@@ -615,9 +620,11 @@ export async function executeNode(
       for (const voice of (ports.get("referenceAudio") ?? []).filter(
         (output): output is Extract<NodeOutput, { kind: "audio" }> => output.kind === "audio",
       )) {
-        if (!voice.artifactId) throw new Error("A reference voice must come from the gallery.");
+        if (!voice.artifactId) throw new Error(t("A reference voice must come from the gallery."));
         referenceAudio.push(
-          await requireStorage(context, "read reference audio").readMedia(voice.artifactId),
+          await requireStorage(context, t("This runner cannot read reference audio.")).readMedia(
+            voice.artifactId,
+          ),
         );
       }
 
@@ -722,9 +729,9 @@ export async function executeNode(
       const source = (ports.get("video") ?? []).find(
         (output): output is Extract<NodeOutput, { kind: "video" }> => output.kind === "video",
       );
-      if (!source) throw new Error("Connect a video to take a frame from.");
+      if (!source) throw new Error(t("Connect a video to take a frame from."));
       if (!source.src) {
-        throw new Error("This runner cannot read frames out of a video.");
+        throw new Error(t("This runner cannot read frames out of a video."));
       }
       const position = stringParam(params, "position") ?? "handoff";
       const frame =
@@ -747,13 +754,13 @@ export async function executeNode(
     }
 
     case "assemble": {
-      const storageForFilm = requireStorage(context, "assemble clips");
+      const storageForFilm = requireStorage(context, t("This runner cannot assemble clips."));
       const clips = (ports.get("clips") ?? []).filter(
         (output): output is Extract<NodeOutput, { kind: "video" }> => output.kind === "video",
       );
-      if (clips.length === 0) throw new Error("Connect at least one clip.");
+      if (clips.length === 0) throw new Error(t("Connect at least one clip."));
       const sources: AssembleClip[] = clips.map((clip, index) => {
-        if (!clip.src) throw new Error("This runner cannot assemble clips.");
+        if (!clip.src) throw new Error(t("This runner cannot assemble clips."));
         // A successor that continues this clip trims it at its handoff, so
         // the half second the next shot re-renders is not played twice.
         const next = clips[index + 1];
@@ -781,7 +788,7 @@ export async function executeNode(
         if (!sound.src) {
           // Never drop a connected sound silently: with storage present every
           // audio-producing node saves and carries a src, so this is a bug net.
-          throw new Error("This runner cannot read one of the connected sounds.");
+          throw new Error(t("This runner cannot read one of the connected sounds."));
         }
       }
 
@@ -819,7 +826,7 @@ export async function executeNode(
     }
 
     default:
-      throw new Error(`Unknown node type: ${String(node.type)}.`);
+      throw new Error(t("Unknown node type: {type}.", { type: String(node.type) }));
   }
 }
 

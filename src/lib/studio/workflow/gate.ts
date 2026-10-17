@@ -1,5 +1,6 @@
 // The gate node: hold the run for an approval, or let a judge speak first.
 
+import { t } from "../../i18n";
 import { judge, type JudgeVerdict, verdictLine } from "../judge";
 import type { WorkflowEdge, WorkflowNode } from "./schema";
 import { type NodeOutput, type NodeRunResult, GateHold } from "./run-types";
@@ -53,7 +54,7 @@ export async function gateDecision(
     ? candidates.find((candidate) => candidate.source === choice)
     : candidates[0];
   if (!picked) {
-    throw new Error("The approved candidate has no result to pass through.");
+    throw new Error(t("The approved candidate has no result to pass through."));
   }
   return picked.output;
 }

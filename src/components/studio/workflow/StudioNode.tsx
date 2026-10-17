@@ -16,7 +16,7 @@ import {
   nodeSchema,
   openInputPorts,
 } from "../../../lib/studio/workflow";
-import { nodeTypeLabel } from "../../../lib/studio/workflow/labels";
+import { nodeTypeLabel, portLabel } from "../../../lib/studio/workflow/labels";
 import { Spinner } from "../../ui/Spinner";
 import type { StudioNodeData, StudioFlowNode } from "./flow";
 import { ParamField } from "./ParamField";
@@ -122,7 +122,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           {inputs.map((port) => (
             <div key={port.id} className="studio-node-port">
               <Handle type="target" position={Position.Left} id={port.id} />
-              <span className="studio-node-port-label">{port.label}</span>
+              <span className="studio-node-port-label">{portLabel(wfNode.type, port)}</span>
             </div>
           ))}
         </div>
@@ -157,7 +157,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           return (
             <div key={port.id} className="studio-port-order nodrag">
               <span className="studio-port-order-head">
-                {t("{label} order", { label: port.label })}
+                {t("{label} order", { label: portLabel(wfNode.type, port) })}
               </span>
               <ol className="studio-port-order-list">
                 {sources.map((source, index) => (

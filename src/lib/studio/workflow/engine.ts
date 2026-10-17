@@ -13,6 +13,7 @@
 // the gate in gate.ts, the outage patience in transient.ts and the shared
 // types in run-types.ts.
 
+import { t } from "../../i18n";
 import {
   isPaidNode,
   maybeNodeSchema,
@@ -85,7 +86,7 @@ export function topoLevels(nodes: WorkflowNode[], edges: WorkflowEdge[]): string
     frontier = next;
   }
   if (visited !== nodes.length) {
-    throw new Error("The workflow contains a cycle.");
+    throw new Error(t("The workflow contains a cycle."));
   }
   return levels;
 }

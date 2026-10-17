@@ -21,6 +21,7 @@ import {
   type VideoDirection,
 } from "../catalog";
 import { maxReferenceVideos, maxVideoReferences, maxReferenceAudio } from "../seedance";
+import { nodeTypeLabel } from "./labels";
 
 export type WorkflowNodeType =
   | "textInput"
@@ -701,7 +702,7 @@ export function maybeNodeSchema(type: string): NodeSchema | undefined {
  * must come through here; `label` on its own is empty far more often than not.
  */
 export function nodeLabel(node: Pick<WorkflowNode, "type" | "label">): string {
-  return node.label.trim() || maybeNodeSchema(node.type)?.label || String(node.type);
+  return node.label.trim() || nodeTypeLabel(node.type);
 }
 
 export function defaultParams(type: WorkflowNodeType): Record<string, unknown> {

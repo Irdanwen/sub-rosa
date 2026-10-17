@@ -343,7 +343,7 @@ describe("closed ports and the edges left on them", () => {
       ),
     );
     expect(result.ok).toBe(false);
-    expect(result.errors[0].message).toContain('no "Opening frame" input');
+    expect(result.errors[0].message).toContain("no Opening frame input");
   });
 
   it("refuses a reference photo on an image-to-video model", () => {
@@ -356,7 +356,7 @@ describe("closed ports and the edges left on them", () => {
       ),
     );
     expect(result.ok).toBe(false);
-    expect(result.errors[0].message).toContain('no "References" input');
+    expect(result.errors[0].message).toContain("no References input");
   });
 
   it("does not degrade an image into the prompt when the image ports are closed", () => {

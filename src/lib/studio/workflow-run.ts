@@ -76,7 +76,7 @@ async function save(
 async function loadAsset(artifactId: string): Promise<LoadedAsset> {
   const artifact = (await listArtifacts()).find((entry) => entry.id === artifactId);
   if (!artifact) {
-    throw new Error("That gallery item is gone. Pick another one.");
+    throw new Error(t("That gallery item is gone. Pick another one."));
   }
   const kind = assetKindOf(artifact);
   if (kind === "image") {
@@ -119,7 +119,7 @@ async function loadNote(noteId: string): Promise<{ title: string; text: string }
 async function readMedia(artifactId: string): Promise<string> {
   const artifact = (await listArtifacts()).find((entry) => entry.id === artifactId);
   if (!artifact) {
-    throw new Error("That gallery item is gone. Pick another one.");
+    throw new Error(t("That gallery item is gone. Pick another one."));
   }
   const base64 = await readArtifactBase64(artifact);
   return `data:${mimeForFile(artifact.fileName)};base64,${base64}`;
@@ -237,7 +237,7 @@ async function rehydrate(stored: StoredOutput, storage: WorkflowStorage): Promis
       return stored;
     case "image": {
       if (!stored.artifactId) {
-        if (!stored.base64) throw new Error("The stored frame is empty.");
+        if (!stored.base64) throw new Error(t("The stored frame is empty."));
         return {
           kind: "image",
           base64: stored.base64,
@@ -246,7 +246,7 @@ async function rehydrate(stored: StoredOutput, storage: WorkflowStorage): Promis
         };
       }
       const asset = await storage.loadAsset(stored.artifactId);
-      if (!asset.base64) throw new Error("The stored image cannot be read back.");
+      if (!asset.base64) throw new Error(t("The stored image cannot be read back."));
       return {
         kind: "image",
         base64: asset.base64,
@@ -325,7 +325,7 @@ async function waitForMediaJob(jobId: string, signal?: AbortSignal): Promise<Med
     const jobs = (await invoke<MediaJobRow[] | null>("media_job_list")) ?? [];
     const job = jobs.find((entry) => entry.id === jobId);
     if (!job) {
-      throw new Error("The render's job row is gone. Run the workflow again to redo this node.");
+      throw new Error(t("The render's job row is gone. Run the workflow again to redo this node."));
     }
     if (job.status === "completed" || job.status === "failed") return job;
     await waitDelay(JOB_WAIT_INTERVAL_MS, signal);
@@ -389,7 +389,7 @@ function durableMediaRunner(
       throw new Error(job.error ?? "The generation failed.");
     }
     if (!job.artifactPath || !job.artifactFileName) {
-      throw new Error("The render finished but its file is missing.");
+      throw new Error(t("The render finished but its file is missing."));
     }
     const file: ArtifactFile = {
       path: job.artifactPath,
@@ -653,7 +653,7 @@ export async function resumeWorkflowRun(
   );
   const workflow = runDefinition(detail.run);
   if (!workflow) {
-    throw new Error("This run's graph is unreadable. Dismiss it and start a new run.");
+    throw new Error(t("This run's graph is unreadable. Dismiss it and start a new run."));
   }
   const storage = workflowStorage();
   const completed = new Map<string, NodeOutput>();
