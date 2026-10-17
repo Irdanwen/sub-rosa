@@ -75,7 +75,28 @@ export async function pngTextChunks(bytes: Uint8Array): Promise<Map<string, stri
  * graph (the editor's file has nodes and links; the executable one has
  * class_type entries). */
 export function findComfyJson(text: string): string | undefined {
-  for (const marker of ['"last_node_id"', '"nodes"', '"class_type"']) {
+  return findJson(text, ['"last_node_id"', '"nodes"', '"class_type"'], looksLikeComfy);
+}
+
+/** The key Sub Rosa writes a workflow under (PNG keyword, and the format
+ * name inside the JSON it writes into other containers). */
+const SUBROSA_KEY = "subrosa-workflow";
+
+/** A Sub Rosa workflow file inside `text`, written compact. */
+export function findSubRosaJson(text: string): string | undefined {
+  return findJson(
+    text,
+    [`"format":"${SUBROSA_KEY}"`],
+    (value) => (value as { format?: unknown } | null)?.format === SUBROSA_KEY,
+  );
+}
+
+function findJson(
+  text: string,
+  markers: string[],
+  accept: (value: unknown) => boolean,
+): string | undefined {
+  for (const marker of markers) {
     let at = text.indexOf(marker);
     while (at >= 0) {
       // Walk back to each opening brace before the marker and try the
@@ -85,7 +106,7 @@ export function findComfyJson(text: string): string | undefined {
         if (candidate) {
           try {
             const parsed: unknown = JSON.parse(candidate);
-            if (looksLikeComfy(parsed)) return candidate;
+            if (accept(parsed)) return candidate;
           } catch {
             // Not this brace; try the one before.
           }
@@ -141,6 +162,9 @@ export async function readEmbeddedWorkflow(file: Blob): Promise<string | undefin
     await file.slice(0, Math.min(file.size, WHOLE_FILE_LIMIT)).arrayBuffer(),
   );
   const chunks = await pngTextChunks(head);
+  // Sub Rosa's own, written by "Save a copy with its workflow".
+  const own = chunks.get(SUBROSA_KEY);
+  if (own && findSubRosaJson(own)) return own;
   for (const key of ["workflow", "prompt"]) {
     const text = chunks.get(key);
     if (text && findComfyJson(text)) return text;
@@ -152,7 +176,7 @@ export async function readEmbeddedWorkflow(file: Blob): Promise<string | undefin
   for (const part of parts) {
     // Metadata JSON is UTF-8; read as Latin-1 the braces and quotes are the
     // same bytes, and the found span is decoded properly before parsing.
-    const found = findComfyJson(part);
+    const found = findSubRosaJson(part) ?? findComfyJson(part);
     if (found) {
       const bytes = Uint8Array.from(found, (char) => char.charCodeAt(0));
       return new TextDecoder().decode(bytes);

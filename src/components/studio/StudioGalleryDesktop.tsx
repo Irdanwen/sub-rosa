@@ -4,6 +4,7 @@
 // on the other; what each view shows comes from lib/studio/gallery-view.ts,
 // which the phone's gallery uses too.
 
+import { workflowFileFor } from "../../lib/studio/workflow/embed";
 import { requestOpenWorkflow } from "../../lib/studio/workflow/open";
 import { IconHeart as IconHeartFilled } from "central-icons-filled/IconHeart";
 import { IconPlay } from "central-icons-filled/IconPlay";
@@ -126,6 +127,24 @@ export function StudioGalleryDesktop() {
 
   if (items === null) return <div className="studio-gallery" aria-busy="true" />;
 
+  /** A copy that opens its workflow again when dropped on the library. */
+  const saveWithWorkflow = async (artifact: StudioArtifact) => {
+    if (artifact.origin?.surface !== "workflow") return;
+    try {
+      const workflow = await workflowFileFor(artifact.origin);
+      if (!workflow) {
+        setOpened(undefined);
+        setError(t("The workflow that made this file is no longer here."));
+        return;
+      }
+      await exportArtifact(artifact, { workflow });
+    } catch (cause) {
+      // The viewer covers the gallery's error line: close it to show why.
+      setOpened(undefined);
+      setError(messageFromError(cause));
+    }
+  };
+
   const actionsFor = (artifact: StudioArtifact) => {
     const current = markOf(library, artifact);
     const markable = canMark(artifact);
@@ -169,6 +188,18 @@ export function StudioGalleryDesktop() {
         <button type="button" onClick={() => void exportArtifact(artifact)}>
           {t("Save a copy")}
         </button>
+        {artifact.origin?.surface === "workflow" &&
+        (artifact.kind === "image" || artifact.kind === "video") ? (
+          <button
+            type="button"
+            title={t(
+              "The copy carries every step, prompt and setting of the workflow. Drop it on the workflow library to open the workflow again.",
+            )}
+            onClick={() => void saveWithWorkflow(artifact)}
+          >
+            {t("Save a copy with its workflow")}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => {

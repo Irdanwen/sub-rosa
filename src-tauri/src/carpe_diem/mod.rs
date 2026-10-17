@@ -29,6 +29,7 @@ pub mod sidecar;
 pub mod stream_usage;
 pub mod voices;
 pub mod workflow_cache;
+pub mod workflow_embed;
 pub mod workflow_history;
 pub mod workflow_runs;
 pub mod zone;

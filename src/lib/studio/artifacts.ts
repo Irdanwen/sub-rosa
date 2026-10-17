@@ -407,8 +407,16 @@ export async function deleteArtifact(artifact: StudioArtifact): Promise<void> {
  * no destination crosses IPC. Resolves to the saved path, or `null` if the user
  * cancelled.
  */
-export async function exportArtifact(artifact: StudioArtifact): Promise<string | null> {
+export async function exportArtifact(
+  artifact: StudioArtifact,
+  options: { workflow?: string } = {},
+): Promise<string | null> {
   return invoke<string | null>("carpe_diem_media_export_artifact", {
-    request: { path: artifact.path, suggestedName: artifact.fileName },
+    request: {
+      path: artifact.path,
+      suggestedName: artifact.fileName,
+      // Written into the copy, never the gallery file (workflow_embed.rs).
+      ...(options.workflow ? { workflow: options.workflow } : {}),
+    },
   });
 }
