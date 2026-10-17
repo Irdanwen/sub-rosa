@@ -65,6 +65,8 @@ export interface StudioNodeData extends Record<string, unknown> {
   issues?: ValidationIssue[];
   /** Run this step and what it needs, nothing else. */
   onRunStep?: (nodeId: string) => void;
+  /** Set the step aside, or back to running (see `modes.ts`). */
+  onModeChange?: (nodeId: string, mode: "bypass" | "mute" | undefined) => void;
 }
 
 export type StudioFlowNode = FlowNode<StudioNodeData, "studio">;

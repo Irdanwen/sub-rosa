@@ -943,6 +943,19 @@
   border-color: var(--destructive);
 }
 
+/* A step set aside (modes.ts): still wired, visibly not running. */
+.studio-node[data-mode] {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.studio-node-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
 /* A step the validator refuses: ringed, and its reasons written on it. */
 .studio-node[data-invalid="true"] {
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--destructive) 55%, transparent);
