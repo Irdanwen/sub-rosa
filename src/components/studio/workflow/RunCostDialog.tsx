@@ -3,6 +3,8 @@
 import { t } from "../../../lib/i18n";
 import { formatCredits } from "../../../lib/studio/catalog";
 import type { WorkflowCostEstimate } from "../../../lib/studio/workflow";
+import { useState } from "react";
+import { readSpendCeiling, writeSpendCeiling } from "../../../lib/studio/workflow/spend-ceiling";
 import { Dialog } from "../../ui/Dialog";
 
 export function costSummary(estimate: WorkflowCostEstimate): string {
@@ -25,6 +27,8 @@ export function RunCostDialog({
   onClose: () => void;
 }) {
   const paying = estimate.nodes.filter((node) => node.kind !== "free");
+  const [ceiling, setCeiling] = useState<number | undefined>(readSpendCeiling);
+  const over = ceiling !== undefined && estimate.credits > ceiling;
   return (
     <Dialog
       open
@@ -56,6 +60,29 @@ export function RunCostDialog({
               : `~${formatCredits(estimate.credits)}`}
           </span>
         </p>
+        <label className="studio-cost-ceiling">
+          <span>{t("Stop a run that would spend more than")}</span>
+          <input
+            className="studio-input"
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            placeholder={t("No limit")}
+            value={ceiling ?? ""}
+            onChange={(event) => {
+              const value = event.target.value === "" ? undefined : Number(event.target.value);
+              const next = value !== undefined && value > 0 ? value : undefined;
+              setCeiling(next);
+              writeSpendCeiling(next);
+            }}
+          />
+        </label>
+        {over ? (
+          <p className="studio-node-error" role="alert">
+            {t("This run is estimated above your ceiling. Raise it or run part of the workflow.")}
+          </p>
+        ) : null}
         <p className="studio-cost-note">
           {t("These are estimates, not a receipt. Usage priced nodes bill by what they consume.")}
         </p>
@@ -63,7 +90,12 @@ export function RunCostDialog({
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             {t("Cancel")}
           </button>
-          <button type="button" className="studio-primary-button" onClick={onConfirm}>
+          <button
+            type="button"
+            className="studio-primary-button"
+            disabled={over}
+            onClick={onConfirm}
+          >
             {t("Run workflow")}
           </button>
         </div>

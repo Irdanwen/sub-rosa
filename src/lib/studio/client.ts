@@ -118,6 +118,25 @@ async function send(call: MediaCall): Promise<MediaProxyResponse> {
   throw lastError ?? new MediaError("The media request failed.", { status: 0 });
 }
 
+/** One attempt, no retry: for calls made while someone is editing (a live
+ * price), where a rate limit should cost a figure, not a thirty-second wait. */
+export async function mediaJsonOnce<T>(
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await sendOnce({ method: "POST", path, body, signal });
+  if (!response.ok) {
+    const { message, code } = errorMessage(response.json, response.status);
+    throw new MediaError(message, {
+      status: response.status,
+      code,
+      retryAfterMs: response.retryAfterMs,
+    });
+  }
+  return response.json as T;
+}
+
 /** JSON-in, JSON-out call (generate, queue, retrieve, quote...). */
 export async function mediaJson<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await send({ method: "POST", path, body, signal });

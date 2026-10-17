@@ -80,6 +80,7 @@ import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
 import { applyModes } from "../../lib/studio/workflow/modes";
 import { pruneToTargets } from "../../lib/studio/workflow/partial";
 import { spendGuard } from "../../lib/studio/workflow/spend";
+import { readSpendCeiling } from "../../lib/studio/workflow/spend-ceiling";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { workflowFileText } from "../../lib/studio/workflow/comfy/file";
@@ -114,6 +115,7 @@ import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
 import { NODE_TYPES } from "./workflow/StudioNode";
 import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
 import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
+import { useLiveQuotes } from "./workflow/useLiveQuotes";
 import { useReusePrediction } from "./workflow/useReusePrediction";
 
 /**
@@ -441,6 +443,20 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   /** Bumped when a run ends, so the cache is asked again what it now holds. */
   const [runEpoch, setRunEpoch] = useState(0);
   const reused = useReusePrediction(effective, runEpoch);
+  const liveQuotes = useLiveQuotes(effective, catalog);
+  const estimate = useMemo(
+    () =>
+      effective
+        ? withReusedSteps(estimateWorkflowCost(effective, catalog, liveQuotes), reused)
+        : undefined,
+    [effective, catalog, reused, liveQuotes],
+  );
+  /** Hovering Run lights up the steps that will spend. */
+  const [hoverRun, setHoverRun] = useState(false);
+  const priceByNode = useMemo(
+    () => new Map((estimate?.nodes ?? []).map((entry) => [entry.nodeId, entry])),
+    [estimate],
+  );
 
   /** "Run this step", with a stable identity for node data; retargeted at
    * every render to the current run handler. */
@@ -521,6 +537,11 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
               wfNode.type === "assemble" ? chainOrderSuggestion(graph, node.id) : undefined,
             willReuse: reused.has(node.id),
             issues: issuesByNode.get(node.id),
+            price: priceByNode.get(node.id),
+            willPay: (() => {
+              const price = priceByNode.get(node.id);
+              return hoverRun && price !== undefined && price.kind !== "free" && !price.reused;
+            })(),
             onRunStep,
             onModeChange,
             gateSources:
@@ -538,6 +559,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     results,
     reused,
     issuesByNode,
+    priceByNode,
+    hoverRun,
     onRunStep,
     onModeChange,
     catalog,
@@ -723,11 +746,6 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     // parts of it the key captures.
     // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   }, [flowEdges, orderGraphKey, highlightedEdge]);
-  const estimate = useMemo(
-    () =>
-      effective ? withReusedSteps(estimateWorkflowCost(effective, catalog), reused) : undefined,
-    [effective, catalog, reused],
-  );
   const [pendingRun, setPendingRun] = useState<
     { estimate: WorkflowCostEstimate; targets?: string[] } | undefined
   >(undefined);
@@ -788,7 +806,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           scheduling: "ready",
           isolateFailures: true,
           nodeCosts: nodeCostMap(priced),
-          beforeNode: spendGuard(priced, { unpriced: "allow" }),
+          beforeNode: spendGuard(priced, { unpriced: "allow", ceiling: readSpendCeiling() }),
           cache: workflowStepCache(runnable.id),
           onRunRecorded: (runId) => {
             runIdRef.current = runId;
@@ -944,7 +962,10 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         if (first?.nodeId) locateNode(first.nodeId);
         return;
       }
-      const staticEstimate = withReusedSteps(estimateWorkflowCost(runnable, catalog), reused);
+      const staticEstimate = withReusedSteps(
+        estimateWorkflowCost(runnable, catalog, liveQuotes),
+        reused,
+      );
       if (!needsRunConfirmation(staticEstimate)) {
         void run(staticEstimate, targets);
         return;
@@ -960,7 +981,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         setQuoting(false);
       }
     },
-    [serialized, running, quoting, catalog, run, reused, locateNode],
+    [serialized, running, quoting, catalog, run, reused, locateNode, liveQuotes],
   );
   runStepRef.current = (nodeId) => void startRun([nodeId]);
 
@@ -1226,6 +1247,10 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
             }
             title={validation?.errors.map((issue) => issue.message).join("\n") || undefined}
             onClick={() => void startRun()}
+            onPointerEnter={() => setHoverRun(true)}
+            onPointerLeave={() => setHoverRun(false)}
+            onFocus={() => setHoverRun(true)}
+            onBlur={() => setHoverRun(false)}
           >
             {quoting ? t("Pricing...") : t("Run workflow")}
           </button>

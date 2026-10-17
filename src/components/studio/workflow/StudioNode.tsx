@@ -68,13 +68,16 @@ function GateApproval({ data }: { data: StudioNodeData }) {
   );
 }
 
+/** Steps with nothing upstream to run: running one alone is just reading. */
+const SOURCES = new Set(["textInput", "asset", "document"]);
+
 export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   const { wfNode, catalog, result, onParamsChange, onRemove } = data;
   const schema = nodeSchema(wfNode.type);
   // The inputs this node carries: its model can close some of them, and a
   // port that is not drawn is a port nothing can be wired to.
   const inputs = openInputPorts(schema, wfNode.params);
-  const cost = estimateNodeCost(wfNode, catalog);
+  const cost = data.price ?? estimateNodeCost(wfNode, catalog);
   // A paid step that has something to reuse can be asked for a new take:
   // the counter is part of what the step asks, so the next run misses the
   // cache for it (and for what it feeds) and makes a new one.
@@ -100,6 +103,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
       data-run={runState}
       data-invalid={data.issues?.some((issue) => issue.severity === "error") ? "true" : undefined}
       data-mode={wfNode.mode}
+      data-will-pay={data.willPay ? "true" : undefined}
     >
       <div className="studio-node-head">
         {/* The name is the node's own, and its type stands in as the
@@ -114,32 +118,10 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           onChange={(event) => data.onRename(wfNode.id, event.target.value)}
         />
         <span className="studio-card-actions">
-          {wfNode.label.trim() ? (
-            // Named, so the type no longer shows in the title. Keep it legible.
-            <span className="studio-node-kind">{nodeTypeLabel(wfNode.type)}</span>
+          {result?.status === "running" && typeof result.progress === "number" ? (
+            <span className="studio-node-kind">{Math.round(result.progress * 100)}%</span>
           ) : null}
-          {wfNode.mode ? (
-            <span className="studio-node-kind">
-              {wfNode.mode === "bypass" ? t("Skipped") : t("Off")}
-            </span>
-          ) : null}
-          {result?.reused ? (
-            <span
-              className="studio-node-reused"
-              title={t("Same request as before, nothing spent.")}
-            >
-              {t("Reused")}
-            </span>
-          ) : data.willReuse && result?.status !== "running" ? (
-            <span
-              className="studio-node-reused"
-              title={t("Unchanged since it was made: the next run reuses it for free.")}
-            >
-              {t("Free")}
-            </span>
-          ) : cost.kind === "flat" && cost.credits !== undefined && cost.credits > 0 ? (
-            <span className="studio-node-kind">~{formatCredits(cost.credits)}</span>
-          ) : null}
+          {result?.status === "running" ? <Spinner aria-hidden /> : null}
           {canMakeAgain ? (
             <button
               type="button"
@@ -156,11 +138,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
               <IconArrowRotateClockwise size={14} />
             </button>
           ) : null}
-          {result?.status === "running" && typeof result.progress === "number" ? (
-            <span className="studio-node-kind">{Math.round(result.progress * 100)}%</span>
-          ) : null}
-          {result?.status === "running" ? <Spinner aria-hidden /> : null}
-          {data.onRunStep && result?.status !== "running" ? (
+          {data.onRunStep && result?.status !== "running" && !SOURCES.has(wfNode.type) ? (
             <button
               type="button"
               className="studio-icon-button nodrag"
@@ -180,6 +158,50 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             <IconCrossSmall size={14} />
           </button>
         </span>
+      </div>
+      {/* The second line says what the step is and what it costs, and how it
+          runs: the title keeps the whole width of the first. */}
+      <div className="studio-node-meta">
+        {wfNode.label.trim() ? (
+          // Named, so the type no longer shows in the title. Keep it legible.
+          <span className="studio-node-kind">{nodeTypeLabel(wfNode.type)}</span>
+        ) : null}
+        {result?.reused ? (
+          <span className="studio-node-reused" title={t("Same request as before, nothing spent.")}>
+            {t("Reused")}
+          </span>
+        ) : data.willReuse && result?.status !== "running" ? (
+          <span
+            className="studio-node-reused"
+            title={t("Unchanged since it was made: the next run reuses it for free.")}
+          >
+            {t("Free")}
+          </span>
+        ) : cost.kind === "flat" && cost.credits !== undefined && cost.credits > 0 ? (
+          <span className="studio-node-kind">~{formatCredits(cost.credits)}</span>
+        ) : cost.kind === "metered" ? (
+          <span className="studio-node-kind" title={t("Billed by what it uses")}>
+            {t("usage")}
+          </span>
+        ) : null}
+        {data.onModeChange ? (
+          <select
+            className="studio-node-mode nodrag"
+            aria-label={t("Runs")}
+            title={t("Skipped passes its input on; off also stops what cannot run without it.")}
+            value={wfNode.mode ?? "always"}
+            onChange={(event) =>
+              data.onModeChange?.(
+                wfNode.id,
+                event.target.value === "always" ? undefined : (event.target.value as NodeMode),
+              )
+            }
+          >
+            <option value="always">{t("Always")}</option>
+            <option value="bypass">{t("Skipped")}</option>
+            <option value="mute">{t("Off")}</option>
+          </select>
+        ) : null}
       </div>
       {data.issues?.length ? (
         <ul className="studio-node-issues">
@@ -321,25 +343,6 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           />
         ))}
       {result?.status === "awaiting" ? <GateApproval data={data} /> : null}
-      {data.onModeChange ? (
-        <label className="studio-node-mode nodrag">
-          <span className="studio-node-kind">{t("Runs")}</span>
-          <select
-            className="studio-native-select"
-            value={wfNode.mode ?? "always"}
-            onChange={(event) =>
-              data.onModeChange?.(
-                wfNode.id,
-                event.target.value === "always" ? undefined : (event.target.value as NodeMode),
-              )
-            }
-          >
-            <option value="always">{t("Always")}</option>
-            <option value="bypass">{t("Skipped, passes its input on")}</option>
-            <option value="mute">{t("Off")}</option>
-          </select>
-        </label>
-      ) : null}
       {result ? <NodeOutputView result={result} node={wfNode} /> : null}
       {schema.output !== "none" ? <Handle type="source" position={Position.Right} /> : null}
     </div>
