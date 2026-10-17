@@ -23,11 +23,36 @@ import {
 } from "./schema";
 import { kindLabel, nodeTypeLabel, paramLabel, portLabel } from "./labels";
 
+/** What kind of problem an issue is, for surfaces that act on it rather
+ * than only print it. */
+export type ValidationCode =
+  | "empty"
+  | "unknownType"
+  | "pickItem"
+  | "missingSetting"
+  | "missingText"
+  | "noInputs"
+  | "noUpstream"
+  | "portRequired"
+  | "portFull"
+  | "noOutput"
+  | "danglingEdge"
+  | "selfLoop"
+  | "portClosed"
+  | "portUnknown"
+  | "noMatchingPort"
+  | "kindMismatch"
+  | "kindDegraded"
+  | "cycle";
+
 export interface ValidationIssue {
   severity: "error" | "warning";
   message: string;
   nodeId?: string;
   edgeId?: string;
+  /** The input it is about, when it is about one. */
+  port?: string;
+  code?: ValidationCode;
 }
 
 export interface ValidationResult {
@@ -84,7 +109,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
 
   if (nodes.length === 0) {
-    warnings.push({ severity: "warning", message: t("The workflow is empty.") });
+    warnings.push({ severity: "warning", code: "empty", message: t("The workflow is empty.") });
   }
 
   const kindContext = { nodeById, edges };
@@ -104,6 +129,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         nodeId: node.id,
+        code: "unknownType",
         message: t("Unknown node type: {type}.", { type: String(node.type) }),
       });
       continue;
@@ -120,6 +146,8 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           nodeId: node.id,
+          code: "pickItem",
+          port: param.name,
           message: picker,
         });
         continue;
@@ -135,6 +163,8 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           nodeId: node.id,
+          code: "missingSetting",
+          port: param.name,
           message: t("{node}: fill in {setting}.", { node: name, setting: paramLabel(param) }),
         });
       }
@@ -149,6 +179,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           nodeId: node.id,
+          code: "missingText",
           message:
             node.type === "tts"
               ? t("Add dialogue before generating speech.")
@@ -161,6 +192,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           edgeId: edge.id,
+          code: "noInputs",
           message: t("{node} does not accept inputs.", { node: name }),
         });
       }
@@ -177,6 +209,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         warnings.push({
           severity: "warning",
           nodeId: node.id,
+          code: "noUpstream",
           message: t("{node}: no upstream input connected.", { node: name }),
         });
       }
@@ -188,6 +221,8 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           nodeId: node.id,
+          code: "portRequired",
+          port: port.id,
           message: t("{node}: connect the {input} input.", {
             node: name,
             input: portLabel(node.type, port),
@@ -199,6 +234,8 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           nodeId: node.id,
+          code: "portFull",
+          port: port.id,
           message:
             capacity === 1
               ? t("{node}: {input} takes one connection at most.", {
@@ -219,6 +256,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           edgeId: edge.id,
+          code: "noOutput",
           message: t("{node} has no output and cannot feed another node.", { node: name }),
         });
       }
@@ -230,6 +268,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
+        code: "danglingEdge",
         message: t("A connection starts from a node that no longer exists."),
       });
       continue;
@@ -238,6 +277,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
+        code: "danglingEdge",
         message: t("A connection leads to a node that no longer exists."),
       });
       continue;
@@ -246,6 +286,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
+        code: "selfLoop",
         message: t("A node cannot feed itself."),
       });
       continue;
@@ -273,6 +314,13 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
+        nodeId: target.id,
+        port: closed?.id ?? edge.targetPort,
+        code: closed
+          ? "portClosed"
+          : edge.targetPort !== undefined
+            ? "portUnknown"
+            : "noMatchingPort",
         message: closed
           ? t("{node}: the chosen model has no {input} input. Remove this connection.", {
               node: targetName,
@@ -291,6 +339,9 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
+        nodeId: target.id,
+        port: port.id,
+        code: "kindMismatch",
         message: t("{node}: {input} expects {expected}, but {source} makes {made}.", {
           node: targetName,
           input: portLabel(target.type, port),
@@ -305,6 +356,9 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       warnings.push({
         severity: "warning",
         edgeId: edge.id,
+        nodeId: target.id,
+        port: port.id,
+        code: "kindDegraded",
         message: t(
           "{source} makes {made} but {input} expects {expected}. The media will chain as a text description.",
           {
@@ -319,7 +373,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
   }
 
   if (hasCycle(nodes, edges)) {
-    errors.push({ severity: "error", message: t("The workflow contains a cycle.") });
+    errors.push({ severity: "error", code: "cycle", message: t("The workflow contains a cycle.") });
   }
 
   return { ok: errors.length === 0, errors, warnings };

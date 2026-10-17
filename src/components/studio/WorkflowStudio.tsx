@@ -18,6 +18,7 @@ import {
   type Edge as FlowEdge,
   type EdgeChange,
   type NodeChange,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -66,6 +67,7 @@ import {
   withReusedSteps,
   WorkflowRunError,
   type NodeRunResult,
+  type ValidationIssue,
   type Workflow,
   type WorkflowCostEstimate,
   type WorkflowNode,
@@ -75,6 +77,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { nodeEtaKey } from "../../lib/studio/workflow/eta";
 import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
 import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
+import { pruneToTargets } from "../../lib/studio/workflow/partial";
 import { spendGuard } from "../../lib/studio/workflow/spend";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -418,9 +421,28 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   }, []);
 
   const serialized = current ? fromFlow(current, flowNodes, flowEdges) : undefined;
+  const validation = useMemo(
+    () => (serialized ? validateWorkflow(serialized) : undefined),
+    [serialized],
+  );
   /** Bumped when a run ends, so the cache is asked again what it now holds. */
   const [runEpoch, setRunEpoch] = useState(0);
   const reused = useReusePrediction(serialized, runEpoch);
+
+  /** "Run this step", with a stable identity for node data; retargeted at
+   * every render to the current run handler. */
+  const runStepRef = useRef<(nodeId: string) => void>(() => {});
+  const onRunStep = useCallback((nodeId: string) => runStepRef.current(nodeId), []);
+
+  /** Each step's own problems, so they show on the step itself. */
+  const issuesByNode = useMemo(() => {
+    const byNode = new Map<string, ValidationIssue[]>();
+    for (const issue of [...(validation?.errors ?? []), ...(validation?.warnings ?? [])]) {
+      if (!issue.nodeId) continue;
+      byNode.set(issue.nodeId, [...(byNode.get(issue.nodeId) ?? []), issue]);
+    }
+    return byNode;
+  }, [validation]);
 
   // Keep node data in sync with run results without disturbing positions.
   // Connection-order lists, gate candidates, and the assemble node's chain
@@ -485,6 +507,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
             chainSuggestion:
               wfNode.type === "assemble" ? chainOrderSuggestion(graph, node.id) : undefined,
             willReuse: reused.has(node.id),
+            issues: issuesByNode.get(node.id),
+            onRunStep,
             gateSources:
               wfNode.type === "gate"
                 ? edgesOnPort(graph, node.id, "in").map((edge) => ({
@@ -499,6 +523,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   }, [
     results,
     reused,
+    issuesByNode,
+    onRunStep,
     catalog,
     artifacts,
     constraintEpoch,
@@ -629,11 +655,6 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     [hydrate],
   );
 
-  const validation = useMemo(
-    () => (serialized ? validateWorkflow(serialized) : undefined),
-    [serialized],
-  );
-
   /** What edge-order resolution actually depends on: node identities, types,
    * and the asset kinds that drive affinity — NOT positions. Keying on this
    * keeps a node drag (which recreates `flowNodes` every frame) from
@@ -692,7 +713,14 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       serialized ? withReusedSteps(estimateWorkflowCost(serialized, catalog), reused) : undefined,
     [serialized, catalog, reused],
   );
-  const [pendingRun, setPendingRun] = useState<WorkflowCostEstimate | undefined>(undefined);
+  const [pendingRun, setPendingRun] = useState<
+    { estimate: WorkflowCostEstimate; targets?: string[] } | undefined
+  >(undefined);
+  /** The canvas instance, for bringing a step into view. */
+  const flowRef = useRef<ReactFlowInstance<StudioFlowNode> | undefined>(undefined);
+  const locateNode = useCallback((nodeId: string) => {
+    void flowRef.current?.fitView({ nodes: [{ id: nodeId }], duration: 250, maxZoom: 1 });
+  }, []);
   const [quoting, setQuoting] = useState(false);
   /** Interrupted durable runs found on mount, offered for resume. */
   const [resumable, setResumable] = useState<WorkflowRunSummary[]>([]);
@@ -717,8 +745,11 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   const runEstimateRef = useRef<WorkflowCostEstimate | undefined>(undefined);
 
   const run = useCallback(
-    async (priced: WorkflowCostEstimate) => {
-      if (!serialized || running || !validation?.ok) return;
+    async (priced: WorkflowCostEstimate, targets?: string[]) => {
+      // Part of the graph: the steps asked for and what they need, frozen as
+      // the run's definition; upstream comes back from the cache.
+      const runnable = serialized && targets ? pruneToTargets(serialized, targets) : serialized;
+      if (!runnable || running || !validateWorkflow(runnable).ok) return;
       runEstimateRef.current = priced;
       renderStartsRef.current = new Map();
       const controller = new AbortController();
@@ -726,28 +757,34 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       abortRef.current = controller;
       setRunning(true);
       setRunError(undefined);
-      setResults(new Map());
+      // A partial run leaves what the other steps show alone.
+      const inRun = new Set(runnable.nodes.map((node) => node.id));
+      setResults((live) =>
+        targets ? new Map([...live].filter(([nodeId]) => !inRun.has(nodeId))) : new Map(),
+      );
       runResultsRef.current = new Map();
       try {
         // Durable run (ADR-0021): state persists as rows, long renders ride
         // the Rust job pollers, and produced media lands in the gallery at
         // the node that made it, with provenance and chain links.
-        await runAndSaveWorkflow(serialized, {
+        await runAndSaveWorkflow(runnable, {
           signal: controller.signal,
+          scheduling: "ready",
+          isolateFailures: true,
           nodeCosts: nodeCostMap(priced),
           beforeNode: spendGuard(priced, { unpriced: "allow" }),
-          cache: workflowStepCache(serialized.id),
+          cache: workflowStepCache(runnable.id),
           onRunRecorded: (runId) => {
             runIdRef.current = runId;
           },
           onUpdate: mirrorUpdate,
         });
-        void pruneWorkflowRuns(serialized.id);
+        void pruneWorkflowRuns(runnable.id);
         // The run's own result becomes the library card's picture: free, and
         // true to what the workflow makes.
-        const cover = coverArtifactOf(serialized, runResultsRef.current);
+        const cover = coverArtifactOf(runnable, runResultsRef.current);
         if (cover) {
-          void setWorkflowCover(serialized.id, cover)
+          void setWorkflowCover(runnable.id, cover)
             .then(() => setWorkflows(listWorkflows()))
             .catch(() => undefined);
         }
@@ -764,7 +801,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         setRunEpoch((epoch) => epoch + 1);
       }
     },
-    [serialized, running, validation, mirrorUpdate],
+    [serialized, running, mirrorUpdate],
   );
 
   /** Pick an interrupted production back up. Node states light the canvas up
@@ -794,6 +831,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           signal: controller.signal,
           beforeNode: priced ? spendGuard(priced, { unpriced: "allow" }) : undefined,
           cache: workflowStepCache(entry.workflowId),
+          scheduling: "ready",
+          isolateFailures: true,
           onUpdate: mirrorsCanvas ? mirrorUpdate : undefined,
         });
         // A resumed run's result is the card's picture too.
@@ -838,6 +877,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           signal: controller.signal,
           beforeNode: priced ? spendGuard(priced, { unpriced: "allow" }) : undefined,
           cache: currentRef.current ? workflowStepCache(currentRef.current.id) : undefined,
+          scheduling: "ready",
+          isolateFailures: true,
           approvedGates: new Map([[gateId, choice]]),
           onUpdate: mirrorUpdate,
         });
@@ -869,21 +910,38 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
 
   /** Run, with the pre-spend handshake in between when the graph warrants
    * one: quotes refine the figures, then the dialog shows the bill. */
-  const startRun = useCallback(async () => {
-    if (!serialized || running || quoting || !validation?.ok) return;
-    const staticEstimate = withReusedSteps(estimateWorkflowCost(serialized, catalog), reused);
-    if (!needsRunConfirmation(staticEstimate)) {
-      void run(staticEstimate);
-      return;
-    }
-    setQuoting(true);
-    try {
-      const quotes = await fetchVideoQuotes(serialized, catalog);
-      setPendingRun(withReusedSteps(estimateWorkflowCost(serialized, catalog, quotes), reused));
-    } finally {
-      setQuoting(false);
-    }
-  }, [serialized, running, quoting, validation, catalog, run, reused]);
+  const startRun = useCallback(
+    async (targets?: string[]) => {
+      if (!serialized || running || quoting) return;
+      const runnable = targets ? pruneToTargets(serialized, targets) : serialized;
+      // Only what will run has to be valid: a broken step elsewhere does
+      // not block running this one.
+      const check = validateWorkflow(runnable);
+      if (!check.ok) {
+        const first = check.errors[0];
+        setRunError(first?.message ?? t("The workflow is invalid."));
+        if (first?.nodeId) locateNode(first.nodeId);
+        return;
+      }
+      const staticEstimate = withReusedSteps(estimateWorkflowCost(runnable, catalog), reused);
+      if (!needsRunConfirmation(staticEstimate)) {
+        void run(staticEstimate, targets);
+        return;
+      }
+      setQuoting(true);
+      try {
+        const quotes = await fetchVideoQuotes(runnable, catalog);
+        setPendingRun({
+          estimate: withReusedSteps(estimateWorkflowCost(runnable, catalog, quotes), reused),
+          targets,
+        });
+      } finally {
+        setQuoting(false);
+      }
+    },
+    [serialized, running, quoting, catalog, run, reused, locateNode],
+  );
+  runStepRef.current = (nodeId) => void startRun([nodeId]);
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
@@ -1166,11 +1224,11 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       />
       {pendingRun ? (
         <RunCostDialog
-          estimate={pendingRun}
+          estimate={pendingRun.estimate}
           onConfirm={() => {
-            const priced = pendingRun;
+            const { estimate: priced, targets } = pendingRun;
             setPendingRun(undefined);
-            void run(priced);
+            void run(priced, targets);
           }}
           onClose={() => setPendingRun(undefined)}
         />
@@ -1201,14 +1259,26 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       {runError ? <ErrorMessage>{runError}</ErrorMessage> : null}
       {validation && (validation.errors.length > 0 || validation.warnings.length > 0) ? (
         <div className="studio-validation">
-          {[...validation.errors, ...validation.warnings].map((issue) => (
-            <span
-              key={`${issue.severity}:${issue.nodeId ?? issue.edgeId ?? ""}:${issue.message}`}
-              data-severity={issue.severity}
-            >
-              {issue.message}
-            </span>
-          ))}
+          {[...validation.errors, ...validation.warnings].map((issue) => {
+            const key = `${issue.severity}:${issue.nodeId ?? issue.edgeId ?? ""}:${issue.message}`;
+            const nodeId = issue.nodeId;
+            return nodeId ? (
+              <button
+                key={key}
+                type="button"
+                className="studio-validation-issue"
+                data-severity={issue.severity}
+                title={t("Show this step")}
+                onClick={() => locateNode(nodeId)}
+              >
+                {issue.message}
+              </button>
+            ) : (
+              <span key={key} data-severity={issue.severity}>
+                {issue.message}
+              </span>
+            );
+          })}
         </div>
       ) : null}
       {historyOpen && current ? (
@@ -1233,6 +1303,11 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           isValidConnection={isValidConnection}
+          onInit={(instance) => {
+            // The display edges carry badge data the instance's type does
+            // not need to know about.
+            flowRef.current = instance as unknown as ReactFlowInstance<StudioFlowNode>;
+          }}
           nodesDraggable={!current?.readOnly}
           nodesConnectable={!current?.readOnly}
           edgesReconnectable={!current?.readOnly}

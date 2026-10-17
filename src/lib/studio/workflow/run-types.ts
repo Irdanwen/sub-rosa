@@ -209,6 +209,15 @@ export interface RunWorkflowOptions {
    * "awaiting", downstream stays pending, and the run returns.
    */
   approvedGates?: Map<string, string | undefined>;
+  /**
+   * How steps are started. `levels` (the default) waits for a whole level
+   * before starting the next, as every production has always run; `ready`
+   * starts a step as soon as what feeds it is done (ADR-0114 addendum).
+   */
+  scheduling?: "levels" | "ready";
+  /** With `ready`: a failed step stops only what it feeds, and the other
+   * branches finish. The run still ends failed, and resumable. */
+  isolateFailures?: boolean;
   /** Reuse what an identical step already made instead of buying it again.
    * Absent for callers whose own takes decide what is made (a film
    * production keeps its take signature, ADR-0030). */
