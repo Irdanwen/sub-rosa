@@ -62,6 +62,8 @@ export function useCanvasEditing(options: {
   frameSelection?: () => void;
   /** Make a block of the selected steps (⇧⌘E). */
   makeBlock?: () => void;
+  /** Keep the workflow as it is now, as a version (⌘S). */
+  saveVersion?: () => void;
 }): CanvasEditing {
   const history = useRef(new GraphHistory());
   const applying = useRef(false);
@@ -135,6 +137,9 @@ export function useCanvasEditing(options: {
       } else if (mod && key === "d") {
         event.preventDefault();
         duplicate();
+      } else if (mod && !event.shiftKey && key === "s") {
+        event.preventDefault();
+        latest.current.saveVersion?.();
       } else if (mod && event.shiftKey && key === "e") {
         event.preventDefault();
         latest.current.makeBlock?.();
@@ -214,6 +219,13 @@ export function useCanvasEditing(options: {
         shortcut: "⌘G",
         keywords: "group",
         run: () => latest.current.frameSelection?.(),
+      },
+      {
+        id: "workflow:version",
+        label: t("Save a version"),
+        shortcut: "⌘S",
+        keywords: "keep snapshot history",
+        run: () => latest.current.saveVersion?.(),
       },
       {
         id: "workflow:block",
