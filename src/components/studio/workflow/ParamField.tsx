@@ -15,6 +15,7 @@ import {
   type WorkflowNode,
 } from "../../../lib/studio/workflow";
 import { Switch } from "../../ui/Switch";
+import { enumLabel, paramLabel } from "../../../lib/studio/workflow/labels";
 import { AssetPreview } from "../AssetPreview";
 import { GalleryPicker } from "../GalleryPicker";
 import { NotePicker } from "../NotePicker";
@@ -52,6 +53,7 @@ export function ParamField({
   /** The prompt field, so the marker lands at the caret rather than the end. */
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const value = node.params[param.name];
+  const label = paramLabel(param);
   const schema = nodeSchema(node.type);
   const modelId = typeof node.params.model === "string" ? node.params.model : "";
   const options = useMemo(
@@ -68,7 +70,7 @@ export function ParamField({
       <select
         className="studio-native-select nodrag"
         value={typeof value === "string" ? value : ""}
-        aria-label={param.label}
+        aria-label={label}
         onChange={(event) =>
           onMerge(
             modelParamPatch(
@@ -97,12 +99,12 @@ export function ParamField({
       <select
         className="studio-native-select nodrag"
         value={effectiveParamValue(options, value)}
-        aria-label={param.label}
+        aria-label={label}
         onChange={(event) => onMerge({ [param.name]: event.target.value })}
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {enumLabel(param.name, option)}
           </option>
         ))}
       </select>
@@ -185,8 +187,8 @@ export function ParamField({
           className="studio-textarea nodrag nowheel"
           rows={2}
           value={text}
-          placeholder={param.label}
-          aria-label={param.label}
+          placeholder={label}
+          aria-label={label}
           onChange={(event) => onMerge({ [param.name]: event.target.value })}
         />
         {offerMarker ? (
@@ -232,11 +234,11 @@ export function ParamField({
   if (param.type === "boolean") {
     return (
       <div className="studio-node-switch nodrag">
-        <span className="studio-node-kind">{param.label}</span>
+        <span className="studio-node-kind">{label}</span>
         <Switch
           checked={value === true}
           onCheckedChange={(checked) => onMerge({ [param.name]: checked })}
-          aria-label={param.label}
+          aria-label={label}
         />
       </div>
     );
@@ -246,7 +248,7 @@ export function ParamField({
       <select
         className="studio-native-select nodrag"
         value={typeof value === "string" ? value : String(param.default ?? "")}
-        aria-label={param.label}
+        aria-label={label}
         onChange={(event) => {
           // Switching an asset's kind invalidates the picked item.
           if (node.type === "asset" && param.name === "assetKind") {
@@ -258,7 +260,7 @@ export function ParamField({
       >
         {(param.enumValues ?? []).map((option) => (
           <option key={option} value={option}>
-            {option}
+            {enumLabel(param.name, option)}
           </option>
         ))}
       </select>
@@ -273,8 +275,8 @@ export function ParamField({
         max={param.max}
         step={param.step}
         value={typeof value === "number" ? value : ""}
-        placeholder={param.label}
-        aria-label={param.label}
+        placeholder={label}
+        aria-label={label}
         onChange={(event) =>
           onMerge({
             [param.name]: event.target.value === "" ? undefined : Number(event.target.value),
@@ -287,8 +289,8 @@ export function ParamField({
     <input
       className="studio-input nodrag"
       value={typeof value === "string" ? value : ""}
-      placeholder={param.label}
-      aria-label={param.label}
+      placeholder={label}
+      aria-label={label}
       onChange={(event) => onMerge({ [param.name]: event.target.value })}
     />
   );

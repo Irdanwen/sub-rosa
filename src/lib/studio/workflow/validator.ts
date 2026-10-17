@@ -21,6 +21,7 @@ import {
   type WorkflowEdge,
   type WorkflowNode,
 } from "./schema";
+import { kindLabel, nodeTypeLabel, paramLabel, portLabel } from "./labels";
 
 export interface ValidationIssue {
   severity: "error" | "warning";
@@ -69,9 +70,9 @@ function hasCycle(nodes: WorkflowNode[], edges: WorkflowEdge[]): boolean {
 
 /** User-legible requirement for picker params, instead of the generic
  * missing-param wording which would name an internal field. */
-function pickerRequirement(paramType: string): string | undefined {
-  if (paramType === "artifact") return "pick a gallery item";
-  if (paramType === "note") return "pick a note";
+function pickerRequirement(node: string, paramType: string): string | undefined {
+  if (paramType === "artifact") return t("{node}: pick a gallery item.", { node });
+  if (paramType === "note") return t("{node}: pick a note.", { node });
   return undefined;
 }
 
@@ -83,7 +84,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
 
   if (nodes.length === 0) {
-    warnings.push({ severity: "warning", message: "The workflow is empty." });
+    warnings.push({ severity: "warning", message: t("The workflow is empty.") });
   }
 
   const kindContext = { nodeById, edges };
@@ -103,22 +104,23 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         nodeId: node.id,
-        message: `Unknown node type: ${String(node.type)}.`,
+        message: t("Unknown node type: {type}.", { type: String(node.type) }),
       });
       continue;
     }
     const incoming = edges.filter((edge) => edge.target === node.id);
+    const name = nodeTypeLabel(node.type);
     // What this node carries, which its chosen model can narrow (ADR-0022).
     const inputs = openInputPorts(schema, node.params);
 
     for (const param of schema.params) {
       if (!param.required || !isParamMissing(node, param.name)) continue;
-      const picker = pickerRequirement(param.type);
+      const picker = pickerRequirement(name, param.type);
       if (picker) {
         errors.push({
           severity: "error",
           nodeId: node.id,
-          message: `${schema.label}: ${picker}.`,
+          message: picker,
         });
         continue;
       }
@@ -133,7 +135,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           nodeId: node.id,
-          message: `${schema.label}: missing required "${param.name}".`,
+          message: t("{node}: fill in {setting}.", { node: name, setting: paramLabel(param) }),
         });
       }
     }
@@ -159,7 +161,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           edgeId: edge.id,
-          message: `${schema.label} does not accept inputs.`,
+          message: t("{node} does not accept inputs.", { node: name }),
         });
       }
     } else if (incoming.length === 0) {
@@ -175,7 +177,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         warnings.push({
           severity: "warning",
           nodeId: node.id,
-          message: `${schema.label}: no upstream input connected.`,
+          message: t("{node}: no upstream input connected.", { node: name }),
         });
       }
     }
@@ -186,7 +188,10 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           nodeId: node.id,
-          message: `${schema.label}: connect the "${port.label}" input.`,
+          message: t("{node}: connect the {input} input.", {
+            node: name,
+            input: portLabel(node.type, port),
+          }),
         });
       }
       const capacity = portCapacity(port, node.params);
@@ -194,9 +199,17 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           nodeId: node.id,
-          message: `${schema.label}: "${port.label}" takes at most ${capacity} ${
-            capacity === 1 ? "connection" : "connections"
-          }.`,
+          message:
+            capacity === 1
+              ? t("{node}: {input} takes one connection at most.", {
+                  node: name,
+                  input: portLabel(node.type, port),
+                })
+              : t("{node}: {input} takes at most {count} connections.", {
+                  node: name,
+                  input: portLabel(node.type, port),
+                  count: capacity,
+                }),
         });
       }
     }
@@ -206,7 +219,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         errors.push({
           severity: "error",
           edgeId: edge.id,
-          message: `${schema.label} has no output and cannot feed another node.`,
+          message: t("{node} has no output and cannot feed another node.", { node: name }),
         });
       }
     }
@@ -217,7 +230,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
-        message: `Edge source "${edge.source}" does not exist.`,
+        message: t("A connection starts from a node that no longer exists."),
       });
       continue;
     }
@@ -225,7 +238,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
-        message: `Edge target "${edge.target}" does not exist.`,
+        message: t("A connection leads to a node that no longer exists."),
       });
       continue;
     }
@@ -233,7 +246,7 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
-        message: "Self loops are not allowed.",
+        message: t("A node cannot feed itself."),
       });
       continue;
     }
@@ -242,6 +255,8 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
     const sourceSchema = source ? maybeNodeSchema(source.type) : undefined;
     const targetSchema = target ? maybeNodeSchema(target.type) : undefined;
     if (!source || !target || !sourceSchema || !targetSchema) continue;
+    const sourceName = nodeTypeLabel(source.type);
+    const targetName = nodeTypeLabel(target.type);
     // Nodes without inputs already reported every inbound edge as an error.
     if (targetSchema.inputs.length === 0) continue;
     const sourceKind = outputKindOf(source, kindContext);
@@ -259,10 +274,16 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
         severity: "error",
         edgeId: edge.id,
         message: closed
-          ? `${targetSchema.label}: the chosen model has no "${closed.label}" input. Remove this connection.`
+          ? t("{node}: the chosen model has no {input} input. Remove this connection.", {
+              node: targetName,
+              input: portLabel(target.type, closed),
+            })
           : edge.targetPort !== undefined
-            ? `${targetSchema.label} has no "${edge.targetPort}" input.`
-            : `${targetSchema.label} has no input that accepts ${sourceKind}.`,
+            ? t("{node} has no {input} input.", { node: targetName, input: edge.targetPort })
+            : t("{node} has no input that accepts {kind}.", {
+                node: targetName,
+                kind: kindLabel(sourceKind),
+              }),
       });
       continue;
     }
@@ -270,7 +291,13 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       errors.push({
         severity: "error",
         edgeId: edge.id,
-        message: `${targetSchema.label}: "${port.label}" expects ${port.kind} but ${sourceSchema.label} outputs ${sourceKind}.`,
+        message: t("{node}: {input} expects {expected}, but {source} makes {made}.", {
+          node: targetName,
+          input: portLabel(target.type, port),
+          expected: kindLabel(port.kind),
+          source: sourceName,
+          made: kindLabel(sourceKind),
+        }),
       });
       continue;
     }
@@ -278,13 +305,21 @@ export function validateWorkflow(workflow: Pick<Workflow, "nodes" | "edges">): V
       warnings.push({
         severity: "warning",
         edgeId: edge.id,
-        message: `${sourceSchema.label} outputs ${sourceKind} but "${port.label}" expects ${port.kind}. The media will chain as a text description.`,
+        message: t(
+          "{source} makes {made} but {input} expects {expected}. The media will chain as a text description.",
+          {
+            source: sourceName,
+            made: kindLabel(sourceKind),
+            input: portLabel(target.type, port),
+            expected: kindLabel(port.kind),
+          },
+        ),
       });
     }
   }
 
   if (hasCycle(nodes, edges)) {
-    errors.push({ severity: "error", message: "The workflow contains a cycle." });
+    errors.push({ severity: "error", message: t("The workflow contains a cycle.") });
   }
 
   return { ok: errors.length === 0, errors, warnings };

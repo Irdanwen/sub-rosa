@@ -4,6 +4,7 @@
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import type { useArtifactIndex } from "../../../lib/artifact-media";
 import { t } from "../../../lib/i18n";
+import { portLabel } from "../../../lib/studio/workflow/labels";
 import type { MediaCatalog } from "../../../lib/studio/types";
 import {
   nodeLabel,
@@ -151,9 +152,10 @@ export function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value !== "" ? value : fallback;
 }
 
-/** The closed inputs behind a set of dropped connections, named once each. */
+/** The closed inputs behind a set of dropped connections, named once each.
+ * Only a model-driven port can close, and those ids name one port each. */
 function strandedPorts(stranded: StrandedEdge[]): string {
-  return [...new Set(stranded.map((entry) => entry.port.label.toLowerCase()))].join(", ");
+  return [...new Set(stranded.map((entry) => portLabel("", entry.port).toLowerCase()))].join(", ");
 }
 
 /** What a model change let go, said once: named when it is one connection,

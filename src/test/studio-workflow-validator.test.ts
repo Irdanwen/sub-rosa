@@ -69,7 +69,7 @@ describe("validateWorkflow", () => {
     const result = validateWorkflow(workflow([node("llm", "chat", { prompt: "Say hi" })], []));
     expect(result.ok).toBe(false);
     expect(
-      result.errors.some((issue) => issue.nodeId === "llm" && issue.message.includes("model")),
+      result.errors.some((issue) => issue.nodeId === "llm" && issue.message.includes("fill in Model")),
     ).toBe(true);
   });
 
@@ -88,7 +88,7 @@ describe("validateWorkflow", () => {
     const result = validateWorkflow(workflow([node("llm", "chat", { model: "m" })], []));
     expect(result.ok).toBe(false);
     expect(
-      result.errors.some((issue) => issue.nodeId === "llm" && issue.message.includes("prompt")),
+      result.errors.some((issue) => issue.nodeId === "llm" && issue.message.includes("fill in Prompt")),
     ).toBe(true);
   });
 
@@ -232,7 +232,7 @@ describe("validateWorkflow with named ports", () => {
     expect(doubleOpening.ok).toBe(false);
     expect(
       doubleOpening.errors.some(
-        (issue) => issue.nodeId === "clip" && issue.message.includes("at most 1"),
+        (issue) => issue.nodeId === "clip" && issue.message.includes("one connection at most"),
       ),
     ).toBe(true);
 
@@ -257,13 +257,13 @@ describe("validateWorkflow with named ports", () => {
     const frame = validateWorkflow(workflow([node("frame", "lastFrame")], []));
     expect(frame.ok).toBe(false);
     expect(
-      frame.errors.some((issue) => issue.nodeId === "frame" && issue.message.includes('"Video"')),
+      frame.errors.some((issue) => issue.nodeId === "frame" && issue.message.includes("connect the Video input")),
     ).toBe(true);
 
     const film = validateWorkflow(workflow([node("film", "assemble")], []));
     expect(film.ok).toBe(false);
     expect(
-      film.errors.some((issue) => issue.nodeId === "film" && issue.message.includes('"Clips"')),
+      film.errors.some((issue) => issue.nodeId === "film" && issue.message.includes("connect the Clips input")),
     ).toBe(true);
   });
 
@@ -317,7 +317,7 @@ describe("validateWorkflow with named ports", () => {
     expect(basic.ok).toBe(false);
     // Named for what it is - an input this model does not have - rather than
     // as a capacity of zero, which reads like a bug in the editor.
-    expect(basic.errors[0].message).toContain('no "Reference clips" input');
+    expect(basic.errors[0].message).toContain("no Reference clips input");
     expect(withModel("seedance-2-0-reference-to-video").ok).toBe(true);
   });
 
