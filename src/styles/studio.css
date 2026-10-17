@@ -943,6 +943,11 @@
   border-color: var(--destructive);
 }
 
+/* Lit while the pointer is on Run: this step will spend. */
+.studio-node[data-will-pay="true"] {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--brand) 60%, transparent);
+}
+
 /* A step set aside (modes.ts): still wired, visibly not running. */
 .studio-node[data-mode] {
   border-style: dashed;
@@ -2236,4 +2241,17 @@
 .studio-run-history-meta {
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
+}
+
+.studio-cost-ceiling {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--body-copy);
+}
+
+.studio-cost-ceiling .studio-input {
+  max-width: 8rem;
 }

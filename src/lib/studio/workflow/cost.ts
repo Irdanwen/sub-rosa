@@ -213,6 +213,56 @@ export function needsRunConfirmation(estimate: WorkflowCostEstimate): boolean {
 
 export const QUOTE_TIMEOUT_MS = 4000;
 
+/** What `/video/quote` is asked for a node: its model and the settings that
+ * price a render (duration, ratio, resolution, sound). */
+export function quoteBody(node: WorkflowNode): Record<string, unknown> {
+  const prompt = node.params.prompt;
+  const body: Record<string, unknown> = {
+    model: node.params.model,
+    // The real prompt may come from an upstream node that has not run yet;
+    // the quote prices duration and resolution, not words.
+    prompt: typeof prompt === "string" && prompt.trim() !== "" ? prompt : nodeLabel(node),
+  };
+  for (const [param, field] of [
+    ["duration", "duration"],
+    ["aspectRatio", "aspect_ratio"],
+    ["resolution", "resolution"],
+  ] as const) {
+    const value = node.params[param];
+    if (typeof value === "string" && value !== "") body[field] = value;
+  }
+  // A silent render can price differently from one with sound; the compiler
+  // only marks it silent on a model that has the switch.
+  if (node.params.silent === true) body.audio = false;
+  return body;
+}
+
+/** One node's quote in credits, or nothing when the quote is slow or fails
+ * (the static estimate stays). `ask` is the client call: with retries at
+ * run time, a single attempt while someone is editing. */
+export async function quoteVideoNode(
+  node: WorkflowNode,
+  multiplier: number,
+  ask: <T>(path: string, body?: unknown) => Promise<T>,
+): Promise<number | undefined> {
+  try {
+    const response = await Promise.race([
+      ask<{ quote?: number }>(VIDEO_QUOTE_PATH, quoteBody(node)),
+      new Promise<undefined>((resolve) => {
+        setTimeout(() => resolve(undefined), QUOTE_TIMEOUT_MS);
+      }),
+    ]);
+    if (response && typeof response.quote === "number") {
+      // The quote comes back in USD; credits are cents times the backend's
+      // price multiplier (same conversion VideoStudio does).
+      return Math.round(response.quote * 100 * multiplier * 100) / 100;
+    }
+  } catch {
+    // Keep the static estimate.
+  }
+  return undefined;
+}
+
 /**
  * Refine quotable video nodes' figures through `/video/quote`, in credits.
  * Failures and slow answers just leave the static estimate in place — a
@@ -233,39 +283,8 @@ export async function fetchVideoQuotes(
     workflow.nodes
       .filter((node) => quotable.has(node.id))
       .map(async (node) => {
-        const prompt = node.params.prompt;
-        const body: Record<string, unknown> = {
-          model: node.params.model,
-          // The real prompt may come from an upstream node that has not run
-          // yet; the quote prices duration and resolution, not words.
-          prompt: typeof prompt === "string" && prompt.trim() !== "" ? prompt : nodeLabel(node),
-        };
-        for (const [param, field] of [
-          ["duration", "duration"],
-          ["aspectRatio", "aspect_ratio"],
-          ["resolution", "resolution"],
-        ] as const) {
-          const value = node.params[param];
-          if (typeof value === "string" && value !== "") body[field] = value;
-        }
-        // A silent render can price differently from one with sound; the
-        // compiler only marks it silent on a model that has the switch.
-        if (node.params.silent === true) body.audio = false;
-        try {
-          const response = await Promise.race([
-            mediaJson<{ quote?: number }>(VIDEO_QUOTE_PATH, body),
-            new Promise<undefined>((resolve) => {
-              setTimeout(() => resolve(undefined), QUOTE_TIMEOUT_MS);
-            }),
-          ]);
-          if (response && typeof response.quote === "number") {
-            // The quote comes back in USD; credits are cents times the
-            // backend's price multiplier (same conversion VideoStudio does).
-            quotes.set(node.id, Math.round(response.quote * 100 * multiplier * 100) / 100);
-          }
-        } catch {
-          // Keep the static estimate.
-        }
+        const credits = await quoteVideoNode(node, multiplier, mediaJson);
+        if (credits !== undefined) quotes.set(node.id, credits);
       }),
   );
   return quotes;

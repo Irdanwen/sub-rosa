@@ -10,6 +10,7 @@ import {
   nodeLabel,
   outputKindOf,
   resolveInputPort,
+  type NodeCostEstimate,
   type NodeRunResult,
   type StrandedEdge,
   type ValidationIssue,
@@ -65,6 +66,10 @@ export interface StudioNodeData extends Record<string, unknown> {
   issues?: ValidationIssue[];
   /** Run this step and what it needs, nothing else. */
   onRunStep?: (nodeId: string) => void;
+  /** What this step costs a run, live quotes and reuse included. */
+  price?: NodeCostEstimate;
+  /** Lit while the pointer is on Run: this step will spend. */
+  willPay?: boolean;
   /** Set the step aside, or back to running (see `modes.ts`). */
   onModeChange?: (nodeId: string, mode: "bypass" | "mute" | undefined) => void;
 }

@@ -74,7 +74,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   // The inputs this node carries: its model can close some of them, and a
   // port that is not drawn is a port nothing can be wired to.
   const inputs = openInputPorts(schema, wfNode.params);
-  const cost = estimateNodeCost(wfNode, catalog);
+  const cost = data.price ?? estimateNodeCost(wfNode, catalog);
   // A paid step that has something to reuse can be asked for a new take:
   // the counter is part of what the step asks, so the next run misses the
   // cache for it (and for what it feeds) and makes a new one.
@@ -100,6 +100,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
       data-run={runState}
       data-invalid={data.issues?.some((issue) => issue.severity === "error") ? "true" : undefined}
       data-mode={wfNode.mode}
+      data-will-pay={data.willPay ? "true" : undefined}
     >
       <div className="studio-node-head">
         {/* The name is the node's own, and its type stands in as the
@@ -139,6 +140,10 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             </span>
           ) : cost.kind === "flat" && cost.credits !== undefined && cost.credits > 0 ? (
             <span className="studio-node-kind">~{formatCredits(cost.credits)}</span>
+          ) : cost.kind === "metered" ? (
+            <span className="studio-node-kind" title={t("Billed by what it uses")}>
+              {t("usage")}
+            </span>
           ) : null}
           {canMakeAgain ? (
             <button
