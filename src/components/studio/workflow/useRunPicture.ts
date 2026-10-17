@@ -39,8 +39,13 @@ export function useRunPicture(
     [flattened],
   );
   /** The level the canvas shows, seen from the flat graph. */
+  // Seen with its lists in place too: a list's items and its copies are
+  // what results, prices and problems speak of (ADR-0117).
   const stepView = useMemo(
-    () => (flattened ? viewAt(flattened, path) : undefined),
+    () =>
+      flattened
+        ? viewAt({ ...flattened, workflow: expandLists(flattened.workflow) }, path)
+        : undefined,
     [flattened, path],
   );
   /** What is wrong, said on the steps as drawn. */
