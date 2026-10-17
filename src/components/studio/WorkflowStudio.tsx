@@ -223,7 +223,7 @@ function WorkflowEditor({
   const [flowEdges, setFlowEdges] = useState<FlowEdge[]>([]);
   /** Each workflow's run, so one goes on while another tab is open: the
    * canvas shows the session of the workflow it has open. */
-  const sessions = useRef(new RunSessions()).current;
+  const [sessions] = useState(() => new RunSessions());
   const [, setSessionsEpoch] = useState(0);
   const refreshSessions = useCallback(() => setSessionsEpoch((epoch) => epoch + 1), []);
   const results = sessions.results(current?.id);

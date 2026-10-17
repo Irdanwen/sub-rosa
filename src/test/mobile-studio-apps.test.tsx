@@ -13,6 +13,8 @@ const state = vi.hoisted(() => ({
   calls: [] as string[],
   saved: [] as string[],
   runs: [] as unknown[],
+  hold: false,
+  release: undefined as (() => void) | undefined,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -22,6 +24,10 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (command === "workflow_run_list") return state.runs;
     if (command === "workflow_run_history") return [];
     if (command === "workflow_cache_known") return [];
+    if (command === "workflow_run_create" && state.hold)
+      return new Promise<void>((resolve) => {
+        state.release = resolve;
+      });
     if (command === "carpe_diem_media_list_artifacts") return [];
     if (command === "studio_workflow_save" && args?.request?.definition)
       state.saved.push(args.request.definition);
@@ -74,6 +80,8 @@ beforeEach(() => {
   state.calls = [];
   state.saved = [];
   state.runs = [];
+  state.hold = false;
+  state.release = undefined;
   window.localStorage.clear();
 });
 
@@ -96,6 +104,49 @@ describe("the phone's apps", () => {
     expect(
       await screen.findByText("Bonsoir", { selector: ".mobile-app-text" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps a run going when the person goes back, and finds it again on reopening", async () => {
+    state.hold = true;
+    const { StudioApps } = await import("../components/mobile/screens/studio/StudioApps");
+    render(<StudioApps catalog={catalog} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Echo/ }));
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Run" }));
+    });
+    await waitFor(() => expect(state.release).toBeDefined());
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    // Back to the list: the run is not killed, and not listed as unfinished.
+    fireEvent.click(screen.getByRole("button", { name: "All apps" }));
+    await screen.findByRole("button", { name: /Echo/ });
+    expect(screen.queryByText(/stopped before it finished/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Echo/ }));
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeInTheDocument();
+    await act(async () => {
+      state.release?.();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(await screen.findByText("Hello", { selector: ".mobile-app-text" })).toBeInTheDocument();
+  });
+
+  it("names a run held at a gate for what it is, and opens its app", async () => {
+    state.runs = [
+      {
+        id: "run-2",
+        workflowId: "w",
+        name: "Echo",
+        status: "awaitingGate",
+        definition: JSON.stringify(app()),
+        createdAt: "2026-10-17T10:00:00Z",
+        updatedAt: "2026-10-17T10:00:00Z",
+      },
+    ];
+    const { StudioApps } = await import("../components/mobile/screens/studio/StudioApps");
+    render(<StudioApps catalog={catalog} />);
+    expect(await screen.findByText("Echo waits for your approval.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(await screen.findByText("Says it back.")).toBeInTheDocument();
   });
 
   it("starts a new app from a shipped one", async () => {

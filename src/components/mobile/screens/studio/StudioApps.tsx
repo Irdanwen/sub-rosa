@@ -31,7 +31,7 @@ import {
 } from "../../../../lib/studio/workflow-run";
 import { EmptyState } from "../../../ui/EmptyState";
 import { Spinner } from "../../../ui/Spinner";
-import { AppRunScreen } from "./AppRunScreen";
+import { AppRunScreen, phoneRunSessions } from "./AppRunScreen";
 
 export function StudioApps({ catalog }: { catalog: MediaCatalog }) {
   const [apps, setApps] = useState<Workflow[] | null>(null);
@@ -106,33 +106,52 @@ export function StudioApps({ catalog }: { catalog: MediaCatalog }) {
     );
 
   const shipped = templateWorkflows().filter(isApp);
+  // A run going on in this webview is not unfinished: its app shows it.
+  const live = new Set(phoneRunSessions.live());
   return (
     <div className="mobile-apps">
-      {unfinished.map((entry) => (
-        <div key={entry.id} className="stage-notice mobile-studio-notice" role="status">
-          <span>
-            {t("{name} stopped before it finished.", {
-              name: runDefinition(entry)?.name || entry.name || t("A run"),
-            })}
-          </span>
-          <button
-            type="button"
-            className="mobile-chip-button"
-            disabled={resuming !== undefined}
-            onClick={() => void resume(entry)}
-          >
-            {resuming === entry.id ? t("Resuming...") : t("Resume")}
-          </button>
-          <button
-            type="button"
-            className="mobile-chip-button"
-            disabled={resuming !== undefined}
-            onClick={() => void dismissWorkflowRun(entry.id).then(refresh)}
-          >
-            {t("Let it go")}
-          </button>
-        </div>
-      ))}
+      {unfinished
+        .filter((entry) => !live.has(entry.workflowId))
+        .map((entry) => {
+          const name = runDefinition(entry)?.name || entry.name || t("A run");
+          const held = entry.status === "awaitingGate";
+          const ownApp = held ? apps.find((app) => app.id === entry.workflowId) : undefined;
+          return (
+            <div key={entry.id} className="stage-notice mobile-studio-notice" role="status">
+              <span>
+                {held
+                  ? t("{name} waits for your approval.", { name })
+                  : t("{name} stopped before it finished.", { name })}
+              </span>
+              {ownApp ? (
+                <button
+                  type="button"
+                  className="mobile-chip-button"
+                  onClick={() => setOpen(ownApp)}
+                >
+                  {t("Open")}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="mobile-chip-button"
+                  disabled={resuming !== undefined}
+                  onClick={() => void resume(entry)}
+                >
+                  {resuming === entry.id ? t("Resuming...") : t("Resume")}
+                </button>
+              )}
+              <button
+                type="button"
+                className="mobile-chip-button"
+                disabled={resuming !== undefined}
+                onClick={() => void dismissWorkflowRun(entry.id).then(refresh)}
+              >
+                {t("Let it go")}
+              </button>
+            </div>
+          );
+        })}
       {apps.length > 0 ? (
         <section aria-label={t("Your apps")}>
           <h2 className="mobile-section-title">{t("Your apps")}</h2>

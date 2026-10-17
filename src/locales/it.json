@@ -190,6 +190,7 @@
   "{name} stopped before it finished.": "{name} si è fermato prima della fine.",
   "{name} value": "Valore di {name}",
   "{name} view": "Vista di {name}",
+  "{name} waits for your approval.": "{name} aspetta la tua approvazione.",
   "{name} was not added. {reason}": "{name} non è stato aggiunto. {reason}",
   "{name}, {role}": "{name}, {role}",
   "{name}, {status}": "{name}, {status}",
