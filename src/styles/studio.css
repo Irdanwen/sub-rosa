@@ -2329,3 +2329,77 @@
   font-size: var(--fs-sm);
   color: var(--muted-foreground);
 }
+
+/* --- the bar over a selection --------------------------------------------- */
+
+.studio-selection-bar {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-lg);
+  animation: studio-selection-bar-in 125ms var(--ease-out) both;
+}
+
+@keyframes studio-selection-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-selection-bar {
+    animation: none;
+  }
+}
+
+/* The button on a selected wire. */
+.studio-edge-delete {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--popover);
+  color: var(--foreground);
+  cursor: pointer;
+  pointer-events: all;
+}
+
+/* A selected step says so: the bar above it acts on what is ringed. */
+.studio-workflow-canvas .react-flow__node.selected > .studio-node {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--foreground) 40%, transparent);
+}
+
+/* The overview: each step in the colour of where it stands. */
+.studio-workflow-canvas .react-flow__minimap {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+}
+
+.studio-workflow-canvas .react-flow__minimap-node {
+  fill: color-mix(in oklch, var(--muted-foreground) 45%, transparent);
+}
+
+.studio-workflow-canvas .react-flow__minimap-node.minimap-running {
+  fill: var(--brand);
+}
+
+.studio-workflow-canvas .react-flow__minimap-node.minimap-error {
+  fill: var(--destructive);
+}
+
+.studio-workflow-canvas .react-flow__minimap-node.minimap-reused {
+  fill: var(--success);
+}
+
+.studio-workflow-canvas .react-flow__minimap-node.minimap-set-aside {
+  fill: var(--border);
+}

@@ -37,6 +37,7 @@ function typingInField(target: EventTarget | null): boolean {
 export interface CanvasEditing {
   undo: () => void;
   redo: () => void;
+  duplicate: () => void;
 }
 
 export function useCanvasEditing(options: {
@@ -222,5 +223,5 @@ export function useCanvasEditing(options: {
     return () => clearContextualCommands("workflow-canvas");
   }, [options.active, undo, redo, duplicate]);
 
-  return { undo, redo };
+  return { undo, redo, duplicate };
 }

@@ -242,6 +242,12 @@
   --success: oklch(46.99% 0.1024 153.81);
   --warning: oklch(50.84% 0.1033 71.19);
   --info: oklch(50.21% 0.0806 234.51);
+  /* What a workflow connection carries: one hue per kind, quiet enough to
+     sit under the steps, apart enough to tell an image wire from a video. */
+  --kind-text: oklch(55% 0.01 84.59);
+  --kind-image: oklch(56% 0.11 245);
+  --kind-video: oklch(54% 0.13 305);
+  --kind-audio: oklch(55% 0.11 160);
 
   /* Fenced code. Themed here rather than in the sheet that uses them: they
    * were three raw hex values behind a prefers-color-scheme query, which meant
@@ -472,6 +478,10 @@
   --success: oklch(0.773 0.1449 147.57);
   --warning: oklch(0.7676 0.1221 75.8);
   --info: oklch(0.7484 0.0686 243.39);
+  --kind-text: oklch(0.7 0.01 84.59);
+  --kind-image: oklch(0.74 0.1 245);
+  --kind-video: oklch(0.72 0.12 305);
+  --kind-audio: oklch(0.74 0.11 160);
   --code-keyword: var(--sr-code-keyword-on-ink);
   --code-string: var(--sr-code-string-on-ink);
   --code-number: var(--sr-code-number-on-ink);
