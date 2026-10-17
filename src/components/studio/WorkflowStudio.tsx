@@ -77,6 +77,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { nodeEtaKey } from "../../lib/studio/workflow/eta";
 import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
 import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
+import { applyModes } from "../../lib/studio/workflow/modes";
 import { pruneToTargets } from "../../lib/studio/workflow/partial";
 import { spendGuard } from "../../lib/studio/workflow/spend";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
@@ -277,6 +278,16 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     );
   }, []);
 
+  const onModeChange = useCallback((id: string, mode: "bypass" | "mute" | undefined) => {
+    setFlowNodes((nodes) =>
+      nodes.map((node) => {
+        if (node.id !== id) return node;
+        const { mode: _previous, ...rest } = node.data.wfNode;
+        return { ...node, data: { ...node.data, wfNode: mode ? { ...rest, mode } : rest } };
+      }),
+    );
+  }, []);
+
   const onRemove = useCallback((id: string) => {
     setFlowNodes((nodes) => nodes.filter((node) => node.id !== id));
     setFlowEdges((edges) => edges.filter((edge) => edge.source !== id && edge.target !== id));
@@ -421,13 +432,15 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   }, []);
 
   const serialized = current ? fromFlow(current, flowNodes, flowEdges) : undefined;
+  /** The graph a run executes: steps set aside resolved away (modes.ts). */
+  const effective = useMemo(() => (serialized ? applyModes(serialized) : undefined), [serialized]);
   const validation = useMemo(
-    () => (serialized ? validateWorkflow(serialized) : undefined),
-    [serialized],
+    () => (effective ? validateWorkflow(effective) : undefined),
+    [effective],
   );
   /** Bumped when a run ends, so the cache is asked again what it now holds. */
   const [runEpoch, setRunEpoch] = useState(0);
-  const reused = useReusePrediction(serialized, runEpoch);
+  const reused = useReusePrediction(effective, runEpoch);
 
   /** "Run this step", with a stable identity for node data; retargeted at
    * every render to the current run handler. */
@@ -509,6 +522,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
             willReuse: reused.has(node.id),
             issues: issuesByNode.get(node.id),
             onRunStep,
+            onModeChange,
             gateSources:
               wfNode.type === "gate"
                 ? edgesOnPort(graph, node.id, "in").map((edge) => ({
@@ -525,6 +539,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     reused,
     issuesByNode,
     onRunStep,
+    onModeChange,
     catalog,
     artifacts,
     constraintEpoch,
@@ -710,8 +725,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   }, [flowEdges, orderGraphKey, highlightedEdge]);
   const estimate = useMemo(
     () =>
-      serialized ? withReusedSteps(estimateWorkflowCost(serialized, catalog), reused) : undefined,
-    [serialized, catalog, reused],
+      effective ? withReusedSteps(estimateWorkflowCost(effective, catalog), reused) : undefined,
+    [effective, catalog, reused],
   );
   const [pendingRun, setPendingRun] = useState<
     { estimate: WorkflowCostEstimate; targets?: string[] } | undefined
@@ -748,7 +763,8 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     async (priced: WorkflowCostEstimate, targets?: string[]) => {
       // Part of the graph: the steps asked for and what they need, frozen as
       // the run's definition; upstream comes back from the cache.
-      const runnable = serialized && targets ? pruneToTargets(serialized, targets) : serialized;
+      const resolved = serialized ? applyModes(serialized) : undefined;
+      const runnable = resolved && targets ? pruneToTargets(resolved, targets) : resolved;
       if (!runnable || running || !validateWorkflow(runnable).ok) return;
       runEstimateRef.current = priced;
       renderStartsRef.current = new Map();
@@ -913,7 +929,12 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   const startRun = useCallback(
     async (targets?: string[]) => {
       if (!serialized || running || quoting) return;
-      const runnable = targets ? pruneToTargets(serialized, targets) : serialized;
+      const resolved = applyModes(serialized);
+      if (targets?.some((id) => !resolved.nodes.some((node) => node.id === id))) {
+        setRunError(t("This step is set aside, so it does not run."));
+        return;
+      }
+      const runnable = targets ? pruneToTargets(resolved, targets) : resolved;
       // Only what will run has to be valid: a broken step elsewhere does
       // not block running this one.
       const check = validateWorkflow(runnable);

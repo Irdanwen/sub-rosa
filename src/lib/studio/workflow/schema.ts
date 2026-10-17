@@ -47,6 +47,9 @@ export interface WorkflowNode {
   /** The node schema version it was saved under; absent means 1. Read by
    * `migrate.ts` when a node's settings change shape. */
   v?: number;
+  /** Set aside without unwiring (see `modes.ts`): skipped passes its input
+   * on, off removes it and what only it fed. Absent means it runs. */
+  mode?: "bypass" | "mute";
 }
 
 export interface WorkflowEdge {

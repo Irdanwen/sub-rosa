@@ -1125,6 +1125,13 @@ everything it feeds. Distinct from a project's **take** (a rendered attempt at
 a shot) and from "New result every run", which skips the lookup altogether.
 _Avoid_: seed, retry.
 
+**Step set aside (workflow)**:
+A step that stays wired but does not run. *Skipped* passes its input of the
+kind it would have made to every step it fed; *off* also removes whatever
+can no longer run without it (a shot with its own prompt still runs). Resolved away before a run (`applyModes`), so nothing priced,
+validated or cached ever sees it. ComfyUI's bypass and mute; its files' modes
+4 and 2 import as these. _Avoid_: disabled (in copy), deleted.
+
 **Port (workflow input)**:
 A named, typed input on a workflow node — a video node's prompt, opening
 frame, end frame, and references are four ports, not one merged stream. Media

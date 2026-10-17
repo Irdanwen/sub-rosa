@@ -216,7 +216,7 @@ describe("what the review found", () => {
     expect(workflow.nodes[0].params.model).toBe("gpt-image-2");
   });
 
-  it("leaves muted and bypassed nodes out, and wires through a bypassed one", () => {
+  it("keeps a set-aside step set aside, and wires through a step that does not translate", () => {
     const ui = {
       nodes: [
         { id: 1, type: "LoadImage", mode: 0, inputs: [], widgets_values: ["car.png", "image"] },
@@ -240,12 +240,15 @@ describe("what the review found", () => {
       ],
     };
     const { workflow, report } = translateComfy(ui, withAnime);
-    expect(workflow.nodes.map((node) => node.type).sort()).toEqual(["asset", "output"]);
-    expect(workflow.edges).toHaveLength(1);
-    expect(report.dropped.map((entry) => entry.reason)).toEqual([
-      "is bypassed in the file",
-      "is muted in the file",
-    ]);
+    // The muted partner node is translated and stays switched off, still
+    // wired; the bypassed local scaler does not translate and is wired
+    // through, as before.
+    expect(workflow.nodes.map((node) => node.type).sort()).toEqual(["asset", "output", "video"]);
+    expect(workflow.nodes.find((node) => node.type === "video")?.mode).toBe("mute");
+    const asset = workflow.nodes.find((node) => node.type === "asset");
+    expect(workflow.edges.every((edge) => edge.source === asset?.id)).toBe(true);
+    expect(report.adjusted.some((line) => line.includes("set aside in the file"))).toBe(true);
+    expect(report.dropped.map((entry) => entry.comfyType)).toEqual(["ImageScaleBy"]);
   });
 
   it("reads an older file whose widget names do not line up, without misplacing the prompt", () => {

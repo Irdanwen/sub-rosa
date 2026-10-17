@@ -419,9 +419,18 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
       label: source.title && source.title !== source.type ? source.title : "",
       position: source.position,
       params: { ...defaultParams(type), ...params },
+      // Set aside in the file, set aside here, still wired (modes.ts).
+      ...(source.mode === 4 ? { mode: "bypass" as const } : {}),
+      ...(source.mode === 2 ? { mode: "mute" as const } : {}),
     };
     built.set(source.id, { node, portFor });
     report.translated.push({ comfyType: source.type, as: nodeTypeLabel(type) });
+    if (source.mode === 2 || source.mode === 4)
+      report.adjusted.push(
+        t("{node} is set aside in the file; it stays set aside here, still wired.", {
+          node: source.title || source.type,
+        }),
+      );
     return node;
   };
 
@@ -440,15 +449,6 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
     report.dropped.push({ comfyType: source.title || source.type, reason });
 
   for (const source of comfy) {
-    if (source.mode === 2) {
-      drop(source, t("is muted in the file"));
-      continue;
-    }
-    if (source.mode === 4) {
-      // Bypassed: its inputs reach its outputs, which the edge pass follows.
-      drop(source, t("is bypassed in the file"));
-      continue;
-    }
     if (source.type === "PrimitiveNode" && typeof source.widgets[0] === "string") {
       // An older file's shared prompt: a primitive holding text feeds the
       // nodes whose prompt was converted to an input.

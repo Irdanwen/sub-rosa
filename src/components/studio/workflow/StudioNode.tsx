@@ -20,6 +20,7 @@ import {
   openInputPorts,
 } from "../../../lib/studio/workflow";
 import { nodeTypeLabel, portLabel } from "../../../lib/studio/workflow/labels";
+import type { NodeMode } from "../../../lib/studio/workflow/modes";
 import { Spinner } from "../../ui/Spinner";
 import type { StudioNodeData, StudioFlowNode } from "./flow";
 import { ParamField } from "./ParamField";
@@ -98,6 +99,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
       className="studio-node"
       data-run={runState}
       data-invalid={data.issues?.some((issue) => issue.severity === "error") ? "true" : undefined}
+      data-mode={wfNode.mode}
     >
       <div className="studio-node-head">
         {/* The name is the node's own, and its type stands in as the
@@ -115,6 +117,11 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           {wfNode.label.trim() ? (
             // Named, so the type no longer shows in the title. Keep it legible.
             <span className="studio-node-kind">{nodeTypeLabel(wfNode.type)}</span>
+          ) : null}
+          {wfNode.mode ? (
+            <span className="studio-node-kind">
+              {wfNode.mode === "bypass" ? t("Skipped") : t("Off")}
+            </span>
           ) : null}
           {result?.reused ? (
             <span
@@ -314,6 +321,25 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           />
         ))}
       {result?.status === "awaiting" ? <GateApproval data={data} /> : null}
+      {data.onModeChange ? (
+        <label className="studio-node-mode nodrag">
+          <span className="studio-node-kind">{t("Runs")}</span>
+          <select
+            className="studio-native-select"
+            value={wfNode.mode ?? "always"}
+            onChange={(event) =>
+              data.onModeChange?.(
+                wfNode.id,
+                event.target.value === "always" ? undefined : (event.target.value as NodeMode),
+              )
+            }
+          >
+            <option value="always">{t("Always")}</option>
+            <option value="bypass">{t("Skipped, passes its input on")}</option>
+            <option value="mute">{t("Off")}</option>
+          </select>
+        </label>
+      ) : null}
       {result ? <NodeOutputView result={result} node={wfNode} /> : null}
       {schema.output !== "none" ? <Handle type="source" position={Position.Right} /> : null}
     </div>
