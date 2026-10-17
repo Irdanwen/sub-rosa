@@ -45,7 +45,10 @@ export type WorkflowNodeType =
   | "soundMix"
   | "compare"
   | "zoneEdit"
-  | "sheet";
+  | "sheet"
+  | "textTemplate"
+  | "preview"
+  | "switch";
 
 export interface WorkflowNode {
   id: string;
@@ -227,9 +230,39 @@ export function openInputPorts(
   params: Record<string, unknown>,
 ): readonly InputPort[] {
   // Fast path: most node types have no per-model ports at all.
-  return schema.inputs.some((port) => port.maxFor !== undefined)
+  const ports = schema.inputs.some((port) => port.maxFor !== undefined)
     ? schema.inputs.filter((port) => isPortOpen(port, params))
     : schema.inputs;
+  const fed = fedParams(params).flatMap((name): InputPort[] => {
+    const param = schema.params.find((entry) => entry.name === name);
+    return param && canFeedParam(param)
+      ? [{ id: `${FED_PORT_PREFIX}${name}`, label: param.label, kind: "text" }]
+      : [];
+  });
+  return fed.length > 0 ? [...ports, ...fed] : ports;
+}
+
+/** Where a step lists the settings it takes from a connection (ComfyUI's
+ * widget converted to an input). */
+export const FED_PARAMS_KEY = "fedParams";
+/** The input a setting taken from a connection arrives on. */
+export const FED_PORT_PREFIX = "param:";
+
+/** Whether a setting may be taken from a connection: words and closed
+ * choices only. Never the model, which decides the step's inputs and its
+ * price (ADR-0022), and never a prompt, which takes text through {{input}}. */
+export function canFeedParam(param: ParamSchema): boolean {
+  if (param.acceptsInputMarker) return false;
+  // A duration, a format or a resolution the model offers drives the quote:
+  // fed during the run, it would be priced at a value it may not have.
+  if (param.modelOptions) return false;
+  return param.type === "text" || param.type === "string" || param.type === "enum";
+}
+
+/** The settings a step takes from a connection. */
+export function fedParams(params: Record<string, unknown>): string[] {
+  const raw = params[FED_PARAMS_KEY];
+  return Array.isArray(raw) ? raw.filter((name): name is string => typeof name === "string") : [];
 }
 
 /**
@@ -901,6 +934,62 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     output: "none",
     params: [{ name: "text", label: "Note", type: "text" }],
   },
+  textTemplate: {
+    type: "textTemplate",
+    label: "Text template",
+    description:
+      "Words with blanks: {{1}}, {{2}} and so on are filled with the connected texts, in their order.",
+    inputs: [{ id: "values", label: "Values", kind: "text", multi: true }],
+    output: "text",
+    params: [
+      {
+        name: "template",
+        type: "text",
+        label: "Template",
+        description: "Use {{1}}, {{2}} and so on for the connected texts, in their order.",
+        required: true,
+        default: "{{1}}",
+      },
+    ],
+  },
+  preview: {
+    type: "preview",
+    label: "Preview",
+    description: "Shows what reaches it, as soon as it exists. It never runs.",
+    inputs: [{ id: "in", label: "Shows", kind: "any" }],
+    output: "none",
+    params: [],
+  },
+  switch: {
+    type: "switch",
+    label: "Switch",
+    description:
+      "Passes on one of two inputs: the one set here, or the one a condition picks during the run. The other side is not made.",
+    inputs: [
+      { id: "a", label: "A", kind: "any" },
+      { id: "b", label: "B", kind: "any" },
+      { id: "when", label: "Condition", kind: "text" },
+    ],
+    // What it passes on: resolved through the graph (see outputKindOf).
+    output: "text",
+    params: [
+      {
+        name: "branch",
+        type: "enum",
+        label: "Passes on",
+        description: "Used when no condition is connected.",
+        enumValues: ["a", "b"],
+        default: "a",
+      },
+      {
+        name: "contains",
+        type: "string",
+        label: "Takes A when the condition says",
+        description: "Any case. Otherwise it takes B.",
+        default: "yes",
+      },
+    ],
+  },
   relay: {
     type: "relay",
     label: "Relay",
@@ -1004,11 +1093,14 @@ export function outputKindOf(
     if (kind === "audio") return "audio";
     return "image";
   }
-  if ((node.type === "gate" || node.type === "relay") && context) {
+  if ((node.type === "gate" || node.type === "relay" || node.type === "switch") && context) {
     const seen = visited ?? new Set<string>();
     if (seen.has(node.id)) return "text";
     seen.add(node.id);
-    const inbound = context.edges.find((edge) => edge.target === node.id);
+    // A switch gives what its sides give, never its condition.
+    const inbound = context.edges.find(
+      (edge) => edge.target === node.id && (node.type !== "switch" || edge.targetPort !== "when"),
+    );
     const source = inbound ? context.nodeById.get(inbound.source) : undefined;
     // An unconnected gate has nothing to pass; "text" keeps it connectable
     // while validation separately warns about the missing input.

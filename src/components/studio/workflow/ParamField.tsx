@@ -4,6 +4,8 @@
 import { t } from "../../../lib/i18n";
 import { useMemo, useRef, useState } from "react";
 import type { ArtifactKind, MediaCatalog } from "../../../lib/studio/types";
+import { IconConnectors1 } from "central-icons/IconConnectors1";
+import { canFeedParam, FED_PARAMS_KEY, fedParams } from "../../../lib/studio/workflow/schema";
 import {
   effectiveParamValue,
   INPUT_MARKER,
@@ -30,7 +32,7 @@ function assetPickerKinds(node: WorkflowNode): ArtifactKind[] {
   return ["image"];
 }
 
-export function ParamField({
+function ParamControl({
   node,
   param,
   catalog,
@@ -307,5 +309,53 @@ export function ParamField({
       aria-label={label}
       onChange={(event) => onMerge({ [param.name]: event.target.value })}
     />
+  );
+}
+
+type ParamFieldProps = Parameters<typeof ParamControl>[0];
+
+/** A setting, with the choice to take it from a connection instead (words
+ * and closed choices only, see `canFeedParam`). Taken from one, the field
+ * gives way to a note saying so, and the step grows the input it arrives on. */
+export function ParamField(props: ParamFieldProps) {
+  const { node, param, onMerge } = props;
+  // A text input's words are the source itself; a note never runs.
+  const feedable = canFeedParam(param) && node.type !== "textInput" && node.type !== "note";
+  if (!feedable) return <ParamControl {...props} />;
+  const fed = fedParams(node.params);
+  const isFed = fed.includes(param.name);
+  const toggle = () =>
+    onMerge({
+      [FED_PARAMS_KEY]: isFed ? fed.filter((name) => name !== param.name) : [...fed, param.name],
+    });
+  const label = paramLabel(param);
+  return (
+    <div className="studio-param-feedable">
+      {isFed ? (
+        <p className="studio-param-fed">
+          {t("{setting}: from its connection", { setting: label })}
+        </p>
+      ) : (
+        <ParamControl {...props} />
+      )}
+      <button
+        type="button"
+        className="studio-icon-button nodrag"
+        aria-pressed={isFed}
+        aria-label={
+          isFed
+            ? t("Set {setting} here again", { setting: label })
+            : t("Take {setting} from a connection", { setting: label })
+        }
+        title={
+          isFed
+            ? t("Set {setting} here again", { setting: label })
+            : t("Take {setting} from a connection", { setting: label })
+        }
+        onClick={toggle}
+      >
+        <IconConnectors1 size={14} />
+      </button>
+    </div>
   );
 }

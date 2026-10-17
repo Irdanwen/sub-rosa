@@ -156,6 +156,15 @@ export function useNodeDataSync(options: {
                     label: labelOf.get(edge.source) ?? "",
                   }))
                 : undefined,
+            preview:
+              wfNode.type === "preview"
+                ? (() => {
+                    const sourceId = edgesOnPort(graph, node.id, "in")[0]?.source;
+                    const source = graph.nodes.find((entry) => entry.id === sourceId);
+                    const result = sourceId ? results.get(sourceId) : undefined;
+                    return source && result ? { node: source, result } : undefined;
+                  })()
+                : undefined,
             zoneSource:
               wfNode.type === "zoneEdit"
                 ? imageOf(edgesOnPort(graph, node.id, "image")[0]?.source ?? "")

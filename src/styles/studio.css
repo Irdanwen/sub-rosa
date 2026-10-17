@@ -2816,3 +2816,22 @@ button.studio-block-crumb:hover {
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
 }
+
+/* A setting that may come from a connection: its field, and the switch. */
+.studio-param-feedable {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+
+.studio-param-feedable > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.studio-param-fed {
+  margin: 0;
+  padding-block: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}

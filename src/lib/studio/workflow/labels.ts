@@ -50,6 +50,12 @@ export function nodeTypeLabel(type: WorkflowNodeType | string): string {
       return t("Retouch a zone");
     case "sheet":
       return t("Contact sheet");
+    case "textTemplate":
+      return t("Text template");
+    case "preview":
+      return t("Preview");
+    case "switch":
+      return t("Switch");
     default:
       return String(type);
   }
@@ -59,6 +65,9 @@ export function nodeTypeLabel(type: WorkflowNodeType | string): string {
  * schema, and only `in` means two things (a gate's candidates, an output's
  * result). Unknown ids fall back to the schema's own wording. */
 export function portLabel(type: WorkflowNodeType | string, port: { id: string; label: string }) {
+  // A setting taken from a connection is named as the setting.
+  if (port.id.startsWith("param:"))
+    return paramLabel({ name: port.id.slice("param:".length), label: port.label });
   switch (port.id) {
     case "prompt":
       return t("Prompt");
@@ -94,6 +103,10 @@ export function portLabel(type: WorkflowNodeType | string, port: { id: string; l
       return t("Image");
     case "before":
       return t("Before");
+    case "values":
+      return t("Values");
+    case "when":
+      return t("Condition");
     case "after":
       return t("After");
     default:
@@ -170,6 +183,12 @@ export function paramLabel(param: { name: string; label: string }): string {
       return t("Zone");
     case "pack":
       return t("Variations");
+    case "template":
+      return t("Template");
+    case "branch":
+      return t("Passes on");
+    case "contains":
+      return t("Takes A when the condition says");
     case "freshEachRun":
       return t("New result every run");
     default:
@@ -181,6 +200,8 @@ export function paramLabel(param: { name: string; label: string }): string {
  * their own names. */
 export function enumLabel(paramName: string, value: string): string {
   if (paramName === "scale") return t("{factor} times larger", { factor: value });
+  // A switch's sides are named by their inputs, A and B.
+  if (paramName === "branch") return value.toUpperCase();
   if (paramName === "pack") return composePacks().find((pack) => pack.id === value)?.label ?? value;
   switch (`${paramName}:${value}`) {
     case "assetKind:image":

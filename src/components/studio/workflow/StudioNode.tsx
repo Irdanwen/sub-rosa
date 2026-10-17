@@ -78,7 +78,9 @@ function GateApproval({ data }: { data: StudioNodeData }) {
 const COMPACT_BELOW_ZOOM = 0.5;
 
 /** Steps with nothing upstream to run: running one alone is just reading. */
-const SOURCES = new Set(["textInput", "asset", "document", "note", "compare"]);
+const SOURCES = new Set(["textInput", "asset", "document", "note", "compare", "preview"]);
+/** Steps that are read or looked at, never run: nothing to skip or switch off. */
+const SHOWN_ONLY_STEPS = new Set(["note", "compare", "preview"]);
 
 export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   const { wfNode, catalog, result, onParamsChange, onRemove } = data;
@@ -260,8 +262,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             {t("usage")}
           </span>
         ) : null}
-        {/* A note or a comparison never runs: nothing to skip or switch off. */}
-        {data.onModeChange && wfNode.type !== "note" && wfNode.type !== "compare" ? (
+        {data.onModeChange && !SHOWN_ONLY_STEPS.has(wfNode.type) ? (
           <select
             className="studio-node-mode nodrag"
             aria-label={t("Runs")}
@@ -420,6 +421,13 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             onMerge={(partial) => onParamsChange(wfNode.id, { ...wfNode.params, ...partial })}
           />
         ))}
+      {wfNode.type === "preview" ? (
+        data.preview ? (
+          <NodeOutputView result={data.preview.result} node={data.preview.node} />
+        ) : (
+          <p className="studio-node-port-label">{t("Shows what reaches it, once that exists.")}</p>
+        )
+      ) : null}
       {wfNode.type === "compare" ? (
         <CompareView before={data.compare?.before} after={data.compare?.after} />
       ) : null}
