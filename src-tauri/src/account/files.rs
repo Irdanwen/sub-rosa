@@ -788,6 +788,25 @@ pub(super) async fn download_one(
             .await?;
     }
     tx.commit().await?;
+    // A picture from another device arrives without its poster (posters stay
+    // where they were made). Made here, off the webview, one at a time, so a
+    // gallery that just received hundreds does not decode them all in the
+    // page the moment it opens. Detached and best-effort: a poster lost to a
+    // suspension is made on demand by the tile that finds none.
+    if done && studio && crate::carpe_diem::posters::is_picture(&target.to_string_lossy()) {
+        let (pool, gallery) = (pool.clone(), gallery.to_path_buf());
+        let name = target
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        tauri::async_runtime::spawn(async move {
+            if let Err(failure) =
+                crate::carpe_diem::posters::file_poster(&pool, &gallery, &name).await
+            {
+                tracing::debug!(code=%failure.code, "synchronized picture poster deferred");
+            }
+        });
+    }
     Ok(())
 }
 fn ensure_contained(dir: &std::path::Path, path: &PathBuf) -> Result<(), AppError> {

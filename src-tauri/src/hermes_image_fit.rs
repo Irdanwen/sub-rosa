@@ -159,7 +159,7 @@ fn fit_within_edge(image: &DynamicImage, edge: u32) -> DynamicImage {
 /// Composite onto white so transparency survives the trip to JPEG. Dropping the
 /// alpha channel instead would render a transparent background black and hide
 /// exactly the dark text a screenshot was attached for.
-fn flatten_onto_white(image: &DynamicImage) -> RgbImage {
+pub(crate) fn flatten_onto_white(image: &DynamicImage) -> RgbImage {
     let rgba = image.to_rgba8();
     let mut out = RgbImage::new(rgba.width(), rgba.height());
     for (x, y, pixel) in rgba.enumerate_pixels() {
