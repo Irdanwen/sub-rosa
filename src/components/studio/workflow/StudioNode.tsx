@@ -2,10 +2,12 @@
 // approval controls and the node's output.
 
 import { t } from "../../../lib/i18n";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps, useStore } from "@xyflow/react";
 import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
+import { IconChevronDownSmall } from "central-icons/IconChevronDownSmall";
+import { IconChevronRight } from "central-icons/IconChevronRight";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { IconPlay } from "central-icons/IconPlay";
 import { useState } from "react";
@@ -15,6 +17,7 @@ import { referenceMentions } from "../../../lib/studio/seedance";
 import {
   estimateNodeCost,
   isPaidNode,
+  nodeLabel,
   paramApplies,
   nodeSchema,
   openInputPorts,
@@ -68,6 +71,9 @@ function GateApproval({ data }: { data: StudioNodeData }) {
   );
 }
 
+/** Below this zoom a step is drawn as its name and state only. */
+const COMPACT_BELOW_ZOOM = 0.5;
+
 /** Steps with nothing upstream to run: running one alone is just reading. */
 const SOURCES = new Set(["textInput", "asset", "document"]);
 
@@ -97,12 +103,63 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           : result?.status === "awaiting"
             ? "awaiting"
             : undefined;
+  // Far out, a step is its name and its state: drawing every field of a
+  // graph of a hundred steps is what makes zooming out stutter.
+  const zoom = useStore((state) => state.transform[2]);
+  if (wfNode.type === "relay") {
+    return (
+      <div className="studio-relay" data-run={runState} title={t("Relay")}>
+        <Handle type="target" position={Position.Left} id="in" />
+        <Handle type="source" position={Position.Right} />
+      </div>
+    );
+  }
+  if (wfNode.collapsed || zoom < COMPACT_BELOW_ZOOM) {
+    const picture = result?.output?.kind === "image" ? result.output : undefined;
+    return (
+      <div
+        className="studio-node studio-node-compact"
+        data-run={runState}
+        data-mode={wfNode.mode}
+        data-color={wfNode.color}
+        data-will-pay={data.willPay ? "true" : undefined}
+      >
+        {/* Every input keeps its handle, so the wires stay attached. */}
+        {inputs.map((port) => (
+          <Handle key={port.id} type="target" position={Position.Left} id={port.id} />
+        ))}
+        <div className="studio-node-compact-title">
+          {wfNode.collapsed ? (
+            <button
+              type="button"
+              className="studio-icon-button nodrag"
+              aria-label={t("Expand")}
+              onClick={() => data.onLayoutChange?.(wfNode.id, { collapsed: false })}
+            >
+              <IconChevronRight size={14} />
+            </button>
+          ) : null}
+          <span>{nodeLabel(wfNode)}</span>
+          {result?.status === "running" ? <Spinner aria-hidden /> : null}
+        </div>
+        {picture ? (
+          <img
+            className="studio-node-compact-picture"
+            alt=""
+            src={`data:${picture.mimeType};base64,${picture.base64}`}
+          />
+        ) : null}
+        {schema.output !== "none" ? <Handle type="source" position={Position.Right} /> : null}
+      </div>
+    );
+  }
   return (
     <div
       className="studio-node"
       data-run={runState}
       data-invalid={data.issues?.some((issue) => issue.severity === "error") ? "true" : undefined}
       data-mode={wfNode.mode}
+      data-color={wfNode.color}
       data-will-pay={data.willPay ? "true" : undefined}
     >
       <div className="studio-node-head">
@@ -149,6 +206,15 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
               <IconPlay size={14} />
             </button>
           ) : null}
+          <button
+            type="button"
+            className="studio-icon-button nodrag"
+            aria-label={t("Collapse")}
+            title={t("Collapse")}
+            onClick={() => data.onLayoutChange?.(wfNode.id, { collapsed: true })}
+          >
+            <IconChevronDownSmall size={14} />
+          </button>
           <button
             type="button"
             className="studio-icon-button nodrag"

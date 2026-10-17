@@ -248,6 +248,12 @@
   --kind-image: oklch(56% 0.11 245);
   --kind-video: oklch(54% 0.13 305);
   --kind-audio: oklch(55% 0.11 160);
+  /* Tints a person gives workflow steps to group them by eye. */
+  --tint-rose: oklch(62% 0.12 15);
+  --tint-amber: oklch(70% 0.12 75);
+  --tint-green: oklch(62% 0.1 150);
+  --tint-blue: oklch(60% 0.1 245);
+  --tint-violet: oklch(58% 0.12 300);
 
   /* Fenced code. Themed here rather than in the sheet that uses them: they
    * were three raw hex values behind a prefers-color-scheme query, which meant
@@ -482,6 +488,11 @@
   --kind-image: oklch(0.74 0.1 245);
   --kind-video: oklch(0.72 0.12 305);
   --kind-audio: oklch(0.74 0.11 160);
+  --tint-rose: oklch(0.7 0.12 15);
+  --tint-amber: oklch(0.78 0.12 75);
+  --tint-green: oklch(0.72 0.1 150);
+  --tint-blue: oklch(0.72 0.1 245);
+  --tint-violet: oklch(0.7 0.12 300);
   --code-keyword: var(--sr-code-keyword-on-ink);
   --code-string: var(--sr-code-string-on-ink);
   --code-number: var(--sr-code-number-on-ink);

@@ -70,6 +70,11 @@ export interface StudioNodeData extends Record<string, unknown> {
   price?: NodeCostEstimate;
   /** Lit while the pointer is on Run: this step will spend. */
   willPay?: boolean;
+  /** Collapse, pin or tint the step (layout only). */
+  onLayoutChange?: (
+    nodeId: string,
+    change: Partial<Pick<WorkflowNode, "collapsed" | "pinned" | "color">>,
+  ) => void;
   /** Set the step aside, or back to running (see `modes.ts`). */
   onModeChange?: (nodeId: string, mode: "bypass" | "mute" | undefined) => void;
 }
@@ -93,6 +98,8 @@ export function toFlowNodes(
     id: node.id,
     type: "studio" as const,
     position: node.position,
+    // A pinned step stays where it was put.
+    draggable: !node.pinned,
     data: {
       wfNode: node,
       catalog,

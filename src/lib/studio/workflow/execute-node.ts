@@ -825,6 +825,14 @@ export async function executeNode(
       return { kind: "video", artifactId: saved.artifactId, src: saved.src };
     }
 
+    case "relay": {
+      // Canvas runs resolve relays away (modes.ts); a graph built elsewhere
+      // still gets what reached it.
+      const first = ports.get("in")?.[0];
+      if (!first) throw new Error(t("Connect something to pass on."));
+      return first;
+    }
+
     default:
       throw new Error(t("Unknown node type: {type}.", { type: String(node.type) }));
   }
