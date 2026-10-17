@@ -229,6 +229,9 @@ export function WorkflowLibrary({
                 <div className="workflow-card-body">
                   <div className="workflow-card-title">
                     <span>{proposal.name || t("Untitled workflow")}</span>
+                    {isApp(proposal) ? (
+                      <span className="workflow-card-badge">{t("App")}</span>
+                    ) : null}
                   </div>
                   {proposal.description ? (
                     <p className="workflow-card-description">{proposal.description}</p>
