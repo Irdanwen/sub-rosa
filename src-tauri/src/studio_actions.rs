@@ -102,6 +102,12 @@ pub async fn dispatch(
         "shots.read" => {
             as_json(crate::shotlist::shot_list(app, required_param(&params, "noteId")?).await?)
         }
+        "workflows.list" => crate::workflow_actions::list(app).await,
+        "workflows.read" => {
+            crate::workflow_actions::read(app, &required_param(&params, "id")?).await
+        }
+        "workflows.steps" => crate::workflow_actions::steps(),
+        "workflows.propose" => crate::workflow_actions::propose(app, params).await,
         "shots.forget" => {
             crate::shotlist::forget_shot_list(app, required_param(&params, "noteId")?).await?;
             Ok(serde_json::json!({ "ok": true }))

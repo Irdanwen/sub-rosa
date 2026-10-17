@@ -119,6 +119,8 @@ pub(crate) async fn save(pool: &SqlitePool, request: SaveWorkflowRequest) -> Res
     let origin = match request.origin.as_deref() {
         Some("import") => "import",
         Some("block") => "block",
+        // A draft the assistant proposed, waiting to be kept (ADR-0120).
+        Some("assistant") => "assistant",
         _ => "mine",
     };
     let now = now_ms();
@@ -127,7 +129,7 @@ pub(crate) async fn save(pool: &SqlitePool, request: SaveWorkflowRequest) -> Res
          VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, \
          definition = excluded.definition, format_version = excluded.format_version, \
-         updated_at = excluded.updated_at \
+         origin = excluded.origin, updated_at = excluded.updated_at \
          WHERE excluded.updated_at >= studio_workflows.updated_at",
     )
     .bind(&request.id)
@@ -329,6 +331,20 @@ mod tests {
         imported.origin = Some("import".into());
         save(&pool, imported).await.unwrap();
         assert_eq!(list(&pool).await.unwrap()[0].origin, "import");
+    }
+
+    #[tokio::test]
+    async fn a_proposal_stays_one_until_it_is_kept() {
+        let (_dir, pool) = open().await;
+        let mut proposed = request("a", "Proposed", 1);
+        proposed.origin = Some("assistant".into());
+        save(&pool, proposed).await.unwrap();
+        assert_eq!(list(&pool).await.unwrap()[0].origin, "assistant");
+        // Kept: the same row, now the person's own.
+        let mut kept = request("a", "Proposed", 2);
+        kept.origin = Some("mine".into());
+        save(&pool, kept).await.unwrap();
+        assert_eq!(list(&pool).await.unwrap()[0].origin, "mine");
     }
 
     #[tokio::test]

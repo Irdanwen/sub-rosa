@@ -20,6 +20,7 @@
       "*.ts",
       "*.mjs",
       "!**/*.min.js",
+      "!src/lib/studio/workflow/step-catalog.json",
       "!**/dist",
       "!**/node_modules"
     ],

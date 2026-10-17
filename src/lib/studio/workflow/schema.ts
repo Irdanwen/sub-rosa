@@ -103,7 +103,7 @@ export interface Workflow {
   createdAt: number;
   updatedAt: number;
   /** Where it came from: drawn here, or imported from a file. */
-  origin?: "mine" | "import" | "block";
+  origin?: "mine" | "import" | "block" | "assistant";
   /** The gallery file shown on its library card: its last real result, or a
    * picture made for it on request. */
   coverArtifactId?: string;

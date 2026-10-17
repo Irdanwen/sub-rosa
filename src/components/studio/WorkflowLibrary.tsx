@@ -83,6 +83,9 @@ export function WorkflowLibrary({
   onMakeCover,
   blocks = [],
   onDeleteBlock,
+  proposals = [],
+  onKeepProposal,
+  onDiscardProposal,
   autoFocus = false,
 }: {
   catalog: MediaCatalog;
@@ -98,6 +101,10 @@ export function WorkflowLibrary({
   /** Blocks saved in the library (ADR-0116), added from the step search. */
   blocks?: Workflow[];
   onDeleteBlock?: (block: Workflow) => void;
+  /** Workflows the assistant proposed (ADR-0120), until kept or discarded. */
+  proposals?: Workflow[];
+  onKeepProposal?: (proposal: Workflow) => void;
+  onDiscardProposal?: (proposal: Workflow) => void;
   /** Take focus on the heading: the person just left the canvas. */
   autoFocus?: boolean;
 }) {
@@ -203,6 +210,51 @@ export function WorkflowLibrary({
       {error ? <ErrorMessage>{error}</ErrorMessage> : null}
       {dragging ? (
         <p className="workflow-library-drop">{t("Drop the workflow file to import it")}</p>
+      ) : null}
+
+      {proposals.length > 0 ? (
+        <section aria-label={t("Proposed by the assistant")}>
+          <h3>{t("Proposed by the assistant")}</h3>
+          <div className="workflow-library-grid">
+            {proposals.map((proposal) => (
+              <article key={proposal.id} className="workflow-card" data-proposed="true">
+                <button
+                  type="button"
+                  className="workflow-card-open"
+                  aria-label={t("Look at {name}", { name: proposal.name })}
+                  onClick={() => onOpen(proposal)}
+                >
+                  <CardPicture workflow={proposal} />
+                </button>
+                <div className="workflow-card-body">
+                  <div className="workflow-card-title">
+                    <span>{proposal.name || t("Untitled workflow")}</span>
+                  </div>
+                  {proposal.description ? (
+                    <p className="workflow-card-description">{proposal.description}</p>
+                  ) : null}
+                  <p className="workflow-card-meta">{workflowMakes(proposal)}</p>
+                  <div className="workflow-card-proposal">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => onDiscardProposal?.(proposal)}
+                    >
+                      {t("Discard")}
+                    </button>
+                    <button
+                      type="button"
+                      className="studio-primary-button"
+                      onClick={() => onKeepProposal?.(proposal)}
+                    >
+                      {t("Keep")}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
       ) : null}
 
       {workflows.length > 0 ? (

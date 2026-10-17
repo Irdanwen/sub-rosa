@@ -72,6 +72,29 @@ pub(super) fn tool_definitions(memory_enabled: bool) -> serde_json::Value {
             }
         }
     }));
+    // Workflows, the same tool the desktop MCP has (ADR-0120): read them and
+    // propose a new one as a draft. Never a run: the person runs a workflow
+    // where they see its price.
+    tools.push(serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "workflows",
+            "description": "The Studio's workflows: graphs of steps (a prompt, an image, a clip, a voice) wired together. Actions: list, read (id), steps (every step type with its inputs and settings; read it before proposing), propose (name, steps [{id, type, label, params}], wires [{source, target, port}], app {fields [{nodeId, param, label}], outputs [nodeId], intro}). A proposal is a new draft the person keeps or discards in the Studio; it never changes one of theirs, and you never run one.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["list", "read", "steps", "propose"] },
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "description": { "type": "string" },
+                    "steps": { "type": "array", "items": { "type": "object" } },
+                    "wires": { "type": "array", "items": { "type": "object" } },
+                    "app": { "type": "object" }
+                },
+                "required": ["action"]
+            }
+        }
+    }));
     tools.push(serde_json::json!({
         "type": "function",
         "function": {

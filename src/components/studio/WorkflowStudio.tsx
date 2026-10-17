@@ -101,6 +101,8 @@ import {
 } from "../../lib/studio/workflow/library";
 import {
   blankWorkflow,
+  keepProposal,
+  listProposals,
   loadWorkflowLibrary,
   setWorkflowCover,
   workflowLibraryLoaded,
@@ -153,6 +155,7 @@ import { WorkflowAppView } from "./workflow/WorkflowAppView";
 import { AppBuilder } from "./workflow/AppBuilder";
 import { isApp } from "../../lib/studio/workflow/app";
 import { SegmentedControl } from "../ui/SegmentedControl";
+import { ProposalNotice } from "./workflow/ProposalNotice";
 
 /**
  * The Workflows tab. The library is read before anything is drawn: an editor
@@ -1561,6 +1564,16 @@ function WorkflowEditor({
             deleteWorkflow(block.id);
             setWorkflows(listWorkflows());
           }}
+          proposals={listProposals()}
+          onKeepProposal={(proposal) => {
+            const kept = keepProposal(proposal.id);
+            setWorkflows(listWorkflows());
+            if (kept) openWorkflow(kept);
+          }}
+          onDiscardProposal={(proposal) => {
+            deleteWorkflow(proposal.id);
+            setWorkflows(listWorkflows());
+          }}
           autoFocus={leftCanvas}
         />
       </div>
@@ -1645,7 +1658,21 @@ function WorkflowEditor({
           onClose={() => setPendingRun(undefined)}
         />
       ) : null}
-      {current?.readOnly ? (
+      {current?.origin === "assistant" ? (
+        <ProposalNotice
+          onDiscard={() => {
+            deleteWorkflow(current.id);
+            const remaining = listWorkflows();
+            setWorkflows(remaining);
+            hydrate(remaining[0]);
+          }}
+          onKeep={() => {
+            const kept = keepProposal(current.id);
+            setWorkflows(listWorkflows());
+            if (kept) hydrate(kept);
+          }}
+        />
+      ) : current?.readOnly ? (
         <div className="studio-port-notice" role="status">
           <span>
             {t(

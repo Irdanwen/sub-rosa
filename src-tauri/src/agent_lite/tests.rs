@@ -484,6 +484,7 @@ fn reading_and_writing_tools_are_advertised() {
         // and the spending happens where the user sees the figure.
         "bible",
         "shots",
+        "workflows",
     ] {
         assert!(names.contains(&expected.to_string()), "missing {expected}");
     }

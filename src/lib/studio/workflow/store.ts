@@ -78,7 +78,10 @@ export function fromStored(row: StoredWorkflow): Workflow | undefined {
       edges: edges as Workflow["edges"],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      origin: row.origin === "import" || row.origin === "block" ? row.origin : "mine",
+      origin:
+        row.origin === "import" || row.origin === "block" || row.origin === "assistant"
+          ? row.origin
+          : "mine",
       ...(row.coverArtifactId ? { coverArtifactId: row.coverArtifactId } : {}),
       ...(kept.length > 0 ? { frames: kept } : {}),
       ...(defined.length > 0 ? { blocks: defined } : {}),
@@ -88,6 +91,9 @@ export function fromStored(row: StoredWorkflow): Workflow | undefined {
       // and leaves it alone, so the later device's work is never cut down
       // to what this one understands.
       ...(row.formatVersion > WORKFLOW_FILE_VERSION ? { readOnly: true as const } : {}),
+      // Proposed by the assistant (ADR-0120): shown, never saved over, until
+      // the person keeps it.
+      ...(row.origin === "assistant" ? { readOnly: true as const } : {}),
     };
   } catch {
     return undefined;
@@ -224,8 +230,31 @@ export function workflowLibraryLoaded(): boolean {
 /** Saved workflows, most recently updated first. */
 export function listWorkflows(): Workflow[] {
   // A block published to the library is stored beside the workflows, and
-  // listed among blocks (library-blocks.ts).
-  return sorted(cache).filter((workflow) => workflow.origin !== "block");
+  // listed among blocks (library-blocks.ts); a proposal waits apart until it
+  // is kept.
+  return sorted(cache).filter(
+    (workflow) => workflow.origin !== "block" && workflow.origin !== "assistant",
+  );
+}
+
+/** The workflows the assistant proposed, waiting to be kept or discarded. */
+export function listProposals(): Workflow[] {
+  return sorted(cache).filter((workflow) => workflow.origin === "assistant");
+}
+
+/** A proposal kept: the person's own from now on, to change and to run. */
+export function keepProposal(id: string): Workflow | undefined {
+  const proposal = cache.find((workflow) => workflow.id === id && workflow.origin === "assistant");
+  if (!proposal) return undefined;
+  const { readOnly: _proposed, ...rest } = proposal;
+  const kept: Workflow = {
+    ...rest,
+    origin: "mine",
+    updatedAt: Math.max(Date.now(), proposal.updatedAt + 1),
+  };
+  cache = [kept, ...cache.filter((workflow) => workflow.id !== id)];
+  void persist(kept);
+  return kept;
 }
 
 /** The blocks published to the library, newest first. */

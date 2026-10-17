@@ -1184,6 +1184,13 @@ apps are the only workflow surface. See
 [ADR-0119](docs/adr/0119-an-app-is-a-view-over-its-workflow.md).
 _Avoid_: form mode, simple mode, front end.
 
+**Proposal (workflow)**:
+A workflow the assistant drew, waiting in the library as a draft of its own
+until the person keeps it (it becomes theirs, to change and run) or discards
+it. It never changes a workflow the person has, and the assistant never runs
+one. See [ADR-0120](docs/adr/0120-the-assistant-proposes-workflows-and-never-runs-them.md).
+_Avoid_: suggestion, AI workflow, generated workflow.
+
 **Version (workflow)**:
 The whole workflow as it was, kept on purpose (⌘S, "Save a version") under
 a name, to compare with the graph as it is now and to go back to; going back

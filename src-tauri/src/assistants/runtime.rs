@@ -768,6 +768,7 @@ mod tests {
             "search_calendar",
             "bible",
             "shots",
+            "workflows",
             "import_link",
             "summarize_note",
             "search_memories",

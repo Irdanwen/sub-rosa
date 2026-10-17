@@ -2,6 +2,7 @@
 // read again on every sync event, and the open canvas follows what arrived
 // for its workflow by `settleArrival`'s rules, after a run if one is live.
 
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef } from "react";
 import { useAccountSyncUpdated } from "../../../lib/account-sync-events";
 import { settleArrival } from "../../../lib/studio/workflow/arrivals";
@@ -11,6 +12,9 @@ import {
   reloadWorkflowLibrary,
   storedWorkflow,
 } from "../../../lib/studio/workflow/store";
+
+/** Sent by the native side when the assistant proposes a workflow. */
+export const WORKFLOW_PROPOSED_EVENT = "subrosa://workflow-proposed";
 
 export function useLibraryArrivals(options: {
   /** The whole workflow on the canvas, as the next save would write it. */
@@ -43,7 +47,7 @@ export function useLibraryArrivals(options: {
     else if (arrival.kind === "gone") hydrate(listWorkflows()[0]);
   }, [hydrate]);
 
-  useAccountSyncUpdated(async () => {
+  const arrive = async () => {
     const openId = serializedRef.current?.id;
     const base = openId ? storedWorkflow(openId) : undefined;
     if (!(await reloadWorkflowLibrary())) return;
@@ -53,7 +57,19 @@ export function useLibraryArrivals(options: {
     // first waits must not replace it with a copy the canvas never showed.
     if (waiting.current?.id !== openId) waiting.current = { id: openId, base };
     settle();
-  });
+  };
+  useAccountSyncUpdated(arrive);
+  // The assistant proposed a workflow (ADR-0120): it shows in the library.
+  const arriveRef = useRef(arrive);
+  arriveRef.current = arrive;
+  useEffect(() => {
+    const subscription = listen(WORKFLOW_PROPOSED_EVENT, () => {
+      void arriveRef.current().catch(() => undefined);
+    }).catch(() => () => {});
+    return () => {
+      void subscription.then((unlisten) => unlisten());
+    };
+  }, []);
 
   useEffect(() => {
     if (!running) settle();
