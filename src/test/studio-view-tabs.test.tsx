@@ -41,9 +41,7 @@ vi.mock("../components/studio/StudioGalleryDesktop", () => ({
   StudioGalleryDesktop: () => <p>gallery tab</p>,
 }));
 vi.mock("../components/studio/WorkflowStudio", () => ({
-  WorkflowStudio: ({ scriptRequested }: { scriptRequested?: boolean }) => (
-    <p>{scriptRequested ? "workflows tab, script asked for" : "workflows tab"}</p>
-  ),
+  WorkflowStudio: () => <p>workflows tab</p>,
 }));
 
 beforeEach(() => window.localStorage.clear());
