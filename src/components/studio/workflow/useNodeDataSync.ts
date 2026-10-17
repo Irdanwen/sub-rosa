@@ -48,6 +48,7 @@ export function useNodeDataSync(options: {
   onHighlightEdge: (edgeId: string | undefined) => void;
   onApplyChainOrder: (nodeId: string, orderedEdgeIds: string[]) => void;
   onUngroup: (nodeId: string) => void;
+  onOpenBlock: (nodeId: string) => void;
 }) {
   const {
     setFlowNodes,
@@ -68,6 +69,7 @@ export function useNodeDataSync(options: {
     onHighlightEdge,
     onApplyChainOrder,
     onUngroup,
+    onOpenBlock,
   } = options;
   // Keep node data in sync with run results without disturbing positions.
   // Connection-order lists, gate candidates, and the assemble node's chain
@@ -137,6 +139,7 @@ export function useNodeDataSync(options: {
             willReuse: reusedShown.has(node.id),
             blocks: wfNode.type === "block" ? blocks : undefined,
             onUngroup,
+            onOpenBlock,
             issues: issuesByNode.get(node.id),
             price: priceByNode.get(node.id),
             willPay: (() => {
@@ -161,6 +164,7 @@ export function useNodeDataSync(options: {
     setFlowNodes,
     blocks,
     onUngroup,
+    onOpenBlock,
     results,
     reusedShown,
     issuesByNode,

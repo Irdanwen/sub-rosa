@@ -83,7 +83,12 @@ import { pruneToTargets } from "../../lib/studio/workflow/partial";
 import { align, distribute, layered } from "../../lib/studio/workflow/arrange";
 import { spendGuard } from "../../lib/studio/workflow/spend";
 import { stableJson } from "../../lib/studio/workflow/stable-json";
-import { blockFromSelection, edgeSourceKind, ungroupBlock } from "../../lib/studio/workflow/blocks";
+import {
+  blockFromSelection,
+  edgeSourceKind,
+  replaceBlock,
+  ungroupBlock,
+} from "../../lib/studio/workflow/blocks";
 import { writtenGraph } from "../../lib/studio/workflow/flatten";
 import { flatTargets, liftResults } from "../../lib/studio/workflow/lift";
 import { readSpendCeiling } from "../../lib/studio/workflow/spend-ceiling";
@@ -114,7 +119,6 @@ import {
   toFlowEdges,
   canConnect,
   toWorkflowEdge,
-  fromFlow,
   modelChangeNotice,
   openNotice,
 } from "./workflow/flow";
@@ -130,6 +134,9 @@ import { SelectionToolbar } from "./workflow/SelectionToolbar";
 import { useCanvasEditing } from "./workflow/useCanvasEditing";
 import { stepBoxes, useFrames } from "./workflow/useFrames";
 import { useNodeDataSync } from "./workflow/useNodeDataSync";
+import { BlockBreadcrumb } from "./workflow/BlockBreadcrumb";
+import { BlockPanel } from "./workflow/BlockPanel";
+import { composeRoot, useBlockScope, withLevel } from "./workflow/useBlockScope";
 import { useRunPicture } from "./workflow/useRunPicture";
 
 /**
@@ -359,12 +366,42 @@ function WorkflowEditor({
     setFlowEdges((edges) => edges.filter((edge) => edge.source !== id && edge.target !== id));
   }, []);
 
+  /** Put a graph on the canvas afresh: its steps and wires, no results. */
+  const draw = useCallback(
+    (workflow: Workflow) => {
+      setFlowNodes(
+        toFlowNodes(
+          workflow,
+          catalogRef.current,
+          artifacts,
+          new Map(),
+          onParamsChange,
+          onRename,
+          onRemove,
+          onApproveGate,
+        ),
+      );
+      setFlowEdges(toFlowEdges(workflow));
+    },
+    [artifacts, onParamsChange, onRename, onRemove, onApproveGate],
+  );
+  /** The level shown: the workflow, or inside a block step (ADR-0116). */
+  const blockScope = useBlockScope({
+    currentRef,
+    setCurrent,
+    setFrames,
+    draw,
+    // A block of two steps drawn at three times their size reads as broken.
+    fitView: () => void flowRef.current?.fitView({ duration: 250, maxZoom: 1 }),
+  });
+
   // (Re)hydrate the canvas whenever another workflow is selected.
   const hydrate = useCallback(
     (stored: Workflow | undefined) => {
       // Brought forward on open (renamed steps, reshaped settings); a newer
       // version's workflow is shown as it was written.
       const workflow = stored && !stored.readOnly ? migrateWorkflow(stored) : stored;
+      blockScope.reset();
       setCurrent(workflow);
       setResults(new Map());
       setRunError(undefined);
@@ -415,7 +452,16 @@ function WorkflowEditor({
         })().catch(() => undefined);
       }
     },
-    [catalog, artifacts, onParamsChange, onRename, onRemove, onApproveGate, setFrames],
+    [
+      catalog,
+      artifacts,
+      onParamsChange,
+      onRename,
+      onRemove,
+      onApproveGate,
+      setFrames,
+      blockScope.reset,
+    ],
   );
 
   // First mount: open the most recent workflow, or seed from templates. Once:
@@ -452,25 +498,6 @@ function WorkflowEditor({
     hydrate(workflow);
   }, [hydrate]);
 
-  // Debounced persistence of every canvas change (drag, edit, connect).
-  useEffect(() => {
-    const base = currentRef.current;
-    if (!base || base.readOnly) return;
-    window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      const serialized = fromFlow(base, flowNodes, flowEdges, frames);
-      // Opening a workflow redraws its canvas; that is not an edit, and
-      // saving it would move the card to the top with today's date.
-      const stored = listWorkflows().find((entry) => entry.id === serialized.id);
-      if (stored && sameWorkflow(stored, serialized)) return;
-      saveWorkflow(serialized);
-      currentRef.current = serialized;
-      setWorkflows(listWorkflows());
-    }, SAVE_DEBOUNCE_MS);
-    return () => window.clearTimeout(saveTimer.current);
-    // `current` is a dependency so renames persist without a canvas change.
-  }, [flowNodes, flowEdges, frames, current]);
-
   /** Move one connection within its port's order. The engine reads edge
    * order, so this IS the reorder — nothing else changes. */
   const onReorderEdge = useCallback((edgeId: string, delta: -1 | 1) => {
@@ -498,17 +525,35 @@ function WorkflowEditor({
     });
   }, []);
 
-  const drawn = current ? fromFlow(current, flowNodes, flowEdges, frames) : undefined;
+  const drawn = current
+    ? composeRoot(current, blockScope.scope, flowNodes, flowEdges, frames)
+    : undefined;
   const drawnKey = drawn ? stableJson(drawn) : "";
   /** The graph as drawn, the same object for as long as it says the same
    * thing: refreshing what the steps show (prices, issues, reuse) must not
    * read as an edit, or that refresh would feed itself without end. */
   // biome-ignore lint/correctness/useExhaustiveDependencies: drawnKey stands in for the graph.
   const serialized = useMemo(() => drawn, [drawnKey]);
+
+  // Debounced persistence of every change (drag, edit, connect, rename),
+  // inside a block too: what is saved is always the whole workflow.
+  useEffect(() => {
+    if (!serialized || serialized.readOnly) return;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      // Opening a workflow redraws its canvas; that is not an edit, and
+      // saving it would move the card to the top with today's date.
+      const stored = listWorkflows().find((entry) => entry.id === serialized.id);
+      if (stored && sameWorkflow(stored, serialized)) return;
+      saveWorkflow(serialized);
+      currentRef.current = serialized;
+      setWorkflows(listWorkflows());
+    }, SAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(saveTimer.current);
+  }, [serialized]);
   /** Bumped when a run ends, so the cache is asked again what it now holds. */
   const [runEpoch, setRunEpoch] = useState(0);
   const {
-    flattened,
     effective,
     validation,
     reused,
@@ -517,15 +562,19 @@ function WorkflowEditor({
     estimate,
     priceByNode,
     issuesByNode,
-  } = useRunPicture(serialized, catalog, runEpoch);
+    stepView,
+  } = useRunPicture(serialized, catalog, runEpoch, blockScope.path);
   /** What the run made, with each block step's own (lift.ts). */
   const shownResults = useMemo(
-    () => (flattened ? liftResults(results, flattened) : results),
-    [results, flattened],
+    () => (stepView ? liftResults(results, stepView) : results),
+    [results, stepView],
   );
-  /** Put a block step's steps back; retargeted each render (needs the graph). */
+  /** Put a block step's steps back, or go inside it; retargeted each
+   * render (they need the graph). */
   const ungroupRef = useRef<(nodeId: string) => void>(() => {});
   const onUngroup = useCallback((nodeId: string) => ungroupRef.current(nodeId), []);
+  const openBlockRef = useRef<(nodeId: string) => void>(() => {});
+  const onOpenBlock = useCallback((nodeId: string) => openBlockRef.current(nodeId), []);
   /** Hovering Run lights up the steps that will spend. */
   const [hoverRun, setHoverRun] = useState(false);
 
@@ -553,6 +602,7 @@ function WorkflowEditor({
     onHighlightEdge,
     onApplyChainOrder,
     onUngroup,
+    onOpenBlock,
   });
 
   const onNodesChange = useCallback(
@@ -687,6 +737,9 @@ function WorkflowEditor({
 
   /** Connection-order badges: edges into a multi port with two or more
    * connections carry their 1-based position; everything else stays bare. */
+  // orderGraphKey stands in for the step list the memo reads from its ref:
+  // order and kinds only depend on the parts of it the key captures.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   const displayEdges = useMemo(() => {
     const graph = {
       nodes: flowNodesRef.current.map((node) => node.data.wfNode),
@@ -780,8 +833,8 @@ function WorkflowEditor({
       // Part of the graph: the steps asked for and what they need, frozen as
       // the run's definition; upstream comes back from the cache.
       const runnable =
-        effective && targets && flattened
-          ? pruneToTargets(effective, flatTargets(targets, flattened))
+        effective && targets && stepView
+          ? pruneToTargets(effective, flatTargets(targets, stepView))
           : effective;
       if (!runnable || running || !validateWorkflow(runnable).ok) return;
       runEstimateRef.current = priced;
@@ -835,7 +888,7 @@ function WorkflowEditor({
         setRunEpoch((epoch) => epoch + 1);
       }
     },
-    [effective, flattened, running, mirrorUpdate],
+    [effective, stepView, running, mirrorUpdate],
   );
 
   /** Pick an interrupted production back up. Node states light the canvas up
@@ -946,9 +999,9 @@ function WorkflowEditor({
    * one: quotes refine the figures, then the dialog shows the bill. */
   const startRun = useCallback(
     async (targets?: string[]) => {
-      if (!effective || !flattened || running || quoting) return;
+      if (!effective || !stepView || running || quoting) return;
       const resolved = effective;
-      const flat = targets ? flatTargets(targets, flattened) : undefined;
+      const flat = targets ? flatTargets(targets, stepView) : undefined;
       if (flat && !flat.some((id) => resolved.nodes.some((node) => node.id === id))) {
         setRunError(t("This step is set aside, so it does not run."));
         return;
@@ -982,7 +1035,7 @@ function WorkflowEditor({
         setQuoting(false);
       }
     },
-    [effective, flattened, running, quoting, catalog, run, reused, locateNode, liveQuotes],
+    [effective, stepView, running, quoting, catalog, run, reused, locateNode, liveQuotes],
   );
   runStepRef.current = (nodeId) => void startRun([nodeId]);
 
@@ -1095,6 +1148,8 @@ function WorkflowEditor({
   /** The canvas's own editing: undo, clipboard, shortcuts, palette. */
   const startRunRef = useRef(startRun);
   startRunRef.current = startRun;
+  /** A whole graph from the undo history: the workflow as it was, shown at
+   * the level the canvas is on when that level still exists. */
   const applyGraph = useCallback(
     (graph: {
       nodes: WorkflowNode[];
@@ -1104,52 +1159,61 @@ function WorkflowEditor({
     }) => {
       const base = currentRef.current;
       if (!base) return;
-      const { blocks: _previous, ...rest } = base;
-      const next = {
+      const { blocks: _blocks, frames: _frames, ...rest } = base;
+      blockScope.applyRoot({
         ...rest,
         nodes: graph.nodes,
         edges: graph.edges,
+        ...(graph.frames?.length ? { frames: graph.frames } : {}),
         ...(graph.blocks?.length ? { blocks: graph.blocks } : {}),
-      };
-      // Blocks live on the workflow itself, not on the canvas's state.
-      currentRef.current = next;
-      setCurrent(next);
-      setFrames(graph.frames ?? []);
-      setFlowNodes(
-        toFlowNodes(
-          next,
-          catalogRef.current,
-          artifacts,
-          new Map(),
-          onParamsChange,
-          onRename,
-          onRemove,
-          onApproveGate,
-        ),
-      );
-      setFlowEdges(toFlowEdges(next));
+      });
     },
-    [artifacts, onParamsChange, onRename, onRemove, onApproveGate, setFrames],
+    [blockScope.applyRoot],
   );
+  /** The block whose inside the canvas shows, if any. */
+  const insideBlock = serialized?.blocks?.find(
+    (block) => block.id === blockScope.scope.at(-1)?.blockId,
+  );
+  /** The level the canvas shows, as a graph an edit can work on. */
+  const levelGraph = () => ({
+    nodes: flowNodesRef.current.map((node) => node.data.wfNode),
+    edges: flowEdges.map(toWorkflowEdge),
+    blocks: serialized?.blocks,
+  });
   /** The selected steps as one block step (⇧⌘E), and a block step's steps
-   * put back. Both edit the graph as a whole, so undo takes them back. */
+   * put back. Both edit the workflow as a whole, so undo takes them back. */
   const makeBlock = () => {
     const ids = new Set(
       flowNodesRef.current.filter((node) => node.selected).map((node) => node.id),
     );
     const name = t("Block {count}", { count: (serialized?.blocks?.length ?? 0) + 1 });
-    const made = serialized ? blockFromSelection(serialized, ids, name) : undefined;
-    if (made) applyGraph({ ...made.graph, frames });
+    const made = blockFromSelection(levelGraph(), ids, name);
+    if (made && serialized)
+      blockScope.applyRoot(withLevel(serialized, blockScope.scope, made.graph));
   };
   ungroupRef.current = (nodeId) => {
-    const next = serialized ? ungroupBlock(serialized, nodeId) : undefined;
-    if (next) applyGraph({ ...next, frames });
+    const next = ungroupBlock(levelGraph(), nodeId);
+    if (next && serialized) blockScope.applyRoot(withLevel(serialized, blockScope.scope, next));
+  };
+  openBlockRef.current = (nodeId) => {
+    const step = flowNodesRef.current.find((node) => node.id === nodeId)?.data.wfNode;
+    const blockId = step?.type === "block" ? String(step.params.blockId) : "";
+    if (serialized?.blocks?.some((block) => block.id === blockId))
+      blockScope.enter(serialized, nodeId, blockId);
   };
   const openSearchRef = useRef<(x: number, y: number) => void>(() => {});
   const editing = useCanvasEditing({
     active: view === "canvas" && current !== undefined && !current.readOnly,
     workflowId: current?.id,
     graph: serialized,
+    canvasGraph:
+      blockScope.scope.length > 0
+        ? {
+            nodes: flowNodes.map((node) => node.data.wfNode),
+            edges: flowEdges.map(toWorkflowEdge),
+            blocks: serialized?.blocks,
+          }
+        : undefined,
     selectedIds: () =>
       new Set(flowNodesRef.current.filter((node) => node.selected).map((node) => node.id)),
     applyGraph,
@@ -1586,6 +1650,25 @@ function WorkflowEditor({
             );
           })}
         </div>
+      ) : null}
+      {current && blockScope.scope.length > 0 ? (
+        <BlockBreadcrumb
+          workflowName={current.name}
+          scope={blockScope.scope}
+          blocks={serialized?.blocks}
+          onLeave={(depth) => serialized && blockScope.leave(serialized, depth)}
+        />
+      ) : null}
+      {insideBlock && serialized && !current?.readOnly ? (
+        <BlockPanel
+          block={insideBlock}
+          onChange={(next) => {
+            // The block's face only: its steps stay on the canvas as they are.
+            const root = replaceBlock(serialized, next);
+            currentRef.current = root;
+            setCurrent(root);
+          }}
+        />
       ) : null}
       {historyOpen && current ? (
         <RunHistoryPanel

@@ -168,6 +168,46 @@ describe("the workflow editor", () => {
     expect(screen.getByDisplayValue("a blue bike")).toBeTruthy();
   });
 
+  it("opens a block to change it, and comes back to the workflow", async () => {
+    const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
+    const { container } = render(
+      <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
+    );
+    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
+    const steps = () => container.querySelectorAll(".react-flow__node-studio").length;
+    const before = steps();
+    fireEvent.keyDown(window, { key: "a", metaKey: true });
+    await waitFor(() =>
+      expect(container.querySelectorAll(".react-flow__node-studio.selected").length).toBe(before),
+    );
+    fireEvent.keyDown(window, { key: "e", metaKey: true, shiftKey: true });
+    await waitFor(() => expect(container.querySelector(".studio-block")).not.toBeNull());
+    // Steps are drawn hidden until measured, which jsdom never does.
+    const open = await waitFor(() => {
+      const found = container.querySelector('.studio-block [aria-label="Open block"]');
+      if (!found) throw new Error("no open button yet");
+      return found;
+    });
+    fireEvent.click(open);
+    const crumbs = await screen.findByRole("navigation", { name: "Where you are in the workflow" });
+    expect(within(crumbs).getByText("Cover")).toBeTruthy();
+    await waitFor(() => expect(steps()).toBe(before));
+    expect(container.querySelector(".studio-block")).toBeNull();
+    // Its face: a new name, and its text no longer shown on the block.
+    fireEvent.change(screen.getByLabelText("Block name"), { target: { value: "Opening shot" } });
+    (container.querySelector(".studio-block-panel") as HTMLDetailsElement).open = true;
+    fireEvent.click(screen.getByRole("checkbox", { name: "Prompt · Text" }));
+    fireEvent.click(within(crumbs).getByRole("button", { name: "Cover" }));
+    await waitFor(() => expect(steps()).toBe(1));
+    expect(screen.queryByRole("navigation", { name: "Where you are in the workflow" })).toBeNull();
+    const block = container.querySelector(".studio-block") as HTMLElement;
+    expect((within(block).getByLabelText("Block name") as HTMLInputElement).placeholder).toBe(
+      "Opening shot",
+    );
+    expect(within(block).queryByDisplayValue("a red car")).toBeNull();
+  });
+
   it("acts on the selection from its bar, and on a frame's steps from the frame's", async () => {
     const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
     const { container } = render(

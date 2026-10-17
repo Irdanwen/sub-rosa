@@ -403,3 +403,83 @@ export function cleanBlocks(raw: unknown): WorkflowBlock[] {
   }
   return blocks;
 }
+
+/** A new id for a block's port, unused by its others. */
+function nextPortId(prefix: string, taken: readonly { id: string }[]): string {
+  let index = taken.length + 1;
+  while (taken.some((port) => port.id === `${prefix}-${index}`)) index += 1;
+  return `${prefix}-${index}`;
+}
+
+/** The block taking (or no longer taking) this inner step's input. */
+export function toggleBlockInput(
+  block: WorkflowBlock,
+  nodeId: string,
+  port: string,
+  label: string,
+): WorkflowBlock {
+  const found = block.inputs.find((input) => input.nodeId === nodeId && input.port === port);
+  if (found) return { ...block, inputs: block.inputs.filter((input) => input !== found) };
+  return {
+    ...block,
+    inputs: [...block.inputs, { id: nextPortId("in", block.inputs), label, nodeId, port }],
+  };
+}
+
+/** The block giving (or no longer giving) this inner step's result. */
+export function toggleBlockOutput(
+  block: WorkflowBlock,
+  nodeId: string,
+  label: string,
+): WorkflowBlock {
+  const found = block.outputs.find((output) => output.nodeId === nodeId && !output.port);
+  if (found) return { ...block, outputs: block.outputs.filter((output) => output !== found) };
+  return {
+    ...block,
+    outputs: [...block.outputs, { id: nextPortId("out", block.outputs), label, nodeId }],
+  };
+}
+
+/** The block showing (or no longer showing) this inner setting. */
+export function togglePromoted(block: WorkflowBlock, nodeId: string, param: string): WorkflowBlock {
+  const found = block.promoted.find((entry) => entry.nodeId === nodeId && entry.param === param);
+  return {
+    ...block,
+    promoted: found
+      ? block.promoted.filter((entry) => entry !== found)
+      : [...block.promoted, { nodeId, param }],
+  };
+}
+
+/** The workflow with one block replaced, and every wire on a port the new
+ * one no longer has taken off its instances, wherever they stand. */
+export function replaceBlock<G extends BlockGraph>(graph: G, next: WorkflowBlock): G {
+  const before = graph.blocks?.find((block) => block.id === next.id);
+  if (!before) return graph;
+  const inputs = new Set(next.inputs.map((input) => input.id));
+  const outputs = new Set(next.outputs.map((output) => output.id));
+  const usesIt = (nodes: WorkflowNode[]) =>
+    new Set(
+      nodes
+        .filter((node) => node.type === "block" && node.params.blockId === next.id)
+        .map((node) => node.id),
+    );
+  const keep = (nodes: WorkflowNode[], edges: WorkflowEdge[]) => {
+    const instances = usesIt(nodes);
+    if (instances.size === 0) return edges;
+    return edges.filter(
+      (edge) =>
+        !(instances.has(edge.target) && !inputs.has(edge.targetPort ?? "")) &&
+        !(instances.has(edge.source) && edge.sourcePort && !outputs.has(edge.sourcePort)),
+    );
+  };
+  return {
+    ...graph,
+    edges: keep(graph.nodes, graph.edges),
+    blocks: (graph.blocks ?? []).map((block) => {
+      const updated = block.id === next.id ? next : block;
+      const edges = keep(updated.nodes, updated.edges);
+      return edges === updated.edges ? updated : { ...updated, edges };
+    }),
+  };
+}

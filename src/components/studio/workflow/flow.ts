@@ -95,6 +95,8 @@ export interface StudioNodeData extends Record<string, unknown> {
   blocks?: WorkflowBlock[];
   /** Block steps only: put its steps back in its place. */
   onUngroup?: (nodeId: string) => void;
+  /** Block steps only: show what is inside it, to edit. */
+  onOpenBlock?: (nodeId: string) => void;
 }
 
 export type StudioFlowNode = FlowNode<StudioNodeData, "studio">;

@@ -2629,3 +2629,95 @@
   flex-direction: column;
   gap: var(--sp-1);
 }
+
+/* --- inside a block: where you are, and the face it shows ----------------- */
+
+.studio-block-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+}
+
+.studio-block-crumb-level {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--muted-foreground);
+}
+
+.studio-block-crumb {
+  padding: 0;
+  font: inherit;
+  color: var(--foreground);
+  background: none;
+  border: none;
+}
+
+button.studio-block-crumb {
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+button.studio-block-crumb:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+.studio-block-crumb-note {
+  margin-inline-start: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.studio-block-panel {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  font-size: var(--fs-sm);
+}
+
+.studio-block-panel summary {
+  cursor: pointer;
+  color: var(--foreground);
+}
+
+.studio-block-panel-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-block: var(--sp-3);
+  white-space: nowrap;
+}
+
+.studio-block-panel-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-3);
+  max-height: 30dvh;
+  overflow-y: auto;
+}
+
+.studio-block-panel fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.studio-block-panel legend {
+  margin-block-end: var(--sp-1);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.studio-block-panel-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--muted-foreground);
+}

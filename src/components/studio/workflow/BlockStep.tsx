@@ -5,6 +5,7 @@
 
 import { Handle, Position } from "@xyflow/react";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
+import { IconExpandSimple } from "central-icons/IconExpandSimple";
 import { IconPackage } from "central-icons/IconPackage";
 import { IconPlay } from "central-icons/IconPlay";
 import { formatCredits } from "../../../lib/studio/catalog";
@@ -95,6 +96,17 @@ export function BlockStep({ data, compact }: { data: StudioNodeData; compact: bo
               onClick={() => data.onRunStep?.(wfNode.id)}
             >
               <IconPlay size={14} />
+            </button>
+          ) : null}
+          {block && data.onOpenBlock ? (
+            <button
+              type="button"
+              className="studio-icon-button nodrag"
+              aria-label={t("Open block")}
+              title={t("Show its steps, to change them")}
+              onClick={() => data.onOpenBlock?.(wfNode.id)}
+            >
+              <IconExpandSimple size={14} />
             </button>
           ) : null}
           {block && data.onUngroup ? (

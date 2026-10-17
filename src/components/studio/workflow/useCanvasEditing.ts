@@ -45,6 +45,9 @@ export function useCanvasEditing(options: {
   active: boolean;
   workflowId: string | undefined;
   graph: GraphSnapshot | undefined;
+  /** The steps the canvas shows, when that is not the whole workflow (inside
+   * a block): what copy and paste work on. Undo always keeps the whole. */
+  canvasGraph?: GraphSnapshot;
   selectedIds: () => Set<string>;
   applyGraph: (graph: GraphSnapshot) => void;
   addSteps: (graph: GraphSnapshot) => void;
@@ -101,7 +104,8 @@ export function useCanvasEditing(options: {
   const redo = useCallback(() => restore(history.current.redo()), [restore]);
 
   const duplicate = useCallback(() => {
-    const { graph, selectedIds, addSteps } = latest.current;
+    const { selectedIds, addSteps } = latest.current;
+    const graph = latest.current.canvasGraph ?? latest.current.graph;
     const ids = selectedIds();
     const clip = graph && ids.size > 0 ? readClip(copySteps(graph, ids)) : undefined;
     if (!clip || !graph) return;
@@ -152,7 +156,8 @@ export function useCanvasEditing(options: {
     };
     const onCopy = (event: ClipboardEvent, cut: boolean) => {
       if (typingInField(event.target) || typingInField(document.activeElement)) return;
-      const { graph, selectedIds, removeSteps } = latest.current;
+      const { selectedIds, removeSteps } = latest.current;
+      const graph = latest.current.canvasGraph ?? latest.current.graph;
       const ids = selectedIds();
       if (!graph || ids.size === 0) return;
       event.clipboardData?.setData("text/plain", copySteps(graph, ids));
@@ -164,7 +169,7 @@ export function useCanvasEditing(options: {
     const paste = (event: ClipboardEvent) => {
       if (typingInField(event.target) || typingInField(document.activeElement)) return;
       const clip = readClip(event.clipboardData?.getData("text/plain") ?? "");
-      const graph = latest.current.graph;
+      const graph = latest.current.canvasGraph ?? latest.current.graph;
       if (!clip || !graph) return;
       event.preventDefault();
       latest.current.addSteps(

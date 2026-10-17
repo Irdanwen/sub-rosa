@@ -15,7 +15,7 @@ import {
   withReusedSteps,
 } from "../../../lib/studio/workflow";
 import { flattenBlocks } from "../../../lib/studio/workflow/flatten";
-import { liftIssues, liftPrices, liftReused } from "../../../lib/studio/workflow/lift";
+import { liftIssues, liftPrices, liftReused, viewAt } from "../../../lib/studio/workflow/lift";
 import { applyModes } from "../../../lib/studio/workflow/modes";
 import { useLiveQuotes } from "./useLiveQuotes";
 import { useReusePrediction } from "./useReusePrediction";
@@ -24,6 +24,8 @@ export function useRunPicture(
   serialized: Workflow | undefined,
   catalog: MediaCatalog,
   runEpoch: number,
+  /** The block steps the canvas is inside (none: the workflow itself). */
+  path: readonly string[] = [],
 ) {
   const flattened = useMemo(
     () => (serialized ? flattenBlocks(serialized) : undefined),
@@ -35,17 +37,22 @@ export function useRunPicture(
     () => (flattened ? applyModes(flattened.workflow) : undefined),
     [flattened],
   );
+  /** The level the canvas shows, seen from the flat graph. */
+  const stepView = useMemo(
+    () => (flattened ? viewAt(flattened, path) : undefined),
+    [flattened, path],
+  );
   /** What is wrong, said on the steps as drawn. */
   const validation = useMemo(() => {
-    if (!effective || !flattened) return undefined;
+    if (!effective || !flattened || !stepView) return undefined;
     const checked = validateWorkflow(effective);
-    const errors = liftIssues([...flattened.issues, ...checked.errors], flattened);
+    const errors = liftIssues([...flattened.issues, ...checked.errors], stepView);
     return {
       ok: errors.length === 0,
       errors,
-      warnings: liftIssues(checked.warnings, flattened),
+      warnings: liftIssues(checked.warnings, stepView),
     };
-  }, [effective, flattened]);
+  }, [effective, flattened, stepView]);
   /** The flat steps the cache will answer (what a run's price reads). */
   const reused = useReusePrediction(effective, runEpoch);
   const liveQuotes = useLiveQuotes(effective, catalog);
@@ -59,18 +66,18 @@ export function useRunPicture(
   /** The steps as drawn that the cache will answer, block steps included. */
   const reusedShown = useMemo(
     () =>
-      flattened && effective
+      stepView && effective
         ? liftReused(
             reused,
-            flattened,
+            stepView,
             new Set(effective.nodes.filter(isPaidNode).map((node) => node.id)),
           )
         : reused,
-    [reused, flattened, effective],
+    [reused, stepView, effective],
   );
   const priceByNode = useMemo(
-    () => (flattened ? liftPrices(estimate?.nodes ?? [], flattened) : new Map<string, never>()),
-    [estimate, flattened],
+    () => (stepView ? liftPrices(estimate?.nodes ?? [], stepView) : new Map<string, never>()),
+    [estimate, stepView],
   );
   /** Each step's own problems, so they show on the step itself. */
   const issuesByNode = useMemo(() => {
@@ -91,5 +98,6 @@ export function useRunPicture(
     estimate,
     priceByNode,
     issuesByNode,
+    stepView,
   };
 }
