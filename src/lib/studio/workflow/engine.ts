@@ -14,6 +14,7 @@
 // types in run-types.ts.
 
 import {
+  isPaidNode,
   maybeNodeSchema,
   outputKindOf,
   resolveInputPort,
@@ -145,6 +146,7 @@ export async function runWorkflow(
 
   const levels = topoLevels(workflow.nodes, workflow.edges);
   const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
+  const beforeNode = options.beforeNode;
   const update = (result: NodeRunResult) => {
     results.set(result.nodeId, result);
     options.onUpdate?.(result);
@@ -175,13 +177,16 @@ export async function runWorkflow(
         update({ nodeId, status: "running" });
         try {
           const ports = portInputs(node, workflow.edges, results, nodeById);
-          if (["image", "imageEdit", "tts", "music", "video", "chat"].includes(node.type)) {
+          // A gate checks the budget itself, and only when its judge is
+          // about to read: an approval already given spends nothing.
+          if (node.type !== "gate" && isPaidNode(node)) {
             await options.beforeNode?.(node);
           }
           const output =
             node.type === "gate"
               ? await gateDecision(node, workflow.edges, results, options.approvedGates, {
                   signal: options.signal,
+                  beforeJudge: beforeNode ? () => beforeNode(node) : undefined,
                 })
               : await withTransientTolerance(
                   () =>

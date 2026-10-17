@@ -355,7 +355,7 @@ describe("listResumableRuns", () => {
     expect(after).toHaveLength(1);
   });
 
-  it("offers a production that stopped on an error, and hides a finished one", async () => {
+  it("offers a stopped, held or interrupted production, and hides a finished one", async () => {
     // A run that failed used to show nothing at all after a reload, so a
     // production that was stuck looked exactly like one at rest. Resuming it
     // retries the step that failed and keeps everything already paid for.
@@ -411,8 +411,10 @@ describe("listResumableRuns", () => {
           ]
         : null,
     );
+    // A run stopped by hand is offered too, so its row can be let go instead
+    // of sitting in the table for good; it is never resumed on its own.
     const offered = await listResumableRuns();
-    expect(offered.map((run) => run.id)).toEqual(["a", "b", "c"]);
+    expect(offered.map((run) => run.id)).toEqual(["a", "b", "c", "e"]);
   });
 });
 

@@ -16,6 +16,7 @@ import {
   nodeSchema,
   openInputPorts,
 } from "../../../lib/studio/workflow";
+import { nodeTypeLabel } from "../../../lib/studio/workflow/labels";
 import { Spinner } from "../../ui/Spinner";
 import type { StudioNodeData, StudioFlowNode } from "./flow";
 import { ParamField } from "./ParamField";
@@ -90,14 +91,14 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
         <input
           className="studio-node-title nodrag"
           value={wfNode.label}
-          placeholder={schema.label}
-          aria-label={t("{type} name", { type: schema.label })}
+          placeholder={nodeTypeLabel(wfNode.type)}
+          aria-label={t("{type} name", { type: nodeTypeLabel(wfNode.type) })}
           onChange={(event) => data.onRename(wfNode.id, event.target.value)}
         />
         <span className="studio-card-actions">
           {wfNode.label.trim() ? (
             // Named, so the type no longer shows in the title. Keep it legible.
-            <span className="studio-node-kind">{schema.label}</span>
+            <span className="studio-node-kind">{nodeTypeLabel(wfNode.type)}</span>
           ) : null}
           {cost.kind === "flat" && cost.credits !== undefined && cost.credits > 0 ? (
             <span className="studio-node-kind">~{formatCredits(cost.credits)}</span>

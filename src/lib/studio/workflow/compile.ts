@@ -7,10 +7,9 @@ import { t } from "../../i18n";
  * executor, a scheduler, a resume story or a cost model of its own. It
  * compiles into the graph the Studio already runs - which is durable across
  * restarts and iOS suspensions (ADR-0021), already prices itself, already has
- * approval gates, already reattaches to renders that finished while the app
- * was closed, and already renders as guided Flows on the phone. Everything a
- * production needs was built once, for the canvas, and is inherited here for
- * free.
+ * approval gates, and already reattaches to renders that finished while the
+ * app was closed. Everything a production needs was built once, for the
+ * canvas, and is inherited here for free.
  *
  * **The app owns the routing.** The model that read the script returned a
  * motion class and who is in the shot. It never saw the catalogue, so it never

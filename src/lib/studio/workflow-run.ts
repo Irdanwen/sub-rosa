@@ -36,6 +36,7 @@ import {
   type ChainRef,
   type DurableRenderRequest,
   type LoadedAsset,
+  maybeNodeSchema,
   type NodeOutput,
   type NodeRunResult,
   runWorkflow,
@@ -606,9 +607,15 @@ async function createRunRow(
 export async function listResumableRuns(): Promise<WorkflowRunSummary[]> {
   try {
     const runs = await invoke<WorkflowRunSummary[]>("workflow_run_list");
+    // A run someone stopped is listed too, so its row can be let go (it would
+    // otherwise sit in the table for good). It is offered, never resumed on
+    // its own: stopping was a decision.
     return runs.filter(
       (run) =>
-        (run.status === "running" || run.status === "awaitingGate" || run.status === "failed") &&
+        (run.status === "running" ||
+          run.status === "awaitingGate" ||
+          run.status === "failed" ||
+          run.status === "cancelled") &&
         !liveRuns.has(run.id),
     );
   } catch {
@@ -686,10 +693,9 @@ export async function resumeWorkflowRun(
   }
   for (const node of detail.nodes) {
     if (stale?.has(node.nodeId)) continue;
+    // A generator's result is what was paid for; a gate only passes one on.
     const paid = workflow.nodes.some(
-      (candidate) =>
-        candidate.id === node.nodeId &&
-        ["image", "imageEdit", "tts", "music", "video", "chat"].includes(candidate.type),
+      (candidate) => candidate.id === node.nodeId && maybeNodeSchema(candidate.type)?.paid === true,
     );
     const missingPaidOutput = () =>
       new Error(t("A paid result is missing. Restore its file or explicitly request a new take."));

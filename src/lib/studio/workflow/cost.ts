@@ -15,6 +15,7 @@ import { mediaJson } from "../client";
 import { supportsVideoQuote, VIDEO_QUOTE_PATH } from "../paths";
 import type { MediaCatalog, MediaModel } from "../types";
 import {
+  isPaidNode,
   maybeNodeSchema,
   nodeLabel,
   type Workflow,
@@ -77,7 +78,6 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
     case "asset":
     case "document":
     case "lastFrame":
-    case "gate":
     case "assemble":
     case "output":
       return { ...base, kind: "free" };
@@ -85,6 +85,11 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
     // Usage-priced per token; no per-run figure to show.
     case "chat":
       return { ...base, kind: "metered" };
+
+    // An approval is free; a judge reading the candidates first is a chat
+    // call like any other.
+    case "gate":
+      return isPaidNode(node) ? { ...base, kind: "metered" } : { ...base, kind: "free" };
 
     case "image":
     case "imageEdit":

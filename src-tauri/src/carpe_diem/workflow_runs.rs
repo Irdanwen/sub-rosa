@@ -46,7 +46,10 @@ pub struct WorkflowRunDetailDto {
 pub struct SetWorkflowRunNodeRequest {
     pub run_id: String,
     pub node_id: String,
-    /// Mirrors the engine: pending, running, done or error.
+    /// Mirrors the engine: pending, running, done, error, or awaiting (a gate
+    /// holding the run for an approval). Migration 012's comment predates
+    /// gates; it is left as written, since editing an applied migration
+    /// would replay it.
     pub status: String,
     #[serde(default)]
     pub output: Option<serde_json::Value>,

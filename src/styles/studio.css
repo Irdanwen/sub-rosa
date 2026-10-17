@@ -1033,6 +1033,18 @@
   border-radius: var(--r-sm);
 }
 
+/* The Studio's veil, at node size: the frame keeps the stage's look, the
+   caption shrinks to fit a card a few hundred pixels wide. */
+.studio-node-stage {
+  border-radius: var(--r-sm);
+}
+
+.studio-node-stage .stage-veil-caption {
+  max-width: calc(100% - var(--sp-4));
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-xs);
+}
+
 .studio-node-error {
   color: var(--destructive);
   font-size: var(--fs-xs);

@@ -118,8 +118,10 @@ committed under `src-tauri/gen/apple/`). Full architecture + upstream-diff table
 - **Mobile shell**: `src/main.tsx` picks `MobileApp` (`src/app/mobile/`, screens in
   `src/components/mobile/`) via `isMobilePlatform()`; `?mobile=1` forces it in a browser.
   Desktop `App.tsx` is untouched. Shared pieces reused: `notesReducer`, `src/lib/tauri.ts`,
-  `NoteEditor`, `CarpeDiemSettings`, the whole `src/lib/studio/` lib (incl. the workflow
-  engine, rendered as guided "Flows" instead of the canvas).
+  `NoteEditor`, `CarpeDiemSettings`, the whole `src/lib/studio/` lib. The workflow
+  editor itself is desktop-only since 2026-09-22 (the guided "Flows" editor was
+  unusable at phone size and was removed); productions started on a phone resume on
+  the desktop.
 - **iOS gallery caveat**: never persist absolute paths — the app's data container path
   changes across reinstalls (`listArtifacts` re-derives paths from the disk listing; the
   asset protocol doesn't resolve in the iOS webview: clips and tracks stream from the
