@@ -99,6 +99,8 @@ export interface StudioNodeData extends Record<string, unknown> {
   onOpenBlock?: (nodeId: string) => void;
   /** Comparisons only: the pictures reaching each side, once they exist. */
   compare?: { before?: string; after?: string };
+  /** Zone retouches only: the picture the zone is drawn on. */
+  zoneSource?: string;
 }
 
 export type StudioFlowNode = FlowNode<StudioNodeData, "studio">;

@@ -20,6 +20,7 @@ import { AssetPreview } from "../AssetPreview";
 import { GalleryPicker } from "../GalleryPicker";
 import { NotePicker } from "../NotePicker";
 import { type ArtifactIndex, stringOr } from "./flow";
+import { ZonePicker } from "./ZonePicker";
 
 /** Gallery buckets an asset node's picker should offer for its chosen kind. */
 function assetPickerKinds(node: WorkflowNode): ArtifactKind[] {
@@ -37,6 +38,7 @@ export function ParamField({
   textSources,
   constraintEpoch,
   onMerge,
+  zoneSource,
 }: {
   node: WorkflowNode;
   param: ParamSchema;
@@ -48,6 +50,8 @@ export function ParamField({
   /** Bumped when a rejection taught us a model's options, so they re-derive. */
   constraintEpoch: number;
   onMerge: (partial: Record<string, unknown>) => void;
+  /** Zone settings only: the picture the zone is drawn on. */
+  zoneSource?: string;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   /** The prompt field, so the marker lands at the caret rather than the end. */
@@ -64,6 +68,16 @@ export function ParamField({
     // localStorage read per keystroke.
     [param, modelId, catalog, constraintEpoch],
   );
+  if (param.type === "zone") {
+    return (
+      <ZonePicker
+        value={value}
+        source={zoneSource}
+        label={label}
+        onChange={(zone) => onMerge({ [param.name]: zone })}
+      />
+    );
+  }
   if (param.type === "model") {
     const models = modelsForParam(catalog, param);
     return (

@@ -156,6 +156,10 @@ export function useNodeDataSync(options: {
                     label: labelOf.get(edge.source) ?? "",
                   }))
                 : undefined,
+            zoneSource:
+              wfNode.type === "zoneEdit"
+                ? imageOf(edgesOnPort(graph, node.id, "image")[0]?.source ?? "")
+                : undefined,
             // A comparison shows what reaches it, as soon as it exists.
             compare:
               wfNode.type === "compare"

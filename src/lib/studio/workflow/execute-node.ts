@@ -20,7 +20,12 @@ import {
   speechCapabilities,
 } from "../speech";
 import { mediaJson } from "../client";
-import { composeImages, removeBackground, upscaleImage } from "../edit-image";
+import { composePacks, sheetable, sheetPrompt } from "../compose/packs";
+import { composeImages, nativeQueuedImage, removeBackground, upscaleImage } from "../edit-image";
+import { cropForSending, naturalSize, prepareSource, rasterizeZone } from "../retouch/canvas-io";
+import { buildEditRequest, editCaps } from "../retouch/request";
+import { strokesInCrop, type ZoneStroke, zoneBounds, zoneCrop } from "../retouch/zone";
+import { zoneOf } from "./zone-param";
 import { generateImages } from "../generate-image";
 import { extractFrameAt, extractHandoffFrame, loadVideoElement } from "../frames";
 import { musicPaths, retrieveBody } from "../paths";
@@ -902,6 +907,120 @@ export async function executeNode(
         mimeType: "audio/wav",
         ...(saved ? { artifactId: saved.artifactId, src: saved.src } : {}),
       };
+    }
+
+    case "zoneEdit": {
+      const source = imagesOn(ports, "image")[0];
+      if (!source) throw new Error(t("Connect a picture."));
+      // The result is merged back into the source by Rust, which reads the
+      // source from the gallery (carpe_diem/zone.rs).
+      const asset =
+        source.artifactId && storage ? await storage.loadAsset(source.artifactId) : undefined;
+      if (!asset?.fileName || !context.durableMedia || !storage)
+        throw new Error(t("The picture to retouch has to be in the gallery first."));
+      const model = stringParam(params, "model") ?? "";
+      const prompt = resolvePrompt(
+        stringParam(params, "prompt") ?? "",
+        textInputOf(ports, "prompt"),
+      );
+      const caps = editCaps(await catalogModel(model));
+      const size = await naturalSize(asset.src);
+      const zone = zoneOf(params.zone);
+      const left = zone.x * size.width;
+      const top = zone.y * size.height;
+      const right = (zone.x + zone.width) * size.width;
+      const bottom = (zone.y + zone.height) * size.height;
+      const lasso: ZoneStroke = {
+        kind: "lasso",
+        points: [
+          [left, top],
+          [right, top],
+          [right, bottom],
+          [left, bottom],
+        ],
+      };
+      const bounds = zoneBounds([lasso], size);
+      const crop = bounds && zoneCrop(bounds, size, { ratios: caps.aspectRatios });
+      if (!crop)
+        throw new Error(t("This model cannot retouch a zone. Pick one that takes a format."));
+      const request = buildEditRequest(caps, {
+        model,
+        prompt,
+        images: [await cropForSending(asset.src, crop)],
+        aspectRatio: crop.ratio,
+      });
+      const saved = await context.durableMedia(
+        node.id,
+        {
+          kind: "image",
+          model,
+          prompt,
+          extension: "png",
+          queuePath: `${request.base}/queue`,
+          queueBody: request.body,
+          retrievePath: `${request.base}/retrieve`,
+          urlFields: ["image_url", "url"],
+          costCredits: context.costCredits,
+          composite: {
+            parentFileName: asset.fileName,
+            crop: [crop.x, crop.y, crop.width, crop.height],
+            maskPngBase64: rasterizeZone(strokesInCrop([lasso], crop), crop),
+          },
+        },
+        signal,
+      );
+      if (!saved.artifactId) throw new Error(t("The edit finished but its file is missing."));
+      const merged = await storage.loadAsset(saved.artifactId);
+      return {
+        kind: "image",
+        base64: merged.base64 ?? "",
+        mimeType: merged.mimeType ?? "image/png",
+        artifactId: saved.artifactId,
+      };
+    }
+
+    case "sheet": {
+      const source = imagesOn(ports, "image")[0];
+      if (!source) throw new Error(t("Connect a picture."));
+      const pack = composePacks().find((entry) => entry.id === stringParam(params, "pack"));
+      if (!pack || !sheetable(pack)) throw new Error(t("Pick variations that fit in nine panels."));
+      const model = stringParam(params, "model") ?? "";
+      const caps = editCaps(await catalogModel(model));
+      const prompt = sheetPrompt(pack);
+      // A sheet is square whatever the source: each panel is a ninth of it.
+      const request = buildEditRequest(caps, {
+        model,
+        prompt,
+        images: [await prepareSource(imageDataUri(source))],
+        aspectRatio: caps.aspectRatios.includes("1:1") ? "1:1" : undefined,
+      });
+      if (context.durableMedia && storage) {
+        const saved = await context.durableMedia(
+          node.id,
+          {
+            kind: "image",
+            model,
+            prompt,
+            extension: "png",
+            queuePath: `${request.base}/queue`,
+            queueBody: request.body,
+            retrievePath: `${request.base}/retrieve`,
+            urlFields: ["image_url", "url"],
+            costCredits: context.costCredits,
+          },
+          signal,
+        );
+        if (!saved.artifactId) throw new Error(t("The edit finished but its file is missing."));
+        const drawn = await storage.loadAsset(saved.artifactId);
+        return {
+          kind: "image",
+          base64: drawn.base64 ?? "",
+          mimeType: drawn.mimeType ?? "image/png",
+          artifactId: saved.artifactId,
+        };
+      }
+      const drawn = await nativeQueuedImage(request.base, request.body, "workflow");
+      return { kind: "image", base64: drawn, mimeType: "image/png" };
     }
 
     case "compare":

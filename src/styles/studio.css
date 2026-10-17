@@ -2751,3 +2751,68 @@ button.studio-block-crumb:hover {
   align-self: end;
   margin: var(--sp-2);
 }
+
+/* The zone a retouch changes, over the picture it is given. */
+.studio-zone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.studio-zone legend {
+  margin-block-end: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.studio-zone-frame {
+  position: relative;
+  display: grid;
+  min-height: 96px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-subtle);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.studio-zone-frame img {
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.studio-zone-frame p {
+  align-self: center;
+  margin: var(--sp-2);
+  text-align: center;
+}
+
+.studio-zone-rect {
+  position: absolute;
+  left: var(--zone-x);
+  top: var(--zone-y);
+  width: var(--zone-w);
+  height: var(--zone-h);
+  border: 2px solid var(--ring);
+  background: color-mix(in oklch, var(--ring) 15%, transparent);
+  pointer-events: none;
+}
+
+.studio-zone-numbers {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-1) var(--sp-2);
+}
+
+.studio-zone-number {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}

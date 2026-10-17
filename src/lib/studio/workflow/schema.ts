@@ -43,7 +43,9 @@ export type WorkflowNodeType =
   | "upscale"
   | "cutout"
   | "soundMix"
-  | "compare";
+  | "compare"
+  | "zoneEdit"
+  | "sheet";
 
 export interface WorkflowNode {
   id: string;
@@ -246,7 +248,17 @@ export function closedInputPort(
 
 export interface ParamSchema {
   name: string;
-  type: "string" | "text" | "number" | "boolean" | "enum" | "model" | "artifact" | "note";
+  type:
+    | "string"
+    | "text"
+    | "number"
+    | "boolean"
+    | "enum"
+    | "model"
+    | "artifact"
+    | "note"
+    /** A rectangle on the input picture, as fractions of its size. */
+    | "zone";
   label: string;
   description?: string;
   required?: boolean;
@@ -813,6 +825,53 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         default: true,
       },
     ],
+  },
+  zoneEdit: {
+    type: "zoneEdit",
+    label: "Retouch a zone",
+    description:
+      "Change one part of a picture: only that rectangle is sent, and the result is blended back into the rest, untouched.",
+    inputs: [{ id: "image", label: "Image", kind: "image", required: true }, PROMPT_PORT],
+    output: "image",
+    params: [
+      { name: "model", type: "model", label: "Model", required: true, mediaType: "imageEdit" },
+      {
+        name: "prompt",
+        type: "text",
+        label: "Prompt",
+        description: "What to change inside the zone.",
+        required: true,
+        default: "",
+        acceptsInputMarker: true,
+      },
+      {
+        name: "zone",
+        type: "zone",
+        label: "Zone",
+        default: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+      },
+    ],
+    paid: true,
+  },
+  sheet: {
+    type: "sheet",
+    label: "Contact sheet",
+    description:
+      "Nine variations of a picture's subject in one 3 by 3 sheet: one paid edit instead of nine.",
+    inputs: [{ id: "image", label: "Image", kind: "image", required: true }],
+    output: "image",
+    params: [
+      { name: "model", type: "model", label: "Model", required: true, mediaType: "imageEdit" },
+      {
+        name: "pack",
+        type: "enum",
+        label: "Variations",
+        // The packs of nine shots with no frame of their own (`sheetable`).
+        enumValues: ["character", "expressions"],
+        default: "character",
+      },
+    ],
+    paid: true,
   },
   compare: {
     type: "compare",

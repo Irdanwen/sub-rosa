@@ -101,8 +101,12 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
     case "gate":
       return isPaidNode(node) ? { ...base, kind: "metered" } : { ...base, kind: "free" };
 
+    // One edit each: a zone retouch sends one crop, a sheet draws nine
+    // variations in one image.
     case "image":
     case "imageEdit":
+    case "zoneEdit":
+    case "sheet":
       return flat(base, modelOf(catalog, node.params)?.costCredits);
 
     // Speech is billed by what it reads (per character, or per second of

@@ -125,6 +125,8 @@ export interface LoadedAsset {
   base64?: string;
   mimeType?: string;
   artifactId: string;
+  /** The gallery file's name: what a zone retouch is merged back into. */
+  fileName?: string;
   parentId?: string;
   parentHandoffSeconds?: number;
 }
@@ -171,6 +173,12 @@ export interface DurableRenderRequest {
   costCredits?: number;
   /** The workflow, run and step it is made for (filed with the result). */
   origin?: WorkflowOrigin;
+  /** A zone retouch: where Rust merges the result back (carpe_diem/zone.rs). */
+  composite?: {
+    parentFileName: string;
+    crop: [number, number, number, number];
+    maskPngBase64: string;
+  };
 }
 
 export interface RunWorkflowOptions {
