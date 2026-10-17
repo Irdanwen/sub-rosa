@@ -16,7 +16,7 @@ import {
   type WorkflowNodeType,
 } from "./schema";
 
-export type NodeCategory = "inputs" | "generate" | "montage" | "flow";
+export type NodeCategory = "inputs" | "generate" | "montage" | "flow" | "blocks";
 
 const CATEGORY: Record<WorkflowNodeType, NodeCategory> = {
   textInput: "inputs",
@@ -47,6 +47,8 @@ export function categoryLabel(category: NodeCategory): string {
       return t("Montage");
     case "flow":
       return t("Flow");
+    case "blocks":
+      return t("Blocks");
   }
 }
 
@@ -98,6 +100,13 @@ export interface NodeSearchHit {
   /** Settings the new step should start with to fit the connection (an
    * asset of the kind the input wants). */
   params?: Record<string, unknown>;
+  /** A block saved in the library: the new step is an instance of a copy. */
+  libraryId?: string;
+}
+
+/** What the search shows a hit as, unique among hits. */
+export function hitKey(hit: NodeSearchHit): string {
+  return hit.libraryId ? `block-${hit.libraryId}` : hit.type;
 }
 
 /** Whether a new step of this type can take, or feed, the dragged link. */
@@ -142,8 +151,13 @@ export function fuzzyScore(query: string, text: string): number {
 
 /** Step types matching the query (and the dragged link), best first, within
  * the order of their categories. */
-export function searchNodeTypes(query: string, filter?: LinkFilter): NodeSearchHit[] {
-  const order: NodeCategory[] = ["inputs", "generate", "montage", "flow"];
+export function searchNodeTypes(
+  query: string,
+  filter?: LinkFilter,
+  /** Blocks saved in the library, by name. */
+  libraryBlocks: ReadonlyArray<{ id: string; name: string; description?: string }> = [],
+): NodeSearchHit[] {
+  const order: NodeCategory[] = ["inputs", "generate", "montage", "flow", "blocks"];
   const hits: Array<NodeSearchHit & { score: number }> = [];
   for (const type of Object.keys(NODE_SCHEMAS) as WorkflowNodeType[]) {
     // A block step is always an instance of a block: made from a selection
@@ -161,6 +175,24 @@ export function searchNodeTypes(query: string, filter?: LinkFilter): NodeSearchH
       score,
       ...(Object.keys(params).length > 0 ? { params } : {}),
     });
+  }
+  // A library block is offered when nothing is being wired: which of its
+  // inputs a dragged link should land on is the person's call.
+  if (!filter) {
+    for (const block of libraryBlocks) {
+      const score = Math.max(
+        fuzzyScore(query, block.name) * 2,
+        fuzzyScore(query, `${block.description ?? ""} ${keywords("block")}`),
+      );
+      if (score === 0) continue;
+      hits.push({
+        type: "block",
+        label: block.name,
+        category: "blocks",
+        score,
+        libraryId: block.id,
+      });
+    }
   }
   const typed = query.trim() !== "";
   return hits

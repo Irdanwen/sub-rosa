@@ -8,9 +8,11 @@ import { useModalFocus } from "../../../lib/modal-focus";
 import {
   categoryLabel,
   type LinkFilter,
+  hitKey,
   type NodeSearchHit,
   searchNodeTypes,
 } from "../../../lib/studio/workflow/node-search";
+import { listLibraryBlocks } from "../../../lib/studio/workflow/store";
 
 export function NodeSearch({
   at,
@@ -28,7 +30,7 @@ export function NodeSearch({
   useModalFocus(surface, { onClose, initialFocusSelector: "input" });
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const hits = useMemo(() => searchNodeTypes(query, filter), [query, filter]);
+  const hits = useMemo(() => searchNodeTypes(query, filter, listLibraryBlocks()), [query, filter]);
   const current = Math.min(active, Math.max(hits.length - 1, 0));
   const style = { "--search-x": `${at.x}px`, "--search-y": `${at.y}px` } as CSSProperties;
   return (
@@ -46,7 +48,7 @@ export function NodeSearch({
         placeholder={filter ? t("Steps that fit this connection") : t("Search steps")}
         aria-label={t("Search steps")}
         aria-controls="studio-node-search-list"
-        aria-activedescendant={hits[current] ? `node-search-${hits[current].type}` : undefined}
+        aria-activedescendant={hits[current] ? `node-search-${hitKey(hits[current])}` : undefined}
         onChange={(event) => {
           setQuery(event.target.value);
           setActive(0);
@@ -69,13 +71,13 @@ export function NodeSearch({
       ) : (
         <div id="studio-node-search-list" role="listbox" aria-label={t("Steps")}>
           {hits.map((hit, index) => (
-            <div key={hit.type} role="presentation">
+            <div key={hitKey(hit)} role="presentation">
               {/* Grouped while browsing; best first, ungrouped, once typing. */}
               {!query.trim() && (index === 0 || hits[index - 1].category !== hit.category) ? (
                 <span className="studio-node-search-group">{categoryLabel(hit.category)}</span>
               ) : null}
               <button
-                id={`node-search-${hit.type}`}
+                id={`node-search-${hitKey(hit)}`}
                 type="button"
                 role="option"
                 aria-selected={index === current}

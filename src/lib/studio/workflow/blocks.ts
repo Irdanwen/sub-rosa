@@ -483,3 +483,22 @@ export function replaceBlock<G extends BlockGraph>(graph: G, next: WorkflowBlock
     }),
   };
 }
+
+/** The blocks these steps need, nested ones included. */
+export function blocksUsed(
+  nodes: WorkflowNode[],
+  blocks: readonly WorkflowBlock[],
+): WorkflowBlock[] {
+  const used = new Map<string, WorkflowBlock>();
+  const visit = (steps: WorkflowNode[]) => {
+    for (const step of steps) {
+      if (step.type !== "block") continue;
+      const block = blocks.find((entry) => entry.id === step.params.blockId);
+      if (!block || used.has(block.id)) continue;
+      used.set(block.id, block);
+      visit(block.nodes);
+    }
+  };
+  visit(nodes);
+  return [...used.values()];
+}

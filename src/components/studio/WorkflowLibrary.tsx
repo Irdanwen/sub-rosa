@@ -72,6 +72,8 @@ export function WorkflowLibrary({
   onExport,
   onDelete,
   onMakeCover,
+  blocks = [],
+  onDeleteBlock,
   autoFocus = false,
 }: {
   catalog: MediaCatalog;
@@ -84,6 +86,9 @@ export function WorkflowLibrary({
   onExport: (workflow: Workflow) => Promise<void>;
   onDelete: (workflow: Workflow) => void;
   onMakeCover: (workflow: Workflow) => Promise<StudioArtifact | undefined>;
+  /** Blocks saved in the library (ADR-0116), added from the step search. */
+  blocks?: Workflow[];
+  onDeleteBlock?: (block: Workflow) => void;
   /** Take focus on the heading: the person just left the canvas. */
   autoFocus?: boolean;
 }) {
@@ -96,6 +101,7 @@ export function WorkflowLibrary({
   const [dragging, setDragging] = useState(false);
   const [review, setReview] = useState<ComfyImport>();
   const [deleting, setDeleting] = useState<Workflow>();
+  const [deletingBlock, setDeletingBlock] = useState<Workflow>();
   const [covering, setCovering] = useState<string>();
   const artifacts = useArtifactIndex();
   const offer = useMemo(() => coverOffer(catalog), [catalog]);
@@ -292,6 +298,37 @@ export function WorkflowLibrary({
         </section>
       ) : null}
 
+      {blocks.length > 0 ? (
+        <section aria-label={t("Your blocks")}>
+          <h3>{t("Your blocks")}</h3>
+          <p className="workflow-library-hint">
+            {t("Add one to a workflow from the step search: double-click the canvas.")}
+          </p>
+          <ul className="workflow-library-blocks">
+            {blocks.map((block) => (
+              <li key={block.id}>
+                <span className="workflow-library-block-name">{block.name}</span>
+                <span className="workflow-card-meta">
+                  {block.nodes.length === 1
+                    ? t("One step")
+                    : t("{count} steps", { count: block.nodes.length })}
+                </span>
+                {onDeleteBlock ? (
+                  <button
+                    type="button"
+                    className="studio-icon-button"
+                    aria-label={t("Delete {name}", { name: block.name })}
+                    onClick={() => setDeletingBlock(block)}
+                  >
+                    <IconTrashCanSimple size={14} />
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section aria-label={t("Templates")}>
         <h3>{t("Templates")}</h3>
         <div className="workflow-library-grid">
@@ -326,6 +363,18 @@ export function WorkflowLibrary({
           }}
         />
       ) : null}
+      <ConfirmDialog
+        open={Boolean(deletingBlock)}
+        onClose={() => setDeletingBlock(undefined)}
+        title={t("Delete this block from the library?")}
+        description={t("Workflows that use it keep their own copy.")}
+        confirmLabel={t("Delete")}
+        destructive
+        onConfirm={() => {
+          if (deletingBlock) onDeleteBlock?.(deletingBlock);
+          setDeletingBlock(undefined);
+        }}
+      />
       <ConfirmDialog
         open={Boolean(deleting)}
         onClose={() => setDeleting(undefined)}

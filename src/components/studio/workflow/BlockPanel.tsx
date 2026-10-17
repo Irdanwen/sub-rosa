@@ -4,6 +4,7 @@
 // and promoted widgets). Taking an input or a result away also takes off
 // the wires that used it.
 
+import { useState } from "react";
 import { t } from "../../../lib/i18n";
 import {
   togglePromoted,
@@ -21,22 +22,46 @@ import {
 export function BlockPanel({
   block,
   onChange,
+  onPublish,
 }: {
   block: WorkflowBlock;
   onChange: (next: WorkflowBlock) => void;
+  /** Keep the block in the library, for other workflows. */
+  onPublish: () => void;
 }) {
+  const [saved, setSaved] = useState(false);
   const steps = block.nodes.filter((node) => node.type !== "note" && node.type !== "relay");
   return (
     <details className="studio-block-panel">
       <summary>{t("What this block takes, gives and shows")}</summary>
-      <label className="studio-block-panel-name">
-        <span>{t("Block name")}</span>
+      <div className="studio-block-panel-name">
+        <label htmlFor={`block-name-${block.id}`}>{t("Block name")}</label>
         <input
+          id={`block-name-${block.id}`}
           className="studio-input"
           value={block.name}
-          onChange={(event) => onChange({ ...block, name: event.target.value })}
+          onChange={(event) => {
+            setSaved(false);
+            onChange({ ...block, name: event.target.value });
+          }}
         />
-      </label>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          title={t("Other workflows can then add it from the step search.")}
+          onClick={() => {
+            onPublish();
+            setSaved(true);
+          }}
+        >
+          {block.source ? t("Update in the library") : t("Save to the library")}
+        </button>
+        {saved ? (
+          <span className="studio-block-panel-saved" role="status">
+            {t("Saved in the library.")}
+          </span>
+        ) : null}
+      </div>
       <div className="studio-block-panel-columns">
         <fieldset>
           <legend>{t("It takes")}</legend>

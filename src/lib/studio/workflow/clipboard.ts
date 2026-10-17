@@ -4,6 +4,7 @@
 // connections that came into the copied steps from steps still on the
 // canvas.
 
+import { blocksUsed } from "./blocks";
 import type { Workflow, WorkflowBlock, WorkflowEdge, WorkflowNode } from "./schema";
 
 const FORMAT = "subrosa-workflow-steps";
@@ -22,22 +23,6 @@ export interface StepClip {
   /** The blocks the copied block steps are instances of, and the blocks
    * inside those: a block step pasted elsewhere brings its steps. */
   blocks?: WorkflowBlock[];
-}
-
-/** The blocks these steps need, nested ones included. */
-function blocksUsed(nodes: WorkflowNode[], blocks: readonly WorkflowBlock[]): WorkflowBlock[] {
-  const used = new Map<string, WorkflowBlock>();
-  const visit = (steps: WorkflowNode[]) => {
-    for (const step of steps) {
-      if (step.type !== "block") continue;
-      const block = blocks.find((entry) => entry.id === step.params.blockId);
-      if (!block || used.has(block.id)) continue;
-      used.set(block.id, block);
-      visit(block.nodes);
-    }
-  };
-  visit(nodes);
-  return [...used.values()];
 }
 
 export function copySteps(

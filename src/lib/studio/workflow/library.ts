@@ -1,6 +1,7 @@
 // What a workflow's library card shows: its last real result, a summary of
 // what it makes, and, on request, a picture made for it (ADR-0075).
 
+import { MAX_BLOCK_DEPTH } from "./blocks";
 import { t } from "../../i18n";
 import { saveArtifactFromBase64 } from "../artifacts";
 import { defaultImageModel, estimateCostCredits } from "../catalog";
@@ -39,10 +40,23 @@ export function coverArtifactOf(
   return undefined;
 }
 
+/** Every step a run would make, a block's own steps counted in its place. */
+function stepsOf(
+  nodes: Workflow["nodes"],
+  blocks: Workflow["blocks"],
+  depth = 0,
+): Workflow["nodes"] {
+  return nodes.flatMap((node) => {
+    if (node.type !== "block") return [node];
+    const block = blocks?.find((entry) => entry.id === node.params.blockId);
+    return block && depth < MAX_BLOCK_DEPTH ? stepsOf(block.nodes, blocks, depth + 1) : [];
+  });
+}
+
 /** "2 images, 1 video": what one run makes, for the card. */
-export function workflowMakes(workflow: Pick<Workflow, "nodes">): string {
-  const count = (types: string[]) =>
-    workflow.nodes.filter((node) => types.includes(node.type)).length;
+export function workflowMakes(workflow: Pick<Workflow, "nodes" | "blocks">): string {
+  const steps = stepsOf(workflow.nodes, workflow.blocks);
+  const count = (types: string[]) => steps.filter((node) => types.includes(node.type)).length;
   const images = count(["image", "imageEdit"]);
   const videos = count(["video"]);
   const sounds = count(["tts", "music"]);
@@ -51,12 +65,11 @@ export function workflowMakes(workflow: Pick<Workflow, "nodes">): string {
   if (images) parts.push(images === 1 ? t("1 image") : t("{count} images", { count: images }));
   if (sounds) parts.push(sounds === 1 ? t("1 sound") : t("{count} sounds", { count: sounds }));
   if (parts.length > 0) return parts.join(", ");
-  const steps = workflow.nodes.length;
-  return steps === 0
+  return steps.length === 0
     ? t("No steps yet")
-    : steps === 1
+    : steps.length === 1
       ? t("1 step")
-      : t("{count} steps", { count: steps });
+      : t("{count} steps", { count: steps.length });
 }
 
 /** The prompt for a card picture: what the workflow is about, in its own

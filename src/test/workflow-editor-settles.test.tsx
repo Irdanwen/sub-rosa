@@ -208,6 +208,36 @@ describe("the workflow editor", () => {
     expect(within(block).queryByDisplayValue("a red car")).toBeNull();
   });
 
+  it("keeps a block in the library and adds it to a workflow from the step search", async () => {
+    const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
+    const { container } = render(
+      <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
+    );
+    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
+    fireEvent.keyDown(window, { key: "a", metaKey: true });
+    fireEvent.keyDown(window, { key: "e", metaKey: true, shiftKey: true });
+    const open = await waitFor(() => {
+      const found = container.querySelector('.studio-block [aria-label="Open block"]');
+      if (!found) throw new Error("no open button yet");
+      return found;
+    });
+    fireEvent.click(open);
+    await screen.findByRole("navigation", { name: "Where you are in the workflow" });
+    fireEvent.change(screen.getByLabelText("Block name"), { target: { value: "Poster maker" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save to the library", hidden: true }));
+    expect(await screen.findByText("Saved in the library.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cover" }));
+    await waitFor(() => expect(container.querySelectorAll(".studio-block").length).toBe(1));
+    // From the step search: the saved block, as a new block step.
+    fireEvent.keyDown(window, { key: "/" });
+    const field = await screen.findByLabelText("Search steps");
+    fireEvent.change(field, { target: { value: "poster" } });
+    expect(screen.getByRole("option", { name: "Poster maker" })).toBeTruthy();
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(container.querySelectorAll(".studio-block").length).toBe(2));
+  });
+
   it("acts on the selection from its bar, and on a frame's steps from the frame's", async () => {
     const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
     const { container } = render(

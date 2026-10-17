@@ -134,6 +134,8 @@ import { SelectionToolbar } from "./workflow/SelectionToolbar";
 import { useCanvasEditing } from "./workflow/useCanvasEditing";
 import { stepBoxes, useFrames } from "./workflow/useFrames";
 import { useNodeDataSync } from "./workflow/useNodeDataSync";
+import { blockToLibrary, blocksForLibraryBlock } from "../../lib/studio/workflow/library-blocks";
+import { listLibraryBlocks } from "../../lib/studio/workflow/store";
 import { BlockBreadcrumb } from "./workflow/BlockBreadcrumb";
 import { BlockPanel } from "./workflow/BlockPanel";
 import { composeRoot, useBlockScope, withLevel } from "./workflow/useBlockScope";
@@ -1292,6 +1294,18 @@ function WorkflowEditor({
       const opened = search;
       setSearch(undefined);
       if (!opened) return;
+      if (hit.libraryId) {
+        // A library block comes in by value, beside the workflow's own blocks.
+        const row = listLibraryBlocks().find((entry) => entry.id === hit.libraryId);
+        const base = currentRef.current;
+        if (!row || !base) return;
+        const { blocks, blockId } = blocksForLibraryBlock(row, base.blocks ?? []);
+        const next = { ...base, blocks };
+        currentRef.current = next;
+        setCurrent(next);
+        addNode("block", opened.flow, { blockId });
+        return;
+      }
       const id = addNode(hit.type, opened.flow, hit.params);
       const link = opened.link;
       if (!link) return;
@@ -1458,6 +1472,11 @@ function WorkflowEditor({
           onExport={exportWorkflow}
           onDelete={deleteFromLibrary}
           onMakeCover={makeCover}
+          blocks={listLibraryBlocks()}
+          onDeleteBlock={(block) => {
+            deleteWorkflow(block.id);
+            setWorkflows(listWorkflows());
+          }}
           autoFocus={leftCanvas}
         />
       </div>
@@ -1662,6 +1681,17 @@ function WorkflowEditor({
       {insideBlock && serialized && !current?.readOnly ? (
         <BlockPanel
           block={insideBlock}
+          onPublish={() => {
+            // Saved as a library row of its own; this copy remembers it, so
+            // saving again updates the same row.
+            const saved = saveWorkflow(blockToLibrary(insideBlock, serialized.blocks ?? []));
+            const root = replaceBlock(serialized, {
+              ...insideBlock,
+              source: { id: saved.id, updatedAt: saved.updatedAt },
+            });
+            currentRef.current = root;
+            setCurrent(root);
+          }}
           onChange={(next) => {
             // The block's face only: its steps stay on the canvas as they are.
             const root = replaceBlock(serialized, next);
