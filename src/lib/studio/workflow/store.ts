@@ -54,32 +54,45 @@ function writeLegacy(workflows: Workflow[]): void {
 
 function fromStored(row: StoredWorkflow): Workflow | undefined {
   try {
-    const graph = JSON.parse(row.definition) as Pick<Workflow, "nodes" | "edges">;
-    if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) return undefined;
+    const parsed: unknown = JSON.parse(row.definition);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const { nodes, edges, ...extra } = parsed as Record<string, unknown>;
+    if (!Array.isArray(nodes) || !Array.isArray(edges)) return undefined;
     return {
       id: row.id,
       name: row.name,
       ...(row.description ? { description: row.description } : {}),
-      nodes: graph.nodes,
-      edges: graph.edges,
+      nodes: nodes as Workflow["nodes"],
+      edges: edges as Workflow["edges"],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       origin: row.origin === "import" ? "import" : "mine",
       ...(row.coverArtifactId ? { coverArtifactId: row.coverArtifactId } : {}),
+      ...(Object.keys(extra).length > 0 ? { extra } : {}),
+      // A later version may have reshaped what it wrote; this one shows it
+      // and leaves it alone, so the later device's work is never cut down
+      // to what this one understands.
+      ...(row.formatVersion > WORKFLOW_FILE_VERSION ? { readOnly: true as const } : {}),
     };
   } catch {
     return undefined;
   }
 }
 
+/** The stored graph: what this version edits, plus whatever it carried in. */
+function definitionOf(workflow: Workflow): string {
+  return JSON.stringify({ ...workflow.extra, nodes: workflow.nodes, edges: workflow.edges });
+}
+
 /** Write one workflow to the table. Resolves whether it got there. */
 function persist(workflow: Workflow): Promise<boolean> {
+  if (workflow.readOnly) return Promise.resolve(false);
   return invoke<void>("studio_workflow_save", {
     request: {
       id: workflow.id,
       name: workflow.name,
       description: workflow.description ?? null,
-      definition: JSON.stringify({ nodes: workflow.nodes, edges: workflow.edges }),
+      definition: definitionOf(workflow),
       formatVersion: WORKFLOW_FILE_VERSION,
       origin: workflow.origin ?? "mine",
       createdAt: workflow.createdAt,
@@ -154,6 +167,8 @@ export function listWorkflows(): Workflow[] {
  * a save from an editor that never knew about it. */
 export function saveWorkflow(workflow: Workflow): Workflow {
   const previous = cache.find((existing) => existing.id === workflow.id);
+  // Never saved over: see `readOnly`.
+  if (previous?.readOnly) return previous;
   const updated: Workflow = {
     ...workflow,
     // The library owns these; an editor's copy may carry an older value.

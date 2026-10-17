@@ -69,6 +69,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { nodeEtaKey } from "../../lib/studio/workflow/eta";
 import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
+import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
 import { spendGuard } from "../../lib/studio/workflow/spend";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -273,7 +274,10 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
 
   // (Re)hydrate the canvas whenever another workflow is selected.
   const hydrate = useCallback(
-    (workflow: Workflow | undefined) => {
+    (stored: Workflow | undefined) => {
+      // Brought forward on open (renamed steps, reshaped settings); a newer
+      // version's workflow is shown as it was written.
+      const workflow = stored && !stored.readOnly ? migrateWorkflow(stored) : stored;
       setCurrent(workflow);
       setResults(new Map());
       setRunError(undefined);
@@ -345,7 +349,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
   // Debounced persistence of every canvas change (drag, edit, connect).
   useEffect(() => {
     const base = currentRef.current;
-    if (!base) return;
+    if (!base || base.readOnly) return;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       const serialized = fromFlow(base, flowNodes, flowEdges);
@@ -875,6 +879,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       const workflow = saveWorkflow({
         ...blankWorkflow(imported.name),
         ...(imported.description ? { description: imported.description } : {}),
+        ...(imported.extra ? { extra: imported.extra } : {}),
         nodes: imported.nodes,
         edges: imported.edges,
         origin: "import",
@@ -1068,7 +1073,13 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           <button
             type="button"
             className="studio-primary-button"
-            disabled={!validation?.ok || !serialized || serialized.nodes.length === 0 || quoting}
+            disabled={
+              !validation?.ok ||
+              !serialized ||
+              serialized.nodes.length === 0 ||
+              quoting ||
+              current?.readOnly === true
+            }
             title={validation?.errors.map((issue) => issue.message).join("\n") || undefined}
             onClick={() => void startRun()}
           >
@@ -1099,6 +1110,15 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           onClose={() => setPendingRun(undefined)}
         />
       ) : null}
+      {current?.readOnly ? (
+        <div className="studio-port-notice" role="status">
+          <span>
+            {t(
+              "A newer version of Sub Rosa made this workflow. Update the app to edit or run it; it is shown here as it was saved.",
+            )}
+          </span>
+        </div>
+      ) : null}
       {portNotice ? (
         <div className="studio-port-notice">
           <span>{portNotice}</span>
@@ -1126,7 +1146,10 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           ))}
         </div>
       ) : null}
-      <div className="studio-workflow-canvas">
+      <div
+        className="studio-workflow-canvas"
+        data-readonly={current?.readOnly ? "true" : undefined}
+      >
         <ReactFlow
           nodes={flowNodes}
           edges={displayEdges}
@@ -1136,6 +1159,10 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           isValidConnection={isValidConnection}
+          nodesDraggable={!current?.readOnly}
+          nodesConnectable={!current?.readOnly}
+          edgesReconnectable={!current?.readOnly}
+          deleteKeyCode={current?.readOnly ? null : undefined}
           fitView
           proOptions={{ hideAttribution: true }}
         >

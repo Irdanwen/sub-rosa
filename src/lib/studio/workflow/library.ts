@@ -133,7 +133,7 @@ function stableJson(value: unknown): string {
 export function sameWorkflow(a: Workflow, b: Workflow): boolean {
   return (
     a.name === b.name &&
-    stableJson({ nodes: a.nodes, edges: a.edges }) ===
-      stableJson({ nodes: b.nodes, edges: b.edges })
+    stableJson({ nodes: a.nodes, edges: a.edges, extra: a.extra ?? {} }) ===
+      stableJson({ nodes: b.nodes, edges: b.edges, extra: b.extra ?? {} })
   );
 }

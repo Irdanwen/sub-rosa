@@ -368,6 +368,7 @@
   "A new member can read the project's history. Whoever you remove keeps what they already received, and cannot read anything written after.": "Un nouveau membre peut lire l'historique du projet. Une personne que vous retirez garde ce qu'elle a déjà reçu, et ne peut rien lire de ce qui est écrit ensuite.",
   "A new message matching a search": "Un nouveau message correspondant à une recherche",
   "A new note opens and starts listening. Stop when the meeting ends.": "Une nouvelle note s'ouvre et se met à écouter. Arrêtez quand la réunion se termine.",
+  "A newer version of Sub Rosa made this workflow. Update the app to edit or run it; it is shown here as it was saved.": "Une version plus récente de Sub Rosa a créé ce workflow. Mettez l'app à jour pour le modifier ou le lancer ; il s'affiche ici tel qu'il a été enregistré.",
   "A node cannot feed itself.": "Un nœud ne peut pas s'alimenter lui-même.",
   "A notification on this device when your balance drops under the amount you choose, once each time.": "Une notification sur cet appareil quand votre solde passe sous le montant choisi, une fois à chaque fois.",
   "A page on {host}. yt-dlp will be asked for the audio, and its captions when it has them.": "Une page sur {host}. yt-dlp sera sollicité pour l'audio, et ses sous-titres quand il en a.",
