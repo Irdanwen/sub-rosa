@@ -32,6 +32,7 @@ import {
   resumeWorkflowRun,
   runAndSaveWorkflow,
   runDefinition,
+  workflowStepCache,
   type WorkflowRunSummary,
 } from "../../lib/studio/workflow-run";
 import {
@@ -59,6 +60,7 @@ import {
   templateWorkflows,
   textSourceLabels,
   validateWorkflow,
+  withReusedSteps,
   WorkflowRunError,
   type NodeRunResult,
   type Workflow,
@@ -104,6 +106,7 @@ import {
 import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
 import { NODE_TYPES } from "./workflow/StudioNode";
 import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
+import { useReusePrediction } from "./workflow/useReusePrediction";
 
 /**
  * The Workflows tab. The library is read before anything is drawn: an editor
@@ -392,6 +395,11 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     });
   }, []);
 
+  const serialized = current ? fromFlow(current, flowNodes, flowEdges) : undefined;
+  /** Bumped when a run ends, so the cache is asked again what it now holds. */
+  const [runEpoch, setRunEpoch] = useState(0);
+  const reused = useReusePrediction(serialized, runEpoch);
+
   // Keep node data in sync with run results without disturbing positions.
   // Connection-order lists, gate candidates, and the assemble node's chain
   // suggestion refresh here too, so they always describe the wiring as it is.
@@ -454,6 +462,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
             textSources: textSourceLabels(graph, node.id),
             chainSuggestion:
               wfNode.type === "assemble" ? chainOrderSuggestion(graph, node.id) : undefined,
+            willReuse: reused.has(node.id),
             gateSources:
               wfNode.type === "gate"
                 ? edgesOnPort(graph, node.id, "in").map((edge) => ({
@@ -467,6 +476,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     });
   }, [
     results,
+    reused,
     catalog,
     artifacts,
     constraintEpoch,
@@ -597,7 +607,6 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     [hydrate],
   );
 
-  const serialized = current ? fromFlow(current, flowNodes, flowEdges) : undefined;
   const validation = useMemo(
     () => (serialized ? validateWorkflow(serialized) : undefined),
     [serialized],
@@ -657,8 +666,9 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   }, [flowEdges, orderGraphKey, highlightedEdge]);
   const estimate = useMemo(
-    () => (serialized ? estimateWorkflowCost(serialized, catalog) : undefined),
-    [serialized, catalog],
+    () =>
+      serialized ? withReusedSteps(estimateWorkflowCost(serialized, catalog), reused) : undefined,
+    [serialized, catalog, reused],
   );
   const [pendingRun, setPendingRun] = useState<WorkflowCostEstimate | undefined>(undefined);
   const [quoting, setQuoting] = useState(false);
@@ -704,6 +714,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           signal: controller.signal,
           nodeCosts: nodeCostMap(priced),
           beforeNode: spendGuard(priced, { unpriced: "allow" }),
+          cache: workflowStepCache(serialized.id),
           onRunRecorded: (runId) => {
             runIdRef.current = runId;
           },
@@ -727,6 +738,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         }
       } finally {
         setRunning(false);
+        setRunEpoch((epoch) => epoch + 1);
       }
     },
     [serialized, running, validation, mirrorUpdate],
@@ -758,6 +770,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         await resumeWorkflowRun(entry.id, {
           signal: controller.signal,
           beforeNode: priced ? spendGuard(priced, { unpriced: "allow" }) : undefined,
+          cache: workflowStepCache(entry.workflowId),
           onUpdate: mirrorsCanvas ? mirrorUpdate : undefined,
         });
         // A resumed run's result is the card's picture too.
@@ -778,6 +791,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         }
       } finally {
         setRunning(false);
+        setRunEpoch((epoch) => epoch + 1);
       }
     },
     [running, current, mirrorUpdate, catalog],
@@ -800,6 +814,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         await resumeWorkflowRun(runId, {
           signal: controller.signal,
           beforeNode: priced ? spendGuard(priced, { unpriced: "allow" }) : undefined,
+          cache: currentRef.current ? workflowStepCache(currentRef.current.id) : undefined,
           approvedGates: new Map([[gateId, choice]]),
           onUpdate: mirrorUpdate,
         });
@@ -812,6 +827,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         }
       } finally {
         setRunning(false);
+        setRunEpoch((epoch) => epoch + 1);
       }
     },
     [running, mirrorUpdate],
@@ -832,7 +848,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
    * one: quotes refine the figures, then the dialog shows the bill. */
   const startRun = useCallback(async () => {
     if (!serialized || running || quoting || !validation?.ok) return;
-    const staticEstimate = estimateWorkflowCost(serialized, catalog);
+    const staticEstimate = withReusedSteps(estimateWorkflowCost(serialized, catalog), reused);
     if (!needsRunConfirmation(staticEstimate)) {
       void run(staticEstimate);
       return;
@@ -840,11 +856,11 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     setQuoting(true);
     try {
       const quotes = await fetchVideoQuotes(serialized, catalog);
-      setPendingRun(estimateWorkflowCost(serialized, catalog, quotes));
+      setPendingRun(withReusedSteps(estimateWorkflowCost(serialized, catalog, quotes), reused));
     } finally {
       setQuoting(false);
     }
-  }, [serialized, running, quoting, validation, catalog, run]);
+  }, [serialized, running, quoting, validation, catalog, run, reused]);
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 

@@ -9,6 +9,7 @@ import { markArtifacts } from "../library";
 import type { MediaCatalog, MediaModel, StudioArtifact } from "../types";
 import type { NodeRunResult } from "./engine";
 import { nodeLabel, type Workflow } from "./schema";
+import { stableJson } from "./stable-json";
 import { setWorkflowCover } from "./store";
 
 /** The picture a finished run leaves for its card: what reached an output
@@ -116,17 +117,6 @@ export async function makeWorkflowCover(
 }
 
 /** Key-order-independent JSON, to tell an edit from a redraw. */
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value)
-      .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
 
 /** Whether two copies of a workflow hold the same graph and name: opening a
  * workflow redraws its canvas, which is not an edit. */

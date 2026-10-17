@@ -5,6 +5,7 @@ import { t } from "../../../lib/i18n";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
+import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useState } from "react";
 import { formatCredits } from "../../../lib/studio/catalog";
@@ -12,6 +13,7 @@ import type { ReferenceRole } from "../../../lib/studio/kling";
 import { referenceMentions } from "../../../lib/studio/seedance";
 import {
   estimateNodeCost,
+  isPaidNode,
   paramApplies,
   nodeSchema,
   openInputPorts,
@@ -71,6 +73,15 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   // port that is not drawn is a port nothing can be wired to.
   const inputs = openInputPorts(schema, wfNode.params);
   const cost = estimateNodeCost(wfNode, catalog);
+  // A paid step that has something to reuse can be asked for a new take:
+  // the counter is part of what the step asks, so the next run misses the
+  // cache for it (and for what it feeds) and makes a new one.
+  const canMakeAgain =
+    isPaidNode(wfNode) &&
+    wfNode.type !== "gate" &&
+    wfNode.params.freshEachRun !== true &&
+    result?.status !== "running" &&
+    (result?.status === "done" || data.willReuse === true);
   const runState =
     result?.status === "running"
       ? "running"
@@ -100,8 +111,38 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             // Named, so the type no longer shows in the title. Keep it legible.
             <span className="studio-node-kind">{nodeTypeLabel(wfNode.type)}</span>
           ) : null}
-          {cost.kind === "flat" && cost.credits !== undefined && cost.credits > 0 ? (
+          {result?.reused ? (
+            <span
+              className="studio-node-reused"
+              title={t("Same request as before, nothing spent.")}
+            >
+              {t("Reused")}
+            </span>
+          ) : data.willReuse && result?.status !== "running" ? (
+            <span
+              className="studio-node-reused"
+              title={t("Unchanged since it was made: the next run reuses it for free.")}
+            >
+              {t("Free")}
+            </span>
+          ) : cost.kind === "flat" && cost.credits !== undefined && cost.credits > 0 ? (
             <span className="studio-node-kind">~{formatCredits(cost.credits)}</span>
+          ) : null}
+          {canMakeAgain ? (
+            <button
+              type="button"
+              className="studio-icon-button nodrag"
+              aria-label={t("Make a new one next run")}
+              title={t("Make a new one next run")}
+              onClick={() =>
+                onParamsChange(wfNode.id, {
+                  ...wfNode.params,
+                  take: (typeof wfNode.params.take === "number" ? wfNode.params.take : 0) + 1,
+                })
+              }
+            >
+              <IconArrowRotateClockwise size={14} />
+            </button>
           ) : null}
           {result?.status === "running" && typeof result.progress === "number" ? (
             <span className="studio-node-kind">{Math.round(result.progress * 100)}%</span>

@@ -178,7 +178,7 @@ async function videoDuration(src: string): Promise<number> {
  * to a bare stand-in when the catalog is unreachable or the id is unknown: the
  * probed table still answers by id, which is better than refusing to render.
  */
-async function catalogModel(modelId: string): Promise<MediaModel> {
+export async function catalogModel(modelId: string): Promise<MediaModel> {
   try {
     const catalog = await fetchMediaCatalog();
     const found = catalog.models.find((entry) => entry.id === modelId);

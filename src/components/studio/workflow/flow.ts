@@ -58,6 +58,8 @@ export interface StudioNodeData extends Record<string, unknown> {
   /** Assemble nodes only: apply the graph's chain order to the clips port. */
   chainSuggestion?: string[];
   onApplyChainOrder?: (nodeId: string, orderedEdgeIds: string[]) => void;
+  /** The next run answers this step from the step cache (ADR-0115). */
+  willReuse?: boolean;
 }
 
 export type StudioFlowNode = FlowNode<StudioNodeData, "studio">;

@@ -64,6 +64,19 @@ export interface NodeRunResult {
   progress?: number;
   /** A judged gate's verdict, shown next to the hold it caused. */
   note?: string;
+  /** The result came from the step cache: same request, nothing spent
+   * (ADR-0115). */
+  reused?: boolean;
+}
+
+/**
+ * The step cache (ADR-0115), injected by the caller that wants it (the
+ * canvas). A step is looked up by what it is about to ask just before it
+ * would spend, and stored once it has made something.
+ */
+export interface StepCache {
+  get(key: string): Promise<NodeOutput | undefined>;
+  put(key: string, staticKey: string, node: WorkflowNode, output: NodeOutput): Promise<void>;
 }
 
 /** The gate nodes currently holding a finished-for-now run. */
@@ -196,6 +209,10 @@ export interface RunWorkflowOptions {
    * "awaiting", downstream stays pending, and the run returns.
    */
   approvedGates?: Map<string, string | undefined>;
+  /** Reuse what an identical step already made instead of buying it again.
+   * Absent for callers whose own takes decide what is made (a film
+   * production keeps its take signature, ADR-0030). */
+  cache?: StepCache;
 }
 
 /** Carries the per-node status map so callers keep the results of branches

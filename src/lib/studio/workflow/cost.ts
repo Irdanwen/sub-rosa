@@ -35,6 +35,8 @@ export interface NodeCostEstimate {
   credits?: number;
   /** True when `/video/quote` could refine this figure at run time. */
   quotable: boolean;
+  /** Answered from the step cache: free, and not quoted (ADR-0115). */
+  reused?: boolean;
 }
 
 export interface WorkflowCostEstimate {
@@ -160,6 +162,29 @@ export function estimateWorkflowCost(
     if (estimate.kind === "flat" && estimate.credits !== undefined) credits += estimate.credits;
     if (estimate.kind === "metered") metered += 1;
     if (estimate.quotable) quotable += 1;
+  }
+  return { nodes, credits: Math.round(credits * 100) / 100, metered, quotable };
+}
+
+/** The bill once the steps the cache will answer are taken out: each costs
+ * nothing, asks for no quote, and says why. */
+export function withReusedSteps(
+  estimate: WorkflowCostEstimate,
+  reused: ReadonlySet<string>,
+): WorkflowCostEstimate {
+  if (reused.size === 0) return estimate;
+  const nodes = estimate.nodes.map((node) =>
+    reused.has(node.nodeId) && node.kind !== "free"
+      ? { ...node, kind: "flat" as const, credits: 0, quotable: false, reused: true }
+      : node,
+  );
+  let credits = 0;
+  let metered = 0;
+  let quotable = 0;
+  for (const node of nodes) {
+    if (node.kind === "flat" && node.credits !== undefined) credits += node.credits;
+    if (node.kind === "metered") metered += 1;
+    if (node.quotable) quotable += 1;
   }
   return { nodes, credits: Math.round(credits * 100) / 100, metered, quotable };
 }
