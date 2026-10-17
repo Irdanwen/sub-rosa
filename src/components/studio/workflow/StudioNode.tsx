@@ -7,6 +7,7 @@ import { IconArrowDown } from "central-icons/IconArrowDown";
 import { IconArrowUp } from "central-icons/IconArrowUp";
 import { IconArrowRotateClockwise } from "central-icons/IconArrowRotateClockwise";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
+import { IconPlay } from "central-icons/IconPlay";
 import { useState } from "react";
 import { formatCredits } from "../../../lib/studio/catalog";
 import type { ReferenceRole } from "../../../lib/studio/kling";
@@ -93,7 +94,11 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             ? "awaiting"
             : undefined;
   return (
-    <div className="studio-node" data-run={runState}>
+    <div
+      className="studio-node"
+      data-run={runState}
+      data-invalid={data.issues?.some((issue) => issue.severity === "error") ? "true" : undefined}
+    >
       <div className="studio-node-head">
         {/* The name is the node's own, and its type stands in as the
             placeholder until it has one: three asset nodes all reading
@@ -148,6 +153,17 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             <span className="studio-node-kind">{Math.round(result.progress * 100)}%</span>
           ) : null}
           {result?.status === "running" ? <Spinner aria-hidden /> : null}
+          {data.onRunStep && result?.status !== "running" ? (
+            <button
+              type="button"
+              className="studio-icon-button nodrag"
+              aria-label={t("Run this step")}
+              title={t("Run this step and what it needs, nothing else")}
+              onClick={() => data.onRunStep?.(wfNode.id)}
+            >
+              <IconPlay size={14} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="studio-icon-button nodrag"
@@ -158,6 +174,18 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
           </button>
         </span>
       </div>
+      {data.issues?.length ? (
+        <ul className="studio-node-issues">
+          {data.issues.map((issue) => (
+            <li
+              key={`${issue.code ?? ""}:${issue.port ?? ""}:${issue.message}`}
+              data-severity={issue.severity}
+            >
+              {issue.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {inputs.length > 0 ? (
         <div className="studio-node-ports">
           {inputs.map((port) => (

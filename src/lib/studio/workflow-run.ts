@@ -619,6 +619,8 @@ interface DurableRunOptions {
   transientWaitMs?: number;
   /** The step cache, for callers that want it (see `RunWorkflowOptions`). */
   cache?: StepCache;
+  scheduling?: RunWorkflowOptions["scheduling"];
+  isolateFailures?: boolean;
   beforeNode?: RunWorkflowOptions["beforeNode"];
   signal?: AbortSignal;
   onUpdate?: (result: NodeRunResult) => void;
@@ -696,6 +698,8 @@ async function executeDurable(
       completed,
       approvedGates: options.approvedGates,
       cache: options.cache,
+      scheduling: options.scheduling,
+      isolateFailures: options.isolateFailures,
       durableMedia: durableMediaRunner(runId, pendingJobs, options.transientWaitMs),
       beforeNode: async (node) => {
         await writes;

@@ -79,3 +79,30 @@ does not accept an idempotency key today.
 - **Sizing the gate from `/api_keys/rate_limits`.** The response's shape for
   queue limits is not documented; a fixed, small gate plus honouring
   `Retry-After` is honest without it.
+
+## Addendum 2026-10-17: the canvas starts a step when it is ready, and can run part of a graph
+
+The engine ran a workflow level by level: a step waited for its whole level
+to finish, so one slow video held back an unrelated branch, and a failure
+anywhere stopped everything. ComfyUI schedules with a queue of ready nodes
+(`comfy_execution/graph.py`) and runs partial graphs on request.
+
+1. **Two schedulers, chosen by the caller.** `scheduling: "ready"` starts a
+   step as soon as every step feeding it is done, the long renders first.
+   `levels` stays the default and is what film productions use: their spend,
+   gates and strict resume were reviewed against it, and the queue would
+   start a later shot before an earlier one had failed.
+2. **What a held gate or a failure blocks.** A held gate, a failure or a
+   cancel starts nothing below it. With `isolateFailures` (the canvas), the
+   other branches finish; without it, the first failure stops anything new
+   from starting anywhere. When a run ends with both a failure and a held
+   gate, the failure wins: the run is `failed`, resumable, and its gates can
+   be approved on the resume.
+3. **Partial runs freeze the pruned graph.** "Run this step" runs the step
+   and its ancestors (`pruneToTargets`), and that pruned graph is the run's
+   frozen definition, so a resume never runs what was left out. What is
+   upstream and unchanged comes back from the step cache (ADR-0115). Only
+   what will run is validated: a broken step elsewhere does not block it.
+4. **Problems are said on the step.** A validation issue carries the step,
+   the input and a code; the step is ringed and its reasons written on it,
+   and the list above the canvas brings it into view.

@@ -943,6 +943,26 @@
   border-color: var(--destructive);
 }
 
+/* A step the validator refuses: ringed, and its reasons written on it. */
+.studio-node[data-invalid="true"] {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--destructive) 55%, transparent);
+}
+
+.studio-node-issues {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}
+
+.studio-node-issues [data-severity="error"] {
+  color: var(--destructive);
+}
+
 .studio-node[data-run="awaiting"] {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand) 25%, transparent);
@@ -1385,6 +1405,22 @@
 
 .studio-validation [data-severity="error"] {
   color: var(--destructive);
+}
+
+.studio-validation-issue {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .studio-validation-issue:hover {
+    text-decoration: underline;
+  }
 }
 
 /* --- the bible ---------------------------------------------------------- */

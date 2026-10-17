@@ -145,6 +145,80 @@ async function modelEntry(node: WorkflowNode): Promise<unknown> {
   return { id, mediaType, constraints };
 }
 
+/** How one step ended. */
+type NodeOutcome = "done" | "held" | "failed" | "aborted" | "skipped";
+
+/** Which ready steps start first: the long renders, then images and speech,
+ * then the rest, so the slowest work is on its way soonest. */
+function startOrder(node: WorkflowNode | undefined): number {
+  switch (node?.type) {
+    case "video":
+    case "music":
+      return 0;
+    case "image":
+    case "imageEdit":
+    case "tts":
+      return 1;
+    case "chat":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+/**
+ * The ready queue (ADR-0114 addendum): a step starts as soon as every step
+ * feeding it is done, instead of waiting for a whole level. A step that
+ * fails, holds at a gate or is cancelled starts nothing below it; unless the
+ * caller isolates failures, the first failure also stops anything new from
+ * starting anywhere, as the level runner always did.
+ */
+async function runReady(
+  workflow: Workflow,
+  runNode: (nodeId: string) => Promise<NodeOutcome>,
+  options: RunWorkflowOptions,
+): Promise<void> {
+  const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
+  const parents = new Map<string, Set<string>>();
+  const children = new Map<string, Set<string>>();
+  for (const node of workflow.nodes) {
+    parents.set(node.id, new Set());
+    children.set(node.id, new Set());
+  }
+  for (const edge of workflow.edges) {
+    if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) continue;
+    parents.get(edge.target)?.add(edge.source);
+    children.get(edge.source)?.add(edge.target);
+  }
+  const waiting = new Map([...parents].map(([id, set]) => [id, set.size]));
+  const running = new Set<Promise<void>>();
+  let stopped = false;
+  const start = (ids: string[]) => {
+    for (const id of [...ids].sort(
+      (a, b) => startOrder(nodeById.get(a)) - startOrder(nodeById.get(b)),
+    )) {
+      if (stopped || options.signal?.aborted) return;
+      const task: Promise<void> = runNode(id).then((outcome) => {
+        running.delete(task);
+        if (outcome === "done") {
+          const ready: string[] = [];
+          for (const child of children.get(id) ?? []) {
+            const left = (waiting.get(child) ?? 1) - 1;
+            waiting.set(child, left);
+            if (left === 0) ready.push(child);
+          }
+          start(ready);
+        } else if (outcome === "aborted" || (outcome === "failed" && !options.isolateFailures)) {
+          stopped = true;
+        }
+      });
+      running.add(task);
+    }
+  };
+  start(workflow.nodes.filter((node) => waiting.get(node.id) === 0).map((node) => node.id));
+  while (running.size > 0) await Promise.race(running);
+}
+
 /** Runs the workflow and resolves with every node's final result. Rejects
  * with WorkflowRunError (carrying the partial results) when validation or a
  * node fails, and with an AbortError DOMException on cancellation. */
@@ -181,109 +255,112 @@ export async function runWorkflow(
     options.onUpdate?.(result);
   };
 
-  for (const level of levels) {
-    if (options.signal?.aborted) {
-      throw new DOMException("The workflow run was cancelled.", "AbortError");
+  const failures: Array<{ nodeId: string; message: string }> = [];
+  /** One step, start to finish. What it returns is how it ended. */
+  const runNode = async (nodeId: string): Promise<NodeOutcome> => {
+    const node = nodeById.get(nodeId);
+    if (!node) return "skipped";
+    // Unknown schemas were rejected by validation; this is a type guard.
+    if (!maybeNodeSchema(node.type)) return "skipped";
+    // A resumed run replays finished nodes from their cached outputs
+    // instead of re-executing (and re-spending) them.
+    const cached = options.completed?.get(nodeId);
+    if (cached) {
+      update({ nodeId, status: "done", output: cached });
+      return "done";
     }
-    const failures: Array<{ nodeId: string; message: string }> = [];
-    let aborted = false;
-    let held = false;
-    // allSettled semantics: siblings that finish keep their results even when
-    // another node in the level fails.
-    await Promise.all(
-      level.map(async (nodeId) => {
-        const node = nodeById.get(nodeId);
-        if (!node) return;
-        // Unknown schemas were rejected by validation; this is a type guard.
-        if (!maybeNodeSchema(node.type)) return;
-        // A resumed run replays finished nodes from their cached outputs
-        // instead of re-executing (and re-spending) them.
-        const cached = options.completed?.get(nodeId);
-        if (cached) {
-          update({ nodeId, status: "done", output: cached });
-          return;
+    update({ nodeId, status: "running" });
+    try {
+      const ports = portInputs(node, workflow.edges, results, nodeById);
+      // The step cache: the same request, asked again, is answered by
+      // what it made the first time instead of being bought again. Asked
+      // before the budget check, because a reused step spends nothing.
+      const cacheKey =
+        cache && cacheable(node)
+          ? await runtimeKey(node, ports, await modelEntry(node))
+          : undefined;
+      if (cacheKey && cache && node.params.freshEachRun !== true) {
+        const reused = await cache.get(cacheKey).catch(() => undefined);
+        if (reused) {
+          update({ nodeId, status: "done", output: reused, reused: true });
+          return "done";
         }
-        update({ nodeId, status: "running" });
-        try {
-          const ports = portInputs(node, workflow.edges, results, nodeById);
-          // The step cache: the same request, asked again, is answered by
-          // what it made the first time instead of being bought again. Asked
-          // before the budget check, because a reused step spends nothing.
-          const cacheKey =
-            cache && cacheable(node)
-              ? await runtimeKey(node, ports, await modelEntry(node))
-              : undefined;
-          if (cacheKey && cache && node.params.freshEachRun !== true) {
-            const reused = await cache.get(cacheKey).catch(() => undefined);
-            if (reused) {
-              update({ nodeId, status: "done", output: reused, reused: true });
-              return;
-            }
-          }
-          // A gate checks the budget itself, and only when its judge is
-          // about to read: an approval already given spends nothing.
-          if (node.type !== "gate" && isPaidNode(node)) {
-            await options.beforeNode?.(node);
-          }
-          const output =
-            node.type === "gate"
-              ? await gateDecision(node, workflow.edges, results, options.approvedGates, {
+      }
+      // A gate checks the budget itself, and only when its judge is
+      // about to read: an approval already given spends nothing.
+      if (node.type !== "gate" && isPaidNode(node)) {
+        await options.beforeNode?.(node);
+      }
+      const output =
+        node.type === "gate"
+          ? await gateDecision(node, workflow.edges, results, options.approvedGates, {
+              signal: options.signal,
+              beforeJudge: beforeNode ? () => beforeNode(node) : undefined,
+            })
+          : await withTransientTolerance(
+              () =>
+                executeNode(node, ports, {
                   signal: options.signal,
-                  beforeJudge: beforeNode ? () => beforeNode(node) : undefined,
-                })
-              : await withTransientTolerance(
-                  () =>
-                    executeNode(node, ports, {
-                      signal: options.signal,
-                      storage: options.storage,
-                      costCredits: options.nodeCosts?.[nodeId],
-                      durableMedia: options.durableMedia,
-                      onProgress: (fraction) =>
-                        update({ nodeId, status: "running", progress: fraction }),
-                    }),
-                  {
-                    signal: options.signal,
-                    budgetMs: options.transientWaitMs,
-                    onWait: (note) => update({ nodeId, status: "running", note }),
-                  },
-                );
-          update({ nodeId, status: "done", output });
-          if (cacheKey && cache) {
-            const staticKey = (await staticKeysOnce())?.get(nodeId);
-            // Best effort: a step that could not be remembered still ran.
-            if (staticKey)
-              await cache.put(cacheKey, staticKey, node, output).catch(() => undefined);
-          }
-        } catch (error) {
-          if (error instanceof GateHold) {
-            // Not a failure: the production is waiting for the user.
-            held = true;
-            update({ nodeId, status: "awaiting", note: error.note });
-            return;
-          }
-          if (error instanceof DOMException && error.name === "AbortError") {
-            // Cancellation is not a node failure; leave the node pending.
-            aborted = true;
-            update({ nodeId, status: "pending" });
-            return;
-          }
-          const message = error instanceof Error ? error.message : "The node failed.";
-          update({ nodeId, status: "error", error: message });
-          failures.push({ nodeId, message });
-        }
-      }),
-    );
-    if (aborted || options.signal?.aborted) {
-      throw new DOMException("The workflow run was cancelled.", "AbortError");
+                  storage: options.storage,
+                  costCredits: options.nodeCosts?.[nodeId],
+                  durableMedia: options.durableMedia,
+                  onProgress: (fraction) =>
+                    update({ nodeId, status: "running", progress: fraction }),
+                }),
+              {
+                signal: options.signal,
+                budgetMs: options.transientWaitMs,
+                onWait: (note) => update({ nodeId, status: "running", note }),
+              },
+            );
+      update({ nodeId, status: "done", output });
+      if (cacheKey && cache) {
+        const staticKey = (await staticKeysOnce())?.get(nodeId);
+        // Best effort: a step that could not be remembered still ran.
+        if (staticKey) await cache.put(cacheKey, staticKey, node, output).catch(() => undefined);
+      }
+      return "done";
+    } catch (error) {
+      if (error instanceof GateHold) {
+        // Not a failure: the production is waiting for the user.
+        update({ nodeId, status: "awaiting", note: error.note });
+        return "held";
+      }
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // Cancellation is not a node failure; leave the node pending.
+        update({ nodeId, status: "pending" });
+        return "aborted";
+      }
+      const message = error instanceof Error ? error.message : "The node failed.";
+      update({ nodeId, status: "error", error: message });
+      failures.push({ nodeId, message });
+      return "failed";
     }
-    const firstFailure = failures[0];
-    if (firstFailure) {
-      throw new WorkflowRunError(firstFailure.message, results, firstFailure.nodeId);
+  };
+
+  const cancelled = () => new DOMException("The workflow run was cancelled.", "AbortError");
+  if (options.scheduling === "ready") {
+    await runReady(workflow, runNode, options);
+    if (options.signal?.aborted) throw cancelled();
+  } else {
+    for (const level of levels) {
+      if (options.signal?.aborted) throw cancelled();
+      // allSettled semantics: siblings that finish keep their results even
+      // when another node in the level fails.
+      const outcomes = await Promise.all(level.map(runNode));
+      if (outcomes.includes("aborted") || options.signal?.aborted) throw cancelled();
+      if (failures[0]) break;
+      // A held gate ends the run here, cleanly: what finished stays
+      // finished, everything downstream stays pending, and the caller reads
+      // the awaiting nodes off the results (see `awaitingGateIds`).
+      if (outcomes.includes("held")) return results;
     }
-    // A held gate ends the run here, cleanly: what finished stays finished,
-    // everything downstream stays pending, and the caller reads the awaiting
-    // nodes off the results (see `awaitingGateIds`).
-    if (held) return results;
+  }
+  // A failure outranks a held gate: the run is failed (and resumable), and
+  // its gates can still be approved when it is resumed.
+  const firstFailure = failures[0];
+  if (firstFailure) {
+    throw new WorkflowRunError(firstFailure.message, results, firstFailure.nodeId);
   }
   return results;
 }

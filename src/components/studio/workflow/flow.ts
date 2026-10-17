@@ -12,6 +12,7 @@ import {
   resolveInputPort,
   type NodeRunResult,
   type StrandedEdge,
+  type ValidationIssue,
   type Workflow,
   type WorkflowNode,
 } from "../../../lib/studio/workflow";
@@ -60,6 +61,10 @@ export interface StudioNodeData extends Record<string, unknown> {
   onApplyChainOrder?: (nodeId: string, orderedEdgeIds: string[]) => void;
   /** The next run answers this step from the step cache (ADR-0115). */
   willReuse?: boolean;
+  /** What the validator says about this step, shown on it. */
+  issues?: ValidationIssue[];
+  /** Run this step and what it needs, nothing else. */
+  onRunStep?: (nodeId: string) => void;
 }
 
 export type StudioFlowNode = FlowNode<StudioNodeData, "studio">;
