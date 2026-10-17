@@ -161,3 +161,34 @@
   color: var(--muted-foreground);
   font-size: var(--fs-xs);
 }
+
+.workflow-library-hint {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--muted-foreground);
+}
+
+.workflow-library-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-library-blocks li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.workflow-library-block-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--foreground);
+}

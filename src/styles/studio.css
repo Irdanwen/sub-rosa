@@ -2721,3 +2721,8 @@ button.studio-block-crumb:hover {
   gap: var(--sp-2);
   color: var(--muted-foreground);
 }
+
+.studio-block-panel-saved {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+}

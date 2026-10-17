@@ -259,3 +259,47 @@ describe("writing a level back into the workflow", () => {
     expect(top.blocks).toBeUndefined();
   });
 });
+
+describe("a block kept in the library", () => {
+  it("is saved with its steps, the blocks inside it and its face, and comes back as a copy", async () => {
+    const { blockToLibrary, blocksForLibraryBlock } = await import(
+      "../lib/studio/workflow/library-blocks"
+    );
+    const { workflow: withBlock, block } = grouped();
+    const row = blockToLibrary(block, withBlock.blocks ?? [], 5, () => "row");
+    expect(row).toMatchObject({ id: "row", origin: "block", name: "Shot", updatedAt: 5 });
+    expect(row.extra?.face).toEqual({
+      inputs: block.inputs,
+      outputs: block.outputs,
+      promoted: block.promoted,
+    });
+    // Into another workflow: a copy with a new id that remembers where it came from.
+    const first = blocksForLibraryBlock(row, [], () => "copy");
+    expect(first.blockId).toBe("copy");
+    expect(first.blocks[0]).toMatchObject({
+      id: "copy",
+      name: "Shot",
+      inputs: block.inputs,
+      source: { id: "row", updatedAt: 5 },
+    });
+    // The same saved version again is the copy already there.
+    expect(blocksForLibraryBlock(row, first.blocks, () => "other").blockId).toBe("copy");
+    // A newer one is a new copy beside it.
+    const newer = blocksForLibraryBlock({ ...row, updatedAt: 9 }, first.blocks, () => "newer");
+    expect(newer.blocks.map((entry) => entry.id)).toEqual(["copy", "newer"]);
+    // Saving a copy again updates the row it came from.
+    expect(blockToLibrary(first.blocks[0], first.blocks, 7).id).toBe("row");
+  });
+
+  it("is offered by the step search, but not to finish a connection", async () => {
+    const { searchNodeTypes } = await import("../lib/studio/workflow/node-search");
+    const library = [{ id: "row", name: "Opening shot" }];
+    const hits = searchNodeTypes("opening", undefined, library);
+    expect(hits[0]).toMatchObject({ type: "block", label: "Opening shot", libraryId: "row" });
+    expect(
+      searchNodeTypes("opening", { from: "output", kind: "image" }, library).some(
+        (hit) => hit.libraryId,
+      ),
+    ).toBe(false);
+  });
+});

@@ -114,8 +114,11 @@ pub(crate) async fn save(pool: &SqlitePool, request: SaveWorkflowRequest) -> Res
     {
         return Err(INVALID.into());
     }
+    // A block published to the library (ADR-0116) is a row like a workflow,
+    // told apart so the library lists it among blocks.
     let origin = match request.origin.as_deref() {
         Some("import") => "import",
+        Some("block") => "block",
         _ => "mine",
     };
     let now = now_ms();
@@ -326,5 +329,20 @@ mod tests {
         imported.origin = Some("import".into());
         save(&pool, imported).await.unwrap();
         assert_eq!(list(&pool).await.unwrap()[0].origin, "import");
+    }
+
+    #[tokio::test]
+    async fn a_published_block_is_remembered_as_one_and_nothing_else_is_invented() {
+        let (_dir, pool) = open().await;
+        let mut block = request("a", "Opening shot", 1);
+        block.origin = Some("block".into());
+        save(&pool, block).await.unwrap();
+        let mut odd = request("b", "Odd", 1);
+        odd.origin = Some("template".into());
+        save(&pool, odd).await.unwrap();
+        let rows = list(&pool).await.unwrap();
+        let origin = |id: &str| rows.iter().find(|row| row.id == id).unwrap().origin.clone();
+        assert_eq!(origin("a"), "block");
+        assert_eq!(origin("b"), "mine");
     }
 }

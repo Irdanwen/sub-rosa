@@ -95,3 +95,19 @@ every step that uses the block. Three rules keep that level honest:
   chosen from inside it (`BlockPanel`). Taking away an input or a result
   takes off the wires that used it on every instance, wherever it stands
   (`replaceBlock`); a wire never dangles silently.
+
+## Addendum 2026-10-17: blocks kept in the library
+
+"Save to the library", from inside a block, keeps it as a library row of its
+own (`studio_workflows`, `origin: "block"`, no migration): its steps, the
+blocks inside it and its face (`extra.face`). The library page lists these
+blocks apart from workflows, and the step search offers them under
+"Blocks" (not to finish a dragged connection: which input it should land
+on is the person's call).
+
+A library block comes into a workflow **by value** (`library-blocks.ts`):
+a copy with its own id, remembering the row and the version it came from
+(`source`). The same saved version again reuses that copy; a newer one is a
+new copy beside it. Saving a copy again updates the row it came from.
+Changing or deleting the library row never changes a workflow that already
+holds a copy, which is the reason given above for refusing references.

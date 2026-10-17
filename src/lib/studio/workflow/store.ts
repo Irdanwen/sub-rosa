@@ -70,7 +70,7 @@ function fromStored(row: StoredWorkflow): Workflow | undefined {
       edges: edges as Workflow["edges"],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      origin: row.origin === "import" ? "import" : "mine",
+      origin: row.origin === "import" || row.origin === "block" ? row.origin : "mine",
       ...(row.coverArtifactId ? { coverArtifactId: row.coverArtifactId } : {}),
       ...(kept.length > 0 ? { frames: kept } : {}),
       ...(defined.length > 0 ? { blocks: defined } : {}),
@@ -171,7 +171,14 @@ export function workflowLibraryLoaded(): boolean {
 
 /** Saved workflows, most recently updated first. */
 export function listWorkflows(): Workflow[] {
-  return sorted(cache);
+  // A block published to the library is stored beside the workflows, and
+  // listed among blocks (library-blocks.ts).
+  return sorted(cache).filter((workflow) => workflow.origin !== "block");
+}
+
+/** The blocks published to the library, newest first. */
+export function listLibraryBlocks(): Workflow[] {
+  return sorted(cache).filter((workflow) => workflow.origin === "block");
 }
 
 /** Upserts by id, refreshing updatedAt. Returns the stored copy. What the
