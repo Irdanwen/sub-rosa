@@ -2,6 +2,11 @@
 // cost (asked before anything is spent), the run itself through the same
 // durable engine as the desktop, its results, and a gate's candidates to
 // choose from when the run holds for approval. The graph is never drawn.
+//
+// A run lives in the phone's run sessions, shared by every app screen, so
+// going back to the list or to another Studio tab leaves it running and
+// opening the app again finds it where it is; the desktop keeps its runs
+// the same way, one session per workflow (run-phoneRunSessions.ts).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayableMediaUrl } from "../../../../lib/artifact-media";
@@ -28,6 +33,7 @@ import { nodeTypeLabel } from "../../../../lib/studio/workflow/labels";
 import type { NodeOutput } from "../../../../lib/studio/workflow/run-types";
 import { spendGuard } from "../../../../lib/studio/workflow/spend";
 import { readSpendCeiling } from "../../../../lib/studio/workflow/spend-ceiling";
+import { RunSessions } from "../../../../lib/studio/workflow/run-sessions";
 import { saveWorkflow } from "../../../../lib/studio/workflow/store";
 import {
   resumeWorkflowRun,
@@ -43,6 +49,14 @@ import { itemName } from "../../../studio/workflow/NodeOutputView";
 import { keyed } from "../../../../lib/keyed";
 import { AppField } from "./AppField";
 
+/** The phone's run sessions, one per workflow, for as long as the webview
+ * lives; the screens subscribe to hear of a change. */
+export const phoneRunSessions = new RunSessions();
+const listeners = new Set<() => void>();
+function notify(): void {
+  for (const listener of listeners) listener();
+}
+
 export function AppRunScreen({
   workflow: opened,
   catalog,
@@ -55,26 +69,35 @@ export function AppRunScreen({
   const estimate = useMemo(() => appEstimate(graph, catalog), [graph, catalog]);
   const blocker = appBlocker(graph);
   const fields = shownFields(workflow.app, workflow, catalog);
-  const [results, setResults] = useState<Map<string, NodeRunResult>>(new Map());
-  const [running, setRunning] = useState(false);
+  const [, setEpoch] = useState(0);
+  useEffect(() => {
+    const listener = () => setEpoch((epoch) => epoch + 1);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+  const results = phoneRunSessions.results(workflow.id);
+  const running = phoneRunSessions.running(workflow.id);
+  const error = phoneRunSessions.get(workflow.id)?.error;
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string>();
-  const runIdRef = useRef<string | undefined>(undefined);
-  const abortRef = useRef<AbortController | undefined>(undefined);
 
-  // What the last run made shows again when the app is opened.
+  // What the last run made shows again when the app is opened, unless its
+  // session already holds a run (going on, or just finished).
   useEffect(() => {
     let cancelled = false;
+    if (phoneRunSessions.get(opened.id)) return;
     void (async () => {
       const last = (await workflowRunHistory(opened.id)).find((entry) => entry.done > 0);
-      if (!last || cancelled) return;
-      runIdRef.current = last.id;
+      if (!last || cancelled || phoneRunSessions.get(opened.id)) return;
       const { results: past } = await runResults(last.id);
-      if (!cancelled) setResults((live) => (live.size > 0 ? live : past));
+      if (cancelled || phoneRunSessions.get(opened.id)) return;
+      phoneRunSessions.setRunId(opened.id, last.id);
+      phoneRunSessions.show(opened.id, () => past);
+      notify();
     })().catch(() => undefined);
     return () => {
       cancelled = true;
-      abortRef.current?.abort();
     };
   }, [opened.id]);
 
@@ -99,17 +122,23 @@ export function AppRunScreen({
   }, []);
 
   const update = useCallback(
-    (result: NodeRunResult) => setResults((current) => new Map(current).set(result.nodeId, result)),
-    [],
+    (result: NodeRunResult) => {
+      phoneRunSessions.record(workflow.id, result);
+      notify();
+    },
+    [workflow.id],
   );
 
   const run = useCallback(async () => {
     setConfirming(false);
-    setError(undefined);
-    setRunning(true);
-    setResults(new Map());
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const workflowId = workflow.id;
+    const controller = phoneRunSessions.begin(workflowId, {
+      graph: graph.effective,
+      estimate,
+      timed: false,
+    });
+    notify();
+    let outcome: "done" | "failed" | "cancelled" = "done";
     try {
       await runAndSaveWorkflow(graph.effective, {
         signal: controller.signal,
@@ -117,47 +146,57 @@ export function AppRunScreen({
         isolateFailures: true,
         nodeCosts: nodeCostMap(estimate),
         beforeNode: spendGuard(estimate, { unpriced: "allow", ceiling: readSpendCeiling() }),
-        cache: workflowStepCache(workflow.id),
-        onRunRecorded: (runId) => {
-          runIdRef.current = runId;
-        },
+        cache: workflowStepCache(workflowId),
+        onRunRecorded: (runId) => phoneRunSessions.setRunId(workflowId, runId),
         onUpdate: update,
       });
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError"))
-        setError(
+      if (cause instanceof DOMException && cause.name === "AbortError") outcome = "cancelled";
+      else {
+        outcome = "failed";
+        phoneRunSessions.fail(
+          workflowId,
           cause instanceof WorkflowRunError || cause instanceof Error
             ? cause.message
             : t("The run failed."),
         );
+      }
     } finally {
-      setRunning(false);
+      phoneRunSessions.end(workflowId, outcome);
+      notify();
     }
   }, [graph, estimate, workflow.id, update]);
 
   const approve = useCallback(
     async (gateId: string, choice: string) => {
-      const runId = runIdRef.current;
+      const workflowId = workflow.id;
+      const runId = phoneRunSessions.get(workflowId)?.runId;
       if (!runId) return;
-      setRunning(true);
-      setError(undefined);
-      const controller = new AbortController();
-      abortRef.current = controller;
+      const controller = phoneRunSessions.begin(workflowId, { timed: false, keep: () => true });
+      notify();
+      let outcome: "done" | "failed" | "cancelled" = "done";
       try {
         await resumeWorkflowRun(runId, {
           signal: controller.signal,
           beforeNode: spendGuard(estimate, { unpriced: "allow" }),
-          cache: workflowStepCache(workflow.id),
+          cache: workflowStepCache(workflowId),
           scheduling: "ready",
           isolateFailures: true,
           approvedGates: new Map([[gateId, choice]]),
           onUpdate: update,
         });
       } catch (cause) {
-        if (!(cause instanceof DOMException && cause.name === "AbortError"))
-          setError(cause instanceof Error ? cause.message : t("The approval failed."));
+        if (cause instanceof DOMException && cause.name === "AbortError") outcome = "cancelled";
+        else {
+          outcome = "failed";
+          phoneRunSessions.fail(
+            workflowId,
+            cause instanceof Error ? cause.message : t("The approval failed."),
+          );
+        }
       } finally {
-        setRunning(false);
+        phoneRunSessions.end(workflowId, outcome);
+        notify();
       }
     },
     [estimate, workflow.id, update],
@@ -198,9 +237,12 @@ export function AppRunScreen({
         <button
           type="button"
           className="mobile-studio-generate"
-          onClick={() => abortRef.current?.abort()}
+          onClick={() => phoneRunSessions.stop(workflow.id)}
         >
-          <Spinner /> {t("Stop")}
+          <span aria-hidden>
+            <Spinner />
+          </span>
+          {t("Stop")}
         </button>
       ) : (
         <button

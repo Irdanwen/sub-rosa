@@ -53,7 +53,7 @@ app side is done; the provider is asked for the rest).
 | Preview nodes | Preview and before/after compare steps | done | #420, #423 |
 | Queue and history | Run history per workflow, last results on reopen, reopen a past run | done | #404 |
 | Workflow tabs | Tabs that show each run's state; a run goes on in its own tab | done | #428 |
-| Large graphs | 150 steps judged, priced, put in place and laid out in about 3 ms (`workflow-scale.test.ts`) | done | #412 |
+| Large graphs | 150 steps: judged, priced, put in place and laid out in about 3 ms (`workflow-scale.test.ts`); on the canvas, opened in 1.0 s, panned and dragged at 60 frames a second (p95 17.7 ms, Chromium 1440 px, 2026-10-17) | done | #412 |
 
 ## Files and import
 
