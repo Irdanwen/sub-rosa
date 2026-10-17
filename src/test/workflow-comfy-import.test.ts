@@ -330,8 +330,10 @@ describe("what the review found", () => {
   });
 
   it("never turns a chat node into a paid image, and fills a one-image port once", () => {
+    // A chat node answers in text: it becomes a chat step, never an image.
     const chat = api({ "1": { class_type: "OpenAIChatNode", inputs: { prompt: "hi" } } });
-    expect(chat.workflow.nodes).toEqual([]);
+    expect(chat.workflow.nodes.map((node) => node.type)).toEqual(["chat"]);
+    expect(chat.workflow.nodes[0].params.prompt).toBe("hi");
     const ui = {
       nodes: [
         { id: 1, type: "LoadImage", mode: 0, inputs: [], widgets_values: ["a.png", "image"] },
