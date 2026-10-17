@@ -902,7 +902,20 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  flex-wrap: wrap;
+  /* Its name, its step menu and its price give way first, so Run stays on
+     the line; only a narrow window lets it wrap. */
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.studio-workflows-toolbar > * {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1100px) {
+  .studio-workflows-toolbar {
+    flex-wrap: wrap;
+  }
 }
 
 .studio-workflows-toolbar .studio-spacer {
@@ -1367,9 +1380,14 @@
 
 /* --- run cost ---------------------------------------------------------------- */
 
+.studio-workflows-toolbar > .studio-workflow-cost,
 .studio-workflow-cost {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1413,8 +1431,27 @@
   margin-top: var(--sp-4);
 }
 
-.studio-workflow-name {
+.studio-workflows-toolbar > .studio-workflow-name {
+  /* Gives way before anything wraps: the toolbar keeps Run on its line. */
+  flex: 0 1 220px;
+  min-width: 112px;
   max-width: 220px;
+}
+
+.studio-workflows-toolbar > .select-control {
+  flex: 0 1 184px;
+  min-width: 128px;
+}
+
+.studio-workflows-toolbar > .select-control .select-trigger {
+  width: 100%;
+  min-width: 0;
+}
+
+.studio-workflows-toolbar > .select-control .select-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A connection the editor let go of when a model change closed its port.
