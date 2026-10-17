@@ -136,7 +136,16 @@ import { useReusePrediction } from "./workflow/useReusePrediction";
  * that rendered on an empty cache would seed a first workflow over the ones
  * already stored (ADR-0075).
  */
-export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
+export function WorkflowStudio({
+  catalog,
+  pendingWorkflowId,
+  onPendingWorkflowOpened,
+}: {
+  catalog: MediaCatalog;
+  /** A workflow to open, asked for from elsewhere (the gallery). */
+  pendingWorkflowId?: string;
+  onPendingWorkflowOpened?: () => void;
+}) {
   const [ready, setReady] = useState(workflowLibraryLoaded);
   useEffect(() => {
     if (ready) return;
@@ -155,10 +164,24 @@ export function WorkflowStudio({ catalog }: { catalog: MediaCatalog }) {
       </div>
     );
   }
-  return <WorkflowEditor catalog={catalog} />;
+  return (
+    <WorkflowEditor
+      catalog={catalog}
+      pendingWorkflowId={pendingWorkflowId}
+      onPendingWorkflowOpened={onPendingWorkflowOpened}
+    />
+  );
 }
 
-function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
+function WorkflowEditor({
+  catalog,
+  pendingWorkflowId,
+  onPendingWorkflowOpened,
+}: {
+  catalog: MediaCatalog;
+  pendingWorkflowId?: string;
+  onPendingWorkflowOpened?: () => void;
+}) {
   const [workflows, setWorkflows] = useState<Workflow[]>(() => listWorkflows());
   /** The library of cards, or the canvas of the workflow being edited. */
   const [view, setView] = useState<"library" | "canvas">("library");
@@ -1074,6 +1097,15 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     },
     [hydrate],
   );
+
+  // Asked from elsewhere (the gallery): open that workflow, or say it is gone.
+  useEffect(() => {
+    if (!pendingWorkflowId) return;
+    const found = listWorkflows().find((entry) => entry.id === pendingWorkflowId);
+    if (found) openWorkflow(found);
+    else setRunError(t("The workflow that made this file has been deleted."));
+    onPendingWorkflowOpened?.();
+  }, [pendingWorkflowId, openWorkflow, onPendingWorkflowOpened]);
 
   /** A file read and, for a ComfyUI one, translated and reviewed. */
   const importWorkflow = useCallback(

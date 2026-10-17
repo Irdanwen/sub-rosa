@@ -36,6 +36,7 @@ import {
 } from "../../lib/studio/image-job-recovery";
 import { OPEN_COMPOSE_EVENT } from "../../lib/studio/compose/jobs";
 import { OPEN_RETOUCH_EVENT } from "../../lib/studio/retouch/jobs";
+import { OPEN_WORKFLOW_EVENT } from "../../lib/studio/workflow/open";
 import "./stage/stage.css";
 import "./desk/desk.css";
 
@@ -168,6 +169,21 @@ export function StudioView() {
     return () => window.removeEventListener(OPEN_RETOUCH_EVENT, onOpen);
   }, []);
 
+  // The gallery leads back to the workflow that made a file.
+  const [pendingWorkflow, setPendingWorkflow] = useState<string | undefined>(undefined);
+  const clearPendingWorkflow = useCallback(() => setPendingWorkflow(undefined), []);
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const workflowId = (event as CustomEvent<string>).detail;
+      if (typeof workflowId !== "string" || !workflowId) return;
+      setPendingWorkflow(workflowId);
+      setTab("projects");
+      setSection("workflows");
+    };
+    window.addEventListener(OPEN_WORKFLOW_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_WORKFLOW_EVENT, onOpen);
+  }, []);
+
   // And to the Compose tool.
   const [pendingCompose, setPendingCompose] = useState<string | undefined>(undefined);
   const clearPendingCompose = useCallback(() => setPendingCompose(undefined), []);
@@ -296,7 +312,11 @@ export function StudioView() {
             onPendingProductionApplied={clearPendingProduction}
           />
         ) : (
-          <WorkflowStudio catalog={catalog} />
+          <WorkflowStudio
+            catalog={catalog}
+            pendingWorkflowId={pendingWorkflow}
+            onPendingWorkflowOpened={clearPendingWorkflow}
+          />
         )}
       </div>
     );

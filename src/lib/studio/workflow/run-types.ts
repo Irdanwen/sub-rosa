@@ -1,7 +1,7 @@
 // The engine's vocabulary: what a node produces, what a run reports, and what
 // a caller injects (storage, durable renders, budget checks, approvals).
 
-import type { ArtifactKind } from "../types";
+import type { ArtifactKind, WorkflowOrigin } from "../types";
 import type { WorkflowNode } from "./schema";
 
 /** A shot's link to the clip it continues (ADR-0019 parent links). */
@@ -114,6 +114,8 @@ export interface SaveMediaMeta {
   /** What the render was quoted or estimated at, in credits. An estimate the
    * caller priced before running, not a receipt. */
   costCredits?: number;
+  /** The workflow, run and step that made it. */
+  origin?: WorkflowOrigin;
 }
 
 export interface LoadedAsset {
@@ -167,6 +169,8 @@ export interface DurableRenderRequest {
   parentArtifactId?: string;
   parentHandoffSeconds?: number;
   costCredits?: number;
+  /** The workflow, run and step it is made for (filed with the result). */
+  origin?: WorkflowOrigin;
 }
 
 export interface RunWorkflowOptions {
@@ -218,6 +222,9 @@ export interface RunWorkflowOptions {
   /** With `ready`: a failed step stops only what it feeds, and the other
    * branches finish. The run still ends failed, and resumable. */
   isolateFailures?: boolean;
+  /** Which workflow (and run) is running: every file a step makes is filed
+   * with it, and the step's id, so the gallery can lead back to it. */
+  origin?: Omit<WorkflowOrigin, "surface" | "nodeId">;
   /** Reuse what an identical step already made instead of buying it again.
    * Absent for callers whose own takes decide what is made (a film
    * production keeps its take signature, ADR-0030). */

@@ -30,7 +30,9 @@ import {
   GateHold,
   type RunWorkflowOptions,
   WorkflowRunError,
+  type WorkflowStorage,
 } from "./run-types";
+import type { WorkflowOrigin } from "../types";
 import { catalogModel, executeNode } from "./execute-node";
 import { runtimeKey, staticKeys } from "./signature";
 import { withTransientTolerance } from "./transient";
@@ -123,6 +125,33 @@ function portInputs(
     else ports.set(port.id, [output]);
   }
   return ports;
+}
+
+/** The step's origin, filed with everything it makes. */
+function stepOrigin(options: RunWorkflowOptions, nodeId: string): WorkflowOrigin | undefined {
+  return options.origin ? { surface: "workflow", ...options.origin, nodeId } : undefined;
+}
+
+/** The run's storage, filing what this step saves with its origin. */
+function stepStorage(options: RunWorkflowOptions, nodeId: string): WorkflowStorage | undefined {
+  const storage = options.storage;
+  const origin = stepOrigin(options, nodeId);
+  if (!storage || !origin) return storage;
+  return {
+    ...storage,
+    save: (payload, extension, meta) => storage.save(payload, extension, { ...meta, origin }),
+  };
+}
+
+/** The run's durable renders, carrying this step's origin to the job. */
+function stepDurableMedia(
+  options: RunWorkflowOptions,
+  nodeId: string,
+): RunWorkflowOptions["durableMedia"] {
+  const durable = options.durableMedia;
+  const origin = stepOrigin(options, nodeId);
+  if (!durable || !origin) return durable;
+  return (id, request, signal) => durable(id, { ...request, origin }, signal);
 }
 
 /** The steps worth remembering: every paid one (a gate's judge excepted,
@@ -301,9 +330,9 @@ export async function runWorkflow(
               () =>
                 executeNode(node, ports, {
                   signal: options.signal,
-                  storage: options.storage,
+                  storage: stepStorage(options, nodeId),
                   costCredits: options.nodeCosts?.[nodeId],
-                  durableMedia: options.durableMedia,
+                  durableMedia: stepDurableMedia(options, nodeId),
                   onProgress: (fraction) =>
                     update({ nodeId, status: "running", progress: fraction }),
                 }),

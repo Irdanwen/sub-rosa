@@ -210,7 +210,7 @@ pub fn apply_landed_context(generation: &mut Value, source: Option<&str>, contex
     };
     let origin = context
         .and_then(|context| context.get("origin"))
-        .filter(|origin| origin.get("surface").and_then(Value::as_str) == Some("chat"))
+        .filter(|origin| known_origin(origin))
         .cloned()
         .or_else(|| (source == Some("assistant")).then(|| chat_origin(None)));
     if let Some(origin) = origin {
@@ -221,6 +221,29 @@ pub fn apply_landed_context(generation: &mut Value, source: Option<&str>, contex
         .filter(|edit| edit.get("op").and_then(Value::as_str) == Some("refine"))
     {
         fields.insert("edit".into(), edit.clone());
+    }
+}
+
+/// An origin the gallery knows how to lead back to: a chat, or a workflow
+/// step (its workflow, run and step ids, short strings). Anything else is
+/// dropped rather than filed.
+fn known_origin(origin: &Value) -> bool {
+    match origin.get("surface").and_then(Value::as_str) {
+        Some("chat") => true,
+        Some("workflow") => {
+            let short = |field: &str| {
+                origin.get(field).map_or(true, |value| {
+                    value.as_str().is_some_and(|text| text.len() <= 200)
+                })
+            };
+            origin
+                .get("workflowId")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.is_empty() && id.len() <= 200)
+                && short("runId")
+                && short("nodeId")
+        }
+        _ => false,
     }
 }
 
@@ -745,6 +768,30 @@ mod tests {
         let retouch_context = json!({ "edit": { "of": "a", "root": "a", "op": "prompt", "n": 1 } });
         apply_landed_context(&mut retouch, Some("retouch:a"), Some(&retouch_context));
         assert!(retouch.get("edit").is_none() && retouch.get("origin").is_none());
+
+        // A workflow step's render leads back to the step that made it.
+        let mut step = json!({ "id": "s.mp4" });
+        let step_context = json!({
+            "origin": { "surface": "workflow", "workflowId": "w", "runId": "r", "nodeId": "n" }
+        });
+        apply_landed_context(&mut step, Some("workflow"), Some(&step_context));
+        assert_eq!(step["origin"]["workflowId"], "w");
+        assert_eq!(step["origin"]["nodeId"], "n");
+
+        // An origin the gallery cannot follow is not filed.
+        for origin in [
+            json!({ "surface": "workflow" }),
+            json!({ "surface": "workflow", "workflowId": 7 }),
+            json!({ "surface": "elsewhere", "workflowId": "w" }),
+        ] {
+            let mut odd = json!({ "id": "o.png" });
+            apply_landed_context(
+                &mut odd,
+                Some("workflow"),
+                Some(&json!({ "origin": origin })),
+            );
+            assert!(odd.get("origin").is_none());
+        }
     }
 
     #[test]

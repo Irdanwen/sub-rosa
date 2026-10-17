@@ -293,6 +293,10 @@ describe("runAndSaveWorkflow (durable)", () => {
     const startRequest = started[0].request as Record<string, unknown>;
     expect(startRequest.jobId).toBe("q1");
     expect(startRequest.source).toBe("workflow");
+    // The job carries the step it is made for, so the file leads back to it.
+    expect(startRequest.clientContext).toEqual({
+      origin: { surface: "workflow", workflowId: "wf", runId: "q1", nodeId: "clip" },
+    });
 
     // The pending-job pointer went down before the wait, and the node
     // settled with a dehydrated artifact reference.

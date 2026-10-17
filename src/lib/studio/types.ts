@@ -185,7 +185,17 @@ export interface StudioArtifact {
 }
 
 /** The surface that asked for a gallery file. */
-export interface ArtifactOrigin {
+export type ArtifactOrigin = ChatOrigin | WorkflowOrigin;
+
+/** A file a workflow step made: which workflow, which run, which step. */
+export interface WorkflowOrigin {
+  surface: "workflow";
+  workflowId: string;
+  runId?: string;
+  nodeId?: string;
+}
+
+export interface ChatOrigin {
   surface: "chat";
   taskId?: string;
 }

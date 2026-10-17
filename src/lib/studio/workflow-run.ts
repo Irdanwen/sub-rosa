@@ -505,6 +505,8 @@ function durableMediaRunner(
           parentHandoffSeconds: request.parentHandoffSeconds,
           costCredits: request.costCredits,
           source: "workflow",
+          // Filed with the result, so the gallery leads back to the step.
+          ...(request.origin ? { clientContext: { origin: request.origin } } : {}),
         },
       }),
     );
@@ -569,6 +571,7 @@ function durableMediaRunner(
       parentId: request.parentArtifactId,
       parentHandoffSeconds: request.parentHandoffSeconds,
       costCredits: request.costCredits,
+      origin: request.origin,
     });
     // Keep the completed job until its consumer has durably stored the output.
     // A crash between delivery and that write must reattach, never repurchase.
@@ -698,6 +701,7 @@ async function executeDurable(
       completed,
       approvedGates: options.approvedGates,
       cache: options.cache,
+      origin: { workflowId: workflow.id, runId },
       scheduling: options.scheduling,
       isolateFailures: options.isolateFailures,
       durableMedia: durableMediaRunner(runId, pendingJobs, options.transientWaitMs),
@@ -983,6 +987,12 @@ export async function dismissWorkflowRun(runId: string): Promise<void> {
             parentId: job.parentArtifactId,
             parentHandoffSeconds: job.parentHandoffSeconds,
             costCredits: job.costCredits,
+            origin: {
+              surface: "workflow",
+              workflowId: detail.run.workflowId,
+              runId,
+              nodeId: node.nodeId,
+            },
           },
         );
       }

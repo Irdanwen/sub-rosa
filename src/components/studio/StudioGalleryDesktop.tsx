@@ -4,6 +4,7 @@
 // on the other; what each view shows comes from lib/studio/gallery-view.ts,
 // which the phone's gallery uses too.
 
+import { requestOpenWorkflow } from "../../lib/studio/workflow/open";
 import { IconHeart as IconHeartFilled } from "central-icons-filled/IconHeart";
 import { IconPlay } from "central-icons-filled/IconPlay";
 import { IconArrowDownCircle } from "central-icons/IconArrowDownCircle";
@@ -130,6 +131,19 @@ export function StudioGalleryDesktop() {
     const markable = canMark(artifact);
     return (
       <>
+        {artifact.origin?.surface === "workflow" ? (
+          <button
+            type="button"
+            onClick={() => {
+              const workflowId =
+                artifact.origin?.surface === "workflow" ? artifact.origin.workflowId : "";
+              setOpened(undefined);
+              requestOpenWorkflow(workflowId);
+            }}
+          >
+            {t("Open the workflow that made it")}
+          </button>
+        ) : null}
         {markable ? (
           <button type="button" onClick={() => mark([artifact], { favorite: !current?.favorite })}>
             {current?.favorite ? t("Remove from favorites") : t("Add to favorites")}
