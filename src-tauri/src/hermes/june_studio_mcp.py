@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """MCP server exposing Sub Rosa's local film production (`june_studio`).
 
-Six tools, each with an `action` discriminator, rather than thirty granular
+Three tools, each with an `action` discriminator, rather than thirty granular
 ones. The whole surface is always in the model's context, so its size is a
 running cost on every turn of every conversation - a granular surface for this
 much capability runs to thousands of tokens before anybody asks for a film.
@@ -93,6 +93,32 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["action", "noteId"],
         },
     },
+    {
+        "name": "workflows",
+        "description": (
+            "The Studio's workflows: graphs of steps (a prompt, an image, a clip, a "
+            "voice...) wired together. Actions: list, read (id), steps (every step type "
+            "with its inputs and settings - read it before you propose), propose (name, "
+            "steps [{id, type, label, params}], wires [{source, target, port}], app "
+            "{fields [{nodeId, param, label}], outputs [nodeId], intro}). A proposal is a "
+            "new draft the person keeps or discards in the Studio; it never changes a "
+            "workflow they have, and you never run one: running is theirs, after they see "
+            "the price."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["list", "read", "steps", "propose"]},
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "steps": {"type": "array", "items": {"type": "object"}},
+                "wires": {"type": "array", "items": {"type": "object"}},
+                "app": {"type": "object"},
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 
@@ -148,6 +174,10 @@ ACTIONS: dict[tuple[str, str], str] = {
     ("shots", "build"): "shots.build",
     ("shots", "read"): "shots.read",
     ("shots", "forget"): "shots.forget",
+    ("workflows", "list"): "workflows.list",
+    ("workflows", "read"): "workflows.read",
+    ("workflows", "steps"): "workflows.steps",
+    ("workflows", "propose"): "workflows.propose",
 }
 
 
@@ -275,10 +305,6 @@ def response(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
 
 def error_response(request_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":

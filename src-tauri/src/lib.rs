@@ -137,6 +137,7 @@ pub mod studio_project;
 pub mod studio_workflows;
 pub mod timeline;
 pub mod win_console;
+pub mod workflow_actions;
 
 #[cfg(desktop)]
 use serde::Deserialize;

@@ -1355,7 +1355,7 @@ async fn execute_tool(
                 Err(error) => format!("Web search failed: {}", error.message),
             }
         }
-        "bible" | "shots" => {
+        "bible" | "shots" | "workflows" => {
             // One implementation for both shells: the same dispatch the
             // desktop MCP reaches through the local proxy, called directly
             // here because there is no proxy hop on the phone.

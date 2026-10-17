@@ -251,3 +251,13 @@
     transition: none;
   }
 }
+
+/* A workflow the assistant proposed: kept or discarded from its card. */
+.workflow-card[data-proposed] {
+  border-style: dashed;
+}
+.workflow-card-proposal {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}

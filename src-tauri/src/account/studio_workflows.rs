@@ -59,6 +59,7 @@ pub(super) fn admit_row(row: &mut Map<String, Value>) -> Result<(), AppError> {
     let origin = match text(row, "origin")?.as_deref() {
         Some("import") => "import",
         Some("block") => "block",
+        Some("assistant") => "assistant",
         _ => "mine",
     };
     row.insert("origin".into(), json!(origin));

@@ -1,0 +1,729 @@
+[
+  {
+    "type": "textInput",
+    "label": "Text input",
+    "description": "Static text written by the user. The starting point of a workflow.",
+    "inputs": [],
+    "output": "text",
+    "params": [
+      {
+        "name": "text",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "type": "asset",
+    "label": "Asset",
+    "description": "An item from your gallery: a reference image, a clip, or a track. Connect it to every scene that should use it.",
+    "inputs": [],
+    "output": "image",
+    "params": [
+      {
+        "name": "assetKind",
+        "type": "enum",
+        "values": [
+          "image",
+          "video",
+          "audio"
+        ]
+      },
+      {
+        "name": "artifactId",
+        "type": "artifact"
+      }
+    ]
+  },
+  {
+    "type": "document",
+    "label": "Document",
+    "description": "The content of one of your notes, as text. Use it as a brief, a script, or art direction other nodes read from.",
+    "inputs": [],
+    "output": "text",
+    "params": [
+      {
+        "name": "noteId",
+        "type": "note"
+      }
+    ]
+  },
+  {
+    "type": "chat",
+    "label": "Chat",
+    "description": "Run a chat completion. Upstream text feeds the prompt.",
+    "inputs": [
+      {
+        "id": "prompt",
+        "kind": "text",
+        "multi": true
+      }
+    ],
+    "output": "text",
+    "params": [
+      {
+        "name": "model",
+        "type": "model"
+      },
+      {
+        "name": "prompt",
+        "type": "text"
+      },
+      {
+        "name": "temperature",
+        "type": "number"
+      },
+      {
+        "name": "maxTokens",
+        "type": "number"
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "image",
+    "label": "Image",
+    "description": "Generate an image from a text prompt.",
+    "inputs": [
+      {
+        "id": "prompt",
+        "kind": "text",
+        "multi": true
+      }
+    ],
+    "output": "image",
+    "params": [
+      {
+        "name": "model",
+        "type": "model"
+      },
+      {
+        "name": "prompt",
+        "type": "text"
+      },
+      {
+        "name": "negativePrompt",
+        "type": "text"
+      },
+      {
+        "name": "aspectRatio",
+        "type": "string"
+      },
+      {
+        "name": "stylePreset",
+        "type": "string"
+      },
+      {
+        "name": "hideWatermark",
+        "type": "boolean"
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "imageEdit",
+    "label": "Image edit",
+    "description": "Transform or compose up to three images with a prompt: restyle a frame, or place a reference subject into a scene.",
+    "inputs": [
+      {
+        "id": "prompt",
+        "kind": "text",
+        "multi": true
+      },
+      {
+        "id": "images",
+        "kind": "image",
+        "multi": true
+      }
+    ],
+    "output": "image",
+    "params": [
+      {
+        "name": "model",
+        "type": "model"
+      },
+      {
+        "name": "prompt",
+        "type": "text"
+      },
+      {
+        "name": "aspectRatio",
+        "type": "string"
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "tts",
+    "label": "Text to speech",
+    "description": "Narrate upstream text as speech audio.",
+    "inputs": [
+      {
+        "id": "text",
+        "kind": "text",
+        "multi": true
+      }
+    ],
+    "output": "audio",
+    "params": [
+      {
+        "name": "model",
+        "type": "model"
+      },
+      {
+        "name": "voice",
+        "type": "string"
+      },
+      {
+        "name": "speed",
+        "type": "number"
+      },
+      {
+        "name": "startAt",
+        "type": "string"
+      },
+      {
+        "name": "responseFormat",
+        "type": "enum",
+        "values": [
+          "mp3",
+          "wav",
+          "flac"
+        ]
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "music",
+    "label": "Music",
+    "description": "Generate a music track. Upstream text is the style prompt.",
+    "inputs": [
+      {
+        "id": "prompt",
+        "kind": "text",
+        "multi": true
+      }
+    ],
+    "output": "audio",
+    "params": [
+      {
+        "name": "model",
+        "type": "model"
+      },
+      {
+        "name": "lyrics",
+        "type": "text"
+      },
+      {
+        "name": "durationSeconds",
+        "type": "number"
+      },
+      {
+        "name": "instrumental",
+        "type": "boolean"
+      },
+      {
+        "name": "writeLyrics",
+        "type": "boolean"
+      },
+      {
+        "name": "loop",
+        "type": "boolean"
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "video",
+    "label": "Video",
+    "description": "Generate a short video. Feed an image to start from, an image to end on, reference images that keep a subject consistent, and (on the seedance reference models that take video input) clips to edit, extend or stitch.",
+    "inputs": [
+      {
+        "id": "prompt",
+        "kind": "text",
+        "multi": true
+      },
+      {
+        "id": "openingFrame",
+        "kind": "image"
+      },
+      {
+        "id": "endFrame",
+        "kind": "image"
+      },
+      {
+        "id": "references",
+        "kind": "image",
+        "multi": true
+      },
+      {
+        "id": "referenceClips",
+        "kind": "video",
+        "multi": true
+      },
+      {
+        "id": "referenceAudio",
+        "kind": "audio",
+        "multi": true
+      }
+    ],
+    "output": "video",
+    "params": [
+      {
+        "name": "model",
+        "type": "model"
+      },
+      {
+        "name": "prompt",
+        "type": "text"
+      },
+      {
+        "name": "duration",
+        "type": "string"
+      },
+      {
+        "name": "aspectRatio",
+        "type": "string"
+      },
+      {
+        "name": "resolution",
+        "type": "string"
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "lastFrame",
+    "label": "Frame from video",
+    "description": "Take a still out of a video: the handoff frame near its end (the sharpest one, so the next shot can continue from it), its very end, or its first frame. Feeds an image input.",
+    "inputs": [
+      {
+        "id": "video",
+        "kind": "video"
+      }
+    ],
+    "output": "image",
+    "params": [
+      {
+        "name": "position",
+        "type": "enum",
+        "values": [
+          "handoff",
+          "end",
+          "start"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "gate",
+    "label": "Approval gate",
+    "description": "Pauses the production here until you approve. With several inputs connected, approving picks which one continues - wire alternative takes in and choose. A judged gate asks a model first.",
+    "inputs": [
+      {
+        "id": "in",
+        "kind": "any",
+        "multi": true
+      }
+    ],
+    "output": "text",
+    "params": [
+      {
+        "name": "note",
+        "type": "text"
+      },
+      {
+        "name": "mode",
+        "type": "enum",
+        "values": [
+          "human",
+          "judged",
+          "judged-then-human"
+        ]
+      },
+      {
+        "name": "judgeModel",
+        "type": "model"
+      }
+    ]
+  },
+  {
+    "type": "assemble",
+    "label": "Assemble",
+    "description": "Cut connected clips together into one film, in connection order, and mix everything under it: dialogue, effects, a score. Chained shots are trimmed at their handoff automatically, the music gets out of the way of the dialogue, and the whole thing is levelled once.",
+    "inputs": [
+      {
+        "id": "clips",
+        "kind": "video",
+        "multi": true
+      },
+      {
+        "id": "dialogue",
+        "kind": "audio",
+        "multi": true
+      },
+      {
+        "id": "sfx",
+        "kind": "audio",
+        "multi": true
+      },
+      {
+        "id": "music",
+        "kind": "audio",
+        "multi": true
+      },
+      {
+        "id": "audio",
+        "kind": "audio"
+      }
+    ],
+    "output": "video",
+    "params": [
+      {
+        "name": "audioVolume",
+        "type": "number"
+      },
+      {
+        "name": "normalize",
+        "type": "boolean"
+      }
+    ]
+  },
+  {
+    "type": "output",
+    "label": "Output",
+    "description": "Displays whatever its upstream nodes produced. Accepts any kind.",
+    "inputs": [
+      {
+        "id": "in",
+        "kind": "any",
+        "multi": true
+      }
+    ],
+    "output": "none",
+    "params": []
+  },
+  {
+    "type": "upscale",
+    "label": "Upscale",
+    "description": "A larger, sharper copy of a picture.",
+    "inputs": [
+      {
+        "id": "image",
+        "kind": "image"
+      }
+    ],
+    "output": "image",
+    "params": [
+      {
+        "name": "scale",
+        "type": "enum",
+        "values": [
+          "2",
+          "4"
+        ]
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "cutout",
+    "label": "Cut out",
+    "description": "The subject of a picture on a transparent background.",
+    "inputs": [
+      {
+        "id": "image",
+        "kind": "image"
+      }
+    ],
+    "output": "image",
+    "params": [
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "soundMix",
+    "label": "Sound mix",
+    "description": "Voices, effects and music in one track: lines one after the other, the music lowered under them.",
+    "inputs": [
+      {
+        "id": "dialogue",
+        "kind": "audio",
+        "multi": true
+      },
+      {
+        "id": "sfx",
+        "kind": "audio",
+        "multi": true
+      },
+      {
+        "id": "music",
+        "kind": "audio",
+        "multi": true
+      }
+    ],
+    "output": "audio",
+    "params": [
+      {
+        "name": "audioVolume",
+        "type": "number"
+      },
+      {
+        "name": "level",
+        "type": "boolean"
+      }
+    ]
+  },
+  {
+    "type": "zoneEdit",
+    "label": "Retouch a zone",
+    "description": "Change one part of a picture: only that rectangle is sent, and the result is blended back into the rest, untouched.",
+    "inputs": [
+      {
+        "id": "image",
+        "kind": "image"
+      },
+      {
+        "id": "prompt",
+        "kind": "text",
+        "multi": true
+      }
+    ],
+    "output": "image",
+    "params": [
+      {
+        "name": "model",
+        "type": "model"
+      },
+      {
+        "name": "prompt",
+        "type": "text"
+      },
+      {
+        "name": "zone",
+        "type": "zone"
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "sheet",
+    "label": "Contact sheet",
+    "description": "Nine variations of a picture's subject in one 3 by 3 sheet: one paid edit instead of nine.",
+    "inputs": [
+      {
+        "id": "image",
+        "kind": "image"
+      }
+    ],
+    "output": "image",
+    "params": [
+      {
+        "name": "model",
+        "type": "model"
+      },
+      {
+        "name": "pack",
+        "type": "enum",
+        "values": [
+          "character",
+          "expressions"
+        ]
+      },
+      {
+        "name": "freshEachRun",
+        "type": "boolean"
+      }
+    ],
+    "paid": true
+  },
+  {
+    "type": "compare",
+    "label": "Compare",
+    "description": "Two pictures side by side, with a slider between them. It never runs.",
+    "inputs": [
+      {
+        "id": "before",
+        "kind": "image"
+      },
+      {
+        "id": "after",
+        "kind": "image"
+      }
+    ],
+    "output": "none",
+    "params": []
+  },
+  {
+    "type": "note",
+    "label": "Note",
+    "description": "Words on the canvas for whoever reads the workflow. It never runs.",
+    "inputs": [],
+    "output": "none",
+    "params": [
+      {
+        "name": "text",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "type": "textTemplate",
+    "label": "Text template",
+    "description": "Words with blanks: {{1}}, {{2}} and so on are filled with the connected texts, in their order.",
+    "inputs": [
+      {
+        "id": "values",
+        "kind": "text",
+        "multi": true
+      }
+    ],
+    "output": "text",
+    "params": [
+      {
+        "name": "template",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "type": "preview",
+    "label": "Preview",
+    "description": "Shows what reaches it, as soon as it exists. It never runs.",
+    "inputs": [
+      {
+        "id": "in",
+        "kind": "any"
+      }
+    ],
+    "output": "none",
+    "params": []
+  },
+  {
+    "type": "switch",
+    "label": "Switch",
+    "description": "Passes on one of two inputs: the one set here, or the one a condition picks during the run. The other side is not made.",
+    "inputs": [
+      {
+        "id": "a",
+        "kind": "any"
+      },
+      {
+        "id": "b",
+        "kind": "any"
+      },
+      {
+        "id": "when",
+        "kind": "text"
+      }
+    ],
+    "output": "text",
+    "params": [
+      {
+        "name": "branch",
+        "type": "enum",
+        "values": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "name": "contains",
+        "type": "string"
+      }
+    ]
+  },
+  {
+    "type": "textList",
+    "label": "Text list",
+    "description": "Several texts, one per line: each step it feeds runs once per line, and a step taking several inputs gets them all.",
+    "inputs": [],
+    "output": "text",
+    "params": [
+      {
+        "name": "items",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "type": "splitText",
+    "label": "Split into lines",
+    "description": "A text cut into its lines during the run, up to a number set here: the steps it feeds run once per line.",
+    "inputs": [
+      {
+        "id": "text",
+        "kind": "text"
+      }
+    ],
+    "output": "text",
+    "params": [
+      {
+        "name": "max",
+        "type": "number"
+      }
+    ]
+  },
+  {
+    "type": "imageList",
+    "label": "Picture list",
+    "description": "Several pictures from the gallery: each step it feeds runs once per picture, and a step taking several inputs gets them all.",
+    "inputs": [],
+    "output": "image",
+    "params": [
+      {
+        "name": "artifactIds",
+        "type": "artifacts"
+      }
+    ]
+  },
+  {
+    "type": "relay",
+    "label": "Relay",
+    "description": "A point a connection passes through, to route wires around other steps. It passes on what it receives.",
+    "inputs": [
+      {
+        "id": "in",
+        "kind": "any"
+      }
+    ],
+    "output": "text",
+    "params": []
+  }
+]
