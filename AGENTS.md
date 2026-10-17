@@ -120,8 +120,10 @@ committed under `src-tauri/gen/apple/`). Full architecture + upstream-diff table
   Desktop `App.tsx` is untouched. Shared pieces reused: `notesReducer`, `src/lib/tauri.ts`,
   `NoteEditor`, `CarpeDiemSettings`, the whole `src/lib/studio/` lib. The workflow
   editor itself is desktop-only since 2026-09-22 (the guided "Flows" editor was
-  unusable at phone size and was removed); productions started on a phone resume on
-  the desktop.
+  unusable at phone size and was removed); a workflow made an app is used on the
+  phone through its form only (Studio › Apps, `studio/StudioApps.tsx`,
+  [ADR-0119](docs/adr/0119-an-app-is-a-view-over-its-workflow.md)), run by the same
+  durable engine, an unfinished run offered again there rather than resumed alone.
 - **iOS gallery caveat**: never persist absolute paths — the app's data container path
   changes across reinstalls (`listArtifacts` re-derives paths from the disk listing; the
   asset protocol doesn't resolve in the iOS webview: clips and tracks stream from the

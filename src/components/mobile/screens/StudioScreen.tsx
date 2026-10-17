@@ -28,6 +28,7 @@ import { type VideoHandoff, VideoPanel } from "./studio/StudioVideoPanel";
 import { StudioViewer } from "./studio/StudioViewer";
 import { StudioGallery } from "./studio/StudioGallery";
 import { RecentStrip } from "./studio/StudioLibrary";
+import { StudioApps } from "./studio/StudioApps";
 import { handOffImagePrompt } from "../../../lib/studio/prompt-handoff";
 import { rateBadge, rateSentence } from "../../../lib/studio/rate";
 import { EmptyState } from "../../ui/EmptyState";
@@ -36,9 +37,10 @@ import { StackHeader } from "../StackHeader";
 import { ActionSheet } from "../ActionSheet";
 import "../../studio/stage/stage.css";
 
-// No "flows" here: the guided workflow editor was unusable at phone size and
-// was removed from the phone. Productions stay a desktop surface.
-type StudioMode = "image" | "video" | "audio" | "library";
+// No canvas here: the guided workflow editor was unusable at phone size and
+// was removed from the phone. A workflow made an app is used through its form
+// (ADR-0119); drawing and productions stay desktop surfaces.
+type StudioMode = "image" | "video" | "audio" | "apps" | "library";
 
 // Carpe Diem streams the finished track as the retrieve body (one shot);
 // Venice answers JSON with an `audio_url`. Both shapes must be accepted.
@@ -242,7 +244,7 @@ export function StudioScreen() {
         </div>
       ) : null}
       <div className="mobile-segmented" role="tablist" aria-label={t("Studio mode")}>
-        {(["image", "video", "audio", "library"] as const).map((entry) => (
+        {(["image", "video", "audio", "apps", "library"] as const).map((entry) => (
           <button
             key={entry}
             type="button"
@@ -258,7 +260,9 @@ export function StudioScreen() {
                 ? t("Video")
                 : entry === "audio"
                   ? t("Audio")
-                  : t("Gallery")}
+                  : entry === "apps"
+                    ? t("Apps")
+                    : t("Gallery")}
           </button>
         ))}
       </div>
@@ -294,6 +298,8 @@ export function StudioScreen() {
                 handoff={videoHandoff}
                 onHandoffApplied={clearVideoHandoff}
               />
+            ) : mode === "apps" ? (
+              <StudioApps catalog={catalog} />
             ) : mode === "audio" ? (
               <AudioPanel
                 catalog={catalog}

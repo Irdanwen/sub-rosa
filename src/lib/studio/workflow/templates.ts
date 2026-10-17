@@ -485,6 +485,7 @@ function upscaleForPrint(): Workflow {
         { nodeId: "up", param: "scale" },
       ],
       outputs: ["out"],
+      intro: t("Pick a picture, get a copy four times larger."),
     },
     edges: [edge("picture", "up", "image"), edge("up", "out")],
   };
@@ -552,6 +553,7 @@ function readInAnotherLanguage(): Workflow {
     app: {
       fields: [{ nodeId: "text", param: "text", label: t("Your text") }],
       outputs: ["out"],
+      intro: t("Write a text, hear it in another language."),
     },
     edges: [edge("text", "translate"), edge("translate", "voice", "text"), edge("voice", "out")],
   };

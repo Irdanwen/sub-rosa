@@ -5940,3 +5940,203 @@
   color: var(--muted-foreground);
   font-size: var(--fs-sm);
 }
+
+/* --- Apps (ADR-0119): a workflow used through its form ---------------------- */
+
+.mobile-apps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.mobile-apps .mobile-chip-button {
+  align-self: flex-start;
+}
+
+.mobile-section-title {
+  margin: 0 0 var(--sp-2);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-apps-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-apps-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--sp-1);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-apps-name {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-apps-intro,
+.mobile-app-intro {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-app-title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.mobile-app {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.mobile-app-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.mobile-app-input {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.mobile-app-picture {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 48px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+}
+
+.mobile-app-picture img {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  object-fit: cover;
+}
+
+.mobile-app-blocker {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-app-gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+
+.mobile-app-gate p {
+  margin: 0;
+}
+
+.mobile-app-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.mobile-app-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.mobile-app-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.mobile-app-result figcaption {
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-app-image {
+  width: 100%;
+  border-radius: var(--r-lg);
+}
+
+.mobile-app-text {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.mobile-app-waiting {
+  margin: 0;
+  padding: var(--sp-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-lg);
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* On the Studio's stage, which is always dark: glass, its edge and its ink. */
+.mobile-studio-stage .mobile-apps-row,
+.mobile-studio-stage .mobile-app-input,
+.mobile-studio-stage .mobile-app-picture {
+  background: var(--stage-glass-strong);
+  border-color: var(--stage-edge);
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .mobile-app-title,
+.mobile-studio-stage .mobile-app-text,
+.mobile-studio-stage .mobile-app-gate {
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage .mobile-apps-intro,
+.mobile-studio-stage .mobile-app-intro,
+.mobile-studio-stage .mobile-section-title,
+.mobile-studio-stage .mobile-app-result figcaption,
+.mobile-studio-stage .mobile-app-blocker,
+.mobile-studio-stage .mobile-app-waiting {
+  color: var(--screen-muted);
+}
+
+.mobile-studio-stage .mobile-app-gate,
+.mobile-studio-stage .mobile-app-waiting {
+  border-color: var(--stage-edge);
+}
+
+.mobile-studio-stage .mobile-apps-row:active {
+  background: var(--stage-soft);
+}
