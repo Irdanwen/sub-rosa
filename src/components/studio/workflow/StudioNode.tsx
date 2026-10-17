@@ -2,6 +2,7 @@
 // approval controls and the node's output.
 
 import { BlockStep } from "./BlockStep";
+import { CompareView } from "./CompareView";
 import { FrameNode } from "./FrameNode";
 import { t } from "../../../lib/i18n";
 import { Handle, Position, type NodeProps, useStore } from "@xyflow/react";
@@ -77,7 +78,7 @@ function GateApproval({ data }: { data: StudioNodeData }) {
 const COMPACT_BELOW_ZOOM = 0.5;
 
 /** Steps with nothing upstream to run: running one alone is just reading. */
-const SOURCES = new Set(["textInput", "asset", "document", "note"]);
+const SOURCES = new Set(["textInput", "asset", "document", "note", "compare"]);
 
 export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   const { wfNode, catalog, result, onParamsChange, onRemove } = data;
@@ -259,8 +260,8 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             {t("usage")}
           </span>
         ) : null}
-        {/* A note never runs: nothing to skip or switch off. */}
-        {data.onModeChange && wfNode.type !== "note" ? (
+        {/* A note or a comparison never runs: nothing to skip or switch off. */}
+        {data.onModeChange && wfNode.type !== "note" && wfNode.type !== "compare" ? (
           <select
             className="studio-node-mode nodrag"
             aria-label={t("Runs")}
@@ -418,6 +419,9 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             onMerge={(partial) => onParamsChange(wfNode.id, { ...wfNode.params, ...partial })}
           />
         ))}
+      {wfNode.type === "compare" ? (
+        <CompareView before={data.compare?.before} after={data.compare?.after} />
+      ) : null}
       {result?.status === "awaiting" ? <GateApproval data={data} /> : null}
       {result ? <NodeOutputView result={result} node={wfNode} /> : null}
       {schema.output !== "none" ? <Handle type="source" position={Position.Right} /> : null}

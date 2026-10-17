@@ -12,13 +12,18 @@
 import { outputKindOf, type Workflow, type WorkflowEdge, type WorkflowNode } from "./schema";
 import { validateWorkflow } from "./validator";
 
+/** Steps that are there to be read or looked at, never run. */
+const SHOWN_ONLY = new Set<WorkflowNode["type"]>(["note", "compare"]);
+
 export type NodeMode = NonNullable<WorkflowNode["mode"]>;
 
 /** The graph a run executes: skipped steps passed through, switched-off
  * steps and what can no longer run without them removed. Returns the same object when no step
  * is set aside. */
 export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow: W): W {
-  if (!workflow.nodes.some((node) => node.mode || node.type === "relay" || node.type === "note"))
+  if (
+    !workflow.nodes.some((node) => node.mode || node.type === "relay" || SHOWN_ONLY.has(node.type))
+  )
     return workflow;
   const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
   const kindContext = { nodeById, edges: workflow.edges };
@@ -46,8 +51,8 @@ export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow
     );
   }
   for (const node of workflow.nodes) {
-    // A note is words for the reader: it never runs.
-    if (node.mode === "mute" || node.type === "note" || removed.has(node.id)) {
+    // A note and a comparison are for the reader's eyes: they never run.
+    if (node.mode === "mute" || SHOWN_ONLY.has(node.type) || removed.has(node.id)) {
       removed.add(node.id);
     }
   }

@@ -85,10 +85,15 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
     case "block":
     case "assemble":
     case "output":
+    case "soundMix":
+    case "compare":
       return { ...base, kind: "free" };
 
-    // Usage-priced per token; no per-run figure to show.
+    // Usage-priced per token; no per-run figure to show. An upscale and a
+    // cutout are billed by the provider with no price the catalog states.
     case "chat":
+    case "upscale":
+    case "cutout":
       return { ...base, kind: "metered" };
 
     // An approval is free; a judge reading the candidates first is a chat

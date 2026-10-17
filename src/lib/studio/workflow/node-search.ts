@@ -35,6 +35,10 @@ const CATEGORY: Record<WorkflowNodeType, NodeCategory> = {
   relay: "flow",
   note: "flow",
   block: "flow",
+  upscale: "generate",
+  cutout: "generate",
+  soundMix: "montage",
+  compare: "flow",
 };
 
 export function categoryLabel(category: NodeCategory): string {
@@ -87,6 +91,14 @@ function keywords(type: WorkflowNodeType): string {
       return t("comment text explain");
     case "block":
       return t("group subgraph several steps");
+    case "upscale":
+      return t("enlarge sharpen resolution bigger");
+    case "cutout":
+      return t("remove background transparent subject");
+    case "soundMix":
+      return t("mix voice music audio duck");
+    case "compare":
+      return t("before after slider side by side");
   }
 }
 

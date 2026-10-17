@@ -37,6 +37,14 @@ export function nodeTypeLabel(type: WorkflowNodeType | string): string {
       return t("Note");
     case "block":
       return t("Block");
+    case "upscale":
+      return t("Upscale");
+    case "cutout":
+      return t("Cut out");
+    case "soundMix":
+      return t("Sound mix");
+    case "compare":
+      return t("Compare");
     default:
       return String(type);
   }
@@ -77,6 +85,12 @@ export function portLabel(type: WorkflowNodeType | string, port: { id: string; l
       return t("Music");
     case "audio":
       return t("Audio track");
+    case "image":
+      return t("Image");
+    case "before":
+      return t("Before");
+    case "after":
+      return t("After");
     default:
       return port.label;
   }
@@ -143,6 +157,10 @@ export function paramLabel(param: { name: string; label: string }): string {
       return t("Music level");
     case "normalize":
       return t("Level the film");
+    case "level":
+      return t("Level the mix");
+    case "scale":
+      return t("Scale");
     case "freshEachRun":
       return t("New result every run");
     default:
@@ -153,6 +171,7 @@ export function paramLabel(param: { name: string; label: string }): string {
 /** A choice in a list setting, in the reader's language. File formats keep
  * their own names. */
 export function enumLabel(paramName: string, value: string): string {
+  if (paramName === "scale") return t("{factor} times larger", { factor: value });
   switch (`${paramName}:${value}`) {
     case "assetKind:image":
       return t("Image");

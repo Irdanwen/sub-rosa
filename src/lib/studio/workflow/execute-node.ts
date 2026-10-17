@@ -1,11 +1,17 @@
 // What each node type does when it runs, and the small readers it shares.
 
 import { t } from "../../i18n";
-import { assembleClips, blobToBase64, type AssembleClip } from "../assemble";
+import { assembleClips, blobToBase64, mixSounds, type AssembleClip } from "../assemble";
 import { DEFAULT_TARGET_LUFS } from "../loudness";
 import { DIALOGUE_GAP_SECONDS } from "../mix";
 import { fileResultFrom, type MediaFileResult, pollUntilDone } from "../async-job";
-import { fetchMediaCatalog, musicCapabilities, musicQueueBody, speechRail } from "../catalog";
+import {
+  fetchMediaCatalog,
+  musicCapabilities,
+  musicQueueBody,
+  speechRail,
+  supportsBackgroundRemoval,
+} from "../catalog";
 import {
   acceptedFormat,
   generateSpeech,
@@ -14,7 +20,7 @@ import {
   speechCapabilities,
 } from "../speech";
 import { mediaJson } from "../client";
-import { composeImages } from "../edit-image";
+import { composeImages, removeBackground, upscaleImage } from "../edit-image";
 import { generateImages } from "../generate-image";
 import { extractFrameAt, extractHandoffFrame, loadVideoElement } from "../frames";
 import { musicPaths, retrieveBody } from "../paths";
@@ -22,6 +28,7 @@ import type { ReferenceRole } from "../kling";
 import { requestSizeProblem } from "../seedance";
 import type { MediaModel } from "../types";
 import { videoRequestBody } from "../video-request";
+import { audioBufferToWav } from "../wav";
 import { nodeLabel, type WorkflowNode } from "./schema";
 import type {
   NodeOutput,
@@ -824,6 +831,82 @@ export async function executeNode(
       });
       return { kind: "video", artifactId: saved.artifactId, src: saved.src };
     }
+
+    case "upscale":
+    case "cutout": {
+      const source = imagesOn(ports, "image")[0];
+      if (!source) throw new Error(t("Connect a picture."));
+      let made: string;
+      if (node.type === "cutout") {
+        // A dedicated endpoint the Carpe Diem operator does not mirror yet.
+        if (!supportsBackgroundRemoval(await fetchMediaCatalog()))
+          throw new Error(t("Cutting out is not available with this provider yet."));
+        made = await removeBackground(source.base64);
+      } else {
+        made = await upscaleImage(source.base64, stringParam(params, "scale") === "4" ? 4 : 2);
+      }
+      const saved = storage
+        ? await storage.save({ base64: made }, "png", {
+            kind: "image",
+            model: node.type,
+            prompt: nodeLabel(node),
+            costCredits: context.costCredits,
+          })
+        : undefined;
+      return {
+        kind: "image",
+        base64: made,
+        mimeType: saved?.mimeType ?? "image/png",
+        artifactId: saved?.artifactId,
+      };
+    }
+
+    case "soundMix": {
+      const sounds = (portId: string) =>
+        (ports.get(portId) ?? []).filter(
+          (output): output is Extract<NodeOutput, { kind: "audio" }> => output.kind === "audio",
+        );
+      const dialogue = sounds("dialogue");
+      const sfx = sounds("sfx");
+      const music = sounds("music");
+      for (const sound of [...dialogue, ...sfx, ...music]) {
+        if (!sound.src) throw new Error(t("This runner cannot read one of the connected sounds."));
+      }
+      const musicLevel = numberParam(params, "audioVolume") ?? 0.6;
+      const mixed = await mixSounds({
+        lanes: {
+          // Lines one after the other, as in a film's mix (placeLines).
+          dialogue: placeLines(dialogue),
+          sfx: sfx.map((sound) => ({ src: sound.src as string, atSeconds: sound.atSeconds ?? 0 })),
+          music: music.map((sound) => ({
+            src: sound.src as string,
+            atSeconds: sound.atSeconds ?? 0,
+            gain: musicLevel,
+          })),
+        },
+        normalizeToLufs: booleanParam(params, "level") === false ? undefined : DEFAULT_TARGET_LUFS,
+      });
+      const wav = audioBufferToWav(mixed);
+      const base64 = await blobToBase64(wav);
+      const saved = storage
+        ? await storage.save({ base64 }, "wav", {
+            // A mix is music in the gallery's terms: a track to play under things.
+            kind: "music",
+            model: "mix",
+            prompt: nodeLabel(node),
+          })
+        : undefined;
+      return {
+        kind: "audio",
+        base64,
+        mimeType: "audio/wav",
+        ...(saved ? { artifactId: saved.artifactId, src: saved.src } : {}),
+      };
+    }
+
+    case "compare":
+      // Canvas runs leave comparisons out (modes.ts): it shows its inputs.
+      return { kind: "text", text: "" };
 
     case "block":
       // Flattened before anything runs (flatten.ts); reaching here is a bug.

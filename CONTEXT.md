@@ -1150,6 +1150,11 @@ its steps are put in its place first. ComfyUI's subgraph. See
 [ADR-0116](docs/adr/0116-a-block-runs-as-its-steps.md).
 _Avoid_: group (in copy), subgraph (in copy), macro, component.
 
+**Comparison (workflow)**:
+A step that shows two pictures, the second from a slider on, to see what an
+upscale, a cutout or a retouch changed. Like a note it never runs: it shows
+what reaches it once that exists. _Avoid_: diff, preview.
+
 **Note (workflow)**:
 A step that holds words for whoever reads the workflow and never runs: removed
 with the steps set aside before anything is priced, validated or run. A
