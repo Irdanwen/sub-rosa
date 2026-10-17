@@ -908,7 +908,7 @@
   min-width: 0;
 }
 
-.studio-workflows-toolbar > * {
+:where(.studio-workflows-toolbar) > * {
   flex-shrink: 0;
 }
 
@@ -1380,15 +1380,17 @@
 
 /* --- run cost ---------------------------------------------------------------- */
 
-.studio-workflows-toolbar > .studio-workflow-cost,
 .studio-workflow-cost {
+  font-size: var(--fs-xs);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.studio-workflows-toolbar > .studio-workflow-cost {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-size: var(--fs-xs);
-  color: var(--muted-foreground);
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .studio-cost-rows {
@@ -1448,7 +1450,7 @@
   min-width: 0;
 }
 
-.studio-workflows-toolbar > .select-control .select-trigger > span {
+:where(.studio-workflows-toolbar > .select-control .select-trigger) > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
