@@ -1036,6 +1036,13 @@ export async function runAndSaveWorkflow(
       nodeCosts: options?.nodeCosts,
       beforeNode: options?.beforeNode,
       approvedGates: options?.approvedGates,
+      // Everything the caller chose about how the run goes: dropping these
+      // here silently ran canvas workflows without the step cache, level by
+      // level, and without the rate-limit budget.
+      cache: options?.cache,
+      scheduling: options?.scheduling,
+      isolateFailures: options?.isolateFailures,
+      transientWaitMs: options?.transientWaitMs,
     },
     new Map(),
     new Map(),

@@ -38,6 +38,7 @@ import {
   resumeWorkflowRun,
   runAndSaveWorkflow,
 } from "../lib/studio/workflow-run";
+import type { NodeOutput, StepCache } from "../lib/studio/workflow/run-types";
 import {
   defaultParams,
   type Workflow,
@@ -187,6 +188,37 @@ describe("runAndSaveWorkflow (durable)", () => {
       ),
     ).rejects.toThrow("The prompt was refused.");
     expect(invokeCalls("media_job_queue")).toHaveLength(1);
+  });
+
+  it("hands the canvas's step cache and scheduling to the run it records", async () => {
+    // The real app ran canvas workflows without the cache: this entry point
+    // rebuilt the options and dropped it, so a second identical run bought
+    // everything again. Two runs through it must buy the render once.
+    const rows = new Map<string, NodeOutput>();
+    const cache: StepCache = {
+      get: async (key) => rows.get(key),
+      put: async (key, _static, _node, output) => {
+        rows.set(key, output);
+      },
+    };
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "media_job_list") return [DELIVERED_JOB];
+      if (command === "carpe_diem_media_list_artifacts") return [];
+      return null;
+    });
+    const graph = workflow([node("clip", "video", { model: "m-t2v", prompt: "a shot" })], []);
+    await runAndSaveWorkflow(graph, { cache, scheduling: "ready", isolateFailures: true });
+    expect(invokeCalls("media_job_queue")).toHaveLength(1);
+    expect(rows.size).toBe(1);
+    mocks.invoke.mockClear();
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "carpe_diem_media_list_artifacts"
+        ? [{ path: "/gallery/a.mp4", fileName: "a.mp4", bytes: 5, modifiedMs: 1 }]
+        : null,
+    );
+    const again = await runAndSaveWorkflow(graph, { cache });
+    expect(again.get("clip")).toMatchObject({ status: "done", reused: true });
+    expect(invokeCalls("media_job_queue")).toHaveLength(0);
   });
 
   it("carries a native FLAC delivery into the persisted music output", async () => {
