@@ -19,7 +19,12 @@ export async function workflowFileFor(origin: WorkflowOrigin): Promise<string | 
     ? await frozenWorkflow(origin.runId).catch(() => undefined)
     : undefined;
   const workflow = frozen
-    ? { ...frozen, name: stored?.name ?? frozen.name ?? t("Workflow") }
+    ? {
+        ...frozen,
+        name: stored?.name ?? frozen.name ?? t("Workflow"),
+        // Frames are layout, never frozen with a run: the workflow's own.
+        ...(stored?.frames ? { frames: stored.frames } : {}),
+      }
     : stored;
   return workflow ? workflowFileText(workflow, { compact: true }) : undefined;
 }
