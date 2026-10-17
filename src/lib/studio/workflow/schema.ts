@@ -684,6 +684,22 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
 export const NODE_TYPES: WorkflowNodeType[] = Object.keys(NODE_SCHEMAS) as WorkflowNodeType[];
 
 /**
+ * The switch every paid step carries (ADR-0115): off, a run reuses what an
+ * identical step already made; on, it makes a new one every time. The
+ * ComfyUI "control after generate" idea, without a seed to show.
+ */
+const FRESH_EACH_RUN: ParamSchema = {
+  name: "freshEachRun",
+  label: "New result every run",
+  type: "boolean",
+  description:
+    "Off, a run reuses what this step already made with the same settings and inputs, for free. On, every run makes a new one.",
+};
+for (const schema of Object.values(NODE_SCHEMAS)) {
+  if (schema.paid) schema.params.push(FRESH_EACH_RUN);
+}
+
+/**
  * Whether running this node spends credits: every generator, and a gate whose
  * judge reads the candidates before anyone else does. The one answer the
  * budget check, the resume's paid-output rule and the cost estimate share, so

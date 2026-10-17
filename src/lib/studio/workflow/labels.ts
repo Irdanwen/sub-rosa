@@ -137,6 +137,8 @@ export function paramLabel(param: { name: string; label: string }): string {
       return t("Music level");
     case "normalize":
       return t("Level the film");
+    case "freshEachRun":
+      return t("New result every run");
     default:
       return param.label;
   }

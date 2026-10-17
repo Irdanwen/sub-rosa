@@ -39,9 +39,11 @@ export function RunCostDialog({
             <li key={node.nodeId}>
               <span>{node.label}</span>
               <span>
-                {node.kind === "flat" && node.credits !== undefined
-                  ? `~${formatCredits(node.credits)}`
-                  : t("usage priced")}
+                {node.reused
+                  ? t("Reused, free")
+                  : node.kind === "flat" && node.credits !== undefined
+                    ? `~${formatCredits(node.credits)}`
+                    : t("usage priced")}
               </span>
             </li>
           ))}

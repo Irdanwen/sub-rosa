@@ -31,7 +31,8 @@ import {
   type RunWorkflowOptions,
   WorkflowRunError,
 } from "./run-types";
-import { executeNode } from "./execute-node";
+import { catalogModel, executeNode } from "./execute-node";
+import { runtimeKey, staticKeys } from "./signature";
 import { withTransientTolerance } from "./transient";
 import { gateDecision } from "./gate";
 
@@ -45,6 +46,7 @@ export type {
   RunWorkflowOptions,
   SavedMedia,
   SaveMediaMeta,
+  StepCache,
   WorkflowStorage,
 } from "./run-types";
 export { INPUT_MARKER, placeLines, resolvePrompt } from "./execute-node";
@@ -123,6 +125,26 @@ function portInputs(
   return ports;
 }
 
+/** The steps worth remembering: every paid one (a gate's judge excepted,
+ * its verdict belongs to the run), and the cut, which is slow. */
+function cacheable(node: WorkflowNode): boolean {
+  if (node.type === "assemble") return true;
+  return node.type !== "gate" && isPaidNode(node);
+}
+
+/** The catalog's entry for a step's model, part of what it asks: a default
+ * the operator changes is a different request. */
+async function modelEntry(node: WorkflowNode): Promise<unknown> {
+  const model = node.params.model;
+  if (typeof model !== "string" || model === "") return undefined;
+  const entry = await catalogModel(model).catch(() => undefined);
+  if (!entry) return model;
+  // What shapes the request, not what it costs: a price change makes the
+  // same picture.
+  const { id, mediaType, constraints } = entry as unknown as Record<string, unknown>;
+  return { id, mediaType, constraints };
+}
+
 /** Runs the workflow and resolves with every node's final result. Rejects
  * with WorkflowRunError (carrying the partial results) when validation or a
  * node fails, and with an AbortError DOMException on cancellation. */
@@ -148,6 +170,12 @@ export async function runWorkflow(
   const levels = topoLevels(workflow.nodes, workflow.edges);
   const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
   const beforeNode = options.beforeNode;
+  const cache = options.cache;
+  let statics: Promise<Map<string, string> | undefined> | undefined;
+  const staticKeysOnce = () => {
+    statics ??= staticKeys(workflow).catch(() => undefined);
+    return statics;
+  };
   const update = (result: NodeRunResult) => {
     results.set(result.nodeId, result);
     options.onUpdate?.(result);
@@ -178,6 +206,20 @@ export async function runWorkflow(
         update({ nodeId, status: "running" });
         try {
           const ports = portInputs(node, workflow.edges, results, nodeById);
+          // The step cache: the same request, asked again, is answered by
+          // what it made the first time instead of being bought again. Asked
+          // before the budget check, because a reused step spends nothing.
+          const cacheKey =
+            cache && cacheable(node)
+              ? await runtimeKey(node, ports, await modelEntry(node))
+              : undefined;
+          if (cacheKey && cache && node.params.freshEachRun !== true) {
+            const reused = await cache.get(cacheKey).catch(() => undefined);
+            if (reused) {
+              update({ nodeId, status: "done", output: reused, reused: true });
+              return;
+            }
+          }
           // A gate checks the budget itself, and only when its judge is
           // about to read: an approval already given spends nothing.
           if (node.type !== "gate" && isPaidNode(node)) {
@@ -206,6 +248,12 @@ export async function runWorkflow(
                   },
                 );
           update({ nodeId, status: "done", output });
+          if (cacheKey && cache) {
+            const staticKey = (await staticKeysOnce())?.get(nodeId);
+            // Best effort: a step that could not be remembered still ran.
+            if (staticKey)
+              await cache.put(cacheKey, staticKey, node, output).catch(() => undefined);
+          }
         } catch (error) {
           if (error instanceof GateHold) {
             // Not a failure: the production is waiting for the user.

@@ -46,6 +46,7 @@ export {
   type RunWorkflowOptions,
   type SavedMedia,
   type SaveMediaMeta,
+  type StepCache,
   type WorkflowStorage,
 } from "./engine";
 export {
@@ -59,6 +60,7 @@ export {
   type NodeCostEstimate,
   type NodeCostKind,
   type WorkflowCostEstimate,
+  withReusedSteps,
 } from "./cost";
 export {
   effectiveParamValue,

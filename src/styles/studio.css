@@ -1008,6 +1008,14 @@
   color: var(--muted-foreground);
 }
 
+/* A step the cache answers (ADR-0115): said in the success color, where the
+   price would otherwise be. */
+.studio-node-reused {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--success);
+}
+
 .studio-node .studio-textarea,
 .studio-node .studio-input,
 .studio-node .studio-native-select {

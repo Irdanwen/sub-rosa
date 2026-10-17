@@ -1095,6 +1095,36 @@ hosted image, and the rest is listed in the **import report** before anything
 is saved. Never running the ComfyUI graph itself.
 _Avoid_: Comfy support, running Comfy, compatibility.
 
+**Step cache**:
+What a paid workflow step made, kept against exactly what it was asked (its
+settings, its model's catalog entry, and its inputs as they arrived), so the
+same request asked again is answered for free instead of bought again. Local
+to the device, canvas runs only: a film production keeps its own **take**
+signature. See [ADR-0115](docs/adr/0115-an-unchanged-step-is-reused-never-bought-twice.md).
+_Avoid_: memo, history (that is the run list); distinct from Hermes' prompt
+cache and from the provider's.
+
+**Step signature**:
+The digest a step is cached under. The *static* signature is taken from the
+graph alone (settings, take counter, and the static signatures of what feeds
+each port), which is what lets the canvas say which steps a run will reuse;
+the *runtime* signature is taken from what the step actually receives, just
+before it would spend. Neither holds a node id, a position or a name.
+_Avoid_: hash, fingerprint (in copy).
+
+**Reused step**:
+A step a run answered from the **step cache**: nothing spent, no budget check,
+shown as "Reused" on the node, and as "Free" beforehand when the canvas can
+tell. A step is only promised free when every paid step above it is reused
+too. _Avoid_: cached (in copy), skipped (it produced its result).
+
+**Take counter (workflow)**:
+The number "Make a new one next run" raises on a paid step. It is part of the
+step's signature, so the next run misses the cache for that step and for
+everything it feeds. Distinct from a project's **take** (a rendered attempt at
+a shot) and from "New result every run", which skips the lookup altogether.
+_Avoid_: seed, retry.
+
 **Port (workflow input)**:
 A named, typed input on a workflow node — a video node's prompt, opening
 frame, end frame, and references are four ports, not one merged stream. Media

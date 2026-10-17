@@ -45,6 +45,7 @@ import {
   type RunWorkflowOptions,
   type SavedMedia,
   type SaveMediaMeta,
+  type StepCache,
   type Workflow,
   type WorkflowStorage,
 } from "./workflow";
@@ -75,8 +76,31 @@ async function save(
   };
 }
 
+/** How long one gallery listing answers lookups. A run with many inputs (or
+ * many reused steps) used to list the whole gallery once per lookup. */
+const LISTING_TTL_MS = 10_000;
+let listing: Promise<StudioArtifact[]> | undefined;
+let listedAt = 0;
+
+/** A gallery item by id, from a recent listing; a miss lists again once, so
+ * a file filed a moment ago is never reported gone. */
+async function findArtifact(artifactId: string): Promise<StudioArtifact | undefined> {
+  const stale = !listing || Date.now() - listedAt > LISTING_TTL_MS;
+  if (stale) {
+    listing = listArtifacts();
+    listedAt = Date.now();
+  }
+  const found = (await (listing as Promise<StudioArtifact[]>)).find(
+    (entry) => entry.id === artifactId,
+  );
+  if (found || stale) return found;
+  listing = listArtifacts();
+  listedAt = Date.now();
+  return (await listing).find((entry) => entry.id === artifactId);
+}
+
 async function loadAsset(artifactId: string): Promise<LoadedAsset> {
-  const artifact = (await listArtifacts()).find((entry) => entry.id === artifactId);
+  const artifact = await findArtifact(artifactId);
   if (!artifact) {
     throw new Error(t("That gallery item is gone. Pick another one."));
   }
@@ -119,7 +143,7 @@ async function loadNote(noteId: string): Promise<{ title: string; text: string }
  * (reference clips). Read on demand — a clip is heavy and almost no node
  * needs its bytes. */
 async function readMedia(artifactId: string): Promise<string> {
-  const artifact = (await listArtifacts()).find((entry) => entry.id === artifactId);
+  const artifact = await findArtifact(artifactId);
   if (!artifact) {
     throw new Error(t("That gallery item is gone. Pick another one."));
   }
@@ -300,6 +324,45 @@ interface MediaJobRow {
   source?: string;
 }
 
+/**
+ * The step cache as the canvas uses it (ADR-0115): rows in the native table,
+ * outputs stored as gallery references (or a step's text), never bytes. A
+ * hit whose file has left the gallery is forgotten and the step runs.
+ */
+export function workflowStepCache(workflowId: string): StepCache {
+  const storage = workflowStorage();
+  return {
+    async get(key) {
+      const row = await invoke<{ output: unknown } | null>("workflow_cache_get", { key });
+      if (!row?.output || typeof row.output !== "object") return undefined;
+      try {
+        return await rehydrate(row.output as StoredOutput, storage);
+      } catch {
+        await invoke("workflow_cache_forget", { key }).catch(() => undefined);
+        return undefined;
+      }
+    },
+    async put(key, staticKey, node, output) {
+      const stored = dehydrate(output);
+      // A frame read out of a clip is cheap to read again and heavy to keep.
+      if (!stored || (stored.kind === "image" && !stored.artifactId)) return;
+      await invoke("workflow_cache_put", {
+        step: { key, staticKey, nodeType: node.type, output: stored, workflowId },
+      });
+    },
+  };
+}
+
+/** Which of these static keys a run would answer from the cache. */
+export async function knownStepKeys(staticKeys: string[]): Promise<Set<string>> {
+  if (staticKeys.length === 0) return new Set();
+  try {
+    return new Set(await invoke<string[]>("workflow_cache_known", { staticKeys }));
+  } catch {
+    return new Set();
+  }
+}
+
 function waitDelay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -477,6 +540,8 @@ interface DurableRunOptions {
   /** How long a render may wait out a rate limit or an empty payment rail
    * before the node fails (see `RunWorkflowOptions.transientWaitMs`). */
   transientWaitMs?: number;
+  /** The step cache, for callers that want it (see `RunWorkflowOptions`). */
+  cache?: StepCache;
   beforeNode?: RunWorkflowOptions["beforeNode"];
   signal?: AbortSignal;
   onUpdate?: (result: NodeRunResult) => void;
@@ -553,6 +618,7 @@ async function executeDurable(
       nodeCosts: options.nodeCosts,
       completed,
       approvedGates: options.approvedGates,
+      cache: options.cache,
       durableMedia: durableMediaRunner(runId, pendingJobs, options.transientWaitMs),
       beforeNode: async (node) => {
         await writes;
