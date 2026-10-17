@@ -303,3 +303,11 @@ describe("a block kept in the library", () => {
     ).toBe(false);
   });
 });
+
+describe("a workflow's card", () => {
+  it("counts what its blocks make", async () => {
+    const { workflowMakes } = await import("../lib/studio/workflow/library");
+    const { workflow: withBlock } = grouped();
+    expect(workflowMakes(withBlock)).toBe("1 image");
+  });
+});
