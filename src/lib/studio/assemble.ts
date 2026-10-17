@@ -224,6 +224,53 @@ async function renderOfflineMix(
   return rendered?.buffer;
 }
 
+/**
+ * Sounds mixed into one track, with no picture: lines where they were placed,
+ * effects where they fall, the music under everything and lowered under the
+ * lines, as long as the longest sound. The same offline mix as a film's.
+ */
+export async function mixSounds(options: {
+  lanes: NonNullable<AssembleOptions["lanes"]>;
+  normalizeToLufs?: number;
+}): Promise<AudioBuffer> {
+  if (typeof OfflineAudioContext === "undefined") throw new Error("This system cannot mix sound.");
+  const scratch = new OfflineAudioContext(1, 1, 48000);
+  const buffers = new Map<string, AudioBuffer>();
+  const sources: MixSource[] = [];
+  let durationSeconds = 0;
+  const lanes: Array<[Exclude<MixLane, "clips">, AssembleSound[]]> = [
+    ["dialogue", options.lanes.dialogue ?? []],
+    ["sfx", options.lanes.sfx ?? []],
+    ["music", options.lanes.music ?? []],
+  ];
+  for (const [lane, sounds] of lanes) {
+    for (const [index, sound] of sounds.entries()) {
+      const id = `${lane}-${index}`;
+      const decoded = await decodeAudio(scratch, sound.src);
+      if (!decoded) throw new Error("One of the sounds could not be read.");
+      buffers.set(id, decoded);
+      const outSeconds = sound.outSeconds ?? decoded.duration;
+      const inSeconds = sound.inSeconds ?? 0;
+      sources.push({
+        id,
+        lane,
+        atSeconds: sound.atSeconds,
+        inSeconds,
+        outSeconds,
+        gain: sound.gain,
+      });
+      durationSeconds = Math.max(durationSeconds, sound.atSeconds + outSeconds - inSeconds);
+    }
+  }
+  if (sources.length === 0) throw new Error("Connect at least one sound to mix.");
+  const rendered = await renderMix(planMix({ durationSeconds, sources }), {
+    buffers,
+    targetLufs: options.normalizeToLufs ?? null,
+  });
+  if (!rendered) throw new Error("This system cannot mix sound.");
+  return rendered.buffer;
+}
+
 export async function assembleClips(options: AssembleOptions): Promise<AssembleResult> {
   if (options.clips.length === 0) throw new Error("Add at least one clip.");
   const mime = pickRecorderMime();

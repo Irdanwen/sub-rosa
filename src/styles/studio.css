@@ -2726,3 +2726,28 @@ button.studio-block-crumb:hover {
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
 }
+
+/* A comparison: the second picture shown from the slider on. */
+.studio-compare {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+}
+
+.studio-compare img {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.studio-compare-after {
+  clip-path: inset(0 0 0 var(--compare-split, 50%));
+}
+
+.studio-compare input[type="range"] {
+  grid-area: 1 / 1;
+  align-self: end;
+  margin: var(--sp-2);
+}

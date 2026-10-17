@@ -39,7 +39,11 @@ export type WorkflowNodeType =
   | "output"
   | "relay"
   | "note"
-  | "block";
+  | "block"
+  | "upscale"
+  | "cutout"
+  | "soundMix"
+  | "compare";
 
 export interface WorkflowNode {
   id: string;
@@ -751,6 +755,73 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     label: "Output",
     description: "Displays whatever its upstream nodes produced. Accepts any kind.",
     inputs: [{ id: "in", label: "Result", kind: "any", multi: true }],
+    output: "none",
+    params: [],
+  },
+  upscale: {
+    type: "upscale",
+    label: "Upscale",
+    description: "A larger, sharper copy of a picture.",
+    inputs: [{ id: "image", label: "Image", kind: "image", required: true }],
+    output: "image",
+    params: [
+      {
+        name: "scale",
+        type: "enum",
+        label: "Scale",
+        enumValues: ["2", "4"],
+        default: "2",
+      },
+    ],
+    paid: true,
+  },
+  cutout: {
+    type: "cutout",
+    label: "Cut out",
+    description: "The subject of a picture on a transparent background.",
+    inputs: [{ id: "image", label: "Image", kind: "image", required: true }],
+    output: "image",
+    params: [],
+    paid: true,
+  },
+  soundMix: {
+    type: "soundMix",
+    label: "Sound mix",
+    description:
+      "Voices, effects and music in one track: lines one after the other, the music lowered under them.",
+    inputs: [
+      { id: "dialogue", label: "Dialogue", kind: "audio", multi: true },
+      { id: "sfx", label: "Effects", kind: "audio", multi: true },
+      { id: "music", label: "Music", kind: "audio", multi: true },
+    ],
+    output: "audio",
+    params: [
+      {
+        name: "audioVolume",
+        type: "number",
+        label: "Music level",
+        default: 0.6,
+        min: 0,
+        max: 1,
+        step: 0.1,
+      },
+      {
+        name: "level",
+        type: "boolean",
+        label: "Level the mix",
+        description: "Bring the mix to a standard loudness.",
+        default: true,
+      },
+    ],
+  },
+  compare: {
+    type: "compare",
+    label: "Compare",
+    description: "Two pictures side by side, with a slider between them. It never runs.",
+    inputs: [
+      { id: "before", label: "Before", kind: "image" },
+      { id: "after", label: "After", kind: "image" },
+    ],
     output: "none",
     params: [],
   },

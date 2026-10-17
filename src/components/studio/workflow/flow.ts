@@ -97,6 +97,8 @@ export interface StudioNodeData extends Record<string, unknown> {
   onUngroup?: (nodeId: string) => void;
   /** Block steps only: show what is inside it, to edit. */
   onOpenBlock?: (nodeId: string) => void;
+  /** Comparisons only: the pictures reaching each side, once they exist. */
+  compare?: { before?: string; after?: string };
 }
 
 export type StudioFlowNode = FlowNode<StudioNodeData, "studio">;
