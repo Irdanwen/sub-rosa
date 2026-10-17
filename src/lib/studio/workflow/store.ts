@@ -8,6 +8,7 @@
 // first workflow over a real one. Writes update the cache at once and reach
 // the table behind it.
 
+import { cleanApp } from "./app";
 import { cleanBlocks } from "./blocks";
 import { cleanFrames } from "./frames";
 import { invoke } from "@tauri-apps/api/core";
@@ -61,9 +62,13 @@ export function fromStored(row: StoredWorkflow): Workflow | undefined {
   try {
     const parsed: unknown = JSON.parse(row.definition);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-    const { nodes, edges, frames, blocks, ...extra } = parsed as Record<string, unknown>;
+    const { nodes, edges, frames, blocks, app, ...extra } = parsed as Record<string, unknown>;
     const kept = cleanFrames(frames);
     const defined = cleanBlocks(blocks);
+    const asApp = cleanApp(app);
+    // An app this version cannot read travels back untouched, like any field
+    // a later version wrote.
+    if (app !== undefined && !asApp) extra.app = app;
     if (!Array.isArray(nodes) || !Array.isArray(edges)) return undefined;
     return {
       id: row.id,
@@ -77,6 +82,7 @@ export function fromStored(row: StoredWorkflow): Workflow | undefined {
       ...(row.coverArtifactId ? { coverArtifactId: row.coverArtifactId } : {}),
       ...(kept.length > 0 ? { frames: kept } : {}),
       ...(defined.length > 0 ? { blocks: defined } : {}),
+      ...(asApp ? { app: asApp } : {}),
       ...(Object.keys(extra).length > 0 ? { extra } : {}),
       // A later version may have reshaped what it wrote; this one shows it
       // and leaves it alone, so the later device's work is never cut down
@@ -96,6 +102,7 @@ export function definitionOf(workflow: Workflow): string {
     edges: workflow.edges,
     ...(workflow.frames?.length ? { frames: workflow.frames } : {}),
     ...(workflow.blocks?.length ? { blocks: workflow.blocks } : {}),
+    ...(workflow.app ? { app: workflow.app } : {}),
   });
 }
 

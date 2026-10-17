@@ -15,6 +15,7 @@
 // refuse connections, and make any edge still landing on one an error. See
 // `openInputPorts`, which every surface must read instead of `schema.inputs`.
 
+import type { WorkflowApp } from "./app";
 import {
   acceptsOpeningFrameWithReferences,
   videoDirectionFromId,
@@ -117,6 +118,9 @@ export interface Workflow {
   frames?: WorkflowFrame[];
   /** The blocks this workflow's block steps are instances of (blocks.ts). */
   blocks?: WorkflowBlock[];
+  /** The workflow as an app: what a person fills in and gets (app.ts,
+   * ADR-0119). */
+  app?: WorkflowApp;
 }
 
 /** A set of steps that runs as one step (ComfyUI's subgraph). Defined once

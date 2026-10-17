@@ -24,8 +24,6 @@ import {
   type NodeChange,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import { IconArrowRedoDown } from "central-icons/IconArrowRedoDown";
-import { IconArrowUndoUp } from "central-icons/IconArrowUndoUp";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifactIndex } from "../../lib/artifact-media";
@@ -54,7 +52,6 @@ import {
   listWorkflows,
   maybeNodeSchema,
   needsRunConfirmation,
-  NODE_SCHEMAS,
   nodeCostMap,
   openInputPorts,
   outputKindOf,
@@ -62,6 +59,7 @@ import {
   resolveInputPort,
   saveWorkflow,
   strandedEdges,
+  copyTemplate,
   templateWorkflows,
   validateWorkflow,
   withReusedSteps,
@@ -77,7 +75,6 @@ import {
 } from "../../lib/studio/workflow";
 import { invoke } from "@tauri-apps/api/core";
 import { nodeEtaKey } from "../../lib/studio/workflow/eta";
-import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
 import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
 import type { LinkFilter, NodeSearchHit } from "../../lib/studio/workflow/node-search";
 import { pruneToTargets } from "../../lib/studio/workflow/partial";
@@ -108,7 +105,6 @@ import {
   setWorkflowCover,
   workflowLibraryLoaded,
 } from "../../lib/studio/workflow/store";
-import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
 import { type ImportedWorkflow, WorkflowLibrary } from "./WorkflowLibrary";
 import "@xyflow/react/dist/style.css";
@@ -126,7 +122,7 @@ import {
 import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
 import type { FrameFlowNode } from "./workflow/FrameNode";
 import { NODE_TYPES } from "./workflow/StudioNode";
-import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
+import { RunCostDialog } from "./workflow/RunCostDialog";
 import { ARRANGE_GAP, ArrangePopover } from "./workflow/ArrangePopover";
 import { NodeSearch } from "./workflow/NodeSearch";
 import { RunBanners } from "./workflow/RunBanners";
@@ -152,6 +148,11 @@ import { useLibraryArrivals } from "./workflow/useLibraryArrivals";
 import { RunSessions } from "../../lib/studio/workflow/run-sessions";
 import { useWorkflowTabs } from "./workflow/useWorkflowTabs";
 import { WorkflowTabs } from "./workflow/WorkflowTabs";
+import { WorkflowToolbar } from "./workflow/WorkflowToolbar";
+import { WorkflowAppView } from "./workflow/WorkflowAppView";
+import { AppBuilder } from "./workflow/AppBuilder";
+import { isApp } from "../../lib/studio/workflow/app";
+import { SegmentedControl } from "../ui/SegmentedControl";
 
 /**
  * The Workflows tab. The library is read before anything is drawn: an editor
@@ -493,21 +494,7 @@ function WorkflowEditor({
     }
     const seeded = blankWorkflow("My first workflow");
     const template = resolveTemplateModels(templateWorkflows()[0], catalogRef.current).workflow;
-    const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
-    const workflow: Workflow = {
-      ...seeded,
-      nodes: template.nodes.map((node) => ({
-        ...node,
-        id: idMap.get(node.id) ?? node.id,
-        params: { ...node.params },
-      })),
-      edges: template.edges.map((edge) => ({
-        ...edge,
-        id: crypto.randomUUID(),
-        source: idMap.get(edge.source) ?? edge.source,
-        target: idMap.get(edge.target) ?? edge.target,
-      })),
-    };
+    const workflow = copyTemplate(template, seeded);
     saveWorkflow(workflow);
     setWorkflows(listWorkflows());
     hydrate(workflow);
@@ -727,22 +714,7 @@ function WorkflowEditor({
       // so the library can show what the person made from it.
       const template = resolveTemplateModels(shipped, catalogRef.current).workflow;
       const workflow = { ...blankWorkflow(template.name), extra: { template: shipped.id } };
-      const idMap = new Map(template.nodes.map((node) => [node.id, crypto.randomUUID()]));
-      const cloned: Workflow = {
-        ...workflow,
-        ...(template.description ? { description: template.description } : {}),
-        nodes: template.nodes.map((node) => ({
-          ...node,
-          id: idMap.get(node.id) ?? node.id,
-          params: { ...node.params },
-        })),
-        edges: template.edges.map((edge) => ({
-          ...edge,
-          id: crypto.randomUUID(),
-          source: idMap.get(edge.source) ?? edge.source,
-          target: idMap.get(edge.target) ?? edge.target,
-        })),
-      };
+      const cloned = copyTemplate(template, workflow);
       saveWorkflow(cloned);
       setWorkflows(listWorkflows());
       hydrate(cloned);
@@ -1154,6 +1126,7 @@ function WorkflowEditor({
         // A file's groups and subgraphs come in as frames and blocks.
         ...(imported.frames?.length ? { frames: imported.frames } : {}),
         ...(imported.blocks?.length ? { blocks: imported.blocks } : {}),
+        ...(imported.app ? { app: imported.app } : {}),
         nodes: imported.nodes,
         edges: imported.edges,
         origin: "import",
@@ -1195,6 +1168,21 @@ function WorkflowEditor({
   );
 
   const [historyOpen, setHistoryOpen] = useState(false);
+  /** The graph, or the workflow as an app (ADR-0119). */
+  const [mode, setMode] = useState<"graph" | "app">("graph");
+  const [buildingApp, setBuildingApp] = useState(false);
+  const openedId = current?.id;
+  // A workflow that is an app opens as one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when another workflow opens.
+  useEffect(() => {
+    setMode(current && isApp(current) ? "app" : "graph");
+  }, [openedId]);
+  const switchMode = (next: "graph" | "app") => {
+    // The app's fields are the workflow's own steps: shown from its top level.
+    if (next === "app" && blockScope.scope.length > 0 && serialized)
+      blockScope.leave(serialized, 0);
+    setMode(next);
+  };
   const [versionsOpen, setVersionsOpen] = useState(false);
   /** Bumped when a version is kept, so the list is read again. */
   const [versionsEpoch, setVersionsEpoch] = useState(0);
@@ -1589,129 +1577,51 @@ function WorkflowEditor({
         onSelect={workflowTabs.select}
         onClose={workflowTabs.close}
       />
-      <div className="studio-workflows-toolbar">
-        <button
-          ref={libraryButtonRef}
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => {
-            setLeftCanvas(true);
-            setView("library");
-          }}
-        >
-          {t("Library")}
-        </button>
-        <input
-          className="studio-input studio-workflow-name"
-          value={current?.name ?? ""}
-          placeholder={t("Workflow name")}
-          aria-label={t("Workflow name")}
-          onChange={(event) =>
-            setCurrent((existing) =>
-              existing ? { ...existing, name: event.target.value } : existing,
-            )
-          }
-        />
-        <button type="button" className="btn btn-secondary" onClick={newWorkflow}>
-          {t("New")}
-        </button>
-        <button
-          type="button"
-          className="studio-icon-button"
-          aria-label={t("Undo")}
-          title={t("Undo (⌘Z)")}
-          disabled={current?.readOnly === true}
-          onClick={editing.undo}
-        >
-          <IconArrowUndoUp size={16} />
-        </button>
-        <button
-          type="button"
-          className="studio-icon-button"
-          aria-label={t("Redo")}
-          title={t("Redo (⇧⌘Z)")}
-          disabled={current?.readOnly === true}
-          onClick={editing.redo}
-        >
-          <IconArrowRedoDown size={16} />
-        </button>
-        <Select
-          value={null}
-          placeholder={t("Add node")}
-          ariaLabel={t("Add a node")}
-          onChange={(type) => addNode(type as WorkflowNodeType)}
-          options={Object.values(NODE_SCHEMAS)
-            .filter((schema) => schema.type !== "block" && schema.type !== "listItem")
-            .map((schema) => ({ value: schema.type, label: nodeTypeLabel(schema.type) }))}
-        />
-        <button
-          type="button"
-          className="btn btn-secondary"
-          aria-pressed={arranging !== undefined}
-          disabled={!current || current.readOnly === true || flowNodes.length < 2}
-          onClick={() => (arranging ? setArranging(undefined) : startArranging())}
-        >
-          {t("Arrange")}
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          aria-pressed={historyOpen}
-          disabled={!current}
-          onClick={() => setHistoryOpen((open) => !open)}
-        >
-          {t("History")}
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          aria-pressed={versionsOpen}
-          disabled={!current}
-          onClick={() => setVersionsOpen((open) => !open)}
-        >
-          {t("Versions")}
-        </button>
-        <span className="studio-spacer" />
-        {current ? (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setConfirmingDelete(true)}
-          >
-            {t("Delete")}
-          </button>
-        ) : null}
-        {estimate && (estimate.credits > 0 || estimate.metered > 0) ? (
-          <span className="studio-workflow-cost" title={t("Estimated cost of one run")}>
-            {costSummary(estimate)}
-          </span>
-        ) : null}
-        {running ? (
-          <button type="button" className="btn btn-secondary" onClick={stop}>
-            {t("Stop")}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="studio-primary-button"
-            disabled={
-              !validation?.ok ||
-              !serialized ||
-              serialized.nodes.length === 0 ||
-              quoting ||
-              current?.readOnly === true
-            }
-            title={validation?.errors.map((issue) => issue.message).join("\n") || undefined}
-            onClick={() => void startRun()}
-            onPointerEnter={() => setHoverRun(true)}
-            onPointerLeave={() => setHoverRun(false)}
-            onFocus={() => setHoverRun(true)}
-            onBlur={() => setHoverRun(false)}
-          >
-            {quoting ? t("Pricing...") : t("Run workflow")}
-          </button>
-        )}
-      </div>
+      <WorkflowToolbar
+        libraryButtonRef={libraryButtonRef}
+        onLibrary={() => {
+          setLeftCanvas(true);
+          setView("library");
+        }}
+        name={current?.name ?? ""}
+        onRename={(name) => setCurrent((existing) => (existing ? { ...existing, name } : existing))}
+        onNew={newWorkflow}
+        readOnly={current?.readOnly === true}
+        hasWorkflow={current !== undefined}
+        onUndo={editing.undo}
+        onRedo={editing.redo}
+        onAddNode={addNode}
+        arranging={arranging !== undefined}
+        canArrange={flowNodes.length >= 2}
+        onArrange={() => (arranging ? setArranging(undefined) : startArranging())}
+        historyOpen={historyOpen}
+        onHistory={() => setHistoryOpen((open) => !open)}
+        versionsOpen={versionsOpen}
+        onVersions={() => setVersionsOpen((open) => !open)}
+        onDelete={() => setConfirmingDelete(true)}
+        estimate={estimate}
+        running={running}
+        onStop={stop}
+        canRun={Boolean(validation?.ok && serialized && serialized.nodes.length > 0)}
+        runIssues={validation?.errors.map((issue) => issue.message).join("\n") || undefined}
+        quoting={quoting}
+        onRun={() => void startRun()}
+        onHoverRun={setHoverRun}
+        asApp={mode === "app"}
+        modeSwitch={
+          current ? (
+            <SegmentedControl
+              aria-label={t("Show the workflow as")}
+              value={mode}
+              onValueChange={switchMode}
+              options={[
+                { value: "graph", label: t("Graph") },
+                { value: "app", label: t("App") },
+              ]}
+            />
+          ) : null
+        }
+      />
       <ConfirmDialog
         open={confirmingDelete}
         onClose={() => setConfirmingDelete(false)}
@@ -1836,8 +1746,44 @@ function WorkflowEditor({
           onClose={() => setHistoryOpen(false)}
         />
       ) : null}
+      {mode === "app" && serialized ? (
+        <WorkflowAppView
+          workflow={serialized}
+          catalog={catalog}
+          artifacts={artifacts}
+          results={shownResults}
+          constraintEpoch={constraintEpoch}
+          onParamsChange={onParamsChange}
+          estimate={estimate}
+          run={{
+            running,
+            onStop: stop,
+            canRun: Boolean(validation?.ok && serialized.nodes.length > 0),
+            readOnly: current?.readOnly === true,
+            runIssues: validation?.errors.map((issue) => issue.message).join("\n") || undefined,
+            quoting,
+            onRun: () => void startRun(),
+          }}
+          onBuild={() => setBuildingApp(true)}
+        />
+      ) : null}
+      {buildingApp && serialized ? (
+        <AppBuilder
+          workflow={serialized}
+          catalog={catalog}
+          onKeep={(app) => {
+            setBuildingApp(false);
+            const { app: _previous, ...graph } = serialized;
+            const root = app ? { ...graph, app } : graph;
+            currentRef.current = root;
+            setCurrent(root);
+          }}
+          onClose={() => setBuildingApp(false)}
+        />
+      ) : null}
       <div
         ref={canvasRef}
+        hidden={mode === "app"}
         className="studio-workflow-canvas"
         data-readonly={current?.readOnly ? "true" : undefined}
       >

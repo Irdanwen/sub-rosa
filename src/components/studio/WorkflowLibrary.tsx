@@ -26,6 +26,7 @@ import { readEmbeddedWorkflow } from "../../lib/studio/workflow/comfy/embedded";
 import { Dialog } from "../ui/Dialog";
 import { Spinner } from "../ui/Spinner";
 import { SegmentedControl } from "../ui/SegmentedControl";
+import { isApp } from "../../lib/studio/workflow/app";
 import { resolveTemplateModels } from "../../lib/studio/workflow/template-models";
 import { templateEstimate, templatePriceLabel } from "../../lib/studio/workflow/template-price";
 import { type TemplateCategory, templateCategory } from "../../lib/studio/workflow/templates";
@@ -67,7 +68,7 @@ export type ImportedWorkflow = Pick<
   Workflow,
   "name" | "description" | "nodes" | "edges" | "extra"
 > &
-  Partial<Pick<Workflow, "frames" | "blocks">>;
+  Partial<Pick<Workflow, "frames" | "blocks" | "app">>;
 
 export function WorkflowLibrary({
   catalog,
@@ -225,6 +226,9 @@ export function WorkflowLibrary({
                   <div className="workflow-card-body">
                     <div className="workflow-card-title">
                       <span>{workflow.name || t("Untitled workflow")}</span>
+                      {isApp(workflow) ? (
+                        <span className="workflow-card-badge">{t("App")}</span>
+                      ) : null}
                       {workflow.origin === "import" ? (
                         <span className="workflow-card-badge">{t("Imported")}</span>
                       ) : null}
@@ -597,6 +601,7 @@ function TemplateGallery({
               <div className="workflow-card-body">
                 <div className="workflow-card-title">
                   <span>{template.name}</span>
+                  {isApp(template) ? <span className="workflow-card-badge">{t("App")}</span> : null}
                 </div>
                 {template.description ? (
                   <p className="workflow-card-description">{template.description}</p>

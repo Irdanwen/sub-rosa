@@ -149,6 +149,7 @@ export function sameWorkflow(a: Workflow, b: Workflow): boolean {
       frames: a.frames ?? [],
       blocks: a.blocks ?? [],
       extra: a.extra ?? {},
+      app: a.app ?? null,
     }) ===
       stableJson({
         nodes: b.nodes,
@@ -156,6 +157,7 @@ export function sameWorkflow(a: Workflow, b: Workflow): boolean {
         frames: b.frames ?? [],
         blocks: b.blocks ?? [],
         extra: b.extra ?? {},
+        app: b.app ?? null,
       })
   );
 }
