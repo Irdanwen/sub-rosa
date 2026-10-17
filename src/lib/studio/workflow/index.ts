@@ -22,6 +22,7 @@ export {
   type ParamSchema,
   type PortKind,
   type Workflow,
+  type WorkflowBlock,
   type WorkflowEdge,
   type WorkflowFrame,
   type WorkflowNode,

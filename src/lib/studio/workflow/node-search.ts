@@ -34,6 +34,7 @@ const CATEGORY: Record<WorkflowNodeType, NodeCategory> = {
   output: "flow",
   relay: "flow",
   note: "flow",
+  block: "flow",
 };
 
 export function categoryLabel(category: NodeCategory): string {
@@ -82,6 +83,8 @@ function keywords(type: WorkflowNodeType): string {
       return t("reroute point route wire");
     case "note":
       return t("comment text explain");
+    case "block":
+      return t("group subgraph several steps");
   }
 }
 
@@ -143,6 +146,9 @@ export function searchNodeTypes(query: string, filter?: LinkFilter): NodeSearchH
   const order: NodeCategory[] = ["inputs", "generate", "montage", "flow"];
   const hits: Array<NodeSearchHit & { score: number }> = [];
   for (const type of Object.keys(NODE_SCHEMAS) as WorkflowNodeType[]) {
+    // A block step is always an instance of a block: made from a selection
+    // or taken from the library, never blank.
+    if (type === "block") continue;
     const params = filter ? fits(type, filter) : {};
     if (params === false) continue;
     const label = nodeTypeLabel(type);

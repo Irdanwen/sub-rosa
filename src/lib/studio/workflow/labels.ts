@@ -35,6 +35,8 @@ export function nodeTypeLabel(type: WorkflowNodeType | string): string {
       return t("Relay");
     case "note":
       return t("Note");
+    case "block":
+      return t("Block");
     default:
       return String(type);
   }

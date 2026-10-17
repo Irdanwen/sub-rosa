@@ -134,6 +134,40 @@ describe("the workflow editor", () => {
     await screen.findByRole("button", { name: /Cover/ });
   });
 
+  it("makes a block with ⇧⌘E, sets its promoted text, and puts its steps back", async () => {
+    const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
+    const { container } = render(
+      <WorkflowStudio catalog={{ backend: "carpe-diem", models: [] }} />,
+    );
+    await screen.findByRole("button", { name: /Cover/ }).then((card) => card.click());
+    await waitFor(() => expect(screen.getByText("Opening")).toBeTruthy());
+    const steps = () => container.querySelectorAll(".react-flow__node-studio").length;
+    const before = steps();
+    fireEvent.keyDown(window, { key: "a", metaKey: true });
+    await waitFor(() =>
+      expect(container.querySelectorAll(".react-flow__node-studio.selected").length).toBe(before),
+    );
+    fireEvent.keyDown(window, { key: "e", metaKey: true, shiftKey: true });
+    const block = await waitFor(() => {
+      const found = container.querySelector(".studio-block");
+      if (!found) throw new Error("no block yet");
+      return found as HTMLElement;
+    });
+    expect(steps()).toBe(1);
+    expect(within(block).getByText(`Block of ${before} steps`)).toBeTruthy();
+    // The prompt's words show on the block, and this block's own value wins.
+    const words = within(block).getByDisplayValue("a red car");
+    fireEvent.change(words, { target: { value: "a blue bike" } });
+    await waitFor(() => expect(within(block).getByDisplayValue("a blue bike")).toBeTruthy());
+    // Steps are drawn hidden until measured, which jsdom never does.
+    const ungroup = container.querySelector('.studio-block [aria-label="Ungroup"]');
+    if (!ungroup) throw new Error("no ungroup button");
+    fireEvent.click(ungroup);
+    await waitFor(() => expect(steps()).toBe(before));
+    expect(container.querySelector(".studio-block")).toBeNull();
+    expect(screen.getByDisplayValue("a blue bike")).toBeTruthy();
+  });
+
   it("acts on the selection from its bar, and on a frame's steps from the frame's", async () => {
     const { WorkflowStudio } = await import("../components/studio/WorkflowStudio");
     const { container } = render(

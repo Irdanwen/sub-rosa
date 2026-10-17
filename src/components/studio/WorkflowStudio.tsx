@@ -28,7 +28,6 @@ import { IconArrowUndoUp } from "central-icons/IconArrowUndoUp";
 import { IconCrossSmall } from "central-icons/IconCrossSmall";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifactIndex } from "../../lib/artifact-media";
-import { artifactSrc } from "../../lib/studio/artifacts";
 import { rememberConstraintError } from "../../lib/studio/model-constraints";
 import type { MediaCatalog } from "../../lib/studio/types";
 import {
@@ -46,35 +45,30 @@ import {
 } from "../../lib/studio/workflow-run";
 import {
   applyPortOrder,
-  chainOrderSuggestion,
   defaultParams,
   deleteWorkflow,
   edgesOnPort,
   estimateWorkflowCost,
   fetchVideoQuotes,
-  isInputCompatible,
   listWorkflows,
   maybeNodeSchema,
   needsRunConfirmation,
   NODE_SCHEMAS,
   nodeCostMap,
-  nodeLabel,
   openInputPorts,
   outputKindOf,
-  portCapacity,
   reorderPortEdge,
   resolveInputPort,
   saveWorkflow,
   strandedEdges,
   templateWorkflows,
-  textSourceLabels,
   validateWorkflow,
   withReusedSteps,
   WorkflowRunError,
   type NodeRunResult,
-  type ValidationIssue,
   type Workflow,
   type WorkflowCostEstimate,
+  type WorkflowBlock,
   type WorkflowEdge,
   type WorkflowFrame,
   type WorkflowNode,
@@ -84,12 +78,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { nodeEtaKey } from "../../lib/studio/workflow/eta";
 import { nodeTypeLabel } from "../../lib/studio/workflow/labels";
 import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
-import { applyModes } from "../../lib/studio/workflow/modes";
 import type { LinkFilter, NodeSearchHit } from "../../lib/studio/workflow/node-search";
 import { pruneToTargets } from "../../lib/studio/workflow/partial";
 import { align, distribute, layered } from "../../lib/studio/workflow/arrange";
 import { spendGuard } from "../../lib/studio/workflow/spend";
 import { stableJson } from "../../lib/studio/workflow/stable-json";
+import { blockFromSelection, edgeSourceKind, ungroupBlock } from "../../lib/studio/workflow/blocks";
+import { writtenGraph } from "../../lib/studio/workflow/flatten";
+import { flatTargets, liftResults } from "../../lib/studio/workflow/lift";
 import { readSpendCeiling } from "../../lib/studio/workflow/spend-ceiling";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -111,12 +107,12 @@ import { Spinner } from "../ui/Spinner";
 import { type ImportedWorkflow, WorkflowLibrary } from "./WorkflowLibrary";
 import "@xyflow/react/dist/style.css";
 import {
-  type PortSourceEntry,
   type StudioFlowNode,
   type StudioNodeData,
   SAVE_DEBOUNCE_MS,
   toFlowNodes,
   toFlowEdges,
+  canConnect,
   toWorkflowEdge,
   fromFlow,
   modelChangeNotice,
@@ -133,8 +129,8 @@ import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
 import { SelectionToolbar } from "./workflow/SelectionToolbar";
 import { useCanvasEditing } from "./workflow/useCanvasEditing";
 import { stepBoxes, useFrames } from "./workflow/useFrames";
-import { useLiveQuotes } from "./workflow/useLiveQuotes";
-import { useReusePrediction } from "./workflow/useReusePrediction";
+import { useNodeDataSync } from "./workflow/useNodeDataSync";
+import { useRunPicture } from "./workflow/useRunPicture";
 
 /**
  * The Workflows tab. The library is read before anything is drawn: an editor
@@ -509,145 +505,55 @@ function WorkflowEditor({
    * read as an edit, or that refresh would feed itself without end. */
   // biome-ignore lint/correctness/useExhaustiveDependencies: drawnKey stands in for the graph.
   const serialized = useMemo(() => drawn, [drawnKey]);
-  /** The graph a run executes: steps set aside resolved away (modes.ts). */
-  const effective = useMemo(() => (serialized ? applyModes(serialized) : undefined), [serialized]);
-  const validation = useMemo(
-    () => (effective ? validateWorkflow(effective) : undefined),
-    [effective],
-  );
   /** Bumped when a run ends, so the cache is asked again what it now holds. */
   const [runEpoch, setRunEpoch] = useState(0);
-  const reused = useReusePrediction(effective, runEpoch);
-  const liveQuotes = useLiveQuotes(effective, catalog);
-  const estimate = useMemo(
-    () =>
-      effective
-        ? withReusedSteps(estimateWorkflowCost(effective, catalog, liveQuotes), reused)
-        : undefined,
-    [effective, catalog, reused, liveQuotes],
+  const {
+    flattened,
+    effective,
+    validation,
+    reused,
+    reusedShown,
+    liveQuotes,
+    estimate,
+    priceByNode,
+    issuesByNode,
+  } = useRunPicture(serialized, catalog, runEpoch);
+  /** What the run made, with each block step's own (lift.ts). */
+  const shownResults = useMemo(
+    () => (flattened ? liftResults(results, flattened) : results),
+    [results, flattened],
   );
+  /** Put a block step's steps back; retargeted each render (needs the graph). */
+  const ungroupRef = useRef<(nodeId: string) => void>(() => {});
+  const onUngroup = useCallback((nodeId: string) => ungroupRef.current(nodeId), []);
   /** Hovering Run lights up the steps that will spend. */
   const [hoverRun, setHoverRun] = useState(false);
-  const priceByNode = useMemo(
-    () => new Map((estimate?.nodes ?? []).map((entry) => [entry.nodeId, entry])),
-    [estimate],
-  );
 
   /** "Run this step", with a stable identity for node data; retargeted at
    * every render to the current run handler. */
   const runStepRef = useRef<(nodeId: string) => void>(() => {});
   const onRunStep = useCallback((nodeId: string) => runStepRef.current(nodeId), []);
 
-  /** Each step's own problems, so they show on the step itself. */
-  const issuesByNode = useMemo(() => {
-    const byNode = new Map<string, ValidationIssue[]>();
-    for (const issue of [...(validation?.errors ?? []), ...(validation?.warnings ?? [])]) {
-      if (!issue.nodeId) continue;
-      byNode.set(issue.nodeId, [...(byNode.get(issue.nodeId) ?? []), issue]);
-    }
-    return byNode;
-  }, [validation]);
-
-  // Keep node data in sync with run results without disturbing positions.
-  // Connection-order lists, gate candidates, and the assemble node's chain
-  // suggestion refresh here too, so they always describe the wiring as it is.
-  useEffect(() => {
-    setFlowNodes((nodes) => {
-      const graph = {
-        nodes: nodes.map((node) => node.data.wfNode),
-        edges: flowEdges.map(toWorkflowEdge),
-      };
-      const labelOf = new Map(nodes.map((node) => [node.id, nodeLabel(node.data.wfNode)]));
-      const imageOf = (nodeId: string): string | undefined => {
-        const output = results.get(nodeId)?.output;
-        if (output?.kind === "image") return `data:${output.mimeType};base64,${output.base64}`;
-        // Before any run, an asset node already knows what it points at, and
-        // a reference list of thumbnails is the only version of it that can be
-        // read at a glance. The asset protocol streams the file, so this costs
-        // nothing (the canvas is desktop-only; see `useArtifactPreview` for
-        // why iOS answers differently).
-        const source = nodes.find((entry) => entry.id === nodeId)?.data.wfNode;
-        if (source?.type !== "asset") return undefined;
-        const artifactId = source.params.artifactId;
-        const artifact =
-          typeof artifactId === "string" ? artifacts.byId.get(artifactId) : undefined;
-        return artifact?.kind === "image" ? artifactSrc(artifact) : undefined;
-      };
-      const artifactOf = (nodeId: string): string | undefined => {
-        const source = nodes.find((entry) => entry.id === nodeId)?.data.wfNode;
-        const artifactId = source?.type === "asset" ? source.params.artifactId : undefined;
-        return typeof artifactId === "string" ? artifactId : undefined;
-      };
-      return nodes.map((node) => {
-        const wfNode = node.data.wfNode;
-        const schema = maybeNodeSchema(wfNode.type);
-        let portSources: Record<string, PortSourceEntry[]> | undefined;
-        for (const port of schema ? openInputPorts(schema, wfNode.params) : []) {
-          if (!port.multi) continue;
-          const portEdges = edgesOnPort(graph, node.id, port.id);
-          if (portEdges.length < 2) continue;
-          portSources ??= {};
-          portSources[port.id] = portEdges.map((edge) => ({
-            edgeId: edge.id,
-            sourceId: edge.source,
-            label: labelOf.get(edge.source) ?? edge.source,
-            image: imageOf(edge.source),
-            artifactId: artifactOf(edge.source),
-          }));
-        }
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            result: results.get(node.id),
-            catalog,
-            artifacts,
-            constraintEpoch,
-            onReorderEdge,
-            onHighlightEdge,
-            onApplyChainOrder,
-            portSources,
-            textSources: textSourceLabels(graph, node.id),
-            chainSuggestion:
-              wfNode.type === "assemble" ? chainOrderSuggestion(graph, node.id) : undefined,
-            willReuse: reused.has(node.id),
-            issues: issuesByNode.get(node.id),
-            price: priceByNode.get(node.id),
-            willPay: (() => {
-              const price = priceByNode.get(node.id);
-              return hoverRun && price !== undefined && price.kind !== "free" && !price.reused;
-            })(),
-            onRunStep,
-            onModeChange,
-            onLayoutChange,
-            gateSources:
-              wfNode.type === "gate"
-                ? edgesOnPort(graph, node.id, "in").map((edge) => ({
-                    id: edge.source,
-                    label: labelOf.get(edge.source) ?? "",
-                  }))
-                : undefined,
-          },
-        };
-      });
-    });
-  }, [
-    results,
-    reused,
+  useNodeDataSync({
+    setFlowNodes,
+    flowEdges,
+    results: shownResults,
+    reusedShown,
     issuesByNode,
     priceByNode,
     hoverRun,
-    onRunStep,
-    onModeChange,
-    onLayoutChange,
     catalog,
     artifacts,
     constraintEpoch,
-    flowEdges,
+    blocks: serialized?.blocks,
+    onRunStep,
+    onModeChange,
+    onLayoutChange,
     onReorderEdge,
     onHighlightEdge,
     onApplyChainOrder,
-  ]);
+    onUngroup,
+  });
 
   const onNodesChange = useCallback(
     (changes: NodeChange<StudioFlowNode | FrameFlowNode>[]) => {
@@ -668,37 +574,16 @@ function WorkflowEditor({
    * has room. What this rejects, the validator would flag anyway — refusing
    * the drop is just the earlier, kinder place to say no. */
   const isValidConnection = useCallback(
-    (connection: Connection | FlowEdge) => {
-      const source = flowNodes.find((node) => node.id === connection.source)?.data.wfNode;
-      const target = flowNodes.find((node) => node.id === connection.target)?.data.wfNode;
-      if (!source || !target || source.id === target.id) return false;
-      const schema = maybeNodeSchema(target.type);
-      if (!schema || openInputPorts(schema, target.params).length === 0) return false;
-      // Graph context so a gate's output resolves to what it passes through.
-      const sourceKind = outputKindOf(source, {
-        nodeById: new Map(flowNodes.map((node) => [node.id, node.data.wfNode])),
-        edges: flowEdges.map((edge) => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          targetPort: edge.targetHandle ?? undefined,
-        })),
-      });
-      const port = resolveInputPort(
-        target,
-        { targetPort: connection.targetHandle ?? undefined },
-        sourceKind,
-      );
-      if (!port || !isInputCompatible(sourceKind, port.kind)) return false;
-      const landing = flowEdges.filter(
-        (edge) => edge.target === target.id && (edge.targetHandle ?? undefined) === port.id,
-      ).length;
-      // The cap can be per model (seedance 2.0 takes 9 reference photos,
-      // 2.5 takes 30), so ask the port with the node's own params.
-      const capacity = portCapacity(port, target.params) ?? Number.POSITIVE_INFINITY;
-      return landing < capacity;
-    },
-    [flowNodes, flowEdges],
+    (connection: Connection | FlowEdge) =>
+      canConnect(
+        {
+          nodes: flowNodes.map((node) => node.data.wfNode),
+          edges: flowEdges.map(toWorkflowEdge),
+          blocks: current?.blocks,
+        },
+        connection,
+      ),
+    [flowNodes, flowEdges, current?.blocks],
   );
 
   const addNode = useCallback(
@@ -791,7 +676,7 @@ function WorkflowEditor({
     .join("|");
 
   /** Which steps are being made right now, as a stable key. */
-  const runningKey = [...results.values()]
+  const runningKey = [...shownResults.values()]
     .filter((result) => result.status === "running")
     .map((result) => result.nodeId)
     .sort()
@@ -829,11 +714,9 @@ function WorkflowEditor({
       sourceRanks.set(edge.id, rank);
       perSource.set(edge.source, rank + 1);
     }
-    const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-    const kindContext = { nodeById, edges: graph.edges };
+    const blockGraph = { ...graph, blocks: current?.blocks };
     const runningNow = new Set(runningKey.split("|"));
     return flowEdges.map((edge) => {
-      const source = nodeById.get(edge.source);
       return {
         ...edge,
         type: "studio" as const,
@@ -844,15 +727,23 @@ function WorkflowEditor({
           order: orders.get(edge.id),
           sourceRank: sourceRanks.get(edge.id),
           highlight: edge.id === highlightedEdge,
-          kind: source ? outputKindOf(source, kindContext) : undefined,
+          kind: edgeSourceKind(
+            { source: edge.source, sourcePort: edge.sourceHandle ?? undefined },
+            blockGraph,
+          ),
           onDelete: current?.readOnly ? undefined : removeEdge,
         } satisfies StudioEdgeData,
       };
     });
-    // orderGraphKey stands in for the node list: order and kinds only depend
-    // on the parts of it the key captures.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: see above
-  }, [flowEdges, orderGraphKey, highlightedEdge, runningKey, current?.readOnly, removeEdge]);
+  }, [
+    flowEdges,
+    orderGraphKey,
+    highlightedEdge,
+    runningKey,
+    current?.readOnly,
+    current?.blocks,
+    removeEdge,
+  ]);
   const [pendingRun, setPendingRun] = useState<
     { estimate: WorkflowCostEstimate; targets?: string[] } | undefined
   >(undefined);
@@ -888,8 +779,10 @@ function WorkflowEditor({
     async (priced: WorkflowCostEstimate, targets?: string[]) => {
       // Part of the graph: the steps asked for and what they need, frozen as
       // the run's definition; upstream comes back from the cache.
-      const resolved = serialized ? applyModes(serialized) : undefined;
-      const runnable = resolved && targets ? pruneToTargets(resolved, targets) : resolved;
+      const runnable =
+        effective && targets && flattened
+          ? pruneToTargets(effective, flatTargets(targets, flattened))
+          : effective;
       if (!runnable || running || !validateWorkflow(runnable).ok) return;
       runEstimateRef.current = priced;
       renderStartsRef.current = new Map();
@@ -942,7 +835,7 @@ function WorkflowEditor({
         setRunEpoch((epoch) => epoch + 1);
       }
     },
-    [serialized, running, mirrorUpdate],
+    [effective, flattened, running, mirrorUpdate],
   );
 
   /** Pick an interrupted production back up. Node states light the canvas up
@@ -1053,13 +946,14 @@ function WorkflowEditor({
    * one: quotes refine the figures, then the dialog shows the bill. */
   const startRun = useCallback(
     async (targets?: string[]) => {
-      if (!serialized || running || quoting) return;
-      const resolved = applyModes(serialized);
-      if (targets?.some((id) => !resolved.nodes.some((node) => node.id === id))) {
+      if (!effective || !flattened || running || quoting) return;
+      const resolved = effective;
+      const flat = targets ? flatTargets(targets, flattened) : undefined;
+      if (flat && !flat.some((id) => resolved.nodes.some((node) => node.id === id))) {
         setRunError(t("This step is set aside, so it does not run."));
         return;
       }
-      const runnable = targets ? pruneToTargets(resolved, targets) : resolved;
+      const runnable = flat ? pruneToTargets(resolved, flat) : resolved;
       // Only what will run has to be valid: a broken step elsewhere does
       // not block running this one.
       const check = validateWorkflow(runnable);
@@ -1088,7 +982,7 @@ function WorkflowEditor({
         setQuoting(false);
       }
     },
-    [serialized, running, quoting, catalog, run, reused, locateNode, liveQuotes],
+    [effective, flattened, running, quoting, catalog, run, reused, locateNode, liveQuotes],
   );
   runStepRef.current = (nodeId) => void startRun([nodeId]);
 
@@ -1185,7 +1079,14 @@ function WorkflowEditor({
       const base = currentRef.current;
       const { definition, results: past } = await runResults(runId);
       if (!base || !definition) return;
-      hydrate({ ...base, nodes: definition.nodes, edges: definition.edges });
+      // A run with blocks froze the graph as written too (flatten.ts).
+      const written = writtenGraph(definition);
+      hydrate({
+        ...base,
+        nodes: (written ?? definition).nodes,
+        edges: (written ?? definition).edges,
+        ...(written ? { blocks: written.blocks } : {}),
+      });
       setResults(past);
     },
     [hydrate],
@@ -1195,10 +1096,24 @@ function WorkflowEditor({
   const startRunRef = useRef(startRun);
   startRunRef.current = startRun;
   const applyGraph = useCallback(
-    (graph: { nodes: WorkflowNode[]; edges: WorkflowEdge[]; frames?: WorkflowFrame[] }) => {
+    (graph: {
+      nodes: WorkflowNode[];
+      edges: WorkflowEdge[];
+      frames?: WorkflowFrame[];
+      blocks?: WorkflowBlock[];
+    }) => {
       const base = currentRef.current;
       if (!base) return;
-      const next = { ...base, nodes: graph.nodes, edges: graph.edges };
+      const { blocks: _previous, ...rest } = base;
+      const next = {
+        ...rest,
+        nodes: graph.nodes,
+        edges: graph.edges,
+        ...(graph.blocks?.length ? { blocks: graph.blocks } : {}),
+      };
+      // Blocks live on the workflow itself, not on the canvas's state.
+      currentRef.current = next;
+      setCurrent(next);
       setFrames(graph.frames ?? []);
       setFlowNodes(
         toFlowNodes(
@@ -1216,6 +1131,20 @@ function WorkflowEditor({
     },
     [artifacts, onParamsChange, onRename, onRemove, onApproveGate, setFrames],
   );
+  /** The selected steps as one block step (⇧⌘E), and a block step's steps
+   * put back. Both edit the graph as a whole, so undo takes them back. */
+  const makeBlock = () => {
+    const ids = new Set(
+      flowNodesRef.current.filter((node) => node.selected).map((node) => node.id),
+    );
+    const name = t("Block {count}", { count: (serialized?.blocks?.length ?? 0) + 1 });
+    const made = serialized ? blockFromSelection(serialized, ids, name) : undefined;
+    if (made) applyGraph({ ...made.graph, frames });
+  };
+  ungroupRef.current = (nodeId) => {
+    const next = serialized ? ungroupBlock(serialized, nodeId) : undefined;
+    if (next) applyGraph({ ...next, frames });
+  };
   const openSearchRef = useRef<(x: number, y: number) => void>(() => {});
   const editing = useCanvasEditing({
     active: view === "canvas" && current !== undefined && !current.readOnly,
@@ -1227,6 +1156,14 @@ function WorkflowEditor({
     addSteps: (graph) => {
       const base = currentRef.current;
       if (!base) return;
+      // Pasted block steps bring their blocks, unless this workflow has them.
+      const known = new Set((base.blocks ?? []).map((block) => block.id));
+      const brought = (graph.blocks ?? []).filter((block) => !known.has(block.id));
+      if (brought.length > 0) {
+        const next = { ...base, blocks: [...(base.blocks ?? []), ...brought] };
+        currentRef.current = next;
+        setCurrent(next);
+      }
       const added = toFlowNodes(
         { ...base, nodes: graph.nodes, edges: graph.edges },
         catalogRef.current,
@@ -1254,6 +1191,7 @@ function WorkflowEditor({
     run: () => void startRunRef.current(),
     toggleHistory: () => setHistoryOpen((open) => !open),
     frameSelection,
+    makeBlock,
     openSearch: () => {
       const box = canvasRef.current?.getBoundingClientRect();
       if (box) openSearchRef.current(box.left + box.width / 2 - 128, box.top + 80);
@@ -1515,10 +1453,9 @@ function WorkflowEditor({
           placeholder={t("Add node")}
           ariaLabel={t("Add a node")}
           onChange={(type) => addNode(type as WorkflowNodeType)}
-          options={Object.values(NODE_SCHEMAS).map((schema) => ({
-            value: schema.type,
-            label: nodeTypeLabel(schema.type),
-          }))}
+          options={Object.values(NODE_SCHEMAS)
+            .filter((schema) => schema.type !== "block")
+            .map((schema) => ({ value: schema.type, label: nodeTypeLabel(schema.type) }))}
         />
         <button
           type="button"
@@ -1762,6 +1699,7 @@ function WorkflowEditor({
             }}
             onDuplicate={editing.duplicate}
             onFrame={frameSelection}
+            onMakeBlock={makeBlock}
             onAlign={(to) => moveNodes(align(boxesOf(selectedIds), to))}
             onDistribute={() => {
               const boxes = boxesOf(selectedIds);

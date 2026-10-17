@@ -825,6 +825,10 @@ export async function executeNode(
       return { kind: "video", artifactId: saved.artifactId, src: saved.src };
     }
 
+    case "block":
+      // Flattened before anything runs (flatten.ts); reaching here is a bug.
+      throw new Error(t("A block reached the run without its steps."));
+
     case "note":
       // Canvas runs leave notes out (modes.ts); nothing to make anywhere.
       return { kind: "text", text: "" };

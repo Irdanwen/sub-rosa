@@ -2591,3 +2591,41 @@
 .studio-node[data-type="note"] {
   background: color-mix(in oklch, var(--tint-amber) 10%, var(--card));
 }
+
+/* --- a block step: several steps that run as one ------------------------- */
+
+/* A card stacked on another: what is inside is more than one step. */
+.studio-node.studio-block {
+  box-shadow:
+    4px 4px 0 -1px var(--card),
+    4px 4px 0 0 var(--border);
+}
+
+.studio-block-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-inline: calc(var(--sp-4) * -1);
+  padding-inline: var(--sp-4);
+}
+
+.studio-block-output {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 16px;
+}
+
+.studio-block-output .react-flow__handle {
+  position: absolute;
+  right: calc(var(--sp-4) * -1);
+  top: 50%;
+  transform: translate(50%, -50%);
+}
+
+.studio-block-setting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}

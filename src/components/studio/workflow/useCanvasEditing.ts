@@ -57,6 +57,8 @@ export function useCanvasEditing(options: {
   openSearch?: () => void;
   /** Frame the selected steps (⌘G). */
   frameSelection?: () => void;
+  /** Make a block of the selected steps (⇧⌘E). */
+  makeBlock?: () => void;
 }): CanvasEditing {
   const history = useRef(new GraphHistory());
   const applying = useRef(false);
@@ -129,6 +131,9 @@ export function useCanvasEditing(options: {
       } else if (mod && key === "d") {
         event.preventDefault();
         duplicate();
+      } else if (mod && event.shiftKey && key === "e") {
+        event.preventDefault();
+        latest.current.makeBlock?.();
       } else if (mod && key === "g") {
         event.preventDefault();
         latest.current.frameSelection?.();
@@ -204,6 +209,13 @@ export function useCanvasEditing(options: {
         shortcut: "⌘G",
         keywords: "group",
         run: () => latest.current.frameSelection?.(),
+      },
+      {
+        id: "workflow:block",
+        label: t("Make a block of the selected steps"),
+        shortcut: "⇧⌘E",
+        keywords: "group subgraph",
+        run: () => latest.current.makeBlock?.(),
       },
       {
         id: "workflow:select-all",

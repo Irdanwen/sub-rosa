@@ -69,16 +69,25 @@ function migrateNode(node: WorkflowNode, registry: MigrationRegistry): WorkflowN
 /** The workflow with every node brought forward. Returns the same object when
  * nothing needed to change, so opening a workflow is not mistaken for an
  * edit. */
-export function migrateWorkflow<W extends Pick<Workflow, "nodes">>(
+export function migrateWorkflow<W extends Pick<Workflow, "nodes"> & Pick<Workflow, "blocks">>(
   workflow: W,
   registry: MigrationRegistry = MIGRATIONS,
 ): W {
   let changed = false;
-  const nodes = workflow.nodes.map((node) => {
-    const migrated = migrateNode(node, registry);
-    if (JSON.stringify(migrated) === JSON.stringify(node)) return node;
-    changed = true;
-    return migrated;
+  const migrate = (list: WorkflowNode[]) =>
+    list.map((node) => {
+      const migrated = migrateNode(node, registry);
+      if (JSON.stringify(migrated) === JSON.stringify(node)) return node;
+      changed = true;
+      return migrated;
+    });
+  const nodes = migrate(workflow.nodes);
+  // A block's steps are steps like any other (ADR-0116).
+  const blocks = workflow.blocks?.map((block) => {
+    const inner = migrate(block.nodes);
+    return inner.every((node, index) => node === block.nodes[index])
+      ? block
+      : { ...block, nodes: inner };
   });
-  return changed ? { ...workflow, nodes } : workflow;
+  return changed ? { ...workflow, nodes, ...(blocks ? { blocks } : {}) } : workflow;
 }

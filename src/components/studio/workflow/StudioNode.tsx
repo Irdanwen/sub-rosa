@@ -1,6 +1,7 @@
 // The canvas node: header, ports, settings, ordering lists, the gate's
 // approval controls and the node's output.
 
+import { BlockStep } from "./BlockStep";
 import { FrameNode } from "./FrameNode";
 import { t } from "../../../lib/i18n";
 import { Handle, Position, type NodeProps, useStore } from "@xyflow/react";
@@ -107,6 +108,11 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   // Far out, a step is its name and its state: drawing every field of a
   // graph of a hundred steps is what makes zooming out stutter.
   const zoom = useStore((state) => state.transform[2]);
+  if (wfNode.type === "block") {
+    return (
+      <BlockStep data={data} compact={Boolean(wfNode.collapsed) || zoom < COMPACT_BELOW_ZOOM} />
+    );
+  }
   if (wfNode.type === "relay") {
     return (
       <div className="studio-relay" data-run={runState} title={t("Relay")}>

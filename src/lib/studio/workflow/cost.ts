@@ -82,6 +82,7 @@ export function estimateNodeCost(node: WorkflowNode, catalog: MediaCatalog): Nod
     case "lastFrame":
     case "relay":
     case "note":
+    case "block":
     case "assemble":
     case "output":
       return { ...base, kind: "free" };
