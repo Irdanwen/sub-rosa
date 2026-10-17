@@ -194,6 +194,58 @@ describe("clip posters", () => {
     expect(thumbnail.src).toBe("subrosa-media://localhost/clip-1.mp4");
   });
 
+  it("has a picture's poster made natively, and paints the filed still", async () => {
+    media.invoke.mockImplementation((command: string) =>
+      Promise.resolve(
+        command === "carpe_diem_media_make_poster"
+          ? { posterVersion: 1, width: 4096, height: 4096 }
+          : undefined,
+      ),
+    );
+    const { artifactThumbnail } = await import("../lib/artifact-media");
+
+    const thumbnail = await artifactThumbnail({ ...CLIP, kind: "image", path: "/gallery/a.png" });
+
+    expect(media.invoke).toHaveBeenCalledWith("carpe_diem_media_make_poster", { id: "a.png" });
+    // Nothing decoded in the page: no canvas, no base64 copy.
+    expect(media.poster).not.toHaveBeenCalled();
+    expect(media.readBase64).not.toHaveBeenCalled();
+    expect(thumbnail).toEqual({
+      src: "subrosa-media://localhost/poster/a.png?v=1",
+      kind: "still",
+      durationSeconds: undefined,
+    });
+  });
+
+  it("decodes pictures in the page one at a time when the native path cannot", async () => {
+    media.invoke.mockImplementation((command: string) =>
+      command === "carpe_diem_media_make_poster"
+        ? Promise.reject(new Error("unknown command"))
+        : Promise.resolve(undefined),
+    );
+    let inFlight = 0;
+    let most = 0;
+    media.poster.mockImplementation(async (src: string) => {
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return { dataUrl: `${src}#poster`, width: 640, height: 480 };
+    });
+    const { artifactThumbnail } = await import("../lib/artifact-media");
+
+    // A screenful of pictures that just arrived from another device.
+    const tiles = await Promise.all(
+      Array.from({ length: 12 }, (_, index) =>
+        artifactThumbnail({ ...CLIP, kind: "image", path: `/gallery/p-${index}.png` }),
+      ),
+    );
+
+    expect(tiles.every((tile) => tile.kind === "still")).toBe(true);
+    expect(media.poster).toHaveBeenCalledTimes(12);
+    expect(most).toBe(1);
+  });
+
   it("gives a picture its poster off the stream too", async () => {
     const { artifactThumbnail } = await import("../lib/artifact-media");
 

@@ -550,7 +550,11 @@ pub(crate) async fn record_landed_artifact(
 
 /// Adds measures learned after the fact (a poster's clip length, a track's
 /// waveform) to an item's generation without touching anything else in it.
-async fn merge_measures(pool: &SqlitePool, id: &str, measures: &Value) -> Result<(), String> {
+pub(crate) async fn merge_measures(
+    pool: &SqlitePool,
+    id: &str,
+    measures: &Value,
+) -> Result<(), String> {
     validate_id(id)?;
     let Value::Object(measures) = measures else {
         return Err(INVALID_DOCUMENT.into());
