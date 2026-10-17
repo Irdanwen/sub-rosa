@@ -416,6 +416,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             artifacts={data.artifacts}
             textSources={data.textSources ?? []}
             constraintEpoch={data.constraintEpoch}
+            zoneSource={data.zoneSource}
             onMerge={(partial) => onParamsChange(wfNode.id, { ...wfNode.params, ...partial })}
           />
         ))}

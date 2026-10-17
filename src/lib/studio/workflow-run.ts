@@ -117,6 +117,7 @@ async function loadAsset(artifactId: string): Promise<LoadedAsset> {
       base64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl,
       mimeType: mimeType || "image/png",
       artifactId: artifact.id,
+      fileName: artifact.fileName,
       parentId: artifact.parentId,
       parentHandoffSeconds: artifact.parentHandoffSeconds,
     };
@@ -507,6 +508,7 @@ function durableMediaRunner(
           source: "workflow",
           // Filed with the result, so the gallery leads back to the step.
           ...(request.origin ? { clientContext: { origin: request.origin } } : {}),
+          ...(request.composite ? { composite: request.composite } : {}),
         },
       }),
     );

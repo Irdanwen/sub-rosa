@@ -39,6 +39,8 @@ const CATEGORY: Record<WorkflowNodeType, NodeCategory> = {
   cutout: "generate",
   soundMix: "montage",
   compare: "flow",
+  zoneEdit: "generate",
+  sheet: "generate",
 };
 
 export function categoryLabel(category: NodeCategory): string {
@@ -99,6 +101,10 @@ function keywords(type: WorkflowNodeType): string {
       return t("mix voice music audio duck");
     case "compare":
       return t("before after slider side by side");
+    case "zoneEdit":
+      return t("inpaint region area fix part retouch mask");
+    case "sheet":
+      return t("grid nine angles expressions variations composer");
   }
 }
 

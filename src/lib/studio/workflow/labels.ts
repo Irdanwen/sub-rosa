@@ -1,5 +1,6 @@
 // What a person reads for each kind of workflow node, in their language.
 
+import { composePacks } from "../compose/packs";
 import { t } from "../../i18n";
 import type { WorkflowNodeType } from "./schema";
 
@@ -45,6 +46,10 @@ export function nodeTypeLabel(type: WorkflowNodeType | string): string {
       return t("Sound mix");
     case "compare":
       return t("Compare");
+    case "zoneEdit":
+      return t("Retouch a zone");
+    case "sheet":
+      return t("Contact sheet");
     default:
       return String(type);
   }
@@ -161,6 +166,10 @@ export function paramLabel(param: { name: string; label: string }): string {
       return t("Level the mix");
     case "scale":
       return t("Scale");
+    case "zone":
+      return t("Zone");
+    case "pack":
+      return t("Variations");
     case "freshEachRun":
       return t("New result every run");
     default:
@@ -172,6 +181,7 @@ export function paramLabel(param: { name: string; label: string }): string {
  * their own names. */
 export function enumLabel(paramName: string, value: string): string {
   if (paramName === "scale") return t("{factor} times larger", { factor: value });
+  if (paramName === "pack") return composePacks().find((pack) => pack.id === value)?.label ?? value;
   switch (`${paramName}:${value}`) {
     case "assetKind:image":
       return t("Image");
