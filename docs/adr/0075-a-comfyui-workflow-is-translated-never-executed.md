@@ -95,3 +95,23 @@ the canvas can now hold it:
 Sub Rosa's own file carries frames and each node's mode and layout (collapsed,
 pinned, tint) in both directions; an import used to drop them silently.
 
+## Addendum 2026-10-17: a copy can carry its workflow out
+
+The gallery viewer offers "Save a copy with its workflow" on a picture or a
+video a workflow made. The copy carries Sub Rosa's own workflow file, compact,
+and dropping it on the workflow library opens the graph again, the way a
+picture ComfyUI saved opens its graph there.
+
+- **Under Sub Rosa's own key** (`subrosa-workflow`), never ComfyUI's
+  `workflow`: ComfyUI must not try to read a graph it cannot run. PNG gets an
+  `iTXt` chunk, JPEG a comment segment, WebP a RIFF chunk of its own, MP4 and
+  MOV a top-level `uuid` box: the places their readers skip
+  (`carpe_diem/workflow_embed.rs`). Audio files are refused rather than
+  half-supported.
+- **Asked each time, on the copy only.** The workflow holds every prompt and
+  setting of the graph; a device-wide setting would make leaving the device
+  with them silent. The gallery file is never rewritten, and the plain "Save a
+  copy" stays as it was.
+- **The graph the run froze**, which is exactly what made the file; the
+  workflow as it now stands when that run has been pruned.
+

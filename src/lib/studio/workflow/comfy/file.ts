@@ -24,7 +24,9 @@ export interface WorkflowFile {
   workflow: Pick<Workflow, "name" | "description" | "nodes" | "edges" | "frames" | "extra">;
 }
 
-export function workflowFileText(workflow: Workflow): string {
+/** The file Sub Rosa writes for a workflow; compact when it goes inside
+ * another file rather than into one of its own. */
+export function workflowFileText(workflow: Workflow, options: { compact?: boolean } = {}): string {
   const file: WorkflowFile = {
     format: "subrosa-workflow",
     version: WORKFLOW_FILE_VERSION,
@@ -37,7 +39,7 @@ export function workflowFileText(workflow: Workflow): string {
       ...(workflow.extra ? { extra: workflow.extra } : {}),
     },
   };
-  return `${JSON.stringify(file, null, 2)}\n`;
+  return options.compact ? JSON.stringify(file) : `${JSON.stringify(file, null, 2)}\n`;
 }
 
 export type ReadWorkflow =

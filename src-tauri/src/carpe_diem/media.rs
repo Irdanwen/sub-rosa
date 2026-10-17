@@ -833,6 +833,10 @@ pub struct ExportArtifactRequest {
     /// receives a destination path from the webview.
     #[serde(default)]
     pub suggested_name: Option<String>,
+    /// A Sub Rosa workflow file to write into the copy (never into the
+    /// gallery file), see `workflow_embed`.
+    #[serde(default)]
+    pub workflow: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1030,9 +1034,26 @@ pub async fn carpe_diem_media_export_artifact(
     let Some(destination) = pick_export_destination(&app, &suggested).await? else {
         return Ok(None);
     };
-    tokio::fs::copy(&source, &destination)
-        .await
-        .map_err(|error| AppError::new("media_artifact_export_failed", error.to_string()))?;
+    let failed =
+        |error: std::io::Error| AppError::new("media_artifact_export_failed", error.to_string());
+    match request.workflow.as_deref() {
+        Some(workflow) => {
+            let extension = source
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("");
+            let bytes = tokio::fs::read(&source).await.map_err(failed)?;
+            let written = super::workflow_embed::embed_workflow(&bytes, extension, workflow)?;
+            tokio::fs::write(&destination, written)
+                .await
+                .map_err(failed)?;
+        }
+        None => {
+            tokio::fs::copy(&source, &destination)
+                .await
+                .map_err(failed)?;
+        }
+    }
     Ok(Some(destination.to_string_lossy().into_owned()))
 }
 

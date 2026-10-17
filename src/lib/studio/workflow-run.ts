@@ -805,6 +805,12 @@ export async function listResumableRuns(): Promise<WorkflowRunSummary[]> {
 }
 
 /** The frozen graph a run executes, for showing it on the canvas. */
+/** The graph a run froze, without loading what it made. */
+export async function frozenWorkflow(runId: string): Promise<Workflow | undefined> {
+  const detail = await invoke<{ run: WorkflowRunSummary }>("workflow_run_get", { id: runId });
+  return runDefinition(detail.run);
+}
+
 export function runDefinition(run: WorkflowRunSummary): Workflow | undefined {
   try {
     const parsed: unknown = JSON.parse(run.definition);
