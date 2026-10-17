@@ -69,7 +69,9 @@ describe("validateWorkflow", () => {
     const result = validateWorkflow(workflow([node("llm", "chat", { prompt: "Say hi" })], []));
     expect(result.ok).toBe(false);
     expect(
-      result.errors.some((issue) => issue.nodeId === "llm" && issue.message.includes("fill in Model")),
+      result.errors.some(
+        (issue) => issue.nodeId === "llm" && issue.message.includes("fill in Model"),
+      ),
     ).toBe(true);
   });
 
@@ -88,7 +90,9 @@ describe("validateWorkflow", () => {
     const result = validateWorkflow(workflow([node("llm", "chat", { model: "m" })], []));
     expect(result.ok).toBe(false);
     expect(
-      result.errors.some((issue) => issue.nodeId === "llm" && issue.message.includes("fill in Prompt")),
+      result.errors.some(
+        (issue) => issue.nodeId === "llm" && issue.message.includes("fill in Prompt"),
+      ),
     ).toBe(true);
   });
 
@@ -257,13 +261,17 @@ describe("validateWorkflow with named ports", () => {
     const frame = validateWorkflow(workflow([node("frame", "lastFrame")], []));
     expect(frame.ok).toBe(false);
     expect(
-      frame.errors.some((issue) => issue.nodeId === "frame" && issue.message.includes("connect the Video input")),
+      frame.errors.some(
+        (issue) => issue.nodeId === "frame" && issue.message.includes("connect the Video input"),
+      ),
     ).toBe(true);
 
     const film = validateWorkflow(workflow([node("film", "assemble")], []));
     expect(film.ok).toBe(false);
     expect(
-      film.errors.some((issue) => issue.nodeId === "film" && issue.message.includes("connect the Clips input")),
+      film.errors.some(
+        (issue) => issue.nodeId === "film" && issue.message.includes("connect the Clips input"),
+      ),
     ).toBe(true);
   });
 
