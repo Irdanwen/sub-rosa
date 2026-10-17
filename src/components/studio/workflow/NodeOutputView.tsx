@@ -34,7 +34,8 @@ function RenderingFrame({ node }: { node: WorkflowNode }) {
 }
 
 /** What an item of a list is, for its key. */
-function itemName(output: NodeOutput): string {
+/** What an item is, for a stable key among a list's items. */
+export function itemName(output: NodeOutput): string {
   if (output.kind === "text") return `text:${output.text}`;
   if (output.kind === "image") return `image:${output.artifactId ?? output.base64.slice(0, 32)}`;
   return `${output.kind}:${output.artifactId ?? output.src ?? ""}`;
