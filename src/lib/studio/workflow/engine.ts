@@ -33,7 +33,7 @@ import {
   type WorkflowStorage,
 } from "./run-types";
 import type { WorkflowOrigin } from "../types";
-import { catalogModel, executeNode, joinAsText } from "./execute-node";
+import { catalogModel, executeNode, joinAsText, NoItem } from "./execute-node";
 import { decideSwitch, liveSwitchBranches } from "./switches";
 import { runtimeKey, staticKeys } from "./signature";
 import { withTransientTolerance } from "./transient";
@@ -176,7 +176,7 @@ async function modelEntry(node: WorkflowNode): Promise<unknown> {
 }
 
 /** How one step ended. */
-type NodeOutcome = "done" | "held" | "failed" | "aborted" | "skipped";
+type NodeOutcome = "done" | "held" | "failed" | "aborted" | "skipped" | "unreached";
 
 /** Which ready steps start first: the long renders, then images and speech,
  * then the rest, so the slowest work is on its way soonest. */
@@ -291,8 +291,10 @@ async function runReady(
       }
       const task: Promise<void> = runNode(id).then((outcome) => {
         running.delete(task);
-        if (outcome === "done") {
-          done.add(id);
+        // Not made because a list was short: what it feeds still gets its
+        // turn, to run with what came or to say why it cannot.
+        if (outcome === "done" || outcome === "unreached") {
+          if (outcome === "done") done.add(id);
           const ready: string[] = [];
           for (const child of children.get(id) ?? []) {
             const left = (waiting.get(child) ?? 1) - 1;
@@ -358,10 +360,28 @@ export async function runWorkflow(
   };
 
   const failures: Array<{ nodeId: string; message: string }> = [];
+  /** Steps a list did not reach (ADR-0117), and so nothing below them runs. */
+  const unreached = new Set<string>();
   /** One step, start to finish. What it returns is how it ended. */
   const runNode = async (nodeId: string): Promise<NodeOutcome> => {
     const node = nodeById.get(nodeId);
     if (!node) return "skipped";
+    // A step something it needed was not made for is not made either; one
+    // whose input gathers a list runs with the items that came.
+    const missing = workflow.edges.filter(
+      (edge) => edge.target === nodeId && unreached.has(edge.source),
+    );
+    if (
+      missing.some((edge) => {
+        const source = nodeById.get(edge.source);
+        const kind = source ? outputKindOf(source, { nodeById, edges: workflow.edges }) : "text";
+        return !resolveInputPort(node, edge, kind)?.gathers;
+      })
+    ) {
+      unreached.add(nodeId);
+      update({ nodeId, status: "pending", note: t("Not made: what it needed was not made.") });
+      return "unreached";
+    }
     // Unknown schemas were rejected by validation; this is a type guard.
     if (!maybeNodeSchema(node.type)) return "skipped";
     // A resumed run replays finished nodes from their cached outputs
@@ -423,6 +443,11 @@ export async function runWorkflow(
       }
       return "done";
     } catch (error) {
+      if (error instanceof NoItem) {
+        unreached.add(nodeId);
+        update({ nodeId, status: "pending", note: error.message });
+        return "unreached";
+      }
       if (error instanceof GateHold) {
         // Not a failure: the production is waiting for the user.
         update({ nodeId, status: "awaiting", note: error.note });

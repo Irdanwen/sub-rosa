@@ -2835,3 +2835,36 @@ button.studio-block-crumb:hover {
   font-size: var(--fs-xs);
   color: var(--muted-foreground);
 }
+
+/* A step run once per item of a list: each result, in order. */
+.studio-node-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: var(--sp-1);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.studio-node-items > .studio-node-output {
+  margin: 0;
+}
+
+.studio-node-list-picks ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: var(--sp-1);
+  margin: 0 0 var(--sp-2);
+  padding: 0;
+  list-style: none;
+}
+
+.studio-node-list-picks li {
+  position: relative;
+}
+
+.studio-node-list-picks li .studio-icon-button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: var(--card);
+}

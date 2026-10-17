@@ -44,6 +44,10 @@ const CATEGORY: Record<WorkflowNodeType, NodeCategory> = {
   textTemplate: "inputs",
   preview: "flow",
   switch: "flow",
+  textList: "inputs",
+  splitText: "flow",
+  imageList: "inputs",
+  listItem: "flow",
 };
 
 export function categoryLabel(category: NodeCategory): string {
@@ -114,6 +118,14 @@ function keywords(type: WorkflowNodeType): string {
       return t("show look view display");
     case "switch":
       return t("if condition choose either branch toggle");
+    case "textList":
+      return t("list batch several many each lines");
+    case "splitText":
+      return t("split lines list batch each");
+    case "imageList":
+      return t("pictures batch several many each gallery");
+    case "listItem":
+      return "";
   }
 }
 
@@ -189,7 +201,7 @@ export function searchNodeTypes(
   for (const type of Object.keys(NODE_SCHEMAS) as WorkflowNodeType[]) {
     // A block step is always an instance of a block: made from a selection
     // or taken from the library, never blank.
-    if (type === "block") continue;
+    if (type === "block" || type === "listItem") continue;
     const params = filter ? fits(type, filter) : {};
     if (params === false) continue;
     const label = nodeTypeLabel(type);

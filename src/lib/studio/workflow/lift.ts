@@ -25,7 +25,8 @@ export interface StepView {
  * or nothing when it is not inside it. */
 export function visibleStep(view: Pick<StepView, "prefix">, flatId: string): string | undefined {
   if (!flatId.startsWith(view.prefix)) return undefined;
-  return flatId.slice(view.prefix.length).split("/")[0] || undefined;
+  // A list's items and a step's copies (`step#2`) belong to the step.
+  return flatId.slice(view.prefix.length).split("/")[0].split("#")[0] || undefined;
 }
 
 /** The level inside the block steps `path` leads through (none: the top). */
@@ -45,6 +46,12 @@ export function viewAt(
     if (step && `${prefix}${step}` === blockPath) primary.set(step, shown);
   }
   return { prefix, groups, primary };
+}
+
+/** Where a copy or an item sits in its list (`step#2` → 2). */
+function copyIndex(id: string): number {
+  const index = Number(id.slice(id.lastIndexOf("#") + 1));
+  return Number.isFinite(index) ? index : 0;
 }
 
 /** Whether a step at this level is a plain one, answering for itself. */
@@ -80,10 +87,19 @@ export function liftResults(
             : "pending";
     const shown = results.get(view.primary.get(step) ?? "");
     const running = own.filter((entry) => entry.status === "running");
+    // A list's items, or a step's copies, in order: what each made.
+    const copies = ids
+      .filter((id) => id.startsWith(`${view.prefix}${step}#`))
+      .sort((a, b) => copyIndex(a) - copyIndex(b))
+      .flatMap((id) => {
+        const output = results.get(id)?.output;
+        return output ? [output] : [];
+      });
     lifted.set(step, {
       nodeId: step,
       status,
       ...(shown?.output ? { output: shown.output } : {}),
+      ...(copies.length > 0 ? { items: copies } : {}),
       ...(failed?.error ? { error: failed.error } : {}),
       // How far along: the share of its steps done, the running one's own
       // progress counted in.
