@@ -25,6 +25,7 @@ import { composeImages, nativeQueuedImage, removeBackground, upscaleImage } from
 import { cropForSending, naturalSize, prepareSource, rasterizeZone } from "../retouch/canvas-io";
 import { buildEditRequest, editCaps } from "../retouch/request";
 import { strokesInCrop, type ZoneStroke, zoneBounds, zoneCrop } from "../retouch/zone";
+import { textItems } from "./lists";
 import { decideSwitch, fixedSide } from "./switches";
 import { zoneOf } from "./zone-param";
 import { generateImages } from "../generate-image";
@@ -91,6 +92,19 @@ function textualize(output: NodeOutput): string {
       return "[generated audio]";
     case "video":
       return "[generated video]";
+  }
+}
+
+/** A line a split text did not have: the step is not made, and neither is
+ * anything that needed it (ADR-0117). Not a failure. */
+export class NoItem extends Error {
+  constructor(index: number, count: number) {
+    super(
+      t("Not made: the list had {count} items, and this was number {index}.", {
+        count,
+        index: index + 1,
+      }),
+    );
   }
 }
 
@@ -1087,6 +1101,22 @@ export async function executeNode(
       if (!chosen) throw new Error(t("Nothing reached the side this switch takes."));
       return chosen;
     }
+
+    case "splitText":
+      // Its lines are its list's items (lists.ts); itself, it gives the text.
+      return { kind: "text", text: textInputOf(ports, "text") };
+
+    case "listItem": {
+      const index = numberParam(params, "index") ?? 0;
+      const lines = textItems(textInputOf(ports, "text"));
+      if (index >= lines.length) throw new NoItem(index, lines.length);
+      return { kind: "text", text: lines[index] };
+    }
+
+    case "textList":
+    case "imageList":
+      // Put in place as their items before anything runs (lists.ts).
+      throw new Error(t("A list reached the run without its items."));
 
     case "preview":
     case "compare":

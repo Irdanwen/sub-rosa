@@ -16,6 +16,7 @@ import {
 } from "../../../lib/studio/workflow";
 import { flattenBlocks } from "../../../lib/studio/workflow/flatten";
 import { liftIssues, liftPrices, liftReused, viewAt } from "../../../lib/studio/workflow/lift";
+import { expandLists } from "../../../lib/studio/workflow/lists";
 import { applyModes } from "../../../lib/studio/workflow/modes";
 import { useLiveQuotes } from "./useLiveQuotes";
 import { useReusePrediction } from "./useReusePrediction";
@@ -34,7 +35,7 @@ export function useRunPicture(
   /** The graph a run executes: blocks put in place, steps set aside
    * resolved away (modes.ts). */
   const effective = useMemo(
-    () => (flattened ? applyModes(flattened.workflow) : undefined),
+    () => (flattened ? expandLists(applyModes(flattened.workflow)) : undefined),
     [flattened],
   );
   /** The level the canvas shows, seen from the flat graph. */

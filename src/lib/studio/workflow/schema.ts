@@ -48,7 +48,11 @@ export type WorkflowNodeType =
   | "sheet"
   | "textTemplate"
   | "preview"
-  | "switch";
+  | "switch"
+  | "textList"
+  | "splitText"
+  | "imageList"
+  | "listItem";
 
 export interface WorkflowNode {
   id: string;
@@ -187,6 +191,10 @@ export interface InputPort {
   kind: PortKind;
   /** Accepts several inbound edges (an assemble node's clips, references). */
   multi?: boolean;
+  /** Takes a whole list at once (ComfyUI's INPUT_IS_LIST): every item of a
+   * list wired here arrives, in order. A list on any other input runs the
+   * step once per item (lists.ts, ADR-0117). */
+  gathers?: true;
   /**
    * Cap on inbound edges when `multi`, as the schema knows it. Some caps are
    * really per model (seedance 2.0 takes 9 reference photos, 2.5 takes 30),
@@ -291,7 +299,9 @@ export interface ParamSchema {
     | "artifact"
     | "note"
     /** A rectangle on the input picture, as fractions of its size. */
-    | "zone";
+    | "zone"
+    /** Several gallery items, in order. */
+    | "artifacts";
   label: string;
   description?: string;
   required?: boolean;
@@ -436,6 +446,10 @@ function videoReferenceCapacity(params: Record<string, unknown>): number {
   return direction === "reference" ? maxVideoReferences(model) : 0;
 }
 
+/** The most items one list step may hold: each one is a run of what it
+ * feeds, and a price. */
+export const MAX_LIST_ITEMS = 20;
+
 export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
   textInput: {
     type: "textInput",
@@ -534,7 +548,15 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
       "Transform or compose up to three images with a prompt: restyle a frame, or place a reference subject into a scene.",
     inputs: [
       PROMPT_PORT,
-      { id: "images", label: "Images", kind: "image", multi: true, max: 3, required: true },
+      {
+        id: "images",
+        label: "Images",
+        kind: "image",
+        multi: true,
+        gathers: true,
+        max: 3,
+        required: true,
+      },
     ],
     output: "image",
     params: [
@@ -630,6 +652,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         label: "References",
         kind: "image",
         multi: true,
+        gathers: true,
         // The ceiling is the most generous family's (seedance 2.5); what the
         // chosen model actually takes comes from `videoReferenceCapacity`,
         // which is zero outside the reference-to-video direction.
@@ -647,6 +670,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         label: "Reference clips",
         kind: "video",
         multi: true,
+        gathers: true,
         max: 10,
         maxFor: videoClipCapacity,
       },
@@ -658,6 +682,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         label: "Reference audio",
         kind: "audio",
         multi: true,
+        gathers: true,
         max: 10,
         maxFor: videoAudioCapacity,
       },
@@ -729,7 +754,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     label: "Approval gate",
     description:
       "Pauses the production here until you approve. With several inputs connected, approving picks which one continues - wire alternative takes in and choose. A judged gate asks a model first.",
-    inputs: [{ id: "in", label: "Candidates", kind: "any", multi: true }],
+    inputs: [{ id: "in", label: "Candidates", kind: "any", multi: true, gathers: true }],
     // Dynamic in practice: a gate emits whatever it lets through. See
     // `outputKindOf`, which resolves it from the connected input.
     output: "text",
@@ -766,10 +791,10 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     description:
       "Cut connected clips together into one film, in connection order, and mix everything under it: dialogue, effects, a score. Chained shots are trimmed at their handoff automatically, the music gets out of the way of the dialogue, and the whole thing is levelled once.",
     inputs: [
-      { id: "clips", label: "Clips", kind: "video", multi: true, required: true },
-      { id: "dialogue", label: "Dialogue", kind: "audio", multi: true },
-      { id: "sfx", label: "Effects", kind: "audio", multi: true },
-      { id: "music", label: "Music", kind: "audio", multi: true },
+      { id: "clips", label: "Clips", kind: "video", multi: true, gathers: true, required: true },
+      { id: "dialogue", label: "Dialogue", kind: "audio", multi: true, gathers: true },
+      { id: "sfx", label: "Effects", kind: "audio", multi: true, gathers: true },
+      { id: "music", label: "Music", kind: "audio", multi: true, gathers: true },
       // The single track this node started with. Kept so a workflow saved
       // before the lanes existed still runs, and reads as the music it was.
       { id: "audio", label: "Audio track", kind: "audio" },
@@ -835,9 +860,9 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     description:
       "Voices, effects and music in one track: lines one after the other, the music lowered under them.",
     inputs: [
-      { id: "dialogue", label: "Dialogue", kind: "audio", multi: true },
-      { id: "sfx", label: "Effects", kind: "audio", multi: true },
-      { id: "music", label: "Music", kind: "audio", multi: true },
+      { id: "dialogue", label: "Dialogue", kind: "audio", multi: true, gathers: true },
+      { id: "sfx", label: "Effects", kind: "audio", multi: true, gathers: true },
+      { id: "music", label: "Music", kind: "audio", multi: true, gathers: true },
     ],
     output: "audio",
     params: [
@@ -939,7 +964,7 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     label: "Text template",
     description:
       "Words with blanks: {{1}}, {{2}} and so on are filled with the connected texts, in their order.",
-    inputs: [{ id: "values", label: "Values", kind: "text", multi: true }],
+    inputs: [{ id: "values", label: "Values", kind: "text", multi: true, gathers: true }],
     output: "text",
     params: [
       {
@@ -989,6 +1014,61 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         default: "yes",
       },
     ],
+  },
+  textList: {
+    type: "textList",
+    label: "Text list",
+    description:
+      "Several texts, one per line: each step it feeds runs once per line, and a step taking several inputs gets them all.",
+    inputs: [],
+    output: "text",
+    params: [
+      {
+        name: "items",
+        type: "text",
+        label: "Items",
+        description: "One per line.",
+        required: true,
+        default: "",
+      },
+    ],
+  },
+  splitText: {
+    type: "splitText",
+    label: "Split into lines",
+    description:
+      "A text cut into its lines during the run, up to a number set here: the steps it feeds run once per line.",
+    inputs: [{ id: "text", label: "Text", kind: "text", required: true }],
+    output: "text",
+    params: [
+      {
+        name: "max",
+        type: "number",
+        label: "At most",
+        description: "The run is priced for this many lines; fewer arriving cost less.",
+        default: 5,
+        min: 1,
+        max: MAX_LIST_ITEMS,
+        step: 1,
+      },
+    ],
+  },
+  imageList: {
+    type: "imageList",
+    label: "Picture list",
+    description:
+      "Several pictures from the gallery: each step it feeds runs once per picture, and a step taking several inputs gets them all.",
+    inputs: [],
+    output: "image",
+    params: [{ name: "artifactIds", type: "artifacts", label: "Pictures", required: true }],
+  },
+  listItem: {
+    type: "listItem",
+    label: "List item",
+    description: "One line of a split text. Made by the run, never placed by hand.",
+    inputs: [{ id: "text", label: "Text", kind: "text", required: true }],
+    output: "text",
+    params: [{ name: "index", type: "number", label: "Index", default: 0 }],
   },
   relay: {
     type: "relay",

@@ -147,6 +147,10 @@ function estimateOwnCost(node: WorkflowNode, catalog: MediaCatalog): NodeCostEst
     case "textTemplate":
     case "preview":
     case "switch":
+    case "textList":
+    case "splitText":
+    case "imageList":
+    case "listItem":
       return { ...base, kind: "free" };
 
     // Usage-priced per token; no per-run figure to show. An upscale and a

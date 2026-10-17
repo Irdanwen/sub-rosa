@@ -1167,6 +1167,14 @@ converted to an input): words and closed choices only, never the model, a
 prompt, or an option the model's quote depends on. A closed choice is
 priced at its dearest value. _Avoid_: primitive, widget input.
 
+**List (workflow)**:
+A step that holds several items (lines of text, pictures, the lines a text
+is split into): what it feeds runs once per item, except an input that
+gathers (clips, references, a template's values), which receives every item
+in order. A split text states the most lines it may hold, and is priced for
+them. See [ADR-0117](docs/adr/0117-a-list-runs-what-it-feeds-once-per-item.md).
+_Avoid_: batch (in copy), array, loop.
+
 **Note (workflow)**:
 A step that holds words for whoever reads the workflow and never runs: removed
 with the steps set aside before anything is priced, validated or run. A

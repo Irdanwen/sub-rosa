@@ -1541,7 +1541,7 @@ function WorkflowEditor({
           ariaLabel={t("Add a node")}
           onChange={(type) => addNode(type as WorkflowNodeType)}
           options={Object.values(NODE_SCHEMAS)
-            .filter((schema) => schema.type !== "block")
+            .filter((schema) => schema.type !== "block" && schema.type !== "listItem")
             .map((schema) => ({ value: schema.type, label: nodeTypeLabel(schema.type) }))}
         />
         <button

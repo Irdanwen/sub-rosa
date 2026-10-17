@@ -1,10 +1,11 @@
 // What a node shows once it has run, or while it is making something.
 
+import { keyed } from "../../../lib/keyed";
 import { useMemo, useState } from "react";
 import { t } from "../../../lib/i18n";
 import { explainConstraintError } from "../../../lib/studio/model-constraints";
 import { estimateRenderMs } from "../../../lib/studio/render-eta";
-import type { NodeRunResult, WorkflowNode } from "../../../lib/studio/workflow";
+import type { NodeOutput, NodeRunResult, WorkflowNode } from "../../../lib/studio/workflow";
 import { nodeEtaKey } from "../../../lib/studio/workflow/eta";
 import { StageFrame } from "../stage/StageFrame";
 import "../stage/stage.css";
@@ -32,6 +33,13 @@ function RenderingFrame({ node }: { node: WorkflowNode }) {
   );
 }
 
+/** What an item of a list is, for its key. */
+function itemName(output: NodeOutput): string {
+  if (output.kind === "text") return `text:${output.text}`;
+  if (output.kind === "image") return `image:${output.artifactId ?? output.base64.slice(0, 32)}`;
+  return `${output.kind}:${output.artifactId ?? output.src ?? ""}`;
+}
+
 export function NodeOutputView({ result, node }: { result: NodeRunResult; node: WorkflowNode }) {
   if (result.status === "running") {
     // A chat node answers in seconds; a render holds the canvas for minutes
@@ -43,6 +51,20 @@ export function NodeOutputView({ result, node }: { result: NodeRunResult; node: 
     // instead, next to the pickers that have just been updated with it.
     const explained = result.error ? explainConstraintError(result.error) : undefined;
     return <p className="studio-node-error">{explained ?? result.error}</p>;
+  }
+  // A step run once per item: what each run made, side by side.
+  if (result.items && result.items.length > 0) {
+    return (
+      <div className="studio-node-items nowheel">
+        {keyed(result.items, itemName).map(({ key, value }) => (
+          <NodeOutputView
+            key={key}
+            result={{ ...result, items: undefined, output: value }}
+            node={node}
+          />
+        ))}
+      </div>
+    );
   }
   const output = result.output;
   if (!output) return null;

@@ -1,11 +1,17 @@
 // One setting of a node, drawn from its declarative schema: model and option
 // pickers, prompts, switches, numbers, gallery and note pickers.
 
+import { keyed } from "../../../lib/keyed";
 import { t } from "../../../lib/i18n";
 import { useMemo, useRef, useState } from "react";
 import type { ArtifactKind, MediaCatalog } from "../../../lib/studio/types";
 import { IconConnectors1 } from "central-icons/IconConnectors1";
-import { canFeedParam, FED_PARAMS_KEY, fedParams } from "../../../lib/studio/workflow/schema";
+import {
+  canFeedParam,
+  FED_PARAMS_KEY,
+  fedParams,
+  MAX_LIST_ITEMS,
+} from "../../../lib/studio/workflow/schema";
 import {
   effectiveParamValue,
   INPUT_MARKER,
@@ -17,6 +23,8 @@ import {
   type WorkflowNode,
 } from "../../../lib/studio/workflow";
 import { Switch } from "../../ui/Switch";
+import { IconCrossSmall } from "central-icons/IconCrossSmall";
+import { pictureItems } from "../../../lib/studio/workflow/lists";
 import { enumLabel, paramLabel } from "../../../lib/studio/workflow/labels";
 import { AssetPreview } from "../AssetPreview";
 import { GalleryPicker } from "../GalleryPicker";
@@ -164,6 +172,58 @@ function ParamControl({
           />
         ) : null}
       </>
+    );
+  }
+  if (param.type === "artifacts") {
+    const chosen = pictureItems(node.params[param.name]);
+    const full = chosen.length >= MAX_LIST_ITEMS;
+    return (
+      <div className="studio-node-list-picks">
+        {chosen.length > 0 ? (
+          <ul>
+            {keyed(chosen, (artifactId) => artifactId).map(({ key, value: artifactId }, index) => (
+              <li key={key}>
+                <AssetPreview
+                  artifact={artifacts.byId.get(artifactId)}
+                  loaded={artifacts.loaded}
+                  className="studio-node-asset"
+                />
+                <button
+                  type="button"
+                  className="studio-icon-button nodrag"
+                  aria-label={t("Remove picture {number}", { number: index + 1 })}
+                  onClick={() => onMerge({ [param.name]: chosen.filter((_, at) => at !== index) })}
+                >
+                  <IconCrossSmall size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <button
+          type="button"
+          className="studio-node-picker nodrag"
+          disabled={full}
+          onClick={() => setPickerOpen(true)}
+        >
+          {full
+            ? t("A list holds {count} pictures at most.", { count: MAX_LIST_ITEMS })
+            : t("Add a picture from the gallery")}
+        </button>
+        {pickerOpen ? (
+          <GalleryPicker
+            kinds={["image"]}
+            resolveData={false}
+            title={t("Add a picture")}
+            description={t("Each step this list feeds runs once per picture.")}
+            onPick={(_, artifact) => {
+              artifacts.remember(artifact);
+              onMerge({ [param.name]: [...chosen, artifact.id] });
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+        ) : null}
+      </div>
     );
   }
   if (param.type === "note") {
@@ -314,13 +374,18 @@ function ParamControl({
 
 type ParamFieldProps = Parameters<typeof ParamControl>[0];
 
+/** Steps whose settings are never taken from a connection. */
+const UNFED_STEPS = new Set(["textInput", "note", "textList", "imageList", "splitText"]);
+
 /** A setting, with the choice to take it from a connection instead (words
  * and closed choices only, see `canFeedParam`). Taken from one, the field
  * gives way to a note saying so, and the step grows the input it arrives on. */
 export function ParamField(props: ParamFieldProps) {
   const { node, param, onMerge } = props;
-  // A text input's words are the source itself; a note never runs.
-  const feedable = canFeedParam(param) && node.type !== "textInput" && node.type !== "note";
+  // A text input's words are the source itself; a note never runs; a
+  // list's items are counted before the run (a split text takes them from
+  // a connection instead).
+  const feedable = canFeedParam(param) && !UNFED_STEPS.has(node.type);
   if (!feedable) return <ParamControl {...props} />;
   const fed = fedParams(node.params);
   const isFed = fed.includes(param.name);

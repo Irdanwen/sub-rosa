@@ -56,6 +56,14 @@ export function nodeTypeLabel(type: WorkflowNodeType | string): string {
       return t("Preview");
     case "switch":
       return t("Switch");
+    case "textList":
+      return t("Text list");
+    case "splitText":
+      return t("Split into lines");
+    case "imageList":
+      return t("Picture list");
+    case "listItem":
+      return t("List item");
     default:
       return String(type);
   }
@@ -185,6 +193,12 @@ export function paramLabel(param: { name: string; label: string }): string {
       return t("Variations");
     case "template":
       return t("Template");
+    case "items":
+      return t("Items");
+    case "max":
+      return t("At most");
+    case "artifactIds":
+      return t("Pictures");
     case "branch":
       return t("Passes on");
     case "contains":

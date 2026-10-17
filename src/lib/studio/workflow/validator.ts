@@ -70,6 +70,7 @@ function isParamMissing(node: WorkflowNode, name: string): boolean {
   if (fedParams(node.params).includes(name)) return false;
   const value = node.params[name];
   if (value === undefined || value === null) return true;
+  if (Array.isArray(value)) return value.length === 0;
   return typeof value === "string" && value.trim() === "";
 }
 

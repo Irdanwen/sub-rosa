@@ -67,6 +67,9 @@ export interface NodeRunResult {
   /** The result came from the step cache: same request, nothing spent
    * (ADR-0115). */
   reused?: boolean;
+  /** A step run once per item of a list: what each run made, in order
+   * (ADR-0117). Shown on the canvas only. */
+  items?: NodeOutput[];
 }
 
 /**
