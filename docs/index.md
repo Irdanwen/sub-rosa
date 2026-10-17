@@ -235,6 +235,7 @@ tasks / contracts / checklists`.
 ## Parity
 
 - [parity/chatgpt.md](parity/chatgpt.md) — the ChatGPT parity matrix (ADR-0078): every row of the vendor's grid, per platform, with evidence and the lot that closes it
+- [parity/comfyui.md](parity/comfyui.md) — the ComfyUI parity matrix for workflows (2026-10-17 plan): every engine, canvas, file and library capability as done, adapted, refused or external, each with its PR or ADR; `src/test/comfy-parity.test.ts` fails on a row without a reference or left to do
 
 ## Roadmap
 
