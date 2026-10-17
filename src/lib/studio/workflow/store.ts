@@ -33,6 +33,9 @@ let loaded = false;
 /** Workflows whose last save did not reach the table; retried with the next
  * save that does. */
 const unsaved = new Set<string>();
+/** Saves on their way to the table, by workflow: until they land, the cache
+ * is newer than the table for that workflow. */
+const inFlight = new Map<string, number>();
 
 function readLegacy(): Workflow[] {
   try {
@@ -99,6 +102,12 @@ export function definitionOf(workflow: Workflow): string {
 /** Write one workflow to the table. Resolves whether it got there. */
 function persist(workflow: Workflow): Promise<boolean> {
   if (workflow.readOnly) return Promise.resolve(false);
+  inFlight.set(workflow.id, (inFlight.get(workflow.id) ?? 0) + 1);
+  const landed = () => {
+    const left = (inFlight.get(workflow.id) ?? 1) - 1;
+    if (left > 0) inFlight.set(workflow.id, left);
+    else inFlight.delete(workflow.id);
+  };
   return invoke<void>("studio_workflow_save", {
     request: {
       id: workflow.id,
@@ -112,11 +121,13 @@ function persist(workflow: Workflow): Promise<boolean> {
     },
   }).then(
     () => {
+      landed();
       unsaved.delete(workflow.id);
       retryUnsaved();
       return true;
     },
     () => {
+      landed();
       // The cache still holds it; the next save that reaches the table
       // brings it along.
       unsaved.add(workflow.id);
@@ -163,6 +174,40 @@ export function loadWorkflowLibrary(): Promise<Workflow[]> {
     return cache;
   });
   return loading;
+}
+
+/** Read the table again after another device's changes reached it
+ * (ADR-0118). The table is the record, except for a workflow this device is
+ * still writing: its own save is newer than anything the table holds, and
+ * keeps its place. Compared by content, never by date: two devices' clocks
+ * do not agree. Resolves whether anything the editor shows changed. */
+export async function reloadWorkflowLibrary(): Promise<boolean> {
+  if (!loaded) return false;
+  const rows = (await invoke<StoredWorkflow[] | null>("studio_workflow_list")) ?? [];
+  const stored = rows.flatMap((row) => fromStored(row) ?? []);
+  const writing = (id: string) => unsaved.has(id) || inFlight.has(id);
+  const kept = new Map(cache.filter((workflow) => writing(workflow.id)).map((w) => [w.id, w]));
+  const next = sorted([...stored.filter((workflow) => !kept.has(workflow.id)), ...kept.values()]);
+  const key = (workflows: Workflow[]) =>
+    JSON.stringify(
+      workflows.map((workflow) => [
+        workflow.id,
+        workflow.name,
+        workflow.description ?? "",
+        workflow.origin ?? "mine",
+        workflow.coverArtifactId ?? "",
+        workflow.readOnly ?? false,
+        definitionOf(workflow),
+      ]),
+    );
+  if (key(next) === key(cache)) return false;
+  cache = next;
+  return true;
+}
+
+/** One stored workflow or library block, as the library holds it now. */
+export function storedWorkflow(id: string): Workflow | undefined {
+  return cache.find((workflow) => workflow.id === id);
 }
 
 export function workflowLibraryLoaded(): boolean {
@@ -257,6 +302,8 @@ export async function setWorkflowCover(id: string, artifactId: string | undefine
 /** Tests only: forget the cache and the load. */
 export function resetWorkflowLibraryForTests(): void {
   cache = readLegacy();
+  unsaved.clear();
+  inFlight.clear();
   loading = undefined;
   loaded = false;
 }

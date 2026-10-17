@@ -160,6 +160,7 @@ It is excluded from the AI usage counters.
 | Conversations | Portable visible user/assistant history; explicit continuation starts a new turn |
 | Imports | Historical ingest metadata and resulting notes/transcripts; no remote download or paid execution |
 | Studio | Completed gallery files and available prompt/model metadata; the gallery's collections, favourites and hidden marks (ADR-0073); a gallery delete removes the file on every device; no remote job execution |
+| Studio workflows | Workflow and library block definitions (`studio_workflows`: graph, name, description, origin, format), checked like a local save on arrival; a newer format opens read-only; runs, the step cache, versions and the card picture stay local, and a received workflow runs only when a person starts it (ADR-0118) |
 | Assignments | Assignments and scheduled tasks (`assignments`) and their runs with verdicts and feedback (`assignment_runs`); only the device a row names runs it, under the errand guards, and the slot ledger stays local (ADR-0091) |
 | Connector relay and daily brief cards | What a device offers to run for a browser tab (`connector_relays`), the calls a tab addresses to it and their bounded answers (`connector_errands`, an errand kind under the errand guards, with a local single-use ledger), and each device's daily brief card with its agenda line (`daily_brief_cards`, history wherever it lands) (ADR-0107) |
 | Health and finances | Daily health summaries for each measure whose sync the person switched on (`health_days`), and, with finance sync on, transactions and rules (`transactions`, `finance_rules`); the choices themselves, model suggestions and statement files stay local (ADR-0099) |
@@ -189,7 +190,7 @@ provider balance per device: display a recent observation, never sum balances.
 
 ## Explicit remaining limits
 
-- Studio workflow definitions, production bibles, arbitrary frontend preferences,
+- Studio workflow runs, their step cache and versions, production bibles, arbitrary frontend preferences,
   Hermes profiles and runtime configuration, arbitrary note attachments, and local
   memory enable/auto-extract preferences are not synchronized.
 - The shared vault root is not rotated on device revocation. Revocation blocks

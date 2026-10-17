@@ -149,6 +149,24 @@ pub(super) const TABLES: &[Table] = &[
             "created_at",
         ],
     },
+    // The Studio's workflows and the blocks published beside them
+    // (ADR-0118). A definition, never a run: what ran, its step cache and
+    // its versions stay on the device that ran them, and the card's picture
+    // (`cover_artifact_id`) is a local gallery choice that does not travel.
+    Table {
+        name: "studio_workflows",
+        kind: "settings",
+        columns: &[
+            "id",
+            "name",
+            "description",
+            "definition",
+            "format_version",
+            "origin",
+            "created_at",
+            "updated_at",
+        ],
+    },
     Table {
         name: "account_studio_files",
         kind: "artifact",

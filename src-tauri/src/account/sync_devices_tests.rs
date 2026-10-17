@@ -1395,5 +1395,58 @@ async fn a_library_with_sync_off_reports_no_local_work() {
     assert!(!has_local_work(&mac.pool).await.unwrap());
 }
 
+/// A workflow drawn on one device opens on the other, an edit there comes
+/// back, each keeps the card picture it chose, and a deletion empties both
+/// libraries (ADR-0118).
+#[tokio::test]
+async fn a_workflow_drawn_on_the_mac_is_edited_on_the_phone_and_deleted_everywhere() {
+    use crate::studio_workflows::{delete, list, save, set_cover, SaveWorkflowRequest};
+    let service = Service::start().await;
+    let key = crypto::random_key();
+    let (mac, phone) = (
+        device(&service, "mac").await,
+        device(&service, "phone").await,
+    );
+    let id = note();
+    let draw = |name: &str, updated_at: i64| SaveWorkflowRequest {
+        id: id.clone(),
+        name: name.into(),
+        description: None,
+        definition: format!(r#"{{"nodes":[],"edges":[],"label":"{name}"}}"#),
+        format_version: Some(2),
+        origin: Some("block".into()),
+        created_at: Some(1),
+        updated_at: Some(updated_at),
+    };
+    save(&mac.pool, draw("Opening shot", 10)).await.unwrap();
+    set_cover(&mac.pool, &id, Some("mac-cover.png"))
+        .await
+        .unwrap();
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    let there = list(&phone.pool).await.unwrap();
+    assert_eq!(there.len(), 1);
+    assert_eq!(there[0].name, "Opening shot");
+    assert_eq!(there[0].origin, "block");
+    assert_eq!(there[0].cover_artifact_id, None);
+
+    save(&phone.pool, draw("Opening shot, tighter", 20))
+        .await
+        .unwrap();
+    phone.sync(&key).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    let back = list(&mac.pool).await.unwrap();
+    assert_eq!(back[0].name, "Opening shot, tighter");
+    assert!(back[0].definition.contains("tighter"));
+    assert_eq!(back[0].cover_artifact_id.as_deref(), Some("mac-cover.png"));
+    assert_eq!(mac.cards(&id).await + phone.cards(&id).await, 0);
+
+    delete(&mac.pool, &id).await.unwrap();
+    mac.sync(&key).await.unwrap();
+    phone.sync(&key).await.unwrap();
+    assert!(list(&phone.pool).await.unwrap().is_empty());
+    assert_eq!(mac.outbox(&id).await + phone.outbox(&id).await, 0);
+}
+
 #[path = "sync_storage_tests.rs"]
 mod storage_tests;
