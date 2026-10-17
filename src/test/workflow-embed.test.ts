@@ -56,6 +56,30 @@ describe("the workflow a copy carries", () => {
     expect(read.workflow.nodes[0].params.text).toBe("when it ran");
   });
 
+  it("carries the blocks a run wrote, not the steps it ran them as", async () => {
+    const block = {
+      id: "b",
+      name: "Shot",
+      nodes: [node("a", "inside")],
+      edges: [],
+      inputs: [],
+      outputs: [],
+      promoted: [],
+    };
+    const instance = { ...node("i", ""), type: "block" as const, params: { blockId: "b" } };
+    state.frozen = {
+      ...stored,
+      nodes: [node("i/a", "inside")],
+      extra: { written: { nodes: [instance], edges: [], blocks: [block] } },
+    };
+    const text = await workflowFileFor({ surface: "workflow", workflowId: "w", runId: "r" });
+    const read = readWorkflowFile(text ?? "", { backend: "carpe-diem", models: [] });
+    if (read.kind !== "subrosa") throw new Error("not a Sub Rosa file");
+    expect(read.workflow.nodes.map((entry) => entry.type)).toEqual(["block"]);
+    expect(read.workflow.blocks?.[0].name).toBe("Shot");
+    expect(read.workflow.extra).toBeUndefined();
+  });
+
   it("is the workflow as it stands when its run is gone, and nothing when both are", async () => {
     const text = await workflowFileFor({ surface: "workflow", workflowId: "w", runId: "gone" });
     expect(text).toContain('"text":"now"');
