@@ -1,6 +1,7 @@
 //! Completed Studio files join the encrypted file queue. Job execution remains
 //! owned by the device that queued it; this module never calls an AI endpoint.
 use super::*;
+use std::collections::HashSet;
 use std::path::Path;
 
 pub(super) fn extension(raw: &str) -> Result<String, AppError> {
@@ -72,6 +73,21 @@ pub(super) async fn inventory(
     if crate::carpe_diem::jobs::has_active() {
         return Ok(());
     }
+    // Every pass walks the whole gallery. A file already queued or received
+    // is skipped here on a set read once, not on a transaction of its own:
+    // a gallery of a thousand files cost thousands of queries a pass, taken
+    // from the same few connections the screens read through.
+    if !super::storage::sending(pool, "studio").await? {
+        return Ok(());
+    }
+    let known: HashSet<String> = query(
+        "SELECT artifact_id FROM account_file_manifests UNION SELECT artifact_id FROM account_file_uploads",
+    )
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .filter_map(|row| row.try_get::<String, _>("artifact_id").ok())
+    .collect();
     let mut remaining = 20;
     let mut oversized = false;
     let documents = folder(gallery, "docx");
@@ -82,7 +98,15 @@ pub(super) async fn inventory(
             Err(_) if dir != gallery => continue,
             Err(_) => return Err(error("sync_file_unavailable")),
         };
-        scan(pool, gallery, &mut entries, &mut remaining, &mut oversized).await?;
+        scan(
+            pool,
+            gallery,
+            &known,
+            &mut entries,
+            &mut remaining,
+            &mut oversized,
+        )
+        .await?;
     }
     if oversized {
         return Err(error("sync_file_too_large"));
@@ -92,6 +116,7 @@ pub(super) async fn inventory(
 async fn scan(
     pool: &SqlitePool,
     gallery: &Path,
+    known: &HashSet<String>,
     entries: &mut tokio::fs::ReadDir,
     remaining: &mut usize,
     oversized: &mut bool,
@@ -103,6 +128,14 @@ async fn scan(
     {
         if *remaining == 0 {
             break;
+        }
+        let path = entry.path();
+        if path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| known.contains(stem))
+        {
+            continue;
         }
         let Ok(meta) = entry.metadata().await else {
             continue;
@@ -116,7 +149,7 @@ async fn scan(
         {
             continue;
         }
-        match register(pool, gallery, &entry.path()).await {
+        match register(pool, gallery, &path).await {
             Ok(true) => *remaining -= 1,
             Err(failure) if failure.code == "sync_file_too_large" => *oversized = true,
             _ => {}
@@ -306,6 +339,7 @@ mod tests {
         scan(
             &pool,
             gallery.path(),
+            &HashSet::new(),
             &mut entries,
             &mut remaining,
             &mut oversized,
