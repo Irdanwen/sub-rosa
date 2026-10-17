@@ -18,7 +18,10 @@ use quick_xml::Reader;
 
 pub(crate) fn part_names(bytes: &[u8]) -> Vec<String> {
     let archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    archive.file_names().map(str::to_string).collect()
+    archive
+        .file_names()
+        .map(|name| name.expect("a named part").into_owned())
+        .collect()
 }
 
 pub(crate) fn part(bytes: &[u8], name: &str) -> String {

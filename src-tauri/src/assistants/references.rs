@@ -437,7 +437,10 @@ fn extract_office(bytes: &[u8], format: &str) -> Result<String, AppError> {
         let mut file = archive
             .by_index(i)
             .map_err(|_| error("assistant_reference_invalid"))?;
-        let name = file.name().to_owned();
+        // A part whose name cannot be read is not one the reader wants.
+        let Ok(name) = file.name().map(|name| name.into_owned()) else {
+            continue;
+        };
         let selected = match format {
             "docx" => name == "word/document.xml",
             "pptx" => name.starts_with("ppt/slides/slide") && name.ends_with(".xml"),
