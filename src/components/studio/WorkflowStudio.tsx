@@ -5,7 +5,8 @@
 // by level with live per-node status; produced media lands in the gallery at
 // the node that made it, with real provenance and chain links.
 
-import { t } from "../../lib/i18n";
+import { intlLocale, t } from "../../lib/i18n";
+import { messageFromError } from "../../lib/errors";
 import { ErrorMessage } from "../ui/ErrorMessage";
 import {
   addEdge,
@@ -130,6 +131,8 @@ import { ARRANGE_GAP, ArrangePopover } from "./workflow/ArrangePopover";
 import { NodeSearch } from "./workflow/NodeSearch";
 import { RunBanners } from "./workflow/RunBanners";
 import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
+import { VersionsPanel } from "./workflow/VersionsPanel";
+import { saveVersion } from "../../lib/studio/workflow/versions";
 import { SelectionToolbar } from "./workflow/SelectionToolbar";
 import { useCanvasEditing } from "./workflow/useCanvasEditing";
 import { stepBoxes, useFrames } from "./workflow/useFrames";
@@ -1128,6 +1131,20 @@ function WorkflowEditor({
   );
 
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  /** Bumped when a version is kept, so the list is read again. */
+  const [versionsEpoch, setVersionsEpoch] = useState(0);
+  /** Keep the workflow as it is now (⌘S). */
+  const keepVersion = async (label?: string) => {
+    if (!serialized || serialized.readOnly) return;
+    const when = new Intl.DateTimeFormat(intlLocale(), { dateStyle: "medium", timeStyle: "short" });
+    await saveVersion(
+      serialized,
+      label ?? t("Version of {when}", { when: when.format(new Date()) }),
+    )
+      .then(() => setVersionsEpoch((epoch) => epoch + 1))
+      .catch((cause) => setRunError(messageFromError(cause)));
+  };
   const showRun = useCallback(async (runId: string) => {
     const { results: past } = await runResults(runId);
     const present = new Set(flowNodesRef.current.map((node) => node.id));
@@ -1260,6 +1277,10 @@ function WorkflowEditor({
     fitView: () => void flowRef.current?.fitView({ duration: 250 }),
     run: () => void startRunRef.current(),
     toggleHistory: () => setHistoryOpen((open) => !open),
+    saveVersion: () => {
+      setVersionsOpen(true);
+      void keepVersion();
+    },
     frameSelection,
     makeBlock,
     openSearch: () => {
@@ -1562,6 +1583,15 @@ function WorkflowEditor({
         >
           {t("History")}
         </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          aria-pressed={versionsOpen}
+          disabled={!current}
+          onClick={() => setVersionsOpen((open) => !open)}
+        >
+          {t("Versions")}
+        </button>
         <span className="studio-spacer" />
         {current ? (
           <button
@@ -1702,6 +1732,20 @@ function WorkflowEditor({
             currentRef.current = root;
             setCurrent(root);
           }}
+        />
+      ) : null}
+      {versionsOpen && serialized ? (
+        <VersionsPanel
+          workflow={serialized}
+          refreshKey={versionsEpoch}
+          onSave={() => void keepVersion()}
+          onRestore={(version, graph) => {
+            // What it replaces is kept first: going back is never a loss.
+            void keepVersion(t("Before going back to {name}", { name: version.label })).then(() =>
+              blockScope.applyRoot(graph),
+            );
+          }}
+          onClose={() => setVersionsOpen(false)}
         />
       ) : null}
       {historyOpen && current ? (
