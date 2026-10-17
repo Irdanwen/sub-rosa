@@ -23,11 +23,7 @@ import {
   projectScore,
   type ProjectCue,
 } from "./score";
-import {
-  estimateWorkflowCost,
-  fetchVideoQuotes,
-  type WorkflowCostEstimate,
-} from "./workflow/cost";
+import { estimateWorkflowCost, fetchVideoQuotes, type WorkflowCostEstimate } from "./workflow/cost";
 import { spendGuard } from "./workflow/spend";
 import { validateWorkflow } from "./workflow/validator";
 import type { FilmDirection } from "./direction/types";
