@@ -12,6 +12,7 @@ import { IconLayoutAlignTop } from "central-icons/IconLayoutAlignTop";
 import { IconPin } from "central-icons/IconPin";
 import { IconPlay } from "central-icons/IconPlay";
 import { IconSkip } from "central-icons/IconSkip";
+import { IconSquarePlaceholderDashed } from "central-icons/IconSquarePlaceholderDashed";
 import { IconSquareBehindSquare1 } from "central-icons/IconSquareBehindSquare1";
 import { IconTrashCan } from "central-icons/IconTrashCan";
 import { type ReactNode, useState } from "react";
@@ -22,7 +23,7 @@ import { NODE_COLORS } from "../../../lib/studio/workflow/schema";
 /** Pixels the bar needs above a selection to be drawn there. */
 const ROOM_ABOVE = 56;
 
-function colourLabel(color: (typeof NODE_COLORS)[number]): string {
+export function colourLabel(color: (typeof NODE_COLORS)[number]): string {
   switch (color) {
     case "rose":
       return t("Rose");
@@ -67,6 +68,7 @@ export function SelectionToolbar({
   onRun,
   onSetAside,
   onDuplicate,
+  onFrame,
   onAlign,
   onDistribute,
   onDelete,
@@ -81,6 +83,8 @@ export function SelectionToolbar({
   onRun: () => void;
   onSetAside: (mode: "bypass" | "mute" | undefined) => void;
   onDuplicate: () => void;
+  /** Draw a frame about the selection (⌘G). */
+  onFrame: () => void;
   onAlign: (to: Alignment) => void;
   onDistribute: () => void;
   onDelete: () => void;
@@ -123,6 +127,9 @@ export function SelectionToolbar({
         )}
         <ToolButton label={t("Duplicate")} onClick={onDuplicate}>
           <IconSquareBehindSquare1 size={15} />
+        </ToolButton>
+        <ToolButton label={t("Frame the selected steps")} onClick={onFrame}>
+          <IconSquarePlaceholderDashed size={15} />
         </ToolButton>
         <ToolButton
           label={allPinned ? t("Unpin") : t("Pin in place")}

@@ -55,6 +55,8 @@ export function useCanvasEditing(options: {
   toggleHistory: () => void;
   /** Open the step search ("/"). */
   openSearch?: () => void;
+  /** Frame the selected steps (⌘G). */
+  frameSelection?: () => void;
 }): CanvasEditing {
   const history = useRef(new GraphHistory());
   const applying = useRef(false);
@@ -127,6 +129,9 @@ export function useCanvasEditing(options: {
       } else if (mod && key === "d") {
         event.preventDefault();
         duplicate();
+      } else if (mod && key === "g") {
+        event.preventDefault();
+        latest.current.frameSelection?.();
       } else if (mod && key === "a") {
         event.preventDefault();
         latest.current.selectAll();
@@ -192,6 +197,13 @@ export function useCanvasEditing(options: {
         label: t("Duplicate selected steps"),
         shortcut: "⌘D",
         run: duplicate,
+      },
+      {
+        id: "workflow:frame",
+        label: t("Frame the selected steps"),
+        shortcut: "⌘G",
+        keywords: "group",
+        run: () => latest.current.frameSelection?.(),
       },
       {
         id: "workflow:select-all",

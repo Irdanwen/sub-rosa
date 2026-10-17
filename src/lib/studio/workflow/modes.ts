@@ -18,7 +18,8 @@ export type NodeMode = NonNullable<WorkflowNode["mode"]>;
  * steps and what can no longer run without them removed. Returns the same object when no step
  * is set aside. */
 export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow: W): W {
-  if (!workflow.nodes.some((node) => node.mode || node.type === "relay")) return workflow;
+  if (!workflow.nodes.some((node) => node.mode || node.type === "relay" || node.type === "note"))
+    return workflow;
   const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
   const kindContext = { nodeById, edges: workflow.edges };
   let edges: WorkflowEdge[] = [...workflow.edges];
@@ -45,7 +46,8 @@ export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow
     );
   }
   for (const node of workflow.nodes) {
-    if (node.mode === "mute" || removed.has(node.id)) {
+    // A note is words for the reader: it never runs.
+    if (node.mode === "mute" || node.type === "note" || removed.has(node.id)) {
       removed.add(node.id);
     }
   }

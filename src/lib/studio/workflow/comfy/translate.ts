@@ -31,6 +31,7 @@ import {
   openInputPorts,
   type Workflow,
   type WorkflowEdge,
+  type WorkflowFrame,
   type WorkflowNode,
   type WorkflowNodeType,
 } from "../schema";
@@ -200,6 +201,54 @@ function readApiFormat(json: Record<string, unknown>): ComfyNode[] {
       links,
     };
   });
+}
+
+/** A file's groups, as frames: same rectangle, same title, the nearest tint. */
+function readGroups(json: Record<string, unknown>): WorkflowFrame[] {
+  const groups = Array.isArray(json.groups) ? (json.groups as Array<Record<string, unknown>>) : [];
+  const frames: WorkflowFrame[] = [];
+  for (const group of groups) {
+    const box = Array.isArray(group.bounding) ? group.bounding.map(Number) : [];
+    if (box.length < 4 || box.some((value) => !Number.isFinite(value))) continue;
+    const [x, y, width, height] = box;
+    if (width <= 0 || height <= 0) continue;
+    const color = typeof group.color === "string" ? tintOf(group.color) : undefined;
+    frames.push({
+      id: crypto.randomUUID(),
+      label: typeof group.title === "string" ? group.title : "",
+      x,
+      y,
+      width,
+      height,
+      ...(color ? { color } : {}),
+    });
+  }
+  return frames;
+}
+
+/** The tint nearest a hex colour by hue; none for a grey. */
+export function tintOf(hex: string): string | undefined {
+  const match = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(hex.trim());
+  if (!match) return undefined;
+  const digits =
+    match[1].length === 3 ? [...match[1]].map((digit) => digit + digit).join("") : match[1];
+  const [r, g, b] = [0, 2, 4].map((at) => Number.parseInt(digits.slice(at, at + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max - min < 0.08) return undefined;
+  const delta = max - min;
+  const hue =
+    max === r
+      ? (((g - b) / delta) % 6) * 60
+      : max === g
+        ? ((b - r) / delta + 2) * 60
+        : ((r - g) / delta + 4) * 60;
+  const h = (hue + 360) % 360;
+  if (h < 20 || h >= 330) return "rose";
+  if (h < 70) return "amber";
+  if (h < 170) return "green";
+  if (h < 260) return "blue";
+  return "violet";
 }
 
 // --- What each Comfy node becomes ------------------------------------------
@@ -457,8 +506,13 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
     }
     if (PASS_THROUGH.has(source.type)) continue;
     if (NOTES.has(source.type)) {
-      const body = promptOf(source, ["text", "value"]);
-      if (body.trim()) notes.push(body.trim());
+      // Kept where it was written, for whoever reads the graph, and in the
+      // description, which the library shows before anything is opened.
+      const body = promptOf(source, ["text", "value"]).trim();
+      if (body) {
+        notes.push(body);
+        make(source, "note", { text: body });
+      }
       continue;
     }
     const loaded = LOADERS[source.type];
@@ -705,9 +759,16 @@ export function translateComfy(json: unknown, catalog: MediaCatalog): ComfyImpor
   }
 
   const nodes = [...built.values()].map((entry) => entry.node);
+  const frames = format === "comfy-ui" ? readGroups(json as Record<string, unknown>) : [];
   const usable = nodes.some((node) => ["image", "imageEdit", "video"].includes(node.type));
   return {
-    workflow: { name: "", description: notes.join("\n\n") || undefined, nodes, edges },
+    workflow: {
+      name: "",
+      description: notes.join("\n\n") || undefined,
+      nodes,
+      edges,
+      ...(frames.length > 0 ? { frames } : {}),
+    },
     report,
     usable,
   };

@@ -1,6 +1,7 @@
 // The canvas node: header, ports, settings, ordering lists, the gate's
 // approval controls and the node's output.
 
+import { FrameNode } from "./FrameNode";
 import { t } from "../../../lib/i18n";
 import { Handle, Position, type NodeProps, useStore } from "@xyflow/react";
 import { IconArrowDown } from "central-icons/IconArrowDown";
@@ -75,7 +76,7 @@ function GateApproval({ data }: { data: StudioNodeData }) {
 const COMPACT_BELOW_ZOOM = 0.5;
 
 /** Steps with nothing upstream to run: running one alone is just reading. */
-const SOURCES = new Set(["textInput", "asset", "document"]);
+const SOURCES = new Set(["textInput", "asset", "document", "note"]);
 
 export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   const { wfNode, catalog, result, onParamsChange, onRemove } = data;
@@ -119,6 +120,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
     return (
       <div
         className="studio-node studio-node-compact"
+        data-type={wfNode.type}
         data-run={runState}
         data-mode={wfNode.mode}
         data-color={wfNode.color}
@@ -156,6 +158,7 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   return (
     <div
       className="studio-node"
+      data-type={wfNode.type}
       data-run={runState}
       data-invalid={data.issues?.some((issue) => issue.severity === "error") ? "true" : undefined}
       data-mode={wfNode.mode}
@@ -250,7 +253,8 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
             {t("usage")}
           </span>
         ) : null}
-        {data.onModeChange ? (
+        {/* A note never runs: nothing to skip or switch off. */}
+        {data.onModeChange && wfNode.type !== "note" ? (
           <select
             className="studio-node-mode nodrag"
             aria-label={t("Runs")}
@@ -415,4 +419,4 @@ export function StudioNode({ data }: NodeProps<StudioFlowNode>) {
   );
 }
 
-export const NODE_TYPES = { studio: StudioNode };
+export const NODE_TYPES = { studio: StudioNode, frame: FrameNode };

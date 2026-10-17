@@ -76,3 +76,22 @@ Three questions had real alternatives.
   cannot run is a failure deferred to the moment money is spent.
 - **Generated pictures by default.** Each would cost credits, and a picture
   imagined for a workflow says less about it than its own result.
+
+## Addendum 2026-10-17: modes, groups and notes are carried over
+
+What a ComfyUI file says about its layout now survives the import, because
+the canvas can now hold it:
+
+- A node set aside in the file (mode 4, bypassed, or mode 2, muted) is
+  translated and kept set aside, still wired, as a skipped or switched-off
+  step (`modes.ts`), instead of being left out. The report says so.
+- A **group** becomes a **frame** with the same rectangle and title, its
+  colour mapped to the nearest of the canvas tints by hue (a grey gets none).
+  Frames are layout only: a run never sees them.
+- A **note** (`Note`, `MarkdownNote`) becomes a **note** step where it was
+  written, and is still copied into the description, which the library shows
+  before anything is opened.
+
+Sub Rosa's own file carries frames and each node's mode and layout (collapsed,
+pinned, tint) in both directions; an import used to drop them silently.
+
