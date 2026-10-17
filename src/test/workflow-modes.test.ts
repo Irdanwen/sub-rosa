@@ -102,4 +102,17 @@ describe("steps set aside", () => {
     expect(resolved.nodes.map((entry) => entry.id).sort()).toEqual(["a", "ownPrompt"]);
     expect(resolved.edges).toEqual([]);
   });
+
+  it("resolves a relay away, passing on what reached it", () => {
+    const resolved = applyModes(
+      graph(
+        [node("idea", "textInput"), node("hop", "relay"), node("pic", "image")],
+        [edge("idea", "hop", "in"), edge("hop", "pic", "prompt")],
+      ),
+    );
+    expect(resolved.nodes.map((entry) => entry.id)).toEqual(["idea", "pic"]);
+    expect(resolved.edges).toEqual([
+      { id: "hop-pic", source: "idea", target: "pic", targetPort: "prompt" },
+    ]);
+  });
 });

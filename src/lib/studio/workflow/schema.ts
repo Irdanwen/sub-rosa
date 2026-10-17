@@ -36,7 +36,8 @@ export type WorkflowNodeType =
   | "lastFrame"
   | "gate"
   | "assemble"
-  | "output";
+  | "output"
+  | "relay";
 
 export interface WorkflowNode {
   id: string;
@@ -50,7 +51,16 @@ export interface WorkflowNode {
   /** Set aside without unwiring (see `modes.ts`): skipped passes its input
    * on, off removes it and what only it fed. Absent means it runs. */
   mode?: "bypass" | "mute";
+  /** Shown as its title line only. Layout, never part of what it asks. */
+  collapsed?: boolean;
+  /** Cannot be dragged. */
+  pinned?: boolean;
+  /** A tint to group steps by eye (one of `NODE_COLORS`). */
+  color?: string;
 }
+
+/** The tints a step can take, by name; each maps to a token in studio.css. */
+export const NODE_COLORS = ["rose", "amber", "green", "blue", "violet"] as const;
 
 export interface WorkflowEdge {
   id: string;
@@ -682,6 +692,16 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
     output: "none",
     params: [],
   },
+  relay: {
+    type: "relay",
+    label: "Relay",
+    description:
+      "A point a connection passes through, to route wires around other steps. It passes on what it receives.",
+    inputs: [{ id: "in", label: "In", kind: "any" }],
+    // What it passes on: resolved through the graph (see outputKindOf).
+    output: "text",
+    params: [],
+  },
 };
 
 export const NODE_TYPES: WorkflowNodeType[] = Object.keys(NODE_SCHEMAS) as WorkflowNodeType[];
@@ -775,7 +795,7 @@ export function outputKindOf(
     if (kind === "audio") return "audio";
     return "image";
   }
-  if (node.type === "gate" && context) {
+  if ((node.type === "gate" || node.type === "relay") && context) {
     const seen = visited ?? new Set<string>();
     if (seen.has(node.id)) return "text";
     seen.add(node.id);

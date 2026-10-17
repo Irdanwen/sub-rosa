@@ -18,7 +18,7 @@ export type NodeMode = NonNullable<WorkflowNode["mode"]>;
  * steps and what can no longer run without them removed. Returns the same object when no step
  * is set aside. */
 export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow: W): W {
-  if (!workflow.nodes.some((node) => node.mode)) return workflow;
+  if (!workflow.nodes.some((node) => node.mode || node.type === "relay")) return workflow;
   const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
   const kindContext = { nodeById, edges: workflow.edges };
   let edges: WorkflowEdge[] = [...workflow.edges];
@@ -26,8 +26,10 @@ export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow
 
   // Skipped steps, upstream first, so a chain of them resolves to the first
   // step that really runs.
+  // A relay is a step that only passes its input on: resolved like a
+  // skipped one, so a run never sees it.
   for (const node of workflow.nodes) {
-    if (node.mode !== "bypass") continue;
+    if (node.mode !== "bypass" && node.type !== "relay") continue;
     const made = outputKindOf(node, kindContext);
     const passing = edges.find((edge) => {
       if (edge.target !== node.id) return false;
@@ -43,7 +45,7 @@ export function applyModes<W extends Pick<Workflow, "nodes" | "edges">>(workflow
     );
   }
   for (const node of workflow.nodes) {
-    if (node.mode === "mute" || (node.mode === "bypass" && removed.has(node.id))) {
+    if (node.mode === "mute" || removed.has(node.id)) {
       removed.add(node.id);
     }
   }

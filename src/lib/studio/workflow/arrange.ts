@@ -56,3 +56,53 @@ export function distribute(
   }
   return moved;
 }
+
+/**
+ * Arrange (ComfyUI's arrange popover, for a graph that flows left to right):
+ * each step goes in the column of its longest chain of inputs, steps of a
+ * column stack from the top in their current vertical order, and `gap`
+ * spaces both. Positions only: nothing else about the graph changes.
+ */
+export function layered(
+  boxes: readonly Box[],
+  edges: ReadonlyArray<{ source: string; target: string }>,
+  gap: number,
+): Map<string, { x: number; y: number }> {
+  const byId = new Map(boxes.map((box) => [box.id, box]));
+  const parents = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (!byId.has(edge.source) || !byId.has(edge.target)) continue;
+    parents.set(edge.target, [...(parents.get(edge.target) ?? []), edge.source]);
+  }
+  const depth = new Map<string, number>();
+  const visiting = new Set<string>();
+  const depthOf = (id: string): number => {
+    const known = depth.get(id);
+    if (known !== undefined) return known;
+    if (visiting.has(id)) return 0;
+    visiting.add(id);
+    const value = Math.max(-1, ...(parents.get(id) ?? []).map(depthOf)) + 1;
+    visiting.delete(id);
+    depth.set(id, value);
+    return value;
+  };
+  const columns: Box[][] = [];
+  for (const box of boxes) {
+    const column = depthOf(box.id);
+    columns[column] = [...(columns[column] ?? []), box];
+  }
+  const left = Math.min(...boxes.map((box) => box.x));
+  const top = Math.min(...boxes.map((box) => box.y));
+  const moved = new Map<string, { x: number; y: number }>();
+  let x = left;
+  for (const column of columns) {
+    if (!column) continue;
+    let y = top;
+    for (const box of [...column].sort((a, b) => a.y - b.y)) {
+      moved.set(box.id, { x, y });
+      y += box.height + gap;
+    }
+    x += Math.max(...column.map((box) => box.width)) + gap;
+  }
+  return moved;
+}

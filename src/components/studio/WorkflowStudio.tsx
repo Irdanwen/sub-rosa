@@ -86,7 +86,7 @@ import { migrateWorkflow } from "../../lib/studio/workflow/migrate";
 import { applyModes } from "../../lib/studio/workflow/modes";
 import type { LinkFilter, NodeSearchHit } from "../../lib/studio/workflow/node-search";
 import { pruneToTargets } from "../../lib/studio/workflow/partial";
-import { align, distribute } from "../../lib/studio/workflow/arrange";
+import { align, distribute, layered } from "../../lib/studio/workflow/arrange";
 import { spendGuard } from "../../lib/studio/workflow/spend";
 import { readSpendCeiling } from "../../lib/studio/workflow/spend-ceiling";
 import { rememberRenderMs } from "../../lib/studio/render-eta";
@@ -123,6 +123,7 @@ import {
 import { type StudioEdgeData, EDGE_TYPES } from "./workflow/StudioEdge";
 import { NODE_TYPES } from "./workflow/StudioNode";
 import { costSummary, RunCostDialog } from "./workflow/RunCostDialog";
+import { ARRANGE_GAP, ArrangePopover } from "./workflow/ArrangePopover";
 import { NodeSearch } from "./workflow/NodeSearch";
 import { RunHistoryPanel } from "./workflow/RunHistoryPanel";
 import { SelectionToolbar } from "./workflow/SelectionToolbar";
@@ -301,6 +302,26 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
       }),
     );
   }, []);
+
+  const onLayoutChange = useCallback(
+    (id: string, change: Partial<Pick<WorkflowNode, "collapsed" | "pinned" | "color">>) => {
+      setFlowNodes((nodes) =>
+        nodes.map((node) => {
+          if (node.id !== id) return node;
+          const wfNode = { ...node.data.wfNode, ...change };
+          for (const key of ["collapsed", "pinned", "color"] as const) {
+            if (wfNode[key] === undefined || wfNode[key] === false) delete wfNode[key];
+          }
+          return {
+            ...node,
+            draggable: !wfNode.pinned,
+            data: { ...node.data, wfNode },
+          };
+        }),
+      );
+    },
+    [],
+  );
 
   const onRemove = useCallback((id: string) => {
     setFlowNodes((nodes) => nodes.filter((node) => node.id !== id));
@@ -556,6 +577,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
             })(),
             onRunStep,
             onModeChange,
+            onLayoutChange,
             gateSources:
               wfNode.type === "gate"
                 ? edgesOnPort(graph, node.id, "in").map((edge) => ({
@@ -575,6 +597,7 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
     hoverRun,
     onRunStep,
     onModeChange,
+    onLayoutChange,
     catalog,
     artifacts,
     constraintEpoch,
@@ -1327,6 +1350,26 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         })),
     [],
   );
+  /** Arrange: the positions before it started, and the gap being tried. */
+  const [arranging, setArranging] = useState<
+    { before: Map<string, { x: number; y: number }>; gap: number } | undefined
+  >(undefined);
+  const arrangeWith = useCallback(
+    (gap: number) => {
+      const ids = flowNodesRef.current.map((node) => node.id);
+      moveNodes(layered(boxesOf(ids), flowEdgesRef.current, gap));
+    },
+    [moveNodes, boxesOf],
+  );
+  const startArranging = useCallback(() => {
+    const before = new Map(
+      flowNodesRef.current.map((node) => [node.id, { ...node.position }] as const),
+    );
+    setArranging({ before, gap: ARRANGE_GAP.initial });
+    arrangeWith(ARRANGE_GAP.initial);
+    window.setTimeout(() => void flowRef.current?.fitView({ duration: 250 }), 0);
+  }, [arrangeWith]);
+
   /** Shift held while dragging snaps steps to the grid. */
   const [snapping, setSnapping] = useState(false);
   useEffect(() => {
@@ -1493,6 +1536,15 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         <button
           type="button"
           className="btn btn-secondary"
+          aria-pressed={arranging !== undefined}
+          disabled={!current || current.readOnly === true || flowNodes.length < 2}
+          onClick={() => (arranging ? setArranging(undefined) : startArranging())}
+        >
+          {t("Arrange")}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
           aria-pressed={historyOpen}
           disabled={!current}
           onClick={() => setHistoryOpen((open) => !open)}
@@ -1625,6 +1677,20 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
         className="studio-workflow-canvas"
         data-readonly={current?.readOnly ? "true" : undefined}
       >
+        {arranging ? (
+          <ArrangePopover
+            gap={arranging.gap}
+            onGap={(gap) => {
+              setArranging((state) => (state ? { ...state, gap } : state));
+              arrangeWith(gap);
+            }}
+            onDone={() => setArranging(undefined)}
+            onCancel={() => {
+              moveNodes(arranging.before);
+              setArranging(undefined);
+            }}
+          />
+        ) : null}
         {search ? (
           <NodeSearch
             at={search.at}
@@ -1646,6 +1712,9 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           onReconnect={(oldEdge, connection) =>
             setFlowEdges((edges) => reconnectEdge(oldEdge, connection, edges))
           }
+          // Far enough out to see a production of a hundred steps whole,
+          // drawn compact below half size (StudioNode).
+          minZoom={0.15}
           snapToGrid={snapping}
           snapGrid={[16, 16]}
           onPaneClick={(event) => {
@@ -1690,6 +1759,13 @@ function WorkflowEditor({ catalog }: { catalog: MediaCatalog }) {
           <SelectionToolbar
             selected={selectedIds}
             allSetAside={allSetAside}
+            allPinned={
+              selectedIds.length > 0 &&
+              flowNodes.filter((node) => node.selected).every((node) => node.data.wfNode.pinned)
+            }
+            onLayout={(change) => {
+              for (const id of selectedIds) onLayoutChange(id, change);
+            }}
             onRun={() => void startRun(selectedIds)}
             onSetAside={(mode) => {
               for (const id of selectedIds) onModeChange(id, mode);

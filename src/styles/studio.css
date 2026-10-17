@@ -2403,3 +2403,109 @@
 .studio-workflow-canvas .react-flow__minimap-node.minimap-set-aside {
   fill: var(--border);
 }
+
+/* --- a step's tint, compact form and the relay ---------------------------- */
+
+.studio-node[data-color] {
+  border-top: 3px solid var(--step-tint);
+}
+
+[data-color="rose"] {
+  --step-tint: var(--tint-rose);
+}
+
+[data-color="amber"] {
+  --step-tint: var(--tint-amber);
+}
+
+[data-color="green"] {
+  --step-tint: var(--tint-green);
+}
+
+[data-color="blue"] {
+  --step-tint: var(--tint-blue);
+}
+
+[data-color="violet"] {
+  --step-tint: var(--tint-violet);
+}
+
+.studio-selection-swatches {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-inline: var(--sp-1);
+}
+
+.studio-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--step-tint, var(--background));
+  cursor: pointer;
+}
+
+/* Far out (or collapsed), a step is its name, its state and its picture. */
+.studio-node-compact {
+  min-width: 160px;
+  gap: var(--sp-2);
+}
+
+.studio-node-compact .react-flow__handle {
+  top: 50%;
+}
+
+.studio-node-compact-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.studio-node-compact-picture {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+}
+
+/* A relay is a point a wire passes through. */
+.studio-relay {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--muted-foreground);
+  border-radius: 50%;
+  background: var(--background);
+}
+
+.studio-relay .react-flow__handle {
+  opacity: 0;
+}
+
+/* The arrange popover, top left of the canvas. */
+.studio-arrange {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: var(--sp-3);
+  left: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 15rem;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--fs-sm);
+}
+
+.studio-arrange-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
