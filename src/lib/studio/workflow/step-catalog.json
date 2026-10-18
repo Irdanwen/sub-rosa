@@ -285,6 +285,14 @@
         "id": "referenceAudio",
         "kind": "audio",
         "multi": true
+      },
+      {
+        "id": "sourceClip",
+        "kind": "video"
+      },
+      {
+        "id": "speech",
+        "kind": "audio"
       }
     ],
     "output": "video",

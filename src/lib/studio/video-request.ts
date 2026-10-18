@@ -16,10 +16,12 @@
 
 import {
   isImageToVideoModel,
+  isMotionControlModel,
   isReferenceToVideoModel,
   isSeedanceModel,
   isVideoUpscaleModel,
   requiresOpeningFrame,
+  takesSpeechTrack,
 } from "./catalog";
 import { withSeedanceConsent } from "./consent";
 import { klingReferenceFields, type ReferenceRole, takesKlingReferences } from "./kling";
@@ -62,8 +64,11 @@ export interface VideoRequestInputs {
   /** Reference audio (timbre, voice), which the contract forbids as the only
    * reference — it must ride with an image or a clip. */
   referenceAudio?: string[];
-  /** Source clip, for the restyle/upscale surface. */
+  /** Source clip, for the restyle/upscale surface and motion control. */
   sourceVideo?: string;
+  /** A spoken track the clip follows (`audio_url`), for the models that
+   * take one (`takesSpeechTrack`). */
+  speech?: string;
   upscaleFactor?: number;
   duration?: string;
   aspectRatio?: string;
@@ -96,6 +101,7 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
     referenceVideoSeconds = [],
     referenceAudio = [],
     sourceVideo,
+    speech,
     upscaleFactor,
     duration,
     aspectRatio,
@@ -133,6 +139,16 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
   if (pickedAspect) body.aspect_ratio = pickedAspect;
   if (pickedResolution) body.resolution = pickedResolution;
   if (silent && target.constraints?.audio_configurable) body.audio = false;
+
+  if (isMotionControlModel(target.id)) {
+    // The character and the motion are both required, and the clip sets the
+    // length exactly as for video-to-video below.
+    if (!sourceVideo || !openingFrame) return undefined;
+    body.image_url = openingFrame;
+    body.video_url = sourceVideo;
+    delete body.duration;
+    return body;
+  }
 
   if (isVideoToVideoModel(target.id)) {
     if (!sourceVideo) return undefined;
@@ -174,6 +190,7 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
       );
     }
   }
+  if (speech && takesSpeechTrack(target.id)) body.audio_url = speech;
   const hasOtherReference = clips.length > 0 || (takesReferences && references.length > 0);
   const audioCap = maxReferenceAudio(target);
   if (audioCap > 0 && referenceAudio.length > 0 && hasOtherReference) {
@@ -202,6 +219,7 @@ const INLINE_MEDIA_FIELDS = [
   "image_url",
   "end_image_url",
   "video_url",
+  "audio_url",
   "reference_image_urls",
   "reference_video_urls",
   "reference_audio_urls",

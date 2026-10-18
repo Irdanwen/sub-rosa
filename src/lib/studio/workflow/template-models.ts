@@ -2,14 +2,16 @@
 // today may not offer them any more. Before a template is shown or used,
 // each of its model choices is kept when the catalog still offers it, and
 // otherwise moved to the closest model the catalog does offer: the same
-// direction of video, the same family when there is one, else the cheapest.
+// direction of video, the same inputs the template wires into the step (a
+// clip to change, a line to say, an end frame), the same family when there is
+// one, else the cheapest.
 // A step no offered model can make is named, and the template is not
 // started.
 
 import { videoDirection, videoDirectionFromId } from "../catalog";
 import type { MediaCatalog, MediaModel } from "../types";
 import { modelsForParam } from "./models";
-import { maybeNodeSchema, type Workflow } from "./schema";
+import { maybeNodeSchema, openInputPorts, type Workflow } from "./schema";
 
 export interface ResolvedTemplate {
   workflow: Workflow;
@@ -48,9 +50,24 @@ export function resolveTemplateModels(template: Workflow, catalog: MediaCatalog)
           ? (videoDirectionFromId(id) ??
             (typeof params.modelDirection === "string" ? params.modelDirection : undefined))
           : undefined;
-      const candidates = direction
-        ? offered.filter((model) => videoDirection(model) === direction)
-        : offered;
+      // A stand-in that closes a port the template wires would drop that
+      // wire when opened: the clip to restyle, the line to say.
+      const wired = template.edges
+        .filter((edge) => edge.target === node.id && edge.targetPort)
+        .map((edge) => edge.targetPort as string);
+      const keepsWiring = (model: MediaModel) => {
+        const open = new Set(
+          openInputPorts(schema, {
+            ...params,
+            [param.name]: model.id,
+            ...(node.type === "video" ? { modelDirection: videoDirection(model) } : {}),
+          }).map((port) => port.id),
+        );
+        return wired.every((port) => port.startsWith("param:") || open.has(port));
+      };
+      const candidates = (
+        direction ? offered.filter((model) => videoDirection(model) === direction) : offered
+      ).filter(keepsWiring);
       const picked = closest(id, candidates);
       if (!picked) {
         missing.push(node.label || schema.label);

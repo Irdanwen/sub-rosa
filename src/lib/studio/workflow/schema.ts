@@ -18,6 +18,9 @@
 import type { WorkflowApp } from "./app";
 import {
   acceptsOpeningFrameWithReferences,
+  isMotionControlModel,
+  takesSourceClip,
+  takesSpeechTrack,
   videoDirectionFromId,
   type VideoDirection,
 } from "../catalog";
@@ -418,6 +421,9 @@ function videoFrameCapacity(params: Record<string, unknown>): number | undefined
 }
 
 function videoOpeningFrameCapacity(params: Record<string, unknown>): number | undefined {
+  // Motion control is filed as text-to-video, but the picture is the
+  // character it moves.
+  if (isMotionControlModel(modelIdOf(params))) return undefined;
   return acceptsOpeningFrameWithReferences(modelIdOf(params))
     ? undefined
     : videoFrameCapacity(params);
@@ -430,6 +436,19 @@ function videoOpeningFrameCapacity(params: Record<string, unknown>): number | un
 function videoClipCapacity(params: Record<string, unknown>): number | undefined {
   const id = modelIdOf(params);
   return id === "" ? undefined : maxReferenceVideos({ id });
+}
+
+/** The clip a model changes (video-to-video, motion control), once a model
+ * is in hand: open until then, closed on any model that makes its own. */
+function videoSourceCapacity(params: Record<string, unknown>): number | undefined {
+  const id = modelIdOf(params);
+  return id === "" || takesSourceClip(id) ? undefined : 0;
+}
+
+/** A spoken track the clip follows, on the models that take one. */
+function videoSpeechCapacity(params: Record<string, unknown>): number | undefined {
+  const id = modelIdOf(params);
+  return id === "" || takesSpeechTrack(id) ? undefined : 0;
 }
 
 /** Reference audio (a voice's timbre), once a model is in hand: open until
@@ -689,6 +708,22 @@ export const NODE_SCHEMAS: Record<WorkflowNodeType, NodeSchema> = {
         gathers: true,
         max: 10,
         maxFor: videoAudioCapacity,
+      },
+      {
+        // The clip a video-to-video model changes, or whose motion a motion
+        // control model gives the pictured character (`video_url`).
+        id: "sourceClip",
+        label: "Source clip",
+        kind: "video",
+        maxFor: videoSourceCapacity,
+      },
+      {
+        // A spoken track the picture says (`audio_url`): unlike reference
+        // audio, it is the soundtrack itself, not a timbre to imitate.
+        id: "speech",
+        label: "Speech to follow",
+        kind: "audio",
+        maxFor: videoSpeechCapacity,
       },
     ],
     output: "video",

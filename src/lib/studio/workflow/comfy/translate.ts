@@ -724,9 +724,13 @@ function translateGraph(comfy: ComfyNode[], ctx: Context): TranslatedGraph {
           const kind = linkType || (/image|frame/i.test(input) ? "IMAGE" : "");
           const port =
             kind === "VIDEO"
-              ? "referenceClips"
+              ? open.has("sourceClip")
+                ? "sourceClip"
+                : "referenceClips"
               : kind === "AUDIO"
-                ? "referenceAudio"
+                ? open.has("speech")
+                  ? "speech"
+                  : "referenceAudio"
                 : kind === "IMAGE"
                   ? /end|last/i.test(input)
                     ? "endFrame"

@@ -8,9 +8,13 @@ import {
   FAITHFUL_EDIT_MODEL,
   FRAMES_VIDEO_MODEL,
   IMAGE_MODEL,
+  MOTION_VIDEO_MODEL,
   MUSIC_MODEL,
   node,
   REFERENCES_VIDEO_MODEL,
+  RESTYLE_VIDEO_MODEL,
+  SPEAKING_VIDEO_MODEL,
+  TTS_MODEL,
   VIDEO_FROM_IMAGE_MODEL,
   VIDEO_MODEL,
 } from "./build";
@@ -320,6 +324,112 @@ export function extendAClip(): Workflow {
       edge("clip", "film", "clips"),
       edge("more", "film", "clips"),
       edge("film", "out"),
+    ],
+  };
+}
+
+/** A portrait that says a line: the line read aloud, then followed by the
+ * clip as its soundtrack (ComfyUI: api_heygen_talking_photo,
+ * template_image_speech_to_video). */
+export function talkingPhoto(): Workflow {
+  return {
+    id: "template-talking-photo",
+    name: t("Talking photo"),
+    description: t("A portrait that says the words you write."),
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("portrait", "asset", t("Portrait"), 0, 0, { assetKind: "image" }),
+      node("line", "textInput", t("What they say"), 0, 1, {
+        text: "Hello there. I am only a photograph, but today I learned how to speak.",
+      }),
+      node("voice", "tts", t("Voice"), 1, 1, { model: TTS_MODEL, voice: "am_michael" }),
+      node("clip", "video", t("Speaking"), 2, 0, {
+        model: SPEAKING_VIDEO_MODEL,
+        duration: "5s",
+        prompt:
+          "The person in the picture looks into the camera and says the words of the audio, natural lip movement, small head movements and blinks.",
+      }),
+      node("out", "output", t("Talking photo"), 3, 0),
+    ],
+    app: {
+      fields: [
+        { nodeId: "portrait", param: "artifactId", label: t("A portrait") },
+        { nodeId: "line", param: "text", label: t("What they say") },
+      ],
+      outputs: ["out"],
+      intro: t("Pick a portrait and write a line, watch it say the line."),
+    },
+    edges: [
+      edge("portrait", "clip", "openingFrame"),
+      edge("line", "voice", "text"),
+      edge("voice", "clip", "speech"),
+      edge("clip", "out"),
+    ],
+  };
+}
+
+/** A clip remade in another style, its motion and framing kept
+ * (ComfyUI: api_kling_o3_video_edit, api_runway_aleph2_video_edit). */
+export function restyleAClip(): Workflow {
+  return {
+    id: "template-restyle-a-clip",
+    name: t("Restyle a clip"),
+    description: t("A clip remade in another style, the same motion and framing."),
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("clip", "asset", t("Your clip"), 0, 0, { assetKind: "video" }),
+      node("restyled", "video", t("Restyled"), 1, 0, {
+        model: RESTYLE_VIDEO_MODEL,
+        prompt:
+          "Restyle this clip as a hand-painted watercolor animation on textured paper. Keep the same people, movements, framing and timing.",
+      }),
+      node("out", "output", t("Restyled clip"), 2, 0),
+    ],
+    app: {
+      fields: [
+        { nodeId: "clip", param: "artifactId", label: t("Your clip") },
+        { nodeId: "restyled", param: "prompt", label: t("The new style") },
+      ],
+      outputs: ["out"],
+      intro: t("Pick a clip and describe a style, get the clip in that style."),
+    },
+    edges: [edge("clip", "restyled", "sourceClip"), edge("restyled", "out")],
+  };
+}
+
+/** A character of your own performing what someone does in a clip
+ * (ComfyUI: template_seedance2_0_viral_videos_character_swap). */
+export function recastAClip(): Workflow {
+  return {
+    id: "template-recast-a-clip",
+    name: t("Recast a clip"),
+    description: t("Your character performing the movements of someone in a clip."),
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("character", "asset", t("Your character"), 0, 0, { assetKind: "image" }),
+      node("clip", "asset", t("The clip"), 0, 1, { assetKind: "video" }),
+      node("recast", "video", t("Recast"), 1, 0, {
+        model: MOTION_VIDEO_MODEL,
+        prompt:
+          "The character from the picture performs exactly the movements of the person in the clip, with the character's own face, body and clothes.",
+      }),
+      node("out", "output", t("Recast clip"), 2, 0),
+    ],
+    app: {
+      fields: [
+        { nodeId: "character", param: "artifactId", label: t("A picture of your character") },
+        { nodeId: "clip", param: "artifactId", label: t("A clip of the movements") },
+      ],
+      outputs: ["out"],
+      intro: t("Pick a character and a clip, watch the character move like it."),
+    },
+    edges: [
+      edge("character", "recast", "openingFrame"),
+      edge("clip", "recast", "sourceClip"),
+      edge("recast", "out"),
     ],
   };
 }
