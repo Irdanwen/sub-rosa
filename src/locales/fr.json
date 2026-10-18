@@ -1901,6 +1901,7 @@
   "Editing files": "Modification de fichiers",
   "Editing your message": "Modification de votre message",
   "Editorial to motion": "De la photo de mode au film",
+  "edits text with a pattern: a Split into lines or Text template step can do this": "modifie du texte avec un motif : une étape Découper en lignes ou Gabarit de texte peut le faire",
   "Education": "Formation",
   "Eerie silence": "Silence inquiétant",
   "Effect": "Effet",
@@ -2643,6 +2644,7 @@
   "Join community": "Rejoindre la communauté",
   "Join us in the Sub Rosa community on Telegram at {url}.": "Rejoignez la communauté Sub Rosa sur Telegram à {url}.",
   "Join with a link": "Rejoindre avec un lien",
+  "joins pictures into one sheet: a Sheet step does this": "assemble des images en une planche : une étape Planche le fait",
   "Joins the previous shot with": "Se raccorde au plan précédent par",
   "Joyful": "Joyeux",
   "Judge": "Juge",
@@ -6493,7 +6495,5 @@
   "Zone tools": "Outils de zone",
   "Zoom": "Zoom",
   "Zoom in": "Zoom avant",
-  "Zoom out": "Zoom arrière",
-  "joins pictures into one sheet: a Sheet step does this": "assemble des images en une planche : une étape Planche le fait",
-  "edits text with a pattern: a Split into lines or Text template step can do this": "modifie du texte avec un motif : une étape Découper en lignes ou Gabarit de texte peut le faire"
+  "Zoom out": "Zoom arrière"
 }
