@@ -137,6 +137,12 @@ export function videoRequestBody(inputs: VideoRequestInputs): Record<string, unk
   if (isVideoToVideoModel(target.id)) {
     if (!sourceVideo) return undefined;
     body.video_url = sourceVideo;
+    // The clip sets the length. These models publish "Auto" as their only
+    // duration and the operator's pre-flight accepts nothing else, but the
+    // provider then rejects "Auto" once the job is queued ("duration must be
+    // a positive number", measured 2026-10-18); without the field the render
+    // and the quote both go through.
+    delete body.duration;
     return body;
   }
 
