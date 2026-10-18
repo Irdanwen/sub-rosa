@@ -6370,5 +6370,7 @@
   "Zoom in": "Vergrößern",
   "Zoom out": "Verkleinern",
   "Products and ads": "Produkte und Werbung",
-  "Brand and design": "Marke und Design"
+  "Brand and design": "Marke und Design",
+  "joins pictures into one sheet: a Sheet step does this": "fügt Bilder zu einem Bogen zusammen: Ein Bogen-Schritt erledigt das",
+  "edits text with a pattern: a Split into lines or Text template step can do this": "bearbeitet Text mit einem Muster: Ein Schritt In Zeilen teilen oder Textvorlage kann das"
 }

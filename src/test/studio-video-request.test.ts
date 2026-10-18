@@ -259,6 +259,19 @@ describe("the video surface", () => {
     expect(body?.video_url).toBe("data:video/mp4;base64,V");
     expect(body?.image_url).toBeUndefined();
   });
+
+  it("lets the source clip set the length, never sending the published Auto", () => {
+    // The catalog publishes durations: ["Auto"] for these models; sent, the
+    // job is accepted and then refused upstream for want of a number.
+    const body = videoRequestBody({
+      target: m("gemini-omni-flash-1-1-video-to-video", { durations: ["Auto"] }),
+      prompt: "restyle it",
+      sourceVideo: "data:video/mp4;base64,V",
+      duration: "Auto",
+    });
+    expect(body?.video_url).toBe("data:video/mp4;base64,V");
+    expect(body).not.toHaveProperty("duration");
+  });
 });
 
 describe("the face-media attestation", () => {
