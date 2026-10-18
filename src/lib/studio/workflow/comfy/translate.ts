@@ -283,7 +283,17 @@ const LOADERS: Record<string, "image" | "video" | "audio"> = {
   VHS_LoadVideo: "video",
   LoadAudio: "audio",
   VHS_LoadAudio: "audio",
+  RecordAudio: "audio",
 };
+
+/** Helpers with no step of their own, and the step that does their work. */
+const HELPER_REASONS: Array<[RegExp, () => string]> = [
+  [/^ImageStitch$/, () => t("joins pictures into one sheet: a Sheet step does this")],
+  [
+    /^Regex(Extract|Replace)$/,
+    () => t("edits text with a pattern: a Split into lines or Text template step can do this"),
+  ],
+];
 
 const SAVERS = new Set([
   "SaveImage",
@@ -296,7 +306,19 @@ const SAVERS = new Set([
   "SaveAudio",
   "PreviewAudio",
   "SaveWEBM",
+  "SaveImageAdvanced",
+  "SaveAudioAdvanced",
+  "SaveAudioMP3",
+  "SaveAudioOpus",
+  "SaveText",
 ]);
+
+/** Nodes that show a value while the graph runs, of any kind. */
+const PREVIEWS = new Set(["PreviewAny", "PreviewText", "ShowText|pysssss"]);
+
+/** Nodes that gather pictures into one batch. Every picture they gather
+ * passes through to whoever takes the batch: an edit's images. */
+const GATHERS = new Set(["BatchImagesNode", "ImageBatch", "ImageBatchMultiple"]);
 
 const TEXTS = new Set([
   "PrimitiveString",
@@ -397,22 +419,114 @@ export function modelHints(...sources: unknown[]): string[] {
   return [...words];
 }
 
-/** The catalog model sharing the most words with the hints, preferring one
- * that runs in the wanted direction. A model that shares no word is never
- * chosen: picking another provider's model would be a silent swap. */
+/** The words of a model widget's value, versions kept: "kling-v3" and
+ * "seedream 5.0 pro" name a model, where the same words in a node's type
+ * ("ByteDanceSeedreamNodeV3", "KlingOmniProImageToVideoNode") name the node. */
+export function valueHints(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  const words = new Set<string>();
+  const parts = value
+    .replace(/(\d)\.(\d)/g, "$1-$2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  for (const [at, part] of parts.entries()) {
+    if (part.length >= 2 && !/^(image|video|preview|model|to|the)$/.test(part)) words.add(part);
+    // Two numbers in a row are a version: "4-5" is published as "4-5" and
+    // "v4-5", "5-0" as "v5".
+    const next = parts[at + 1];
+    if (/^\d{1,2}$/.test(part) && next !== undefined && /^\d{1,2}$/.test(next)) {
+      words.add(`${part}-${next}`);
+      words.add(next === "0" ? `v${part}` : `v${part}-${next}`);
+    }
+  }
+  for (const [pattern, family] of MODEL_ALIASES) if (pattern.test(value)) words.add(family);
+  return [...words];
+}
+
+/** Model names ComfyUI files under the provider's own name where the catalog
+ * publishes another one: Google's image models are Nano Banana here. */
+const MODEL_ALIASES: Array<[RegExp, string]> = [
+  [/gemini[- ]3[- ]pro[- ]image|nano banana pro/i, "nano-banana-pro"],
+  [/gemini[- ]3[.-]1[- ]flash[- ]image|nano banana 2(?![.-]\d)/i, "nano-banana-2"],
+  [/gemini[- ]2[.-]5[- ]flash[- ]image/i, "nano-banana"],
+  [/kling[- ]v3[- ]omni/i, "kling-o3"],
+  [/wan[- ]?3[.-]0/i, "wan-3-0"],
+  [/eleven_v4/i, "elevenlabs-tts-v4"],
+  [/eleven_v3/i, "elevenlabs-tts-v3"],
+  [/eleven_sfx/i, "elevenlabs-sound-effects"],
+];
+
+/** The id prefixes a provider's models carry in the catalog, where they are
+ * not its own name: ByteDance publishes Seedance and Seedream. */
+const PROVIDER_FAMILIES: Record<string, string[]> = {
+  bytedance: ["seedance", "seedream"],
+  gemini: ["nano-banana", "gemini", "veo", "imagen", "lyria"],
+  google: ["nano-banana", "gemini", "veo", "imagen", "lyria"],
+  openai: ["gpt-image", "openai", "sora", "dall-e"],
+  bfl: ["flux"],
+  minimax: ["minimax", "hailuo"],
+  hailuo: ["minimax", "hailuo"],
+  elevenlabs: ["elevenlabs", "tts-elevenlabs"],
+  grok: ["grok"],
+  xai: ["grok"],
+  tencent: ["hunyuan"],
+  stability: ["stable", "sd3", "venice-sd"],
+};
+
+/** The catalog models a provider publishes, or undefined when the provider is
+ * not named (the words alone decide then). */
+function providerModels(models: MediaModel[], provider?: string): MediaModel[] | undefined {
+  const key = provider?.trim().toLowerCase().replace(/\s+/g, "");
+  if (!key) return undefined;
+  const prefixes = PROVIDER_FAMILIES[key] ?? [key];
+  return models.filter((model) => {
+    const id = model.id.toLowerCase();
+    return prefixes.some((prefix) => id.startsWith(prefix) || id.includes(`-${prefix}`));
+  });
+}
+
+/** The catalog model sharing the most words with the hints, among the named
+ * provider's models when there is one, and among those that run in the wanted
+ * direction when any does. A model that shares no word is never chosen, nor
+ * one from another provider: picking another provider's model would be a
+ * silent swap. */
 export function pickModel(
   models: MediaModel[],
   hints: string[],
   direction?: VideoDirection,
+  provider?: string,
 ): MediaModel | undefined {
+  const online = models.filter((entry) => !entry.offline);
+  const own = providerModels(online, provider);
+  let pool = own ?? online;
+  if (direction) {
+    const along = pool.filter((model) => isVideo(model) && videoDirection(model) === direction);
+    // A clip to change has no stand-in: a model that starts from a prompt
+    // would make a different video and charge for it.
+    if (along.length > 0 || direction === "video") pool = along;
+  }
   let best: { model: MediaModel; score: number } | undefined;
-  for (const model of models.filter((entry) => !entry.offline)) {
-    const id = model.id.toLowerCase();
-    const name = model.name.toLowerCase();
+  // Whole words only: "max" is in "minimax-h3-image-to-video" as letters,
+  // not as a word, and must not tie it with "minimax-h3-max-image-to-video".
+  const words = (text: string) => `-${text.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-`;
+  for (const model of pool) {
+    const id = words(model.id);
+    const name = words(model.name);
     let score = 0;
-    for (const hint of hints) if (id.includes(hint) || name.includes(hint)) score += hint.length;
-    if (score === 0) continue;
-    if (direction && isVideo(model) && videoDirection(model) === direction) score += 1;
+    for (const hint of hints) {
+      const word = words(hint);
+      if (id.includes(word) || name.includes(word)) score += hint.length;
+    }
+    // Within the provider's own models, sharing no other word still beats
+    // naming none: the provider was the strongest word.
+    if (score === 0 && !own) continue;
+    if (direction && isVideo(model) && videoDirection(model) === direction) {
+      score += 1;
+      // The plain variant over a special one of the same direction
+      // ("minimax-h3-max-image-to-video" over "minimax-h3-max-multi-angle").
+      if (id.includes(`-${direction}-to-video-`)) score += 1;
+    }
     if (
       !best ||
       score > best.score ||
@@ -421,6 +535,26 @@ export function pickModel(
       best = { model, score };
   }
   return best?.model;
+}
+
+/** The value of a node's model widget: named when the file names widgets,
+ * else the first short value that reads like a model ("kling-v3",
+ * "Seedance 2.5"), never a size, a ratio or a seed control. */
+function modelValueOf(node: ComfyNode): string | undefined {
+  for (const name of ["model", "model_name"]) {
+    const value = node.values[name];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return node.widgets.find(
+    (value): value is string =>
+      typeof value === "string" &&
+      value.length < 60 &&
+      /[a-z]/i.test(value) &&
+      /\d/.test(value) &&
+      !/^[(\d]/.test(value) &&
+      !RESOLUTION.test(value) &&
+      !RATIO.test(value),
+  );
 }
 
 function isVideo(model: MediaModel): boolean {
@@ -572,7 +706,9 @@ function translateGraph(comfy: ComfyNode[], ctx: Context): TranslatedGraph {
     if (!param) return undefined;
     const model = pickModel(
       modelsForParam(catalog, param),
-      modelHints(source.type, source.values.model, source.values.model_name, provider),
+      [...modelHints(source.type, provider), ...valueHints(modelValueOf(source))],
+      undefined,
+      provider,
     );
     if (!model)
       report.adjusted.push(
@@ -647,6 +783,26 @@ function translateGraph(comfy: ComfyNode[], ctx: Context): TranslatedGraph {
       make(source, "output", {}, () => "in");
       continue;
     }
+    if (PREVIEWS.has(source.type)) {
+      make(source, "preview", {}, () => "in");
+      continue;
+    }
+    if (GATHERS.has(source.type)) continue; // followed through when the edges are drawn
+    if (source.type === "ImageCompare") {
+      make(source, "compare", {}, (input) =>
+        /_a$|1$|before/i.test(input) ? "before" : /_b$|2$|after/i.test(input) ? "after" : undefined,
+      );
+      continue;
+    }
+    if (source.type === "ComfySwitchNode") {
+      // ComfyUI switches on a yes/no; the native switch passes A or B, set
+      // here or picked by a condition the run writes.
+      const on = source.values.switch ?? source.widgets.find((value) => typeof value === "boolean");
+      make(source, "switch", { branch: on === true ? "a" : "b" }, (input) =>
+        input === "on_true" ? "a" : input === "on_false" ? "b" : undefined,
+      );
+      continue;
+    }
     if (TEXTS.has(source.type)) {
       make(source, "textInput", { text: promptOf(source, ["value", "text", "string"]) });
       continue;
@@ -663,27 +819,32 @@ function translateGraph(comfy: ComfyNode[], ctx: Context): TranslatedGraph {
       const linkedImage = [...source.links.entries()].some(
         ([name, link]) => link.type === "IMAGE" || /image|frame/i.test(name),
       );
-      const task = settingOf(source, "task_type", /_to_/).toLowerCase();
+      const linkedVideo = [...source.links.values()].some((link) => link.type === "VIDEO");
+      // A node that does several things names the one it does in a widget
+      // ("reference", "extend") rather than in a task_type.
+      const mode = source.widgets.find(
+        (value): value is string =>
+          typeof value === "string" && /^(reference|extend|edit)$/i.test(value),
+      );
+      const task = (settingOf(source, "task_type", /_to_/) || mode || "").toLowerCase();
       const direction: VideoDirection =
         role.direction ??
-        (task.includes("reference")
+        (task.includes("reference") || (!task && /reference/i.test(source.type))
           ? "reference"
-          : task.includes("image") || linkedImage
-            ? "image"
-            : "text");
-      const hints = modelHints(
-        source.type,
-        source.values.model,
-        source.values.model_name,
-        role.provider || partnerProvider(source.type),
-      );
+          : linkedVideo || task === "extend" || task === "edit"
+            ? "video"
+            : task.includes("image") || linkedImage
+              ? "image"
+              : "text");
+      const provider = role.provider || partnerProvider(source.type);
+      const hints = [...modelHints(source.type, provider), ...valueHints(modelValueOf(source))];
       const candidates = modelsForParam(catalog, {
         name: "model",
         type: "model",
         label: "",
         mediaTypes: ["video", "imageToVideo", "referenceToVideo"],
       });
-      const model = pickModel(candidates, hints, direction);
+      const model = pickModel(candidates, hints, direction, provider);
       if (!model)
         report.adjusted.push(
           t("No hosted model matches {node}: pick one on the video node.", { node: source.type }),
@@ -756,9 +917,12 @@ function translateGraph(comfy: ComfyNode[], ctx: Context): TranslatedGraph {
       );
       const type: WorkflowNodeType = linkedImage ? "imageEdit" : "image";
       const models = linkedImage ? imageEditModels(catalog) : imageGenerationModels(catalog);
+      const provider = role.provider || partnerProvider(source.type);
       const model = pickModel(
         models,
-        modelHints(source.type, source.values.model, role.provider || partnerProvider(source.type)),
+        [...modelHints(source.type, provider), ...valueHints(modelValueOf(source))],
+        undefined,
+        provider,
       );
       if (!model)
         report.adjusted.push(
@@ -881,6 +1045,11 @@ function translateGraph(comfy: ComfyNode[], ctx: Context): TranslatedGraph {
       drop(source, t("is a group of nodes the file does not define"));
       continue;
     }
+    const helper = HELPER_REASONS.find(([pattern]) => pattern.test(source.type));
+    if (helper) {
+      drop(source, helper[1]());
+      continue;
+    }
     drop(
       source,
       LOCAL_ONLY.test(source.type)
@@ -918,54 +1087,66 @@ function translateGraph(comfy: ComfyNode[], ctx: Context): TranslatedGraph {
     }
     return undefined;
   };
+  /** Every translated node a link brings in: one, or each picture a batch
+   * gathers. */
+  const upstreamAll = (id: string, guard = new Set<string>()): Built[] => {
+    const node = byId.get(id);
+    if (node && GATHERS.has(node.type) && node.mode !== 2) {
+      if (guard.has(id)) return [];
+      guard.add(id);
+      return [...node.links.values()].flatMap((link) => upstreamAll(link.from, guard));
+    }
+    const one = upstreamBuilt(id);
+    return one ? [one] : [];
+  };
   /** Ports that take one link and already have it. */
   const filled = new Set<string>();
   for (const target of comfy) {
     const to = built.get(target.id);
     if (!to || SAMPLERS.has(target.type)) continue; // a sampler's prompts are folded in
-    for (const [input, link] of target.links) {
-      const from = upstreamBuilt(link.from);
-      if (!from || from === to) continue;
-      const linkType = link.type || kindOf(from.node.type, byId.get(link.from));
-      let port = to.portFor(input, linkType);
-      // A widget fed by a text step: a setting taken from that connection.
-      if (!port && ["textInput", "chat"].includes(from.node.type)) {
-        port = fedPort(to.node, input);
-        if (port) {
-          const name = port.slice(FED_PORT_PREFIX.length);
-          const fed = fedParams(to.node.params);
-          if (!fed.includes(name))
-            to.node.params = { ...to.node.params, [FED_PARAMS_KEY]: [...fed, name] };
+    for (const [input, link] of target.links)
+      for (const from of upstreamAll(link.from)) {
+        if (from === to) continue;
+        const linkType = link.type || kindOf(from.node.type, byId.get(link.from));
+        let port = to.portFor(input, linkType);
+        // A widget fed by a text step: a setting taken from that connection.
+        if (!port && ["textInput", "chat"].includes(from.node.type)) {
+          port = fedPort(to.node, input);
+          if (port) {
+            const name = port.slice(FED_PORT_PREFIX.length);
+            const fed = fedParams(to.node.params);
+            if (!fed.includes(name))
+              to.node.params = { ...to.node.params, [FED_PARAMS_KEY]: [...fed, name] };
+          }
         }
-      }
-      if (!port) continue;
-      // A block gives several results: the link names which one.
-      const sourcePort =
-        built.get(link.from) === from ? from.sourcePortFor?.(link.slot) : undefined;
-      const key = `${from.node.id}>${sourcePort ?? ""}>${to.node.id}:${port}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const single = NODE_SCHEMAS[to.node.type].inputs.find((entry) => entry.id === port);
-      if (single && !single.multi) {
-        if (filled.has(`${to.node.id}:${port}`)) {
-          report.adjusted.push(
-            t("{node} takes one {input}: the extra link is left out.", {
-              node: nodeTypeLabel(to.node.type),
-              input,
-            }),
-          );
-          continue;
+        if (!port) continue;
+        // A block gives several results: the link names which one.
+        const sourcePort =
+          built.get(link.from) === from ? from.sourcePortFor?.(link.slot) : undefined;
+        const key = `${from.node.id}>${sourcePort ?? ""}>${to.node.id}:${port}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const single = NODE_SCHEMAS[to.node.type].inputs.find((entry) => entry.id === port);
+        if (single && !single.multi) {
+          if (filled.has(`${to.node.id}:${port}`)) {
+            report.adjusted.push(
+              t("{node} takes one {input}: the extra link is left out.", {
+                node: nodeTypeLabel(to.node.type),
+                input,
+              }),
+            );
+            continue;
+          }
+          filled.add(`${to.node.id}:${port}`);
         }
-        filled.add(`${to.node.id}:${port}`);
+        edges.push({
+          id: crypto.randomUUID(),
+          source: from.node.id,
+          target: to.node.id,
+          targetPort: port,
+          ...(sourcePort ? { sourcePort } : {}),
+        });
       }
-      edges.push({
-        id: crypto.randomUUID(),
-        source: from.node.id,
-        target: to.node.id,
-        targetPort: port,
-        ...(sourcePort ? { sourcePort } : {}),
-      });
-    }
   }
 
   return {

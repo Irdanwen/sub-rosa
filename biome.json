@@ -21,6 +21,7 @@
       "*.mjs",
       "!**/*.min.js",
       "!src/lib/studio/workflow/step-catalog.json",
+      "!src/test/fixtures/comfy-corpus",
       "!**/dist",
       "!**/node_modules"
     ],

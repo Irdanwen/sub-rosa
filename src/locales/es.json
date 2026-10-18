@@ -6433,5 +6433,10 @@
   "Zone tools": "Herramientas de zona",
   "Zoom": "Zoom",
   "Zoom in": "Acercar",
-  "Zoom out": "Alejar"
+  "Zoom out": "Alejar",
+  "Zoom out": "Alejar",
+  "Products and ads": "Productos y anuncios",
+  "Brand and design": "Marca y diseño",
+  "joins pictures into one sheet: a Sheet step does this": "une imágenes en una hoja: un paso Hoja lo hace",
+  "edits text with a pattern: a Split into lines or Text template step can do this": "edita texto con un patrón: un paso Dividir en líneas o Plantilla de texto puede hacerlo"
 }
