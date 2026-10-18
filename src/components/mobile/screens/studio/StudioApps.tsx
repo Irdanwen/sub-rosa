@@ -3,7 +3,7 @@
 // phone left unfinished (the app closed, the phone slept past its grace) is
 // offered again here, and only here: resuming spends, so a person asks for it.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { t } from "../../../../lib/i18n";
 import type { MediaCatalog } from "../../../../lib/studio/types";
 import {
@@ -53,6 +53,8 @@ export function StudioApps({ catalog }: { catalog: MediaCatalog }) {
       .catch(() => setUnfinished([]));
   }, []);
   useEffect(refresh, [refresh]);
+  // Built once per mount, not on every render (a locale change reloads the app).
+  const shipped = useMemo(() => templateWorkflows().filter(isApp), []);
 
   const startFrom = (template: Workflow) => {
     const resolved = resolveTemplateModels(template, catalog).workflow;
@@ -110,7 +112,6 @@ export function StudioApps({ catalog }: { catalog: MediaCatalog }) {
       </div>
     );
 
-  const shipped = templateWorkflows().filter(isApp);
   // A run going on in this webview is not unfinished: its app shows it.
   const live = new Set(phoneRunSessions.live());
   return (
