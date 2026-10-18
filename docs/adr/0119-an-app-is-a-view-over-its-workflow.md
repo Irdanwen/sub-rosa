@@ -65,3 +65,14 @@ from a workflow), or an app as a way of showing a workflow.
   that matter; the canvas is there for the rest.
 - **The canvas on the phone, simplified**: tried and removed in September
   (unusable at phone size); a form is what a phone does well.
+
+## Addendum 2026-10-18: thirty-two of thirty-eight
+
+The shipped catalog grew from fifteen templates to thirty-eight
+([ADR-0121](0121-the-default-catalog-is-re-authored-from-comfyui-recipes.md)),
+and thirty-two of them are apps: every one where a person only brings a
+text, a picture or a clip. The six that are not open on their graph: the
+story scene, the four video starters of the first catalog, and the four
+takes that stop at a gate for the person to choose. Section 6 stands; only its count changed. With that many, the phone's
+"Start from an app" list is grouped by kind of work, and the desktop library
+shows only the kinds some template belongs to.
