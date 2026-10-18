@@ -1,0 +1,1362 @@
+{
+  "api_bfl_flux_1_kontext_multiple_images_input": {
+    "usable": true,
+    "steps": {
+      "asset": 3,
+      "imageEdit": 1,
+      "note": 2,
+      "output": 2
+    },
+    "models": [
+      "flux-2-max-edit"
+    ],
+    "translated": {
+      "FluxKontextProImageNode → Image edit": 1,
+      "LoadImage → Asset": 3,
+      "MarkdownNote → Note": 2,
+      "PreviewImage → Output": 1,
+      "SaveImage → Output": 1
+    },
+    "dropped": {
+      "ImageStitch: joins pictures into one sheet: a Sheet step does this": 2
+    },
+    "adjusted": 0,
+    "missing": 3
+  },
+  "api_bria_genfill": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "compare": 1,
+      "imageEdit": 1,
+      "note": 1,
+      "output": 1
+    },
+    "models": [],
+    "translated": {
+      "BriaGenFill → Image edit": 1,
+      "ImageCompare → Compare": 1,
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "SaveImageAdvanced → Output": 1
+    },
+    "dropped": {
+      "Painter: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 1,
+    "missing": 1
+  },
+  "api_bytedance_seedream_5_0_pro_image_edit": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "imageEdit": 1,
+      "note": 2,
+      "output": 2
+    },
+    "models": [
+      "seedream-v5-pro-edit"
+    ],
+    "translated": {
+      "ByteDanceSeedreamNodeV3 → Image edit": 1,
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 2,
+      "PreviewImage → Output": 1,
+      "SaveImageAdvanced → Output": 1
+    },
+    "dropped": {
+      "Painter: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 1
+  },
+  "api_elevenlabs_text_to_sound_effects": {
+    "usable": true,
+    "steps": {
+      "music": 1,
+      "output": 1,
+      "textInput": 1
+    },
+    "models": [
+      "elevenlabs-sound-effects-v2"
+    ],
+    "translated": {
+      "ElevenLabsTextToSoundEffects → Music": 1,
+      "SaveAudioAdvanced → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 0
+  },
+  "api_elevenlabs_v4_text_to_dialogue": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "note": 2,
+      "output": 1,
+      "textInput": 1,
+      "tts": 1
+    },
+    "models": [
+      "tts-elevenlabs-turbo-v2-5"
+    ],
+    "translated": {
+      "ElevenLabsTextToDialogue → Text to speech": 1,
+      "LoadAudio → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "Note → Note": 1,
+      "RecordAudio → Asset": 1,
+      "SaveAudioAdvanced → Output": 1
+    },
+    "dropped": {
+      "ElevenLabsInstantVoiceClone: sets options of another hosted node, which are not carried over": 1,
+      "ElevenLabsVoiceSelector: sets options of another hosted node, which are not carried over": 2
+    },
+    "adjusted": 2,
+    "missing": 1
+  },
+  "api_elevenlabs_v4_text_to_speech": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "note": 2,
+      "output": 1,
+      "textInput": 1,
+      "tts": 1
+    },
+    "models": [
+      "tts-elevenlabs-turbo-v2-5"
+    ],
+    "translated": {
+      "ElevenLabsTextToSpeech → Text to speech": 1,
+      "LoadAudio → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "Note → Note": 1,
+      "RecordAudio → Asset": 1,
+      "SaveAudioAdvanced → Output": 1
+    },
+    "dropped": {
+      "ElevenLabsInstantVoiceClone: sets options of another hosted node, which are not carried over": 1,
+      "ElevenLabsVoiceSelector: sets options of another hosted node, which are not carried over": 1
+    },
+    "adjusted": 2,
+    "missing": 1
+  },
+  "api_flux_erase_image": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "compare": 1,
+      "imageEdit": 1,
+      "note": 1,
+      "output": 1
+    },
+    "models": [
+      "flux-2-max-edit"
+    ],
+    "translated": {
+      "FluxEraseNode → Image edit": 1,
+      "ImageCompare → Compare": 1,
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "SaveImage → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 1
+  },
+  "api_grok_video_extend": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "output": 1,
+      "video": 1
+    },
+    "models": [
+      "grok-imagine-video-to-video-private"
+    ],
+    "translated": {
+      "GrokVideoExtendNode → Video": 1,
+      "LoadVideo → Asset": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 1,
+    "missing": 1
+  },
+  "api_heygen_talking_photo": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "output": 1,
+      "video": 1
+    },
+    "models": [],
+    "translated": {
+      "HeyGenTalkingPhotoNode → Video": 1,
+      "LoadImage → Asset": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 1,
+    "missing": 1
+  },
+  "api_ideogram_v4_5_t2i": {
+    "usable": true,
+    "steps": {
+      "image": 1,
+      "output": 1
+    },
+    "models": [
+      "ideogram-v4-5"
+    ],
+    "translated": {
+      "IdeogramTextToImageApi → Image": 1,
+      "SaveImageAdvanced → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 0
+  },
+  "api_kling_o3_video_edit": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "note": 1,
+      "output": 1,
+      "video": 1
+    },
+    "models": [],
+    "translated": {
+      "KlingOmniProEditVideoNode → Video": 1,
+      "LoadImage → Asset": 1,
+      "LoadVideo → Asset": 1,
+      "Note → Note": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 1,
+    "missing": 2
+  },
+  "api_kling_v3_flf2v": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "output": 1,
+      "video": 1
+    },
+    "models": [
+      "kling-v3-pro-image-to-video"
+    ],
+    "translated": {
+      "KlingFirstLastFrameNode → Video": 1,
+      "LoadImage → Asset": 2,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 1,
+    "missing": 2
+  },
+  "api_minimax_h3_max_flf2v": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "chat": 1,
+      "note": 3,
+      "output": 3,
+      "switch": 2,
+      "textInput": 1,
+      "video": 2
+    },
+    "models": [
+      "minimax-h3-max-image-to-video",
+      "minimax-m25"
+    ],
+    "translated": {
+      "ComfySwitchNode → Switch": 2,
+      "LoadImage → Asset": 2,
+      "MarkdownNote → Note": 3,
+      "MinimaxHailuo03ContextIRNode → Chat": 1,
+      "MinimaxHailuo03FirstLastFrameNode → Video": 1,
+      "MinimaxHailuo03RegenerateNode → Video": 1,
+      "PrimitiveStringMultiline → Text input": 1,
+      "SaveText → Output": 1,
+      "SaveVideo → Output": 2
+    },
+    "dropped": {
+      "Boolean (Prompt Enhance): has no counterpart in Sub Rosa": 1,
+      "Boolean (Upscale to 2K): has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 1,
+    "missing": 2
+  },
+  "api_nano_banana_2_1_t2i": {
+    "usable": true,
+    "steps": {
+      "image": 1,
+      "output": 1
+    },
+    "models": [
+      "nano-banana-2-1"
+    ],
+    "translated": {
+      "GeminiNanoBanana2V2 → Image": 1,
+      "SaveImageAdvanced → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 0
+  },
+  "api_openai_gpt_image_2_image_edit": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "imageEdit": 1,
+      "output": 1
+    },
+    "models": [
+      "gpt-image-2-edit"
+    ],
+    "translated": {
+      "LoadImage → Asset": 1,
+      "OpenAIGPTImageNodeV2 → Image edit": 1,
+      "SaveImage → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 1
+  },
+  "api_runway_aleph2_video_edit": {
+    "usable": true,
+    "steps": {
+      "asset": 3,
+      "note": 1,
+      "output": 1,
+      "video": 1
+    },
+    "models": [],
+    "translated": {
+      "LoadImage → Asset": 2,
+      "LoadVideo → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "RunwayAleph2VideoToVideoNode → Video": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {
+      "RunwayAleph2KeyframeNode: sets options of another hosted node, which are not carried over": 1,
+      "RunwayAleph2PromptImageNode: sets options of another hosted node, which are not carried over": 1
+    },
+    "adjusted": 1,
+    "missing": 3
+  },
+  "api_seedance2_5_r2v": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "output": 1,
+      "video": 1
+    },
+    "models": [
+      "seedance-2-5-reference-to-video-basic"
+    ],
+    "translated": {
+      "ByteDance2ReferenceNodeV2 → Video": 1,
+      "LoadImage → Asset": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 1
+  },
+  "api_seedance2_5_video_extend": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 1,
+      "note": 1,
+      "output": 2,
+      "switch": 2,
+      "video": 1
+    },
+    "models": [],
+    "translated": {
+      "ByteDance2ReferenceNodeV2 → Video": 1,
+      "ComfySwitchNode → Switch": 2,
+      "LoadVideo → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "Merge Videos → Block": 1,
+      "SaveVideo → Output": 2
+    },
+    "dropped": {
+      "AudioConcat: has no counterpart in Sub Rosa": 1,
+      "CreateVideo: has no counterpart in Sub Rosa": 1,
+      "EmptyAudio: has no counterpart in Sub Rosa": 1,
+      "GetImageSize: has no counterpart in Sub Rosa": 1,
+      "GetVideoComponents: has no counterpart in Sub Rosa": 2,
+      "PrimitiveBoolean: has no counterpart in Sub Rosa": 2,
+      "ResizeAndPadImage: has no counterpart in Sub Rosa": 1,
+      "Video Slice: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 1,
+    "missing": 1
+  },
+  "api_sonilo_v2m": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 1,
+      "music": 1,
+      "note": 1,
+      "output": 2,
+      "textInput": 1
+    },
+    "models": [
+      "sonilo-v1-1-music"
+    ],
+    "translated": {
+      "LoadVideo → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "SaveAudioAdvanced → Output": 1,
+      "SaveVideo → Output": 1,
+      "SoniloVideoToMusic → Music": 1,
+      "Video Audio Merger → Block": 1
+    },
+    "dropped": {
+      "AudioAdjustVolume: has no counterpart in Sub Rosa": 2,
+      "AudioMerge: has no counterpart in Sub Rosa": 1,
+      "CreateVideo: has no counterpart in Sub Rosa": 1,
+      "GetVideoComponents: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 1
+  },
+  "api_wan3_0_i2v": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "note": 1,
+      "output": 1,
+      "video": 1
+    },
+    "models": [
+      "wan-3-0-image-to-video"
+    ],
+    "translated": {
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "SaveVideo → Output": 1,
+      "Wan3ImageToVideoApi → Video": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 1
+  },
+  "audio_ace_step_1_5_split_llm": {
+    "usable": true,
+    "steps": {
+      "block": 1,
+      "chat": 1,
+      "image": 1,
+      "note": 1,
+      "output": 1,
+      "preview": 1
+    },
+    "models": [
+      "gemini-3-7-flash",
+      "gpt-image-2-5-flare"
+    ],
+    "translated": {
+      "GeminiNodeV2 → Chat": 1,
+      "KSampler → Image": 1,
+      "MarkdownNote → Note": 1,
+      "PreviewAny → Preview": 1,
+      "SaveAudioAdvanced → Output": 1,
+      "Text to Audio (ACE-Step 1.5) → Block": 1
+    },
+    "dropped": {
+      "ConditioningZeroOut: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "DualCLIPLoader: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "EmptyAceStep1.5LatentAudio: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "ModelSamplingAuraFlow: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "RegexExtract: edits text with a pattern: a Split into lines or Text template step can do this": 2,
+      "SeedNode: has no counterpart in Sub Rosa": 1,
+      "Song Duration: has no counterpart in Sub Rosa": 1,
+      "TextEncodeAceStepAudio1.5: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "UNETLoader: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "VAEDecodeAudio: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "VAELoader: runs a model on a local graphics card, which Sub Rosa does not do": 1
+    },
+    "adjusted": 1,
+    "missing": 0
+  },
+  "image_qwen_image_2_1_image_edit": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "block": 1,
+      "compare": 1,
+      "image": 1,
+      "note": 3,
+      "output": 1,
+      "preview": 1,
+      "switch": 2,
+      "textInput": 1
+    },
+    "models": [
+      "gpt-image-2-5-flare"
+    ],
+    "translated": {
+      "ComfySwitchNode → Switch": 2,
+      "Image Edit (Qwen Image 2.1) → Block": 1,
+      "ImageCompare → Compare": 1,
+      "KSampler → Image": 1,
+      "LoadImage → Asset": 2,
+      "MarkdownNote → Note": 3,
+      "PreviewAny → Preview": 1,
+      "PrimitiveStringMultiline → Text input": 1,
+      "SaveImageAdvanced → Output": 1
+    },
+    "dropped": {
+      "CLIPLoader: runs a model on a local graphics card, which Sub Rosa does not do": 2,
+      "EmptyLatentImage: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "QwenImage21Cache: has no counterpart in Sub Rosa": 1,
+      "TextEncodeQwenImage21: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "TextGenerate: has no counterpart in Sub Rosa": 1,
+      "UNETLoader: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "VAEDecode: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "VAELoader: runs a model on a local graphics card, which Sub Rosa does not do": 1
+    },
+    "adjusted": 1,
+    "missing": 2
+  },
+  "template_3x3_contact_sheet": {
+    "usable": true,
+    "steps": {
+      "asset": 3,
+      "imageEdit": 2,
+      "note": 3,
+      "output": 2
+    },
+    "models": [
+      "nano-banana-2-edit"
+    ],
+    "translated": {
+      "GeminiNanoBanana2V2 → Image edit": 2,
+      "LoadImage → Asset": 3,
+      "MarkdownNote → Note": 3,
+      "SaveImage → Output": 2
+    },
+    "dropped": {
+      "Custom Combo (Frame / Mode): has no counterpart in Sub Rosa": 1,
+      "StringReplace: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 3,
+    "missing": 3
+  },
+  "template_character_portrait_relighting": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "imageEdit": 5,
+      "output": 5
+    },
+    "models": [
+      "nano-banana-2-edit"
+    ],
+    "translated": {
+      "GeminiImage2Node → Image edit": 5,
+      "LoadImage → Asset": 1,
+      "SaveImage → Output": 5
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 1
+  },
+  "template_contact_sheet-step_1.app": {
+    "usable": true,
+    "steps": {
+      "asset": 3,
+      "imageEdit": 1,
+      "output": 1,
+      "textInput": 1
+    },
+    "models": [
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "GeminiImage2Node → Image edit": 1,
+      "LoadImage → Asset": 3,
+      "PrimitiveStringMultiline → Text input": 1,
+      "SaveImage → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 3
+  },
+  "template_contact_sheet-step_2.app": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "block": 2,
+      "imageEdit": 2,
+      "output": 8,
+      "textInput": 7
+    },
+    "models": [
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "Crop Images → Block": 2,
+      "GeminiImage2Node → Image edit": 2,
+      "LoadImage → Asset": 2,
+      "PrimitiveNode → Text input": 3,
+      "PrimitiveStringMultiline → Text input": 4,
+      "SaveImage → Output": 8
+    },
+    "dropped": {
+      "Crop Grid 1: has no counterpart in Sub Rosa": 2,
+      "Crop Grid 2: has no counterpart in Sub Rosa": 2,
+      "Crop Grid 3: has no counterpart in Sub Rosa": 2,
+      "Crop Grid 4: has no counterpart in Sub Rosa": 2,
+      "GetImageSize: has no counterpart in Sub Rosa": 2,
+      "HEIGHT: has no counterpart in Sub Rosa": 2,
+      "RegexReplace: edits text with a pattern: a Split into lines or Text template step can do this": 2,
+      "Row 2 - Y val: has no counterpart in Sub Rosa": 2,
+      "WIDTH: has no counterpart in Sub Rosa": 2
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "template_contact_sheet-step_3.app": {
+    "usable": true,
+    "steps": {
+      "asset": 7,
+      "block": 7,
+      "chat": 7,
+      "output": 7,
+      "preview": 7,
+      "relay": 2,
+      "textInput": 1,
+      "video": 7
+    },
+    "models": [
+      "gemini-3-5-flash-lite",
+      "kling-v3-pro-image-to-video"
+    ],
+    "translated": {
+      "GeminiNode → Chat": 7,
+      "Generate Video 1 → Block": 1,
+      "Generate Video 2 → Block": 1,
+      "Generate Video 3 → Block": 1,
+      "Generate Video 4 → Block": 1,
+      "Generate Video 5 → Block": 1,
+      "Generate Video 6 → Block": 1,
+      "Generate Video 7 → Block": 1,
+      "KlingFirstLastFrameNode → Video": 7,
+      "LoadImage → Asset": 7,
+      "PreviewAny → Preview": 7,
+      "PrimitiveNode → Text input": 1,
+      "SaveVideo → Output": 7
+    },
+    "dropped": {
+      "ImageFromBatch: has no counterpart in Sub Rosa": 14
+    },
+    "adjusted": 7,
+    "missing": 7
+  },
+  "template_eric_exploded_view": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "imageEdit": 2,
+      "note": 2,
+      "output": 5,
+      "video": 2
+    },
+    "models": [
+      "nano-banana-2-edit",
+      "seedance-1-5-pro-image-to-video-basic"
+    ],
+    "translated": {
+      "ByteDanceFirstLastFrameNode → Video": 2,
+      "GeminiNanoBanana2V2 → Image edit": 2,
+      "LoadImage → Asset": 1,
+      "Note → Note": 2,
+      "SaveImage → Output": 2,
+      "SaveVideo → Output": 3
+    },
+    "dropped": {
+      "CreateVideo: has no counterpart in Sub Rosa": 1,
+      "GetVideoComponents: has no counterpart in Sub Rosa": 2
+    },
+    "adjusted": 0,
+    "missing": 1
+  },
+  "template_eric_thumbnail_generator": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "imageEdit": 1,
+      "note": 2,
+      "output": 1
+    },
+    "models": [
+      "nano-banana-2-edit"
+    ],
+    "translated": {
+      "GeminiNanoBanana2 → Image edit": 1,
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "Note → Note": 1,
+      "SaveImage → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 1
+  },
+  "template_image_speech_to_video": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "block": 1,
+      "chat": 1,
+      "image": 2,
+      "note": 3,
+      "output": 2,
+      "preview": 4,
+      "relay": 1,
+      "textInput": 2,
+      "tts": 1
+    },
+    "models": [
+      "gemini-3-1-pro-preview",
+      "gpt-image-2-5-flare",
+      "tts-elevenlabs-turbo-v2-5"
+    ],
+    "translated": {
+      "ElevenLabsTextToSpeech → Text to speech": 1,
+      "GeminiNode → Chat": 1,
+      "LoadAudio → Asset": 1,
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 3,
+      "PreviewAny → Preview": 4,
+      "PrimitiveStringMultiline → Text input": 1,
+      "SamplerCustomAdvanced → Image": 2,
+      "SaveAudioMP3 → Output": 1,
+      "SaveVideo → Output": 1,
+      "Video Generation (LTX-2.3) → Block": 1
+    },
+    "dropped": {
+      "CFGGuider: runs a model on a local graphics card, which Sub Rosa does not do": 2,
+      "CheckpointLoaderSimple: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "CLIPTextEncode: encodes a prompt for a local model": 2,
+      "ComfyMathExpression: has no counterpart in Sub Rosa": 4,
+      "CreateVideo: has no counterpart in Sub Rosa": 1,
+      "Duration: has no counterpart in Sub Rosa": 1,
+      "ElevenLabsInstantVoiceClone: sets options of another hosted node, which are not carried over": 1,
+      "ElevenLabsVoiceSelector: sets options of another hosted node, which are not carried over": 1,
+      "EmptyLTXVLatentVideo: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "Frame Rate: has no counterpart in Sub Rosa": 1,
+      "Height: has no counterpart in Sub Rosa": 1,
+      "KSamplerSelect: runs a model on a local graphics card, which Sub Rosa does not do": 2,
+      "LatentUpscaleModelLoader: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "LoraLoader: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "LoraLoaderModelOnly: runs a model on a local graphics card, which Sub Rosa does not do": 2,
+      "LTXAVTextEncoderLoader: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "LTXVAudioVAEDecode: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "LTXVAudioVAEEncode: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "LTXVAudioVAELoader: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "LTXVConcatAVLatent: runs a model on a local graphics card, which Sub Rosa does not do": 2,
+      "LTXVConditioning: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "LTXVCropGuides: has no counterpart in Sub Rosa": 1,
+      "LTXVImgToVideoInplace: has no counterpart in Sub Rosa": 2,
+      "LTXVLatentUpsampler: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "LTXVPreprocess: has no counterpart in Sub Rosa": 1,
+      "LTXVSeparateAVLatent: runs a model on a local graphics card, which Sub Rosa does not do": 2,
+      "ManualSigmas: has no counterpart in Sub Rosa": 2,
+      "RandomNoise: runs a model on a local graphics card, which Sub Rosa does not do": 2,
+      "RegexExtract: edits text with a pattern: a Split into lines or Text template step can do this": 2,
+      "ResizeImageMaskNode: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "ResizeImagesByLongerEdge: has no counterpart in Sub Rosa": 1,
+      "SetLatentNoiseMask: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "SolidMask: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "Switch to Text to Video?: has no counterpart in Sub Rosa": 1,
+      "TextGenerateLTX2Prompt: has no counterpart in Sub Rosa": 1,
+      "TrimAudioDuration: has no counterpart in Sub Rosa": 1,
+      "VAEDecodeTiled: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "Width: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 4,
+    "missing": 2
+  },
+  "template_outpaint_to_any_aspect_ratio_nano_banana_pro": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 1,
+      "compare": 1,
+      "image": 1,
+      "imageEdit": 1,
+      "note": 3,
+      "output": 2
+    },
+    "models": [
+      "flux-2-max",
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "FluxResolutionNode → Image": 1,
+      "GeminiImage2Node → Image edit": 1,
+      "Image Extender → Block": 1,
+      "ImageCompare → Compare": 1,
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 3,
+      "PreviewImage → Output": 1,
+      "SaveImage → Output": 1
+    },
+    "dropped": {
+      "EmptyImage: has no counterpart in Sub Rosa": 1,
+      "GetImageSize: has no counterpart in Sub Rosa": 2,
+      "ImageCompositeMasked: runs a model on a local graphics card, which Sub Rosa does not do": 1,
+      "ImagePadForOutpaint: has no counterpart in Sub Rosa": 1,
+      "ImageResize+: has no counterpart in Sub Rosa": 1,
+      "ImageResizeKJv2: has no counterpart in Sub Rosa": 1,
+      "pad_bottom: has no counterpart in Sub Rosa": 1,
+      "pad_left: has no counterpart in Sub Rosa": 1,
+      "pad_right: has no counterpart in Sub Rosa": 1,
+      "pad_top: has no counterpart in Sub Rosa": 1,
+      "top_or_left_outpaint_pct: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 1
+  },
+  "template_product_placement": {
+    "usable": true,
+    "steps": {
+      "asset": 4,
+      "chat": 1,
+      "imageEdit": 1,
+      "output": 2,
+      "preview": 1,
+      "video": 1
+    },
+    "models": [
+      "gemini-3-1-pro-preview",
+      "kling-v3-pro-image-to-video",
+      "nano-banana-2-edit"
+    ],
+    "translated": {
+      "GeminiNanoBanana2V2 → Image edit": 1,
+      "GeminiNode → Chat": 1,
+      "KlingVideoNode → Video": 1,
+      "LoadImage → Asset": 4,
+      "PreviewAny → Preview": 1,
+      "PreviewImage → Output": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 2,
+    "missing": 4
+  },
+  "template_seedance2_0_viral_videos_character_swap": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "chat": 1,
+      "imageEdit": 1,
+      "output": 2,
+      "preview": 1,
+      "video": 1
+    },
+    "models": [
+      "gemini-3-8-flash",
+      "gpt-image-2-edit",
+      "seedance-2-0-reference-to-video-basic"
+    ],
+    "translated": {
+      "ByteDance2ReferenceNodeV2 → Video": 1,
+      "GeminiNodeV3 → Chat": 1,
+      "LoadImage → Asset": 1,
+      "LoadVideo → Asset": 1,
+      "OpenAIGPTImageNodeV2 → Image edit": 1,
+      "PreviewAny → Preview": 1,
+      "SaveImage → Output": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {
+      "Create Prompt: has no counterpart in Sub Rosa": 1,
+      "Get Frame from Video: has no counterpart in Sub Rosa": 1,
+      "GetVideoComponents: has no counterpart in Sub Rosa": 1,
+      "Video Slice: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "template_seedance2_storyboard_to_video": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "chat": 2,
+      "image": 1,
+      "note": 2,
+      "output": 2,
+      "preview": 1,
+      "video": 1
+    },
+    "models": [
+      "gemini-3-8-flash",
+      "gpt-image-2",
+      "seedance-2-0-reference-to-video-basic"
+    ],
+    "translated": {
+      "ByteDance2ReferenceNodeV2 → Video": 1,
+      "GeminiNodeV3 → Chat": 2,
+      "LoadImage → Asset": 2,
+      "MarkdownNote → Note": 2,
+      "OpenAIGPTImageNodeV2 → Image": 1,
+      "PreviewAny → Preview": 1,
+      "SaveImage → Output": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {
+      "Concatenate Prompt: has no counterpart in Sub Rosa": 1,
+      "ImageStitch: joins pictures into one sheet: a Sheet step does this": 1
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "template_sferro21_product_ad.app": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "imageEdit": 1,
+      "output": 1
+    },
+    "models": [
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "GeminiImage2Node → Image edit": 1,
+      "LoadImage → Asset": 2,
+      "SaveImage → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 2
+  },
+  "template_sirolim_image_script_video": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 3,
+      "chat": 4,
+      "imageEdit": 1,
+      "note": 1,
+      "output": 2,
+      "preview": 4,
+      "textInput": 1,
+      "video": 1
+    },
+    "models": [
+      "gemini-3-1-pro-preview",
+      "kling-o3-4k-reference-to-video",
+      "nano-banana-2-edit",
+      "openai-gpt-54-mini"
+    ],
+    "translated": {
+      "GeminiNanoBanana2 → Image edit": 1,
+      "GeminiNode → Chat": 1,
+      "KlingOmniProImageToVideoNode → Video": 1,
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 1,
+      "OpenAIChatNode → Chat": 3,
+      "PreviewAny → Preview": 4,
+      "PreviewImage → Output": 1,
+      "PrimitiveNode → Text input": 1,
+      "Prompt A → Block": 1,
+      "Prompt B → Block": 1,
+      "Prompt C → Block": 1,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {
+      "OpenAIChatConfig: sets options of another hosted node, which are not carried over": 3
+    },
+    "adjusted": 2,
+    "missing": 1
+  },
+  "templates_graphic_design_recomposer": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 1,
+      "imageEdit": 2,
+      "output": 1,
+      "relay": 1,
+      "switch": 1,
+      "textInput": 3
+    },
+    "models": [
+      "nano-banana-2-edit",
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "ComfySwitchNode → Switch": 1,
+      "GeminiImage2Node → Image edit": 1,
+      "GeminiNanoBanana2V2 → Image edit": 1,
+      "LoadImage → Asset": 1,
+      "PrimitiveNode → Text input": 2,
+      "PrimitiveStringMultiline → Text input": 1,
+      "Recompose Image → Block": 1,
+      "SaveImage → Output": 1
+    },
+    "dropped": {
+      "CustomCombo: has no counterpart in Sub Rosa": 1,
+      "StringCompare: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 1
+  },
+  "templates_rob_fashion_shoot_vton-4in1.app": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "block": 1,
+      "imageEdit": 1,
+      "output": 5,
+      "textInput": 1
+    },
+    "models": [
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "Crop Images → Block": 1,
+      "GeminiImage2Node → Image edit": 1,
+      "LoadImage → Asset": 2,
+      "PrimitiveStringMultiline → Text input": 1,
+      "SaveImage → Output": 5
+    },
+    "dropped": {
+      "1: has no counterpart in Sub Rosa": 1,
+      "2: has no counterpart in Sub Rosa": 1,
+      "3: has no counterpart in Sub Rosa": 1,
+      "4: has no counterpart in Sub Rosa": 1,
+      "Col 1 - X val: has no counterpart in Sub Rosa": 1,
+      "Col 2 - X val: has no counterpart in Sub Rosa": 1,
+      "Crop Inset Grid Images Value: has no counterpart in Sub Rosa": 1,
+      "Crop Inset Grid Images: has no counterpart in Sub Rosa": 1,
+      "GetImageSize: has no counterpart in Sub Rosa": 2,
+      "HEIGHT / 2: has no counterpart in Sub Rosa": 1,
+      "HEIGHT: has no counterpart in Sub Rosa": 1,
+      "ImageBatchMulti: has no counterpart in Sub Rosa": 1,
+      "Resize Images: has no counterpart in Sub Rosa": 1,
+      "ResizeAndPadImage: has no counterpart in Sub Rosa": 1,
+      "Row 2 - Y val: has no counterpart in Sub Rosa": 1,
+      "WIDTH / 2: has no counterpart in Sub Rosa": 1,
+      "WIDTH: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "templates-3D_logo_texture_animation": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 1,
+      "chat": 1,
+      "imageEdit": 3,
+      "output": 4,
+      "preview": 1,
+      "video": 1
+    },
+    "models": [
+      "gemini-3-5-flash",
+      "nano-banana-pro-edit",
+      "seedance-1-5-pro-image-to-video-basic"
+    ],
+    "translated": {
+      "Automatic Transition Prompt → Block": 1,
+      "ByteDanceFirstLastFrameNode → Video": 1,
+      "GeminiImage2Node → Image edit": 3,
+      "GeminiNode → Chat": 1,
+      "LoadImage → Asset": 1,
+      "PreviewAny → Preview": 1,
+      "SaveImage → Output": 3,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {},
+    "adjusted": 0,
+    "missing": 1
+  },
+  "templates-car_product": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 3,
+      "chat": 3,
+      "imageEdit": 4,
+      "output": 8,
+      "preview": 6,
+      "relay": 2,
+      "video": 3
+    },
+    "models": [
+      "gemini-3-8-flash",
+      "kling-v3-pro-image-to-video",
+      "seedream-v4-edit"
+    ],
+    "translated": {
+      "ByteDanceSeedreamNodeV3 → Image edit": 4,
+      "GeminiNodeV3 → Chat": 3,
+      "Generate Video → Block": 3,
+      "KlingFirstLastFrameNode → Video": 3,
+      "LoadImage → Asset": 1,
+      "PreviewAny → Preview": 6,
+      "SaveImage → Output": 4,
+      "SaveVideo → Output": 4
+    },
+    "dropped": {
+      "CreateVideo: has no counterpart in Sub Rosa": 1,
+      "GetVideoComponents: has no counterpart in Sub Rosa": 3,
+      "RegexExtract: edits text with a pattern: a Split into lines or Text template step can do this": 6
+    },
+    "adjusted": 3,
+    "missing": 1
+  },
+  "templates-character_sheet": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "imageEdit": 2,
+      "output": 3,
+      "relay": 2
+    },
+    "models": [
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "GeminiImage2Node → Image edit": 2,
+      "LoadImage → Asset": 1,
+      "SaveImage → Output": 3
+    },
+    "dropped": {
+      "ImageStitch: joins pictures into one sheet: a Sheet step does this": 1
+    },
+    "adjusted": 0,
+    "missing": 1
+  },
+  "templates-multiple_consistent_shots-nb_pro": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 12,
+      "chat": 1,
+      "imageEdit": 6,
+      "note": 6,
+      "output": 13,
+      "preview": 13,
+      "relay": 14,
+      "textInput": 7
+    },
+    "models": [
+      "gemini-3-1-pro-preview",
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "Batch Prompt Iterator → Block": 6,
+      "GeminiImage2Node → Image edit": 6,
+      "GeminiNode → Chat": 1,
+      "LoadImage → Asset": 1,
+      "MarkdownNote → Note": 6,
+      "New Subgraph → Block": 6,
+      "PreviewAny → Preview": 13,
+      "PreviewImage → Output": 7,
+      "PrimitiveNode → Text input": 1,
+      "PrimitiveStringMultiline → Text input": 6,
+      "SaveImage → Output": 6
+    },
+    "dropped": {
+      "Convert Prompt Number to Index: has no counterpart in Sub Rosa": 6,
+      "Int - Select Prompt Number (not index): has no counterpart in Sub Rosa": 6,
+      "RegexExtract: edits text with a pattern: a Split into lines or Text template step can do this": 6,
+      "RegexReplace: edits text with a pattern: a Split into lines or Text template step can do this": 6,
+      "SomethingToString: has no counterpart in Sub Rosa": 6
+    },
+    "adjusted": 0,
+    "missing": 1
+  },
+  "templates-photo_to_product_vid": {
+    "usable": true,
+    "steps": {
+      "asset": 1,
+      "block": 1,
+      "imageEdit": 1,
+      "output": 5,
+      "video": 3
+    },
+    "models": [
+      "minimax-h3-max-image-to-video",
+      "seedream-v4-edit"
+    ],
+    "translated": {
+      "ByteDanceSeedreamNode → Image edit": 1,
+      "Combine Video → Block": 1,
+      "LoadImage → Asset": 1,
+      "MinimaxHailuoVideoNode → Video": 3,
+      "SaveImage → Output": 1,
+      "SaveVideo → Output": 4
+    },
+    "dropped": {
+      "CreateVideo: has no counterpart in Sub Rosa": 1,
+      "GetVideoComponents: has no counterpart in Sub Rosa": 3
+    },
+    "adjusted": 0,
+    "missing": 1
+  },
+  "templates-product_ad-v2.0": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "imageEdit": 1,
+      "output": 1,
+      "textInput": 2
+    },
+    "models": [
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "GeminiImage2Node → Image edit": 1,
+      "LoadImage → Asset": 2,
+      "PrimitiveStringMultiline → Text input": 2,
+      "SaveImage → Output": 1
+    },
+    "dropped": {
+      "GetImageSize: has no counterpart in Sub Rosa": 1,
+      "RegexReplace: edits text with a pattern: a Split into lines or Text template step can do this": 1,
+      "ResizeAndPadImage: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "templates-product_scene_relight": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "block": 1,
+      "imageEdit": 1,
+      "output": 1,
+      "textInput": 2
+    },
+    "models": [
+      "seedream-v4-edit"
+    ],
+    "translated": {
+      "Batch Images → Block": 1,
+      "ByteDanceSeedreamNode → Image edit": 1,
+      "LoadImage → Asset": 2,
+      "PrimitiveStringMultiline → Text input": 2,
+      "SaveImage → Output": 1
+    },
+    "dropped": {
+      "GetImageSize: has no counterpart in Sub Rosa": 1,
+      "RegexReplace: edits text with a pattern: a Split into lines or Text template step can do this": 1,
+      "ResizeAndPadImage: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "templates-subject_holding_product.app": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "block": 1,
+      "imageEdit": 1,
+      "output": 1
+    },
+    "models": [
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "Batch Images → Block": 1,
+      "GeminiImage2Node → Image edit": 1,
+      "LoadImage → Asset": 2,
+      "SaveImage → Output": 1
+    },
+    "dropped": {
+      "GetImageSize: has no counterpart in Sub Rosa": 1,
+      "ResizeAndPadImage: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "templates-subject_product_swap.app": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "block": 1,
+      "imageEdit": 1,
+      "output": 1
+    },
+    "models": [
+      "nano-banana-pro-edit"
+    ],
+    "translated": {
+      "Batch Images → Block": 1,
+      "GeminiImage2Node → Image edit": 1,
+      "LoadImage → Asset": 2,
+      "SaveImage → Output": 1
+    },
+    "dropped": {
+      "GetImageSize: has no counterpart in Sub Rosa": 1,
+      "ResizeAndPadImage: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "templates-textured_logotype-v2.1": {
+    "usable": true,
+    "steps": {
+      "asset": 2,
+      "imageEdit": 2,
+      "output": 3,
+      "video": 1
+    },
+    "models": [
+      "nano-banana-2-edit",
+      "nano-banana-pro-edit",
+      "seedance-1-5-pro-image-to-video-basic"
+    ],
+    "translated": {
+      "ByteDanceFirstLastFrameNode → Video": 1,
+      "GeminiImage2Node → Image edit": 1,
+      "GeminiImageNode → Image edit": 1,
+      "LoadImage → Asset": 2,
+      "SaveImage → Output": 2,
+      "SaveVideo → Output": 1
+    },
+    "dropped": {
+      "GetImageSize: has no counterpart in Sub Rosa": 1,
+      "ResizeAndPadImage: has no counterpart in Sub Rosa": 1
+    },
+    "adjusted": 0,
+    "missing": 2
+  },
+  "utility_bria_remove_image_background": {
+    "usable": false,
+    "steps": {
+      "asset": 1,
+      "compare": 1,
+      "output": 1
+    },
+    "models": [],
+    "translated": {
+      "ImageCompare → Compare": 1,
+      "LoadImage → Asset": 1,
+      "SaveImage → Output": 1
+    },
+    "dropped": {
+      "BriaRemoveImageBackground: removes a background, which this provider does not offer": 1
+    },
+    "adjusted": 0,
+    "missing": 1
+  }
+}
