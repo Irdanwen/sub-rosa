@@ -6494,9 +6494,6 @@
   "Zoom": "Zoom",
   "Zoom in": "Ingrandisci",
   "Zoom out": "Riduci",
-  "Zoom out": "Riduci",
-  "Products and ads": "Prodotti e pubblicità",
-  "Brand and design": "Marchio e design",
   "joins pictures into one sheet: a Sheet step does this": "unisce le immagini in un foglio: un passaggio Tavola lo fa",
   "edits text with a pattern: a Split into lines or Text template step can do this": "modifica il testo con uno schema: un passaggio Dividi in righe o Modello di testo può farlo"
 }
