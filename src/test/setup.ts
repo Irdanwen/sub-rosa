@@ -1,8 +1,16 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { MotionGlobalConfig } from "framer-motion";
 import { afterEach, beforeEach, vi } from "vitest";
 import { markOnboardingComplete } from "../lib/onboarding";
+
+// How long findBy* and waitFor keep looking. The default second is sized for
+// a developer's machine; the two-core CI runner has missed it on the studio
+// suites (a library of 38 templates to resolve before a card appears, a run to
+// start before its Stop button does) while the same tests pass locally every
+// time. A passing test is not slowed by this: it only moves the point at which
+// a slow one gives up.
+configure({ asyncUtilTimeout: 4000 });
 
 // Resolve framer-motion animations instantly. Without this the frameloop
 // stalls when tests swap fake/real timers, leaving AnimatePresence exits
