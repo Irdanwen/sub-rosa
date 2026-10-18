@@ -23,6 +23,15 @@ export const VIDEO_MODEL = "kling-2.5-turbo-pro-text-to-video";
 /** The image-to-video half of the same family, for a shot that continues
  * another one from its handoff frame. */
 export const VIDEO_FROM_IMAGE_MODEL = "kling-2.5-turbo-pro-image-to-video";
+/** Edits that keep what is in a picture (a product, a face) while changing
+ * its setting: up to three pictures in, one out. */
+export const EDIT_MODEL = "nano-banana-2-edit";
+/** The same, where a face or a lettering must survive closely. */
+export const FAITHFUL_EDIT_MODEL = "nano-banana-pro-edit";
+/** Pictures whose point is the lettering (a logotype, a title). */
+export const LETTERING_MODEL = "ideogram-v4-5";
+/** A clip that runs from one given picture to another (first and last frame). */
+export const FRAMES_VIDEO_MODEL = "seedance-1-5-pro-image-to-video-basic";
 
 export function node(
   id: string,

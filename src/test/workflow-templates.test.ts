@@ -60,9 +60,35 @@ describe("the shipped templates", () => {
   });
 
   it("say what one run makes, every item of a list and every kind of picture", () => {
+    expect(workflowMakes(template("template-reformat-for-every-format"))).toBe("3 images");
     expect(workflowMakes(template("template-covers-from-list"))).toBe("3 images");
     expect(workflowMakes(template("template-character-sheet"))).toBe("1 image");
     expect(workflowMakes(template("template-story-in-three-shots"))).toBe("3 videos");
+  });
+
+  it("run a clip from a given first picture to a given last one", () => {
+    for (const id of ["template-exploded-view", "template-animated-logo"]) {
+      const entry = template(id);
+      const clip = entry.nodes.find((node) => node.type === "video");
+      const into = (port: string) =>
+        entry.edges.filter((wire) => wire.target === clip?.id && wire.targetPort === port);
+      expect([id, into("openingFrame").length, into("endFrame").length]).toEqual([id, 1, 1]);
+    }
+  });
+
+  it("keep the person or the product first, the picture an edit keeps", () => {
+    for (const [id, first] of [
+      ["template-product-in-hand", "person"],
+      ["template-ad-in-the-style-of", "product"],
+      ["template-product-placement", "product"],
+    ] as const) {
+      const entry = template(id);
+      const edit = entry.nodes.find((node) => node.type === "imageEdit");
+      const images = entry.edges.filter(
+        (wire) => wire.target === edit?.id && wire.targetPort === "images",
+      );
+      expect([id, images[0]?.source]).toEqual([id, first]);
+    }
   });
 
   it("validate as shipped, but for the pictures a person picks", () => {

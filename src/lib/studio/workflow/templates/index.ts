@@ -5,7 +5,16 @@
 import type { Workflow } from "../schema";
 import { appWithIds } from "../app";
 import type { TemplateCategory } from "./categories";
+import { animatedLogo, reformatForEveryFormat, videoThumbnail } from "./brand";
 import { albumCover, coversFromList, postWithCaption, storyScene } from "./pictures";
+import {
+  adInTheStyleOf,
+  explodedView,
+  productInHand,
+  productPlacement,
+  productStudioShot,
+  productToVideo,
+} from "./products";
 import { beforeAndAfter, characterSheet, tryItOn, upscaleForPrint } from "./retouch";
 import { musicFromMood, podcastIntro, readInAnotherLanguage } from "./sound";
 import { shortFilm, shortVideoAd, storyInThreeShots, twoShotSequence } from "./video";
@@ -42,6 +51,15 @@ const CATALOG: ReadonlyArray<readonly [() => Workflow, TemplateCategory]> = [
   [upscaleForPrint, "retouch"],
   [postWithCaption, "pictures"],
   [readInAnotherLanguage, "sound"],
+  [productStudioShot, "products"],
+  [productToVideo, "products"],
+  [productInHand, "products"],
+  [adInTheStyleOf, "products"],
+  [explodedView, "products"],
+  [productPlacement, "products"],
+  [reformatForEveryFormat, "brand"],
+  [videoThumbnail, "brand"],
+  [animatedLogo, "brand"],
 ];
 
 let categories: Map<string, TemplateCategory> | undefined;
