@@ -93,6 +93,10 @@ export function portLabel(type: WorkflowNodeType | string, port: { id: string; l
       return t("Reference clips");
     case "referenceAudio":
       return t("Reference audio");
+    case "sourceClip":
+      return t("Source clip");
+    case "speech":
+      return t("Speech to follow");
     case "video":
       return t("Video");
     case "in":

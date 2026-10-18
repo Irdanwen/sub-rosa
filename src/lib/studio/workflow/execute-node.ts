@@ -696,6 +696,34 @@ export async function executeNode(
         );
       }
 
+      // The clip a model changes and the line a picture speaks travel inline
+      // as well, one of each.
+      const sourceClip = (ports.get("sourceClip") ?? []).find(
+        (output): output is Extract<NodeOutput, { kind: "video" }> => output.kind === "video",
+      );
+      if (sourceClip && !sourceClip.artifactId)
+        throw new Error(t("A source clip must come from the gallery."));
+      const sourceVideo = sourceClip?.artifactId
+        ? await requireStorage(context, t("This runner cannot read a source clip.")).readMedia(
+            sourceClip.artifactId,
+          )
+        : undefined;
+      const spoken = (ports.get("speech") ?? []).find(
+        (output): output is Extract<NodeOutput, { kind: "audio" }> => output.kind === "audio",
+      );
+      if (spoken && !spoken.artifactId)
+        throw new Error(t("The speech to follow must come from the gallery."));
+      const speech = spoken?.artifactId
+        ? await requireStorage(
+            context,
+            t("This runner cannot read the speech to follow."),
+          ).readMedia(spoken.artifactId)
+        : undefined;
+      const oversize = requestSizeProblem(
+        [sourceVideo, speech].filter((media): media is string => !!media),
+      );
+      if (oversize) throw new Error(oversize);
+
       // The body comes from the one place that knows each variant's contract
       // (which fields exist, which enums are valid, that image-to-video
       // rejects aspect_ratio, when the seedance attestation rides along).
@@ -717,6 +745,8 @@ export async function executeNode(
         referenceVideos,
         referenceVideoSeconds,
         referenceAudio,
+        sourceVideo,
+        speech,
         duration: stringParam(params, "duration"),
         aspectRatio: stringParam(params, "aspectRatio"),
         resolution: stringParam(params, "resolution"),

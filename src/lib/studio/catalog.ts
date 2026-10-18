@@ -360,6 +360,35 @@ export function videoDirectionFromId(modelId: string): VideoDirection | undefine
   return undefined;
 }
 
+/** Kling's motion control: a pictured character (`image_url`) moved the way
+ * a given clip moves (`video_url`). Its catalog type says text-to-video, and
+ * only the id says it works from both. */
+export function isMotionControlModel(modelId: string): boolean {
+  return modelId.toLowerCase().includes("motion-control");
+}
+
+/** Models that change a clip they are given (`video_url`): video-to-video,
+ * and motion control. */
+export function takesSourceClip(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return id.includes("video-to-video") || isMotionControlModel(id);
+}
+
+/**
+ * Image- and text-to-video models that follow an audio track (`audio_url`):
+ * the person pictured speaks it. The Wan 2.5 to 2.7 variants publish
+ * `audio_input: true` (the enhanced ones do not); the id carries it where
+ * only the id is in hand, as on the canvas. Measured 2026-10-18 on
+ * `wan-2-7-image-to-video`: a portrait and a spoken line made a clip of the
+ * portrait saying it, the line as its soundtrack.
+ */
+export function takesSpeechTrack(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return (
+    /^wan-2[.-][567]/.test(id) && /-(image|text)-to-video$/.test(id) && !id.includes("enhanced")
+  );
+}
+
 /** Video upscalers (e.g. `topaz-video-upscale`) take a source clip plus an
  * `upscale_factor` instead of a prompt-driven restyle. */
 export function isVideoUpscaleModel(modelId: string): boolean {

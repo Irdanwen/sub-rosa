@@ -260,6 +260,43 @@ describe("the video surface", () => {
     expect(body?.image_url).toBeUndefined();
   });
 
+  it("moves a pictured character the way a clip moves (motion control)", () => {
+    const target = m("kling-v3-standard-motion-control", { durations: ["Auto"] });
+    const body = videoRequestBody({
+      target,
+      prompt: "she dances",
+      openingFrame: FRAME,
+      sourceVideo: "data:video/mp4;base64,V",
+      duration: "Auto",
+    });
+    expect(body).toMatchObject({ image_url: FRAME, video_url: "data:video/mp4;base64,V" });
+    expect(body).not.toHaveProperty("duration");
+    // Without the character or the clip there is nothing to render.
+    expect(videoRequestBody({ target, prompt: "x", openingFrame: FRAME })).toBeUndefined();
+    expect(
+      videoRequestBody({ target, prompt: "x", sourceVideo: "data:video/mp4;base64,V" }),
+    ).toBeUndefined();
+  });
+
+  it("sends the speech to follow to a Wan image-to-video, and to no other", () => {
+    const speech = "data:audio/mpeg;base64,LINE";
+    const wan = videoRequestBody({
+      target: m("wan-2-7-image-to-video"),
+      prompt: "he speaks",
+      openingFrame: FRAME,
+      speech,
+    });
+    expect(wan?.audio_url).toBe(speech);
+    const kling = videoRequestBody({
+      target: I2V,
+      prompt: "he speaks",
+      openingFrame: FRAME,
+      speech,
+    });
+    expect(kling).not.toHaveProperty("audio_url");
+    expect(inlineMediaInputs(wan ?? {})).toContain(speech);
+  });
+
   it("lets the source clip set the length, never sending the published Auto", () => {
     // The catalog publishes durations: ["Auto"] for these models; sent, the
     // job is accepted and then refused upstream for want of a number.

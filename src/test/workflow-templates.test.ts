@@ -120,6 +120,15 @@ describe("the shipped templates", () => {
     ).toBe(true);
   });
 
+  it("hand a clip to change, and a line to say, to the steps that take them", () => {
+    const port = (id: string, source: string) =>
+      template(id).edges.find((wire) => wire.source === source)?.targetPort;
+    expect(port("template-talking-photo", "voice")).toBe("speech");
+    expect(port("template-restyle-a-clip", "clip")).toBe("sourceClip");
+    expect(port("template-recast-a-clip", "clip")).toBe("sourceClip");
+    expect(port("template-recast-a-clip", "character")).toBe("openingFrame");
+  });
+
   it("chain each camera move from where the last one ended", () => {
     const entry = template("template-editorial-to-motion");
     const frame = (clip: string, port: string) =>
@@ -190,6 +199,30 @@ describe("a template in today's catalog", () => {
     const clip = workflow.nodes.find((node) => node.id === "clip");
     expect(clip?.params.model).toBe("kling-v3-pro-text-to-video");
     expect(clip?.params.modelDirection).toBe("text");
+  });
+
+  it("never stands in a model that drops a wire the template needs", () => {
+    // No motion control here, only a plain text-to-video of the same
+    // family: it would close the clip the character is moved by.
+    const recast = resolveTemplateModels(template("template-recast-a-clip"), catalog);
+    expect(recast.missing).toEqual(["Recast"]);
+    // A clip to restyle moves to another model that changes a clip.
+    const restyle = resolveTemplateModels(template("template-restyle-a-clip"), {
+      ...catalog,
+      models: [
+        ...catalog.models,
+        {
+          id: "wan-2-7-video-to-video",
+          mediaType: "video",
+          name: "Wan 2.7 V2V",
+          offline: false,
+        },
+      ],
+    });
+    expect(restyle.missing).toEqual([]);
+    expect(restyle.workflow.nodes.find((node) => node.id === "restyled")?.params.model).toBe(
+      "wan-2-7-video-to-video",
+    );
   });
 
   it("names the steps no offered model can make", () => {

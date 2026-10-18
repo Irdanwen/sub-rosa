@@ -37,6 +37,12 @@ export const FRAMES_VIDEO_MODEL = "seedance-1-5-pro-image-to-video-basic";
 /** A film made from reference pictures (a storyboard, a character), the
  * pictures steering it rather than opening it. */
 export const REFERENCES_VIDEO_MODEL = "seedance-2-0-fast-reference-to-video-basic";
+/** A picture that says a spoken track (`audio_url`), measured 2026-10-18. */
+export const SPEAKING_VIDEO_MODEL = "wan-2-7-image-to-video";
+/** A clip restyled as a whole, its motion and framing kept. */
+export const RESTYLE_VIDEO_MODEL = "gemini-omni-flash-1-1-video-to-video";
+/** A pictured character moved the way a clip moves. */
+export const MOTION_VIDEO_MODEL = "kling-v3-standard-motion-control";
 
 export function node(
   id: string,

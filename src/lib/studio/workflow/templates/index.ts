@@ -42,10 +42,13 @@ import {
 import {
   editorialToMotion,
   extendAClip,
+  recastAClip,
+  restyleAClip,
   shortFilm,
   shortVideoAd,
   storyboardToVideo,
   storyInThreeShots,
+  talkingPhoto,
   twoShotSequence,
 } from "./video";
 
@@ -101,6 +104,9 @@ const CATALOG: ReadonlyArray<readonly [() => Workflow, TemplateCategory]> = [
   [soundEffectsPack, "sound"],
   [songFromAStory, "sound"],
   [twoVoiceDialogue, "sound"],
+  [talkingPhoto, "video"],
+  [restyleAClip, "video"],
+  [recastAClip, "video"],
 ];
 
 let categories: Map<string, TemplateCategory> | undefined;

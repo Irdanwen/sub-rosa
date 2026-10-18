@@ -63,7 +63,35 @@ describe("openInputPorts on a video node", () => {
       "references",
       "referenceClips",
       "referenceAudio",
+      "sourceClip",
+      "speech",
     ]);
+  });
+
+  it("opens the source clip on a model that changes one, and nothing else visual", () => {
+    expect(
+      portIds({ model: "gemini-omni-flash-1-1-video-to-video", modelDirection: "video" }),
+    ).toEqual(["prompt", "sourceClip"]);
+  });
+
+  it("gives motion control both the character's picture and the clip it follows", () => {
+    expect(portIds({ model: "kling-v3-standard-motion-control", modelDirection: "text" })).toEqual([
+      "prompt",
+      "openingFrame",
+      "sourceClip",
+    ]);
+  });
+
+  it("opens the speech to follow on the Wan versions that take a spoken track", () => {
+    expect(portIds({ model: "wan-2-7-image-to-video", modelDirection: "image" })).toContain(
+      "speech",
+    );
+    expect(
+      portIds({ model: "wan-2-7-enhanced-image-to-video", modelDirection: "image" }),
+    ).not.toContain("speech");
+    expect(portIds({ model: "wan-3-0-image-to-video", modelDirection: "image" })).not.toContain(
+      "speech",
+    );
   });
 
   it("closes the references on an image-to-video model", () => {

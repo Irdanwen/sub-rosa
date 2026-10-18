@@ -167,3 +167,33 @@ Not settled by probing, and that is worth recording: the operator's pre-flight
 enumerates every rejected **value** with its accepted list, and says nothing
 about unrecognised **keys**. So a frame sent to a reference model cannot be
 detected for free — which is itself the argument for closing the port.
+
+## Addendum 2026-10-18: a clip to change and a line to say
+
+The video step gains two inputs, each open only where the chosen model has
+it (`videoSourceCapacity`, `videoSpeechCapacity`) and open while no model is
+chosen, like every other port here:
+
+- **Source clip** (`sourceClip`, sent as `video_url`): the clip a
+  video-to-video model changes, or whose motion Kling's motion control gives
+  the pictured character. Motion control is filed as text-to-video, so the id
+  alone (`isMotionControlModel`) opens its opening frame too: it needs the
+  character's picture and the clip, and refuses to build a body without both.
+- **Speech to follow** (`speech`, sent as `audio_url`): a spoken track the
+  picture says, on the Wan 2.5 to 2.7 image- and text-to-video variants that
+  publish `audio_input: true` (`takesSpeechTrack`, read from the id because
+  the canvas holds no catalog). It is not reference audio: reference audio is
+  a timbre a model imitates in a line it writes itself, and goes to
+  `reference_audio_urls`; this is the soundtrack.
+
+Both were measured on real renders on 2026-10-18 before being offered:
+a portrait and a spoken line on `wan-2-7-image-to-video` made the portrait say
+the line; `gemini-omni-flash-1-1-video-to-video` restyled a clip keeping its
+motion; `kling-v3-standard-motion-control` moved a pictured character the way
+the clip moved. The same measurements found that these models must be sent
+**no duration**: they publish `"Auto"` as their only one, the operator's
+pre-flight accepts nothing else, and the provider then refuses `"Auto"` after
+queueing. The clip sets the length.
+
+Not offered, and why: a soundtrack made *from* a clip (foley). No sound model
+in the catalog publishes a video input; `mmaudio-v2` is text to audio.
