@@ -103,6 +103,23 @@ describe("the shipped templates", () => {
     expect(into("template-storyboard-to-video", "film", "references")).toBe(6);
   });
 
+  it("give each line of a dialogue to its speaker, in order", () => {
+    const entry = template("template-two-voice-dialogue");
+    const voices = entry.edges
+      .filter((wire) => wire.target === "mix" && wire.targetPort === "dialogue")
+      .map((wire) => entry.nodes.find((node) => node.id === wire.source)?.params.voice);
+    expect(voices).toEqual(["af_heart", "am_michael", "af_heart", "am_michael"]);
+  });
+
+  it("sing the lyrics the story was turned into", () => {
+    const entry = template("template-song-from-a-story");
+    const song = entry.nodes.find((node) => node.id === "song");
+    expect(song?.params.fedParams).toEqual(["lyrics"]);
+    expect(
+      entry.edges.some((wire) => wire.target === "song" && wire.targetPort === "param:lyrics"),
+    ).toBe(true);
+  });
+
   it("chain each camera move from where the last one ended", () => {
     const entry = template("template-editorial-to-motion");
     const frame = (clip: string, port: string) =>

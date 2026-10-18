@@ -19,6 +19,8 @@ export const CHAT_MODEL = "qwen3-next-80b";
 export const IMAGE_MODEL = "seedream-v4";
 export const TTS_MODEL = "tts-kokoro";
 export const MUSIC_MODEL = "ace-step-15";
+/** Short sound effects, one prompt each (1 to 22 seconds). */
+export const EFFECTS_MODEL = "elevenlabs-sound-effects-v2";
 export const VIDEO_MODEL = "kling-2.5-turbo-pro-text-to-video";
 /** The image-to-video half of the same family, for a shot that continues
  * another one from its handoff frame. */
