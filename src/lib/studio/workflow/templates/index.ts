@@ -31,7 +31,14 @@ import {
   tryItOn,
   upscaleForPrint,
 } from "./retouch";
-import { musicFromMood, podcastIntro, readInAnotherLanguage } from "./sound";
+import {
+  musicFromMood,
+  podcastIntro,
+  readInAnotherLanguage,
+  songFromAStory,
+  soundEffectsPack,
+  twoVoiceDialogue,
+} from "./sound";
 import {
   editorialToMotion,
   extendAClip,
@@ -91,6 +98,9 @@ const CATALOG: ReadonlyArray<readonly [() => Workflow, TemplateCategory]> = [
   [coverageFromOneShot, "retouch"],
   [outfitShoot, "retouch"],
   [removeAnObject, "retouch"],
+  [soundEffectsPack, "sound"],
+  [songFromAStory, "sound"],
+  [twoVoiceDialogue, "sound"],
 ];
 
 let categories: Map<string, TemplateCategory> | undefined;
