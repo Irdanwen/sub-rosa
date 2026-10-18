@@ -136,3 +136,41 @@ export function postWithCaption(): Workflow {
     ],
   };
 }
+
+/** Four takes on one idea, the person picks the best, and the one picked is
+ * made four times larger: the gate gathers every take
+ * (ComfyUI: template_3x3_contact_sheet). */
+export function pickTheBestOfFour(): Workflow {
+  return {
+    id: "template-pick-the-best-of-four",
+    name: t("Pick the best of four"),
+    description: t("Four takes on one idea: pick the best, get it four times larger."),
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("idea", "textInput", t("Idea"), 0, 0, {
+        text: "A cozy reading nook in a treehouse during a summer rain.",
+      }),
+      node("takes", "chat", t("Four takes"), 1, 0, {
+        model: CHAT_MODEL,
+        prompt:
+          "Write four different image prompts for this idea, each with its own composition, point of view and palette. One line per prompt, under 60 words each. No numbering, no other text.\n\n{{input}}",
+      }),
+      node("lines", "splitText", t("One per take"), 2, 0, { max: 4 }),
+      node("take", "image", t("Take"), 3, 0, { model: IMAGE_MODEL, aspectRatio: "1:1" }),
+      node("pick", "gate", t("Pick one"), 4, 0, {
+        note: "Pick the take to keep: it is made four times larger.",
+      }),
+      node("large", "upscale", t("Larger"), 5, 0, { scale: "4" }),
+      node("out", "output", t("Chosen picture"), 6, 0),
+    ],
+    edges: [
+      edge("idea", "takes"),
+      edge("takes", "lines", "text"),
+      edge("lines", "take", "prompt"),
+      edge("take", "pick", "in"),
+      edge("pick", "large", "image"),
+      edge("large", "out"),
+    ],
+  };
+}

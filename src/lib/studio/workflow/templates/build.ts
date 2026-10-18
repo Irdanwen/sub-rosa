@@ -32,6 +32,9 @@ export const FAITHFUL_EDIT_MODEL = "nano-banana-pro-edit";
 export const LETTERING_MODEL = "ideogram-v4-5";
 /** A clip that runs from one given picture to another (first and last frame). */
 export const FRAMES_VIDEO_MODEL = "seedance-1-5-pro-image-to-video-basic";
+/** A film made from reference pictures (a storyboard, a character), the
+ * pictures steering it rather than opening it. */
+export const REFERENCES_VIDEO_MODEL = "seedance-2-0-fast-reference-to-video-basic";
 
 export function node(
   id: string,

@@ -6,7 +6,13 @@ import type { Workflow } from "../schema";
 import { appWithIds } from "../app";
 import type { TemplateCategory } from "./categories";
 import { animatedLogo, reformatForEveryFormat, videoThumbnail } from "./brand";
-import { albumCover, coversFromList, postWithCaption, storyScene } from "./pictures";
+import {
+  albumCover,
+  coversFromList,
+  pickTheBestOfFour,
+  postWithCaption,
+  storyScene,
+} from "./pictures";
 import {
   adInTheStyleOf,
   explodedView,
@@ -15,9 +21,26 @@ import {
   productStudioShot,
   productToVideo,
 } from "./products";
-import { beforeAndAfter, characterSheet, tryItOn, upscaleForPrint } from "./retouch";
+import {
+  beforeAndAfter,
+  characterSheet,
+  coverageFromOneShot,
+  outfitShoot,
+  relightAPortrait,
+  removeAnObject,
+  tryItOn,
+  upscaleForPrint,
+} from "./retouch";
 import { musicFromMood, podcastIntro, readInAnotherLanguage } from "./sound";
-import { shortFilm, shortVideoAd, storyInThreeShots, twoShotSequence } from "./video";
+import {
+  editorialToMotion,
+  extendAClip,
+  shortFilm,
+  shortVideoAd,
+  storyboardToVideo,
+  storyInThreeShots,
+  twoShotSequence,
+} from "./video";
 
 export {
   CHAT_MODEL,
@@ -60,6 +83,14 @@ const CATALOG: ReadonlyArray<readonly [() => Workflow, TemplateCategory]> = [
   [reformatForEveryFormat, "brand"],
   [videoThumbnail, "brand"],
   [animatedLogo, "brand"],
+  [pickTheBestOfFour, "pictures"],
+  [storyboardToVideo, "video"],
+  [editorialToMotion, "video"],
+  [extendAClip, "video"],
+  [relightAPortrait, "retouch"],
+  [coverageFromOneShot, "retouch"],
+  [outfitShoot, "retouch"],
+  [removeAnObject, "retouch"],
 ];
 
 let categories: Map<string, TemplateCategory> | undefined;
