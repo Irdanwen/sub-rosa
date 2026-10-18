@@ -539,6 +539,9 @@ function WorkflowEditor({
    * read as an edit, or that refresh would feed itself without end. */
   // biome-ignore lint/correctness/useExhaustiveDependencies: drawnKey stands in for the graph.
   const serialized = useMemo(() => drawn, [drawnKey]);
+  // Built once per mount: a locale change reloads the app, and building the
+  // whole catalog on every render made the library redo its estimates each time.
+  const shippedTemplates = useMemo(() => templateWorkflows(), []);
 
   // Debounced persistence of every change (drag, edit, connect, rename),
   // inside a block too: what is saved is always the whole workflow.
@@ -1551,7 +1554,7 @@ function WorkflowEditor({
         <WorkflowLibrary
           catalog={catalog}
           workflows={workflows}
-          templates={templateWorkflows()}
+          templates={shippedTemplates}
           onOpen={openWorkflow}
           onUseTemplate={applyTemplate}
           onNew={newWorkflow}
