@@ -20,7 +20,12 @@ import {
   saveWorkflow,
 } from "../../../../lib/studio/workflow/store";
 import { resolveTemplateModels } from "../../../../lib/studio/workflow/template-models";
-import { copyTemplate } from "../../../../lib/studio/workflow/templates";
+import {
+  copyTemplate,
+  TEMPLATE_CATEGORIES,
+  templateCategory,
+  templateCategoryLabel,
+} from "../../../../lib/studio/workflow/templates";
 import {
   dismissWorkflowRun,
   listResumableRuns,
@@ -178,18 +183,33 @@ export function StudioApps({ catalog }: { catalog: MediaCatalog }) {
       )}
       <section aria-label={t("Start from an app")}>
         <h2 className="mobile-section-title">{t("Start from an app")}</h2>
-        <ul className="mobile-apps-list">
-          {shipped.map((template) => (
-            <li key={template.id}>
-              <button type="button" className="mobile-apps-row" onClick={() => startFrom(template)}>
-                <span className="mobile-apps-name">{template.name}</span>
-                {template.app?.intro ? (
-                  <span className="mobile-apps-intro">{template.app.intro}</span>
-                ) : null}
-              </button>
-            </li>
-          ))}
-        </ul>
+        {/* Grouped by kind of work: a long list reads by its headings. */}
+        {TEMPLATE_CATEGORIES.map((kind) => {
+          const inKind = shipped.filter((template) => templateCategory(template.id) === kind);
+          if (inKind.length === 0) return null;
+          const label = templateCategoryLabel(kind);
+          return (
+            <section key={kind} aria-label={label} className="mobile-apps-group">
+              <h3 className="mobile-apps-group-title">{label}</h3>
+              <ul className="mobile-apps-list">
+                {inKind.map((template) => (
+                  <li key={template.id}>
+                    <button
+                      type="button"
+                      className="mobile-apps-row"
+                      onClick={() => startFrom(template)}
+                    >
+                      <span className="mobile-apps-name">{template.name}</span>
+                      {template.app?.intro ? (
+                        <span className="mobile-apps-intro">{template.app.intro}</span>
+                      ) : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })}
       </section>
     </div>
   );

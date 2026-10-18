@@ -9,7 +9,18 @@ import { workflowMakes } from "../lib/studio/workflow/library";
 import { expandLists } from "../lib/studio/workflow/lists";
 import { resolveTemplateModels } from "../lib/studio/workflow/template-models";
 import { templateEstimate, templatePriceLabel } from "../lib/studio/workflow/template-price";
-import { templateCategory, templateWorkflows } from "../lib/studio/workflow/templates";
+import {
+  TEMPLATE_CATEGORIES,
+  templateCategory,
+  templateWorkflows,
+} from "../lib/studio/workflow/templates";
+
+/** The covers shipped with the app, made once per template. */
+const COVERS = import.meta.glob("../assets/workflow-covers/*.webp", {
+  eager: true,
+  import: "default",
+  query: "?url",
+}) as Record<string, string>;
 
 const template = (id: string) => {
   const found = templateWorkflows().find((entry) => entry.id === id);
@@ -18,12 +29,34 @@ const template = (id: string) => {
 };
 
 describe("the shipped templates", () => {
-  it("are fifteen, each with a category and a unique id", () => {
+  it("each have a unique id, a category and a cover", () => {
     const templates = templateWorkflows();
-    expect(templates).toHaveLength(15);
-    expect(new Set(templates.map((entry) => entry.id)).size).toBe(15);
-    const categories = new Set(templates.map((entry) => templateCategory(entry.id)));
-    expect([...categories].sort()).toEqual(["pictures", "retouch", "sound", "video"]);
+    expect(new Set(templates.map((entry) => entry.id)).size).toBe(templates.length);
+    for (const entry of templates) {
+      expect(entry.id).toMatch(/^template-[a-z0-9-]+$/);
+      expect(TEMPLATE_CATEGORIES).toContain(templateCategory(entry.id));
+      expect([entry.id, Boolean(COVERS[`../assets/workflow-covers/${entry.id}.webp`])]).toEqual([
+        entry.id,
+        true,
+      ]);
+    }
+  });
+
+  it("make every app a form over steps the template has", () => {
+    for (const entry of templateWorkflows().filter((workflow) => workflow.app)) {
+      const app = entry.app as NonNullable<typeof entry.app>;
+      const ids = new Set(entry.nodes.map((node) => node.id));
+      expect([entry.id, app.fields.length > 0, app.outputs.length > 0]).toEqual([
+        entry.id,
+        true,
+        true,
+      ]);
+      for (const field of app.fields)
+        expect([entry.id, ids.has(field.nodeId)]).toEqual([entry.id, true]);
+      for (const output of app.outputs)
+        expect([entry.id, ids.has(output)]).toEqual([entry.id, true]);
+      expect((app.intro ?? "").trim()).not.toBe("");
+    }
   });
 
   it("say what one run makes, every item of a list and every kind of picture", () => {
