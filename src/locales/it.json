@@ -1910,6 +1910,7 @@
   "Editing files": "Modifica dei file",
   "Editing your message": "Modifica del messaggio in corso",
   "Editorial to motion": "Dalla foto editoriale al movimento",
+  "edits text with a pattern: a Split into lines or Text template step can do this": "modifica il testo con uno schema: un passaggio Dividi in righe o Modello di testo può farlo",
   "Education": "Istruzione",
   "Eerie silence": "Silenzio inquietante",
   "Effect": "Effetto",
@@ -2652,6 +2653,7 @@
   "Join community": "Unisciti alla community",
   "Join us in the Sub Rosa community on Telegram at {url}.": "Unisciti alla community di Sub Rosa su Telegram: {url}.",
   "Join with a link": "Unisciti con un link",
+  "joins pictures into one sheet: a Sheet step does this": "unisce le immagini in un foglio: un passaggio Tavola lo fa",
   "Joins the previous shot with": "Si raccorda all'inquadratura precedente con",
   "Joyful": "Gioioso",
   "Judge": "Giudice",
@@ -6536,10 +6538,5 @@
   "Zone tools": "Strumenti zona",
   "Zoom": "Zoom",
   "Zoom in": "Ingrandisci",
-  "Zoom out": "Riduci",
-  "Zoom out": "Riduci",
-  "Products and ads": "Prodotti e pubblicità",
-  "Brand and design": "Marchio e design",
-  "joins pictures into one sheet: a Sheet step does this": "unisce le immagini in un foglio: un passaggio Tavola lo fa",
-  "edits text with a pattern: a Split into lines or Text template step can do this": "modifica il testo con uno schema: un passaggio Dividi in righe o Modello di testo può farlo"
+  "Zoom out": "Riduci"
 }
