@@ -84,6 +84,11 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["src/test/setup.ts"],
+    // The studio suites open a workflow, run it and watch it settle: 0.6 to
+    // 1.8 s here, several times that on the two-core CI runner, which ran out
+    // of the default five seconds (#449, #451). The waits inside them are set
+    // in src/test/setup.ts; this is only how long a whole test may take.
+    testTimeout: 20_000,
     include: ["src/test/**/*.{test,spec}.{ts,tsx,mjs}"],
     css: true,
     coverage: {
