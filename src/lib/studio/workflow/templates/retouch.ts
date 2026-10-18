@@ -4,7 +4,7 @@ import type { Workflow } from "../schema";
 import { t } from "../../../i18n";
 import { PREFERRED_RETOUCH_MODEL } from "../../retouch/request";
 import { TRY_ON_MODEL_PREFERENCE, tryOnPrompt } from "../../try-on";
-import { edge, node } from "./build";
+import { EDIT_MODEL, edge, FAITHFUL_EDIT_MODEL, node } from "./build";
 
 /** Virtual try-on: a photo of a person and a photo of a garment, composed
  * into the person wearing it. The prompt is the tuned one the chat card uses
@@ -124,5 +124,165 @@ export function upscaleForPrint(): Workflow {
       intro: t("Pick a picture, get a copy four times larger."),
     },
     edges: [edge("picture", "up", "image"), edge("up", "out")],
+  };
+}
+
+/** One portrait relit several ways, one picture per light: the edit runs
+ * once for each line of the list (ComfyUI: template_character_portrait_relighting). */
+export function relightAPortrait(): Workflow {
+  return {
+    id: "template-relight-a-portrait",
+    name: t("Relight a portrait"),
+    description: t("One portrait, relit several ways: one picture per light."),
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("portrait", "asset", t("Portrait"), 0, 0, { assetKind: "image" }),
+      node("lights", "textList", t("Lights"), 0, 1, {
+        items:
+          "warm golden hour sun from the side\ncool blue moonlight through a window\nneon pink and teal from both sides\nsoft overhead studio light, white background",
+      }),
+      node("relit", "imageEdit", t("Relit"), 1, 0, {
+        model: FAITHFUL_EDIT_MODEL,
+        prompt:
+          "Relight this portrait with {{input}}. Keep the person exactly: face, expression, hair, clothes and pose, the same framing. Only the light, the shadows and the colors it casts change.",
+      }),
+      node("out", "output", t("Portraits"), 2, 0),
+    ],
+    app: {
+      fields: [
+        { nodeId: "portrait", param: "artifactId", label: t("The portrait") },
+        { nodeId: "lights", param: "items", label: t("Lights, one per line") },
+      ],
+      outputs: ["out"],
+      intro: t("Pick a portrait and list some lights, get it in each one."),
+    },
+    edges: [
+      edge("portrait", "relit", "images"),
+      edge("lights", "relit", "prompt"),
+      edge("relit", "out"),
+    ],
+  };
+}
+
+/** The angles a film editor wants of one shot, each made from the same
+ * picture (ComfyUI: templates-multiple_consistent_shots, template_contact_sheet). */
+export function coverageFromOneShot(): Workflow {
+  return {
+    id: "template-coverage-from-one-shot",
+    name: t("Coverage from one shot"),
+    description: t("The same scene from several camera angles, from one picture."),
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("shot", "asset", t("The shot"), 0, 0, { assetKind: "image" }),
+      node("angles", "textList", t("Angles"), 0, 1, {
+        items:
+          "a wide establishing shot showing the whole place\na medium shot from the other side\na close-up on the face\nan over-the-shoulder shot\na low angle looking up\na high angle looking down",
+      }),
+      node("angle", "imageEdit", t("Angle"), 1, 0, {
+        model: FAITHFUL_EDIT_MODEL,
+        aspectRatio: "16:9",
+        prompt:
+          "The same scene and moment as this picture, seen as {{input}}. Keep the same people, faces, clothes, place, light and time of day, as if a second camera were rolling.",
+      }),
+      node("out", "output", t("Angles"), 2, 0),
+    ],
+    app: {
+      fields: [
+        { nodeId: "shot", param: "artifactId", label: t("The shot") },
+        { nodeId: "angles", param: "items", label: t("Angles, one per line") },
+      ],
+      outputs: ["out"],
+      intro: t("Pick a shot and list some angles, get the scene from each one."),
+    },
+    edges: [
+      edge("shot", "angle", "images"),
+      edge("angles", "angle", "prompt"),
+      edge("angle", "out"),
+    ],
+  };
+}
+
+/** A character dressed in an outfit, in a few poses of a fashion shoot
+ * (ComfyUI: templates_rob_fashion_shoot_vton-4in1). */
+export function outfitShoot(): Workflow {
+  return {
+    id: "template-outfit-shoot",
+    name: t("Outfit shoot"),
+    description: t("A person and an outfit: a short fashion shoot of them wearing it."),
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("person", "asset", t("The person"), 0, 0, { assetKind: "image" }),
+      node("outfit", "asset", t("The outfit"), 0, 1, { assetKind: "image" }),
+      node("poses", "textList", t("Poses"), 0, 2, {
+        items:
+          "standing full length, facing the camera\nwalking toward the camera, mid stride\nseated on a low stool, looking away\na three-quarter close-up, hands in pockets",
+      }),
+      node("look", "imageEdit", t("Look"), 1, 0, {
+        model: FAITHFUL_EDIT_MODEL,
+        aspectRatio: "3:4",
+        prompt:
+          "A fashion photograph of the person from the first picture wearing the outfit from the second picture, {{input}}, in a bright minimal studio. Keep the person's face, hair and body. Keep every piece of the outfit, its cut, fabric and colors.",
+      }),
+      node("out", "output", t("Looks"), 2, 0),
+    ],
+    app: {
+      fields: [
+        { nodeId: "person", param: "artifactId", label: t("A photo of the person") },
+        { nodeId: "outfit", param: "artifactId", label: t("A photo of the outfit") },
+        { nodeId: "poses", param: "items", label: t("Poses, one per line") },
+      ],
+      outputs: ["out"],
+      intro: t("Pick a person and an outfit, get a short fashion shoot."),
+    },
+    // The person first: the edit keeps image 1 and borrows from image 2.
+    edges: [
+      edge("person", "look", "images"),
+      edge("outfit", "look", "images"),
+      edge("poses", "look", "prompt"),
+      edge("look", "out"),
+    ],
+  };
+}
+
+/** Something taken out of a picture, the gap filled, the two side by side
+ * (ComfyUI: api_flux_erase_image, api_bria_genfill). */
+export function removeAnObject(): Workflow {
+  return {
+    id: "template-remove-an-object",
+    name: t("Remove an object"),
+    description: t("Something taken out of a picture, the gap filled as if it never was."),
+    createdAt: 0,
+    updatedAt: 0,
+    nodes: [
+      node("picture", "asset", t("Picture"), 0, 0, { assetKind: "image" }),
+      node("what", "textInput", t("What to remove"), 0, 1, {
+        text: "the tourists in the background",
+      }),
+      node("removed", "imageEdit", t("Removed"), 1, 0, {
+        model: EDIT_MODEL,
+        prompt:
+          "Remove {{input}} from this picture and fill the space with what would naturally be behind it, matching the light, texture and perspective. Change nothing else.",
+      }),
+      node("compare", "compare", t("Before and after"), 2, 0),
+      node("out", "output", t("Cleaned up"), 2, 1),
+    ],
+    app: {
+      fields: [
+        { nodeId: "picture", param: "artifactId", label: t("The picture") },
+        { nodeId: "what", param: "text", label: t("What to remove") },
+      ],
+      outputs: ["compare"],
+      intro: t("Pick a picture and say what to remove."),
+    },
+    edges: [
+      edge("picture", "removed", "images"),
+      edge("what", "removed", "prompt"),
+      edge("picture", "compare", "before"),
+      edge("removed", "compare", "after"),
+      edge("removed", "out"),
+    ],
   };
 }

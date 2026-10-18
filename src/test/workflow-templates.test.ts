@@ -91,6 +91,26 @@ describe("the shipped templates", () => {
     }
   });
 
+  it("gather every item of a list where one step takes them all", () => {
+    const into = (id: string, base: string, port: string) => {
+      const expanded = expandLists(template(id));
+      return expanded.edges.filter(
+        (wire) => wire.target.split("#")[0] === base && wire.targetPort === port,
+      ).length;
+    };
+    // The gate chooses among the four takes; the film is steered by the six panels.
+    expect(into("template-pick-the-best-of-four", "pick", "in")).toBe(4);
+    expect(into("template-storyboard-to-video", "film", "references")).toBe(6);
+  });
+
+  it("chain each camera move from where the last one ended", () => {
+    const entry = template("template-editorial-to-motion");
+    const frame = (clip: string, port: string) =>
+      entry.edges.find((wire) => wire.target === clip && wire.targetPort === port)?.source;
+    expect(frame("move-2", "openingFrame")).toBe(frame("move-1", "endFrame"));
+    expect(frame("move-3", "openingFrame")).toBe(frame("move-2", "endFrame"));
+  });
+
   it("validate as shipped, but for the pictures a person picks", () => {
     for (const entry of templateWorkflows()) {
       const issues = validateWorkflow(expandLists(entry)).errors.filter(
