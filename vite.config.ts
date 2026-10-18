@@ -89,6 +89,12 @@ export default defineConfig({
     // of the default five seconds (#449, #451). The waits inside them are set
     // in src/test/setup.ts; this is only how long a whole test may take.
     testTimeout: 20_000,
+    // On CI only, a failed test is run again twice before it counts. The
+    // studio suites (open a workflow, run it, hear an arrival) still miss on
+    // the runner about once per run with the waits above, never locally, and
+    // never the same test twice; the cause is open (see #451). A test that
+    // fails three times in a row still fails the job.
+    retry: process.env.CI ? 2 : 0,
     include: ["src/test/**/*.{test,spec}.{ts,tsx,mjs}"],
     css: true,
     coverage: {
