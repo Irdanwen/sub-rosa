@@ -6369,6 +6369,8 @@
   "Zoom": "Zoom",
   "Zoom in": "Zoom avant",
   "Zoom out": "Zoom arrière",
+  "Products and ads": "Produits et pubs",
+  "Brand and design": "Marque et design",
   "joins pictures into one sheet: a Sheet step does this": "assemble des images en une planche : une étape Planche le fait",
   "edits text with a pattern: a Split into lines or Text template step can do this": "modifie du texte avec un motif : une étape Découper en lignes ou Gabarit de texte peut le faire"
 }

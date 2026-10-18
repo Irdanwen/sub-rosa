@@ -29,7 +29,12 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { isApp } from "../../lib/studio/workflow/app";
 import { resolveTemplateModels } from "../../lib/studio/workflow/template-models";
 import { templateEstimate, templatePriceLabel } from "../../lib/studio/workflow/template-price";
-import { type TemplateCategory, templateCategory } from "../../lib/studio/workflow/templates";
+import {
+  TEMPLATE_CATEGORIES,
+  type TemplateCategory,
+  templateCategory,
+  templateCategoryLabel,
+} from "../../lib/studio/workflow/templates";
 import "./workflow-library.css";
 
 /** Pictures made once for the built-in templates, shipped with the app. */
@@ -553,27 +558,8 @@ function ReportList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-const CATEGORIES: ReadonlyArray<"all" | TemplateCategory> = [
-  "all",
-  "pictures",
-  "video",
-  "sound",
-  "retouch",
-];
-
 function categoryLabel(category: "all" | TemplateCategory): string {
-  switch (category) {
-    case "all":
-      return t("All");
-    case "pictures":
-      return t("Pictures");
-    case "video":
-      return t("Video");
-    case "sound":
-      return t("Sound");
-    case "retouch":
-      return t("Retouch");
-  }
+  return category === "all" ? t("All") : templateCategoryLabel(category);
 }
 
 /** The shipped templates: sorted by what they make, priced against today's
@@ -618,6 +604,13 @@ function TemplateGallery({
     }
     return byTemplate;
   }, [workflows, artifactsById]);
+  // Only the kinds some template belongs to: an empty tab would be a promise.
+  const categories: Array<"all" | TemplateCategory> = [
+    "all",
+    ...TEMPLATE_CATEGORIES.filter((kind) =>
+      templates.some((template) => templateCategory(template.id) === kind),
+    ),
+  ];
   const shown = cards.filter(
     (card) => category === "all" || templateCategory(card.template.id) === category,
   );
@@ -629,7 +622,7 @@ function TemplateGallery({
           aria-label={t("Kind of template")}
           value={category}
           onValueChange={setCategory}
-          options={CATEGORIES.map((value) => ({ value, label: categoryLabel(value) }))}
+          options={categories.map((value) => ({ value, label: categoryLabel(value) }))}
         />
       </div>
       <div className="workflow-library-grid">

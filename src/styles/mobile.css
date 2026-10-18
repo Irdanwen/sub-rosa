@@ -5960,6 +5960,17 @@
   font-weight: var(--fw-medium);
 }
 
+.mobile-apps-group + .mobile-apps-group {
+  margin-top: var(--sp-4);
+}
+
+.mobile-apps-group-title {
+  margin: 0 0 var(--sp-2);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
 .mobile-apps-list {
   display: flex;
   flex-direction: column;
