@@ -6493,5 +6493,10 @@
   "Zone tools": "Zone tools",
   "Zoom": "Zoom",
   "Zoom in": "Zoom in",
-  "Zoom out": "Zoom out"
+  "Zoom out": "Zoom out",
+  "Zoom out": "Zoom out",
+  "Products and ads": "Products and ads",
+  "Brand and design": "Brand and design",
+  "joins pictures into one sheet: a Sheet step does this": "joins pictures into one sheet: a Sheet step does this",
+  "edits text with a pattern: a Split into lines or Text template step can do this": "edits text with a pattern: a Split into lines or Text template step can do this"
 }
