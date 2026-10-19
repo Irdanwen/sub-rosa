@@ -67,7 +67,7 @@ export function AppRunScreen({
   const [workflow, setWorkflow] = useState(opened);
   const graph = useMemo(() => appGraph(workflow), [workflow]);
   const estimate = useMemo(() => appEstimate(graph, catalog), [graph, catalog]);
-  const blocker = appBlocker(graph);
+  const blocker = appBlocker(graph, workflow.app);
   const fields = shownFields(workflow.app, workflow, catalog);
   const [, setEpoch] = useState(0);
   useEffect(() => {

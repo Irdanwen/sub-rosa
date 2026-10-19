@@ -4,10 +4,13 @@
 // The same steps the canvas takes (useRunPicture): blocks put in place, set
 // aside steps taken out, lists laid out.
 
+import { t } from "../../i18n";
 import type { MediaCatalog } from "../types";
+import type { WorkflowApp } from "./app";
 import { estimateWorkflowCost, type WorkflowCostEstimate } from "./cost";
 import { flattenBlocks } from "./flatten";
-import { liftResults, type StepView, viewAt } from "./lift";
+import { nodeTypeLabel } from "./labels";
+import { liftResults, type StepView, viewAt, visibleStep } from "./lift";
 import { expandLists } from "./lists";
 import { applyModes } from "./modes";
 import { edgesOnPort } from "./ordering";
@@ -34,10 +37,23 @@ export function appEstimate(graph: AppGraph, catalog: MediaCatalog): WorkflowCos
   return estimateWorkflowCost(graph.effective, catalog);
 }
 
-/** Why the app cannot run yet, in the first problem's words, or none. */
-export function appBlocker(graph: AppGraph): string | undefined {
+/** Why the app cannot run yet, in the first problem's words, or none. An
+ * empty picture, clip or track is named by the field a person sees, not by
+ * the step type the validator knows ("Asset: pick a gallery item."). */
+export function appBlocker(graph: AppGraph, app?: WorkflowApp): string | undefined {
   const check = validateWorkflow(graph.effective);
-  return check.ok ? undefined : check.errors[0]?.message;
+  if (check.ok) return undefined;
+  const issue = check.errors[0];
+  if (!issue) return undefined;
+  if (issue.code !== "pickItem" || !issue.nodeId || !app) return issue.message;
+  const stepId = visibleStep(graph.view, issue.nodeId);
+  const field = app.fields.find((entry) => entry.nodeId === stepId && entry.param === issue.port);
+  const node = graph.effective.nodes.find((entry) => entry.id === issue.nodeId);
+  if (!field || !node) return issue.message;
+  const name = field.label || node.label || nodeTypeLabel(node.type);
+  if (node.params.assetKind === "video") return t("{field}: pick a clip.", { field: name });
+  if (node.params.assetKind === "audio") return t("{field}: pick a track.", { field: name });
+  return t("{field}: pick a picture.", { field: name });
 }
 
 /** A run's results as the app's steps show them. */

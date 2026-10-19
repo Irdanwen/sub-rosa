@@ -7,6 +7,7 @@ import { t } from "../../../lib/i18n";
 import type { MediaCatalog } from "../../../lib/studio/types";
 import type { WorkflowCostEstimate } from "../../../lib/studio/workflow";
 import { shownFields } from "../../../lib/studio/workflow/app";
+import { appBlocker, appGraph } from "../../../lib/studio/workflow/app-run";
 import { nodeTypeLabel } from "../../../lib/studio/workflow/labels";
 import type { NodeRunResult } from "../../../lib/studio/workflow/run-types";
 import type { Workflow } from "../../../lib/studio/workflow/schema";
@@ -38,6 +39,8 @@ export function WorkflowAppView({
   onBuild: () => void;
 }) {
   const fields = shownFields(workflow.app, workflow, catalog);
+  // Said under the form, as the phone says it, not only as the run button's title.
+  const blocker = appBlocker(appGraph(workflow), workflow.app);
   const outputs = (workflow.app?.outputs ?? []).flatMap((id) => {
     const node = workflow.nodes.find((entry) => entry.id === id);
     return node ? [node] : [];
@@ -90,6 +93,7 @@ export function WorkflowAppView({
             />
           </div>
         ))}
+        {blocker ? <p className="workflow-app-blocker">{blocker}</p> : null}
         <div className="workflow-app-run">
           {estimate && (estimate.credits > 0 || estimate.metered > 0) ? (
             <span className="studio-workflow-cost">{costSummary(estimate)}</span>
