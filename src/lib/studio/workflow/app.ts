@@ -33,7 +33,9 @@ export interface WorkflowApp {
 /** Settings an app never shows: plumbing the canvas keeps for itself. */
 const HIDDEN_TYPES = new Set<ParamSchema["type"]>(["note", "zone"]);
 
-/** Steps whose result is worth showing in an app. */
+/** Steps whose result is worth showing in an app. A comparison is not one:
+ * it is drawn on the canvas from its two inputs and never runs (modes.ts), so
+ * an app that listed it as an output waited for a result that never came. */
 const RESULT_TYPES = new Set<WorkflowNodeType>([
   "output",
   "image",
@@ -48,8 +50,12 @@ const RESULT_TYPES = new Set<WorkflowNodeType>([
   "soundMix",
   "assemble",
   "chat",
-  "compare",
 ]);
+
+/** Whether a run can leave a result on this step for an app to show. */
+export function canShowResult(node: Pick<WorkflowNode, "type">): boolean {
+  return RESULT_TYPES.has(node.type);
+}
 
 /** An app read back from storage, keeping only what makes sense. */
 export function cleanApp(raw: unknown): WorkflowApp | undefined {
@@ -87,7 +93,7 @@ export function exposableParams(node: WorkflowNode, catalog: MediaCatalog): Para
 
 /** Steps whose results an app may show. */
 export function resultSteps(workflow: Pick<Workflow, "nodes">): WorkflowNode[] {
-  return workflow.nodes.filter((node) => RESULT_TYPES.has(node.type));
+  return workflow.nodes.filter(canShowResult);
 }
 
 /** A field as the form draws it, or none when its step or setting is gone. */

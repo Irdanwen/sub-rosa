@@ -3,11 +3,13 @@
 // and prices all come from the merged catalog — nothing here hardcodes what
 // a backend can do today.
 //
-// Five tabs (ADR-0111). Image, Video and Audio render on the desk: a dark
-// room with the scene, the dock and an inspector. Retouch, Compose, Upscale
-// and Cutout are tools of Image; the Bible, the montage and the workflows
-// live in Films. The tab says Films, not Projects: a project is a chat
-// project (ADR-0085), and the sidebar lists those under that name.
+// Six tabs (ADR-0111 and its addendum of 2026-10-19). Image, Video and Audio
+// render on the desk: a dark room with the scene, the dock and an inspector.
+// Retouch, Compose, Upscale and Cutout are tools of Image; the Bible and the
+// montage live in Films. The workflows have their own tab, Apps: most of the
+// catalog's apps make a picture, a sound or a product shot, not a film. The
+// tab says Films, not Projects: a project is a chat project (ADR-0085), and
+// the sidebar lists those under that name.
 
 import { t } from "../../lib/i18n";
 import { OPEN_STUDIO_TAB_EVENT, STUDIO_TAB_STORAGE_KEY } from "./studio-keys";
@@ -40,8 +42,7 @@ import { OPEN_WORKFLOW_EVENT } from "../../lib/studio/workflow/open";
 import "./stage/stage.css";
 import "./desk/desk.css";
 
-// The workflow canvas pulls in @xyflow/react; only the Workflows section pays
-// for it.
+// The workflow canvas pulls in @xyflow/react; only the Apps tab pays for it.
 const WorkflowStudio = recoverableView(async () => {
   const module = await import("./WorkflowStudio");
   return { default: module.WorkflowStudio };
@@ -59,8 +60,8 @@ const RetouchStudio = recoverableView(async () => {
   return { default: module.RetouchStudio };
 });
 
-type StudioTab = "image" | "video" | "audio" | "projects" | "gallery";
-type ProjectSection = "films" | "bible" | "assemble" | "workflows";
+type StudioTab = "image" | "video" | "audio" | "workflows" | "projects" | "gallery";
+type ProjectSection = "films" | "bible" | "assemble";
 
 const TAB_STORAGE_KEY = STUDIO_TAB_STORAGE_KEY;
 
@@ -77,6 +78,9 @@ export function studioPlaceFor(saved: string | null): Place {
     case "video":
     case "audio":
     case "gallery":
+    // The workflows were a section of Films before their own tab (addendum
+    // to ADR-0111); the saved name is the same.
+    case "workflows":
       return { tab: saved };
     // "music" is the audio tab's old name.
     case "music":
@@ -95,8 +99,6 @@ export function studioPlaceFor(saved: string | null): Place {
       return { tab: "projects", section: "bible" };
     case "assemble":
       return { tab: "projects", section: "assemble" };
-    case "workflows":
-      return { tab: "projects", section: "workflows" };
     default:
       return { tab: "image" };
   }
@@ -143,7 +145,7 @@ export function StudioView() {
   const [pendingProduction, setPendingProduction] = useState<string | undefined>(undefined);
   const clearPendingProduction = useCallback(() => setPendingProduction(undefined), []);
 
-  // The shell's "New image" and "New video" open the matching desk.
+  // The shell's "New image", "New video" and "New app" open the matching tab.
   useEffect(() => {
     const onOpen = (event: Event) => {
       const place = studioPlaceFor((event as CustomEvent<string>).detail);
@@ -177,8 +179,7 @@ export function StudioView() {
       const workflowId = (event as CustomEvent<string>).detail;
       if (typeof workflowId !== "string" || !workflowId) return;
       setPendingWorkflow(workflowId);
-      setTab("projects");
-      setSection("workflows");
+      setTab("workflows");
     };
     window.addEventListener(OPEN_WORKFLOW_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_WORKFLOW_EVENT, onOpen);
@@ -286,6 +287,16 @@ export function StudioView() {
       <VideoStudio catalog={catalog} onAssembleChain={assembleChain} onOpenGallery={openGallery} />
     ) : tab === "audio" ? (
       <AudioStudio catalog={catalog} onOpenGallery={openGallery} />
+    ) : tab === "workflows" ? (
+      // The apps take the whole room, like the Image tools: a library of
+      // cards, then a canvas.
+      <div className="studio-tool-room studio-apps-room">
+        <WorkflowStudio
+          catalog={catalog}
+          pendingWorkflowId={pendingWorkflow}
+          onPendingWorkflowOpened={clearPendingWorkflow}
+        />
+      </div>
     ) : (
       <div className="studio-projects">
         <SegmentedControl
@@ -296,26 +307,19 @@ export function StudioView() {
             { value: "films", label: t("Film projects") },
             { value: "bible", label: t("Bible") },
             { value: "assemble", label: t("Assemble") },
-            { value: "workflows", label: t("Workflows") },
           ]}
         />
         {section === "films" ? (
           <ProjectStudio catalog={catalog} />
         ) : section === "bible" ? (
           <BibleStudio catalog={catalog} onMakeAFilm={() => setSection("films")} />
-        ) : section === "assemble" ? (
+        ) : (
           <AssembleStudio
             pendingCuts={pendingCuts}
             onPendingCutsApplied={clearPendingCuts}
             catalog={catalog}
             pendingProductionRunId={pendingProduction}
             onPendingProductionApplied={clearPendingProduction}
-          />
-        ) : (
-          <WorkflowStudio
-            catalog={catalog}
-            pendingWorkflowId={pendingWorkflow}
-            onPendingWorkflowOpened={clearPendingWorkflow}
           />
         )}
       </div>
@@ -334,6 +338,7 @@ export function StudioView() {
               { value: "image", label: t("Image") },
               { value: "video", label: t("Video") },
               { value: "audio", label: t("Audio") },
+              { value: "workflows", label: t("Apps") },
               { value: "projects", label: t("Films") },
               { value: "gallery", label: t("Gallery") },
             ]}
