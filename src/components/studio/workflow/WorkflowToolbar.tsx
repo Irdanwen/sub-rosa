@@ -152,6 +152,8 @@ export function RunButton(props: {
   quoting: boolean;
   onRun: () => void;
   onHoverRun?: (hovering: boolean) => void;
+  /** The button's words when it is not pricing: the canvas says what it runs, an app just runs. */
+  label?: string;
 }) {
   if (props.running)
     return (
@@ -171,7 +173,7 @@ export function RunButton(props: {
       onFocus={() => props.onHoverRun?.(true)}
       onBlur={() => props.onHoverRun?.(false)}
     >
-      {props.quoting ? t("Pricing...") : t("Run workflow")}
+      {props.quoting ? t("Pricing...") : (props.label ?? t("Run workflow"))}
     </button>
   );
 }

@@ -1095,6 +1095,10 @@ function WorkflowEditor({
     const remaining = listWorkflows();
     setWorkflows(remaining);
     hydrate(remaining[0]);
+    // Back to the library, not onto whichever workflow comes next: the
+    // person asked to be rid of one, not to open another.
+    setLeftCanvas(true);
+    setView("library");
   }, [current, hydrate, sessions]);
 
   const newWorkflow = useCallback(() => {
@@ -1610,6 +1614,8 @@ function WorkflowEditor({
         libraryButtonRef={libraryButtonRef}
         onLibrary={() => {
           setLeftCanvas(true);
+          // The run's error belongs to the canvas it was shown on.
+          setRunError(undefined);
           setView("library");
         }}
         name={current?.name ?? ""}

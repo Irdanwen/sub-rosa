@@ -112,7 +112,7 @@ describe.each(apps.map((app) => [app.id, app] as const))("the app %s", (_id, tem
           : undefined);
       expect([template.id, label, Boolean(control)]).toEqual([template.id, label, true]);
     }
-    const run = screen.getByRole("button", { name: /^Run, / });
+    const run = screen.getByRole("button", { name: /^Run · / });
     expect(run).toBeEnabled();
     expect(run.textContent).toContain(price);
     expect(container.querySelectorAll(".mobile-app-result figcaption")).toHaveLength(
@@ -143,7 +143,7 @@ describe.each(apps.map((app) => [app.id, app] as const))("the app %s", (_id, tem
       ]);
     });
     expect(container.querySelector(".studio-workflow-cost")?.textContent).toBe(price);
-    expect(screen.getByRole("button", { name: "Run workflow" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run" })).toBeEnabled();
     expect(container.querySelectorAll(".workflow-app-result figcaption")).toHaveLength(
       outputs.length,
     );
@@ -165,7 +165,7 @@ describe("an app whose picture is still to pick", () => {
     expect(
       within(container as HTMLElement).getByText("The picture: pick a picture."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run workflow" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
   });
 });
 
