@@ -5971,35 +5971,104 @@
   font-weight: var(--fw-medium);
 }
 
-.mobile-apps-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
+.mobile-apps-lead {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+/* Two cards a row: a picture each, as the desktop library shows them. */
+.mobile-apps-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.mobile-apps-row {
+.mobile-apps-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: var(--sp-1);
   width: 100%;
-  min-height: 48px;
-  padding: var(--sp-3) var(--sp-4);
+  min-height: 44px;
+  padding: 0;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-xl);
   background: var(--card);
   color: var(--foreground);
   text-align: left;
+  overflow: hidden;
+  transition: transform var(--t-fast) var(--ease-out);
   -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-apps-card:active {
+  transform: scale(0.97);
+}
+
+.mobile-apps-card:disabled {
+  opacity: 0.55;
+}
+
+/* The picture, 16:10, filled. The square trick of the gallery grid is not
+ * needed here: the card is a flex column, not a grid item that may be
+ * clipped to nothing. */
+.mobile-apps-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--muted);
+}
+
+.mobile-apps-cover > img,
+.mobile-apps-cover > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* A workflow with no picture yet: its first steps, laid as a sketch. */
+.mobile-apps-sketch {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  overflow: hidden;
+}
+
+.mobile-apps-sketch > span {
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.mobile-apps-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
 }
 
 .mobile-apps-name {
   font-size: var(--fs-md);
   font-weight: var(--fw-medium);
+}
+
+.mobile-apps-meta {
+  color: var(--muted-foreground);
+  font-size: var(--fs-xs);
 }
 
 .mobile-apps-intro,
@@ -6019,6 +6088,33 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
+}
+
+/* The template's picture over the form, the name read on it by the title above. */
+.mobile-app-banner {
+  position: relative;
+  height: 120px;
+  border-radius: var(--r-xl);
+  overflow: hidden;
+  background: var(--muted);
+}
+
+.mobile-app-banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, var(--screen-scrim), transparent 60%);
+}
+
+.mobile-app-banner > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mobile-app :where(.mobile-studio-generate) {
+  width: 100%;
 }
 
 .mobile-app-fields {
@@ -6193,7 +6289,26 @@
 }
 
 /* On the Studio's stage, which is always dark: glass, its edge and its ink. */
-.mobile-studio-stage .mobile-apps-row,
+/* The group titles read on the stage, which is dark in both themes. */
+.mobile-studio-stage :where(.mobile-apps-group-title) {
+  color: var(--screen-foreground);
+}
+
+.mobile-studio-stage :where(.mobile-apps-meta, .mobile-apps-lead) {
+  color: var(--screen-muted);
+}
+
+.mobile-studio-stage .mobile-apps-cover,
+.mobile-studio-stage .mobile-app-banner {
+  background: var(--stage-soft);
+}
+
+.mobile-studio-stage .mobile-apps-sketch > span {
+  background: var(--stage-glass-strong);
+  color: var(--screen-muted);
+}
+
+.mobile-studio-stage .mobile-apps-card,
 .mobile-studio-stage .mobile-app-input,
 .mobile-studio-stage .mobile-app-media-icon {
   background: var(--stage-soft);
@@ -6230,6 +6345,6 @@
   border-color: var(--stage-edge);
 }
 
-.mobile-studio-stage .mobile-apps-row:active {
+.mobile-studio-stage .mobile-apps-card:active {
   background: var(--stage-soft);
 }

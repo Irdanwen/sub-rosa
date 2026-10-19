@@ -35,18 +35,8 @@ import {
   templateCategory,
   templateCategoryLabel,
 } from "../../lib/studio/workflow/templates";
+import { templateCover } from "../../lib/studio/workflow/template-covers";
 import "./workflow-library.css";
-
-/** Pictures made once for the built-in templates, shipped with the app. */
-const TEMPLATE_COVERS = import.meta.glob("../../assets/workflow-covers/*.webp", {
-  eager: true,
-  import: "default",
-  query: "?url",
-}) as Record<string, string>;
-
-function templateCover(id: string): string | undefined {
-  return TEMPLATE_COVERS[`../../assets/workflow-covers/${id}.webp`];
-}
 
 /** A picked or dropped file's text. */
 /** A workflow file: Sub Rosa's own export or a ComfyUI graph. */
