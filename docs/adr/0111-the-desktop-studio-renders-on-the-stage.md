@@ -87,3 +87,20 @@ Library's header; Routines, which schedule the work Today shows, from
 Today's. All of them stay one ⌘K away. Every platform launches on the chat's
 hero: the comment that kept Windows on the notes list predated the Windows
 installer bundling Hermes.
+
+## Addendum 2026-10-19: the apps have their own tab
+
+Decision 1 filed the workflows under Films, next to the film projects,
+because a compiled film is an ordinary workflow (ADR-0030) and the editor
+had fifteen templates, most of them about a film. The catalog now holds
+thirty-eight, thirty-two of them apps (ADR-0119, ADR-0121), and most make a
+picture, a product shot, a logo or a sound: a person looking for "the app
+that removes an object" had no reason to open Films, and testers did not.
+
+The Studio has **six tabs: Image, Video, Audio, Apps, Films, Gallery.** Apps
+is the workflow editor, opening on its library of cards and taking the whole
+room like the Image tools; the saved place keeps its old name, `workflows`,
+so a Studio last left there reopens there. The Bible and the montage stay in
+Films. The gallery's "Open the workflow that made it" and the shell's "New
+app" (sidebar menu, ⌘K) open the Apps tab. The tab is called Apps on both
+shells: on the phone (ADR-0119 §5) it already was.

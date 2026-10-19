@@ -15,12 +15,15 @@ export const STUDIO_FILM_NOTE_KEY = "os-june:studio-film-note";
 /** Fired when the shell asks an open Studio to show a tab. */
 export const OPEN_STUDIO_TAB_EVENT = "subrosa:studio:open-tab";
 
+/** The tabs the shell can ask for; "workflows" is the Apps tab. */
+export type RequestableStudioTab = "image" | "video" | "audio" | "workflows";
+
 /**
- * Ask the Studio to open on a tab ("image", "video"), from anywhere in the
- * shell. The saved tab is set first, so a Studio that is not mounted yet
- * opens there; one that is mounted hears the event.
+ * Ask the Studio to open on a tab ("image", "video", "workflows"), from
+ * anywhere in the shell. The saved tab is set first, so a Studio that is not
+ * mounted yet opens there; one that is mounted hears the event.
  */
-export function requestStudioTab(tab: "image" | "video" | "audio") {
+export function requestStudioTab(tab: RequestableStudioTab) {
   try {
     window.localStorage.setItem(STUDIO_TAB_STORAGE_KEY, tab);
   } catch {

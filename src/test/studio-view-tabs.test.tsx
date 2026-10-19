@@ -47,7 +47,7 @@ vi.mock("../components/studio/WorkflowStudio", () => ({
 beforeEach(() => window.localStorage.clear());
 
 describe("the studio's tabs", () => {
-  it("opens on the image desk, with five tabs (ADR-0111), Films not Projects", () => {
+  it("opens on the image desk, with six tabs (ADR-0111 and its addendum), Films not Projects", async () => {
     render(<StudioView />);
     expect(screen.getByText("image tab")).toBeInTheDocument();
     const tabs = screen.getByRole("group", { name: "Studio section" });
@@ -55,14 +55,20 @@ describe("the studio's tabs", () => {
       "Image",
       "Video",
       "Audio",
+      "Apps",
       "Films",
       "Gallery",
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Films" }));
     expect(screen.getByText("project workspace")).toBeInTheDocument();
+    // The workflows left Films for their own tab: nothing of them stays there.
+    expect(screen.queryByRole("button", { name: "Workflows" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Apps" }));
+    expect(await screen.findByText("workflows tab")).toBeInTheDocument();
+    expect(window.localStorage.getItem("os-june:studio-tab")).toBe("workflows");
   });
 
-  it("finds the old Assemble and Workflows tabs inside Projects", async () => {
+  it("finds the old Assemble tab inside Films, and a saved Workflows section on the Apps tab", async () => {
     window.localStorage.setItem("os-june:studio-tab", "assemble");
     const view = render(<StudioView />);
     await waitFor(() => expect(screen.getByText("assemble tab")).toBeInTheDocument());
@@ -70,6 +76,7 @@ describe("the studio's tabs", () => {
     window.localStorage.setItem("os-june:studio-tab", "workflows");
     render(<StudioView />);
     await waitFor(() => expect(screen.getByText("workflows tab")).toBeInTheDocument());
+    expect(screen.queryByRole("group", { name: "Projects section" })).toBeNull();
   });
 
   it("lands somebody who was last on the old Films tab where films are made now", async () => {

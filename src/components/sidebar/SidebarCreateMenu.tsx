@@ -5,12 +5,13 @@ import { IconSparkle3 } from "central-icons/IconSparkle3";
 import { useRef, useState } from "react";
 import { t } from "../../lib/i18n";
 import { primaryShiftShortcutLabel } from "../../lib/platform";
+import type { RequestableStudioTab } from "../studio/studio-keys";
 import { Popover } from "../ui/Popover";
 
 /**
  * What else can be started from the top of the sidebar: a note, an import,
- * an image, a video. The chat stays the one-press default (⌘N); the rest is
- * one press further, under the chevron beside it.
+ * an image, a video, an app. The chat stays the one-press default (⌘N); the
+ * rest is one press further, under the chevron beside it.
  */
 export function SidebarCreateMenu({
   onCreateNote,
@@ -19,7 +20,7 @@ export function SidebarCreateMenu({
 }: {
   onCreateNote?: () => void;
   onImportMedia?: () => void;
-  onOpenStudio: (tab: "image" | "video") => void;
+  onOpenStudio: (tab: RequestableStudioTab) => void;
 }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -59,6 +60,13 @@ export function SidebarCreateMenu({
       hint: undefined,
       icon: <IconSparkle3 size={15} />,
       run: () => onOpenStudio("video"),
+    },
+    {
+      id: "app",
+      label: t("New app"),
+      hint: undefined,
+      icon: <IconSparkle3 size={15} />,
+      run: () => onOpenStudio("workflows"),
     },
   ];
   return (
