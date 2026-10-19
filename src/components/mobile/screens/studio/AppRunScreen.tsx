@@ -60,9 +60,12 @@ function notify(): void {
 export function AppRunScreen({
   workflow: opened,
   catalog,
+  onGalleryChanged,
 }: {
   workflow: Workflow;
   catalog: MediaCatalog;
+  /** A device file joined the gallery from a field. */
+  onGalleryChanged?: () => void;
 }) {
   const [workflow, setWorkflow] = useState(opened);
   const graph = useMemo(() => appGraph(workflow), [workflow]);
@@ -224,6 +227,7 @@ export function AppRunScreen({
             shown={entry}
             catalog={catalog}
             onMerge={(partial) => edit(entry.node.id, partial)}
+            onImported={onGalleryChanged}
           />
         ))}
       </div>

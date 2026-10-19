@@ -2,6 +2,8 @@
 // pickers, prompts, switches, numbers, gallery and note pickers.
 
 import { keyed } from "../../../lib/keyed";
+import { friendlyErrorMessage } from "../../../lib/errors";
+import { acceptFor, type AssetKind, importAssetFile } from "../../../lib/studio/import-asset";
 import { t } from "../../../lib/i18n";
 import { useMemo, useRef, useState } from "react";
 import type { ArtifactKind, MediaCatalog } from "../../../lib/studio/types";
@@ -32,12 +34,23 @@ import { NotePicker } from "../NotePicker";
 import { type ArtifactIndex, stringOr } from "./flow";
 import { ZonePicker } from "./ZonePicker";
 
-/** Gallery buckets an asset node's picker should offer for its chosen kind. */
-function assetPickerKinds(node: WorkflowNode): ArtifactKind[] {
-  const kind = node.params.assetKind;
-  if (kind === "video") return ["video"];
-  if (kind === "audio") return ["music", "speech", "sfx"];
-  return ["image"];
+/** What an asset node takes, for its chosen kind: the gallery buckets its
+ * picker offers, and what a file input accepts, kept in one place so the two
+ * never disagree. */
+function assetPicker(node: WorkflowNode): {
+  kind: AssetKind;
+  kinds: ArtifactKind[];
+  accept: string;
+} {
+  const kind: AssetKind =
+    node.params.assetKind === "video"
+      ? "video"
+      : node.params.assetKind === "audio"
+        ? "audio"
+        : "image";
+  const kinds: ArtifactKind[] =
+    kind === "video" ? ["video"] : kind === "audio" ? ["music", "speech", "sfx"] : ["image"];
+  return { kind, kinds, accept: acceptFor(kind) };
 }
 
 export function ParamControl({
@@ -64,6 +77,10 @@ export function ParamControl({
   zoneSource?: string;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | undefined>(undefined);
+  const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   /** The prompt field, so the marker lands at the caret rather than the end. */
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const value = node.params[param.name];
@@ -137,8 +154,40 @@ export function ParamControl({
   if (param.type === "artifact") {
     const label = stringOr(node.params.assetLabel, "");
     const artifactId = stringOr(node.params[param.name], "");
+    const picker = assetPicker(node);
+    // A file from the computer joins the gallery first (import-asset.ts): the
+    // engine reads assets from there, and the preview appears with the pick.
+    const take = async (file: File | undefined) => {
+      if (!file) return;
+      setImportError(undefined);
+      setImporting(true);
+      try {
+        const artifact = await importAssetFile(file, picker.kind);
+        artifacts.remember(artifact);
+        onMerge({ [param.name]: artifact.id, assetLabel: artifact.prompt || artifact.fileName });
+      } catch (error) {
+        setImportError(friendlyErrorMessage(error, t("The file could not be imported.")));
+      } finally {
+        setImporting(false);
+      }
+    };
     return (
-      <>
+      <section
+        className={`studio-node-asset-drop${dragging ? " is-dragging" : ""}`}
+        aria-label={t("{setting}: pick from the gallery, import a file, or drop one here", {
+          setting: paramLabel(param),
+        })}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          void take(event.dataTransfer.files?.[0]);
+        }}
+      >
         {artifactId ? (
           <AssetPreview
             artifact={artifacts.byId.get(artifactId)}
@@ -146,16 +195,42 @@ export function ParamControl({
             className="studio-node-asset"
           />
         ) : null}
-        <button
-          type="button"
-          className="studio-node-picker nodrag"
-          onClick={() => setPickerOpen(true)}
-        >
-          {label || t("Choose from the gallery")}
-        </button>
+        <div className="studio-node-asset-actions">
+          <button
+            type="button"
+            className="studio-node-picker nodrag"
+            onClick={() => setPickerOpen(true)}
+          >
+            {label || t("Choose from the gallery")}
+          </button>
+          <button
+            type="button"
+            className="studio-node-picker nodrag"
+            disabled={importing}
+            onClick={() => fileRef.current?.click()}
+          >
+            {importing ? t("Importing…") : t("Import a file")}
+          </button>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          accept={picker.accept}
+          aria-label={t("Import a file for {setting}", { setting: paramLabel(param) })}
+          onChange={(event) => {
+            void take(event.currentTarget.files?.[0]);
+            event.currentTarget.value = "";
+          }}
+        />
+        {importError ? (
+          <p className="studio-node-error" role="alert">
+            {importError}
+          </p>
+        ) : null}
         {pickerOpen ? (
           <GalleryPicker
-            kinds={assetPickerKinds(node)}
+            kinds={picker.kinds}
             resolveData={false}
             title={t("Pick an asset")}
             description={t("This item feeds every node the asset connects to.")}
@@ -171,7 +246,7 @@ export function ParamControl({
             onClose={() => setPickerOpen(false)}
           />
         ) : null}
-      </>
+      </section>
     );
   }
   if (param.type === "artifacts") {

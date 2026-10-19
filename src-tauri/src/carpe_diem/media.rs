@@ -907,6 +907,101 @@ pub(super) async fn save_bytes(
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportStagedRequest {
+    /// A file `stage_imported_file` wrote, slice by slice, into the temp dir.
+    pub staged_path: String,
+    /// The extension the webview read off the picked file; corrected by the
+    /// bytes' own signature where one is known.
+    pub extension: String,
+}
+
+/// Moves a staged import (a clip or a track picked on the phone, dropped on
+/// the desktop) into the gallery. The webview never holds the whole file: it
+/// streamed it to `stage_imported_file`, and this is the hand-over.
+#[tauri::command]
+pub async fn carpe_diem_media_import_staged(
+    app: AppHandle,
+    request: ImportStagedRequest,
+) -> Result<ArtifactDto, AppError> {
+    import_staged(
+        &app,
+        std::path::Path::new(&request.staged_path),
+        &request.extension,
+    )
+    .await
+}
+
+/// Whether `path` is one of this app's own staging files: in the temp dir,
+/// carrying the staging prefix, with no way back up. Anything else a caller
+/// sends is refused before the filesystem is touched.
+pub(crate) fn is_staged_import(path: &std::path::Path) -> bool {
+    let temp = std::env::temp_dir();
+    let named = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("subrosa-staging-"));
+    named && path.parent() == Some(temp.as_path()) && is_within_gallery(&temp, path)
+}
+
+pub(super) async fn import_staged(
+    app: &AppHandle,
+    staged: &std::path::Path,
+    extension: &str,
+) -> Result<ArtifactDto, AppError> {
+    let extension = validate_extension(extension)?;
+    if !is_staged_import(staged) {
+        return Err(AppError::new(
+            "media_artifact_invalid",
+            "That file is not a staged import.",
+        ));
+    }
+    let byte_count = tokio::fs::metadata(staged)
+        .await
+        .map_err(|error| AppError::new("media_artifact_invalid", error.to_string()))?
+        .len();
+    if byte_count == 0 {
+        let _ = tokio::fs::remove_file(staged).await;
+        return Err(AppError::new(
+            "media_artifact_invalid",
+            "The artifact is empty.",
+        ));
+    }
+    // Only the head is read: the signature lives in the first bytes, and the
+    // file itself moves rather than travelling through memory.
+    let mut head = vec![0u8; 4096];
+    let read = {
+        use tokio::io::AsyncReadExt as _;
+        let mut file = tokio::fs::File::open(staged)
+            .await
+            .map_err(|error| AppError::new("media_artifact_invalid", error.to_string()))?;
+        file.read(&mut head)
+            .await
+            .map_err(|error| AppError::new("media_artifact_invalid", error.to_string()))?
+    };
+    let mut probe = super::artifact_format::Probe::default();
+    probe.push(&head[..read]);
+    let extension = probe.extension(&extension).to_string();
+    let dir = artifacts_dir(app)?;
+    let file_name = format!("{}.{extension}", uuid::Uuid::new_v4());
+    let path = dir.join(&file_name);
+    // The temp dir and the app's data dir share a volume on every platform we
+    // ship to, so a rename is the common case; a copy covers the other.
+    if tokio::fs::rename(staged, &path).await.is_err() {
+        tokio::fs::copy(staged, &path)
+            .await
+            .map_err(|error| AppError::new("media_artifact_write_failed", error.to_string()))?;
+        let _ = tokio::fs::remove_file(staged).await;
+    }
+    crate::account::studio::completed(app, &path).await;
+    Ok(ArtifactDto {
+        path: path.to_string_lossy().to_string(),
+        file_name,
+        bytes: byte_count,
+    })
+}
+
 /// Downloads a generated file (video, music) into the gallery. Relative URLs
 /// resolve against the backend per Carpe Diem's join rule: absolute paths join
 /// the origin, bare paths join the operator root (the base URL minus `/v1`).
@@ -1431,6 +1526,24 @@ fn context_tokens(spec: &serde_json::Value) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_this_apps_staging_files_are_imported() {
+        let temp = std::env::temp_dir();
+        assert!(super::is_staged_import(
+            &temp.join("subrosa-staging-abc123.mov")
+        ));
+        assert!(!super::is_staged_import(&temp.join("other-file.mov")));
+        assert!(!super::is_staged_import(
+            &temp.join("nested").join("subrosa-staging-abc123.mov")
+        ));
+        assert!(!super::is_staged_import(
+            &temp.join("..").join("subrosa-staging-abc123.mov")
+        ));
+        assert!(!super::is_staged_import(std::path::Path::new(
+            "/etc/subrosa-staging-abc123.mov"
+        )));
+    }
+
     #[test]
     fn web_prices_are_read_from_the_fixed_costs_and_absent_when_missing() {
         // The shape the operator's `/pricing` served on 2026-10-08.

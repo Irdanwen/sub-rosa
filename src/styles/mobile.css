@@ -6056,6 +6056,79 @@
   object-fit: cover;
 }
 
+/* A field's media tile: what was picked (its poster) and how long it is. */
+.mobile-app-media {
+  width: 100%;
+  text-align: left;
+}
+
+.mobile-app-media-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+}
+
+.mobile-app-media-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mobile-app-media-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-app-media-meta,
+.mobile-app-media-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--fs-sm);
+}
+
+.mobile-app-media-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 50dvh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.mobile-app-media-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--fs-md);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-app-media-row img {
+  flex: none;
+  width: 56px;
+  height: 40px;
+  border-radius: var(--r-md);
+  object-fit: cover;
+}
+
 .mobile-app-blocker {
   margin: 0;
   color: var(--muted-foreground);
@@ -6122,6 +6195,15 @@
 /* On the Studio's stage, which is always dark: glass, its edge and its ink. */
 .mobile-studio-stage .mobile-apps-row,
 .mobile-studio-stage .mobile-app-input,
+.mobile-studio-stage .mobile-app-media-icon {
+  background: var(--stage-soft);
+  color: var(--screen-muted);
+}
+
+.mobile-studio-stage :where(.mobile-app-media-meta, .mobile-app-media-hint) {
+  color: var(--screen-muted);
+}
+
 .mobile-studio-stage .mobile-app-picture {
   background: var(--stage-glass-strong);
   border-color: var(--stage-edge);

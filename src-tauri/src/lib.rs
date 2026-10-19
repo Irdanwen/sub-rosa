@@ -857,6 +857,8 @@ pub fn run() {
             carpe_diem::media::carpe_diem_text_pricing,
             carpe_diem::media::carpe_diem_web_pricing,
             carpe_diem::media::carpe_diem_media_save_artifact,
+            carpe_diem::media::carpe_diem_media_import_staged,
+            carpe_diem::media::carpe_diem_media_import_staged,
             carpe_diem::media::carpe_diem_media_fetch_artifact,
             carpe_diem::media::carpe_diem_media_export_artifact,
             carpe_diem::media::carpe_diem_media_delete_artifact,
