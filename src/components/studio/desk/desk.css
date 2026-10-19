@@ -399,6 +399,19 @@ button.studio-filmstrip-tile:active {
   padding: var(--sp-5) var(--sp-8) var(--sp-6);
 }
 
+/* The Apps tab (addendum of 2026-10-19 to ADR-0111) fills the room: the
+ * library of cards, then a canvas that grows with the window instead of
+ * keeping the 560px it had as a section of Films. */
+:where(.studio-apps-room) > .studio-workflows {
+  flex: 1;
+}
+
+:where(.studio-apps-room) .studio-workflow-canvas {
+  flex: 1;
+  height: auto;
+  min-height: 560px;
+}
+
 /* Projects is a page, not a desk: it keeps a reading width. */
 .studio-projects {
   display: flex;

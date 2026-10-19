@@ -90,7 +90,7 @@ export function beforeAndAfter(): Workflow {
         { nodeId: "picture", param: "artifactId", label: t("The picture") },
         { nodeId: "fix", param: "prompt", label: t("What to change") },
       ],
-      outputs: ["compare"],
+      outputs: ["out"],
       intro: t("Pick a picture and say what to change."),
     },
     edges: [
@@ -274,7 +274,7 @@ export function removeAnObject(): Workflow {
         { nodeId: "picture", param: "artifactId", label: t("The picture") },
         { nodeId: "what", param: "text", label: t("What to remove") },
       ],
-      outputs: ["compare"],
+      outputs: ["out"],
       intro: t("Pick a picture and say what to remove."),
     },
     edges: [

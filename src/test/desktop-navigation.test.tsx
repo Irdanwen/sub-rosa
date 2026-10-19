@@ -24,7 +24,7 @@ vi.mock("../components/personal-data/FinancesView", () => ({
 beforeEach(() => localStorage.clear());
 
 describe("the New menu", () => {
-  it("starts a note, an import, an image or a video", async () => {
+  it("starts a note, an import, an image, a video or an app", async () => {
     const onCreateNote = vi.fn();
     const onImportMedia = vi.fn();
     const onOpenStudio = vi.fn();
@@ -43,6 +43,7 @@ describe("the New menu", () => {
       "Import audio or video",
       "New image",
       "New video",
+      "New app",
     ]);
     await userEvent.click(screen.getByRole("menuitem", { name: /New note/ }));
     expect(onCreateNote).toHaveBeenCalled();
@@ -51,6 +52,9 @@ describe("the New menu", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: "New video" }));
     expect(onOpenStudio).toHaveBeenCalledWith("video");
     await open();
+    await userEvent.click(screen.getByRole("menuitem", { name: "New app" }));
+    expect(onOpenStudio).toHaveBeenCalledWith("workflows");
+    await open();
     await userEvent.click(screen.getByRole("menuitem", { name: "Import audio or video" }));
     expect(onImportMedia).toHaveBeenCalled();
   });
@@ -58,7 +62,8 @@ describe("the New menu", () => {
   it("offers only what the shell can do", async () => {
     render(<SidebarCreateMenu onOpenStudio={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: "Create something else" }));
-    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+    // An image, a video, an app: the Studio's own, always there.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
   });
 
   it("asks the Studio for a tab whether or not it is open", () => {

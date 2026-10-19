@@ -492,6 +492,16 @@ export function Sidebar({
         },
       },
       {
+        id: "quick:new-app",
+        label: t("New app"),
+        icon: <IconSparkle3 size={15} />,
+        searchText: normalizeCommandQuery("new app apps workflow workflows flux create studio"),
+        action: () => {
+          requestStudioTab("workflows");
+          onChangeView("studio");
+        },
+      },
+      {
         id: "quick:shortcuts",
         label: t("Keyboard shortcuts"),
         icon: <IconShortcut size={15} />,
@@ -525,6 +535,16 @@ export function Sidebar({
         icon: <IconSparkle3 size={15} />,
         searchText: normalizeCommandQuery("studio image video music workflows go to"),
         action: () => onChangeView("studio"),
+      },
+      {
+        id: "quick:apps",
+        label: t("Go to Apps"),
+        icon: <IconSparkle3 size={15} />,
+        searchText: normalizeCommandQuery("apps workflows flux go to"),
+        action: () => {
+          requestStudioTab("workflows");
+          onChangeView("studio");
+        },
       },
       {
         id: "quick:library",
