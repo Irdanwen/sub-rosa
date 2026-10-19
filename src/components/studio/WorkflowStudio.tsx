@@ -1718,7 +1718,11 @@ function WorkflowEditor({
       ) : null}
       {productionBanners}
       {runError ? <ErrorMessage>{runError}</ErrorMessage> : null}
-      {validation && (validation.errors.length > 0 || validation.warnings.length > 0) ? (
+      {/* The app form says what its own fields need, under them; the canvas
+          strip would say the same thing a second time, above, in step terms. */}
+      {mode === "graph" &&
+      validation &&
+      (validation.errors.length > 0 || validation.warnings.length > 0) ? (
         <div className="studio-validation">
           {[...validation.errors, ...validation.warnings].map((issue) => {
             const key = `${issue.severity}:${issue.nodeId ?? issue.edgeId ?? ""}:${issue.message}`;
