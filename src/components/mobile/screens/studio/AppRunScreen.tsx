@@ -35,6 +35,7 @@ import { spendGuard } from "../../../../lib/studio/workflow/spend";
 import { readSpendCeiling } from "../../../../lib/studio/workflow/spend-ceiling";
 import { RunSessions } from "../../../../lib/studio/workflow/run-sessions";
 import { saveWorkflow } from "../../../../lib/studio/workflow/store";
+import { templateCover } from "../../../../lib/studio/workflow/template-covers";
 import {
   resumeWorkflowRun,
   runAndSaveWorkflow,
@@ -217,8 +218,17 @@ export function AppRunScreen({
     else void run();
   };
 
+  const cover = templateCover(
+    typeof workflow.extra?.template === "string" ? workflow.extra.template : undefined,
+  );
+
   return (
     <div className="mobile-app">
+      {cover ? (
+        <div className="mobile-app-banner" aria-hidden>
+          <img src={cover} alt="" decoding="async" />
+        </div>
+      ) : null}
       {workflow.app?.intro ? <p className="mobile-app-intro">{workflow.app.intro}</p> : null}
       <div className="mobile-app-fields">
         {fields.map((entry) => (

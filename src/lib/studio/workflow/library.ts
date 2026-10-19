@@ -140,6 +140,50 @@ export async function makeWorkflowCover(
 
 /** Whether two copies of a workflow hold the same graph and name: opening a
  * workflow redraws its canvas, which is not an edit. */
+/**
+ * Whether a library copy is still this template, however its app's fields were
+ * filled. A copy has fresh ids for every step and wire (copyTemplate), so the
+ * two are compared with ids renumbered by position, wires by the positions
+ * they join, and the settings the app exposes as fields blanked: a form
+ * filled in is still the same app, a step added or a hidden setting changed
+ * is not.
+ */
+export function sameTemplateCopy(copy: Workflow, template: Workflow): boolean {
+  return canonicalTemplate(copy) === canonicalTemplate(template);
+}
+
+function canonicalTemplate(workflow: Workflow): string {
+  const position = new Map(workflow.nodes.map((node, index) => [node.id, `n${index}`]));
+  const exposed = new Set(
+    (workflow.app?.fields ?? []).map((field) => `${position.get(field.nodeId)}:${field.param}`),
+  );
+  const nodes = workflow.nodes.map((node, index) => {
+    const { id: _id, position: _at, params, ...rest } = node;
+    const kept = Object.fromEntries(
+      Object.entries(params).filter(([name]) => !exposed.has(`n${index}:${name}`)),
+    );
+    return { ...rest, id: `n${index}`, params: kept };
+  });
+  const edges = workflow.edges
+    .map(({ id: _id, source, target, ...rest }) => ({
+      ...rest,
+      source: position.get(source) ?? source,
+      target: position.get(target) ?? target,
+    }))
+    .sort((a, b) => stableJson(a).localeCompare(stableJson(b)));
+  const app = workflow.app
+    ? {
+        ...workflow.app,
+        fields: workflow.app.fields.map((field) => ({
+          ...field,
+          nodeId: position.get(field.nodeId) ?? field.nodeId,
+        })),
+        outputs: workflow.app.outputs.map((id) => position.get(id) ?? id),
+      }
+    : null;
+  return stableJson({ nodes, edges, app });
+}
+
 export function sameWorkflow(a: Workflow, b: Workflow): boolean {
   return (
     a.name === b.name &&

@@ -3,7 +3,7 @@
 // apps to start from, a held gate's candidates, and an unfinished run
 // offered again rather than resumed on its own.
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { appGraph, heldGate, needsWindowOpen } from "../lib/studio/workflow/app-run";
 import type { Workflow } from "../lib/studio/workflow/schema";
@@ -159,6 +159,59 @@ describe("the phone's apps", () => {
     expect(
       state.saved.some((definition) => JSON.parse(definition).template === "template-album-cover"),
     ).toBe(true);
+  });
+
+  it("reopens your copy of a shipped app instead of saving another", async () => {
+    state.rows = [];
+    const { StudioApps } = await import("../components/mobile/screens/studio/StudioApps");
+    render(<StudioApps catalog={catalog} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Album cover/ }));
+    const field = await screen.findByRole("textbox", { name: "Describe the album" });
+    fireEvent.change(field, { target: { value: "A night drive" } });
+    await waitFor(() =>
+      expect(state.saved.some((definition) => definition.includes("A night drive"))).toBe(true),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "All apps" }));
+    // Back on the list, the shipped card opens the same copy, words kept.
+    const shipped = await screen.findByRole("region", { name: "Start from an app" });
+    fireEvent.click(within(shipped).getByRole("button", { name: /^Album cover/ }));
+    expect(await screen.findByRole("textbox", { name: "Describe the album" })).toHaveValue(
+      "A night drive",
+    );
+    // And "Your apps" lists that one copy, not one per tap.
+    fireEvent.click(screen.getByRole("button", { name: "All apps" }));
+    const yours = await screen.findByRole("region", { name: "Your apps" });
+    expect(within(yours).getAllByRole("button", { name: /^Album cover/ })).toHaveLength(1);
+  });
+
+  it("says which shipped apps today's catalog cannot make", async () => {
+    state.rows = [];
+    const { StudioApps } = await import("../components/mobile/screens/studio/StudioApps");
+    // A text model and an image model, no music: a sound app has no model for its track.
+    render(
+      <StudioApps
+        catalog={{
+          backend: "carpe-diem",
+          models: [
+            { id: "qwen3-next-80b", mediaType: "text", name: "Qwen3 Next", offline: false },
+            {
+              id: "flux-2-pro",
+              mediaType: "image",
+              name: "Flux 2 Pro",
+              offline: false,
+              costCredits: 1.3,
+            },
+          ],
+        }}
+      />,
+    );
+    const music = await screen.findByRole("button", { name: /^Music from a mood/ });
+    expect(music).toBeDisabled();
+    expect(music).toHaveTextContent("Not offered today: no model for");
+    // A picture app is priced and open.
+    const cover = screen.getByRole("button", { name: /^Album cover/ });
+    expect(cover).toBeEnabled();
+    expect(cover).toHaveTextContent("1 image, ~1.3 credits");
   });
 
   it("offers an unfinished run again, and lets it go when asked", async () => {

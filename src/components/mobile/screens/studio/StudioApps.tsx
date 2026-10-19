@@ -4,8 +4,10 @@
 // offered again here, and only here: resuming spends, so a person asks for it.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useArtifactThumbnail } from "../../../../lib/artifact-media";
 import { t } from "../../../../lib/i18n";
-import type { MediaCatalog } from "../../../../lib/studio/types";
+import { listArtifacts } from "../../../../lib/studio/artifacts";
+import type { MediaCatalog, StudioArtifact } from "../../../../lib/studio/types";
 import {
   estimateWorkflowCost,
   templateWorkflows,
@@ -13,6 +15,13 @@ import {
 } from "../../../../lib/studio/workflow";
 import { spendGuard } from "../../../../lib/studio/workflow/spend";
 import { isApp } from "../../../../lib/studio/workflow/app";
+import { nodeTypeLabel } from "../../../../lib/studio/workflow/labels";
+import { sameTemplateCopy, workflowMakes } from "../../../../lib/studio/workflow/library";
+import { templateCover } from "../../../../lib/studio/workflow/template-covers";
+import {
+  templateEstimate,
+  templatePriceLabel,
+} from "../../../../lib/studio/workflow/template-price";
 import {
   blankWorkflow,
   listWorkflows,
@@ -50,6 +59,8 @@ export function StudioApps({
   const [open, setOpen] = useState<Workflow>();
   const [unfinished, setUnfinished] = useState<WorkflowRunSummary[]>([]);
   const [resuming, setResuming] = useState<string>();
+  /** The gallery, for the picture each of your apps last made. */
+  const [artifacts, setArtifacts] = useState<ReadonlyMap<string, StudioArtifact>>(new Map());
 
   const refresh = useCallback(() => {
     void loadWorkflowLibrary()
@@ -58,19 +69,51 @@ export function StudioApps({
     void listResumableRuns()
       .then(setUnfinished)
       .catch(() => setUnfinished([]));
+    void listArtifacts()
+      .then((list) => setArtifacts(new Map(list.map((artifact) => [artifact.id, artifact]))))
+      .catch(() => undefined);
   }, []);
   useEffect(refresh, [refresh]);
   // Built once per mount, not on every render (a locale change reloads the app).
   const shipped = useMemo(() => templateWorkflows().filter(isApp), []);
+  /** Each shipped app pinned to today's catalog: the models it would run on,
+   * the steps no offered model can make, and its price. */
+  const offers = useMemo(
+    () =>
+      new Map(
+        shipped.map((template) => {
+          const resolved = resolveTemplateModels(template, catalog);
+          return [
+            template.id,
+            { ...resolved, estimate: templateEstimate(resolved.workflow, catalog) },
+          ] as const;
+        }),
+      ),
+    [shipped, catalog],
+  );
 
+  /** Open your copy of a shipped app, or make the first one. A tap used to
+   * save a new copy every time; "Your apps" filled with the same app. */
   const startFrom = (template: Workflow) => {
-    const resolved = resolveTemplateModels(template, catalog).workflow;
+    const offer = offers.get(template.id);
+    if (!offer || offer.missing.length > 0) return;
+    const existing = listWorkflows()
+      .filter(
+        (workflow) =>
+          workflow.extra?.template === template.id && sameTemplateCopy(workflow, offer.workflow),
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (existing) {
+      setOpen(existing);
+      return;
+    }
     const made = saveWorkflow({
-      ...copyTemplate(resolved, {
+      ...copyTemplate(offer.workflow, {
         ...blankWorkflow(template.name),
         extra: { template: template.id },
       }),
     });
+    setApps(listWorkflows().filter(isApp));
     setOpen(made);
   };
 
@@ -165,20 +208,36 @@ export function StudioApps({
             </div>
           );
         })}
+      <p className="mobile-apps-lead">
+        {t("An app is a workflow reduced to its settings: choose one, fill it in, run it.")}
+      </p>
       {apps.length > 0 ? (
         <section aria-label={t("Your apps")}>
           <h2 className="mobile-section-title">{t("Your apps")}</h2>
-          <ul className="mobile-apps-list">
-            {apps.map((app) => (
-              <li key={app.id}>
-                <button type="button" className="mobile-apps-row" onClick={() => setOpen(app)}>
-                  <span className="mobile-apps-name">{app.name || t("Untitled workflow")}</span>
-                  {app.app?.intro ? (
-                    <span className="mobile-apps-intro">{app.app.intro}</span>
-                  ) : null}
-                </button>
-              </li>
-            ))}
+          <ul className="mobile-apps-grid">
+            {apps.map((app) => {
+              const from = typeof app.extra?.template === "string" ? app.extra.template : undefined;
+              const estimate = templateEstimate(app, catalog);
+              return (
+                <li key={app.id}>
+                  <AppCard
+                    name={app.name || t("Untitled workflow")}
+                    meta={
+                      estimate
+                        ? t("{makes}, {price}", {
+                            makes: workflowMakes(app),
+                            price: templatePriceLabel(estimate),
+                          })
+                        : workflowMakes(app)
+                    }
+                    workflow={app}
+                    artifact={app.coverArtifactId ? artifacts.get(app.coverArtifactId) : undefined}
+                    cover={templateCover(from)}
+                    onOpen={() => setOpen(app)}
+                  />
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : (
@@ -199,26 +258,100 @@ export function StudioApps({
           return (
             <section key={kind} aria-label={label} className="mobile-apps-group">
               <h3 className="mobile-apps-group-title">{label}</h3>
-              <ul className="mobile-apps-list">
-                {inKind.map((template) => (
-                  <li key={template.id}>
-                    <button
-                      type="button"
-                      className="mobile-apps-row"
-                      onClick={() => startFrom(template)}
-                    >
-                      <span className="mobile-apps-name">{template.name}</span>
-                      {template.app?.intro ? (
-                        <span className="mobile-apps-intro">{template.app.intro}</span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
+              <ul className="mobile-apps-grid">
+                {inKind.map((template) => {
+                  const offer = offers.get(template.id);
+                  const missing = offer?.missing ?? [];
+                  const price = offer?.estimate ? templatePriceLabel(offer.estimate) : undefined;
+                  return (
+                    <li key={template.id}>
+                      <AppCard
+                        name={template.name}
+                        meta={
+                          missing.length > 0
+                            ? t("Not offered today: no model for {steps}", {
+                                steps: missing.join(", "),
+                              })
+                            : price
+                              ? t("{makes}, {price}", { makes: workflowMakes(template), price })
+                              : workflowMakes(template)
+                        }
+                        workflow={template}
+                        cover={templateCover(template.id)}
+                        disabled={missing.length > 0}
+                        onOpen={() => startFrom(template)}
+                      />
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           );
         })}
       </section>
     </div>
+  );
+}
+
+/** One app to open: its picture, its name, and what a run makes for what
+ * price. The picture is what it last made, else the template's cover, else a
+ * sketch of its steps. */
+function AppCard({
+  name,
+  meta,
+  workflow,
+  artifact,
+  cover,
+  disabled,
+  onOpen,
+}: {
+  name: string;
+  meta: string;
+  workflow: Pick<Workflow, "nodes">;
+  artifact?: StudioArtifact;
+  cover?: string;
+  disabled?: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button type="button" className="mobile-apps-card" disabled={disabled} onClick={onOpen}>
+      <span className="mobile-apps-cover" aria-hidden>
+        <AppCover workflow={workflow} artifact={artifact} src={cover} />
+      </span>
+      <span className="mobile-apps-card-body">
+        <span className="mobile-apps-name">{name}</span>
+        <span className="mobile-apps-meta">{meta}</span>
+      </span>
+    </button>
+  );
+}
+
+function AppCover({
+  workflow,
+  artifact,
+  src,
+}: {
+  workflow: Pick<Workflow, "nodes">;
+  artifact?: StudioArtifact;
+  src?: string;
+}) {
+  // Through the thumbnail hook, not the asset protocol: the iOS webview does
+  // not resolve the latter (see artifact-media.ts).
+  const thumbnail = useArtifactThumbnail(artifact ?? null);
+  if (thumbnail)
+    return thumbnail.kind === "media" ? (
+      <video src={`${thumbnail.src}#t=0.1`} muted playsInline preload="metadata" />
+    ) : (
+      <img src={thumbnail.src} alt="" />
+    );
+  if (src) return <img src={src} alt="" loading="lazy" decoding="async" />;
+  return (
+    <span className="mobile-apps-sketch">
+      {workflow.nodes.slice(0, 6).map((node) => (
+        <span key={node.id} data-type={node.type}>
+          {nodeTypeLabel(node.type)}
+        </span>
+      ))}
+    </span>
   );
 }
