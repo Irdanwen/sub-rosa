@@ -153,11 +153,14 @@ export function songFromAStory(): Workflow {
         prompt:
           "Write song lyrics that tell this story: two verses and a chorus sung twice, short singable lines, under 900 characters. Mark the parts as [Verse] and [Chorus]. Reply with the lyrics only.\n\n{{input}}",
       }),
+      // The style is a step of its own: a music step takes its prompt from a
+      // connection, not from a setting an app could show.
+      node("style", "textInput", t("The style"), 0, 1, {
+        text: "warm indie folk, acoustic guitar and soft piano, an intimate voice, a gentle build",
+      }),
       node("song", "music", t("Song"), 2, 0, {
         model: MUSIC_MODEL,
         durationSeconds: 120,
-        prompt:
-          "warm indie folk, acoustic guitar and soft piano, an intimate voice, a gentle build",
         [FED_PARAMS_KEY]: ["lyrics"],
       }),
       node("out", "output", t("Song"), 3, 0),
@@ -165,13 +168,14 @@ export function songFromAStory(): Workflow {
     app: {
       fields: [
         { nodeId: "story", param: "text", label: t("Your story") },
-        { nodeId: "song", param: "prompt", label: t("The style") },
+        { nodeId: "style", param: "text", label: t("The style") },
       ],
       outputs: ["out"],
       intro: t("Tell a story and choose a style, get it as a song."),
     },
     edges: [
       edge("story", "lyrics"),
+      edge("style", "song", "prompt"),
       edge("lyrics", "song", `${FED_PORT_PREFIX}lyrics`),
       edge("song", "out"),
     ],
