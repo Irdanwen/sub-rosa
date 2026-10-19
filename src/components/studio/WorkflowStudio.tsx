@@ -219,6 +219,12 @@ function WorkflowEditor({
   }, [view]);
 
   const [current, setCurrent] = useState<Workflow | undefined>(() => listWorkflows()[0]);
+  /** The workflow whose steps the canvas holds. Set in the same batch as the
+   * steps themselves (hydrate), so a render where it matches `current` is one
+   * where the canvas really shows that workflow. Before the first hydrate,
+   * `current` already names a workflow while the canvas is still empty: that
+   * empty graph must never read as the workflow's content. */
+  const [drawnId, setDrawnId] = useState<string | undefined>(undefined);
   const [flowNodes, setFlowNodes] = useState<StudioFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<FlowEdge[]>([]);
   /** Each workflow's run, so one goes on while another tab is open: the
@@ -418,6 +424,7 @@ function WorkflowEditor({
       const workflow = stored && !stored.readOnly ? migrateWorkflow(stored) : stored;
       blockScope.reset();
       setCurrent(workflow);
+      setDrawnId(workflow?.id);
       // Its run goes on in its session, whichever tab was open: what it
       // ended with is seen now, and so is what it failed with.
       if (workflow) sessions.seen(workflow.id);
@@ -530,9 +537,15 @@ function WorkflowEditor({
     });
   }, []);
 
-  const drawn = current
-    ? composeRoot(current, blockScope.scope, flowNodes, flowEdges, frames)
-    : undefined;
+  // Only once the canvas holds this workflow's steps. The first render has
+  // `current` from the library and an empty canvas; a save made from that
+  // graph wrote an empty workflow over the real one whenever the machine was
+  // slow enough for the debounce to fire before the hydrated render landed
+  // (the CI runner, a phone under load).
+  const drawn =
+    current && drawnId === current.id
+      ? composeRoot(current, blockScope.scope, flowNodes, flowEdges, frames)
+      : undefined;
   const drawnKey = drawn ? stableJson(drawn) : "";
   /** The graph as drawn, the same object for as long as it says the same
    * thing: refreshing what the steps show (prices, issues, reuse) must not
