@@ -329,7 +329,8 @@ describe("where a saved tab opens now", () => {
     expect(studioPlaceFor("film")).toEqual({ tab: "projects", section: "films" });
     expect(studioPlaceFor("bible")).toEqual({ tab: "projects", section: "bible" });
     expect(studioPlaceFor("assemble")).toEqual({ tab: "projects", section: "assemble" });
-    expect(studioPlaceFor("workflows")).toEqual({ tab: "projects", section: "workflows" });
+    // Their own tab since the addendum of 2026-10-19 to ADR-0111.
+    expect(studioPlaceFor("workflows")).toEqual({ tab: "workflows" });
     expect(studioPlaceFor(null)).toEqual({ tab: "image" });
     expect(studioPlaceFor("gallery")).toEqual({ tab: "gallery" });
   });
