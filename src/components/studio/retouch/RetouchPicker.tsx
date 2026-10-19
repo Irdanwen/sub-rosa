@@ -9,8 +9,7 @@ import { useArtifactPreview } from "../../../lib/artifact-media";
 import { friendlyErrorMessage } from "../../../lib/errors";
 import { t } from "../../../lib/i18n";
 import { ErrorMessage } from "../../ui/ErrorMessage";
-import { listArtifacts, saveArtifactFromBase64 } from "../../../lib/studio/artifacts";
-import { reencodeAsJpeg } from "../../../lib/studio/retouch/canvas-io";
+import { listArtifacts } from "../../../lib/studio/artifacts";
 import { versionTitle } from "../../../lib/studio/retouch/labels";
 import { sessionsIn } from "../../../lib/studio/retouch/lineage";
 import type { StudioArtifact } from "../../../lib/studio/types";
@@ -19,27 +18,11 @@ import { Spinner } from "../../ui/Spinner";
 const RECENT_IMAGES = 24;
 const RECENT_SESSIONS = 6;
 
-/** Read a dropped or picked file into the gallery. Formats the operator does
- * not read (a phone's HEIC) are re-encoded as JPEG on the way in. */
-export async function importImageFile(file: File): Promise<StudioArtifact> {
-  const read = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error(t("The file could not be read.")));
-    reader.readAsDataURL(file);
-  });
-  const native = SENDABLE_TYPES.has(file.type);
-  const dataUrl = native ? read : await reencodeAsJpeg(read);
-  const extension =
-    !native || file.type === "image/jpeg" ? "jpg" : file.type === "image/webp" ? "webp" : "png";
-  return saveArtifactFromBase64(dataUrl.replace(/^data:[^,]*,/, ""), extension, {
-    kind: "image",
-    model: "",
-    prompt: "",
-  });
-}
+// The image import now lives with the other kinds (import-asset.ts); the
+// retouch callers keep their import path.
+import { importImageFile } from "../../../lib/studio/import-asset";
 
-const SENDABLE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+export { importImageFile };
 
 export function imageFilesOf(list: FileList | null | undefined): File[] {
   return [...(list ?? [])].filter((file) => file.type.startsWith("image/"));

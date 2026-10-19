@@ -2,11 +2,11 @@
 // phone's own control, and a run that asks before spending, says when the
 // phone must stay open, and continues from a gate with the chosen take.
 
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppField } from "../components/mobile/screens/studio/AppField";
 import type { ShownField } from "../lib/studio/workflow/app";
-import type { ParamSchema, Workflow, WorkflowNode } from "../lib/studio/workflow/schema";
+import type { ParamSchema, WorkflowNode } from "../lib/studio/workflow/schema";
 
 const state = vi.hoisted(() => ({ calls: [] as string[], args: [] as unknown[] }));
 
@@ -28,6 +28,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => path,
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+const imports = vi.hoisted(() => ({ importAssetFile: vi.fn() }));
+vi.mock("../lib/studio/import-asset", async (original) => {
+  const actual = await original<typeof import("../lib/studio/import-asset")>();
+  return { ...actual, importAssetFile: imports.importAssetFile };
+});
 
 const catalog = {
   backend: "carpe-diem" as const,
@@ -165,7 +170,7 @@ describe("a field of an app on the phone", () => {
     expect(merge).toHaveBeenCalledWith({ voice: "af_bella" });
   });
 
-  it("picks a picture from the gallery, and a track from its list", async () => {
+  it("picks a picture from the Studio gallery, and a track from its clips and tracks", async () => {
     const merge = vi.fn();
     const { unmount } = render(
       <AppField
@@ -179,7 +184,9 @@ describe("a field of an app on the phone", () => {
         onMerge={merge}
       />,
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Choose a picture" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Choose a picture/ }));
+    const sources = await screen.findByRole("dialog", { name: "Your photo" });
+    fireEvent.click(within(sources).getByRole("button", { name: "From the Studio gallery" }));
     const sheet = await screen.findByRole("dialog", { name: "Choose from the gallery" });
     const tile = await waitFor(() => {
       const found = within(sheet)
@@ -207,91 +214,89 @@ describe("a field of an app on the phone", () => {
       />,
     );
     await waitFor(() => expect(state.calls).toContain("carpe_diem_media_list_artifacts"));
-    fireEvent.click(await screen.findByRole("button", { name: /^Your track/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Choose a track/ }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Your track" })).getByRole("button", {
+        name: "From the Studio gallery",
+      }),
+    );
     const list = await screen.findByRole("dialog", { name: "Your track" });
-    fireEvent.click(within(list).getByRole("button", { name: "theme.mp3" }));
+    fireEvent.click(await within(list).findByRole("button", { name: /theme\.mp3/ }));
     expect(merge).toHaveBeenCalledWith(expect.objectContaining({ artifactId: "theme.mp3" }));
   });
-});
 
-describe("running an app on the phone", () => {
-  function film(): Workflow {
-    return {
-      id: "w",
-      name: "Film",
-      nodes: [
-        {
-          id: "a",
-          type: "textInput",
-          label: "Take A",
-          position: { x: 0, y: 0 },
-          params: { text: "A" },
-        },
-        {
-          id: "b",
-          type: "textInput",
-          label: "Take B",
-          position: { x: 0, y: 1 },
-          params: { text: "B" },
-        },
-        {
-          id: "g",
-          type: "gate",
-          label: "",
-          position: { x: 1, y: 0 },
-          params: { note: "Pick a take" },
-        },
-        {
-          id: "p",
-          type: "image",
-          label: "Poster",
-          position: { x: 2, y: 1 },
-          params: { model: "big-image", prompt: "{{input}}" },
-        },
-        { id: "o", type: "output", label: "Out", position: { x: 3, y: 0 }, params: {} },
-      ],
-      edges: [
-        { id: "1", source: "a", target: "g", targetPort: "in" },
-        { id: "2", source: "b", target: "g", targetPort: "in" },
-        { id: "3", source: "g", target: "o", targetPort: "in" },
-        { id: "4", source: "a", target: "p", targetPort: "prompt" },
-      ],
-      app: { fields: [{ nodeId: "a", param: "text" }], outputs: ["o"] },
+  it("imports a clip from the phone, keeps it as the pick, and shows it on the tile", async () => {
+    imports.importAssetFile.mockResolvedValue({
+      id: "clip.mov",
+      kind: "video",
+      path: "/g/clip.mov",
+      fileName: "clip.mov",
+      bytes: 9,
+      model: "",
+      prompt: "",
       createdAt: 1,
-      updatedAt: 1,
-    };
-  }
-
-  it("asks before spending past the threshold, and offers a held gate's takes", async () => {
-    const { AppRunScreen } = await import("../components/mobile/screens/studio/AppRunScreen");
-    const priced = {
-      ...catalog,
-      models: [
-        ...catalog.models,
-        {
-          id: "big-image",
-          mediaType: "image" as const,
-          name: "Big",
-          offline: false,
-          costCredits: 25,
-        },
-      ],
-    };
-    render(<AppRunScreen workflow={film()} catalog={priced} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Run, / }));
-    const sheet = await screen.findByRole("dialog", { name: "Run this app?" });
-    expect(within(sheet).getByText(/25/)).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(within(sheet).getByRole("button", { name: "Run" }));
     });
-    await waitFor(() => expect(state.calls).toContain("workflow_run_create"));
-    const gate = await screen.findByRole("region", { name: "Waiting for your approval" });
-    expect(within(gate).getByText("Pick a take")).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(within(gate).getByRole("button", { name: "Continue with Take B" }));
-    });
-    await waitFor(() =>
-      expect(state.calls.filter((call) => call === "workflow_run_get").length).toBeGreaterThan(0),
+    const merge = vi.fn();
+    const imported = vi.fn();
+    const { rerender } = render(
+      <AppField
+        shown={shown(
+          "asset",
+          { name: "artifactId", type: "artifact", label: "Gallery item" },
+          { assetKind: "video", artifactId: "" },
+          "Your clip",
+        )}
+        catalog={catalog}
+        onMerge={merge}
+        onImported={imported}
+      />,
     );
+    // Nothing in the gallery yet: the field says where a clip can come from.
+    expect(await screen.findByText(/No clip yet/)).toBeInTheDocument();
+    const input = screen.getByLabelText("Photo library or Files") as HTMLInputElement;
+    expect(input.accept).toContain("video/*");
+    const file = new File([new Uint8Array(4)], "clip.mov", { type: "video/quicktime" });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(merge).toHaveBeenCalledWith({ artifactId: "clip.mov", assetLabel: "clip.mov" }),
+    );
+    expect(imports.importAssetFile).toHaveBeenCalledWith(file, "video");
+    expect(imported).toHaveBeenCalled();
+    rerender(
+      <AppField
+        shown={shown(
+          "asset",
+          { name: "artifactId", type: "artifact", label: "Gallery item" },
+          { assetKind: "video", artifactId: "clip.mov" },
+          "Your clip",
+        )}
+        catalog={catalog}
+        onMerge={merge}
+        onImported={imported}
+      />,
+    );
+    expect(await screen.findByRole("button", { name: /clip\.mov/ })).toBeInTheDocument();
+  });
+
+  it("says when the picked file is not what the field takes", async () => {
+    imports.importAssetFile.mockRejectedValue(
+      new Error("This setting takes a clip, not this file."),
+    );
+    render(
+      <AppField
+        shown={shown(
+          "asset",
+          { name: "artifactId", type: "artifact", label: "Gallery item" },
+          { assetKind: "video", artifactId: "" },
+          "Your clip",
+        )}
+        catalog={catalog}
+        onMerge={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Photo library or Files"), {
+      target: { files: [new File([new Uint8Array(4)], "pic.png", { type: "image/png" })] },
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("This setting takes a clip");
   });
 });

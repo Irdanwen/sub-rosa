@@ -291,6 +291,7 @@
   "That feed has no episode this app can play.",
   "That feed is too large to read.",
   "That file extension is not valid.",
+  "That file is not a staged import.",
   "That file is not a Sub Rosa archive (no manifest).",
   "That file is too large to import.",
   "That is not a model id.",

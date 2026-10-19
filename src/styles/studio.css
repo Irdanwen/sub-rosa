@@ -1320,6 +1320,32 @@
   background: var(--surface-subtle);
 }
 
+/* An asset's picture, pickers and the file dropped on them. */
+.studio-node-asset-drop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  border-radius: var(--r-md);
+  outline: 1px dashed transparent;
+  outline-offset: 2px;
+  transition: outline-color var(--t-fast) var(--ease-out);
+}
+
+.studio-node-asset-drop.is-dragging {
+  outline-color: var(--brand);
+}
+
+.studio-node-asset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* :where() keeps the picker's own rule, written further down, in charge. */
+.studio-node-asset-actions :where(.studio-node-picker) {
+  flex: 1 1 auto;
+}
+
 .studio-node-asset-missing {
   max-height: none;
   margin: 0;

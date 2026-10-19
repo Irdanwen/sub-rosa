@@ -99,14 +99,16 @@ describe.each(apps.map((app) => [app.id, app] as const))("the app %s", (_id, tem
     for (const shown of fields) {
       const label = fieldLabel(shown);
       // A control named by the field: a text box, a toggle, a sheet row, or
-      // the picture's button under its heading.
+      // the media tile under its heading, which names what was picked.
       const control =
         screen.queryAllByRole("textbox", { name: label })[0] ??
         screen.queryAllByRole("spinbutton", { name: label })[0] ??
         screen.queryAllByRole("switch", { name: label })[0] ??
         screen.queryAllByRole("button", { name: new RegExp(`^${literal(label)}, `) })[0] ??
         (screen.queryAllByText(label).length > 0
-          ? screen.queryAllByRole("button", { name: /Choose (a|another) picture/ })[0]
+          ? screen.queryAllByRole("button", {
+              name: /Choose (a|another) (picture|clip|track)|hero\.png|clip\.mp4|theme\.mp3/,
+            })[0]
           : undefined);
       expect([template.id, label, Boolean(control)]).toEqual([template.id, label, true]);
     }

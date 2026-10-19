@@ -212,6 +212,20 @@ export async function saveArtifactFromBase64(
   return register(file, metadata).artifact;
 }
 
+/** Moves a file the webview streamed into Rust's staging dir (import-media.ts)
+ * into the gallery: a clip or a track picked on the device, never held whole
+ * by the webview. */
+export async function saveArtifactFromStaged(
+  stagedPath: string,
+  extension: string,
+  metadata: ArtifactMetadata,
+): Promise<StudioArtifact> {
+  const file = await invoke<ArtifactFile>("carpe_diem_media_import_staged", {
+    request: { stagedPath, extension },
+  });
+  return register(file, metadata).artifact;
+}
+
 /** Downloads a generated file (video, music) into the gallery through Rust —
  * the webview can't fetch cross-origin, and the download may need the key. */
 export async function saveArtifactFromUrl(

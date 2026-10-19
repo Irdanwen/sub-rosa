@@ -38,7 +38,14 @@ import { EmptyState } from "../../../ui/EmptyState";
 import { Spinner } from "../../../ui/Spinner";
 import { AppRunScreen, phoneRunSessions } from "./AppRunScreen";
 
-export function StudioApps({ catalog }: { catalog: MediaCatalog }) {
+export function StudioApps({
+  catalog,
+  onGalleryChanged,
+}: {
+  catalog: MediaCatalog;
+  /** A device file joined the gallery from an app's field. */
+  onGalleryChanged?: () => void;
+}) {
   const [apps, setApps] = useState<Workflow[] | null>(null);
   const [open, setOpen] = useState<Workflow>();
   const [unfinished, setUnfinished] = useState<WorkflowRunSummary[]>([]);
@@ -101,7 +108,7 @@ export function StudioApps({ catalog }: { catalog: MediaCatalog }) {
           {t("All apps")}
         </button>
         <h2 className="mobile-app-title">{open.name}</h2>
-        <AppRunScreen workflow={open} catalog={catalog} />
+        <AppRunScreen workflow={open} catalog={catalog} onGalleryChanged={onGalleryChanged} />
       </div>
     );
 

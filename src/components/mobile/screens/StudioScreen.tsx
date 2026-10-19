@@ -299,7 +299,7 @@ export function StudioScreen() {
                 onHandoffApplied={clearVideoHandoff}
               />
             ) : mode === "apps" ? (
-              <StudioApps catalog={catalog} />
+              <StudioApps catalog={catalog} onGalleryChanged={refreshGallery} />
             ) : mode === "audio" ? (
               <AudioPanel
                 catalog={catalog}
