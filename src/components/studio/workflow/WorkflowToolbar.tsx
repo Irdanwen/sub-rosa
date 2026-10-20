@@ -126,12 +126,15 @@ export function WorkflowToolbar(props: {
         {t("Versions")}
       </button>
       {props.modeSwitch}
-      <span className="studio-spacer" />
+      {/* Delete stays with the other tools, never at the far right: that is
+          where the run button sits on the graph, and the app view has none
+          there, so the two used to trade places when the mode changed. */}
       {props.hasWorkflow ? (
         <button type="button" className="btn btn-secondary" onClick={props.onDelete}>
           {t("Delete")}
         </button>
       ) : null}
+      <span className="studio-spacer" />
       {!props.asApp && estimate && (estimate.credits > 0 || estimate.metered > 0) ? (
         <span className="studio-workflow-cost" title={t("Estimated cost of one run")}>
           {costSummary(estimate)}
