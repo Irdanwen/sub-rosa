@@ -82,6 +82,7 @@ import {
   VIDEO_QUOTE_PATH,
   VIDEO_RETRIEVE_PATH,
 } from "../../lib/studio/paths";
+import { type VideoQuoteAnswer, videoQuoteCredits } from "../../lib/studio/video-quote";
 import type {
   ArtifactKind,
   MediaCatalog,
@@ -256,6 +257,7 @@ export function VideoStudio({
   const [looping, setLooping] = useState(false);
   const [videoArtifacts, setVideoArtifacts] = useState<StudioArtifact[]>([]);
   const [galleryVideos, setGalleryVideos] = useState<StudioArtifact[]>([]);
+  /** The free quote for the current form, in credits. */
   const [quote, setQuote] = useState<undefined | number>(undefined);
   /** The clip last made here, for the scene, and whether its wipe has played. */
   const [lastResult, setLastResult] = useState<StageResult | undefined>(undefined);
@@ -505,9 +507,11 @@ export function VideoStudio({
     if (!body || !model || !supportsVideoQuote(model.id)) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      mediaJson<{ quote?: number }>(VIDEO_QUOTE_PATH, body)
+      mediaJson<VideoQuoteAnswer>(VIDEO_QUOTE_PATH, body)
         .then((response) => {
-          if (!cancelled && typeof response?.quote === "number") setQuote(response.quote);
+          // In credits, as the operator charges them (video-quote.ts).
+          const credits = videoQuoteCredits(response, catalog.priceMultiplier ?? 1);
+          if (!cancelled && credits !== undefined) setQuote(credits);
         })
         .catch(() => undefined);
     }, 600);
@@ -515,7 +519,7 @@ export function VideoStudio({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [queueBody, model]);
+  }, [queueBody, model, catalog.priceMultiplier]);
 
   const start = useCallback(() => {
     if (!model) return;
@@ -542,7 +546,7 @@ export function VideoStudio({
         queueBody: body,
         parentArtifactId: handoff?.artifactId,
         parentHandoffSeconds: handoff?.timeSeconds,
-        costCredits: quote !== undefined ? quote * 100 * (catalog.priceMultiplier ?? 1) : undefined,
+        costCredits: quote,
         retrieve: (queueId) => ({
           path: VIDEO_RETRIEVE_PATH,
           body: retrieveBody(queueId, target.id),
@@ -779,8 +783,7 @@ export function VideoStudio({
     [activeChain],
   );
 
-  const multiplier = catalog.priceMultiplier ?? 1;
-  const quoteCredits = quote !== undefined ? quote * 100 * multiplier : undefined;
+  const quoteCredits = quote;
   // Anything a provider has already refused this model for. Only fields it
   // complained about explicitly, so this can never block a valid render.
   const missingFields = useMemo(() => {

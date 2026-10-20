@@ -14,6 +14,7 @@ import { estimatedSpeechSeconds } from "../speech";
 import { estimateCostCredits } from "../catalog";
 import { mediaJson } from "../client";
 import { supportsVideoQuote, VIDEO_QUOTE_PATH } from "../paths";
+import { type VideoQuoteAnswer, videoQuoteCredits } from "../video-quote";
 import type { MediaCatalog, MediaModel } from "../types";
 import {
   fedParams,
@@ -317,16 +318,13 @@ export async function quoteVideoNode(
 ): Promise<number | undefined> {
   try {
     const response = await Promise.race([
-      ask<{ quote?: number }>(VIDEO_QUOTE_PATH, quoteBody(node)),
+      ask<VideoQuoteAnswer>(VIDEO_QUOTE_PATH, quoteBody(node)),
       new Promise<undefined>((resolve) => {
         setTimeout(() => resolve(undefined), QUOTE_TIMEOUT_MS);
       }),
     ]);
-    if (response && typeof response.quote === "number") {
-      // The quote comes back in USD; credits are cents times the backend's
-      // price multiplier (same conversion VideoStudio does).
-      return Math.round(response.quote * 100 * multiplier * 100) / 100;
-    }
+    const credits = videoQuoteCredits(response, multiplier);
+    if (credits !== undefined) return credits;
   } catch {
     // Keep the static estimate.
   }
