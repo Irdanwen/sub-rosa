@@ -335,6 +335,15 @@ export async function assembleClips(options: AssembleOptions): Promise<AssembleR
     }
   }
 
+  // The first clip's opening picture is on the canvas before the recording
+  // starts: a canvas starts transparent, and the recording's first frame
+  // (the poster every player and the gallery show) came out black.
+  const firstPlayed = windows.findIndex((cut) => cut.end - cut.start > 0);
+  if (firstPlayed >= 0) {
+    await seek(videos[firstPlayed], windows[firstPlayed].start);
+    context.drawImage(videos[firstPlayed], 0, 0, width, height);
+  }
+
   const stream = canvas.captureStream(frameRate);
   for (const track of mixOut.stream.getAudioTracks()) stream.addTrack(track);
 
