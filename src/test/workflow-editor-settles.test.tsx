@@ -130,7 +130,7 @@ describe("the workflow editor", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Library" }));
+    // Deleting lands back in the library, with the one workflow left to open.
     await screen.findByRole("button", { name: "Open Cover" });
   });
 

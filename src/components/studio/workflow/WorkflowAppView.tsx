@@ -98,7 +98,7 @@ export function WorkflowAppView({
           {estimate && (estimate.credits > 0 || estimate.metered > 0) ? (
             <span className="studio-workflow-cost">{costSummary(estimate)}</span>
           ) : null}
-          <RunButton {...run} />
+          <RunButton {...run} label={t("Run")} />
         </div>
       </form>
       {outputs.length > 0 ? (

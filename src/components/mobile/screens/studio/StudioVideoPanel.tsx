@@ -32,6 +32,7 @@ import {
   VIDEO_QUOTE_PATH,
   VIDEO_RETRIEVE_PATH,
 } from "../../../../lib/studio/paths";
+import { type VideoQuoteAnswer, videoQuoteCredits } from "../../../../lib/studio/video-quote";
 import {
   referenceAudioProblem,
   referenceClipProblem,
@@ -378,9 +379,11 @@ export function VideoPanel({
     if (!body || !model || !supportsVideoQuote(model.id)) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      mediaJson<{ quote?: number }>(VIDEO_QUOTE_PATH, body)
+      mediaJson<VideoQuoteAnswer>(VIDEO_QUOTE_PATH, body)
         .then((response) => {
-          if (!cancelled && typeof response?.quote === "number") setQuote(response.quote);
+          // In credits: the dock prints credits, and the quote was dollars.
+          const credits = videoQuoteCredits(response, catalog.priceMultiplier ?? 1);
+          if (!cancelled && credits !== undefined) setQuote(credits);
         })
         .catch(() => undefined);
     }, 600);
@@ -388,7 +391,7 @@ export function VideoPanel({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [requestBody, model]);
+  }, [requestBody, model, catalog.priceMultiplier]);
 
   const busy =
     job.state.phase === "queueing" ||

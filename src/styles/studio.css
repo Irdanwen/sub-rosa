@@ -3074,7 +3074,8 @@ button.studio-block-crumb:hover {
 .workflow-app {
   display: grid;
   gap: var(--sp-5);
-  max-width: 720px;
+  /* A fixed width: the form must not widen when the first result lands. */
+  width: min(100%, 720px);
   margin: 0 auto;
   padding: var(--sp-5) 0;
 }
@@ -3144,6 +3145,26 @@ button.studio-block-crumb:hover {
 .workflow-app-result figcaption {
   color: var(--muted-foreground);
   font-size: var(--fs-xs);
+}
+
+/* A result in an app is the point of the app: shown whole, not in the
+ * 180 px box a canvas step keeps it in; a list's pictures large enough to tell apart. */
+.workflow-app-result :where(.studio-node-output) {
+  max-height: none;
+  overflow: visible;
+}
+
+.workflow-app-result :where(.studio-node-output) img {
+  width: auto;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+}
+
+.workflow-app-result :where(.studio-node-items) {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--sp-2);
+  max-height: none;
 }
 
 .workflow-app-waiting {

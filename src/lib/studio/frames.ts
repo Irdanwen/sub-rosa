@@ -22,6 +22,7 @@
  * `./assemble` records in real time.
  */
 
+import { t } from "../i18n";
 import { downscaleDataUrl } from "./downscale";
 
 /**
@@ -224,7 +225,7 @@ export function loadVideoElement(src: string, { muted = true } = {}): Promise<HT
       outcome();
     };
     const onLoaded = () => settle(() => resolve(video));
-    const onError = () => settle(() => reject(new Error("A clip failed to load.")));
+    const onError = () => settle(() => reject(new Error(t("A clip failed to load."))));
     // A source that answers neither `loadedmetadata` nor `error` is not a
     // hypothetical: that is what a stalled asset request looks like from here.
     const timer = window.setTimeout(onError, LOAD_TIMEOUT_MS);

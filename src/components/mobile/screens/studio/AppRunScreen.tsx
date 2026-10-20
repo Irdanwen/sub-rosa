@@ -266,7 +266,7 @@ export function AppRunScreen({
           onClick={start}
         >
           {estimate.credits > 0 || estimate.metered > 0
-            ? t("Run, {price}", { price: costSummary(estimate) })
+            ? `${t("Run")} · ${costSummary(estimate)}`
             : t("Run")}
         </button>
       )}

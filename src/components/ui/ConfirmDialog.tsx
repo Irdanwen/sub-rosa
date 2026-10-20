@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { t } from "../../lib/i18n";
 import { Dialog } from "./Dialog";
 
 type ConfirmDialogProps = {
@@ -19,10 +20,13 @@ export function ConfirmDialog({
   onConfirm,
   title,
   description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   destructive = false,
 }: ConfirmDialogProps) {
+  // Defaults resolved at render, so they follow the locale like any other sentence.
+  const confirmWords = confirmLabel ?? t("Confirm");
+  const cancelWords = cancelLabel ?? t("Cancel");
   const [submitting, setSubmitting] = useState(false);
 
   async function handleConfirm() {
@@ -50,7 +54,7 @@ export function ConfirmDialog({
       footer={
         <>
           <button type="button" className="primary-action" onClick={onClose} disabled={submitting}>
-            {cancelLabel}
+            {cancelWords}
           </button>
           <button
             type="button"
@@ -58,7 +62,7 @@ export function ConfirmDialog({
             onClick={() => void handleConfirm()}
             disabled={submitting}
           >
-            {confirmLabel}
+            {confirmWords}
           </button>
         </>
       }

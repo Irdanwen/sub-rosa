@@ -11,6 +11,7 @@
 // properly. Without those options the old live path is used unchanged, so an
 // existing caller gets exactly what it always got.
 
+import { t } from "../i18n";
 import { loadVideoElement, seekVideo } from "./frames";
 import { type MixLane, type MixSource, planMix, renderMix } from "./mix";
 
@@ -100,10 +101,25 @@ export function timelineSeconds(
   }, 0);
 }
 
-/** Unmuted: the assembly mixes every clip's own audio into the recording. */
-function loadVideo(src: string): Promise<HTMLVideoElement> {
-  return loadVideoElement(src, { muted: false });
+/** Unmuted: the assembly mixes every clip's own audio into the recording.
+ * One retry after a pause: a clip the step before just wrote can answer the
+ * first request with an error while the file settles (seen on the desktop,
+ * three clips rendered within seconds of each other), and a montage of paid
+ * renders must not fail on that. */
+async function loadVideo(src: string): Promise<HTMLVideoElement> {
+  try {
+    return await loadVideoElement(src, { muted: false });
+  } catch (error) {
+    await new Promise((resolve) => setTimeout(resolve, CLIP_RETRY_MS));
+    try {
+      return await loadVideoElement(src, { muted: false });
+    } catch {
+      throw error;
+    }
+  }
 }
+
+const CLIP_RETRY_MS = 2_000;
 
 const seek = seekVideo;
 
@@ -272,7 +288,7 @@ export async function mixSounds(options: {
 }
 
 export async function assembleClips(options: AssembleOptions): Promise<AssembleResult> {
-  if (options.clips.length === 0) throw new Error("Add at least one clip.");
+  if (options.clips.length === 0) throw new Error(t("Add at least one clip."));
   const mime = pickRecorderMime();
   if (!mime) throw new Error("This system cannot record video.");
 
@@ -317,6 +333,15 @@ export async function assembleClips(options: AssembleOptions): Promise<AssembleR
       gain.gain.value = options.audioVolume ?? 0.6;
       audioContext.createMediaElementSource(backgroundAudio).connect(gain).connect(mixOut);
     }
+  }
+
+  // The first clip's opening picture is on the canvas before the recording
+  // starts: a canvas starts transparent, and the recording's first frame
+  // (the poster every player and the gallery show) came out black.
+  const firstPlayed = windows.findIndex((cut) => cut.end - cut.start > 0);
+  if (firstPlayed >= 0) {
+    await seek(videos[firstPlayed], windows[firstPlayed].start);
+    context.drawImage(videos[firstPlayed], 0, 0, width, height);
   }
 
   const stream = canvas.captureStream(frameRate);

@@ -98,7 +98,9 @@ export async function importImageFile(file: File): Promise<StudioArtifact> {
   return saveArtifactFromBase64(dataUrl.replace(/^data:[^,]*,/, ""), extension, {
     kind: "image",
     model: "",
-    prompt: "",
+    // The gallery names a file by its prompt, and an import has none: its
+    // own name is what the person knows it by, not the id it is saved under.
+    prompt: file.name,
   });
 }
 
@@ -118,6 +120,6 @@ export async function importAssetFile(file: File, kind: AssetKind): Promise<Stud
     // Audio goes in the music bucket, the one an audio asset's picker offers.
     kind: kind === "video" ? "video" : "music",
     model: "",
-    prompt: "",
+    prompt: file.name,
   });
 }

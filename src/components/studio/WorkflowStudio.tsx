@@ -235,6 +235,8 @@ function WorkflowEditor({
   const results = sessions.results(current?.id);
   const running = sessions.running(current?.id);
   const [runError, setRunError] = useState<string | undefined>(undefined);
+  /** The view shown (graph or app), for callbacks declared before it. */
+  const modeRef = useRef<"graph" | "app">("graph");
   const saveTimer = useRef<number | undefined>(undefined);
   const currentRef = useRef<Workflow | undefined>(current);
   currentRef.current = current;
@@ -1057,6 +1059,9 @@ function WorkflowEditor({
       // not block running this one.
       const check = validateWorkflow(runnable);
       if (!check.ok) {
+        // The app form already names the field that is missing, under it;
+        // the step's own wording above the form would say it twice.
+        if (modeRef.current === "app") return;
         const first = check.errors[0];
         setRunError(first?.message ?? t("The workflow is invalid."));
         if (first?.nodeId) locateNode(first.nodeId);
@@ -1095,6 +1100,10 @@ function WorkflowEditor({
     const remaining = listWorkflows();
     setWorkflows(remaining);
     hydrate(remaining[0]);
+    // Back to the library, not onto whichever workflow comes next: the
+    // person asked to be rid of one, not to open another.
+    setLeftCanvas(true);
+    setView("library");
   }, [current, hydrate, sessions]);
 
   const newWorkflow = useCallback(() => {
@@ -1189,6 +1198,7 @@ function WorkflowEditor({
   const [historyOpen, setHistoryOpen] = useState(false);
   /** The graph, or the workflow as an app (ADR-0119). */
   const [mode, setMode] = useState<"graph" | "app">("graph");
+  modeRef.current = mode;
   const [buildingApp, setBuildingApp] = useState(false);
   const openedId = current?.id;
   // A workflow that is an app opens as one.
@@ -1610,6 +1620,8 @@ function WorkflowEditor({
         libraryButtonRef={libraryButtonRef}
         onLibrary={() => {
           setLeftCanvas(true);
+          // The run's error belongs to the canvas it was shown on.
+          setRunError(undefined);
           setView("library");
         }}
         name={current?.name ?? ""}
@@ -1655,7 +1667,13 @@ function WorkflowEditor({
         open={confirmingDelete}
         onClose={() => setConfirmingDelete(false)}
         title={t("Delete this workflow?")}
-        description={t("Its results stay in the gallery.")}
+        description={
+          running
+            ? t(
+                "It is producing right now: deleting it stops the production. What is already made stays in the gallery.",
+              )
+            : t("Its results stay in the gallery.")
+        }
         confirmLabel={t("Delete")}
         destructive
         onConfirm={() => {
@@ -1712,7 +1730,11 @@ function WorkflowEditor({
       ) : null}
       {productionBanners}
       {runError ? <ErrorMessage>{runError}</ErrorMessage> : null}
-      {validation && (validation.errors.length > 0 || validation.warnings.length > 0) ? (
+      {/* The app form says what its own fields need, under them; the canvas
+          strip would say the same thing a second time, above, in step terms. */}
+      {mode === "graph" &&
+      validation &&
+      (validation.errors.length > 0 || validation.warnings.length > 0) ? (
         <div className="studio-validation">
           {[...validation.errors, ...validation.warnings].map((issue) => {
             const key = `${issue.severity}:${issue.nodeId ?? issue.edgeId ?? ""}:${issue.message}`;
