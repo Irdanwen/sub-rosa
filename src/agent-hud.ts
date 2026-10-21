@@ -23,6 +23,14 @@ import {
 } from "./lib/agent-hud-settings";
 import { agentHudHide, agentHudOpenAgent, agentHudSetLayout, agentHudShow } from "./lib/tauri";
 import { agentHudEndDrag, agentHudStartDrag } from "./lib/agent-hud-drag";
+import {
+  applyLocale,
+  initLocale,
+  LOCALE_STORAGE_KEY,
+  localeChoice,
+  resolveLocale,
+  t,
+} from "./lib/i18n";
 import { installNativeContextMenuGuard } from "./lib/native-context-menu";
 import { isMacDesktopPlatform } from "./lib/platform";
 import type { HermesSessionInfo } from "./lib/tauri";
@@ -31,6 +39,9 @@ import "./styles/agent-hud.css";
 
 // Recolor this HUD window to the selected accent and keep it live-synced.
 subscribeBrand();
+// The HUD window lives as long as the app: it reads the language now and
+// follows a change made in the main window (the storage listener below).
+initLocale();
 
 type HudSessionStatus = AgentSessionStatusKind | "idle";
 
@@ -90,6 +101,16 @@ installNativeContextMenuGuard();
 // Only macOS draws the window's native shadow (agent_hud.rs); elsewhere the
 // stylesheet gives the surface an edge of its own.
 if (hud) hud.dataset.nativeShadow = isMacDesktopPlatform() ? "true" : "false";
+
+// The page's own markup is written in English; the copy it shows comes from
+// here, and again whenever the language changes.
+function applyStaticCopy() {
+  surface?.setAttribute("aria-label", t("Agent activity"));
+  stack?.setAttribute("aria-label", t("Agent sessions"));
+  if (hideHud) hideHud.textContent = t("Hide sessions HUD");
+}
+
+applyStaticCopy();
 
 const state = {
   enabled: getAgentHudEnabled(),
@@ -344,13 +365,17 @@ function renderPill(entries: HudEntry[], expanded: boolean) {
     const showBadge = waitingCount > 0 && runningCount > 0;
     pillBadge.hidden = !showBadge;
     if (showBadge) {
+      const activeLabel = t("{count} active agents", { count: activeCount });
       pillBadge.textContent = String(activeCount);
-      pillBadge.setAttribute("aria-label", `${activeCount} active agents`);
-      pillBadge.title = `${activeCount} active agents`;
+      pillBadge.setAttribute("aria-label", activeLabel);
+      pillBadge.title = activeLabel;
     }
   }
   pill.setAttribute("aria-expanded", expanded ? "true" : "false");
-  pill.setAttribute("aria-label", expanded ? "Collapse agent activity" : "Expand agent activity");
+  pill.setAttribute(
+    "aria-label",
+    expanded ? t("Collapse agent activity") : t("Expand agent activity"),
+  );
 }
 
 function pillSummary(entries: HudEntry[]): {
@@ -366,7 +391,8 @@ function pillSummary(entries: HudEntry[]): {
   ).length;
   if (waitingCount > 0) {
     return {
-      label: waitingCount === 1 ? "1 needs input" : `${waitingCount} need input`,
+      label:
+        waitingCount === 1 ? t("1 needs input") : t("{count} need input", { count: waitingCount }),
       status: "waitingForUser",
       runningCount,
       waitingCount,
@@ -374,7 +400,7 @@ function pillSummary(entries: HudEntry[]): {
   }
   if (runningCount > 0) {
     return {
-      label: runningCount === 1 ? "1 running" : String(runningCount),
+      label: runningCount === 1 ? t("1 running") : String(runningCount),
       status: "running",
       runningCount,
       waitingCount,
@@ -389,7 +415,7 @@ function pillSummary(entries: HudEntry[]): {
       waitingCount,
     };
   }
-  return { label: "Idle", status: "idle", runningCount, waitingCount };
+  return { label: t("Idle"), status: "idle", runningCount, waitingCount };
 }
 
 function renderRow(entry: HudEntry, index: number) {
@@ -498,7 +524,7 @@ function sessionStatus(session: HermesSessionInfo, record?: StatusRecord): HudSe
 
 function sessionTitle(session: HermesSessionInfo, record?: StatusRecord) {
   return (
-    record?.title?.trim() || session.title?.trim() || session.preview?.trim() || "Agent session"
+    record?.title?.trim() || session.title?.trim() || session.preview?.trim() || t("Agent session")
   );
 }
 
@@ -510,7 +536,7 @@ function sessionSummary(
   const summary = record?.summary?.trim();
   if (summary) return summary;
   if (status !== "idle") return statusLabel(status);
-  return session.preview?.trim() || "Idle";
+  return session.preview?.trim() || t("Idle");
 }
 
 function sessionTimestamp(session: HermesSessionInfo, record?: StatusRecord) {
@@ -525,7 +551,7 @@ function sessionTimestamp(session: HermesSessionInfo, record?: StatusRecord) {
 }
 
 function statusTitle(record: StatusRecord) {
-  return record.title?.trim() || record.prompt?.trim() || "Agent session";
+  return record.title?.trim() || record.prompt?.trim() || t("Agent session");
 }
 
 function statusSummary(record: StatusRecord) {
@@ -562,19 +588,19 @@ function statusLabel(status: HudSessionStatus) {
     case "received":
     case "starting":
     case "running":
-      return "Thinking";
+      return t("Thinking");
     case "waitingForUser":
-      return "Needs input";
+      return t("Needs input");
     case "completed":
-      return "Done";
+      return t("Done");
     case "failed":
-      return "Hit a problem";
+      return t("Hit a problem");
     case "cancelled":
-      return "Stopped";
+      return t("Stopped");
     case "idle":
-      return "Idle";
+      return t("Idle");
     default:
-      return "Idle";
+      return t("Idle");
   }
 }
 
@@ -1122,6 +1148,11 @@ window.addEventListener(AGENT_SESSION_STATUS_EVENT, (event) => {
 window.addEventListener("storage", (event) => {
   if (event.key === AGENT_HUD_ENABLED_KEY) {
     applyVisibility(event.newValue !== "false");
+  }
+  if (event.key === LOCALE_STORAGE_KEY) {
+    applyLocale(resolveLocale(localeChoice()));
+    applyStaticCopy();
+    render();
   }
 });
 

@@ -2879,7 +2879,17 @@ restait collé dans son coin. Quatre causes, aucune propre à une session :
 - **Ombre** : sur une fenêtre sans décoration, `set_shadow(true)` ajoute sous
   Windows 11 un cadre DWM de 1 px (couleur d'accentuation au focus) et des
   coins de 8 px autour d'une pastille de 16 px. L'ombre native reste sur macOS
-  ; ailleurs la surface porte un filet intérieur (`data-native-shadow`).
+  ; ailleurs la surface porte un filet intérieur (`data-native-shadow`). Même
+  correction pour le HUD de réunion (le cadre entourait toute sa fenêtre
+  carrée de 76 px, gouttières comprises, d'où le même filet sur la pastille)
+  et pour la barre de chat (qui a déjà sa bordure CSS). Le HUD de dictée
+  coupait déjà l'ombre au démarrage.
+- **Langue** : tout le texte du HUD passait à côté de `t()` (« 1 running »
+  dans une app en français) : `agent-hud.ts` est du TS pur, que le garde
+  `i18n-guard` (TSX seulement) ne lit pas. Il passe par `t()`, le balisage
+  anglais de `agent-hud.html` est réécrit au chargement, et un changement de
+  langue fait dans la fenêtre principale arrive par l'événement `storage`
+  (la fenêtre du HUD ne se recharge jamais).
 - **Largeur** : la surface repliée était en `fit-content`, plafonnée par la
   fenêtre qu'on dimensionne justement à partir de cette mesure : un libellé
   plus long que le précédent (« Done » puis « 1 running ») restait tronqué.
@@ -2903,11 +2913,18 @@ restait collé dans son coin. Quatre causes, aucune propre à une session :
 | `src/agent-hud.ts` | Geste glisser/clic, bascule au relâchement, focus pendant une pression ignoré, `data-native-shadow` | Réappliquer |
 | `src/styles/agent-hud.css` | `width: max-content`, filet sans ombre native | Réappliquer |
 | `src/lib/tauri.ts` | `agentHudStartDrag`, `agentHudEndDrag` | Réappliquer |
+| `src-tauri/src/meeting_hud.rs`, `src-tauri/src/chat_bar/mod.rs` | `set_shadow(!cfg!(target_os = "windows"))` | Réappliquer |
+| `src/meeting-hud.ts`, `src/styles/meeting-hud.css` | `data-native-shadow`, filet sans ombre native | Réappliquer |
+| `src/locales/*.json` | Les 11 phrases du HUD, dans les cinq langues | `pnpm i18n:extract` |
 
 ### Pièges
 
 - **À valider sur machine réelle**, Windows surtout : le glisser natif, la
   détection de fin (premier `pointermove` sans bouton), et l'absence de cadre.
-- Les HUD de dictée et de réunion et la barre de chat gardent
-  `"shadow": true` : sous Windows ils ont probablement le même cadre DWM.
-- Le HUD n'est pas traduit (« 1 running », « Thinking »…), hors de `t()`.
+- `tauri.conf.json` garde `"shadow": true` pour ces fenêtres : c'est l'appel
+  au démarrage qui décide, par plateforme. Ne pas remettre `set_shadow(true)`
+  sans condition à la fusion.
+- Reste ouvert : sous Windows le HUD de réunion contre-tourne ses barres quand
+  on le gare sur un côté (`meeting-hud-zone`), alors que la rotation native qui
+  devait les accompagner n'existe que sur macOS. Ses libellés d'accessibilité
+  sont aussi hors de `t()`.

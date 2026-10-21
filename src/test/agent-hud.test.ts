@@ -827,6 +827,35 @@ describe("agent HUD", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_hide");
   });
 
+  it("speaks the language chosen in the app", async () => {
+    localStorage.setItem("os-june:locale", "fr");
+    await loadAgentHud();
+
+    emitStatus({ status: "running", title: "Résumer la réunion", summary: "Lecture des notes." });
+    await flushPromises();
+
+    expect(pillLabelElement()).toHaveTextContent("1 en cours");
+    expect(pillElement()).toHaveAttribute("aria-label", "Déplier l'activité de l'agent");
+    expect(hideHudButton()).toHaveTextContent("Masquer le HUD des sessions");
+    expect(surfaceElement()).toHaveAttribute("aria-label", "Activité de l'agent");
+  });
+
+  it("follows a language change made in the main window", async () => {
+    await loadAgentHud();
+
+    emitStatus({ status: "waitingForUser", title: "Need approval", summary: "Review this step." });
+    await flushPromises();
+    expect(pillLabelElement()).toHaveTextContent("1 needs input");
+
+    localStorage.setItem("os-june:locale", "fr");
+    window.dispatchEvent(new StorageEvent("storage", { key: "os-june:locale", newValue: "fr" }));
+    await flushPromises();
+
+    expect(pillLabelElement()).toHaveTextContent("1 vous attend");
+    expect(pillElement()).toHaveAttribute("aria-label", "Replier l'activité de l'agent");
+    expect(hideHudButton()).toHaveTextContent("Masquer le HUD des sessions");
+  });
+
   it("honors a disabled flag saved under the legacy mascot key", async () => {
     localStorage.setItem("june:mascot:enabled", "false");
     await loadAgentHud();
