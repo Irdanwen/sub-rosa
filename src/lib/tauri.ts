@@ -1036,14 +1036,6 @@ export async function agentHudSetLayout(input: {
   return invoke<void>("agent_hud_set_layout", { request: input });
 }
 
-export async function agentHudStartDrag() {
-  return invoke<void>("agent_hud_start_drag");
-}
-
-export async function agentHudEndDrag() {
-  return invoke<void>("agent_hud_end_drag");
-}
-
 export async function agentHudOpenAgent(session?: HermesSessionInfo) {
   return invoke<void>("agent_hud_open_agent", { session });
 }

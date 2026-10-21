@@ -21,14 +21,8 @@ import {
   setAgentHudEnabled,
   type AgentHudVisibilityChangedDetail,
 } from "./lib/agent-hud-settings";
-import {
-  agentHudEndDrag,
-  agentHudHide,
-  agentHudOpenAgent,
-  agentHudSetLayout,
-  agentHudShow,
-  agentHudStartDrag,
-} from "./lib/tauri";
+import { agentHudHide, agentHudOpenAgent, agentHudSetLayout, agentHudShow } from "./lib/tauri";
+import { agentHudEndDrag, agentHudStartDrag } from "./lib/agent-hud-drag";
 import { installNativeContextMenuGuard } from "./lib/native-context-menu";
 import { isMacDesktopPlatform } from "./lib/platform";
 import type { HermesSessionInfo } from "./lib/tauri";
