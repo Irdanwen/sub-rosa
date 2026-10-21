@@ -249,7 +249,8 @@ export async function mixSounds(options: {
   lanes: NonNullable<AssembleOptions["lanes"]>;
   normalizeToLufs?: number;
 }): Promise<AudioBuffer> {
-  if (typeof OfflineAudioContext === "undefined") throw new Error("This system cannot mix sound.");
+  if (typeof OfflineAudioContext === "undefined")
+    throw new Error(t("This system cannot mix sound."));
   const scratch = new OfflineAudioContext(1, 1, 48000);
   const buffers = new Map<string, AudioBuffer>();
   const sources: MixSource[] = [];
@@ -263,7 +264,7 @@ export async function mixSounds(options: {
     for (const [index, sound] of sounds.entries()) {
       const id = `${lane}-${index}`;
       const decoded = await decodeAudio(scratch, sound.src);
-      if (!decoded) throw new Error("One of the sounds could not be read.");
+      if (!decoded) throw new Error(t("One of the sounds could not be read."));
       buffers.set(id, decoded);
       const outSeconds = sound.outSeconds ?? decoded.duration;
       const inSeconds = sound.inSeconds ?? 0;
@@ -278,12 +279,12 @@ export async function mixSounds(options: {
       durationSeconds = Math.max(durationSeconds, sound.atSeconds + outSeconds - inSeconds);
     }
   }
-  if (sources.length === 0) throw new Error("Connect at least one sound to mix.");
+  if (sources.length === 0) throw new Error(t("Connect at least one sound to mix."));
   const rendered = await renderMix(planMix({ durationSeconds, sources }), {
     buffers,
     targetLufs: options.normalizeToLufs ?? null,
   });
-  if (!rendered) throw new Error("This system cannot mix sound.");
+  if (!rendered) throw new Error(t("This system cannot mix sound."));
   return rendered.buffer;
 }
 

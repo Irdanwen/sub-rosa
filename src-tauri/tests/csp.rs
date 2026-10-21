@@ -120,15 +120,20 @@ fn network_reach_stays_local() {
             "connect-src must not allow the bare {forbidden}: {connect_src:?}"
         );
     }
+    // The asset protocol (both of its spellings) and page-made blobs reach no
+    // host: a mix reads the gallery files it decodes through them, and the
+    // asset scope pinned below is what bounds the files.
+    let in_app = ["asset:", "http://asset.localhost", "blob:"];
     for source in connect_src {
         let is_local = source.starts_with("'")
             || source.starts_with("ipc:")
             || source.contains("127.0.0.1")
-            || source.contains("ipc.localhost");
+            || source.contains("ipc.localhost")
+            || in_app.contains(&source.as_str());
         assert!(
             is_local,
-            "connect-src source {source} is not loopback or IPC; every host the \
-             webview can reach is one an XSS could probe"
+            "connect-src source {source} is not loopback, IPC or the app's own \
+             files; every host the webview can reach is one an XSS could probe"
         );
     }
 }
