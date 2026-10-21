@@ -30,6 +30,7 @@ import {
   saveArtifactFromBase64,
   saveArtifactFromUrl,
 } from "./artifacts";
+import { isSheetPrompt } from "./bible/sheet";
 import type { ArtifactFile, StudioArtifact } from "./types";
 import { waitForSettledJob, withSubmissionSlot } from "./workflow/render-wait";
 import { TRANSIENT_WAIT_BUDGET_MS, transientDelays } from "./workflow/transient";
@@ -120,6 +121,7 @@ async function loadAsset(artifactId: string): Promise<LoadedAsset> {
       fileName: artifact.fileName,
       parentId: artifact.parentId,
       parentHandoffSeconds: artifact.parentHandoffSeconds,
+      ...(isSheetPrompt(artifact.prompt) ? { sheet: true } : {}),
     };
   }
   return {
@@ -280,6 +282,7 @@ async function rehydrate(stored: StoredOutput, storage: WorkflowStorage): Promis
         mimeType: asset.mimeType ?? stored.mimeType,
         artifactId: stored.artifactId,
         chainFrom: stored.chainFrom,
+        ...(asset.sheet ? { sheet: true } : {}),
       };
     }
     case "audio": {

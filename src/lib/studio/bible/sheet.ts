@@ -28,6 +28,32 @@ export const SHEET_CUTS: ReadonlyArray<{ cell: number; role: BibleRole }> = [
 /** How much of each side of a cell is shaved off, to lose the gutter. */
 export const SHEET_INSET = 0.05;
 
+/** The cell a video model is sent in place of a whole sheet: the full body
+ * from the front, the one view that shows the whole character. */
+export const SHEET_LEAD_CELL = 0;
+
+/** The smallest side the lead view is drawn at. Video models refuse a
+ * picture under 300 pixels a side, and a ninth of a 1024 pixel sheet is
+ * barely that once the gutter is shaved. */
+const LEAD_VIEW_MIN_SIDE = 512;
+
+/**
+ * Whether a gallery picture is a sheet, by the prompt it was drawn from.
+ *
+ * Every sheet the app draws asks for the same grid, whether the bible drew it
+ * (`SHEET_LAYOUT`) or a composition did (`sheetPrompt`), and a rewritten
+ * bible prompt keeps the grid in substance (`SHEET_RULE`), if not word for
+ * word. The file itself carries no mark.
+ */
+export function isSheetPrompt(prompt: string | undefined): boolean {
+  return (
+    !!prompt &&
+    /\b(?:three by three|3\s*(?:x|×|by)\s*3)\s+grid\b|\bgrid of nine\b|\bnine (?:equal )?panels\b/i.test(
+      prompt,
+    )
+  );
+}
+
 /** A trim larger than this on any side is not a margin, it is the picture. */
 const MAX_MARGIN = 0.15;
 
@@ -141,16 +167,22 @@ export async function cutSheet(
 }
 
 /** Any cells of a 3 by 3 sheet, in the order asked, as base64 PNG. The
- * Studio's composer cuts all nine; the bible keeps three. */
-export async function cutSheetCells(dataUri: string, cells: readonly number[]): Promise<string[]> {
+ * Studio's composer cuts all nine; the bible keeps three. A cell smaller than
+ * `minSide` on either side is drawn larger, keeping its shape. */
+export async function cutSheetCells(
+  dataUri: string,
+  cells: readonly number[],
+  minSide = 0,
+): Promise<string[]> {
   const image = await loadImage(dataUri);
   const bounds = measureGrid(image);
   const cuts: string[] = [];
   for (const cell of cells) {
     const rect = sheetCell(bounds, cell);
+    const scale = Math.max(1, minSide / Math.min(rect.width, rect.height));
     const canvas = document.createElement("canvas");
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+    canvas.width = Math.round(rect.width * scale);
+    canvas.height = Math.round(rect.height * scale);
     const context = canvas.getContext("2d");
     if (!context) throw new Error(t("The character sheet could not be read."));
     context.drawImage(
@@ -161,10 +193,18 @@ export async function cutSheetCells(dataUri: string, cells: readonly number[]): 
       rect.height,
       0,
       0,
-      rect.width,
-      rect.height,
+      canvas.width,
+      canvas.height,
     );
     cuts.push(canvas.toDataURL("image/png").split(",")[1] ?? "");
   }
   return cuts;
+}
+
+/** A sheet's lead view (`SHEET_LEAD_CELL`), as base64 PNG: what a video
+ * model is sent in its place (ADR-0066). */
+export async function sheetLeadView(dataUri: string): Promise<string> {
+  const [cut] = await cutSheetCells(dataUri, [SHEET_LEAD_CELL], LEAD_VIEW_MIN_SIDE);
+  if (!cut) throw new Error(t("The character sheet could not be read."));
+  return cut;
 }

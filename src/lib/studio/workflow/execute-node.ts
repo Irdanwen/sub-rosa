@@ -20,6 +20,7 @@ import {
   speechCapabilities,
 } from "../speech";
 import { mediaJson } from "../client";
+import { sheetLeadView } from "../bible/sheet";
 import { composePacks, sheetable, sheetPrompt } from "../compose/packs";
 import { composeImages, nativeQueuedImage, removeBackground, upscaleImage } from "../edit-image";
 import { cropForSending, naturalSize, prepareSource, rasterizeZone } from "../retouch/canvas-io";
@@ -181,6 +182,25 @@ function imageDataUri(image: Extract<NodeOutput, { kind: "image" }>): string {
   return `data:${image.mimeType};base64,${image.base64}`;
 }
 
+/**
+ * What a video step is sent for a picture: a character sheet never reaches a
+ * video model whole (ADR-0066). Handed nine figures, motion control finds no
+ * one character to move and keeps the person in the clip, and the other
+ * models film the grid. The sheet's lead view, the full body from the front,
+ * goes instead.
+ */
+async function videoPicture(
+  image: Extract<NodeOutput, { kind: "image" }>,
+): Promise<Extract<NodeOutput, { kind: "image" }>> {
+  if (!image.sheet) return image;
+  return {
+    kind: "image",
+    base64: await sheetLeadView(imageDataUri(image)),
+    mimeType: "image/png",
+    chainFrom: image.chainFrom,
+  };
+}
+
 function queueId(response: Record<string, unknown>): string {
   const id = response.queue_id ?? response.id;
   if (typeof id !== "string" || id === "") {
@@ -301,6 +321,7 @@ export async function executeNode(
           base64: asset.base64,
           mimeType: asset.mimeType ?? "image/png",
           artifactId: asset.artifactId,
+          ...(asset.sheet ? { sheet: true } : {}),
         };
       }
       if (asset.kind === "video") {
@@ -657,9 +678,14 @@ export async function executeNode(
         stringParam(params, "prompt") ?? "",
         textInputOf(ports, "prompt"),
       );
-      const opening = imagesOn(ports, "openingFrame")[0];
-      const end = imagesOn(ports, "endFrame")[0];
-      const references = imagesOn(ports, "references");
+      const openingInput = imagesOn(ports, "openingFrame")[0];
+      const opening = openingInput && (await videoPicture(openingInput));
+      const endInput = imagesOn(ports, "endFrame")[0];
+      const end = endInput && (await videoPicture(endInput));
+      const references: Extract<NodeOutput, { kind: "image" }>[] = [];
+      for (const reference of imagesOn(ports, "references")) {
+        references.push(await videoPicture(reference));
+      }
 
       // Reference clips travel inline, so they are read out of the gallery
       // here rather than passed around as URLs no backend could fetch.
@@ -1103,10 +1129,11 @@ export async function executeNode(
           base64: drawn.base64 ?? "",
           mimeType: drawn.mimeType ?? "image/png",
           artifactId: saved.artifactId,
+          sheet: true,
         };
       }
       const drawn = await nativeQueuedImage(request.base, request.body, "workflow");
-      return { kind: "image", base64: drawn, mimeType: "image/png" };
+      return { kind: "image", base64: drawn, mimeType: "image/png", sheet: true };
     }
 
     case "textTemplate": {

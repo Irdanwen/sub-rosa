@@ -814,6 +814,8 @@ them in a fixed 3 by 3 grid. It is drawn from the character's portrait when
 there is one, composes opening images, and is cut into a `portrait`, a
 `profile` and an `outfit`. It is **never** part of the reference stack sent to a video model,
 which would film the grid ([ADR-0066](docs/adr/0066-a-character-sheet-composes-frames-and-never-reaches-video.md)).
+A sheet a workflow hands to a video step is sent as its **lead view**, the
+full body from the front, cut out of the top left panel.
 _Avoid_: turnaround, model sheet, planche (in code and docs).
 
 **Voice donor**:

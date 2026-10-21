@@ -20,6 +20,9 @@ export type NodeOutput =
       /** Set when the image is a handoff frame: the clip it was read from and
        * where — the video generated from it records these as parent links. */
       chainFrom?: ChainRef;
+      /** A character sheet (nine views in a grid): a video step is sent its
+       * lead view, never the grid (ADR-0066). */
+      sheet?: boolean;
     }
   // `source` tells savers which gallery bucket the audio belongs to — with
   // base64 delivery, music and speech are otherwise indistinguishable.
@@ -132,6 +135,8 @@ export interface LoadedAsset {
   fileName?: string;
   parentId?: string;
   parentHandoffSeconds?: number;
+  /** Image assets only: the picture is a character sheet (`isSheetPrompt`). */
+  sheet?: boolean;
 }
 
 /**

@@ -13,6 +13,7 @@
 // Neither digest holds a node id or a position: moving, renaming or
 // duplicating a branch keeps its cache. The display name is left out too.
 
+import { isSheetPrompt } from "../bible/sheet";
 import { stableJson } from "./stable-json";
 import type { NodeOutput } from "./run-types";
 import { maybeNodeSchema, openInputPorts, resolveInputPort, outputKindOf } from "./schema";
@@ -45,6 +46,18 @@ function header(node: WorkflowNode) {
   };
 }
 
+/** Whether a step's output is a character sheet, from the graph alone: a
+ * sheet step, or a gallery pick whose label is a sheet's prompt (the pickers
+ * label an asset with its prompt). */
+function drawsSheet(node: WorkflowNode): boolean {
+  if (node.type === "sheet") return true;
+  return (
+    node.type === "asset" &&
+    typeof node.params.assetLabel === "string" &&
+    isSheetPrompt(node.params.assetLabel)
+  );
+}
+
 /** One upstream output, as the digest input it is: a file by its gallery id,
  * a text or an inline frame by its own digest. */
 export async function outputDigest(output: NodeOutput): Promise<string> {
@@ -74,7 +87,22 @@ export async function runtimeKey(
   for (const [portId, outputs] of [...ports.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     inputs.push([portId, await Promise.all(outputs.map(outputDigest))]);
   }
-  return sha256(stableJson({ ...header(node), inputs, model: model ?? null }));
+  // A video step is sent a sheet's lead view, not the sheet (execute-node),
+  // which an older build did send: a render made from the whole grid is not
+  // an answer to this request. Every other key is left as it was.
+  const leadView =
+    node.type === "video" &&
+    [...ports.values()].some((outputs) =>
+      outputs.some((output) => output.kind === "image" && output.sheet),
+    );
+  return sha256(
+    stableJson({
+      ...header(node),
+      inputs,
+      model: model ?? null,
+      ...(leadView ? { sheets: "lead view" } : {}),
+    }),
+  );
 }
 
 /** Static keys for every node, from the graph alone (see the module note). */
@@ -92,6 +120,7 @@ export async function staticKeys(workflow: Pick<Workflow, "nodes" | "edges">) {
     const schema = maybeNodeSchema(node.type);
     const open = new Set(schema ? openInputPorts(schema, node.params).map((port) => port.id) : []);
     const byPort = new Map<string, string[]>();
+    let leadView = false;
     for (const edge of workflow.edges) {
       if (edge.target !== node.id) continue;
       const source = nodeById.get(edge.source);
@@ -101,9 +130,14 @@ export async function staticKeys(workflow: Pick<Workflow, "nodes" | "edges">) {
       const list = byPort.get(port.id) ?? [];
       list.push(await keyOf(source));
       byPort.set(port.id, list);
+      if (node.type === "video" && drawsSheet(source)) leadView = true;
     }
     const inputs = [...byPort.entries()].sort(([a], [b]) => a.localeCompare(b));
-    const key = await sha256(stableJson({ ...header(node), inputs }));
+    // The same mark as the runtime key's, so a render made from a whole sheet
+    // is not promised free to a step that now sends its lead view.
+    const key = await sha256(
+      stableJson({ ...header(node), inputs, ...(leadView ? { sheets: "lead view" } : {}) }),
+    );
     visiting.delete(node.id);
     keys.set(node.id, key);
     return key;

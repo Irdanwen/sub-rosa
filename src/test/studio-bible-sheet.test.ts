@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { SHEET_LAYOUT, portraitPrompt } from "../lib/studio/bible/portrait";
 import { referenceStack } from "../lib/studio/bible/prompt";
-import { gridBounds, SHEET_CUTS, sheetCell } from "../lib/studio/bible/sheet";
+import {
+  gridBounds,
+  isSheetPrompt,
+  SHEET_CUTS,
+  SHEET_LEAD_CELL,
+  sheetCell,
+} from "../lib/studio/bible/sheet";
+import { composePacks, sheetable, sheetPrompt } from "../lib/studio/compose/packs";
 import {
   BIBLE_ROLE_LABELS,
   ROLES_BY_KIND,
@@ -117,6 +124,36 @@ describe("cutting a sheet", () => {
     for (let i = 0; i < size * size; i++)
       pixels.set(i % 7 ? [240, 240, 240, 255] : [20, 20, 20, 255], i * 4);
     expect(gridBounds(pixels, size, size)).toEqual({ x: 0, y: 0, width: 60, height: 60 });
+  });
+});
+
+describe("a sheet in the gallery", () => {
+  it("is known by the grid every sheet the app draws asks for", () => {
+    expect(isSheetPrompt(portraitPrompt(marie(), "sheet"))).toBe(true);
+    const packs = composePacks().filter(sheetable);
+    expect(packs.length).toBeGreaterThan(0);
+    for (const pack of packs) expect(isSheetPrompt(sheetPrompt(pack))).toBe(true);
+    // A rewrite keeps the grid in substance, not always word for word.
+    expect(isSheetPrompt("Marie on a 3x3 grid, light grey background.")).toBe(true);
+    expect(isSheetPrompt("Nine panels of the same woman, front, side and back.")).toBe(true);
+  });
+
+  it("is not mistaken for a single picture", () => {
+    for (const role of ["portrait", "profile", "outfit"] as const) {
+      expect(isSheetPrompt(portraitPrompt(marie(), role))).toBe(false);
+    }
+    expect(isSheetPrompt("A city street grid seen from above at night.")).toBe(false);
+    expect(isSheetPrompt("")).toBe(false);
+    expect(isSheetPrompt(undefined)).toBe(false);
+  });
+
+  it("leads with the full body from the front, the view a video model is sent", () => {
+    expect(SHEET_LEAD_CELL).toBe(0);
+    expect(SHEET_LAYOUT).toContain("Top row: full body from the front");
+    const character = composePacks().find((pack) => pack.id === "character");
+    expect(character?.shots[SHEET_LEAD_CELL].instruction).toBe(
+      "Full body from the front, neutral pose.",
+    );
   });
 });
 

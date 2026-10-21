@@ -68,3 +68,36 @@ are fixed:
 - **Nine references cut from every sheet.** Only the portrait and profile have
   a role in the stack. Nine would crowd out the location and the other
   characters under the nine-image cap, for angles no shot asked for.
+
+## Addendum 2026-10-21: a workflow sends a video step the sheet's lead view
+
+The rule held for the film bible and nowhere else. A workflow's asset step
+takes any gallery picture, sheets included, and the video step sent it
+whole. It showed on the phone with "Recast a clip": handed a sheet and a
+clip of a man walking, Kling's motion control returned the clip with the man
+still in it. Its picture input wants one character filling a good part of
+the frame; nine figures gave it none to move.
+
+- **A sheet reaching a video step is cut to its lead view** (`videoPicture`
+  in `execute-node.ts`), whatever the port: opening frame, end frame or
+  reference. The lead view is the top left panel, the full body from the
+  front (`SHEET_LEAD_CELL`), which both the bible's layout and the
+  composition's character pack put there. It is cut by position like the
+  bible's own cuts, and drawn at 512 pixels a side at least, because video
+  models refuse a picture under 300 and a ninth of a small sheet is close to
+  that. Every other step still receives the whole sheet: composing frames is
+  what a sheet is for.
+- **A sheet is known by its prompt** (`isSheetPrompt`), since the file
+  carries no mark: every sheet the app draws asks for the same grid. The
+  phrase is now a fourth party to the layout contract above, next to
+  `SHEET_LAYOUT`, `SHEET_CUTS` and `SHEET_RULE`. A sheet step marks its own
+  output directly.
+- **Both step cache keys mark the cut** (ADR-0115). The runtime key of a
+  video step fed a sheet, and its static key when the graph shows a sheet
+  step or a gallery pick labelled with a sheet's prompt, carry
+  `sheets: "lead view"`. A render bought from the whole grid is then neither
+  reused nor promised free. Every other key is unchanged, so nothing already
+  cached is bought again.
+
+Rejected: refusing a sheet on a video step. The person picked the character
+they meant, and the lead view is that character.
