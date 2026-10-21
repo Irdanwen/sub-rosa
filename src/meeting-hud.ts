@@ -13,6 +13,7 @@ import {
 import { meterLevelForSources, visualPeakScale } from "./lib/recorder-levels";
 import type { RecordingStatusDto } from "./lib/tauri";
 import { installNativeContextMenuGuard } from "./lib/native-context-menu";
+import { isMacDesktopPlatform } from "./lib/platform";
 import { subscribeBrand } from "./lib/brand";
 import "./styles/meeting-hud.css";
 
@@ -24,6 +25,10 @@ const pill = document.querySelector<HTMLDivElement>("#mhud");
 const bars = Array.from(document.querySelectorAll<HTMLElement>(".mhud-bar"));
 
 installNativeContextMenuGuard();
+
+// Only macOS draws the window's native shadow (meeting_hud.rs); elsewhere the
+// stylesheet gives the pill an edge of its own.
+if (pill) pill.dataset.nativeShadow = isMacDesktopPlatform() ? "true" : "false";
 
 // Shares the dictation HUD's + recorder bar's synthesis, ballistics, and
 // travelling-wave motion so all waveforms move identically.
