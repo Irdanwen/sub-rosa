@@ -21,8 +21,16 @@ import {
   setAgentHudEnabled,
   type AgentHudVisibilityChangedDetail,
 } from "./lib/agent-hud-settings";
-import { agentHudHide, agentHudOpenAgent, agentHudSetLayout, agentHudShow } from "./lib/tauri";
+import {
+  agentHudEndDrag,
+  agentHudHide,
+  agentHudOpenAgent,
+  agentHudSetLayout,
+  agentHudShow,
+  agentHudStartDrag,
+} from "./lib/tauri";
 import { installNativeContextMenuGuard } from "./lib/native-context-menu";
+import { isMacDesktopPlatform } from "./lib/platform";
 import type { HermesSessionInfo } from "./lib/tauri";
 import { subscribeBrand } from "./lib/brand";
 import "./styles/agent-hud.css";
@@ -67,6 +75,10 @@ const WINDOW_FADE_MS = 300;
 // How long the CSS collapse animation gets to play before the native
 // window shrinks underneath it (--t-med plus slack).
 const COLLAPSE_RESIZE_DELAY_MS = 200;
+// A press on the surface that travels past this drags the window
+// (agent_hud.rs runs the native drag and keeps where it lands); one that
+// stays put is a click. The meeting HUD's gesture.
+const DRAG_THRESHOLD_PX = 4;
 
 const hud = document.querySelector<HTMLElement>("#agent-hud");
 const pill = document.querySelector<HTMLButtonElement>("#agent-hud-pill");
@@ -80,6 +92,10 @@ const menu = document.querySelector<HTMLElement>("#agent-hud-menu");
 const hideHud = document.querySelector<HTMLButtonElement>("#agent-hud-hide");
 
 installNativeContextMenuGuard();
+
+// Only macOS draws the window's native shadow (agent_hud.rs); elsewhere the
+// stylesheet gives the surface an edge of its own.
+if (hud) hud.dataset.nativeShadow = isMacDesktopPlatform() ? "true" : "false";
 
 const state = {
   enabled: getAgentHudEnabled(),
@@ -116,6 +132,21 @@ let hideTimer: number | undefined;
 let resizeTimer: number | undefined;
 let widthFlipTimer: number | undefined;
 let windowShown = false;
+
+type Press = {
+  x: number;
+  y: number;
+  onPill: boolean;
+  // A click on the pill flips what the person saw when they pressed, even if
+  // a status event or a focus change re-rendered the panel before release.
+  expandedAtPress: boolean;
+};
+
+let press: Press | undefined;
+// Between the native drag starting and the webview seeing the drop.
+let dragging = false;
+// The current press became a drag, so a click that still arrives is not one.
+let pressDragged = false;
 
 function applySessionsChanged(detail?: AgentSessionsChangedDetail) {
   if (!detail) return;
@@ -962,6 +993,9 @@ hud?.addEventListener("pointerleave", () => {
 });
 
 hud?.addEventListener("focusin", () => {
+  // Focus taken by a press belongs to that click or drag, which decides for
+  // itself; only keyboard focus opens the panel.
+  if (press) return;
   setFocusExpanded(true);
 });
 
@@ -971,12 +1005,73 @@ hud?.addEventListener("focusout", (event) => {
   setFocusExpanded(false);
 });
 
-pill?.addEventListener("pointerdown", (event) => {
+surface?.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
+  endDrag();
+  pressDragged = false;
+  const onPill = event.target instanceof Node && pill?.contains(event.target) === true;
+  press = {
+    x: event.screenX,
+    y: event.screenY,
+    onPill,
+    expandedAtPress: hud?.dataset.expanded === "true",
+  };
+  if (!onPill) return;
   event.preventDefault();
   event.stopPropagation();
-  toggleExpanded();
 });
+
+window.addEventListener("pointermove", (event) => {
+  if (dragging) {
+    // The first move without a button held comes after the drop.
+    if (event.buttons === 0) endDrag();
+    return;
+  }
+  if (!press) return;
+  if (Math.hypot(event.screenX - press.x, event.screenY - press.y) <= DRAG_THRESHOLD_PX) {
+    return;
+  }
+  press = undefined;
+  dragging = true;
+  pressDragged = true;
+  // The native drag takes the gesture over: the release never reaches the
+  // page, so neither the toggle nor a row's click follows.
+  void agentHudStartDrag().catch(() => {
+    dragging = false;
+  });
+});
+
+window.addEventListener("pointerup", (event) => {
+  if (event.button !== 0) return;
+  const released = press;
+  press = undefined;
+  if (dragging) {
+    endDrag();
+    return;
+  }
+  if (released?.onPill) setExpanded(!released.expandedAtPress);
+});
+
+window.addEventListener("pointercancel", () => {
+  press = undefined;
+});
+
+surface?.addEventListener(
+  "click",
+  (event) => {
+    // detail is 0 for a click from the keyboard, which no drag precedes.
+    if (!pressDragged || event.detail === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+  },
+  true,
+);
+
+function endDrag() {
+  if (!dragging) return;
+  dragging = false;
+  void agentHudEndDrag().catch(() => {});
+}
 
 pill?.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;

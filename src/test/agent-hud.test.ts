@@ -101,7 +101,7 @@ describe("agent HUD", () => {
     height = 32;
     vi.useFakeTimers();
     mocks.invoke.mockClear();
-    pillElement().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    clickPill();
     await flushPromises();
 
     width = 96;
@@ -154,7 +154,7 @@ describe("agent HUD", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     mocks.invoke.mockClear();
 
-    pillElement().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    clickPill();
     await flushPromises();
 
     expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_set_layout", {
@@ -280,13 +280,13 @@ describe("agent HUD", () => {
     });
     await flushPromises();
 
-    pillElement().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    clickPill();
     await flushPromises();
 
     expect(hudElement().dataset.expanded).toBe("true");
     expect(localStorage.getItem("june:agent-hud:expanded")).toBe("true");
 
-    pillElement().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    clickPill();
     await flushPromises();
 
     expect(hudElement().dataset.expanded).toBe("false");
@@ -306,7 +306,7 @@ describe("agent HUD", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_show");
     mocks.invoke.mockClear();
 
-    pillElement().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    clickPill();
     await flushPromises();
 
     expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_set_layout", {
@@ -348,7 +348,7 @@ describe("agent HUD", () => {
 
     // Clicking the pill to collapse must stick even though the session is
     // still waiting for the user.
-    pillElement().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    clickPill();
     await flushPromises();
 
     expect(hudElement().dataset.expanded).toBe("false");
@@ -378,7 +378,7 @@ describe("agent HUD", () => {
     });
     await flushPromises();
 
-    pillElement().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    clickPill();
     await flushPromises();
     expect(hudElement().dataset.expanded).toBe("false");
 
@@ -501,7 +501,7 @@ describe("agent HUD", () => {
     });
     await flushPromises();
 
-    pillElement().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    clickPill();
     await flushPromises();
 
     expect(pillLabelElement()).toHaveTextContent("1 running");
@@ -725,6 +725,75 @@ describe("agent HUD", () => {
     });
   });
 
+  it("drags the window from the pill without toggling it", async () => {
+    await loadAgentHud();
+
+    emitStatus({ status: "running", title: "Summarize this", summary: "Working" });
+    await flushPromises();
+    mocks.invoke.mockClear();
+
+    pressPill(100, 100);
+    movePointer(102, 101);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("agent_hud_start_drag");
+
+    movePointer(130, 140);
+    await flushPromises();
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_start_drag");
+
+    // Moves while the native drag holds the button report nothing; the first
+    // one after the drop does.
+    movePointer(160, 160);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("agent_hud_end_drag");
+    movePointer(161, 161, 0);
+    await flushPromises();
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_end_drag");
+    expect(
+      mocks.invoke.mock.calls.filter(([name]) => name === "agent_hud_start_drag"),
+    ).toHaveLength(1);
+
+    releasePointer();
+    await flushPromises();
+    expect(hudElement().dataset.expanded).toBe("false");
+    expect(localStorage.getItem("june:agent-hud:expanded")).toBeNull();
+  });
+
+  it("toggles on release even when the press opened the panel", async () => {
+    await loadAgentHud();
+
+    emitStatus({ status: "running", title: "Summarize this", summary: "Working" });
+    await flushPromises();
+
+    pressPill();
+    // Pointer focus must not open the panel under a press: the release
+    // decides, from what was on screen when the button went down.
+    pillElement().dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flushPromises();
+    expect(hudElement().dataset.expanded).toBe("false");
+
+    releasePointer();
+    await flushPromises();
+    expect(hudElement().dataset.expanded).toBe("true");
+  });
+
+  it("does not open a session when a drag ends over its row", async () => {
+    await loadAgentHud();
+
+    emitStatus({ status: "waitingForUser", title: "Need approval", summary: "Review this step." });
+    await flushPromises();
+
+    const row = document.querySelector<HTMLButtonElement>(".agent-hud-row-body");
+    expect(row).toBeTruthy();
+    row?.dispatchEvent(
+      new MouseEvent("pointerdown", { bubbles: true, cancelable: true, screenX: 10, screenY: 10 }),
+    );
+    movePointer(60, 10);
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    await flushPromises();
+
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_hud_start_drag");
+    expect(mocks.invoke).not.toHaveBeenCalledWith("agent_hud_open_agent", expect.anything());
+  });
+
   it("hides the HUD from the pill context menu action", async () => {
     await loadAgentHud();
 
@@ -886,6 +955,25 @@ function stackElement() {
   const stack = document.querySelector<HTMLElement>("#agent-hud-stack");
   expect(stack).toBeTruthy();
   return stack as HTMLElement;
+}
+
+function clickPill() {
+  pressPill();
+  releasePointer();
+}
+
+function pressPill(screenX = 0, screenY = 0) {
+  pillElement().dispatchEvent(
+    new MouseEvent("pointerdown", { bubbles: true, cancelable: true, screenX, screenY }),
+  );
+}
+
+function movePointer(screenX: number, screenY: number, buttons = 1) {
+  window.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, screenX, screenY, buttons }));
+}
+
+function releasePointer() {
+  window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 }
 
 function surfaceElement() {

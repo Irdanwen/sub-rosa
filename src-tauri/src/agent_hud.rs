@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde_json::json;
+use std::sync::Mutex;
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewWindow,
 };
@@ -23,6 +24,66 @@ const AGENT_HUD_COLLAPSED_WINDOW_HEIGHT: f64 = 58.0;
 #[cfg(target_os = "macos")]
 static AGENT_HUD_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
 
+/// Where the person dragged the HUD. Kept for this run only, like the
+/// dictation and meeting HUDs' drag positions: a fresh launch puts it back in
+/// its corner.
+#[derive(Default)]
+pub struct AgentHudPlacement {
+    inner: Mutex<Placement>,
+}
+
+#[derive(Default)]
+struct Placement {
+    anchor: Option<Anchor>,
+    /// The person may have moved the window since it was last placed, so the
+    /// next layout reads where it really is first. Move events can't tell a
+    /// drag from the HUD's own resizes, which macOS also reports as moves, and
+    /// late.
+    moved: bool,
+}
+
+/// The window's top-right corner, in physical pixels. The surface is
+/// right-aligned and grows leftward and downward, so that is the corner that
+/// holds still while it expands and collapses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Anchor {
+    right: i32,
+    top: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ScreenRect {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+}
+
+impl ScreenRect {
+    fn new(position: PhysicalPosition<i32>, size: PhysicalSize<u32>) -> Self {
+        Self {
+            x: position.x,
+            y: position.y,
+            width: size.width as i32,
+            height: size.height as i32,
+        }
+    }
+
+    /// Squared distance from the point to the nearest pixel of the rect, zero
+    /// inside it.
+    fn distance_squared(&self, x: i32, y: i32) -> i64 {
+        let dx = i64::from((self.x - x).max(x - (self.x + self.width - 1)).max(0));
+        let dy = i64::from((self.y - y).max(y - (self.y + self.height - 1)).max(0));
+        dx * dx + dy * dy
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Screen {
+    bounds: ScreenRect,
+    work_area: ScreenRect,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentHudLayoutRequest {
@@ -36,6 +97,7 @@ pub struct AgentHudLayoutRequest {
 pub fn setup(app: &mut tauri::App) {
     #[cfg(target_os = "macos")]
     let _ = AGENT_HUD_APP.set(app.handle().clone());
+    app.manage(AgentHudPlacement::default());
     if let Err(error) = configure_agent_hud_window(app.handle()) {
         tracing::warn!(%error, "failed to configure agent HUD");
     }
@@ -133,6 +195,33 @@ pub fn agent_hud_set_layout(app: AppHandle, request: AgentHudLayoutRequest) -> R
     position_agent_hud_window_with_size(&window, physical_size, scale)
 }
 
+/// A press that travelled past the webview's threshold becomes a native window
+/// drag. Where it lands is read back at the next layout.
+#[tauri::command]
+pub fn agent_hud_start_drag(app: AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(AGENT_HUD_WINDOW_LABEL) else {
+        return Ok(());
+    };
+    mark_moved(&app);
+    window.start_dragging().map_err(|error| error.to_string())
+}
+
+/// The webview saw the drag end. A layout that landed mid-drag has already
+/// read the window and cleared the mark set at the start, so it is set again
+/// for the drop.
+#[tauri::command]
+pub fn agent_hud_end_drag(app: AppHandle) {
+    mark_moved(&app);
+}
+
+fn mark_moved(app: &AppHandle) {
+    if let Some(placement) = app.try_state::<AgentHudPlacement>() {
+        if let Ok(mut placement) = placement.inner.lock() {
+            placement.moved = true;
+        }
+    }
+}
+
 #[tauri::command]
 pub fn agent_hud_open_agent(
     app: AppHandle,
@@ -196,11 +285,14 @@ fn configure_agent_hud_window(app: &AppHandle) -> Result<(), String> {
     window
         .set_skip_taskbar(true)
         .map_err(|error| error.to_string())?;
-    window
-        // A native shadow sits outside the hit-tested window bounds. CSS
-        // shadow gutters would make transparent pixels intercept clicks.
-        .set_shadow(true)
-        .map_err(|error| error.to_string())?;
+    // A native shadow sits outside the hit-tested window bounds. CSS shadow
+    // gutters would make transparent pixels intercept clicks. Not on Windows:
+    // there a borderless window asking for a shadow gets a 1px frame instead,
+    // in the accent color once the HUD has focus, with 8px corners drawn
+    // around a 16px pill. The surface carries a hairline there instead
+    // (agent-hud.css).
+    #[cfg(not(target_os = "windows"))]
+    window.set_shadow(true).map_err(|error| error.to_string())?;
 
     #[cfg(target_os = "macos")]
     make_agent_hud_nonactivating(&window);
@@ -219,6 +311,78 @@ fn position_agent_hud_window_with_size(
     size: PhysicalSize<u32>,
     scale: f64,
 ) -> Result<(), String> {
+    let width = size.width as i32;
+    let height = size.height as i32;
+    let origin = placement_anchor(window)
+        .and_then(|anchor| {
+            let screens = screens(window);
+            let screen = nearest_screen(&screens, anchor.right - 1, anchor.top)?;
+            Some(anchored_origin(anchor, width, height, screen.work_area))
+        })
+        .or_else(|| default_origin(window, width, scale));
+    let Some((x, y)) = origin else {
+        return Ok(());
+    };
+    window
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|error| error.to_string())
+}
+
+/// The anchor to place the window by, after taking in a drag made since the
+/// last placement. `None` until the person has moved the HUD.
+fn placement_anchor(window: &WebviewWindow) -> Option<Anchor> {
+    let placement = window.try_state::<AgentHudPlacement>()?;
+    let mut placement = placement.inner.lock().ok()?;
+    if std::mem::take(&mut placement.moved) {
+        if let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) {
+            placement.anchor = Some(Anchor {
+                right: position.x + size.width as i32,
+                top: position.y,
+            });
+        }
+    }
+    placement.anchor
+}
+
+fn screens(window: &WebviewWindow) -> Vec<Screen> {
+    window
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|monitor| {
+            let work_area = monitor.work_area();
+            Screen {
+                bounds: ScreenRect::new(*monitor.position(), *monitor.size()),
+                work_area: ScreenRect::new(work_area.position, work_area.size),
+            }
+        })
+        .collect()
+}
+
+/// The display a point sits on, or the closest one when it sits on none: a
+/// drop past the edge of the screen, or a display unplugged since.
+fn nearest_screen(screens: &[Screen], x: i32, y: i32) -> Option<Screen> {
+    screens
+        .iter()
+        .min_by_key(|screen| screen.bounds.distance_squared(x, y))
+        .copied()
+}
+
+/// The window's origin for an anchor, pulled back inside the work area so an
+/// expanded panel never hangs off the screen. The anchor itself is left
+/// alone: once the panel collapses, the pill returns where it was left.
+fn anchored_origin(anchor: Anchor, width: i32, height: i32, work_area: ScreenRect) -> (i32, i32) {
+    let x = (anchor.right - width)
+        .min(work_area.x + work_area.width - width)
+        .max(work_area.x);
+    let y = anchor
+        .top
+        .min(work_area.y + work_area.height - height)
+        .max(work_area.y);
+    (x, y)
+}
+
+fn default_origin(window: &WebviewWindow, width: i32, scale: f64) -> Option<(i32, i32)> {
     // Keep the visible surface at its previous screen position. The old
     // oversized webview placed it 10px from the right and 8px from the top.
     const MARGIN_X: f64 = 26.0;
@@ -231,19 +395,14 @@ fn position_agent_hud_window_with_size(
         .primary_monitor()
         .ok()
         .flatten()
-        .or_else(|| window.current_monitor().ok().flatten());
-    let Some(monitor) = monitor else {
-        return Ok(());
-    };
+        .or_else(|| window.current_monitor().ok().flatten())?;
 
     let work_area = monitor.work_area();
     let margin_x = (MARGIN_X * scale).round() as i32;
     let margin_y = (MARGIN_Y * scale).round() as i32;
-    let x = work_area.position.x + work_area.size.width as i32 - size.width as i32 - margin_x;
+    let x = work_area.position.x + work_area.size.width as i32 - width - margin_x;
     let y = work_area.position.y + margin_y;
-    window
-        .set_position(PhysicalPosition::new(x, y))
-        .map_err(|error| error.to_string())
+    Some((x, y))
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -465,6 +624,87 @@ mod tests {
         assert_eq!(collapsed.1, AGENT_HUD_COLLAPSED_WINDOW_HEIGHT);
         assert!(expanded.1 > collapsed.1);
         assert!(expanded_more.1 > expanded.1);
+    }
+
+    const SCREEN: ScreenRect = ScreenRect {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+    };
+    // A taskbar along the bottom.
+    const WORK_AREA: ScreenRect = ScreenRect {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1032,
+    };
+
+    #[test]
+    fn a_dragged_hud_keeps_its_top_right_corner_as_it_grows() {
+        let anchor = Anchor {
+            right: 900,
+            top: 300,
+        };
+        assert_eq!(anchored_origin(anchor, 112, 32, WORK_AREA), (788, 300));
+        assert_eq!(anchored_origin(anchor, 248, 202, WORK_AREA), (652, 300));
+    }
+
+    #[test]
+    fn a_dragged_hud_expands_inside_the_work_area() {
+        // Parked by the left edge: the wider panel opens rightward instead.
+        let left = Anchor {
+            right: 120,
+            top: 300,
+        };
+        assert_eq!(anchored_origin(left, 112, 32, WORK_AREA), (8, 300));
+        assert_eq!(anchored_origin(left, 248, 202, WORK_AREA), (0, 300));
+
+        // Parked above the taskbar: the panel opens upward.
+        let bottom = Anchor {
+            right: 900,
+            top: 1000,
+        };
+        assert_eq!(anchored_origin(bottom, 112, 32, WORK_AREA), (788, 1000));
+        assert_eq!(anchored_origin(bottom, 248, 202, WORK_AREA), (652, 830));
+
+        // Dropped half off the screen.
+        let off = Anchor {
+            right: 2000,
+            top: -40,
+        };
+        assert_eq!(anchored_origin(off, 112, 32, WORK_AREA), (1808, 0));
+    }
+
+    #[test]
+    fn a_hud_off_every_display_comes_back_to_the_nearest_one() {
+        let primary = Screen {
+            bounds: SCREEN,
+            work_area: WORK_AREA,
+        };
+        let right = Screen {
+            bounds: ScreenRect {
+                x: 1920,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            },
+            work_area: ScreenRect {
+                x: 1920,
+                y: 0,
+                width: 2560,
+                height: 1400,
+            },
+        };
+        let screens = [primary, right];
+
+        let on_right = nearest_screen(&screens, 2500, 200).map(|screen| screen.bounds);
+        assert_eq!(on_right, Some(right.bounds));
+        let past_right = nearest_screen(&screens, 5200, 200).map(|screen| screen.bounds);
+        assert_eq!(past_right, Some(right.bounds));
+        let above_primary = nearest_screen(&screens, 400, -60).map(|screen| screen.bounds);
+        assert_eq!(above_primary, Some(SCREEN));
+        assert!(nearest_screen(&[], 0, 0).is_none());
     }
 
     #[test]
