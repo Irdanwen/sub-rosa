@@ -73,6 +73,19 @@ describe("asset protocol CSP", () => {
     });
   }
 
+  // A mix (the sound mix step, a film's offline mix) does not play its sounds:
+  // it reads their bytes with `fetch` and decodes them, and `fetch` answers to
+  // `connect-src`, not `media-src`. Gallery sounds reach it as asset URLs on
+  // the desktop and as object URLs on the phone, so the directive listing
+  // neither refused every one of them, and the mix said a sound "could not be
+  // read" while the same file played in the step's own player.
+  it("lets connect-src read the gallery files a mix decodes, on every platform", () => {
+    const sources = directive("connect-src");
+    expect(sources).toContain("asset:");
+    expect(sources).toContain("http://asset.localhost");
+    expect(sources).toContain("blob:");
+  });
+
   it("lets media-src load the object URLs iOS requires", () => {
     expect(directive("media-src")).toContain("blob:");
   });
