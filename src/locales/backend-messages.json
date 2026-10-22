@@ -294,6 +294,7 @@
   "That file is not a staged import.",
   "That file is not a Sub Rosa archive (no manifest).",
   "That file is too large to import.",
+  "That is not a gallery picture.",
   "That is not a model id.",
   "That key cannot be used for the chat bar. Try a letter, a number or Space.",
   "That link has no address to fetch from.",

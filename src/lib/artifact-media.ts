@@ -169,7 +169,7 @@ const POSTER_TIME_SECONDS = 0.2;
 const clipLengths = new Map<string, number>();
 
 /**
- * One clip decoded at a time.
+ * One clip, or one picture the native path could not take, decoded at a time.
  *
  * A grid mounts every tile at once, and a video poster costs the clip's whole
  * bytes over IPC plus a decoder to hold them. Ten of those in parallel is how a
@@ -340,20 +340,38 @@ async function loadThumbnail(artifact: TileSubject): Promise<ArtifactThumbnail> 
   // A clip that would not decode, or a track: the tile gets the file itself,
   // streamed, rather than a whole copy of it held in this process.
   if (artifact.kind !== "image") return { src: artifactStreamUrl(artifact), kind: "media" };
-  // A picture's poster comes off the streamed file, so the full image never
-  // crosses into this process as base64 just to be shrunk.
+  // A picture's poster is made natively, off this thread and one picture at a
+  // time (`carpe_diem/posters.rs`). Decoding it here froze the page: a gallery
+  // that had just received hundreds of pictures from another device asked for
+  // every visible poster at once, each a full-size decode on the page's thread.
+  try {
+    const made = await invoke<{ posterVersion: number }>("carpe_diem_media_make_poster", {
+      id: fileNameOf(artifact.path),
+    });
+    const url = artifactPosterUrl({ path: artifact.path, posterVersion: made.posterVersion });
+    remember(thumbCache, artifact.path, url, THUMB_CACHE_MAX);
+    return still(artifact, url);
+  } catch {
+    // An older shell, or a picture the native decoder refuses: made here,
+    // in turn with the clips, never side by side.
+  }
+  const thumb = await inTurn(() => pictureThumbnail(artifact));
+  remember(thumbCache, artifact.path, thumb, THUMB_CACHE_MAX);
+  return still(artifact, thumb);
+}
+
+/** A picture's poster made in the page, for when the native path cannot. */
+async function pictureThumbnail(artifact: TileSubject): Promise<string> {
+  // Off the streamed file, so the full image never crosses into this process
+  // as base64 just to be shrunk.
   try {
     const poster = await posterJpeg(artifactStreamUrl(artifact));
     filePoster(artifact, poster);
-    remember(thumbCache, artifact.path, poster.dataUrl, THUMB_CACHE_MAX);
-    return still(artifact, poster.dataUrl);
+    return poster.dataUrl;
   } catch {
     // Outside the app's own scheme (an older shell, a test), shrink the copy.
   }
-  const full = await artifactDataUrl(artifact);
-  const thumb = await makeThumbnail(full);
-  remember(thumbCache, artifact.path, thumb, THUMB_CACHE_MAX);
-  return still(artifact, thumb);
+  return makeThumbnail(await artifactDataUrl(artifact));
 }
 
 /** The scheme `src-tauri/src/carpe_diem/media_protocol.rs` serves the gallery on. */

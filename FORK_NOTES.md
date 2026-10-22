@@ -2832,3 +2832,34 @@ Demandé : « pour les notes, enregistrer le micro ou le son de l'ordinateur
   Linux ; pour vérifier dans un bac à sable, ajouter temporairement la
   dépendance (ne pas la committer). `cargo check --target
   x86_64-pc-windows-gnu` (mingw-w64) vérifie le code Windows.
+
+## Les posters de la galerie téléphone (2026-10-17)
+
+Après une grande synchronisation, ouvrir la galerie de l'iPhone gelait la page :
+chaque vignette de photo près de l'écran décodait l'image entière dans le webview
+(les posters ne voyagent pas, les fichiers oui), des dizaines à la fois sur le
+fil unique de la page, parfois jusqu'à ce que WebKit abandonne pour mémoire.
+Le pire était aggravé par l'inventaire de sync, qui reparcourait toute la
+galerie à chaque passe en ouvrant une transaction par fichier déjà connu.
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/carpe_diem/posters.rs` (nouveau) | Poster d'une image fait en natif (décodage, vignette 512 px, JPEG aplati sur blanc via `hermes_image_fit::flatten_onto_white`), sur un thread bloquant, **une image à la fois** (`Semaphore::const_new(1)`), mesures portées aux mesures de l'objet (`posterVersion`, `width`, `height`). Commande partagée `carpe_diem_media_make_poster` (**les deux** listes `generate_handler!`). Le nom passe par `media_protocol::file_name_of` : rien hors de la galerie, images seules. | Réappliquer tel quel (fork-side) |
+| `src-tauri/src/account/files.rs` | À l'atterrissage d'une image synchronisée, poster fait tout de suite (détaché, best-effort : une suspension qui le perd est rattrapée à la demande par la vignette qui n'en trouve pas) | Réappliquer |
+| `src-tauri/src/account/studio.rs` | L'inventaire lit les ids connus (manifests + uploads) en une requête `UNION` et saute les fichiers connus sans transaction par fichier | Réappliquer |
+| `src-tauri/src/hermes_image_fit.rs` | `flatten_onto_white` devient `pub(crate)` | Réappliquer |
+| `src-tauri/src/studio_project.rs` | `merge_measures` devient `pub(crate)` | Réappliquer |
+| `src/lib/artifact-media.ts` | `artifactThumbnail` demande le chemin natif d'abord pour une image ; le repli canvas passe par la même file un-à-la-fois que les clips | Réappliquer |
+
+### Pièges
+
+- **Ne jamais persister un chemin absolu** : le conteneur de données change
+  d'emplacement à chaque réinstallation (voir AGENTS.md) ; `listArtifacts`
+  redérive les chemins du listing disque.
+- Les clips gardent leur chemin webview (pas de décodeur vidéo livré),
+  sérialisés comme avant.
+- La base locale reste en `journal_mode=delete` : une longue transaction de
+  sync peut encore faire attendre les lectures des écrans. Le passage à WAL
+  touche le MCP Python (lecture seule) et les sauvegardes ; à part.
+- À valider sur un vrai iPhone : synchroniser quelques centaines d'images
+  depuis le bureau, puis ouvrir la galerie.
