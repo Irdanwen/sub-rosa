@@ -5093,6 +5093,7 @@
   "That file is not a Sub Rosa archive (no manifest).": "Questo file non è un archivio Sub Rosa (manca il manifest).",
   "That file is too large to import.": "Questo file è troppo grande per essere importato.",
   "That gallery item is gone. Pick another one.": "Questo elemento non è più nella galleria. Scegline un altro.",
+  "That is not a gallery picture.": "Quella non è un'immagine della galleria.",
   "That is not a model id.": "Non è un ID di modello.",
   "That item is already back.": "Quell'elemento è già tornato.",
   "That key cannot be used for the chat bar. Try a letter, a number or Space.": "Questo tasto non si può usare per la barra della chat. Prova una lettera, un numero o Spazio.",
