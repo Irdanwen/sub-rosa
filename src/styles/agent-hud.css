@@ -5,9 +5,10 @@
 /*
  * Agent HUD.
  *
- * A small always-on-top overlay pinned to the top right of the screen
- * (agent_hud.rs owns the window position and sizes the window to the
- * layout the controller requests). Collapsed it is a single quiet pill:
+ * A small always-on-top overlay that starts at the top right of the screen
+ * and goes where the person drags it (agent_hud.rs owns the window position
+ * and sizes the window to the layout the controller requests). Collapsed it
+ * is a single quiet pill:
  * the June mark, tinted by the aggregate state, plus "2 running". Click,
  * keyboard focus, or a session needing input expands it into a compact
  * list of sessions, each opening its context in June when clicked.
@@ -92,7 +93,11 @@ body {
   top: 0;
   right: 0;
   display: grid;
-  width: fit-content;
+  /* max-content, not fit-content: fit-content stops at the viewport, which
+   * is the very window being sized from this measurement, so a label longer
+   * than the last one ("Done", then "1 running") measured at the old width
+   * and came out ellipsized. */
+  width: max-content;
   max-width: var(--hud-expanded-w);
   overflow: hidden;
   /* Half the collapsed pill height, NOT --r-pill: a 999px radius
@@ -124,6 +129,13 @@ body {
     transform var(--t-fast) var(--ease-out),
     width var(--t-med) var(--ease-out),
     border-radius var(--t-med) var(--ease-out);
+}
+
+/* Without the native shadow (Windows, Linux) the dark surface melts into a
+ * dark window behind it. An inset hairline gives it an edge without a
+ * gutter that would catch clicks. */
+.agent-hud[data-native-shadow="false"] .agent-hud-surface {
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .agent-hud[data-expanded="true"] .agent-hud-surface {

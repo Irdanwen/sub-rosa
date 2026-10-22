@@ -397,8 +397,12 @@ fn configure_window(app: &AppHandle) -> Result<(), String> {
         hud.set_skip_taskbar(true)
             .map_err(|error| error.to_string())?;
         // The window is exactly the pill, so depth comes from the native
-        // window shadow instead of a CSS one painted into a gutter.
-        hud.set_shadow(true).map_err(|error| error.to_string())?;
+        // window shadow instead of a CSS one painted into a gutter. Not on
+        // Windows: there a borderless window asking for a shadow gets a 1px
+        // DWM frame instead, drawn around the whole square window, gutters
+        // included. The pill carries a hairline there (meeting-hud.css).
+        hud.set_shadow(!cfg!(target_os = "windows"))
+            .map_err(|error| error.to_string())?;
 
         #[cfg(target_os = "macos")]
         {

@@ -573,6 +573,8 @@ pub fn run() {
             agent_hud::agent_hud_show,
             agent_hud::agent_hud_hide,
             agent_hud::agent_hud_set_layout,
+            agent_hud::agent_hud_start_drag,
+            agent_hud::agent_hud_end_drag,
             agent_hud::agent_hud_open_agent,
             agent_browser::agent_browser_status,
             agent_browser::agent_browser_settings,
@@ -1676,6 +1678,16 @@ fn setup_app_menu(app: &tauri::App) -> tauri::Result<()> {
         ],
     )?;
     app.set_menu(menu)?;
+    // On Windows and Linux an app menu lands on every window, not in a menu
+    // bar at the top of the screen. The overlays (the HUDs, the chat bar) are
+    // borderless surfaces a few dozen pixels wide, so each grew a wrapped
+    // "Sub Rosa File Edit View Window Help" bar over its own content.
+    #[cfg(not(target_os = "macos"))]
+    for (label, window) in handle.webview_windows() {
+        if label != "main" {
+            let _ = window.remove_menu();
+        }
+    }
     macos_menu_icons::install_settings_symbol_on_app_menu();
     Ok(())
 }

@@ -103,6 +103,13 @@ body:active {
   transition: width 320ms var(--ease-out);
 }
 
+/* Without the native shadow (Windows, Linux) the pill melts into a dark
+ * window behind it. The inset hairline the vibrancy surface did not need
+ * gives it an edge without a gutter. */
+.mhud[data-native-shadow="false"] {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
 /* Upright the pill carries a shorter 4-bar run, so it runs shorter too —
  * width here is the pill's length, which reads as height once the native
  * turn stands it up. Must match VERTICAL_PILL_LENGTH in meeting_hud.rs. */

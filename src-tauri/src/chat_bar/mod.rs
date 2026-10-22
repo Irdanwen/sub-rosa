@@ -164,7 +164,10 @@ fn configure_window(app: &AppHandle) {
     let _ = window.set_always_on_top(true);
     let _ = window.set_visible_on_all_workspaces(true);
     let _ = window.set_skip_taskbar(true);
-    let _ = window.set_shadow(true);
+    // Windows answers a borderless window's shadow with a 1px DWM frame, in
+    // the accent color while the bar has focus, around the panel's own
+    // border (chat-bar.css), so the shadow stays off there.
+    let _ = window.set_shadow(!cfg!(target_os = "windows"));
     #[cfg(target_os = "macos")]
     crate::agent_hud::make_key_panel(&window);
 }
