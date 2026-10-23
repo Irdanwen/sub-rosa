@@ -9,7 +9,11 @@ at every runtime bump: the plan's P1 decisions depend on it.
   [hermes-upstream-v2026.7.20.md](hermes-upstream-v2026.7.20.md)), installed
   under `~/Library/Application Support/xyz.carpediem.subrosa-dev/hermes-runtime/hermes-agent`.
 - **Compared with:** v0.17.0, commit `2bd1977d` (the copy the plan was first
-  written from), still installed under the production app's runtime folder.
+  written from), left over since July in the production app's
+  `hermes-runtime` folder, which the app no longer runs: the installed app
+  launches the 0.19.0 runtime bundled in
+  `Sub Rosa.app/Contents/Resources/native/hermes/` (`bundled_hermes_command`
+  comes first in `hermes_bridge.rs`).
 - **Method:** source reading, plus small experiments run under a Seatbelt
   profile shaped like Sub Rosa's (allow default, deny every write, re-grant a
   scratch folder and the temp dirs) with the pinned venv's Python. No Hermes
@@ -408,9 +412,9 @@ temporary chat (lineage walked through state.db, 16 levels), for memory and
 past-chat tools under protected mode, and for connector tools ruled `deny`;
 it returns `approve` with `rule_key="subrosa_connector:<tool>"` for connector
 tools ruled `ask` or unknown. It fails closed on its own errors. It also
-installs a logging filter on `agent.turn_context`. Note: on a runtime still at
-0.17 (the production copy on this Mac is, per its `runtime.json`), the
-`approve` directive is ignored and the call runs.
+installs a logging filter on `agent.turn_context`. The `approve` directive is
+new in 0.19; a 0.17 runtime would ignore it and run the call, which is one more
+reason the pin and the bundled runtime must move together.
 
 **Verdict:** **Déjà dans Hermes.** P1's plugin (`subrosa_code`) has what it
 needs: `pre_tool_call` to veto (tree-sitter) and to recompute the fuzzy
@@ -422,12 +426,12 @@ strategy, `tool_execution` middleware for per-call snapshots, and
 
 **Schema in 0.19:** `goal`, `context`, `tasks[{goal, context, role}]`,
 `role` (`leaf` | `orchestrator`), `background` (documented as ignored).
-**0.17's `toolsets` and `acp_command` parameters are gone.**
+**0.17's `toolsets`, `acp_command` and `acp_args` parameters are gone.**
 
 **Behaviour:**
 
 - delegations from the top-level model always run in the background
-  (`run_agent.py:6230`, `background=(not _is_subagent)`): the call returns
+  (`run_agent.py:6258`, `background=(not _is_subagent)`): the call returns
   handles, the work continues after the turn, and the results re-enter the
   conversation as a new message; an orchestrator child's own delegations stay
   synchronous;
