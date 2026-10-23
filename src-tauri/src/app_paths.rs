@@ -74,11 +74,15 @@ pub fn app_local_data_dir(app: &AppHandle) -> Result<PathBuf, tauri::Error> {
     })
 }
 
-fn use_prod_data_dir() -> bool {
+pub(crate) fn use_prod_data_dir() -> bool {
     std::env::var_os(USE_PROD_DATA_DIR_ENV).is_some()
 }
 
-fn app_data_dir_for_build(data_dir: PathBuf, debug_assertions: bool, use_prod: bool) -> PathBuf {
+pub(crate) fn app_data_dir_for_build(
+    data_dir: PathBuf,
+    debug_assertions: bool,
+    use_prod: bool,
+) -> PathBuf {
     if !debug_assertions || use_prod {
         return data_dir;
     }

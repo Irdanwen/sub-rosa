@@ -6251,14 +6251,7 @@ fn managed_hermes_command(app: &AppHandle) -> Result<PathBuf, AppError> {
 }
 
 fn managed_hermes_runtime_current(app: &AppHandle) -> Result<bool, AppError> {
-    let metadata_path = managed_hermes_runtime_dir(app)?.join("runtime.json");
-    let Ok(metadata) = fs::read_to_string(metadata_path) else {
-        return Ok(false);
-    };
-    Ok(
-        metadata.contains(&format!(r#""commit":"{HERMES_AGENT_INSTALL_COMMIT}""#))
-            && metadata.contains(&format!(r#""patches":"{HERMES_MANAGED_PATCHES}""#)),
-    )
+    Ok(headless::runtime_current(&managed_hermes_runtime_dir(app)?))
 }
 
 fn user_local_hermes_command() -> Option<PathBuf> {
@@ -6579,35 +6572,19 @@ fn prepare_sandbox(
     if !Path::new(SANDBOX_EXEC_PATH).exists() {
         return None;
     }
-    let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    let runtime_dir = managed_hermes_runtime_dir(app).ok()?;
-    let write_roots = sandbox_write_roots(hermes_home, &runtime_dir);
-    let config_write_path = sandbox_config_write_path(hermes_home);
-    let config_temp_prefix = sandbox_config_temp_prefix(hermes_home);
     // `working_dir` only ever arrives here through
     // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
     // every start) — this is the "explicit, validated grant" that lets the
     // jail span one user-picked folder without ever widening past it.
-    let profile = build_sandbox_profile(
-        &home,
-        &write_roots,
-        &config_write_path,
-        &config_temp_prefix,
+    headless::write_sandbox_profile(
+        &crate::app_paths::app_data_dir(app)
+            .ok()?
+            .join("hermes-sandbox.sb"),
+        &managed_hermes_runtime_dir(app).ok()?,
+        hermes_home,
         agent_cli_access,
         working_dir,
-    );
-    let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
-    if std::fs::create_dir_all(&app_data_dir).is_err() {
-        return None;
-    }
-    let profile_path = app_data_dir.join("hermes-sandbox.sb");
-    match std::fs::write(&profile_path, profile) {
-        Ok(()) => Some(profile_path),
-        Err(error) => {
-            eprintln!("Could not write Hermes sandbox profile, spawning unsandboxed: {error}");
-            None
-        }
-    }
+    )
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -7510,46 +7487,8 @@ async fn handle_june_provider_connection(
             write_json_response(&mut stream, 200, body).await?;
         }
         ("POST", "/v1/chat/completions") => {
-            let mut body = serde_json::from_slice::<serde_json::Value>(&request.body)
-                .unwrap_or_else(|_| serde_json::json!({}));
-            provider_proxy::apply_reasoning_effort_alias(&mut body);
-            project_memory::apply(&app, &mut body).await;
-            match crate::june_api::proxy_agent_chat_completions(body).await {
-                Ok(response) if response.status >= 400 => {
-                    // Error bodies are small enough to buffer whole, and
-                    // buffering is what makes the overflow translation
-                    // below possible. Success responses keep streaming.
-                    let status = response.status;
-                    let content_type = response.content_type.clone();
-                    let body = response.collect_body().await.unwrap_or_default();
-                    match translate_context_overflow_error(&body) {
-                        Some(rewritten) => {
-                            write_json_response(&mut stream, status, rewritten).await?;
-                        }
-                        None => {
-                            write_raw_response(&mut stream, status, &content_type, &body).await?;
-                        }
-                    }
-                }
-                Ok(response) => {
-                    write_streaming_response(&mut stream, response).await?;
-                }
-                Err(error) => {
-                    // A protected-mode refusal is final: a 5xx would be retried.
-                    let refused = error.code.starts_with("protected_mode");
-                    write_json_response(
-                        &mut stream,
-                        if refused { 403 } else { 502 },
-                        serde_json::json!({
-                            "error": {
-                                "message": format!("Sub Rosa agent provider failed: {}", error.message),
-                                "type": error.code
-                            }
-                        }),
-                    )
-                    .await?;
-                }
-            }
+            provider_proxy::forward_chat_completions(&mut stream, &request.body, Some(&app))
+                .await?;
         }
         ("POST", "/v1/web/search") => {
             forward_web_tool(&mut stream, "/v1/web/search", &request.body).await?;
@@ -8266,6 +8205,7 @@ mod builtin_mcp;
 mod connectors_mcp;
 mod gateway_label;
 mod gateway_start;
+pub(crate) mod headless;
 #[cfg(test)]
 use builtin_mcp::render_context_mcp_entry;
 use builtin_mcp::{

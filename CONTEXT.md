@@ -1618,6 +1618,23 @@ its new start, so it leaves the change review; reverting puts back the start (or
 removes a file that did not exist). Only a file listed as changed, inside
 the folder, can be reverted.
 
+**Run** — one piece of Code mode work on a folder: a conversation, a mode
+(build or plan), an engine, a model and a run budget. `subrosa-code run`
+starts one without a window and `--resume` adds a turn to it (ADR-0123).
+_Avoid:_ "job", "task" (the tasks are the run's todo list).
+
+**Engine** — what runs a run: Hermes (shipped with the app), later Claude
+Code or opencode (installed by the person). Not the model.
+
+**Run budget** — a run's ceiling in dollars, counted from what Carpe Diem
+metered on its completions, earlier invocations included. The run stops
+cleanly once it is reached, over it by one completion at most.
+
+**Code event** — one line of what a run did (`CodeEvent`: `tool.completed`,
+`terminal.output`, `usage`, …), the same whatever the engine; each engine
+has an adapter that writes them (ADR-0123).
+_Avoid:_ "Hermes event" for it (that is the chat's `JuneHermesEvent`).
+
 ### Connectors and skill packs (fork)
 
 **Connector** — another service the assistant may read and act in: a remote

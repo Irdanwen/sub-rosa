@@ -7,6 +7,8 @@ authors = ["Open Software Network"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.80.0"
+# Two binaries since the headless code CLI; `cargo run` means the app.
+default-run = "os-june"
 
 [lib]
 name = "os_june_lib"
@@ -17,6 +19,19 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [[bin]]
 name = "os-june"
 path = "src/main.rs"
+
+# The headless code CLI (ADR-0123, docs/code-cli.md). Behind a feature
+# because the Tauri CLI bundles every binary of the package whose required
+# features are on: without one it would ship inside the app, unsigned by the
+# release's deep-signing steps. Build it with
+# `cargo build --features code-cli --bin subrosa-code`.
+[[bin]]
+name = "subrosa-code"
+path = "src/bin/subrosa-code.rs"
+required-features = ["code-cli"]
+
+[features]
+code-cli = []
 
 # The same policy as the june-api workspace, minus what a Tauri shell cannot
 # hold. `unsafe_code` cannot be forbidden here: the calendar, Spotlight and
@@ -142,7 +157,8 @@ tauri-plugin-haptics = "2.3.2"
 # rather than in the shared dependency so the iOS build carries no
 # process-spawning machinery it can never use. `io-std`: the binary run as a
 # browser's native messaging host relays stdin and stdout (ADR-0100).
-tokio = { version = "1.42", features = ["process", "io-std"] }
+# `signal`: the headless code CLI stops its run cleanly on Ctrl-C (ADR-0123).
+tokio = { version = "1.42", features = ["process", "io-std", "signal"] }
 tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2.10.1"

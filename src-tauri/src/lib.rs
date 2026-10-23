@@ -31,6 +31,7 @@ pub mod carpe_diem;
 pub mod chat_bar;
 pub mod chat_titles;
 pub mod child_env;
+pub mod code;
 #[cfg(desktop)]
 pub mod code_review;
 pub mod commands;

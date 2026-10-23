@@ -1,0 +1,316 @@
+{
+  "lines": [
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "budget_usd": 2.0,
+      "dir": "/work/repo",
+      "engine": "hermes",
+      "mode": "build",
+      "model": "kimi-k2-7-code",
+      "resumed": true,
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "sandboxed": true,
+      "schema": 1,
+      "seq": 1,
+      "session_id": "20261023_101500_ab12cd",
+      "spent_usd": 0.25,
+      "type": "run.started"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 2,
+      "turn_id": "turn-1",
+      "type": "turn.started"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "channel": "reasoning",
+      "message_id": "m-1",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 3,
+      "text": "Reading the migrations first.",
+      "type": "message.delta"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "channel": "answer",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 4,
+      "text": "Done",
+      "type": "message.delta"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-1",
+      "detail": {
+        "lines": {
+          "end": 140,
+          "start": 1
+        },
+        "path": "src/db/migrations.rs"
+      },
+      "kind": "read",
+      "label": "Reading src/db/migrations.rs",
+      "name": "read_file",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 5,
+      "type": "tool.started"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-1",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 6,
+      "text": "reading 140 lines",
+      "type": "tool.progress"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-2",
+      "detail": {
+        "edit": {
+          "added": 14,
+          "diagnostics": [
+            {
+              "line": 4,
+              "message": "unused import `TransactionBehavior`",
+              "severity": "warning",
+              "source": "clippy"
+            }
+          ],
+          "diff": "@@ -1 +1 @@\n-a\n+b\n",
+          "files": ["src/db/migrations.rs", "src/db/mod.rs"],
+          "formatter": "rustfmt",
+          "removed": 3,
+          "strategy": "exact"
+        },
+        "path": "src/db/migrations.rs"
+      },
+      "duration_ms": 42,
+      "kind": "edit",
+      "name": "patch",
+      "ok": true,
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 7,
+      "summary": "2 files changed",
+      "type": "tool.completed"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-3",
+      "detail": {
+        "command": "cargo test"
+      },
+      "error": "exit code 101",
+      "kind": "shell",
+      "name": "terminal",
+      "ok": false,
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 8,
+      "type": "tool.completed"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-4",
+      "detail": {
+        "query": "CREATE VIRTUAL TABLE"
+      },
+      "kind": "search",
+      "name": "search_files",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 9,
+      "type": "tool.started"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-5",
+      "kind": "delegate",
+      "name": "delegate_task",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 10,
+      "type": "tool.started"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-6",
+      "kind": "other",
+      "name": "web_extract",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 11,
+      "type": "tool.started"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-3",
+      "exit_code": 101,
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 12,
+      "text": "test result: FAILED. 22 passed; 1 failed\n",
+      "truncated": false,
+      "type": "terminal.output"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "choices": ["once", "session", "always", "deny"],
+      "command": "rm -rf target/debug/incremental",
+      "description": "recursive delete",
+      "kind": "command",
+      "request_id": "ap-1",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 13,
+      "type": "approval.requested"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "by": "policy",
+      "decision": "deny",
+      "request_id": "ap-1",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 14,
+      "type": "approval.resolved"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "description": "Which branch?",
+      "kind": "clarify",
+      "request_id": "cl-1",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 15,
+      "type": "approval.requested"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "by": "user",
+      "decision": "answered",
+      "request_id": "cl-1",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 16,
+      "type": "approval.resolved"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "items": [
+        {
+          "content": "Reproduce under load",
+          "id": "1",
+          "status": "completed"
+        },
+        {
+          "content": "Serialize the FTS creation",
+          "status": "in_progress"
+        },
+        {
+          "content": "Run the suite 50 times",
+          "id": "3",
+          "status": "pending"
+        },
+        {
+          "content": "Drop the retry",
+          "id": "4",
+          "status": "cancelled"
+        }
+      ],
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 17,
+      "type": "todo.updated"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "call_id": "call-2",
+      "files": ["src/db/migrations.rs"],
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 18,
+      "step_id": "step-3",
+      "type": "step.recorded"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "budget_usd": 2.0,
+      "cached_tokens": 40960,
+      "cost_usd": 0.0123,
+      "input_tokens": 48210,
+      "output_tokens": 1904,
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 19,
+      "type": "usage"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "interim": false,
+      "message_id": "m-1",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 20,
+      "text": "The creation now runs under a lock.",
+      "type": "message.completed"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "code": "upstream_provider_failed",
+      "message": "The operator refused the request.",
+      "recoverable": false,
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 21,
+      "type": "error"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 22,
+      "status": "completed",
+      "turn_id": "turn-1",
+      "type": "turn.finished"
+    },
+    {
+      "at": "2026-10-23T10:15:00.000Z",
+      "cost_usd": 2.01,
+      "reason": "The run budget of $2.00 was reached.",
+      "run_id": "run_0192b6c8d1e47a3fb1c2d3e4f5a6b7c8",
+      "schema": 1,
+      "seq": 23,
+      "status": "budget_exceeded",
+      "turns": 1,
+      "type": "run.finished"
+    }
+  ],
+  "schema": 1,
+  "types": [
+    "run.started",
+    "run.finished",
+    "turn.started",
+    "turn.finished",
+    "message.delta",
+    "message.completed",
+    "tool.started",
+    "tool.progress",
+    "tool.completed",
+    "terminal.output",
+    "approval.requested",
+    "approval.resolved",
+    "todo.updated",
+    "step.recorded",
+    "usage",
+    "error"
+  ]
+}

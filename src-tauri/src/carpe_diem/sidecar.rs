@@ -50,7 +50,7 @@ fn restart_lock() -> &'static Mutex<()> {
 }
 
 /// Local-dev user id handed to `june-api` (must start with `usr_`).
-const LOCAL_USER_ID: &str = "usr_local";
+pub(crate) const LOCAL_USER_ID: &str = "usr_local";
 /// App handle for the request-side guard (`ensure_ready_for_request`), set at
 /// `setup`. Same global-handle pattern as `agent_hud`.
 static APP: OnceLock<AppHandle> = OnceLock::new();
@@ -81,9 +81,9 @@ pub const SIDECAR_STATUS_EVENT: &str = "carpe-diem://sidecar-status";
 /// How long to wait for `/livez` before declaring the sidecar failed. Generous
 /// in debug because the fallback `cargo run` path may compile `june-api` first.
 #[cfg(debug_assertions)]
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(150);
+pub(crate) const HEALTH_TIMEOUT: Duration = Duration::from_secs(150);
 #[cfg(not(debug_assertions))]
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(40);
+pub(crate) const HEALTH_TIMEOUT: Duration = Duration::from_secs(40);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -291,9 +291,9 @@ fn sidecar_snapshot(app: &AppHandle) -> Option<(SidecarStatus, u16)> {
 }
 
 /// One `/livez` probe against the loopback backend. Short timeout: a live
-/// in-process server answers in single-digit milliseconds.
-#[cfg(mobile)]
-async fn probe(port: u16) -> bool {
+/// in-process server answers in single-digit milliseconds. The headless code
+/// CLI waits on its desktop backend with it too.
+pub(crate) async fn probe(port: u16) -> bool {
     let Ok(client) = crate::http_client::loopback(Duration::from_secs(2)).build() else {
         return false;
     };
@@ -417,8 +417,20 @@ fn start_backend(
     base_url: &str,
     key: &str,
 ) -> std::io::Result<Backend> {
+    spawn_with_secrets(build_command(app, port, token, base_url, key), token, key)
+}
+
+/// Spawns a backend command built by [`configure_backend`] and hands it the
+/// two credentials. Without an app handle, so the headless code CLI starts its
+/// backend the same way (ADR-0123).
+#[cfg(desktop)]
+pub(crate) fn spawn_with_secrets(
+    mut command: Command,
+    token: &str,
+    key: &str,
+) -> std::io::Result<Backend> {
     use std::io::Write;
-    let mut child = build_command(app, port, token, base_url, key).spawn()?;
+    let mut child = command.spawn()?;
     // Hand the credentials over on the pipe and close it: the backend reads
     // to EOF before it binds. A child that cannot take them is a child that
     // will not start, which is the failure the caller already handles.
@@ -544,12 +556,20 @@ fn apply_june_api_env(
     key: &str,
 ) {
     attach_sidecar_log(app, command);
+    let _ = (token, key);
+    configure_backend(command, port, base_url);
+}
+
+/// The backend's environment, without an app handle (the headless code CLI
+/// uses it too, ADR-0123).
+#[cfg(desktop)]
+pub(crate) fn configure_backend(command: &mut Command, port: u16, base_url: &str) {
     // The environment names the port and the mode. The two credentials, the
     // session bearer and the upstream key, are written to the child's stdin
-    // by `start_backend` (`JUNE_SECRETS_ON_STDIN`): a process's environment
-    // is readable by any other process of the same user with `ps eww`, a
-    // pipe is not. `tests/sidecar_secrets_on_stdin.rs` keeps them off `.env`.
-    let _ = (token, key);
+    // by `spawn_with_secrets` (`JUNE_SECRETS_ON_STDIN`): a process's
+    // environment is readable by any other process of the same user with
+    // `ps eww`, a pipe is not. `tests/sidecar_secrets_on_stdin.rs` keeps them
+    // off `.env`.
     command
         .env("JUNE__SERVER__HOST", "127.0.0.1")
         .env("JUNE__SERVER__PORT", port.to_string())
@@ -580,8 +600,17 @@ fn stdin_secrets(token: &str, key: &str) -> String {
     format!("local_dev.bearer_token={token}\nupstreams.venice.api_key={key}\n")
 }
 
+#[cfg(desktop)]
+fn build_command(app: &AppHandle, port: u16, token: &str, base_url: &str, key: &str) -> Command {
+    let mut command = backend_program(bundled_sidecar_cwd(app));
+    apply_june_api_env(app, &mut command, port, token, base_url, key);
+    command
+}
+
+/// The backend program of this build and the folder it runs in, without an
+/// app handle (the headless code CLI starts the same one, ADR-0123).
 #[cfg(all(desktop, debug_assertions))]
-fn build_command(_app: &AppHandle, port: u16, token: &str, base_url: &str, key: &str) -> Command {
+pub(crate) fn backend_program(_resource_dir: Option<PathBuf>) -> Command {
     let api_dir = dev_june_api_dir();
     let prebuilt = api_dir.join("target/debug/june");
     let mut command = if prebuilt.exists() {
@@ -596,22 +625,19 @@ fn build_command(_app: &AppHandle, port: u16, token: &str, base_url: &str, key: 
     };
     // CWD = june-api so Figment finds `config.toml` (pricing fallback catalog).
     command.current_dir(&api_dir);
-    apply_june_api_env(_app, &mut command, port, token, base_url, key);
     command
 }
 
 #[cfg(all(desktop, not(debug_assertions)))]
-fn build_command(app: &AppHandle, port: u16, token: &str, base_url: &str, key: &str) -> Command {
+pub(crate) fn backend_program(resource_dir: Option<PathBuf>) -> Command {
     // Release: run the bundled `june-api` sidecar shipped next to the app
     // binary (declared as `externalBin`; see Phase 5). CWD is set to the
     // resource dir so the bundled `config.toml` is found.
-    let binary = bundled_sidecar_path(app);
-    let mut command = Command::new(binary);
+    let mut command = Command::new(bundled_sidecar_path());
     command.arg("serve");
-    if let Some(dir) = bundled_sidecar_cwd(app) {
+    if let Some(dir) = resource_dir {
         command.current_dir(dir);
     }
-    apply_june_api_env(app, &mut command, port, token, base_url, key);
     command
 }
 
@@ -625,7 +651,7 @@ fn dev_june_api_dir() -> PathBuf {
 }
 
 #[cfg(all(desktop, not(debug_assertions)))]
-fn bundled_sidecar_path(_app: &AppHandle) -> PathBuf {
+fn bundled_sidecar_path() -> PathBuf {
     // Tauri places `externalBin` next to the main executable. The plain name
     // (without the target-triple suffix) is what ships inside the bundle.
     let name = if cfg!(windows) {
@@ -639,13 +665,13 @@ fn bundled_sidecar_path(_app: &AppHandle) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(name))
 }
 
-#[cfg(all(desktop, not(debug_assertions)))]
+#[cfg(desktop)]
 fn bundled_sidecar_cwd(app: &AppHandle) -> Option<PathBuf> {
     // Bundled `config.toml` lives under the resource dir (see Phase 5).
     app.path().resource_dir().ok()
 }
 
-fn free_port() -> std::io::Result<u16> {
+pub(crate) fn free_port() -> std::io::Result<u16> {
     // Bind to port 0, read the assigned port, then drop the listener. A small
     // race exists before the child binds, but the child binds immediately.
     let listener = TcpListener::bind("127.0.0.1:0")?;

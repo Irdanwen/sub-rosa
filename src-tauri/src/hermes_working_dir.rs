@@ -143,11 +143,19 @@ pub(crate) fn validate_working_dir(
     app: &AppHandle,
     raw: &str,
 ) -> Result<ValidatedWorkingDir, AppError> {
-    let app_data_dir = crate::app_paths::app_data_dir(app).ok();
+    validate_working_dir_at(raw, crate::app_paths::app_data_dir(app).ok().as_deref())
+}
+
+/// [`validate_working_dir`] with the app's data folder named by the caller:
+/// the headless code CLI has no app handle (ADR-0123).
+pub(crate) fn validate_working_dir_at(
+    raw: &str,
+    app_data_dir: Option<&Path>,
+) -> Result<ValidatedWorkingDir, AppError> {
     validate_working_dir_with(
         raw,
         home_dir().as_deref(),
-        app_data_dir.as_deref(),
+        app_data_dir,
         &guarded_system_prefixes(),
         &guarded_exact_paths(),
     )

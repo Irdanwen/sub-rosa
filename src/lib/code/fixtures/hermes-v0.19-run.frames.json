@@ -1,0 +1,434 @@
+{
+  "name": "hermes-v0.19-run",
+  "hermesVersion": "v0.19.0 (3ef6bbd2)",
+  "recordedFrom": "subrosa-code run, kimi-k2-7-code, 2026-10-23",
+  "sanitized": true,
+  "_note": "A real headless run (\"crée hello.py qui affiche bonjour\"): every gateway frame in arrival order. The working folder is replaced by /work/e2e, and the gateway.ready skin and the session.info skill list are trimmed. No credential ever reaches the gateway. src-tauri/src/code/hermes_adapter.rs adapts it to hermes-v0.19-run.events.json.",
+  "sessionId": "fdf11a39",
+  "frames": [
+    {
+      "payload": {},
+      "type": "gateway.ready"
+    },
+    {
+      "payload": {
+        "cwd": "/work/e2e",
+        "model": "kimi-k2-7-code",
+        "provider": "custom",
+        "running": true,
+        "approval_mode": "manual"
+      },
+      "session_id": "fdf11a39",
+      "type": "session.info"
+    },
+    {
+      "session_id": "fdf11a39",
+      "type": "message.start"
+    },
+    {
+      "payload": {
+        "text": "( •_•)>⌐■-■ processing..."
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "text": ""
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "text": "Simple"
+      },
+      "session_id": "fdf11a39",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": " task"
+      },
+      "session_id": "fdf11a39",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": ". Create hello"
+      },
+      "session_id": "fdf11a39",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": ".py that"
+      },
+      "session_id": "fdf11a39",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": " prints \"bonjour"
+      },
+      "session_id": "fdf11a39",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": "\" in the working"
+      },
+      "session_id": "fdf11a39",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": " folder."
+      },
+      "session_id": "fdf11a39",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "name": "write_file"
+      },
+      "session_id": "fdf11a39",
+      "type": "tool.generating"
+    },
+    {
+      "payload": {
+        "text": ""
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "context": "Writing hello.py",
+        "name": "write_file",
+        "tool_id": "write_file:0"
+      },
+      "session_id": "fdf11a39",
+      "type": "tool.start"
+    },
+    {
+      "payload": {
+        "args": {
+          "content": "print(\"bonjour\")\n",
+          "path": "hello.py"
+        },
+        "duration_s": 0.13996386528015137,
+        "inline_diff": "  ┊ review diff\n\u001b[38;2;136;136;136ma/hello.py → b/hello.py\u001b[0m\n\u001b[38;2;85;85;85m@@ -0,0 +1 @@\u001b[0m\n\u001b[38;2;255;255;255;48;2;34;68;34m+print(\"bonjour\")\u001b[0m",
+        "name": "write_file",
+        "result": {
+          "bytes_written": 17,
+          "dirs_created": true,
+          "files_modified": ["/work/e2e/hello.py"],
+          "lint": {
+            "output": "",
+            "status": "ok"
+          },
+          "resolved_path": "/work/e2e/hello.py"
+        },
+        "tool_id": "write_file:0"
+      },
+      "session_id": "fdf11a39",
+      "type": "tool.complete"
+    },
+    {
+      "payload": {
+        "text": "◉_◉ musing..."
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "text": ""
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "name": "terminal"
+      },
+      "session_id": "fdf11a39",
+      "type": "tool.generating"
+    },
+    {
+      "payload": {
+        "text": ""
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "context": "Running python3 hello.py",
+        "name": "terminal",
+        "tool_id": "terminal:0"
+      },
+      "session_id": "fdf11a39",
+      "type": "tool.start"
+    },
+    {
+      "payload": {
+        "args": {
+          "command": "python3 hello.py"
+        },
+        "duration_s": 3.3859989643096924,
+        "name": "terminal",
+        "result": {
+          "error": null,
+          "exit_code": 0,
+          "output": "bonjour"
+        },
+        "tool_id": "terminal:0"
+      },
+      "session_id": "fdf11a39",
+      "type": "tool.complete"
+    },
+    {
+      "payload": {
+        "text": "(¬_¬) deliberating..."
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "text": ""
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "text": "\n\nJ"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "'ai"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " créé `hello"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": ".py` avec"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " le cont"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "enu `print(\""
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "bonjour\")`"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " et je"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " l'ai ex"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "écut"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "é pour v"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "érifier. La"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " sortie est"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " bien «"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " bonjour ».\n\n"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "F"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "ich"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "ier cré"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "é : `hello"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": ".py` (17"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " oct"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "ets)\n"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "Ex"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": "écution"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " : `python3"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " hello.py` →"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": " `bonjour`"
+      },
+      "session_id": "fdf11a39",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": ""
+      },
+      "session_id": "fdf11a39",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "text": "J'ai créé `hello.py` avec le contenu `print(\"bonjour\")` et je l'ai exécuté pour vérifier. La sortie est bien « bonjour ».\n\nFichier créé : `hello.py` (17 octets)\nExécution : `python3 hello.py` → `bonjour`"
+      },
+      "session_id": "fdf11a39",
+      "type": "reasoning.available"
+    },
+    {
+      "payload": {
+        "reasoning": "Simple task. Create hello.py that prints \"bonjour\" in the working folder.",
+        "status": "complete",
+        "text": "J'ai créé `hello.py` avec le contenu `print(\"bonjour\")` et je l'ai exécuté pour vérifier. La sortie est bien « bonjour ».\n\nFichier créé : `hello.py` (17 octets)\nExécution : `python3 hello.py` → `bonjour`",
+        "usage": {
+          "active_subagents": 0,
+          "calls": 3,
+          "completion": 225,
+          "compressions": 0,
+          "context_max": 262144,
+          "context_percent": 5,
+          "context_used": 12024,
+          "input": 14114,
+          "model": "kimi-k2-7-code",
+          "output": 225,
+          "prompt": 35618,
+          "reasoning": 0,
+          "total": 35843
+        }
+      },
+      "session_id": "fdf11a39",
+      "type": "message.complete"
+    }
+  ]
+}

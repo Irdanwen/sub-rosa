@@ -1,0 +1,236 @@
+{
+  "events": [
+    {
+      "turn_id": "turn-1",
+      "type": "turn.started"
+    },
+    {
+      "channel": "reasoning",
+      "text": "Simple",
+      "type": "message.delta"
+    },
+    {
+      "channel": "reasoning",
+      "text": " task",
+      "type": "message.delta"
+    },
+    {
+      "channel": "reasoning",
+      "text": ". Create hello",
+      "type": "message.delta"
+    },
+    {
+      "channel": "reasoning",
+      "text": ".py that",
+      "type": "message.delta"
+    },
+    {
+      "channel": "reasoning",
+      "text": " prints \"bonjour",
+      "type": "message.delta"
+    },
+    {
+      "channel": "reasoning",
+      "text": "\" in the working",
+      "type": "message.delta"
+    },
+    {
+      "channel": "reasoning",
+      "text": " folder.",
+      "type": "message.delta"
+    },
+    {
+      "call_id": "write_file:0",
+      "kind": "edit",
+      "label": "Writing hello.py",
+      "name": "write_file",
+      "type": "tool.started"
+    },
+    {
+      "call_id": "write_file:0",
+      "detail": {
+        "edit": {
+          "added": 1,
+          "diff": "--- a/hello.py\n+++ b/hello.py\n@@ -0,0 +1 @@\n+print(\"bonjour\")\n",
+          "removed": 0
+        },
+        "path": "hello.py"
+      },
+      "duration_ms": 140,
+      "kind": "edit",
+      "name": "write_file",
+      "ok": true,
+      "type": "tool.completed"
+    },
+    {
+      "call_id": "terminal:0",
+      "kind": "shell",
+      "label": "Running python3 hello.py",
+      "name": "terminal",
+      "type": "tool.started"
+    },
+    {
+      "call_id": "terminal:0",
+      "detail": {
+        "command": "python3 hello.py"
+      },
+      "duration_ms": 3386,
+      "kind": "shell",
+      "name": "terminal",
+      "ok": true,
+      "type": "tool.completed"
+    },
+    {
+      "call_id": "terminal:0",
+      "exit_code": 0,
+      "text": "bonjour",
+      "truncated": false,
+      "type": "terminal.output"
+    },
+    {
+      "channel": "answer",
+      "text": "\n\nJ",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "'ai",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " créé `hello",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": ".py` avec",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " le cont",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "enu `print(\"",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "bonjour\")`",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " et je",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " l'ai ex",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "écut",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "é pour v",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "érifier. La",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " sortie est",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " bien «",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " bonjour ».\n\n",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "F",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "ich",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "ier cré",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "é : `hello",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": ".py` (17",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " oct",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "ets)\n",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "Ex",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": "écution",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " : `python3",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " hello.py` →",
+      "type": "message.delta"
+    },
+    {
+      "channel": "answer",
+      "text": " `bonjour`",
+      "type": "message.delta"
+    },
+    {
+      "interim": false,
+      "text": "J'ai créé `hello.py` avec le contenu `print(\"bonjour\")` et je l'ai exécuté pour vérifier. La sortie est bien « bonjour ».\n\nFichier créé : `hello.py` (17 octets)\nExécution : `python3 hello.py` → `bonjour`",
+      "type": "message.completed"
+    },
+    {
+      "status": "completed",
+      "turn_id": "turn-1",
+      "type": "turn.finished"
+    }
+  ]
+}
