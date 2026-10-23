@@ -59,6 +59,28 @@ typed call ──▶ createHermesMethods(request).<method>() ──▶ gateway.r
 | `fixtures/`           | Sample raw frames (JSON data) for replay tests.                                                                                  |
 | `compatibility/`      | Hermes compatibility matrix: pinned-version support map and checks.                                                              |
 
+## Driving a session: the `use-*` hooks
+
+A surface that drives a Hermes session (the chat, the Code surface) consumes
+the gateway through these hooks instead of re-implementing it. They are not
+re-exported from `index.ts` (they import React and the shared stores); import
+each from its file.
+
+| Hook | Owns |
+| --- | --- |
+| `useLiveEventBuffer` (`use-session-stream.ts`) | The live frames per session. A streamed delta is published on the next animation frame, anything else at once. `pushLiveEvent`, `dropFinishedLiveTurns`, `liveErrorsOfCurrentTurn`. |
+| `useSessionStream` (`use-session-stream.ts`) | One gateway subscription per session, scoped to the session and not the turn (ADR-0016). Every frame goes through `classifyHermesEvent` into the trace, unsupported, pending-action, activity, artifact and background stores; the steer delivery guarantee; `recoverFromGatewayClose`. What a surface does when a turn ends is passed as callbacks. |
+| `useSessionActivity` (`use-session-activity.ts`) | Working, waiting and in-tool-call sessions, as state for rendering and refs for handlers. |
+| `useSessionRunReconciler` (`use-session-activity.ts`) | ADR-0016's settlement rule: only `session.active_list` ends a run (two misses), the transcript only when the runtime cannot be asked; the 2.5 s poll of working sessions. |
+| `useHermesGateways` (`use-hermes-gateways.ts`) | One gateway per write-access mode, and `resolveRuntimeSession` (memo, resume, eviction, one-directional sandboxed fallback). |
+| `useSessionCommands` (`use-session-commands.ts`) | `runPromptTurn` (subscribe, pre-turn state, `prompt.submit`, one replay on a fresh runtime when the old one is gone), `steerActiveSession`, `stopHermesSession`, `stopHermesSubagent`. |
+| `useSessionApprovals` (`use-session-approvals.ts`) | Answers to approval, clarify, sudo and secret requests, each on the gateway of the runtime that asked. |
+
+The hooks hand each other their results (`activity`, `buffer`, `gateways`,
+`stream`), so call them in that order. Their refs and stable setters are
+declared in `biome.json` (`useExhaustiveDependencies` → `hooks`), so a consumer
+does not list them as dependencies. Tests: `src/test/hermes-session-hooks.test.tsx`.
+
 ## Security
 
 - Raw payloads are **never** `JSON.stringify`ed into a normalized event. Only
