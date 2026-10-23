@@ -172,6 +172,7 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 ## Hermes runtime (pin management)
 
 - [hermes-upgrade-checklist.md](hermes-upgrade-checklist.md) — the gate for bumping the pinned runtime
+- [hermes-code-surface.md](hermes-code-surface.md) — what the pinned Hermes (v0.19.0) gives a code surface: fuzzy edits, LSP diagnostics under the Seatbelt jail, checkpoints, large outputs, plugin hooks, delegation, V4A, ACP, output risk, gateway events, and the plan assumptions it corrects (redo at every bump)
 - [hermes-upstream-template.md](hermes-upstream-template.md) — per-bump pin-note template
 - [hermes-upstream-v2026.6.19.md](hermes-upstream-v2026.6.19.md) — current pin note (v2026.6.19)
 - [hermes-tui-debug.md](hermes-tui-debug.md) — dev-only raw-TUI debug fallback
