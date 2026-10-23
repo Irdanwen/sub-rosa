@@ -229,6 +229,30 @@ describe("useSessionStream", () => {
     expect(fake.listenerCount()).toBe(1);
   });
 
+  it("calls the turn-end callbacks of the latest render, not the attaching one", () => {
+    const fake = fakeGateway();
+    const first = vi.fn();
+    const latest = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ onTurnEnded }) => useHarness(fake.client, { onTurnEnded }),
+      { initialProps: { onTurnEnded: first } },
+    );
+    act(() => {
+      result.current.stream.attachSessionEventListener({
+        gateway: fake.client,
+        runtimeSessionId: "rt-1",
+        sessionDisplayTitle: "Session",
+        storedSessionId: "s1",
+      });
+    });
+    rerender({ onTurnEnded: latest });
+
+    act(() => fake.emit({ type: "message.start", session_id: "rt-1" }));
+    act(() => fake.emit({ type: "message.complete", session_id: "rt-1" }));
+    expect(first).not.toHaveBeenCalled();
+    expect(latest).toHaveBeenCalledWith("s1");
+  });
+
   it("replaces the previous subscription instead of stacking a second one", () => {
     const fake = fakeGateway();
     const { result } = renderHook(() => useHarness(fake.client));

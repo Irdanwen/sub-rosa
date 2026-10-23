@@ -1480,6 +1480,7 @@ export function AgentWorkspace({
     ensureHermesGateway,
     rememberRuntimeSessionId,
     resolveRuntimeSession,
+    closeGateways,
   } = hermesGateways;
   const [skills, setSkills] = useState<HermesSkillInfo[] | null>(null);
   const skillCommandsLoadRef = useRef<Promise<HermesSkillInfo[]> | null>(null);
@@ -3028,9 +3029,7 @@ export function AgentWorkspace({
         diagnosisRefreshIssueReportSessionIds: diagnosisRefreshIssueReportSessionIdsRef.current,
         submittingIssueReportSessionIds: submittingIssueReportSessionIdsRef.current,
       });
-      for (const gateway of gatewaysRef.current.values()) {
-        gateway.close();
-      }
+      closeGateways();
     };
   }, []);
 

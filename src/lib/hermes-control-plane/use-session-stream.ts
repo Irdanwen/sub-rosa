@@ -177,6 +177,11 @@ export function useSessionStream({
   // Per-mode: both gateways can drop together (network reconnect), and one
   // mode's in-flight recovery must not swallow the other's only onClose.
   const gatewayRecoveringRef = useRef<Set<boolean>>(new Set());
+  // A subscription outlives the render that attached it (it spans turns), so
+  // the turn-end callbacks are read through a ref: a caller that reads React
+  // state in them sees the latest value, never the one of the attach render.
+  const turnCallbacksRef = useRef({ onTurnCompleted, onUnconsumedSteers, onTurnEnded });
+  turnCallbacksRef.current = { onTurnCompleted, onUnconsumedSteers, onTurnEnded };
 
   /** Ends a session's subscription, if it has one. */
   function detachSession(sessionId: string) {
@@ -337,7 +342,7 @@ export function useSessionStream({
         if (!activityCounts) {
           clearSessionActivity(storedSessionId);
         }
-        if (status === "completed") onTurnCompleted?.(storedSessionId);
+        if (status === "completed") turnCallbacksRef.current.onTurnCompleted?.(storedSessionId);
         // Delivery guarantee: any steer not consumed by a tool result this turn
         // (Hermes only injects steers into tool output) would otherwise be lost.
         // On a clean completion hand the leftovers back to be resent as a
@@ -352,12 +357,12 @@ export function useSessionStream({
             : undefined;
         delete pendingSteerBySessionIdRef.current[storedSessionId];
         if (unconsumedSteers?.length) {
-          onUnconsumedSteers?.(
+          turnCallbacksRef.current.onUnconsumedSteers?.(
             storedSessionId,
             unconsumedSteers.map((entry) => entry.text).join("\n"),
           );
         }
-        onTurnEnded?.(storedSessionId);
+        turnCallbacksRef.current.onTurnEnded?.(storedSessionId);
       }
     });
     unlisten = () => {
