@@ -130,6 +130,18 @@ pub(crate) fn runtime_command(data_dir: &Path) -> Result<PathBuf, AppError> {
     ))
 }
 
+/// A read-only run (no write grant) must be jailed: the jail is what keeps
+/// the folder read-only.
+fn require_jail_for_read_only(write_grant: bool, sandboxed: bool) -> Result<(), AppError> {
+    if write_grant || sandboxed {
+        return Ok(());
+    }
+    Err(AppError::new(
+        "hermes_bridge_sandbox_required",
+        "This run must keep the folder read-only, and the macOS write jail could not be set up, so it was not started.",
+    ))
+}
+
 /// What a headless runtime is started with.
 pub(crate) struct HeadlessOptions<'a> {
     pub data_dir: &'a Path,
@@ -200,6 +212,10 @@ pub(crate) async fn start_runtime(
         None
     };
     let sandboxed = sandbox_profile.is_some();
+    // A run without the folder grant (plan mode) is read-only only because of
+    // the jail: if the profile could not be written, refuse to start rather
+    // than spawn an agent that can write the folder after all.
+    require_jail_for_read_only(options.write_grant, sandboxed)?;
     std::fs::write(hermes_home.join("SOUL.md"), render_code_soul(sandboxed))
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))?;
 
@@ -532,5 +548,14 @@ mod tests {
             let granted = profile.contains(&format!("(subpath \"{}\")", work.path().display()));
             assert_eq!(granted, write_grant);
         }
+    }
+
+    #[test]
+    fn a_read_only_run_is_never_started_without_the_jail() {
+        assert!(require_jail_for_read_only(true, false).is_ok());
+        assert!(require_jail_for_read_only(true, true).is_ok());
+        assert!(require_jail_for_read_only(false, true).is_ok());
+        let refused = require_jail_for_read_only(false, false).unwrap_err();
+        assert_eq!(refused.code, "hermes_bridge_sandbox_required");
     }
 }
