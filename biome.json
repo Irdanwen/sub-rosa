@@ -61,7 +61,38 @@
       },
       "correctness": {
         "noUnusedImports": "error",
-        "useExhaustiveDependencies": "warn"
+        "useExhaustiveDependencies": {
+          "level": "warn",
+          "options": {
+            "hooks": [
+              {
+                "name": "useSessionActivity",
+                "stableResult": [
+                  "workingSessionIdsRef",
+                  "waitingSessionIdsRef",
+                  "toolCallSessionIdsRef",
+                  "activeToolCallsBySessionRef",
+                  "setSessionWorking",
+                  "setSessionWaiting",
+                  "setSessionToolCallActive",
+                  "clearSessionActivity"
+                ]
+              },
+              {
+                "name": "useHermesGateways",
+                "stableResult": ["gatewaysRef", "gatewayCloseHandlerRef", "runtimeSessionIdsRef"]
+              },
+              {
+                "name": "useLiveEventBuffer",
+                "stableResult": ["liveEventsRef", "liveEventsPublisher"]
+              },
+              {
+                "name": "useSessionStream",
+                "stableResult": ["sessionGatewayUnlistenRef", "pendingSteerBySessionIdRef"]
+              }
+            ]
+          }
+        }
       },
       "suspicious": {
         "noConsole": "warn",

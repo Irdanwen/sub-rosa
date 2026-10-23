@@ -198,18 +198,11 @@ import {
   AGENT_SESSIONS_CHANGED_EVENT,
   dispatchAgentSessionsChanged,
   dispatchAgentSessionStatus,
-  repeatsLastAgentSessionStatus,
   type AgentGalleryDetail,
   type AgentSessionsChangedDetail,
-  type AgentSessionStatusKind,
 } from "../../lib/agent-events";
+import { type HermesGatewayClient, isSessionBusyError } from "../../lib/hermes-gateway";
 import {
-  HermesGatewayClient,
-  isSessionBusyError,
-  type HermesGatewayEvent,
-} from "../../lib/hermes-gateway";
-import {
-  classifyHermesEvent,
   createHermesMethods,
   hermesModeFor,
   isHermesFeatureSupported,
@@ -236,7 +229,6 @@ import {
   type CompressSessionResult,
 } from "../../lib/hermes-session-compress";
 import { isBranchableMessageId } from "../../lib/hermes-session-branch";
-import { normalizeSteerText, steeringLiveEvent } from "../../lib/hermes-session-steer";
 import { unsupportedEventStore } from "../../lib/hermes-unsupported-events";
 import { pendingActionStore } from "../../lib/hermes-pending-actions";
 import { hermesActivityStore } from "../../lib/hermes-activity-store";
@@ -320,7 +312,22 @@ import {
   REPORT_CATEGORIES,
   type ReportCategory,
 } from "./composer/reportCategory";
-import { hermesConnectionForMode } from "../../lib/hermes-connection";
+import { isSessionGoneError } from "../../lib/hermes-control-plane/session-errors";
+import {
+  type HermesRuntimeSessionResponse,
+  useHermesGateways,
+} from "../../lib/hermes-control-plane/use-hermes-gateways";
+import {
+  activeToolCallsRecord,
+  useSessionActivity,
+  useSessionRunReconciler,
+} from "../../lib/hermes-control-plane/use-session-activity";
+import { useSessionApprovals } from "../../lib/hermes-control-plane/use-session-approvals";
+import { useSessionCommands } from "../../lib/hermes-control-plane/use-session-commands";
+import {
+  useLiveEventBuffer,
+  useSessionStream,
+} from "../../lib/hermes-control-plane/use-session-stream";
 import {
   forgetSessionMode,
   rememberSessionMode,
@@ -347,17 +354,10 @@ import {
   displayedComposerUserMessageText,
   hermesMessagesEndInterrupted,
   hermesMessagesHaveAssistantReply,
-  hermesMessagesShowCompletedTurn,
   currentTurnLiveErrors,
-  eventText,
   isProcessNoticeTurn,
-  isTerminalHermesEvent,
-  liveEventsForNewTurn,
-  withRestoredLiveEvents,
   repairContractionSpacing,
-  stringValue,
   textFromHermesContent,
-  appendLiveHermesEvent,
   withInterruptedTurnNotice,
   type AgentApprovalChoice,
   type AgentChatPart,
@@ -365,14 +365,14 @@ import {
   type LiveHermesEvent,
 } from "../../lib/agent-chat-runtime";
 import { type ToolActivityKind, toolActivityKind } from "../../lib/agent-tool-labels";
-import { toolActivitySentenceText, toolRowLabel } from "../../lib/agent-tool-label-text";
+import { toolRowLabel } from "../../lib/agent-tool-label-text";
 import {
   buildAgentChatGallery,
   buildAgentErrorGallery,
   type AgentChatGallerySection,
 } from "../../lib/agent-chat-gallery";
 import { attachScrollThumbFade } from "../../lib/scroll-thumb-fade";
-import { createFrameBatcher, requestFrame } from "../../lib/frame-batch";
+import { requestFrame } from "../../lib/frame-batch";
 import { createPostTurnRefresher } from "../../lib/post-turn-refresh";
 import { useEventCallback } from "../../lib/use-event-callback";
 import { clipboardImageFiles } from "../../lib/clipboard-images";
@@ -420,30 +420,6 @@ function isGatewayConnectionError(message: string) {
     /hermes (gateway|bridge)/i.test(message) ||
     message === t("Hermes bridge did not return a gateway URL.")
   );
-}
-
-// A pending request (approval/sudo/secret/clarify) can only be answered by the
-// runtime process that asked for it. When that runtime ends, the session's data
-// still loads, but the gateway answers "Session not found" on respond — the
-// request is now permanently unanswerable. Every respond handler treats this as
-// terminal: it retires the dead-end card and shows SESSION_GONE_MESSAGE rather
-// than leaking the raw "Hermes API returned 404 ... Session not found" error.
-function sessionGoneMessage() {
-  return t("This session has ended, so the request can no longer be answered.");
-}
-
-// A send whose session cannot be resumed on either runtime. Distinct from
-// SESSION_GONE_MESSAGE (an unanswerable pending request): here the conversation
-// itself has no live runtime left, and the raw wire text ("Hermes API returned
-// 404 … Session not found") told the user nothing about what to do next.
-function sessionRuntimeGoneMessage() {
-  return t(
-    "Sub Rosa could not reopen this conversation, so the message was not sent. Start a new session to continue.",
-  );
-}
-
-function isSessionGoneError(message: string): boolean {
-  return message.toLowerCase().includes("session not found");
 }
 
 // Dev-tools response gallery handle. Registered at module scope so
@@ -703,8 +679,6 @@ type PendingIssueReport = {
   diagnosisStartedAt?: string;
 };
 
-type HermesToolEventPhase = "start" | "progress" | "complete";
-
 type AgentWorkspaceError = {
   message: string;
   /** Null means the error belongs to the no-session workspace surface. */
@@ -791,11 +765,6 @@ type TauriFileDropPayload = {
 type FileBytesImportOptions = {
   tooLargeMessage: string;
   readErrorMessage: (file: File) => string;
-};
-
-type HermesRuntimeSessionResponse = {
-  session_id?: string;
-  stored_session_id?: string;
 };
 
 /** Where the session was opened from — rendered as the leading crumbs in the
@@ -961,31 +930,6 @@ function removeStoredNewSessionDraft() {
 
 function shouldOpenNewSessionOnMount() {
   return hasPendingNewSessionRequest() || hasNewSessionComposerDraft();
-}
-
-function activeToolCallsRecord(
-  activeToolCallsBySession: Map<string, Map<string, number>>,
-): Record<string, Record<string, number>> {
-  return Object.fromEntries(
-    Array.from(activeToolCallsBySession.entries())
-      .filter(([, tools]) => tools.size > 0)
-      .map(([sessionId, tools]) => [sessionId, Object.fromEntries(tools)]),
-  );
-}
-
-function activeToolCallsMap(
-  activeToolCallsBySession: Record<string, Record<string, number>> | undefined,
-) {
-  return new Map(
-    Object.entries(activeToolCallsBySession ?? {}).map(([sessionId, tools]) => [
-      sessionId,
-      new Map(
-        Object.entries(tools).filter(
-          (entry): entry is [string, number] => Number.isFinite(entry[1]) && entry[1] > 0,
-        ),
-      ),
-    ]),
-  );
 }
 
 function captureSessionContinuity(state: {
@@ -1492,41 +1436,51 @@ export function AgentWorkspace({
   const sessionMessagesFetchSeqRef = useRef<Map<string, number>>(new Map());
   const sessionMessagesAppliedSeqRef = useRef<Map<string, number>>(new Map());
   const [hermesSessionsLoading, setHermesSessionsLoading] = useState(false);
-  const [liveEvents, setLiveEvents] = useState<Record<string, LiveHermesEvent[]>>(
-    () => continuity?.liveEvents ?? {},
-  );
+  // The live frames per session, published at most once per animation frame
+  // (use-session-stream). Errors of the current turn are read against the
+  // persisted transcript plus the sends not stored yet.
+  const liveEventBuffer = useLiveEventBuffer({
+    initial: continuity?.liveEvents,
+    storedMessages: (sessionId) => [
+      ...(hermesSessionMessagesRef.current[sessionId] ?? []),
+      ...(pendingHermesMessagesRef.current[sessionId] ?? []),
+    ],
+  });
+  const {
+    liveEvents,
+    liveEventsRef,
+    liveEventsPublisher,
+    dropFinishedLiveTurns,
+    liveErrorsOfCurrentTurn,
+  } = liveEventBuffer;
   const [thinkingOpenByKey, setThinkingOpenByKey] = useState<Record<string, boolean>>({});
   const [workingTaskIds, setWorkingTaskIds] = useState<Set<string>>(() => new Set());
-  const [workingSessionIds, setWorkingSessionIds] = useState<Set<string>>(
-    () => new Set(continuity?.workingSessionIds),
-  );
-  const workingSessionIdsRef = useRef<Set<string>>(workingSessionIds);
-  const [toolCallSessionIds, setToolCallSessionIds] = useState<Set<string>>(
-    () => new Set(Object.keys(continuity?.activeToolCallsBySession ?? {})),
-  );
-  const toolCallSessionIdsRef = useRef<Set<string>>(toolCallSessionIds);
-  // Steers we've sent that Hermes may not have delivered yet. Hermes only
-  // injects a steer into the next tool result, so a no-tool turn drops it; we
-  // track the text and resend it as a follow-up on completion when no tool
-  // consumed it (cleared on a tool.complete or a clean terminal).
-  const pendingSteerBySessionIdRef = useRef<
-    Record<string, { text: string; accepted: boolean; toolDrained: boolean }[]>
-  >({});
-  const activeToolCallsBySessionRef = useRef<Map<string, Map<string, number>>>(
-    activeToolCallsMap(continuity?.activeToolCallsBySession),
-  );
-  const [waitingSessionIds, setWaitingSessionIds] = useState<Set<string>>(
-    () => new Set(continuity?.waitingSessionIds),
-  );
-  const waitingSessionIdsRef = useRef<Set<string>>(waitingSessionIds);
-  const [runtimeSessionIds, setRuntimeSessionIds] = useState<Record<string, string>>(
-    () => continuity?.runtimeSessionIds ?? {},
-  );
-  const runtimeSessionIdsRef = useRef(runtimeSessionIds);
-  // Consecutive runtime-reconcile polls in which a locally-working session was
-  // absent from the gateway's live list. Cleared the moment it's seen live.
-  const workingReconcileMissesRef = useRef(new Map<string, number>());
-  const [stoppingSessionIds, setStoppingSessionIds] = useState<ReadonlySet<string>>(new Set());
+  // Which sessions are working, waiting on the person, or inside a tool call
+  // (ADR-0016), and the gateways their RPCs go through, keyed by runtime id.
+  const sessionActivity = useSessionActivity(continuity);
+  const {
+    workingSessionIds,
+    workingSessionIdsRef,
+    waitingSessionIds,
+    waitingSessionIdsRef,
+    activeToolCallsBySessionRef,
+    setSessionWorking,
+    setSessionWaiting,
+    clearSessionActivity,
+  } = sessionActivity;
+  const hermesGateways = useHermesGateways({
+    bridge,
+    startBridge,
+    initialRuntimeSessionIds: continuity?.runtimeSessionIds,
+  });
+  const {
+    gatewaysRef,
+    gatewayCloseHandlerRef,
+    runtimeSessionIdsRef,
+    ensureHermesGateway,
+    rememberRuntimeSessionId,
+    resolveRuntimeSession,
+  } = hermesGateways;
   const [skills, setSkills] = useState<HermesSkillInfo[] | null>(null);
   const skillCommandsLoadRef = useRef<Promise<HermesSkillInfo[]> | null>(null);
   const [toolsets, setToolsets] = useState<HermesToolsetInfo[] | null>(null);
@@ -1570,14 +1524,6 @@ export function AgentWorkspace({
   // Dev-only sample files seeded by window.__agentFiles — surfaced alongside
   // the conversation's own artifacts so the viewer can be exercised at will.
   const [devArtifacts, setDevArtifacts] = useState<AgentArtifact[]>([]);
-  const [approvalSubmitting, setApprovalSubmitting] = useState<
-    Partial<Record<string, AgentApprovalChoice>>
-  >({});
-  const [clarifySubmitting, setClarifySubmitting] = useState<Record<string, string>>({});
-  // Sudo records which choice (approve/deny) is in flight per request id;
-  // secret records only that a submit is in flight (NEVER the value).
-  const [sudoSubmitting, setSudoSubmitting] = useState<Record<string, "approve" | "deny">>({});
-  const [secretSubmitting, setSecretSubmitting] = useState<Record<string, true>>({});
   // Whether "Agent CLI access" (Settings, Agent tab) is on — drives the
   // in-chat request card June can raise via its soul token. undefined until
   // the stored value loads, so a card never flashes the wrong state.
@@ -1605,30 +1551,6 @@ export function AgentWorkspace({
   // surfaces (error banner, composer busy notice) for styling.
   const [gallerySections, setGallerySections] = useState<AgentChatGallerySection[] | null>(null);
   const [galleryErrors, setGalleryErrors] = useState(false);
-  // One gateway client per write-access mode: the sandboxed and unrestricted
-  // runtime processes run side by side, each with its own socket. Sessions
-  // route to the gateway matching their recorded mode.
-  const gatewaysRef = useRef<Map<boolean, HermesGatewayClient>>(new Map());
-  // The gateway's close listener is registered once per client instance, so
-  // it routes through this ref to always run the latest render's recovery
-  // closure (see recoverFromGatewayClose).
-  const gatewayCloseHandlerRef = useRef((_fullMode: boolean) => {});
-  // Per-mode: both gateways can drop together (network reconnect), and one
-  // mode's in-flight recovery must not swallow the other's only onClose.
-  const gatewayRecoveringRef = useRef<Set<boolean>>(new Set());
-  // One live gateway subscription per Hermes session. A follow-up send while
-  // the previous turn is still streaming must replace the old handler, not
-  // stack a second one — otherwise every event lands twice in liveEvents.
-  const sessionGatewayUnlistenRef = useRef<Map<string, () => void>>(new Map());
-  const liveEventsRef = useRef<Record<string, LiveHermesEvent[]>>(liveEvents);
-  // The ref takes every live frame at once (every handler reads it); the render
-  // is published at most once per animation frame, so a streamed reply stops
-  // re-rendering the workspace per token. Anything but a streamed delta flushes.
-  const liveEventsPublisher = useMemo(
-    () => createFrameBatcher(() => setLiveEvents(liveEventsRef.current)),
-    [],
-  );
-  useEffect(() => () => liveEventsPublisher.cancel(), [liveEventsPublisher]);
   // A finished turn is refreshed a few times until its stored reply shows up.
   const refreshHermesSessionRef = useRef(refreshHermesSession);
   refreshHermesSessionRef.current = refreshHermesSession;
@@ -1637,6 +1559,124 @@ export function AgentWorkspace({
     [],
   );
   useEffect(() => () => postTurnRefresher.cancelAll(), [postTurnRefresher]);
+  // The gateway subscription of every session this surface touches, and what
+  // happens when one of its turns ends (use-session-stream).
+  const sessionStream = useSessionStream({
+    activity: sessionActivity,
+    buffer: liveEventBuffer,
+    gateways: hermesGateways,
+    refreshSession: (sessionId, options) => refreshHermesSessionRef.current(sessionId, options),
+    sessionTitle: (sessionId) =>
+      hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title,
+    onTurnCompleted: (storedSessionId) => {
+      // Cross-conversation memory: every 3rd completed assistant turn
+      // feeds the recent window to the extraction model (fire-and-forget;
+      // the helper checks the user's memory settings first).
+      noteAssistantTurnCompleted(storedSessionId);
+      // A session working under a mandate has just said it is finished.
+      // Rust owns the rule for which statuses mean that, so this asks
+      // rather than deciding, and a session with no mandate answers null
+      // and costs one cheap query (ADR-0034).
+      void councilCycleAwaitingVerdict(storedSessionId)
+        .then((cycle) => {
+          if (!cycle) return;
+          if (declinedVerdictsRef.current.has(`${cycle.id}#${cycle.round}`)) return;
+          setVerdictMandateId(cycle.id);
+        })
+        .catch(() => {
+          // Best-effort like the memory hook above: the verdict is an
+          // offer, and failing to offer it must never break a turn.
+        });
+    },
+    onUnconsumedSteers: (storedSessionId, followUpText) => {
+      // Steers no tool result consumed are resent as a follow-up, so the
+      // message always reaches the agent.
+      const followUpSession = hermesSessionItemsRef.current.find(
+        (session) => session.id === storedSessionId,
+      );
+      if (!followUpSession) return;
+      window.setTimeout(() => {
+        void submitHermesSession(followUpText, followUpSession).catch((err: unknown) => {
+          // The follow-up never reached the agent (e.g. a gateway reconnect
+          // or a still-busy session right after completion). Surface it
+          // rather than silently losing the instruction.
+          setError(messageFromError(err), {
+            sessionId: storedSessionId,
+          });
+        });
+      }, 0);
+    },
+    onTurnEnded: (storedSessionId) => {
+      // The diagnostic turn is over (even on error): let the user append
+      // anything the summary surfaced before sending the bundled report.
+      const promotedIssueReport = promotePendingIssueReportToReview(storedSessionId, {
+        queueDiagnosisRefresh: true,
+      });
+      if (!promotedIssueReport) postTurnRefresher.schedule(storedSessionId);
+    },
+  });
+  const {
+    sessionGatewayUnlistenRef,
+    attachSessionEventListener: attachHermesSessionEventListener,
+    recordPendingSteer,
+    recoverFromGatewayClose,
+  } = sessionStream;
+  const {
+    stoppingSessionIds,
+    runPromptTurn,
+    steerActiveSession,
+    stopHermesSession,
+    stopHermesSubagent,
+  } = useSessionCommands({
+    gateways: hermesGateways,
+    activity: sessionActivity,
+    buffer: liveEventBuffer,
+    stream: sessionStream,
+    sessionTitle: (sessionId) =>
+      hermesSessionItems.find((session) => session.id === sessionId)?.title,
+    refreshSession: refreshHermesSession,
+  });
+  const {
+    approvalSubmitting,
+    clarifySubmitting,
+    sudoSubmitting,
+    secretSubmitting,
+    respondToApproval,
+    respondToClarify,
+    respondToSudo,
+    respondToSecret,
+  } = useSessionApprovals({
+    gateways: hermesGateways,
+    buffer: liveEventBuffer,
+    stream: sessionStream,
+    activity: sessionActivity,
+    setError,
+    onApprovalSessionGone: (liveEventKey) => {
+      setWorkingTaskIds((current) => {
+        if (!current.has(liveEventKey)) return current;
+        const next = new Set(current);
+        next.delete(liveEventKey);
+        return next;
+      });
+      void loadHermesSessions();
+    },
+  });
+  // ADR-0016: only the runtime ends a run; working sessions are polled while
+  // the bridge runs.
+  const { settleSessionRun } = useSessionRunReconciler({
+    activity: sessionActivity,
+    liveRuntimeSessionsForModes: hermesGateways.liveRuntimeSessionsForModes,
+    runtimeSnapshotHasSession: hermesGateways.runtimeSnapshotHasSession,
+    liveErrorsOfCurrentTurn,
+    transcript: (sessionId) => [
+      ...(hermesSessionMessagesRef.current[sessionId] ?? []),
+      ...(pendingHermesMessagesRef.current[sessionId] ?? []),
+    ],
+    sessionTitle: (sessionId) =>
+      hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title,
+    pollEnabled: bridge.running,
+    refreshSession: refreshHermesSession,
+  });
   const hydratedTaskIdsRef = useRef<Set<string>>(new Set());
   // Tasks whose hydration fetch has resolved (hydratedTaskIdsRef only says
   // the fetch *started*) — the scroll-settling logic needs the landing.
@@ -1812,10 +1852,6 @@ export function AgentWorkspace({
   }, []);
 
   useEffect(() => {
-    runtimeSessionIdsRef.current = runtimeSessionIds;
-  }, [runtimeSessionIds]);
-
-  useEffect(() => {
     const restoredSessionIds = continuity?.workingSessionIds ?? [];
     if (!restoredSessionIds.length) return;
     let cancelled = false;
@@ -1850,129 +1886,10 @@ export function AgentWorkspace({
 
   useEffect(() => {
     selectedHermesSessionIdRef.current = selectedHermesSessionId;
-    workingSessionIdsRef.current = workingSessionIds;
-    toolCallSessionIdsRef.current = toolCallSessionIds;
-    waitingSessionIdsRef.current = waitingSessionIds;
     pendingHermesMessagesRef.current = pendingHermesMessages;
     hermesSessionItemsRef.current = hermesSessionItems;
     hermesSessionMessagesRef.current = hermesSessionMessages;
-  }, [
-    hermesSessionItems,
-    hermesSessionMessages,
-    pendingHermesMessages,
-    selectedHermesSessionId,
-    toolCallSessionIds,
-    waitingSessionIds,
-    workingSessionIds,
-  ]);
-
-  const setSessionToolCallActive = useCallback((sessionId: string, active: boolean) => {
-    setToolCallSessionIds((current) => {
-      const next = new Set(current);
-      if (active) {
-        next.add(sessionId);
-      } else {
-        next.delete(sessionId);
-      }
-      toolCallSessionIdsRef.current = next;
-      return next;
-    });
-  }, []);
-
-  function clearSessionToolCalls(sessionId: string) {
-    activeToolCallsBySessionRef.current.delete(sessionId);
-    setSessionToolCallActive(sessionId, false);
-  }
-
-  function updateSessionToolCallActivity(
-    sessionId: string,
-    event: HermesGatewayEvent,
-    phase: HermesToolEventPhase,
-  ) {
-    const eventKey = toolEventActivityKey(event);
-    const current = new Map(activeToolCallsBySessionRef.current.get(sessionId) ?? []);
-
-    if (phase === "progress" && eventKey === undefined) {
-      return current.size > 0;
-    }
-
-    const key = eventKey ?? "__anonymous_tool__";
-
-    if (phase === "start") {
-      current.set(key, (current.get(key) ?? 0) + 1);
-    } else if (phase === "progress") {
-      if (!current.has(key)) current.set(key, 1);
-    } else {
-      const count = current.get(key) ?? 0;
-      if (count > 1) {
-        current.set(key, count - 1);
-      } else {
-        current.delete(key);
-      }
-    }
-
-    if (current.size > 0) {
-      activeToolCallsBySessionRef.current.set(sessionId, current);
-      setSessionToolCallActive(sessionId, true);
-      return true;
-    }
-
-    activeToolCallsBySessionRef.current.delete(sessionId);
-    setSessionToolCallActive(sessionId, false);
-    return false;
-  }
-
-  // Both return the current Set when nothing changes: a new Set per streamed
-  // frame re-rendered the workspace and re-armed the working poll's interval.
-  const setSessionWorking = useCallback((sessionId: string, working: boolean) => {
-    setWorkingSessionIds((current) => {
-      if (current.has(sessionId) === working) return current;
-      const next = new Set(current);
-      if (working) {
-        next.add(sessionId);
-      } else {
-        next.delete(sessionId);
-      }
-      workingSessionIdsRef.current = next;
-      return next;
-    });
-  }, []);
-
-  const setSessionWaiting = useCallback((sessionId: string, waiting: boolean) => {
-    setWaitingSessionIds((current) => {
-      if (current.has(sessionId) === waiting) return current;
-      const next = new Set(current);
-      if (waiting) {
-        next.add(sessionId);
-      } else {
-        next.delete(sessionId);
-      }
-      waitingSessionIdsRef.current = next;
-      return next;
-    });
-  }, []);
-
-  const clearSessionActivity = useCallback(
-    (sessionId: string) => {
-      clearSessionToolCalls(sessionId);
-
-      const nextWorking = new Set(workingSessionIdsRef.current);
-      nextWorking.delete(sessionId);
-      workingSessionIdsRef.current = nextWorking;
-      setWorkingSessionIds(nextWorking);
-
-      const nextWaiting = new Set(waitingSessionIdsRef.current);
-      nextWaiting.delete(sessionId);
-      waitingSessionIdsRef.current = nextWaiting;
-      setWaitingSessionIds(nextWaiting);
-
-      return {
-        activeCount: nextWorking.size + nextWaiting.size,
-        needsUserCount: nextWaiting.size,
-      };
-    },
-    [setSessionToolCallActive],
-  );
+  }, [hermesSessionItems, hermesSessionMessages, pendingHermesMessages, selectedHermesSessionId]);
 
   // Shared teardown for a session that is going away: its messages, pending
   // sends, working/waiting flags, live gateway listener, and buffered live
@@ -2002,7 +1919,7 @@ export function AgentWorkspace({
       // A deleted session must not be the restore target on the next mount.
       forgetLastOpenSessionId(sessionId);
     },
-    [clearSessionActivity, liveEventsPublisher, postTurnRefresher],
+    [postTurnRefresher],
   );
 
   const selectedTask = useMemo(
@@ -3035,7 +2952,7 @@ export function AgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [bridge.running, liveEventsPublisher, selectedHermesSessionId]);
+  }, [bridge.running, selectedHermesSessionId]);
 
   useEffect(() => {
     if (!bridge.running || !selectedHermesSessionId) return;
@@ -3127,21 +3044,6 @@ export function AgentWorkspace({
     }, 1000);
     return () => window.clearInterval(interval);
   }, [selectedTask?.id, selectedTask?.status, upsertTask]);
-
-  // Poll every working session — not just the selected one — so a run whose
-  // live gateway stream died (disconnect, navigation) still reconciles from
-  // persisted messages instead of staying "working" forever.
-  useEffect(() => {
-    if (!bridge.running || workingSessionIds.size === 0) return;
-    const sessionIds = Array.from(workingSessionIds);
-    const interval = window.setInterval(() => {
-      for (const sessionId of sessionIds) {
-        void refreshHermesSession(sessionId);
-      }
-      void reconcileWorkingSessionsAgainstRuntime();
-    }, 2500);
-    return () => window.clearInterval(interval);
-  }, [bridge.running, workingSessionIds]);
 
   useEffect(() => {
     categoryRef.current = category;
@@ -3810,14 +3712,7 @@ export function AgentWorkspace({
       if (dropFinishedLiveTurns(steerSessionId, true)) {
         void refreshHermesSession(steerSessionId, { keepLiveFrames: true });
       }
-      const steerEntry = { text: message, accepted: false, toolDrained: false };
-      pendingSteerBySessionIdRef.current = {
-        ...pendingSteerBySessionIdRef.current,
-        [steerSessionId]: [
-          ...(pendingSteerBySessionIdRef.current[steerSessionId] ?? []),
-          steerEntry,
-        ],
-      };
+      const steerEntry = recordPendingSteer(steerSessionId, message);
       void steerActiveSession(steerSessionId, message)
         .then(() => {
           steerEntry.accepted = true;
@@ -4478,18 +4373,7 @@ export function AgentWorkspace({
     });
     liveEventsRef.current = moveRecordKey(liveEventsRef.current, fromSessionId, toSessionId);
     liveEventsPublisher.flush();
-    setWorkingSessionIds((current) => {
-      const next = new Set(current);
-      if (next.delete(fromSessionId)) next.add(toSessionId);
-      workingSessionIdsRef.current = next;
-      return next;
-    });
-    setWaitingSessionIds((current) => {
-      const next = new Set(current);
-      if (next.delete(fromSessionId)) next.add(toSessionId);
-      waitingSessionIdsRef.current = next;
-      return next;
-    });
+    sessionActivity.moveSessionActivity(fromSessionId, toSessionId);
     selectedHermesSessionIdRef.current = toSessionId;
     setSelectedHermesSessionId(toSessionId);
   }
@@ -4516,18 +4400,7 @@ export function AgentWorkspace({
     for (const id of ids) nextLiveEvents = omitRecordKey(nextLiveEvents, id);
     liveEventsRef.current = nextLiveEvents;
     liveEventsPublisher.flush();
-    setWorkingSessionIds((current) => {
-      const next = new Set(current);
-      for (const id of ids) next.delete(id);
-      workingSessionIdsRef.current = next;
-      return next;
-    });
-    setWaitingSessionIds((current) => {
-      const next = new Set(current);
-      for (const id of ids) next.delete(id);
-      waitingSessionIdsRef.current = next;
-      return next;
-    });
+    sessionActivity.dropSessionActivity(ids);
     const selectedSessionId = selectedHermesSessionIdRef.current;
     if (selectedSessionId && ids.has(selectedSessionId)) {
       selectedHermesSessionIdRef.current = undefined;
@@ -4535,246 +4408,6 @@ export function AgentWorkspace({
       newSessionModeRef.current = true;
       setNewSessionMode(true);
     }
-  }
-
-  function attachHermesSessionEventListener({
-    gateway,
-    runtimeSessionId,
-    sessionDisplayTitle,
-    storedSessionId,
-  }: {
-    gateway: HermesGatewayClient;
-    runtimeSessionId: string;
-    sessionDisplayTitle: string;
-    storedSessionId: string;
-  }) {
-    sessionGatewayUnlistenRef.current.get(storedSessionId)?.();
-    let unlisten = () => {};
-    const removeListener = gateway.onEvent((event) => {
-      if (event.session_id !== runtimeSessionId && event.session_id !== storedSessionId) return;
-      const liveEvent = { ...event, receivedAt: new Date().toISOString() };
-      // Run every live frame through the typed control plane alongside the
-      // existing string-based handling below. This is the first consumer of
-      // the classifier: it doesn't drive rendering yet (later features migrate
-      // families onto it incrementally), but it proves the live path is typed
-      // and surfaces any raw type June can't yet model. Unknown frames classify
-      // as `unsupported` rather than being dropped, so a Hermes upgrade that
-      // adds an event shows up in dev instead of silently doing nothing.
-      const classified = classifyHermesEvent(liveEvent);
-      // Feature 15: record every inbound frame (raw type + the kind it
-      // classified to) into the bounded, sanitized trace buffer so the dev/debug
-      // trace panel can reconstruct the session. recordInbound re-classifies and
-      // sanitizes internally; nothing raw is retained.
-      hermesTraceBuffer.recordInbound(liveEvent);
-      if (classified.kind === "unsupported") {
-        // Feed the bounded per-session store so the user gets a recoverable
-        // notice (when this is the active session) and developers get a
-        // sanitized, issue-report-safe export. The payload is already sanitized
-        // by the classifier; nothing raw is retained or logged.
-        unsupportedEventStore.record(classified);
-        if (import.meta.env.DEV) {
-          // biome-ignore lint/suspicious/noConsole: dev-only unsupported-event diagnostic
-          console.debug(
-            "[hermes] unsupported event",
-            classified.rawType,
-            classified.sanitizedPayload,
-          );
-        }
-      } else if (classified.kind === "pending_action") {
-        // Feature 04: aggregate this blocker into the pending-action store
-        // keyed by mode + session + request. The session's mode comes from its
-        // recorded opt-in (sudo carries its own; the rest derive it here). A
-        // fresh event for a known request also re-confirms a row that went
-        // stale across a reconnect (see the store's reconcile logic).
-        pendingActionStore.record(classified, hermesModeFor(storedSessionId));
-      }
-      // Feature 11: roll EVERY classified event into the global activity store
-      // that backs the Agent activity drawer. The store is total and ignores
-      // unattributable events, so one unconditional call covers all kinds; it
-      // derives the session's phase (running/waiting/background/error/complete),
-      // current tool, and subagent count from the normalized event — never from
-      // the raw frame (raw JSON belongs to feature 15's trace panel).
-      hermesActivityStore.record(classified, hermesModeFor(storedSessionId));
-      // Feature 14: extract any file/artifact reference this event carries into
-      // the per-session artifact timeline behind the drawer's "Artifacts"
-      // section. The store is total and only acts on `tool` completions that
-      // name a known file/url field (conservative — never parses prose), so one
-      // unconditional call is safe for every kind. Mode rides along so each
-      // artifact can show its blast radius (sandboxed copy vs unrestricted path).
-      hermesArtifactStore.record(classified, hermesModeFor(storedSessionId));
-      // Track background processes (the `background=true` shell launches the
-      // agent parks long work in) so the chat can say a job is still running
-      // once the turn that started it has ended. Total and conservative: a
-      // frame that does not identify a background process is ignored.
-      hermesBackgroundProcessStore.record(classified, {
-        sessionId: storedSessionId,
-        receivedAt: liveEvent.receivedAt,
-      });
-      // A new assistant message means the chained turn the completion triggered
-      // has begun, so "finished, being picked back up" has served its purpose.
-      if (event.type === "message.start") {
-        hermesBackgroundProcessStore.clearFinished(storedSessionId);
-      }
-      // A turn the gateway starts on its own (a finished background job, the
-      // goal loop) has no send to clear the finished turn's frames, which would
-      // render again under the prompt the gateway stores. Clear them as a send
-      // does and fetch their stored copy.
-      if (
-        event.type === "message.start" &&
-        !workingSessionIdsRef.current.has(storedSessionId) &&
-        !waitingSessionIdsRef.current.has(storedSessionId) &&
-        dropFinishedLiveTurns(storedSessionId, true)
-      ) {
-        void refreshHermesSessionRef.current(storedSessionId, { keepLiveFrames: true });
-      }
-      const nextSessionEvents = appendLiveHermesEvent(
-        liveEventsRef.current[storedSessionId] ?? [],
-        liveEvent,
-      );
-      liveEventsRef.current = {
-        ...liveEventsRef.current,
-        [storedSessionId]: nextSessionEvents,
-      };
-      if (/^(message|thinking|reasoning)\.delta$/.test(event.type)) {
-        liveEventsPublisher.schedule();
-      } else {
-        liveEventsPublisher.flush();
-      }
-      const toolEventPhase = hermesToolEventPhase(event.type);
-      if (toolEventPhase === "complete") {
-        // Hermes drains every accepted steer into the tool result it just
-        // produced (run_agent.steer). Mark the pending entries drained rather
-        // than removing them here: whether a steer was ACCEPTED is settled
-        // asynchronously (the steer RPC's .then), which can resolve AFTER this
-        // event, so the consume-vs-resend decision is deferred to the terminal
-        // handler where both flags are final. Removing on `registered` alone
-        // here would resubmit a steer that was accepted + drained before its
-        // .then ran (the duplicate-delivery race).
-        const list = pendingSteerBySessionIdRef.current[storedSessionId];
-        if (list) {
-          for (const entry of list) entry.toolDrained = true;
-        }
-      }
-      const hasActiveToolCalls =
-        toolEventPhase !== undefined
-          ? updateSessionToolCallActivity(storedSessionId, event, toolEventPhase)
-          : toolCallSessionIdsRef.current.has(storedSessionId);
-      const status = agentStatusFromHermesEvent(event);
-      if (status === "waitingForUser") {
-        setSessionWorking(storedSessionId, false);
-        setSessionWaiting(storedSessionId, true);
-      } else if (status === "running") {
-        setSessionWaiting(storedSessionId, false);
-        setSessionWorking(storedSessionId, true);
-      }
-      const activityCounts =
-        status === "completed" || status === "failed" || status === "cancelled"
-          ? clearSessionActivity(storedSessionId)
-          : undefined;
-      if (activityCounts) {
-        // The fast path of ADR-0016's settlement rule, traced like the poll's
-        // so a session's whole activity history reads in one place.
-        hermesTraceBuffer.recordLocal({
-          sessionId: storedSessionId,
-          event: "activity.settled",
-          reason: `terminal-event:${event.type}`,
-        });
-        // Feature 04: the session reached a terminal state (completed, a
-        // terminal error, or an interrupt) — the agent is no longer blocked, so
-        // any of its outstanding "Needs you" rows are moot. Clear them so the
-        // sidebar "Needs you" count never shows a dead blocker for a finished
-        // session.
-        pendingActionStore.resolveSession(storedSessionId);
-      }
-      const statusDetail = status && {
-        sessionId: storedSessionId,
-        title: sessionDisplayTitle,
-        status,
-        summary: agentStatusSummaryFromHermesEvent(event, status),
-        ...activityCounts,
-      };
-      if (statusDetail && !(status === "running" && repeatsLastAgentSessionStatus(statusDetail))) {
-        dispatchAgentSessionStatus(statusDetail);
-      }
-      if (isTerminalHermesEvent(event.type)) {
-        // The subscription deliberately OUTLIVES the turn (it is replaced by the
-        // next submit, and torn down on unmount / session delete). June is no
-        // longer the only thing that starts a turn: the notification poller
-        // chains one when a background process finishes, the goal loop continues
-        // one after its post-turn judge, and a routine can run one on a
-        // schedule. Detaching here meant every gateway-initiated turn ran
-        // invisibly — the session had no live listener and, once settled, no
-        // poll either, so the conversation froze until the user typed something.
-        if (!activityCounts) {
-          clearSessionActivity(storedSessionId);
-        }
-        if (status === "completed") {
-          // Cross-conversation memory: every 3rd completed assistant turn
-          // feeds the recent window to the extraction model (fire-and-forget;
-          // the helper checks the user's memory settings first).
-          noteAssistantTurnCompleted(storedSessionId);
-          // A session working under a mandate has just said it is finished.
-          // Rust owns the rule for which statuses mean that, so this asks
-          // rather than deciding, and a session with no mandate answers null
-          // and costs one cheap query (ADR-0034).
-          void councilCycleAwaitingVerdict(storedSessionId)
-            .then((cycle) => {
-              if (!cycle) return;
-              if (declinedVerdictsRef.current.has(`${cycle.id}#${cycle.round}`)) return;
-              setVerdictMandateId(cycle.id);
-            })
-            .catch(() => {
-              // Best-effort like the memory hook above: the verdict is an
-              // offer, and failing to offer it must never break a turn.
-            });
-        }
-        // Delivery guarantee: any steer not consumed by a tool result this turn
-        // (Hermes only injects steers into tool output) would otherwise be lost.
-        // On a clean completion resend the leftovers as a follow-up so the
-        // message always reaches June; drop them on a failed/cancelled run.
-        const unconsumedSteers =
-          status === "completed"
-            ? pendingSteerBySessionIdRef.current[storedSessionId]?.filter(
-                // Consumed = Hermes accepted it AND a tool result drained it.
-                // Resend the rest (rejected, or accepted but no tool ran).
-                (entry) => !(entry.accepted && entry.toolDrained),
-              )
-            : undefined;
-        delete pendingSteerBySessionIdRef.current[storedSessionId];
-        if (unconsumedSteers?.length) {
-          const followUpSession = hermesSessionItemsRef.current.find(
-            (session) => session.id === storedSessionId,
-          );
-          if (followUpSession) {
-            const followUpText = unconsumedSteers.map((entry) => entry.text).join("\n");
-            window.setTimeout(() => {
-              void submitHermesSession(followUpText, followUpSession).catch((err: unknown) => {
-                // The follow-up never reached June (e.g. a gateway reconnect
-                // or a still-busy session right after completion). Surface it
-                // rather than silently losing the instruction.
-                setError(messageFromError(err), {
-                  sessionId: storedSessionId,
-                });
-              });
-            }, 0);
-          }
-        }
-        // The diagnostic turn is over (even on error): let the user append
-        // anything June's summary surfaced before sending the bundled report.
-        const promotedIssueReport = promotePendingIssueReportToReview(storedSessionId, {
-          queueDiagnosisRefresh: true,
-        });
-        if (!promotedIssueReport) postTurnRefresher.schedule(storedSessionId);
-      }
-    });
-    unlisten = () => {
-      removeListener();
-      if (sessionGatewayUnlistenRef.current.get(storedSessionId) === unlisten) {
-        sessionGatewayUnlistenRef.current.delete(storedSessionId);
-      }
-    };
-    sessionGatewayUnlistenRef.current.set(storedSessionId, unlisten);
-    return unlisten;
   }
 
   async function continuePortableConversation(taskId: string, newMessage: string) {
@@ -5148,299 +4781,49 @@ export function AgentWorkspace({
     // the model is never called and no "working" loader competes with the
     // image's own in-thread loader.
     if (options?.skipPrompt) return storedSessionId;
-    setSessionWorking(storedSessionId, true);
-    setSessionWaiting(storedSessionId, false);
-    dispatchAgentSessionStatus({
-      sessionId: storedSessionId,
-      title: sessionDisplayTitle,
-      prompt: displayContent,
-      status: "running",
-      summary: t("Sub Rosa is working."),
-    });
-    // Runs the turn against one runtime: the pre-turn state hook, then the
-    // prompt itself. Factored out so it can be replayed once against a fresh
-    // runtime — `beforePrompt` state lives IN the runtime process, so a replay
-    // must re-apply it or the turn runs without what it was armed with.
-    const runTurnOn = async (target: HermesGatewayClient, targetRuntimeSessionId: string) => {
-      attachHermesSessionEventListener({
-        gateway: target,
-        runtimeSessionId: targetRuntimeSessionId,
-        sessionDisplayTitle,
-        storedSessionId,
-      });
-      // Session-scoped pre-turn state (the `/goal` flow) applies here, inside
-      // the same try as the submit: a failed hook aborts the send through the
-      // shared cleanup below instead of launching a turn missing the state it
-      // was supposed to run under.
-      if (options?.beforePrompt) {
-        await options.beforePrompt({
-          gateway: target,
-          runtimeSessionId: targetRuntimeSessionId,
-          storedSessionId,
+    return runPromptTurn({
+      gateway: turnGateway,
+      runtimeSessionId,
+      storedSessionId,
+      sessionDisplayTitle,
+      displayContent,
+      promptSubmitContent,
+      liveErrorsBeforeSend,
+      acquireGateway: ensureGatewayForSend,
+      beforePrompt: options?.beforePrompt,
+      // The images went to a dead process and died with it; the fresh runtime
+      // must see them or the turn runs blind. Re-attaching can add a second row
+      // to the artifact timeline — the honest trade against a prompt that
+      // references an image the model cannot see.
+      reattach: imageInputFallbackContent
+        ? undefined
+        : (target, targetRuntimeSessionId) =>
+            attachPendingImages(target, targetRuntimeSessionId, storedSessionId, turnAttachments),
+      afterSubmit: async () => {
+        projects.projectContextSent(storedSessionId, projectContext, !targetSessionId);
+        await loadHermesSessions({
+          suppressStartupRequestError: !hermesSessionsHydratedRef.current,
         });
-      }
-      // Feature 15: record the outbound prompt.submit in the trace buffer. Its
-      // params are sanitized before storage (the text is the user's own prompt,
-      // kept; any secret-like value would be masked). This is the primary
-      // outbound call from this surface; other RPCs go direct via
-      // gateway.request and are not yet traced (see feature 15 notes).
-      hermesTraceBuffer.recordOutbound({
-        sessionId: storedSessionId,
-        method: "prompt.submit",
-        params: { session_id: targetRuntimeSessionId, text: promptSubmitContent },
-      });
-      await target.request("prompt.submit", {
-        session_id: targetRuntimeSessionId,
-        text: promptSubmitContent,
-      });
-    };
-    try {
-      try {
-        await runTurnOn(turnGateway, runtimeSessionId);
-      } catch (err) {
-        // The runtime this send was keyed to is gone (reaped between turns,
-        // Hermes restarted). Nothing was queued, so resolve a live one and
-        // replay the turn once — without this the memoized dead id was replayed
-        // on every retry and the conversation could not be used again until the
-        // app restarted.
-        if (!isSessionGoneError(messageFromError(err))) throw err;
-        hermesTraceBuffer.recordLocal({
-          sessionId: storedSessionId,
-          event: "runtime.recovered",
-          reason: "prompt-submit-session-not-found",
-        });
-        const recovered = await resolveRuntimeSession(storedSessionId, turnGateway, {
-          forceRefresh: true,
-          acquireGateway: ensureGatewayForSend,
-        });
-        turnGateway = recovered.gateway;
-        runtimeSessionId = recovered.runtimeSessionId;
-        if (!imageInputFallbackContent) {
-          // The images went to the dead process and died with it; the fresh
-          // runtime must see them or the turn runs blind. Re-attaching can add
-          // a second row to the artifact timeline — the honest trade against a
-          // prompt that references an image the model cannot see.
-          await attachPendingImages(
-            turnGateway,
-            runtimeSessionId,
-            storedSessionId,
-            turnAttachments,
-          );
-        }
-        await runTurnOn(turnGateway, runtimeSessionId);
-      }
-      projects.projectContextSent(storedSessionId, projectContext, !targetSessionId);
-      await loadHermesSessions({
-        suppressStartupRequestError: !hermesSessionsHydratedRef.current,
-      });
-      // The turn went in. Handing the id back is what lets a caller bind
-      // something to the session it just created: without it this resolved to
-      // `undefined` on every successful send, and the only caller that reads
-      // the value -- the council's hand-off -- concluded the session had
-      // failed to start. It then skipped `councilBindSession`, so the sitting
-      // stayed open on an error while the agent worked, and the verdict had
-      // nothing to find the work by.
-      return storedSessionId;
-    } catch (err) {
-      // Record the rejection so the trace panel shows failed outbound calls
-      // alongside the inbound stream. messageFromError yields a user-safe string.
-      hermesTraceBuffer.recordError({
-        sessionId: storedSessionId,
-        method: "prompt.submit",
-        message: messageFromError(err),
-      });
-      // A queued report must not outlive its failed prompt; submit() re-arms
-      // issue-report mode so the retry can queue it again.
-      clearQueuedIssueReport();
-      // The prompt never entered the session, so its optimistic bubble must
-      // not linger — a retained pending message renders below every later
-      // persisted message and reads as a send the agent ignored.
-      setPendingHermesMessages((current) => {
-        const next = {
-          ...current,
-          [storedSessionId]: (current[storedSessionId] ?? []).filter(
-            (message) => message.id !== pendingUserMessage.id,
-          ),
-        };
-        pendingHermesMessagesRef.current = next;
-        return next;
-      });
-      liveEventsRef.current = {
-        ...liveEventsRef.current,
-        [storedSessionId]: withRestoredLiveEvents(
-          liveEventsRef.current[storedSessionId] ?? [],
-          liveErrorsBeforeSend,
-        ),
-      };
-      liveEventsPublisher.flush();
-      if (isSessionBusyError(err)) {
-        // The gateway rejected this prompt because the previous turn is still
-        // running — the session itself is healthy, so keep the listener and
-        // working state. Callers translate this into the composer notice.
-        throw err;
-      }
-      sessionGatewayUnlistenRef.current.get(storedSessionId)?.();
-      setSessionWorking(storedSessionId, false);
-      setSessionWaiting(storedSessionId, false);
-      // A session-gone failure that survived the recovery replay above means no
-      // runtime can host this conversation. Say that, rather than leaking the
-      // wire text ("Hermes API returned 404 … Session not found"), which told
-      // the user nothing about what to do next.
-      const failure = isSessionGoneError(messageFromError(err))
-        ? new Error(sessionRuntimeGoneMessage())
-        : err;
-      dispatchAgentSessionStatus({
-        sessionId: storedSessionId,
-        title: sessionDisplayTitle,
-        status: "failed",
-        summary: messageFromError(failure),
-        // The send never left the app: the user is looking at the composer,
-        // which restores their text and shows the reason inline. A desktop
-        // notification on top of that is noise about something they just
-        // watched fail — the status still flows so the menu bar leaves its
-        // running state.
-        silent: true,
-      });
-      throw failure;
-    }
-  }
-
-  // Returns the gateway for the given write-access mode, starting that
-  // mode's runtime process if it isn't up. The two modes run side by side
-  // (the sandbox is applied at spawn and can't change on a live process, so
-  // per-session modes mean a process per mode) — ensuring one never touches
-  // the other's process or in-flight work.
-  //
-  // `workingDir` is the target session's working-folder requirement, same
-  // tri-state as startHermesBridge: undefined = no preference (background
-  // callers must never move a runtime a session pointed at a folder), null =
-  // the default workspace, string = that folder. The send path passes it; a
-  // requirement that differs from the live process's folder restarts that
-  // mode's runtime (the backend owns the comparison and the restart).
-  async function ensureHermesGateway(fullMode = false, workingDir?: string | null) {
-    let connection = hermesConnectionForMode(bridge.running ? bridge : undefined, fullMode);
-    const mismatch =
-      connection !== undefined &&
-      workingDir !== undefined &&
-      (connection.workingDir ?? null) !== workingDir;
-    if (!connection || mismatch) {
-      const next = await startBridge(fullMode, workingDir);
-      connection = hermesConnectionForMode(next, fullMode);
-      if (mismatch) {
-        // The restart killed the process the mode's gateway was talking to.
-        // Detach its (possibly still-open) socket so the reconnect below
-        // dials the new process instead of reusing a dying connection.
-        gatewaysRef.current.get(fullMode)?.close();
-      }
-    }
-    const wsUrl = connection?.wsUrl;
-    if (!wsUrl) throw new Error(t("Hermes bridge did not return a gateway URL."));
-    let gateway = gatewaysRef.current.get(fullMode);
-    if (!gateway) {
-      gateway = new HermesGatewayClient();
-      gatewaysRef.current.set(fullMode, gateway);
-      // Fires only on unexpected drops — the unmount close() detaches the
-      // socket first, and a superseded socket never notifies.
-      gateway.onClose(() => gatewayCloseHandlerRef.current(fullMode));
-    }
-    await gateway.connect(wsUrl);
-    return gateway;
-  }
-
-  /** Drops a stored session's memo of its live runtime id, so the next resolve
-   * asks the gateway for a fresh one instead of reusing a dead process. */
-  function forgetRuntimeSessionId(storedSessionId: string) {
-    if (!(storedSessionId in runtimeSessionIdsRef.current)) return;
-    const next = { ...runtimeSessionIdsRef.current };
-    delete next[storedSessionId];
-    runtimeSessionIdsRef.current = next;
-    setRuntimeSessionIds(next);
-  }
-
-  function rememberRuntimeSessionId(storedSessionId: string, runtimeSessionId: string) {
-    const next = { ...runtimeSessionIdsRef.current, [storedSessionId]: runtimeSessionId };
-    // Written to the ref as well as state: a retry inside the same send must see
-    // the new id before React re-renders.
-    runtimeSessionIdsRef.current = next;
-    setRuntimeSessionIds(next);
-    return runtimeSessionId;
-  }
-
-  /**
-   * Resolves the LIVE runtime session id a stored session's RPCs must be keyed
-   * by, and the gateway that owns it.
-   *
-   * Every call site used to inline `cached ?? session.resume`, and none of them
-   * evicted the memo when it went stale. A runtime dies between turns all the
-   * time (Hermes restarted, the process reaped, the machine slept), and the
-   * gateway then answers `Session not found` — so the cached id kept being
-   * replayed and EVERY later send in that session failed identically until the
-   * app was restarted. That is the reported "session not found" when picking a
-   * conversation back up.
-   *
-   * `forceRefresh` skips the memo (used by a caller retrying after exactly that
-   * failure). A resume that 404s is retried once on the sandboxed runtime when
-   * the session is recorded as Unrestricted: each mode runs its own Hermes
-   * process with its own session store, so a mis-recorded mode is otherwise
-   * permanently unreachable. That fallback is deliberately one-directional —
-   * resuming a sandboxed session on the Unrestricted runtime would silently
-   * widen its write access, and this map's whole design is that absence means
-   * sandboxed.
-   */
-  async function resolveRuntimeSession(
-    storedSessionId: string,
-    gateway: HermesGatewayClient,
-    options: {
-      forceRefresh?: boolean;
-      acquireGateway?: (unrestricted: boolean) => Promise<HermesGatewayClient>;
-    } = {},
-  ): Promise<{ gateway: HermesGatewayClient; runtimeSessionId: string }> {
-    if (!options.forceRefresh) {
-      const cached = runtimeSessionIdsRef.current[storedSessionId];
-      if (cached) return { gateway, runtimeSessionId: cached };
-    }
-    const resume = async (target: HermesGatewayClient) =>
-      (
-        await target.request<HermesRuntimeSessionResponse>("session.resume", {
-          session_id: storedSessionId,
-          cols: 96,
-        })
-      ).session_id;
-
-    let sessionGone = false;
-    try {
-      const resumed = await resume(gateway);
-      if (resumed)
-        return { gateway, runtimeSessionId: rememberRuntimeSessionId(storedSessionId, resumed) };
-    } catch (err) {
-      if (!isSessionGoneError(messageFromError(err))) throw err;
-      sessionGone = true;
-    }
-
-    if (sessionUnrestricted(storedSessionId)) {
-      try {
-        const acquire = options.acquireGateway ?? ((mode: boolean) => ensureHermesGateway(mode));
-        const sandboxedGateway = await acquire(false);
-        const resumed = await resume(sandboxedGateway);
-        if (resumed) {
-          // The sandboxed runtime owns it: correct the record so follow-ups
-          // route straight there (and the session bar stops claiming a write
-          // access it does not have).
-          rememberSessionMode(storedSessionId, false);
-          return {
-            gateway: sandboxedGateway,
-            runtimeSessionId: rememberRuntimeSessionId(storedSessionId, resumed),
+      },
+      onRejected: () => {
+        // A queued report must not outlive its failed prompt; submit() re-arms
+        // issue-report mode so the retry can queue it again.
+        clearQueuedIssueReport();
+        // The prompt never entered the session, so its optimistic bubble must
+        // not linger — a retained pending message renders below every later
+        // persisted message and reads as a send the agent ignored.
+        setPendingHermesMessages((current) => {
+          const next = {
+            ...current,
+            [storedSessionId]: (current[storedSessionId] ?? []).filter(
+              (message) => message.id !== pendingUserMessage.id,
+            ),
           };
-        }
-      } catch {
-        // Neither runtime knows it; fall through to the terminal message.
-      }
-    }
-
-    forgetRuntimeSessionId(storedSessionId);
-    throw new Error(
-      sessionGone ? sessionRuntimeGoneMessage() : t("Hermes did not resume the session."),
-    );
+          pendingHermesMessagesRef.current = next;
+          return next;
+        });
+      },
+    });
   }
 
   // Fetches normalized usage/cost for one session (feature 09). Routes through
@@ -5512,70 +4895,6 @@ export function AgentWorkspace({
     }
   }
 
-  // prompt.submit is ack-style: once acked there are no pending RPCs, so a
-  // socket drop mid-run rejects nothing and no event will ever arrive — the
-  // session would otherwise stay "working" (and broadcast "June is working.")
-  // forever. Try to reconnect and resubscribe the active runtime sessions;
-  // either way, refresh them immediately so the working-gated poll reconciles
-  // their true state from persisted messages. Only the dropped mode's
-  // gateway is rebuilt — sessions of that mode are the ones it served.
-  async function recoverFromGatewayClose(fullMode: boolean) {
-    if (gatewayRecoveringRef.current.has(fullMode)) return;
-    // Every session this app instance holds a runtime for, not only the ones
-    // visibly working: since the live subscription now outlives a turn, an IDLE
-    // session can still receive a gateway-initiated one (a background process
-    // completing, the goal loop continuing, a routine firing) — and that only
-    // reaches it if the socket comes back with its subscription attached.
-    const recoverableSessionIds = new Set(
-      [
-        ...workingSessionIdsRef.current,
-        ...waitingSessionIdsRef.current,
-        ...Object.keys(runtimeSessionIdsRef.current),
-      ].filter((sessionId) => sessionUnrestricted(sessionId) === fullMode),
-    );
-    if (!recoverableSessionIds.size) return;
-    gatewayRecoveringRef.current.add(fullMode);
-    try {
-      const gateway = await ensureHermesGateway(fullMode);
-      await Promise.all(
-        Array.from(recoverableSessionIds).map(async (sessionId) => {
-          try {
-            // forceRefresh: the drop may have taken the runtime with it, so the
-            // memoized id is exactly what must not be trusted here.
-            const resolved = await resolveRuntimeSession(sessionId, gateway, {
-              forceRefresh: true,
-            });
-            // Re-point the subscription at the runtime the resume just minted:
-            // the surviving handler filters on the id captured when it was
-            // attached, so a new one would silently drop every frame.
-            attachHermesSessionEventListener({
-              gateway: resolved.gateway,
-              runtimeSessionId: resolved.runtimeSessionId,
-              sessionDisplayTitle:
-                hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title ??
-                t("Agent session"),
-              storedSessionId: sessionId,
-            });
-          } catch {
-            // The runtime session may be gone; the poll reconciles it.
-          }
-        }),
-      );
-    } catch {
-      // Reconnect failed — fall back to the persisted-message poll.
-    } finally {
-      gatewayRecoveringRef.current.delete(fullMode);
-    }
-    // Feature 04: the gateway is back. Any pending action not re-announced by a
-    // fresh event is now unverifiable across the drop, so mark it stale —
-    // visible but visually distinct — rather than silently dropping a possible
-    // blocker. A re-announced request flips its row back to open in the feed.
-    pendingActionStore.reconcileAfterReconnect();
-    for (const sessionId of recoverableSessionIds) {
-      void refreshHermesSession(sessionId);
-    }
-  }
-
   async function startBridge(fullMode?: boolean, workingDir?: string | null) {
     setBridgeStarting(true);
     setError(null);
@@ -5589,142 +4908,6 @@ export function AgentWorkspace({
       throw err;
     } finally {
       setBridgeStarting(false);
-    }
-  }
-
-  // Message-based reconciliation above can only END a run when an assistant
-  // reply eventually persists. A run that died without one (provider failure,
-  // gateway drop, app quit mid-turn) — or a session wrongly resumed as
-  // working from a trailing user message — would otherwise stay "working"
-  // forever, leaving the menu bar stuck on "Working…". The gateway's
-  // session.active_list is ground truth for what is actually running, so any
-  // locally-working session absent from it (or sitting idle) for two
-  // consecutive polls gets its activity cleared. Two misses, not one: a
-  // just-submitted prompt can race the runtime session registering.
-  async function liveRuntimeSessionsForModes(modes: boolean[]) {
-    let rows: Array<{ id?: string; session_key?: string; status?: string }> = [];
-    const reachableModes = new Set<boolean>();
-    for (const mode of modes) {
-      try {
-        const gateway = await ensureHermesGateway(mode);
-        const response = await gateway.request<{
-          sessions?: Array<{
-            id?: string;
-            session_key?: string;
-            status?: string;
-          }>;
-        }>("session.active_list", {});
-        rows = rows.concat(Array.isArray(response?.sessions) ? response.sessions : []);
-        reachableModes.add(mode);
-      } catch {
-        // Can't reach this runtime — keep ITS sessions' current state rather
-        // than guess, while the reachable mode still reconciles below.
-      }
-    }
-    const live = new Set<string>();
-    for (const row of rows) {
-      // "idle" means the runtime session exists but isn't processing a turn.
-      if (!row || row.status === "idle") continue;
-      if (row.session_key) live.add(String(row.session_key));
-      if (row.id) live.add(String(row.id));
-    }
-    return { live, reachableModes };
-  }
-
-  function runtimeSnapshotHasSession(snapshot: { live: Set<string> }, sessionId: string) {
-    const runtimeSessionId = runtimeSessionIdsRef.current[sessionId];
-    return (
-      snapshot.live.has(sessionId) ||
-      Boolean(runtimeSessionId && snapshot.live.has(runtimeSessionId))
-    );
-  }
-
-  /** Ends one session's run and announces it. `summary` differs per caller —
-   * the runtime reconciler knows only that the run is gone ("stopped"), while a
-   * transcript-shape fallback knows the turn produced an answer ("finished").
-   * A live `error` frame still outranks both: the fork surfaces a turn that died
-   * mid-tool-loop as failed rather than letting it settle silently. */
-  function settleSessionRun(sessionId: string, summary: string, reason: string) {
-    const activityCounts = clearSessionActivity(sessionId);
-    // Only this turn's failure counts: an error the user has sent past is over.
-    const turnFailed = liveErrorsOfCurrentTurn(sessionId).length > 0;
-    // Which authority ended this run is the first question to ask when a chat
-    // looks stuck (or looks finished while it is not), and the answer used to
-    // exist nowhere. Recorded next to the gateway frames it sits between.
-    hermesTraceBuffer.recordLocal({
-      sessionId,
-      event: "activity.settled",
-      reason,
-      detail: { turnFailed },
-    });
-    dispatchAgentSessionStatus({
-      sessionId,
-      title:
-        hermesSessionItemsRef.current.find((session) => session.id === sessionId)?.title ??
-        t("Agent session"),
-      // "completed" (not "failed") keeps a clean end quiet: the status title
-      // falls back to lastStatus when nothing is active, and a stale "running"
-      // there would still render "Working…".
-      status: turnFailed ? "failed" : "completed",
-      summary: turnFailed ? t("Sub Rosa hit a problem.") : summary,
-      ...activityCounts,
-    });
-  }
-
-  // ADR-0016: the runtime is the authority on whether a session is still
-  // running. Message-shape reconciliation cannot be: an agent loop persists an
-  // assistant row (mid-turn commentary, a tool-calling step) from its first
-  // step onward, so "the model has answered" is true seconds into a turn that
-  // has minutes of work left — settling on it ended live runs. `session.active_list`
-  // is ground truth, so any locally-working session absent from it (or sitting
-  // idle) for two consecutive polls gets its activity cleared. Two misses, not
-  // one: a just-submitted prompt can race the runtime session registering.
-  async function reconcileWorkingSessionsAgainstRuntime() {
-    const working = Array.from(workingSessionIdsRef.current);
-    const misses = workingReconcileMissesRef.current;
-    for (const sessionId of misses.keys()) {
-      if (!working.includes(sessionId)) misses.delete(sessionId);
-    }
-    if (working.length === 0) return;
-    // Working sessions may span both runtime processes; ask each mode that
-    // has one and union the answers. A mode we can't reach falls back to the
-    // transcript below rather than being marked dead on a guess — so a
-    // one-gateway failure must not end the other mode's sessions either.
-    const modes = Array.from(new Set(working.map((sessionId) => sessionUnrestricted(sessionId))));
-    const snapshot = await liveRuntimeSessionsForModes(modes);
-    for (const sessionId of working) {
-      if (!snapshot.reachableModes.has(sessionUnrestricted(sessionId))) {
-        // The runtime that owns this session did not answer, so there is no
-        // ground truth this tick. Fall back to the persisted transcript, which
-        // may only settle a turn it can prove is closed — a dangling tool call
-        // keeps the session running until the runtime can be asked again. A
-        // gateway that stays unreachable means the runtime is gone anyway, so a
-        // turn it left mid-loop is settled by the interrupted notice, not here.
-        const messages = [
-          ...(hermesSessionMessagesRef.current[sessionId] ?? []),
-          ...(pendingHermesMessagesRef.current[sessionId] ?? []),
-        ];
-        if (hermesMessagesShowCompletedTurn(messages)) {
-          misses.delete(sessionId);
-          settleSessionRun(
-            sessionId,
-            t("Sub Rosa finished."),
-            "transcript-fallback-runtime-unreachable",
-          );
-        }
-        continue;
-      }
-      if (runtimeSnapshotHasSession(snapshot, sessionId)) {
-        misses.delete(sessionId);
-        continue;
-      }
-      const seen = (misses.get(sessionId) ?? 0) + 1;
-      if (seen < 2) {
-        misses.set(sessionId, seen);
-        continue;
-      }
-      misses.delete(sessionId);
-      settleSessionRun(sessionId, "Sub Rosa stopped.", "runtime-idle-two-polls");
     }
   }
 
@@ -5815,202 +4998,6 @@ export function AgentWorkspace({
     }
   }
 
-  async function respondToApproval(
-    liveEventKey: string,
-    sessionId: string,
-    requestId: string,
-    choice: AgentApprovalChoice,
-    unrestricted = false,
-  ) {
-    setApprovalSubmitting((current) => ({ ...current, [requestId]: choice }));
-    try {
-      // The approval lives in the runtime process that asked, so the
-      // response must go out on that mode's gateway.
-      const gateway = await ensureHermesGateway(unrestricted);
-      await gateway.request("approval.respond", {
-        session_id: sessionId,
-        choice,
-      });
-      pushLiveEvent(liveEventKey, {
-        type: "approval.response",
-        session_id: sessionId,
-        payload: { request_id: requestId, choice },
-      });
-      // Feature 04: the user just answered this approval — clear its global
-      // "Needs you" row immediately (the response itself is the resolution).
-      pendingActionStore.resolveRequest(sessionId, requestId);
-      setError(null);
-    } catch (err) {
-      const message = messageFromError(err);
-      if (isSessionGoneError(message)) {
-        // The runtime session is gone. Scrub only the affected session/task —
-        // including its waiting flag, so the "Needs you" badge clears —
-        // without clobbering other healthy sessions' working state or live
-        // event streams.
-        setWorkingTaskIds((current) => {
-          if (!current.has(liveEventKey)) return current;
-          const next = new Set(current);
-          next.delete(liveEventKey);
-          return next;
-        });
-        for (const key of new Set([liveEventKey, sessionId])) {
-          sessionGatewayUnlistenRef.current.get(key)?.();
-          clearSessionActivity(key);
-        }
-        liveEventsRef.current = omitRecordKey(liveEventsRef.current, liveEventKey);
-        liveEventsPublisher.flush();
-        // The request can never be answered now — retire its card so neither the
-        // sidebar count nor the inline prompt offers a dead-end "Respond".
-        pendingActionStore.resolveRequest(sessionId, requestId);
-        void loadHermesSessions();
-        setError(sessionGoneMessage(), { sessionId });
-      } else {
-        setError(message, { sessionId });
-      }
-    } finally {
-      setApprovalSubmitting((current) => {
-        const next = { ...current };
-        delete next[requestId];
-        return next;
-      });
-    }
-  }
-
-  async function respondToClarify(
-    liveEventKey: string,
-    requestId: string,
-    answer: string,
-    unrestricted = false,
-  ) {
-    setClarifySubmitting((current) => ({ ...current, [requestId]: answer }));
-    try {
-      const gateway = await ensureHermesGateway(unrestricted);
-      await gateway.request("clarify.respond", {
-        request_id: requestId,
-        answer,
-      });
-      pushLiveEvent(liveEventKey, {
-        type: "clarify.response",
-        payload: { request_id: requestId, answer },
-      });
-      // Feature 04: the user answered the clarification — clear its pending record.
-      pendingActionStore.resolveRequest(liveEventKey, requestId);
-      setError(null);
-    } catch (err) {
-      const message = messageFromError(err);
-      if (isSessionGoneError(message)) {
-        // The runtime is gone, so this clarification can never be answered —
-        // retire its card and say so plainly instead of leaking the raw 404.
-        pendingActionStore.resolveRequest(liveEventKey, requestId);
-        setError(sessionGoneMessage());
-      } else {
-        setError(message);
-      }
-    } finally {
-      setClarifySubmitting((current) => {
-        const next = { ...current };
-        delete next[requestId];
-        return next;
-      });
-    }
-  }
-
-  // Sudo (privilege escalation) is resolved through the typed control-plane
-  // method (sudo.respond), not a hand-written request, so the wire shape stays
-  // in one place. The optimistic sudo.response event flips the card to
-  // resolved before the gateway round-trips.
-  async function respondToSudo(
-    liveEventKey: string,
-    sessionId: string,
-    requestId: string,
-    approved: boolean,
-    mode?: HermesMode,
-    unrestricted = false,
-  ) {
-    setSudoSubmitting((current) => ({
-      ...current,
-      [requestId]: approved ? "approve" : "deny",
-    }));
-    try {
-      const gateway = await ensureHermesGateway(unrestricted);
-      await createHermesMethods(gateway).respondToSudo({
-        sessionId,
-        requestId,
-        approved,
-        mode,
-      });
-      pushLiveEvent(liveEventKey, {
-        type: "sudo.response",
-        session_id: sessionId,
-        payload: { request_id: requestId, granted: approved, mode },
-      });
-      // Feature 04: the user resolved the sudo prompt — clear its pending record.
-      pendingActionStore.resolveRequest(sessionId, requestId);
-      setError(null);
-    } catch (err) {
-      const message = messageFromError(err);
-      if (isSessionGoneError(message)) {
-        // The runtime is gone, so this prompt can never be answered — retire
-        // its card and say so plainly instead of leaking the raw 404.
-        pendingActionStore.resolveRequest(sessionId, requestId);
-        setError(sessionGoneMessage(), { sessionId });
-      } else {
-        setError(message, { sessionId });
-      }
-    } finally {
-      setSudoSubmitting((current) => {
-        const next = { ...current };
-        delete next[requestId];
-        return next;
-      });
-    }
-  }
-
-  // Secret entry: the value arrives here only to be handed to the gateway via
-  // the typed secret.respond method, and is never stored, logged, or placed on
-  // an event. The optimistic secret.response carries ONLY a `provided` flag.
-  async function respondToSecret(
-    liveEventKey: string,
-    sessionId: string,
-    requestId: string,
-    value: string,
-    unrestricted = false,
-  ) {
-    setSecretSubmitting((current) => ({ ...current, [requestId]: true }));
-    try {
-      const gateway = await ensureHermesGateway(unrestricted);
-      await createHermesMethods(gateway).respondToSecret({
-        sessionId,
-        requestId,
-        value,
-      });
-      pushLiveEvent(liveEventKey, {
-        type: "secret.response",
-        session_id: sessionId,
-        payload: { request_id: requestId, provided: true },
-      });
-      // Feature 04: the user provided the secret — clear its pending record.
-      pendingActionStore.resolveRequest(sessionId, requestId);
-      setError(null);
-    } catch (err) {
-      const message = messageFromError(err);
-      if (isSessionGoneError(message)) {
-        // The runtime is gone, so this secret prompt can never be answered —
-        // retire its card and say so plainly instead of leaking the raw 404.
-        pendingActionStore.resolveRequest(sessionId, requestId);
-        setError(sessionGoneMessage(), { sessionId });
-      } else {
-        setError(message, { sessionId });
-      }
-    } finally {
-      setSecretSubmitting((current) => {
-        const next = { ...current };
-        delete next[requestId];
-        return next;
-      });
-    }
-  }
-
   // One-click approval of June's in-chat [REQUEST:AGENT_CLI_ACCESS] card.
   // The agent can never flip the setting itself (the flag lives outside the
   // sandbox's write roots), so the click is the trust boundary: it persists
@@ -6094,65 +5081,6 @@ export function AgentWorkspace({
       turnRewrites.branchFromMessage(turnRewriteDeps, sessionId, fromMessageId),
     );
     setBranchingMessageId(null);
-  }
-
-  // A new prompt (or a steer) opens a new beat of the conversation: drop what a
-  // finished turn left in the live buffer (see liveEventsForNewTurn). Returns
-  // whether anything went, so a send can fetch the stored copy right away.
-  function dropFinishedLiveTurns(sessionId: string, turnInProgress: boolean) {
-    const events = liveEventsRef.current[sessionId] ?? [];
-    const kept = liveEventsForNewTurn(events, { turnInProgress });
-    if (kept === events) return false;
-    liveEventsRef.current = { ...liveEventsRef.current, [sessionId]: kept };
-    liveEventsPublisher.flush();
-    return true;
-  }
-
-  function liveErrorsOfCurrentTurn(sessionId: string) {
-    return currentTurnLiveErrors(liveEventsRef.current[sessionId] ?? [], [
-      ...(hermesSessionMessagesRef.current[sessionId] ?? []),
-      ...(pendingHermesMessagesRef.current[sessionId] ?? []),
-    ]);
-  }
-
-  function pushLiveEvent(key: string, event: HermesGatewayEvent) {
-    const liveEvent = { ...event, receivedAt: new Date().toISOString() };
-    const nextEvents = appendLiveHermesEvent(liveEventsRef.current[key] ?? [], liveEvent);
-    liveEventsRef.current = {
-      ...liveEventsRef.current,
-      [key]: nextEvents,
-    };
-    liveEventsPublisher.flush();
-  }
-
-  // Feature 06: steer a STILL-WORKING session with a mid-run instruction,
-  // through the dedicated typed control-plane method (session.steer) — never
-  // prompt.submit, which the gateway rejects with 4009 while a turn runs. On a
-  // gateway ack we record the user's instruction as a local "Steering" system
-  // item in the transcript (pushed onto the same live-event channel Hermes
-  // frames use, so it orders and survives re-renders for free). Rejections
-  // bubble to the caller (the composer input) so it can keep the unsent text
-  // and show recoverable copy; the typed wrapper stays the only seam that knows
-  // the wire shape.
-  async function steerActiveSession(sessionId: string, text: string) {
-    const instruction = normalizeSteerText(text);
-    if (!instruction) return;
-    // Show the instruction in the transcript right away so the user sees it
-    // landed — the gateway ack can lag a beat behind a fast send, and we never
-    // want a sent message to silently vanish.
-    pushLiveEvent(
-      sessionId,
-      steeringLiveEvent({
-        sessionId,
-        text: instruction,
-        receivedAt: new Date().toISOString(),
-      }),
-    );
-    const gateway = await ensureHermesGateway(sessionUnrestricted(sessionId));
-    await createHermesMethods(gateway).steerSession({
-      sessionId,
-      text: instruction,
-    });
   }
 
   async function startNewTask(
@@ -6392,93 +5320,6 @@ export function AgentWorkspace({
     } catch (err) {
       setError(messageFromError(err));
     }
-  }
-
-  // Stops a running June turn: interrupts the runtime session over the
-  // gateway, then clears the local working/waiting flags regardless — the
-  // user asked for it to stop, so the UI must not stay "thinking" even when
-  // the RPC fails (gateway drop, runtime session already gone).
-  async function stopHermesSession(sessionId: string) {
-    if (stoppingSessionIds.has(sessionId)) return;
-    setStoppingSessionIds((current) => new Set(current).add(sessionId));
-
-    // Stop the UI FIRST, synchronously, before the interrupt RPC. Stopping
-    // must feel instant: the moment the user clicks, the session reads as
-    // stopped (the Stop control gives way to Send) rather than staying
-    // "working" until the gateway round-trip acks. Tearing down the
-    // per-session listener here also means a straggler "running" event
-    // arriving while the interrupt is in flight can't flip the session back
-    // to working (and on a gateway drop no terminal event ever comes to do
-    // it). The interrupt then fires below to actually halt the runtime agent.
-    sessionGatewayUnlistenRef.current.get(sessionId)?.();
-    // Interrupting tears the listener down before any cancelled terminal event
-    // reaches the terminal handler, so clear the delivery-guarantee steers here
-    // too -- otherwise a steer typed-then-stopped lingers and could auto-submit
-    // as a follow-up after a later run in the same session.
-    delete pendingSteerBySessionIdRef.current[sessionId];
-    const activityCounts = clearSessionActivity(sessionId);
-    // Feature 11: the per-session listener is gone, so no terminal frame will
-    // reach the activity store to retire this row. Record a synthetic terminal
-    // lifecycle so the drawer flips the session out of "running" the instant
-    // the user clicks stop (the row persists, now reading as complete).
-    hermesActivityStore.record(
-      { kind: "lifecycle", sessionId, status: "cancelled" },
-      hermesModeFor(sessionId),
-    );
-    dispatchAgentSessionStatus({
-      sessionId,
-      title:
-        hermesSessionItems.find((session) => session.id === sessionId)?.title ?? t("Agent session"),
-      status: "cancelled",
-      summary: t("Stopped."),
-      ...activityCounts,
-    });
-
-    try {
-      const runtimeSessionId = runtimeSessionIds[sessionId];
-      if (runtimeSessionId) {
-        const gateway = await ensureHermesGateway(sessionUnrestricted(sessionId));
-        await gateway.request("session.interrupt", {
-          session_id: runtimeSessionId,
-        });
-      }
-    } catch {
-      // The UI already reflects stopped; a failed interrupt (gateway down)
-      // must not leave the session reading as working.
-    } finally {
-      setStoppingSessionIds((current) => {
-        const next = new Set(current);
-        next.delete(sessionId);
-        return next;
-      });
-      // Pull whatever the agent managed to persist before the interrupt so
-      // the transcript reflects the partial turn.
-      void refreshHermesSession(sessionId);
-    }
-  }
-
-  // Feature 13: interrupt ONE background subagent from the activity drawer. The
-  // drawer already vetted the target (active subagent, trustworthy id/handle,
-  // confirmed when mid file/tool work) and owns the optimistic "stopping"
-  // overlay, so this just routes the call to the gateway that owns the parent
-  // session. `subagentId` is the trustworthy Hermes id/handle; the RPC's
-  // session id is the runtime id (as the whole-session interrupt uses). The
-  // promise is returned so the drawer can reconcile: a rejection (the subagent
-  // already finished) drops the overlay and the row settles from the event
-  // stream rather than showing a noisy failure.
-  async function stopHermesSubagent({
-    sessionId,
-    subagentId,
-  }: {
-    sessionId: string;
-    subagentId: string;
-  }): Promise<unknown> {
-    const runtimeSessionId = runtimeSessionIds[sessionId] ?? sessionId;
-    const gateway = await ensureHermesGateway(sessionUnrestricted(sessionId));
-    return createHermesMethods(gateway).interruptSubagent({
-      sessionId: runtimeSessionId,
-      subagentId,
-    });
   }
 
   async function retryTask(taskId: string) {
@@ -12725,72 +11566,6 @@ function shouldResumeSessionActivity(messages: HermesSessionMessage[]) {
   if (!latestUser) return false;
   const sentAt = hermesMessageTimestampMs(latestUser);
   return sentAt !== undefined && Date.now() - sentAt < RESUME_ACTIVITY_WINDOW_MS;
-}
-
-function hermesToolEventPhase(type: string): HermesToolEventPhase | undefined {
-  const normalized = type.toLowerCase();
-  if (normalized === "tool.complete") return "complete";
-  if (normalized === "tool.start") return "start";
-  if (normalized === "tool.progress") return "progress";
-  return undefined;
-}
-
-function toolEventActivityKey(event: HermesGatewayEvent) {
-  const payload = event.payload as Record<string, unknown> | undefined;
-  return (
-    stringValue(payload?.tool_id) ??
-    stringValue(payload?.tool_call_id) ??
-    stringValue(payload?.call_id) ??
-    stringValue(payload?.id) ??
-    stringValue(payload?.request_id)
-  );
-}
-
-function agentStatusFromHermesEvent(event: HermesGatewayEvent): AgentSessionStatusKind | undefined {
-  if (event.type === "error") return "failed";
-  if (event.type === "clarify.request" || event.type === "approval.request") {
-    return "waitingForUser";
-  }
-  if (event.type === "clarify.response" || event.type === "approval.response") {
-    return "running";
-  }
-  if (isTerminalHermesEvent(event.type)) return "completed";
-  if (
-    event.type === "message.start" ||
-    event.type === "thinking.delta" ||
-    event.type === "reasoning.delta" ||
-    event.type === "status.update" ||
-    event.type.startsWith("tool.")
-  ) {
-    return "running";
-  }
-  return undefined;
-}
-
-function agentStatusSummaryFromHermesEvent(
-  event: HermesGatewayEvent,
-  status: AgentSessionStatusKind,
-) {
-  if (status === "waitingForUser") {
-    return event.type === "approval.request"
-      ? t("Sub Rosa needs approval.")
-      : t("Sub Rosa has a question.");
-  }
-  if (status === "completed") return t("Sub Rosa finished.");
-  if (status === "failed") return eventText(event) || t("Sub Rosa hit a problem.");
-  if (event.type === "status.update") {
-    return eventText(event) || t("Sub Rosa is working.");
-  }
-  if (event.type.startsWith("tool.")) {
-    const payload = event.payload as Record<string, unknown> | undefined;
-    const name =
-      stringValue(payload?.name) ?? stringValue(payload?.tool_name) ?? stringValue(payload?.tool);
-    return toolActivitySentenceText(name, payload);
-  }
-  if (event.type === "thinking.delta" || event.type === "reasoning.delta") {
-    return t("Thinking.");
-  }
-  return t("Sub Rosa is working.");
 }
 
 function visibleHermesMessageText(message: HermesSessionMessage) {
