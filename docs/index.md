@@ -237,6 +237,7 @@ tasks / contracts / checklists`.
 
 - [parity/chatgpt.md](parity/chatgpt.md) — the ChatGPT parity matrix (ADR-0078): every row of the vendor's grid, per platform, with evidence and the lot that closes it
 - [parity/comfyui.md](parity/comfyui.md) — the ComfyUI parity matrix for workflows (2026-10-17 plan): every engine, canvas, file and library capability as done, adapted, refused or external, each with its PR or ADR; `src/test/comfy-parity.test.ts` fails on a row without a reference or left to do
+- [parity/code.md](parity/code.md) — the code parity matrix (2026-10-23 code plan): fifty capabilities of Claude Code, opencode and Codex CLI, each with Sub Rosa's status and the lot (`C0.1` to `C8.9`) that closes it; `src/test/code-parity.test.ts` fails on a row without a reference, an open row without its lot, or more open rows than `OPEN_CEILING`
 
 ## Roadmap
 
