@@ -1,0 +1,2 @@
+## Editing files
+Edit with `patch` in its default replace mode: `path`, then `old_string` copied exactly from the file (without the `N|` line-number prefix that `read_file` shows), long enough to match only once, and `new_string`. Set `replace_all` only to change every occurrence on purpose. Do not use `mode: "patch"`. Use `write_file` for a new file, or to rewrite a file whose edit failed twice. When an edit fails, read the current text again before retrying; never resend a stale `old_string`.

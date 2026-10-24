@@ -1,0 +1,29 @@
+{
+  "why": "Catalog ids (website/src/models/snapshot.json) and the prompt family and edit format each one gets. Read by the Rust tests of code::prompts and by src/test/code-prompts.test.ts, which checks every id is a real catalog id.",
+  "cases": [
+    { "model": "claude-sonnet-5-5", "family": "anthropic", "editFormat": "replace" },
+    { "model": "claude-opus-5-5", "family": "anthropic", "editFormat": "replace" },
+    { "model": "claude-haiku-5-5", "family": "anthropic", "editFormat": "replace" },
+    { "model": "openai-gpt-55", "family": "gpt", "editFormat": "v4a" },
+    { "model": "openai-gpt-6-sol", "family": "gpt", "editFormat": "v4a" },
+    { "model": "openai-gpt-54-mini", "family": "gpt", "editFormat": "v4a" },
+    { "model": "openai-gpt-oss-120b", "family": "gpt", "editFormat": "v4a" },
+    { "model": "e2ee-gpt-oss-120b-p", "family": "gpt", "editFormat": "v4a" },
+    { "model": "openai-gpt-53-codex", "family": "codex", "editFormat": "v4a" },
+    { "model": "kimi-k2-7-code", "family": "kimi", "editFormat": "replace" },
+    { "model": "kimi-k3", "family": "kimi", "editFormat": "replace" },
+    { "model": "e2ee-kimi-k3-p", "family": "kimi", "editFormat": "replace" },
+    { "model": "e2ee-glm-5-2-p", "family": "glm", "editFormat": "replace" },
+    { "model": "e2ee-glm-5-3-flash", "family": "glm", "editFormat": "replace" },
+    { "model": "z-ai-glm-5-3", "family": "glm", "editFormat": "replace" },
+    { "model": "zai-org-glm-5-2", "family": "glm", "editFormat": "replace" },
+    { "model": "deepseek-v4-pro", "family": "deepseek", "editFormat": "replace" },
+    { "model": "e2ee-deepseek-v4-flash", "family": "deepseek", "editFormat": "replace" },
+    { "model": "grok-4-7", "family": "grok", "editFormat": "replace" },
+    { "model": "grok-build-0-1", "family": "grok", "editFormat": "replace" },
+    { "model": "qwen3-coder-480b-a35b-instruct-turbo", "family": "generic", "editFormat": "replace" },
+    { "model": "gemini-3-1-pro-preview", "family": "generic", "editFormat": "replace" },
+    { "model": "minimax-m3-preview", "family": "generic", "editFormat": "replace" },
+    { "model": "olafangensan-glm-4.7-flash-heretic", "family": "glm", "editFormat": "replace" }
+  ]
+}

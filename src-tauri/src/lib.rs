@@ -712,6 +712,7 @@ pub fn run() {
             code_review::code_review_keep,
             code_review::code_review_revert,
             code_review::code_review_stop,
+            code::prompts::code_prompt_block,
             browser_extension::browser_extension_status,
             browser_extension::browser_extension_connect,
             browser_extension::browser_extension_cancel_pairing,

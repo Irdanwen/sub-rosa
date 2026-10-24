@@ -55,9 +55,22 @@ beforeEach(() => {
   calls.length = 0;
   mocks.invoke.mockReset();
   mocks.invoke.mockImplementation(
-    async (command: string, args: { request?: { path?: string } } = {}) => {
+    async (
+      command: string,
+      args: { request?: { path?: string; folder?: string; sessionId?: string | null } } = {},
+    ) => {
       calls.push([command, args]);
       switch (command) {
+        // The block is Rust's (src-tauri/src/code/prompts/); this stands in
+        // for its first line.
+        case "code_prompt_block":
+          return {
+            block: `Code mode is on for this chat. The working folder ${args.request?.folder} is the code project.`,
+            model: "kimi-k2-7-code",
+            family: "kimi",
+            editFormat: "replace",
+            version: "code-prompt-v1",
+          };
         case "code_review_status":
           return status;
         case "code_review_start":
@@ -88,6 +101,11 @@ describe("the agent's context", () => {
       "Fix the bug\n\n--- Attached Context ---\n\nCode mode is on for this chat.",
     );
     expect(text).toContain(FOLDER);
+    // Asked for the chat's own model: Rust reads it from the session.
+    expect(calls).toContainEqual([
+      "code_prompt_block",
+      { request: { sessionId: "s1", folder: FOLDER } },
+    ]);
     // Another folder, or no chat yet, leaves the message alone.
     expect(await withCodeContext("x", "s1", "/elsewhere")).toBe("x");
     expect(await withCodeContext("x", null, FOLDER)).toBe("x");
@@ -158,6 +176,11 @@ describe("a new chat", () => {
       "Add a test\n\n--- Attached Context ---\n\nCode mode is on for this chat.",
     );
     expect(first).toContain(FOLDER);
+    // No session yet: Rust answers for the chat default.
+    expect(calls).toContainEqual([
+      "code_prompt_block",
+      { request: { sessionId: null, folder: FOLDER } },
+    ]);
     expect(await withModeContext("Add a test", undefined, "/elsewhere")).toBe("Add a test");
 
     // The send created session s2: the start is recorded under it before the

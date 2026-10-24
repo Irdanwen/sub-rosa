@@ -149,6 +149,18 @@ runs) is read and executed by a code run but never writable from it, in
 either mode: an injected instruction must not change code the app will run
 later.
 
+## What the agent is told
+
+`hermes/SOUL.md` is rewritten at every start: the app's identity paragraph,
+what an unattended code run is, the sandbox section when the jail is on, then
+the code notes for the run's model family from `src-tauri/src/code/prompts/`
+(the same source the app's Code mode adds to each message). The notes pick
+the edit format the family was trained on (V4A `patch` for the GPT and Codex
+models, search and replace for the others) and end on when to stop; a plan
+run gets a plan ending instead. Their first line names the version and the
+family, `<!-- Sub Rosa code-prompt-v1, family kimi, edits replace -->`, so a
+bench result can be traced to the prompt that produced it.
+
 ## What it does not do yet
 
 - It runs Hermes only; Claude Code and opencode come with the ACP adapter (P4).
