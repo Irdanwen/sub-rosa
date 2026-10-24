@@ -766,11 +766,18 @@ every server measured.
 What the table also shows:
 
 - **typescript-language-server pays a 5 s baseline on about half the edits**
-  (19 of 39 baselines at 5.0 s): before an edit to a file whose content the
-  server already holds, it apparently publishes nothing new, and Hermes waits
-  its full `wait_timeout` before writing. The diagnostics after the write are
-  unaffected. TypeScript 7's server and pyright do not have this. A fix is
-  for Hermes' client or the server, not a managed patch.
+  (19 of 39 baselines at 5.0 s). Cause, read in `agent/lsp/manager.py`
+  (`_snapshot_async`): before a write Hermes re-opens the file and calls
+  `wait_for_diagnostics(path, version, mode=...)` **without the configured
+  timeout**, so it waits the fixed 5 s document budget whatever
+  `lsp.wait_timeout` says. typescript-language-server publishes nothing for a
+  re-opened, unchanged file and has no pull diagnostics, so the wait runs to
+  its end; `tsc --lsp` (TypeScript 7) answers the pull at once, hence its
+  0.002 s. Config cannot shorten it. The diagnostics after the write are
+  unaffected. The fix belongs upstream (pass `timeout=self._wait_timeout`, or
+  skip the wait when the server neither pulls nor republishes), not in a
+  managed patch; until then a TypeScript 6 project pays up to 5 s per edit of
+  an already-open file.
 - **A cold rust-analyzer misses the first edit** (the 1 wrong verdict): it
   answered before loading the workspace. Every later edit was right.
 - The preinstall of typescript-language-server, TypeScript 6 and pyright

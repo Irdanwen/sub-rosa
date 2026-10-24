@@ -39,7 +39,9 @@ nothing is added as a managed Hermes patch.
    `apply_isolated_hermes_env` by the app's spawn and by
    `hermes_bridge/headless.rs`):
    - `PATH` is the person's login-shell `PATH` (read once per app process
-     with `$SHELL -l -i -c`, bounded to 5 s, between markers), then the usual
+     with `$SHELL -l -i -c` under a Seatbelt profile that refuses every
+     write, because the startup files it sources can sit in a folder the
+     jail writes; bounded to 5 s, between markers), then the usual
      install folders that exist, then what the app inherited, then the
      system folders, and Hermes' own Node last as a fallback.
    - Every cache points inside the runtime's home, which the jail lets it
@@ -155,3 +157,14 @@ nothing is added as a managed Hermes patch.
   without it, Rust diagnostics are off and said so in the log.
 - **Keep `./target` in the project.** A plan run could not build, and a
   run's build would contend with the person's editor for the same lock.
+
+## Addendum 2026-10-24: what the app runs outside the jail
+
+The app runs exactly two programs of the person's outside the runtime's
+jail: the login-shell probe, itself confined by a profile that refuses every
+write, and `rustup which rust-analyzer`, taken only from `~/.cargo/bin` (whose
+writes the jail refuses by name), `$CARGO_HOME/bin` or a system prefix, never
+from the runtime's `PATH`, which holds folders the jail can write. Every other
+program, language servers and their installs included, runs in the jail.
+Cargo targets in the runtime's home are bounded: three folders, fourteen days
+unused.
