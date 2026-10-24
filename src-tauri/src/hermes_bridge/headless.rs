@@ -227,7 +227,8 @@ pub(crate) async fn start_runtime(
     let command = runtime_command(options.data_dir)?;
     std::fs::write(
         hermes_home.join(super::HERMES_CONFIG_FILE),
-        render_code_config(options.model, options.proxy_port, options.proxy_token),
+        render_code_config(options.model, options.proxy_port, options.proxy_token)
+            + &crate::code::toolchain::lsp_config_block(&hermes_home),
     )
     .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))?;
     super::guard::install_headless(&hermes_home)?;
@@ -279,6 +280,8 @@ pub(crate) async fn start_runtime(
     }
     let hint = environment_hint(sandboxed, options.write_grant, options.working_dir);
     super::apply_isolated_hermes_env(&mut cmd, &hermes_home, &token, hint.as_deref());
+    // The app's toolchain environment (ADR-0125): same PATH, caches, target.
+    crate::code::toolchain::apply_runtime_env(&mut cmd, &hermes_home, Some(options.working_dir));
     // The app's venv is read-only to a code run (see `cli_sandbox_profile`):
     // no `.pyc` written beside its sources. And no desktop-only tool (the
     // in-app terminal reader) on a runtime no window drives.
@@ -296,6 +299,13 @@ pub(crate) async fn start_runtime(
             format!("Could not start the agent runtime. {error}"),
         )
     })?;
+    crate::code::toolchain::start_preinstall(
+        &hermes_home,
+        Some(options.working_dir),
+        sandbox_profile
+            .as_deref()
+            .map(|profile| (Path::new(super::SANDBOX_EXEC_PATH), profile)),
+    );
     let mut runtime = HeadlessRuntime {
         child: Some(child),
         port,

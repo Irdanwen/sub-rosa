@@ -38,7 +38,10 @@ and the memory switches under protected mode. Hermes deep-merges its
 `DEFAULT_CONFIG` (`hermes_cli/config.py`) under them, so **every key this sheet
 discusses (`lsp`, `checkpoints`, `tool_output`, `tool_loop_guardrails`,
 `delegation`, `agent.coding_context`, `agent.verify_on_stop`,
-`approvals.timeout`) runs at the Hermes default.**
+`approvals.timeout`) runs at the Hermes default.** Since C1.3
+([ADR-0125](adr/0125-feedback-after-an-edit-runs-in-the-jail.md)) the `lsp`
+key is written explicitly, and the runtime gets a toolchain environment (see
+section 2, "Since C1.3").
 
 `build_sandbox_profile` renders `(allow default)` then `(deny file-write*)`,
 and re-grants writes to: `$HERMES_HOME`, the runtime dir, `/private/tmp`,
@@ -253,6 +256,16 @@ and the user's toolchains), `npm_config_cache`, `GOPATH`/`GOMODCACHE`/`GOCACHE`
 inside `$HERMES_HOME` on the runtime's environment (Rust side, outside
 Hermes), pre-install servers outside the edit path, and ship a TypeScript 7
 wrapper. The `lsp` key itself only needs writing to pin the values.
+
+**Since C1.3 (ADR-0125):** `src-tauri/src/code/toolchain.rs` does all of the
+above for the app's runtime and the CLI's: the login-shell `PATH` (with
+Hermes' Node last), every cache and a Cargo home of the runtime's own under
+`$HERMES_HOME/cache`, `CARGO_TARGET_DIR` per working folder, `~/.cargo/bin`
+and the rustup home denied by name in the profile, the `lsp:` key written
+(TypeScript launcher beside the home, the toolchain's real rust-analyzer or
+`disabled: true`), and a background preinstall of pinned servers under the
+runtime's own jail into `$HERMES_HOME/lsp/subrosa`. Numbers: "Measurements"
+at the end of this sheet.
 
 ## 3. Checkpoints: `tools/checkpoint_manager.py`
 
@@ -712,3 +725,75 @@ No module the plan relies on is missing in 0.19: `fuzzy_match`, `agent/lsp`,
 `checkpoint_manager`, `tool_result_storage`, `patch_parser`, the plugin hooks
 and `acp_adapter` are all present. The re-estimates come from behaviour, not
 from absence.
+
+## Measurements
+
+### Diagnostics after an edit, under the jail (C1.3, 2026-10-24)
+
+**Method.** Free and local. `scripts/code-eval/lsp_latency.py` runs inside
+`sandbox-exec` with the app's real profile (`build_sandbox_profile` with a
+granted working folder), the real runtime environment
+(`code::toolchain::runtime_env`), the real `lsp:` key and the real
+preinstall, using the pinned runtime's Python (Hermes 0.19.0, `3ef6bbd2`).
+It drives `ShellFileOperations.write_file`, the code path of the `write_file`
+and `patch` tools, on one toy git repository per language: 20 pairs of edits
+(one introduces a type error, one fixes it), so 40 edits per language. Each
+edit is timed three ways: the baseline snapshot before the write, the wait
+for fresh diagnostics after it (the P1 gate's "delay between an edit and its
+diagnostics"), and the whole call. The first edit pays the server's cold start
+and is reported apart; the percentiles are over the 39 others (nearest rank).
+
+    cd src-tauri && SUBROSA_LSP_RUST_ANALYZER=/path/to/rust-analyzer \
+      cargo test --lib --features code-cli lsp_latency_under_the_jail -- --ignored --nocapture
+
+Machine: Apple Silicon Mac, macOS 26.5.2, Node 22.23.1. Three full runs gave the same picture; the table is the last one. Servers:
+TypeScript 7.0.2 `tsc --lsp` (the project's), typescript-language-server
+6.0.2 with TypeScript 6.0.3 (a project without TypeScript), pyright 1.1.414,
+rust-analyzer 0.3.3089 standalone (the machine has no rust-analyzer component,
+so a release binary was pointed at for the measurement only; the app never
+downloads one; no `rust-src`, so the std library was not loaded).
+
+| Language (server) | Right verdicts | First edit, whole | Diagnostics p50 | Diagnostics p95 | Whole edit p50 | Whole edit p95 |
+| --- | --- | --- | --- | --- | --- | --- |
+| TypeScript 7 (`tsc --lsp`) | 40 / 40 | 0.55 s | 0.002 s | 0.002 s | 0.07 s | 0.10 s |
+| TypeScript 6 (typescript-language-server) | 40 / 40 | 5.67 s | 0.36 s | 0.51 s | 0.96 s | 5.50 s |
+| Python (pyright) | 40 / 40 | 0.88 s | 0.009 s | 0.020 s | 0.13 s | 0.19 s |
+| Rust (rust-analyzer) | 39 / 40 | 0.18 s | 0.001 s | 0.012 s | 0.08 s | 0.21 s |
+
+**P1 gate (diagnostics p95 under 1.5 s in TS, Rust and Python): holds** for
+every server measured.
+
+What the table also shows:
+
+- **typescript-language-server pays a 5 s baseline on about half the edits**
+  (19 of 39 baselines at 5.0 s). Cause, read in `agent/lsp/manager.py`
+  (`_snapshot_async`): before a write Hermes re-opens the file and calls
+  `wait_for_diagnostics(path, version, mode=...)` **without the configured
+  timeout**, so it waits the fixed 5 s document budget whatever
+  `lsp.wait_timeout` says. typescript-language-server publishes nothing for a
+  re-opened, unchanged file and has no pull diagnostics, so the wait runs to
+  its end; `tsc --lsp` (TypeScript 7) answers the pull at once, hence its
+  0.002 s. Config cannot shorten it. The diagnostics after the write are
+  unaffected. The fix belongs upstream (pass `timeout=self._wait_timeout`, or
+  skip the wait when the server neither pulls nor republishes), not in a
+  managed patch; until then a TypeScript 6 project pays up to 5 s per edit of
+  an already-open file.
+- **A cold rust-analyzer misses the first edit** (the 1 wrong verdict): it
+  answered before loading the workspace. Every later edit was right.
+- The preinstall of typescript-language-server, TypeScript 6 and pyright
+  under the jail took 3.5 s (warm network, npm cache in the home).
+- Go (gopls) was not measured: Go is not installed on this machine.
+
+### Builds and tests under the jail (C1.3)
+
+`hermes_bridge/toolchain_jail_tests.rs`, run by `cargo test` on macOS:
+`cargo test --offline` on a crate succeeds under the real profile with its
+build in `$HERMES_HOME/cache/cargo-target/` (none in the project),
+`npx --no-install tsc --noEmit` on a TypeScript 7 project succeeds and
+reports a planted TS2322, and a write to `~/.cargo/bin` fails, including
+with a profile whose working folder is `~/.cargo` itself. A crate with a
+dependency resolves it into the runtime's Cargo home (checked by hand: a
+`libc` dependency downloaded and built in 2.7 s); with the person's
+`~/.cargo` as Cargo home, the same build failed on
+`~/.cargo/registry/cache/... Operation not permitted`.
+

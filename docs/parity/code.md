@@ -42,7 +42,7 @@ Competitor cells: `yes`, `partial`, `no`.
 | Tolerant replacement | yes | yes | yes | hidden | C0.1, C2.1 |
 | Edit format chosen per model family | no | yes | yes | partial | C1.4 |
 | Formatter after an edit | partial | yes | no | todo | C1.3 |
-| Language server diagnostics after an edit | partial | yes | no | hidden | C1.3 |
+| Language server diagnostics after an edit | partial | yes | no | partial | C2.1, ADR-0125 |
 | An edit that does not parse is refused | no | no | no | partial | C1.3 |
 | Structural search and rewrite | no | no | no | todo | C1.5 |
 

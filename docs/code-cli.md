@@ -129,7 +129,13 @@ roots:
   Hermes session, last line number). `--resume` reads it.
 - `hermes/` (writable by the agent): the CLI's own Hermes home, apart from the
   app's (the app rewrites its home's `config.yaml` with its own proxy port at
-  every start). Its `logs/dashboard.log` holds the runtime's output.
+  every start). Its `logs/dashboard.log` holds the runtime's output. Its
+  `cache/` holds the run's package caches, Cargo home and Cargo target
+  folders (`cache/cargo-target/<folder>-<hash>`, so `./target` stays
+  untouched), and `lsp/subrosa/` the language servers preinstalled in the
+  background at each start (`logs/lsp-preinstall.log`). See ADR-0125.
+- `code-toolchain/typescript-lsp`: the TypeScript language-server launcher
+  Hermes runs (outside the jail's write roots).
 - `hermes-sandbox.sb`: the Seatbelt profile of the last run.
 - `june-api.log`: the backend's log.
 - `june-api.pid`, `hermes.pid`: the processes the current run started, for

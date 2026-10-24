@@ -31,8 +31,17 @@ pub(crate) const SECRET_STORE_DIRS: &[&str] = &[
 
 /// Credential FILES at the top of the user's home, same dual use as
 /// `SECRET_STORE_DIRS`.
-pub(crate) const SECRET_STORE_FILES: &[&str] =
-    &[".netrc", ".git-credentials", ".npmrc", ".pypirc", ".pgpass"];
+pub(crate) const SECRET_STORE_FILES: &[&str] = &[
+    ".netrc",
+    ".git-credentials",
+    ".npmrc",
+    ".pypirc",
+    ".pgpass",
+    // Registry tokens: builds run in the jail now (ADR-0125) and never
+    // need them, publishing does.
+    ".cargo/credentials.toml",
+    ".cargo/credentials",
+];
 
 /// System locations refused as working folders, prefix-matched: the folder
 /// itself and anything under it. An agent writing here is never "a project".
