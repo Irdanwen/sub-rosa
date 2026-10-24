@@ -1,0 +1,25 @@
+{
+  "why": "The fixed subset of every Code plan gate after P0 (ADR-0122). Ten SWE instances across seven repositories, half under fifteen minutes and half between fifteen minutes and an hour, all with tests that run in seconds; five terminal tasks (build, shell, git, Python, SQL); five Sub Rosa tasks (four TypeScript, one Rust). Chosen for speed and spread before any score existed; replaced only by an addendum to ADR-0122 once full passes show which tasks never discriminate.",
+  "tasks": [
+    "django__django-14373",
+    "django__django-15280",
+    "django__django-16136",
+    "sympy__sympy-22714",
+    "sympy__sympy-23262",
+    "pytest-dev__pytest-7432",
+    "pylint-dev__pylint-6386",
+    "psf__requests-2931",
+    "pallets__flask-5014",
+    "sphinx-doc__sphinx-10449",
+    "term-fix-makefile",
+    "term-shell-spaces",
+    "term-git-recover",
+    "term-circular-import",
+    "term-sqlite-query",
+    "subrosa-446-v2v-duration",
+    "subrosa-410-durable-options",
+    "subrosa-131-account-watch",
+    "subrosa-476-practice-reply",
+    "subrosa-137-manual-notes"
+  ]
+}

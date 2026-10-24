@@ -1,0 +1,5 @@
+{
+  "id": "term-shell-spaces",
+  "prompt": "`archive.sh` breaks on file and folder names that contain spaces (and the source or destination folder may contain spaces too). Fix it so it copies every `.txt` file, keeping relative paths, whatever the names contain, and still prints `archived N files` with the right count. Keep it a POSIX `sh` script.",
+  "timeout_s": 600
+}

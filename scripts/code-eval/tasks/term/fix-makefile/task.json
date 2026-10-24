@@ -1,0 +1,5 @@
+{
+  "id": "term-fix-makefile",
+  "prompt": "`make` fails in this folder. Fix the Makefile so that `make` builds the `hello` program from the C sources here, `make clean` removes what it built, and `./hello` prints `hello, bench`. Do not change the C sources.",
+  "timeout_s": 600
+}

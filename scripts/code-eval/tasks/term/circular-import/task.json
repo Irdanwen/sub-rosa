@@ -1,0 +1,5 @@
+{
+  "id": "term-circular-import",
+  "prompt": "`python3 main.py` crashes with an import error. Fix the `shop` package so it runs and prints the order total, without changing `main.py` and without moving code out of the package. `from shop import Order, price_order` must keep working, and so must importing `shop.pricing` or `shop.orders` first on their own.",
+  "timeout_s": 300
+}

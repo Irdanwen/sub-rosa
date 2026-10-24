@@ -1,0 +1,5 @@
+{
+  "id": "term-csv-totals",
+  "prompt": "From `sales.csv`, write `totals.csv` with a header `region,revenue` and one row per region, where revenue is the sum of quantity times unit_price rounded to 2 decimals (written with exactly two decimals), sorted by revenue, highest first. Region names are case and surrounding-space insensitive: write them capitalised (`North`). Some product names contain commas; parse the file as real CSV.",
+  "timeout_s": 300
+}

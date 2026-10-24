@@ -3001,3 +3001,31 @@ privées ; l'app appelle désormais `headless::runtime_current` et
   (`UPDATE_CODE_EVENT_FIXTURES=1 cargo test --lib code::`, puis
   `pnpm biome format --write src/lib/code/fixtures` : la comparaison porte sur
   le JSON, pas le texte), jamais à la main.
+
+## Le banc de code (2026-10-24, ADR-0122)
+
+Lot C0.1 du plan Code. Tout est neuf et propre au fork : `scripts/code-eval/`
+(Python 3.12 par `uv`, rien dans `package.json`, aucun job de CI : une passe
+coûte des crédits), `docs/code-eval.md`, ADR-0122. Aucun fichier upstream
+modifié hors des deux entrées de `docs/index.md`.
+
+### Pièges
+
+- **Pas de Docker** : les instances SWE-bench tournent dans des environnements
+  `uv` du cache (`~/Library/Caches/subrosa-code-eval/`), installées en mode
+  éditable à un chemin fixe, puis clonées (`cp -c`) avant chaque essai. Une
+  instance n'entre au banc qu'après validation locale (échoue à la base, passe
+  avec le patch de référence) ; les écartées sont dans `tasks/swe-excluded.json`.
+- **Un `git commit` déclenche `gc --auto` en tâche de fond**, qui remballe
+  `.git/objects` pendant la copie de l'instantané : tous les commits du banc
+  passent `-c gc.auto=0 -c maintenance.auto=false`.
+- **Django ne se clone pas en entier** sur une connexion domestique (reset à
+  mi-chemin) : seul le commit de base est récupéré (`git fetch --depth 1`),
+  avec `SETUPTOOLS_SCM_PRETEND_VERSION` pour les dépôts versionnés par tags.
+- **litellm 1.106 importe `mcp` dès qu'on lui passe des outils** sans en
+  dépendre : il est installé à côté de mini-swe-agent.
+- **Un job parallèle = un dossier de données** (`--data-dir`, le CLI prend un
+  run à la fois par dossier) qui partage le runtime de l'app par un lien
+  symbolique `hermes-runtime`.
+- Les JSON figés sont sous `scripts/`, donc vérifiés par Biome : les scripts
+  de gel les passent à `biome format`.

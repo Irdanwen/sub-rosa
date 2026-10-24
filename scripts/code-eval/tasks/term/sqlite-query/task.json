@@ -1,0 +1,5 @@
+{
+  "id": "term-sqlite-query",
+  "prompt": "`shop.db` is a SQLite database. Write a single SQL query in `query.sql` that lists the customers with more than two paid orders placed in 2025, as columns `name` and `paid_total_cents` (the sum of those paid 2025 orders), highest total first, then by name. It must run with `sqlite3 shop.db < query.sql`. Do not modify the database.",
+  "timeout_s": 300
+}

@@ -1,0 +1,5 @@
+{
+  "id": "term-find-file",
+  "prompt": "Somewhere under `logs/` one log file records the incident `ORCHID-7731` (exactly that id). Write the path of that file, relative to this folder (for example `logs/eu/web/day-01/run-001.log`), as the only line of a new file `answer.txt`. Do not modify the logs.",
+  "timeout_s": 300
+}
