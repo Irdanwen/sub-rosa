@@ -45,9 +45,11 @@ pub(crate) const CODE_CLI_DIR: &str = "code-cli";
 /// C3.3); the app's chat keeps delegation.
 const CODE_DISABLED_TOOLSETS: &str = "  disabled_toolsets: [browser, clarify, delegation, memory, session_search, cronjob, image_gen, video_gen, video, tts, computer_use, homeassistant, spotify, kanban, discord, discord_admin, x_search]\n";
 
-/// What a code run's SOUL.md says after the identity paragraph.
+/// What a code run's SOUL.md says after the identity paragraph. The code
+/// notes themselves (style by model family, edit format, when to stop) come
+/// from `crate::code::prompts`, the source the app's Code mode reads too.
 const CODE_SOUL_MD: &str = r#"
-This session is a code run started from the command line. No one watches it live and no one can answer a question in the middle of it: work from the request and the folder, make reasonable choices on your own, and say in your final answer what you chose and why. Keep the final answer short: what changed, what you ran to check it, and what is left.
+This session is a code run started from the command line. No one watches it live and no one can answer a question in the middle of it: work from the request and the folder, make reasonable choices on your own, and say in your final answer what you chose and why.
 "#;
 
 /// The plan-mode line appended to the environment notes.
@@ -242,8 +244,11 @@ pub(crate) async fn start_runtime(
     // the jail: if the profile could not be written, refuse to start rather
     // than spawn an agent that can write the folder after all.
     require_jail_for_read_only(options.write_grant, sandboxed)?;
-    std::fs::write(hermes_home.join("SOUL.md"), render_code_soul(sandboxed))
-        .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))?;
+    std::fs::write(
+        hermes_home.join("SOUL.md"),
+        render_code_soul(sandboxed, options.model, !options.write_grant),
+    )
+    .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))?;
 
     let port = super::pick_port()?;
     let token = super::random_token();
@@ -437,8 +442,10 @@ fn render_code_config(model: &str, proxy_port: u16, proxy_token: &str) -> String
 }
 
 /// The app's identity paragraph, then what a code run is, then the sandbox
-/// section when the jail is on.
-fn render_code_soul(sandboxed: bool) -> String {
+/// section when the jail is on, then the code notes for `model`'s family,
+/// which end on when to stop. A run's model never changes (`--resume` keeps
+/// it), so unlike the app's chats the notes can live in `SOUL.md`.
+fn render_code_soul(sandboxed: bool, model: &str, plan: bool) -> String {
     let identity = super::JUNE_SOUL_MD
         .split("\n\n")
         .next()
@@ -448,7 +455,8 @@ fn render_code_soul(sandboxed: bool) -> String {
     } else {
         ""
     };
-    format!("{identity}\n{CODE_SOUL_MD}{sandbox}")
+    let code = crate::code::prompts::code_block(model, crate::code::prompts::Surface::Cli { plan });
+    format!("{identity}\n{CODE_SOUL_MD}{sandbox}\n{code}\n")
 }
 
 fn environment_hint(sandboxed: bool, write_grant: bool, working_dir: &Path) -> Option<String> {
@@ -582,11 +590,29 @@ mod tests {
 
     #[test]
     fn the_code_soul_says_sub_rosa_and_mentions_the_jail_only_when_on() {
-        let jailed = render_code_soul(true);
+        let jailed = render_code_soul(true, "kimi-k2-7-code", false);
         assert!(jailed.starts_with("You are Sub Rosa"));
         assert!(jailed.contains("code run started from the command line"));
         assert!(jailed.contains("Seatbelt"));
-        assert!(!render_code_soul(false).contains("Seatbelt"));
+        assert!(!render_code_soul(false, "kimi-k2-7-code", false).contains("Seatbelt"));
+    }
+
+    #[test]
+    fn the_code_soul_carries_the_model_familys_notes_and_ends_on_the_stop_rule() {
+        let kimi = render_code_soul(true, "kimi-k2-7-code", false);
+        assert!(kimi.contains(crate::code::prompts::CODE_PROMPT_VERSION));
+        assert!(kimi.contains("family kimi, edits replace"));
+        let done = kimi.find("## When you are done").unwrap();
+        assert!(kimi.find("Seatbelt").unwrap() < done);
+        // Not a chat: no review panel, and none of the app's long-task note.
+        assert!(!kimi.contains("Code mode is on"));
+        assert!(!kimi.contains("notify_on_complete"));
+        let gpt = render_code_soul(true, "openai-gpt-55", false);
+        assert!(gpt.contains("family gpt, edits v4a"));
+        assert!(gpt.contains("*** Begin Patch"));
+        let plan = render_code_soul(true, "kimi-k2-7-code", true);
+        assert!(plan.contains("This is a plan run"));
+        assert!(!plan.contains("## Editing files"));
     }
 
     #[test]

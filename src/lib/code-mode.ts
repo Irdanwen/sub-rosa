@@ -4,6 +4,8 @@
  * holds the record of where the folder started (`src-tauri/src/code_review/`)
  * and is the only thing that touches the folder; this module asks it and
  * tells the agent, with each message, that it is working on code there.
+ * What the agent is told comes from Rust (`src-tauri/src/code/prompts/`), the
+ * source the code CLI reads too, for the model that answers the message.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -95,15 +97,32 @@ export function useCodeMode(sessionId: string | null | undefined) {
   return { status, refresh };
 }
 
-/** What the agent is told with each message of a chat in Code mode. Model
- * instructions, not copy a person reads. */
-export function codeModeBlock(folder: string): string {
-  return [
-    `Code mode is on for this chat. The working folder ${folder} is a code project, and the user wants you to work on it.`,
-    "Make changes by editing the files in place there, with your file tools, or by driving the user's installed Claude Code or Codex CLI when they ask for it or the task is large.",
-    "Read the code before changing it, keep changes to what was asked, and run the project's tests or build when there is one.",
-    "Every file you change is listed for the user in a review panel where they keep or revert each one, so do not revert, stash or commit unless asked, and end with a short list of the files you changed and why.",
-  ].join(" ");
+/** The version of the Code mode prompt; equal to `CODE_PROMPT_VERSION` in
+ * `src-tauri/src/code/prompts/mod.rs` (tested). */
+export const CODE_PROMPT_VERSION = "code-prompt-v1";
+
+/** What `code_prompt_block` answers: the block, and what it was built for. */
+export type CodePrompt = {
+  block: string;
+  model: string;
+  family: string;
+  editFormat: "v4a" | "replace";
+  version: string;
+};
+
+/** What the agent is told with a message of a chat in Code mode on `folder`:
+ * the notes for the model that answers it (the session's, or the chat
+ * default for a chat not created yet). Model instructions, not copy a person
+ * reads. */
+export function codeModeBlock(folder: string, sessionId?: string | null): Promise<CodePrompt> {
+  return invoke<CodePrompt>("code_prompt_block", {
+    request: { sessionId: sessionId ?? null, folder },
+  });
+}
+
+function withBlock(text: string, block: string): string {
+  const separator = text.includes(CONTEXT_MARKER) ? "\n\n" : `\n\n${CONTEXT_MARKER}\n\n`;
+  return `${text}${separator}${block}`;
 }
 
 /** Adds the Code mode block to a message when the chat is in Code mode on
@@ -117,8 +136,8 @@ export async function withCodeContext(
   try {
     const status = await codeModeStatus(sessionId);
     if (!status.active || status.folder !== workingDir) return text;
-    const separator = text.includes(CONTEXT_MARKER) ? "\n\n" : `\n\n${CONTEXT_MARKER}\n\n`;
-    return `${text}${separator}${codeModeBlock(workingDir)}`;
+    const prompt = await codeModeBlock(workingDir, sessionId);
+    return withBlock(text, prompt.block);
   } catch {
     return text;
   }
@@ -165,11 +184,15 @@ export function useCodeModeDraft(): string | null {
 }
 
 /** The first message of a new chat, with the Code mode block when the chat
- * starts in Code mode on its folder. */
-export function withCodeDraftContext(text: string, folder?: string | null): string {
+ * starts in Code mode on its folder. Never fails a send. */
+export async function withCodeDraftContext(text: string, folder?: string | null): Promise<string> {
   if (!folder || !codeModeDraftFor(folder)) return text;
-  const separator = text.includes(CONTEXT_MARKER) ? "\n\n" : `\n\n${CONTEXT_MARKER}\n\n`;
-  return `${text}${separator}${codeModeBlock(folder)}`;
+  try {
+    const prompt = await codeModeBlock(folder);
+    return withBlock(text, prompt.block);
+  } catch {
+    return text;
+  }
 }
 
 /** Why the last chat that should have started in Code mode did not, by

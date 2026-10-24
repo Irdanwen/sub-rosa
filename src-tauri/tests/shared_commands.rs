@@ -42,6 +42,8 @@ fn platform_specific(name: &str) -> bool {
         "council::",
         // Code mode reviews a working folder the desktop agent edits (ADR-0090).
         "code_review::",
+        // The Code mode block of each message, by model family (lot C1.4).
+        "code::prompts::",
         // A browser extension reaches the desktop app through native
         // messaging; no phone browser loads one that way (ADR-0100).
         "browser_extension::",

@@ -3029,3 +3029,68 @@ modifié hors des deux entrées de `docs/index.md`.
   symbolique `hermes-runtime`.
 - Les JSON figés sont sous `scripts/`, donc vérifiés par Biome : les scripts
   de gel les passent à `biome format`.
+
+## Les consignes de code par famille de modèles (2026-10-24, lot C1.4)
+
+Une seule source pour ce que l'agent apprend d'une tâche de code :
+`src-tauri/src/code/prompts/` (`CODE_PROMPT_VERSION`, aujourd'hui
+`code-prompt-v1`). Le style de la famille (`anthropic.md`, `gpt.md`,
+`codex.md`, `kimi.md`, `glm.md`, `deepseek.md`, `grok.md`, `generic.md`), les
+notes communes (`code.md`), le format de modification (`edit-v4a.md` pour
+`openai-gpt-*`, `*-gpt-oss-*` et `*codex*`, `edit-replace.md` pour les autres),
+la surface (`app.md` pour le Code mode d'une discussion) et la règle d'arrêt
+en dernier (`done.md`, ou `plan.md` pour un run en lecture seule). La famille
+se lit sur l'identifiant du modèle (`family_for_model`, table testée sur des
+identifiants réels du catalogue : `family-cases.json`, relu par
+`src/test/code-prompts.test.ts` contre `website/src/models/snapshot.json`).
+
+- **L'app** : `src/lib/code-mode.ts` ne rédige plus le bloc, il le demande à
+  la commande desktop `code_prompt_block`, qui suit le modèle de la session
+  (`sessions.model` du `state.db` de Hermes, tenu à jour quand une discussion
+  change de modèle), sinon le modèle par défaut d'une nouvelle discussion. Le
+  bloc reste côté message, comme avant : le `SOUL.md` est commun à toutes les
+  sessions du runtime, et une discussion peut changer de modèle entre deux
+  messages.
+- **Le CLI** : `render_code_soul` écrit le même bloc dans le `SOUL.md` de son
+  home (un run garde son modèle, `--resume` compris).
+- **Adapté d'opencode v1.19.4** (`packages/opencode/src/session/prompt/*.txt`,
+  MIT, Copyright (c) 2025 opencode ; notice complète en tête de
+  `code/prompts/mod.rs`), réécrit pour Sub Rosa : identité Sub Rosa, outils
+  réels du runtime (`patch`, `write_file`, `read_file`, `search_files`,
+  `terminal`, `todo`). Les tests refusent toute chaîne de
+  `repository-hygiene.yml`, « opencode », « June », `apply_patch` et
+  `TodoWrite` dans un bloc.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | `code::prompts::code_prompt_block` dans la liste desktop de `generate_handler!` | Réappliquer |
+| `src-tauri/tests/shared_commands.rs` | préfixe `code::prompts::` déclaré desktop seulement | Réappliquer |
+
+### Pièges
+
+- **Le `SOUL.md` de l'app ne peut pas porter le bloc** : il est global au
+  processus. Le bloc de l'app neutralise la note `JUNE_SOUL_LONG_TASKS_MD`
+  (« drive it to completion ») pour le Code mode seulement : vérifications au
+  premier plan, et la note ne veut jamais dire « chercher plus de travail ».
+  Le chat normal n'a pas changé.
+- **Ce qui relance un tour fini dans Hermes 0.19** : `agent.verify_on_stop`
+  (`agent/verification_stop.py`, actif par défaut sur ces surfaces) renvoie
+  jusqu'à deux fois l'agent vérifier quand le registre de preuves
+  (`verification_evidence.db`) ne reconnaît pas sa commande de test (un
+  `…/venv/bin/python -m pytest` par chemin absolu ne compte pas, `pytest`
+  dans l'environnement activé compte). `done.md` dit de lancer la commande
+  Verify telle que les notes Workspace l'écrivent. `/goal` ne relance que si
+  la personne en pose un ; `max_turns: 200` est un plafond, pas une poussée.
+- **Le format n'est pas imposé** : Hermes offre les deux modes de `patch` à
+  tous les modèles et aucun réglage ne les filtre (docs/hermes-code-surface.md,
+  section 7). Un veto au `pre_tool_call` du plugin reste possible.
+- **Mesuré au banc, sans gain établi** (kimi-k2-7-code, 6 tâches de `gate20`,
+  une passe, 0,20 $ par tâche ; `scripts/code-eval/results/2026-10-24-kimi-k2-7-code-c14-{before,after}.*`) :
+  pass@1 3/6 des deux côtés (pytest-7432 perdu dans une boucle de 50 `patch`,
+  term-sqlite-query gagné), coût 1,16 $ → 1,00 $, appels d'outil 828 → 552,
+  deux tâches finies seules sous le budget (0,11 $ et 0,08 $). La ligne
+  « Edit format chosen per model family » de `docs/parity/code.md` reste
+  `partial` tant qu'une passe plus large ne tranche pas (et V4A n'a pas été
+  mesuré : aucun modèle GPT au banc).
