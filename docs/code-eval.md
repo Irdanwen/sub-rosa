@@ -138,7 +138,7 @@ the token profile above (about 2 M input, 95 % cached, 15 k output per task):
 | Model | Input | Cached input | Output | Per task, at that profile |
 |---|---|---|---|---|
 | kimi-k2-7-code | 0.32 | 0.07 | 1.51 | about $0.18 (measured) |
-| e2ee-glm-5-2-p (GLM 5.2, private) | 0.76 | 0.14 | 2.38 | about $0.38 |
+| e2ee-glm-5-2-p (GLM 5.2, private) | 0.75 | 0.13 | 2.48 | about $0.38 |
 | claude-sonnet-5-5 | 0.86 | 0.04 | 4.32 | about $0.23, plus cache writes |
 
 A task that runs to a $0.50 budget costs $0.50. Two passes of `gate20` with
