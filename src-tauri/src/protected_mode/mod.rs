@@ -184,6 +184,18 @@ pub fn setup(app: &mut tauri::App) {
     });
 }
 
+/// Loads `protected-mode.json` from the app's config folder without an app
+/// handle: the headless code CLI (ADR-0123) enforces the same switches as the
+/// app, and [`restrictions`] reads only what was loaded. Without this call
+/// the mirror stays at its default, which reads as "off".
+pub fn load_from_config_dir(config_dir: &Path) {
+    replace_mirror(settings_in_config_dir(config_dir));
+}
+
+fn settings_in_config_dir(config_dir: &Path) -> ProtectedModeSettings {
+    load_from_disk(Some(&config_dir.join(SETTINGS_FILE)))
+}
+
 #[tauri::command]
 pub fn protected_mode_status() -> ProtectedModeStatus {
     status_of(&current())
@@ -408,6 +420,30 @@ fn persist(path: &Path, settings: &ProtectedModeSettings) -> Result<(), AppError
 mod tests {
     use super::*;
     use crate::carpe_diem::media::{MediaCatalogDto, MediaModelDto};
+
+    /// The code CLI has no app handle: it loads the switches from the app's
+    /// config folder, and what it loads is what the app saved. The mirror
+    /// itself is left alone, other tests read it.
+    #[test]
+    fn the_switches_load_from_the_config_folder_without_an_app_handle() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            settings_in_config_dir(dir.path()),
+            ProtectedModeSettings::default()
+        );
+        let mut on = turned_on(&ProtectedModeSettings::default(), "4826").unwrap();
+        on.restrictions.memory_off = true;
+        on.restrictions.quiet_hours = Some(restrictions::QuietHours {
+            start_minute: 0,
+            end_minute: 1439,
+        });
+        persist(&dir.path().join(SETTINGS_FILE), &on).unwrap();
+        let loaded = settings_in_config_dir(dir.path());
+        assert!(loaded.enabled);
+        let switches = restrictions_of(&loaded);
+        assert!(switches.memory_off);
+        assert!(restrictions::check_chat(&switches, 600).is_err());
+    }
 
     fn model(id: &str, name: &str, traits: &[&str]) -> MediaModelDto {
         MediaModelDto {

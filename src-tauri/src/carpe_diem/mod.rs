@@ -23,7 +23,7 @@ pub mod low_balance;
 pub mod media;
 pub mod media_protocol;
 #[cfg(desktop)]
-mod orphan;
+pub(crate) mod orphan;
 pub mod posters;
 pub mod settings;
 pub mod sidecar;

@@ -38,6 +38,21 @@ pub struct CacheStats {
     pub cache_saved_usdc_micro: u64,
     /// What the operator says these turns cost, in micro-USDC.
     pub cost_usdc_micro: u64,
+    /// Completions that came with the operator's price, a price of zero
+    /// included: a free model is priced, a model without a price is not. The
+    /// code CLI's budget tells the two apart with it (ADR-0123). Not sent to
+    /// the webview.
+    #[serde(skip)]
+    pub priced_turns: u64,
+    /// Streamed completions that ended without their usage frame: abandoned
+    /// halfway (an interrupt, a lost connection) or cut short. The operator
+    /// may still bill them and nothing here knows how much, so a budget that
+    /// sees one says its total is incomplete. Not sent to the webview.
+    #[serde(skip)]
+    pub unmetered_streams: u64,
+    /// Streamed completions under way right now. Not sent to the webview.
+    #[serde(skip)]
+    pub open_streams: u64,
 }
 
 impl CacheStats {
@@ -79,6 +94,9 @@ impl CacheStats {
             .cache_saved_usdc_micro
             .saturating_add(turn.cache_saved_usdc_micro);
         self.cost_usdc_micro = self.cost_usdc_micro.saturating_add(turn.cost_usdc_micro);
+        if turn.cost_reported {
+            self.priced_turns = self.priced_turns.saturating_add(1);
+        }
     }
 }
 
@@ -91,6 +109,9 @@ pub struct TurnUsage {
     pub cache_creation_tokens: u64,
     pub cache_saved_usdc_micro: u64,
     pub cost_usdc_micro: u64,
+    /// The operator's price came with the completion (zero included). False
+    /// when no price field was there at all.
+    pub cost_reported: bool,
 }
 
 impl TurnUsage {
@@ -113,6 +134,9 @@ static LEDGER: Mutex<CacheStats> = Mutex::new(CacheStats {
     completion_tokens: 0,
     cache_saved_usdc_micro: 0,
     cost_usdc_micro: 0,
+    priced_turns: 0,
+    unmetered_streams: 0,
+    open_streams: 0,
 });
 
 /// Records one completion. Never fails and never blocks the turn: a poisoned
@@ -123,6 +147,24 @@ pub fn record(turn: TurnUsage) {
     }
     if let Ok(mut stats) = LEDGER.lock() {
         stats.add(turn);
+    }
+}
+
+/// A streamed completion started; its usage comes with its last frame.
+pub(crate) fn stream_opened() {
+    if let Ok(mut stats) = LEDGER.lock() {
+        stats.open_streams = stats.open_streams.saturating_add(1);
+    }
+}
+
+/// A streamed completion ended, `metered` when its usage frame was seen (and
+/// recorded just before).
+pub(crate) fn stream_closed(metered: bool) {
+    if let Ok(mut stats) = LEDGER.lock() {
+        stats.open_streams = stats.open_streams.saturating_sub(1);
+        if !metered {
+            stats.unmetered_streams = stats.unmetered_streams.saturating_add(1);
+        }
     }
 }
 
@@ -233,6 +275,7 @@ mod tests {
                 completion_tokens: 120,
                 cache_saved_usdc_micro: 41_000,
                 cost_usdc_micro: 9_100,
+                ..CacheStats::default()
             },
             hit_ratio: Some(0.45),
         };
@@ -248,6 +291,24 @@ mod tests {
         assert_eq!(json["cacheSavedUsdcMicro"], 41_000);
         assert_eq!(json["costUsdcMicro"], 9_100);
         assert_eq!(json["hitRatio"], 0.45);
+        // The budget's counters stay in the process.
+        assert!(json.get("pricedTurns").is_none());
+        assert!(json.get("openStreams").is_none());
+    }
+
+    /// A free model is priced (its price is zero); a completion without a
+    /// price field is not, and the two counts differ.
+    #[test]
+    fn a_price_of_zero_counts_as_priced() {
+        let mut stats = CacheStats::default();
+        stats.add(TurnUsage {
+            cost_reported: true,
+            ..turn(10, 0)
+        });
+        stats.add(turn(10, 0));
+        assert_eq!(stats.turns, 2);
+        assert_eq!(stats.priced_turns, 1);
+        assert_eq!(stats.cost_usdc_micro, 0);
     }
 
     /// An empty ledger must send `null`, not `0.0` — the webview keys off the

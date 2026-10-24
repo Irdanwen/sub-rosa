@@ -19,7 +19,7 @@
 use std::path::{Path, PathBuf};
 
 /// The record's file name, in the app's local data directory.
-pub(super) const RECORD_FILE: &str = "june-api.pid";
+pub(crate) const RECORD_FILE: &str = "june-api.pid";
 
 /// One backend this app started.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +69,7 @@ pub(super) fn is_orphan(record: &Record, live: Option<&Live>, own_pid: u32) -> b
 
 /// Note the backend just started. Best-effort: a record that cannot be
 /// written only means a crash would leave this backend behind, as before.
-pub(super) fn remember(path: &Path, pid: u32) {
+pub(crate) fn remember(path: &Path, pid: u32) {
     let Some(exe) = live(pid).map(|live| live.exe) else {
         return;
     };
@@ -80,7 +80,7 @@ pub(super) fn remember(path: &Path, pid: u32) {
 }
 
 /// The backend `pid` was stopped on purpose: drop its record, and only its.
-pub(super) fn forget(path: &Path, pid: u32) {
+pub(crate) fn forget(path: &Path, pid: u32) {
     let recorded = std::fs::read_to_string(path)
         .ok()
         .and_then(|text| Record::parse(&text));
@@ -91,14 +91,25 @@ pub(super) fn forget(path: &Path, pid: u32) {
 
 /// At launch, before the first backend starts: terminate the one a previous
 /// run left behind, if any, and clear the record. Returns the pid terminated.
-pub(super) fn reap(path: &Path) -> Option<u32> {
+pub(crate) fn reap(path: &Path) -> Option<u32> {
+    reap_with(path, false)
+}
+
+/// [`reap`] for a process that leads its own process group (the code CLI's
+/// backend and runtime, ADR-0123): the whole group is terminated, so the
+/// tools a runtime started go with it.
+pub(crate) fn reap_group(path: &Path) -> Option<u32> {
+    reap_with(path, true)
+}
+
+fn reap_with(path: &Path, group: bool) -> Option<u32> {
     let text = std::fs::read_to_string(path).ok()?;
     let _ = std::fs::remove_file(path);
     let record = Record::parse(&text)?;
     if !is_orphan(&record, live(record.pid).as_ref(), std::process::id()) {
         return None;
     }
-    terminate(record.pid);
+    terminate(record.pid, group);
     Some(record.pid)
 }
 
@@ -183,10 +194,12 @@ fn live(pid: u32) -> Option<Live> {
 /// Ask the backend to stop, then insist: SIGTERM, up to a second for it to
 /// go, then SIGKILL.
 #[cfg(unix)]
-fn terminate(pid: u32) {
+fn terminate(pid: u32, group: bool) {
     let Ok(pid) = libc::pid_t::try_from(pid) else {
         return;
     };
+    // A negative target addresses the process group the pid leads.
+    let pid = if group { -pid } else { pid };
     // SAFETY: kill(2) on a pid this module just identified as its own orphan.
     unsafe {
         libc::kill(pid, libc::SIGTERM);
@@ -205,7 +218,7 @@ fn terminate(pid: u32) {
 }
 
 #[cfg(windows)]
-fn terminate(pid: u32) {
+fn terminate(pid: u32, _group: bool) {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
     // SAFETY: plain Win32 calls on a handle this function opens and closes.

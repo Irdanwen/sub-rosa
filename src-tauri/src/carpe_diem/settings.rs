@@ -13,7 +13,7 @@ use crate::domain::types::AppError;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     time::Duration,
 };
@@ -148,6 +148,12 @@ pub fn setup(app: &mut tauri::App) {
     });
 }
 
+/// Loads `carpe-diem.json` from the app's config folder without an app handle:
+/// the headless code CLI reads the same base URL the app would (ADR-0123).
+pub fn load_from_config_dir(config_dir: &Path) {
+    set_mirror(load_from_disk(Some(&config_dir.join(SETTINGS_FILE))));
+}
+
 // --- Values read by the sidecar --------------------------------------------
 
 /// Current Carpe Diem base URL — the **inference rail** (falls back to the
@@ -160,6 +166,13 @@ pub fn base_url() -> String {
     if let Ok(Some((base, _))) = active_credential() {
         return base;
     }
+    legacy_base_url()
+}
+
+/// The base URL from `carpe-diem.json` alone, without reading the keychain:
+/// for a headless code run whose key came from the environment, where a
+/// keychain prompt would hang with no one to answer it (ADR-0123).
+pub fn file_base_url() -> String {
     legacy_base_url()
 }
 

@@ -63,6 +63,54 @@ pub(super) fn apply_reasoning_effort_alias(body: &mut serde_json::Value) {
     }
 }
 
+/// Answers one `POST /v1/chat/completions` from a runtime: the request shaped
+/// like the desktop's, forwarded to the sidecar, success streamed back and an
+/// error buffered so an overflow can be rewritten into the wording the
+/// runtime recovers from. Shared by the app's proxy and the headless one of
+/// the code CLI (ADR-0123), which has no app handle and so no project memory.
+pub(super) async fn forward_chat_completions(
+    stream: &mut tokio::net::TcpStream,
+    request_body: &[u8],
+    app: Option<&tauri::AppHandle>,
+) -> std::io::Result<()> {
+    let mut body = serde_json::from_slice::<serde_json::Value>(request_body)
+        .unwrap_or_else(|_| serde_json::json!({}));
+    apply_reasoning_effort_alias(&mut body);
+    if let Some(app) = app {
+        super::project_memory::apply(app, &mut body).await;
+    }
+    match crate::june_api::proxy_agent_chat_completions(body).await {
+        Ok(response) if response.status >= 400 => {
+            // Error bodies are small enough to buffer whole, and buffering is
+            // what makes the overflow translation below possible. Success
+            // responses keep streaming.
+            let status = response.status;
+            let content_type = response.content_type.clone();
+            let body = response.collect_body().await.unwrap_or_default();
+            match super::translate_context_overflow_error(&body) {
+                Some(rewritten) => super::write_json_response(stream, status, rewritten).await,
+                None => super::write_raw_response(stream, status, &content_type, &body).await,
+            }
+        }
+        Ok(response) => super::write_streaming_response(stream, response).await,
+        Err(error) => {
+            // A protected-mode refusal is final: a 5xx would be retried.
+            let refused = error.code.starts_with("protected_mode");
+            super::write_json_response(
+                stream,
+                if refused { 403 } else { 502 },
+                serde_json::json!({
+                    "error": {
+                        "message": format!("Sub Rosa agent provider failed: {}", error.message),
+                        "type": error.code
+                    }
+                }),
+            )
+            .await
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

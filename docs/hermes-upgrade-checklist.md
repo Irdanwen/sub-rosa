@@ -116,6 +116,13 @@ instead of a silent drop. Follow the "On Hermes upgrade" steps in
 3. Route any event that now classifies as `unsupported` but should be modeled to
    its owning feature, and record it under "Known gaps".
 4. Add a fixture for any brand new event family the bump introduces.
+5. Re-record the code run (ADR-0123): one `subrosa-code run` on a throwaway
+   folder with `SUBROSA_CODE_TRACE` set, sanitized into
+   `src/lib/code/fixtures/hermes-v0.19-run.frames.json` (renamed for the new
+   pin), then `UPDATE_CODE_EVENT_FIXTURES=1 cargo test --lib code::` and
+   `pnpm biome format --write src/lib/code/fixtures`, and read
+   the diff of the committed events: a change there is a change in what every
+   code consumer sees ([docs/code-cli.md](code-cli.md)).
 
 Record the outcome here: `pnpm test` green against refreshed fixtures, plus any
 fixture added or retired.

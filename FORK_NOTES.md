@@ -2931,3 +2931,73 @@ restait collé dans son coin. Quatre causes, aucune propre à une session :
   on le gare sur un côté (`meeting-hud-zone`), alors que la rotation native qui
   devait les accompagner n'existe que sur macOS. Ses libellés d'accessibilité
   sont aussi hors de `t()`.
+
+## Le contrat des événements de code et le CLI sans interface (2026-10-23, ADR-0123)
+
+Lots C0.3 (moitié contrat) et C0.2 du plan Code. Un run de code se raconte en
+`CodeEvent` quel que soit le moteur : `src-tauri/src/code/event.rs` (la
+référence, qui écrit `src/lib/code/fixtures/code-events.v1.json`),
+`src/lib/code/events.ts` (types et validateur, `src/test/code-events.test.ts`
+relit la fixture), l'adaptateur pur de la passerelle Hermes
+`src-tauri/src/code/hermes_adapter.rs` (épinglé par un vrai run enregistré,
+`hermes-v0.19-run.frames.json` → `.events.json`). Premier hôte :
+`subrosa-code run` (`src-tauri/src/code/cli/`, binaire `src/bin/subrosa-code.rs`
+derrière la feature `code-cli`), documenté dans `docs/code-cli.md`.
+
+Ce qui demandait un `AppHandle` prend maintenant des chemins, sans rien
+recopier : le cœur du sidecar, du rendu de config, du garde, du profil
+Seatbelt et du transfert des complétions est partagé entre l'app et le CLI.
+`hermes_bridge/headless.rs` est un sous-module du pont, il lit ses fonctions
+privées ; l'app appelle désormais `headless::runtime_current` et
+`headless::write_sandbox_profile`.
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/lib.rs` | `pub mod code;` | Réappliquer |
+| `src-tauri/Cargo.toml` | `default-run = "os-june"`, `[[bin]] subrosa-code` avec `required-features = ["code-cli"]`, `[features] code-cli`, `signal` pour tokio (desktop) | Réappliquer |
+| `src-tauri/src/hermes_bridge.rs` | La branche `/v1/chat/completions` du proxy appelle `provider_proxy::forward_chat_completions` ; `managed_hermes_runtime_current` et le corps de `prepare_sandbox` délèguent à `headless` ; `pub(crate) mod headless;` (le fichier perd des lignes) | Réappliquer |
+| `src-tauri/src/hermes_bridge/provider_proxy.rs` | `forward_chat_completions` (déplacé de `hermes_bridge.rs`, mémoire de projet seulement avec un `AppHandle`) | Réappliquer |
+| `src-tauri/src/hermes_bridge/guard.rs` | `install_headless` (plugin et registre vide) | Réappliquer |
+| `src-tauri/src/carpe_diem/sidecar.rs` | `backend_program`, `configure_backend`, `spawn_with_secrets` extraits de `build_command`/`apply_june_api_env`/`start_backend` ; `probe`, `free_port`, `HEALTH_TIMEOUT`, `LOCAL_USER_ID` en `pub(crate)` ; `probe` compilé aussi sur desktop | Réappliquer |
+| `src-tauri/src/carpe_diem/settings.rs` | `load_from_config_dir`, `file_base_url` | Réappliquer |
+| `src-tauri/src/hermes_working_dir.rs` | `validate_working_dir_at` (le dossier de données passé par l'appelant) | Réappliquer |
+| `src-tauri/src/app_paths.rs` | `app_data_dir_for_build` et `use_prod_data_dir` en `pub(crate)` | Réappliquer |
+| `docs/hermes-upgrade-checklist.md` | Étape 5 : réenregistrer le run de code à chaque bump | Réappliquer |
+| `src-tauri/src/june_api.rs` | `turn_usage_from_headers` remplit `cost_reported` (présence de `x-june-cost-usdc-micro`) | Réappliquer |
+| `src-tauri/src/carpe_diem/{cache_stats,stream_usage}.rs` | Compteurs du budget du CLI hors webview (`#[serde(skip)]`) : `priced_turns`, `unmetered_streams`, `open_streams` ; un `StreamUsageTap` lâché avant sa fin compte comme non mesuré (`Drop`) | Réappliquer |
+| `src-tauri/src/carpe_diem/{mod,orphan}.rs` | `orphan` en `pub(crate)`, `reap_group` (le groupe de processus entier) pour les processus du CLI | Réappliquer |
+| `src-tauri/src/protected_mode/mod.rs` | `load_from_config_dir` : le CLI charge le mode protégé sans `AppHandle` (sinon `restrictions()` le lit éteint) | Réappliquer |
+
+### Pièges
+
+- **Tauri embarque tout binaire du paquet** dont les features requises sont
+  actives (`get_binaries` du CLI Tauri). Sans `required-features`, le CLI
+  partirait dans le `.app`, hors des étapes de signature profonde de
+  `release.yml`. Ne pas retirer la feature.
+- **Le CLI a son propre home Hermes** (`<data>/code-cli/hermes`) et un verrou
+  d'un run par dossier de données : l'app réécrit le `config.yaml` de son home
+  avec son port de proxy à chaque démarrage.
+- **`thinking.delta` n'est pas du raisonnement** en v0.19 : c'est la ligne de
+  spinner (« (¬_¬) synthesizing... »). L'adaptateur l'ignore ; le raisonnement
+  est `reasoning.delta`.
+- **`hermes_bridge.rs` est au plafond de son cliquet** : tout ajout pour le
+  mode sans interface va dans `hermes_bridge/headless.rs`.
+- **Le mode plan finit sur un `deny` du dossier** dans le profil du CLI
+  (`headless::cli_sandbox_profile`) : le profil de base réaccorde les
+  dossiers temporaires dans tous les modes, et en SBPL la dernière règle qui
+  correspond gagne. Le venv de l'app (`<data>/hermes-runtime`) n'est jamais
+  une racine d'écriture du CLI, et `PYTHONDONTWRITEBYTECODE=1` évite les
+  `.pyc`. Le profil de l'app n'a pas changé.
+- **`unsetenv` ne retire pas une variable de ce que `ps eww` lit** : le bloc
+  d'environnement initial reste en mémoire. `take_env_key` écrase les octets
+  de la valeur avant de la retirer, avant que le runtime async démarre.
+  Seatbelt n'y peut rien : `process-info*` ne couvre pas `KERN_PROCARGS2`
+  (mesuré sur macOS 26), donc aucune règle de ce genre n'a été ajoutée.
+- Le CLI désactive le toolset `delegation` (limite temporaire de P0,
+  ADR-0123) ; l'app le garde.
+- Les fixtures `src/lib/code/fixtures/*.json` sont écrites par les tests Rust
+  (`UPDATE_CODE_EVENT_FIXTURES=1 cargo test --lib code::`, puis
+  `pnpm biome format --write src/lib/code/fixtures` : la comparaison porte sur
+  le JSON, pas le texte), jamais à la main.
