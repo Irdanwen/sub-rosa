@@ -158,7 +158,7 @@ pub(crate) fn prune_cargo_targets(
             (used, path)
         })
         .collect();
-    others.sort_by(|a, b| b.0.cmp(&a.0));
+    others.sort_by_key(|(used, _)| std::cmp::Reverse(*used));
     let room = CARGO_TARGET_KEEP.saturating_sub(usize::from(current.is_some()));
     let mut removed = Vec::new();
     for (index, (used, path)) in others.into_iter().enumerate() {
