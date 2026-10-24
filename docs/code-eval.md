@@ -108,7 +108,8 @@ plugin recomputes it at `pre_tool_call` and the column fills by itself.
 - **Edit failures**: failed modifications over all modifications.
 - **Median time**: from the clean copy to the end of the check.
 - **Pass to pass**: pass@1 of each pass on the tasks every pass scored, and
-  the spread. The P0 gate asks it to be within **3 points** for glm-5.2,
+  the spread. The P0 gate asks it to be within **3 points** for e2ee-glm-5-2-p (the
+  plan's "GLM 5.2", the private TEE build),
   kimi-k2-7-code and claude-sonnet-5-5.
 
 ## What a pass costs
@@ -137,7 +138,7 @@ the token profile above (about 2 M input, 95 % cached, 15 k output per task):
 | Model | Input | Cached input | Output | Per task, at that profile |
 |---|---|---|---|---|
 | kimi-k2-7-code | 0.32 | 0.07 | 1.51 | about $0.18 (measured) |
-| z-ai-glm-5-3 (the GLM 5 line: check the id in `/v1/models`) | 0.76 | 0.14 | 2.38 | about $0.38 |
+| e2ee-glm-5-2-p (GLM 5.2, private) | 0.76 | 0.14 | 2.38 | about $0.38 |
 | claude-sonnet-5-5 | 0.86 | 0.04 | 4.32 | about $0.23, plus cache writes |
 
 A task that runs to a $0.50 budget costs $0.50. Two passes of `gate20` with
