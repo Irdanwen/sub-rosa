@@ -1,0 +1,5 @@
+{
+  "id": "term-rename-photos",
+  "prompt": "Rename the photos in `photos/` from `IMG_YYYYMMDD_HHMMSS.jpg` to `YYYY-MM-DD_HH-MM-SS.jpg` (the extension is always written in lowercase `.jpg`, whatever its case was). A duplicate such as `IMG_20250101_123456 (1).jpg` becomes `2025-01-01_12-34-56_1.jpg`. Leave every other file as it is, and do not change any file's content.",
+  "timeout_s": 300
+}

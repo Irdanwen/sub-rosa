@@ -1,0 +1,5 @@
+{
+  "id": "term-log-5xx",
+  "prompt": "`access.log` is a web server log in the combined format. Write `report.txt` with the three client IPs that received the most 5xx responses, one per line, most first, as `<ip> <count>` (a single space). Break ties by IP in ascending string order.",
+  "timeout_s": 300
+}

@@ -128,6 +128,7 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0119](adr/0119-an-app-is-a-view-over-its-workflow.md) — a workflow can be shown as an app: a few of its steps' settings and results, stored with the workflow (no second graph), built from a suggestion in three steps, synced, exported and copied with it; the phone's only workflow surface is apps; no migration
 - [adr/0120](adr/0120-the-assistant-proposes-workflows-and-never-runs-them.md) — the assistant's `workflows` tool (desktop MCP and phone agent-lite, one action table): list, read, the step catalog (a schema snapshot the native side embeds), and propose a draft of its own that the person keeps or discards; it never changes a person's workflow and never runs one; no migration
 - [adr/0121](adr/0121-the-default-catalog-is-re-authored-from-comfyui-recipes.md) — the shipped templates are written by hand from ComfyUI's official recipes (a frozen corpus of them also measures the importer), never imported: own prompts, six languages, app forms, covers made by Sub Rosa; chosen for hosted models, use, a gap filled and fit; the catalog is one list of template and kind; no migration
+- [adr/0122](adr/0122-the-code-plan-is-measured-on-a-local-bench.md) — the Code plan is measured before it is built: 60 fixed tasks in `scripts/code-eval/` (40 SWE-bench Verified instances run without Docker in `uv` environments, kept only when validated locally against their gold patch; 10 terminal tasks; 10 merged Sub Rosa pull requests) and a fixed `gate20`; Sub Rosa's `subrosa-code run` against a mini-swe-agent reference column on the same model, key, budget and jail; pass@1, operator-metered cost, edit failures, duration, the fuzzy strategy recorded as null until P1; two passes within 3 points for the P0 gate; no CI job; no migration
 - [adr/0123](adr/0123-code-events-are-one-neutral-contract-with-two-adapters.md) — a run of code work is reported as `CodeEvent`s whatever the engine: sixteen dotted types in JSON lines after `codex exec --json`, Rust the reference writing a fixture the TypeScript validator reads, a pure Hermes gateway adapter pinned by a recorded real run (ACP's comes in P4); its first host is the headless `subrosa-code run` (own Hermes home and one run per data folder, the run budget from the operator's metering, plan mode enforced by not granting the folder to the jail, the binary behind the `code-cli` feature so the app does not bundle it); no migration
 
 Numbers 0103, 0105 and 0106 are reserved and unused: they were handed out in
@@ -176,6 +177,7 @@ feature specs). Full index: [spec/index.md](../spec/index.md).
 - [hermes-upstream-template.md](hermes-upstream-template.md) — per-bump pin-note template
 - [hermes-upstream-v2026.6.19.md](hermes-upstream-v2026.6.19.md) — current pin note (v2026.6.19)
 - [hermes-tui-debug.md](hermes-tui-debug.md) — dev-only raw-TUI debug fallback
+- [code-eval.md](code-eval.md) — the code bench: tasks, running it, the two engines, reading the report, what a pass costs (ADR-0122)
 - [code-cli.md](code-cli.md) — `subrosa-code run`: a code run without a window, its events as JSON lines (ADR-0123)
 
 ## Release & ops runbooks

@@ -1,0 +1,5 @@
+{
+  "id": "term-git-recover",
+  "prompt": "In the git repository `project/`, someone ran `git reset --hard` and lost the commit that wrote the deployment checklist into `notes.md`. Restore it: the `main` branch of `project/` must again have `notes.md` with the checklist as committed then (the later `scratch.txt` commit may stay lost), with the working tree clean.",
+  "timeout_s": 300
+}

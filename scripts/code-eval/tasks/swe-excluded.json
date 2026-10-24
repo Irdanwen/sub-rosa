@@ -1,0 +1,48 @@
+{
+  "excluded": [
+    {
+      "instance_id": "pydata__xarray-6721",
+      "reason": "gold patch does not pass here (failing: ['xarray/tests/test_dataset.py::TestDataset::test_rename_does_not_change_CFTimeIndex_type', 'xarray/tests/test_dataset.py::TestDataset::test_unstack_sparse', 'xarray/tests/test_dataset.py::TestDataset::test_from_dataframe_sparse', 'xarray/tests/test_dataset.py::TestDataset::test_rank', 'xarray/tests/test_dataset.py::TestDataset::test_query[numpy-numexpr-pandas]'])"
+    },
+    {
+      "instance_id": "pydata__xarray-6744",
+      "reason": "gold patch does not pass here (failing: ['xarray/tests/test_rolling.py::TestDataArrayRolling::test_rolling_wrapped_bottleneck[1-numpy-1-True-sum]', 'xarray/tests/test_rolling.py::TestDataArrayRolling::test_rolling_wrapped_bottleneck[1-numpy-1-True-mean]', 'xarray/tests/test_rolling.py::TestDataArrayRolling::test_rolling_wrapped_bottleneck[1-numpy-1-True-std]', 'xarray/tests/test_rolling.py::TestDataArrayRolling::test_rolling_wrapped_bottleneck[1-numpy-1-True-min]', 'xarray/tests/test_rolling.py::TestDataArrayRolling::test_rolling_wrapped_bottleneck[1-numpy-1-True-max]'])"
+    },
+    {
+      "instance_id": "pydata__xarray-6938",
+      "reason": "gold patch does not pass here (failing: ['xarray/tests/test_variable.py::TestVariable::test_reduce_use_bottleneck', 'xarray/tests/test_variable.py::TestVariable::test_rank_dask_raises', 'xarray/tests/test_variable.py::TestVariable::test_rank', 'xarray/tests/test_variable.py::TestVariableWithSparse::test_as_sparse', 'xarray/tests/test_variable.py::TestNumpyCoercion::test_from_pint[Variable]'])"
+    },
+    {
+      "instance_id": "pydata__xarray-7229",
+      "reason": "gold patch does not pass here (failing: ['xarray/tests/test_computation.py::test_polyval_cftime[1970-01-01-nodask]', 'xarray/tests/test_computation.py::test_polyval_cftime[1970-01-01-dask]', 'xarray/tests/test_computation.py::test_polyval_cftime[0753-04-21-nodask]', 'xarray/tests/test_computation.py::test_polyval_cftime[0753-04-21-dask]'])"
+    },
+    {
+      "instance_id": "pydata__xarray-7233",
+      "reason": "gold patch does not pass here (failing: ['xarray/tests/test_coarsen.py::test_coarsen_coords_cftime'])"
+    },
+    {
+      "instance_id": "pydata__xarray-7393",
+      "reason": "gold patch does not pass here (failing: ['xarray/tests/test_indexes.py::test_safe_cast_to_index_cftimeindex', 'xarray/tests/test_indexes.py::test_safe_cast_to_index_datetime_datetime'])"
+    },
+    {
+      "instance_id": "pylint-dev__pylint-6528",
+      "reason": "gold patch does not pass here (failing: ['tests/test_self.py::TestRunTC::test_do_not_import_files_from_local_directory', 'tests/test_self.py::TestRunTC::test_do_not_import_files_from_local_directory_with_pythonpath', 'tests/test_self.py::TestRunTC::test_can_list_directories_without_dunder_init', 'tests/test_self.py::TestCallbackOptions::test_output_of_callback_options[command0-Emittable', 'tests/test_self.py::TestCallbackOptions::test_output_of_callback_options[command1-Enabled'])"
+    },
+    {
+      "instance_id": "pylint-dev__pylint-7080",
+      "reason": "gold patch does not pass here (failing: ['tests/test_self.py::TestRunTC::test_do_not_import_files_from_local_directory', 'tests/test_self.py::TestRunTC::test_do_not_import_files_from_local_directory_with_pythonpath', 'tests/test_self.py::TestRunTC::test_can_list_directories_without_dunder_init', 'tests/test_self.py::TestCallbackOptions::test_output_of_callback_options[command0-Emittable', 'tests/test_self.py::TestCallbackOptions::test_output_of_callback_options[command1-Enabled'])"
+    },
+    {
+      "instance_id": "pylint-dev__pylint-7277",
+      "reason": "environment: `uv pip install --python` exited 1: Using Python 3.9.25 environment at: <cache>/swe/pylint-dev__pylint-7277/venv\n   Building pylint @ file://<cache>/work/swe/pylint-dev__pylint-7277\n  \u00d7 Failed to build `pylint @\n  \u2502 file://<cache>/work/swe/pylint-dev__pylint-7277`\n  \u251c\u2500\u25b6 The build backend returned an error\n  \u2570\u2500\u25b6 Call to `setuptools.build_meta.build_editable` failed (exit status: 1)\n\n      [stderr]\n      Traceback (most recent call last):\n        File \"<string>\", line 11, in <module>\n      AttributeError: module 'setuptools.build_meta' has no attribute\n      'build_editable'\n\n\nhint: Build failures usually indicate a problem with the package or the build environment\n"
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-10323",
+      "reason": "gold patch does not pass here (failing: ['tests/test_directive_code.py::test_literal_include_linenos', 'tests/test_directive_code.py::test_linenothreshold'])"
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-10614",
+      "reason": "gold patch does not pass here (failing: ['tests/test_ext_inheritance_diagram.py::test_inheritance_diagram_svg_html', 'tests/test_ext_inheritance_diagram.py::test_inheritance_diagram', 'tests/test_ext_inheritance_diagram.py::test_inheritance_diagram_png_html', 'tests/test_ext_inheritance_diagram.py::test_inheritance_diagram_latex', 'tests/test_ext_inheritance_diagram.py::test_inheritance_diagram_latex_alias'])"
+    }
+  ]
+}

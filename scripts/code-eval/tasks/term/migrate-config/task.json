@@ -1,0 +1,5 @@
+{
+  "id": "term-migrate-config",
+  "prompt": "Migrate this service's configuration from `app.ini` to a new `app.toml` with the same sections and keys, using real TOML types (integers, floats, booleans, strings). Change `load_config.py` so that `load()` reads `app.toml` with the standard library's `tomllib` and returns exactly what it returns today, then delete `app.ini`.",
+  "timeout_s": 600
+}
