@@ -16,4 +16,5 @@ pub mod hermes_adapter;
 pub mod cli;
 #[cfg(desktop)]
 pub mod toolchain;
+#[cfg(desktop)]
 pub mod prompts;
