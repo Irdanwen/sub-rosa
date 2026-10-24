@@ -3029,3 +3029,57 @@ modifié hors des deux entrées de `docs/index.md`.
   symbolique `hermes-runtime`.
 - Les JSON figés sont sous `scripts/`, donc vérifiés par Biome : les scripts
   de gel les passent à `biome format`.
+
+## Le retour après une modification, partie environnement (2026-10-24, ADR-0125)
+
+Lot C1.3 du plan Code, moitié environnement : les diagnostics LSP de Hermes et
+les chaînes de build et de test du dossier marchent sous le jail Seatbelt,
+pour l'app et pour le CLI sans interface (même code,
+`src-tauri/src/code/toolchain.rs`). Le formateur et le veto tree-sitter
+viendront en addendum de l'ADR-0125 avec le lot suivant.
+
+- `apply_runtime_env` : `PATH` du shell de connexion (lu une fois, 5 s au plus),
+  caches npm, pip, uv, Go et un `CARGO_HOME` propre sous `$HERMES_HOME/cache`,
+  `CARGO_TARGET_DIR` par dossier de travail, `RUSTUP_HOME` de la personne,
+  `RUSTUP_AUTO_INSTALL=0`, une phrase ajoutée au `HERMES_ENVIRONMENT_HINT`.
+- `lsp_config_block` : la clé `lsp:` écrite à chaque démarrage, avec le lanceur
+  TypeScript (`<data>/code-toolchain/typescript-lsp`, hors des racines
+  d'écriture du jail) et le vrai rust-analyzer ou `disabled: true`.
+- `start_preinstall` : en tâche de fond, sous le profil du runtime, les
+  serveurs épinglés dans `$HERMES_HOME/lsp/subrosa`, journal
+  `$HERMES_HOME/logs/lsp-preinstall.log`.
+- Mesure gratuite : `scripts/code-eval/lsp_latency.py`, lancé par le test
+  ignoré `lsp_latency_under_the_jail` (chiffres dans
+  `docs/hermes-code-surface.md`, « Measurements »).
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/hermes_bridge.rs` | `apply_runtime_env` après `apply_isolated_hermes_env` et `start_preinstall` après le spawn du dashboard ; `sync_hermes_config` ajoute `lsp_config_block` ; `build_sandbox_profile`, `sbpl_quote`, `sbpl_regex_escape` déplacés tels quels dans `hermes_bridge/sandbox_profile.rs` (le fichier perd environ 170 lignes) ; `mod toolchain_jail_tests` | Réappliquer |
+| `src-tauri/src/hermes_bridge/sandbox_profile.rs` | Nouveau (code déplacé) : une section « Toolchains » qui refuse l'écriture de `~/.cargo/bin` et du home rustup, après toutes les permissions | Réappliquer |
+| `src-tauri/src/hermes_bridge/headless.rs` | Même environnement, même clé `lsp:`, même préinstallation pour le CLI | Réappliquer |
+| `src-tauri/src/hermes_working_dir.rs` | `.cargo/credentials.toml` et `.cargo/credentials` dans `SECRET_STORE_FILES` (lecture et écriture refusées, dossier qui les contient refusé) | Réappliquer |
+
+### Pièges
+
+- **Préinstaller DANS le jail, jamais hors jail dans le home Hermes** : le
+  home est inscriptible par un run (liens symboliques plantés), et ici même le
+  `node` de la personne (`~/.local/bin/node`) est un lien vers
+  `…/xyz.carpediem.subrosa/hermes/node/bin/node`, un fichier qu'un run de
+  l'app de prod peut réécrire. Un npm lancé hors jail l'aurait exécuté.
+- **Ne jamais rendre `~/.cargo/registry` inscriptible** : ses sources
+  extraites sont compilées par les builds de la personne hors jail. Le run a
+  son propre `CARGO_HOME` (les crates se téléchargent une fois par home).
+- **Le proxy rustup `rust-analyzer` existe partout** et échoue sans le
+  composant : `find_rust_analyzer` le résout par `rustup which`, sinon le
+  serveur est `disabled: true` (sinon Hermes perd le budget de la première
+  modification à le découvrir).
+- **Hermes n'utilise que `command[0]`** d'un `lsp.servers.<id>.command`, et
+  seulement si le chemin existe : les arguments vont dans le lanceur.
+- **typescript-language-server attend 5 s** à la ligne de base d'environ une
+  modification sur deux (mesuré, ADR-0125) : c'est Hermes ou le serveur, pas
+  un patch géré de plus.
+- Le cliquet de `hermes_bridge.rs` n'a pas été abaissé (11 167, le fichier en
+  fait environ 10 995) : la marge est laissée aux lots qui fusionnent en
+  parallèle.

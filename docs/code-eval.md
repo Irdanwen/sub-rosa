@@ -145,6 +145,23 @@ A task that runs to a $0.50 budget costs $0.50. Two passes of `gate20` with
 three models and both engines is 240 attempts: plan **$60 to $120**, and
 always pass `--max-total-usd`.
 
+## Diagnostics latency (free)
+
+`lsp_latency.py` measures what P1's gate asks about the language servers: the
+delay between an edit and its diagnostics, under the real jail, with no model
+and no cost. It is driven by an ignored Rust test that writes the app's real
+profile, environment, `lsp:` key and preinstall, then runs the script with the
+installed runtime's Python inside `sandbox-exec`:
+
+    cd src-tauri && cargo test --lib --features code-cli \
+      lsp_latency_under_the_jail -- --ignored --nocapture
+
+`SUBROSA_LSP_ITERATIONS`, `SUBROSA_LSP_LANGS`, `SUBROSA_LSP_RUST_ANALYZER`,
+`SUBROSA_LSP_OUT` and `SUBROSA_HERMES_RUNTIME` are described at the top of the
+script. The last numbers are in
+[hermes-code-surface.md](hermes-code-surface.md) ("Measurements"), and the
+decisions in [ADR-0125](adr/0125-feedback-after-an-edit-runs-in-the-jail.md).
+
 ## Changing the bench
 
 The tasks are frozen: a change of a task changes every score after it.
