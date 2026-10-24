@@ -120,6 +120,56 @@ pub(crate) fn cargo_target_dir(hermes_home: &Path, working_dir: Option<&Path>) -
     cache_dir(hermes_home).join("cargo-target").join(key)
 }
 
+/// How many Cargo target folders a runtime home keeps, the current one
+/// included, and how long an untouched one is kept at most. A Rust target
+/// weighs gigabytes; without a bound every folder a person ever opened would
+/// stay on disk.
+const CARGO_TARGET_KEEP: usize = 3;
+const CARGO_TARGET_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(14 * 24 * 3600);
+const CARGO_TARGET_STAMP: &str = ".subrosa-last-used";
+
+/// Marks `working_dir`'s target as used now and removes the others past the
+/// bound: older than [`CARGO_TARGET_MAX_AGE`], or beyond the
+/// [`CARGO_TARGET_KEEP`] most recently used. Returns what it removed.
+pub(crate) fn prune_cargo_targets(
+    hermes_home: &Path,
+    working_dir: Option<&Path>,
+    now: std::time::SystemTime,
+) -> Vec<PathBuf> {
+    let root = cache_dir(hermes_home).join("cargo-target");
+    let current = working_dir.map(|dir| cargo_target_dir(hermes_home, Some(dir)));
+    if let Some(current) = &current {
+        if std::fs::create_dir_all(current).is_ok() {
+            let _ = std::fs::write(current.join(CARGO_TARGET_STAMP), b"");
+        }
+    }
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+    let mut others: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir() && Some(path) != current.as_ref())
+        .map(|path| {
+            let used = std::fs::metadata(path.join(CARGO_TARGET_STAMP))
+                .or_else(|_| std::fs::metadata(&path))
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            (used, path)
+        })
+        .collect();
+    others.sort_by(|a, b| b.0.cmp(&a.0));
+    let room = CARGO_TARGET_KEEP.saturating_sub(usize::from(current.is_some()));
+    let mut removed = Vec::new();
+    for (index, (used, path)) in others.into_iter().enumerate() {
+        let stale = now.duration_since(used).unwrap_or_default() > CARGO_TARGET_MAX_AGE;
+        if (stale || index >= room) && std::fs::remove_dir_all(&path).is_ok() {
+            removed.push(path);
+        }
+    }
+    removed
+}
+
 /// The variables the runtime gets on top of what it inherits. Pure, so the
 /// whole set can be asserted.
 pub(crate) fn toolchain_env(
@@ -850,6 +900,22 @@ pub(crate) fn start_preinstall(
     working_dir: Option<&Path>,
     jail: Option<(&Path, &Path)>,
 ) {
+    {
+        let hermes_home = hermes_home.to_path_buf();
+        let working_dir = working_dir.map(Path::to_path_buf);
+        std::thread::spawn(move || {
+            for removed in prune_cargo_targets(
+                &hermes_home,
+                working_dir.as_deref(),
+                std::time::SystemTime::now(),
+            ) {
+                eprintln!(
+                    "Removed an unused Cargo target folder: {}",
+                    removed.display()
+                );
+            }
+        });
+    }
     let Some(working_dir) = working_dir else {
         return;
     };
@@ -1219,5 +1285,36 @@ mod tests {
         assert!(!chat
             .get_envs()
             .any(|(key, _)| key == "HERMES_ENVIRONMENT_HINT"));
+    }
+
+    #[test]
+    fn cargo_targets_are_bounded_by_count_and_age() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("cache").join("cargo-target");
+        let now = std::time::SystemTime::now();
+        let folders: Vec<PathBuf> = (0..5)
+            .map(|n| PathBuf::from(format!("/work/p{n}")))
+            .collect();
+        // Five folders used one after the other, the last one first.
+        for folder in &folders {
+            prune_cargo_targets(home.path(), Some(folder), now);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let left: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        assert_eq!(left.len(), CARGO_TARGET_KEEP);
+        for kept in &folders[2..] {
+            assert!(
+                cargo_target_dir(home.path(), Some(kept)).is_dir(),
+                "{kept:?}"
+            );
+        }
+        // Weeks later, only the folder in use stays.
+        let later = now + CARGO_TARGET_MAX_AGE + std::time::Duration::from_secs(60);
+        let removed = prune_cargo_targets(home.path(), Some(&folders[4]), later);
+        assert_eq!(removed.len(), CARGO_TARGET_KEEP - 1);
+        assert!(cargo_target_dir(home.path(), Some(&folders[4])).is_dir());
     }
 }
