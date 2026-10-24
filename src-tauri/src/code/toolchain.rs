@@ -389,13 +389,12 @@ fn read_login_path() -> Option<String> {
     ) {
         return None;
     }
-    let mut cmd = Command::new(&shell);
-    cmd.args([
-        "-l",
-        "-i",
-        "-c",
-        &format!("printf '\\n{PATH_START}%s{PATH_END}\\n' \"$PATH\""),
-    ]);
+    let probe = format!("printf '\\n{PATH_START}%s{PATH_END}\\n' \"$PATH\"");
+    // The startup files a login shell sources can sit in a folder the jail
+    // may write (a dotfiles repository opened in Code mode), so the probe
+    // runs with every write refused: it can do no more than the agent itself.
+    let mut cmd = login_probe_command(&shell);
+    cmd.args(["-l", "-i", "-c", &probe]);
     crate::child_env::scrub(&mut cmd);
     let started = Instant::now();
     let output = capture_stdout(cmd, LOGIN_PATH_TIMEOUT, Some(PATH_END))?;
@@ -407,6 +406,25 @@ fn read_login_path() -> Option<String> {
     );
     path
 }
+
+/// The login shell, under a write-refusing Seatbelt profile on macOS.
+#[cfg(unix)]
+fn login_probe_command(shell: &str) -> Command {
+    #[cfg(target_os = "macos")]
+    {
+        const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
+        if Path::new(SANDBOX_EXEC).exists() {
+            let mut cmd = Command::new(SANDBOX_EXEC);
+            cmd.args(["-p", LOGIN_PROBE_PROFILE, shell]);
+            return cmd;
+        }
+    }
+    Command::new(shell)
+}
+
+/// Everything the shell does, except write: no file, no rc file, no history.
+#[cfg(target_os = "macos")]
+const LOGIN_PROBE_PROFILE: &str = "(version 1)(allow default)(deny file-write*)";
 
 #[cfg(not(unix))]
 fn read_login_path() -> Option<String> {
@@ -664,7 +682,9 @@ fn write_typescript_launcher(hermes_home: &Path) -> Option<PathBuf> {
 /// is resolved through `rustup which` to the toolchain's own binary.
 fn find_rust_analyzer(path: &OsStr) -> Option<PathBuf> {
     let found = which_in("rust-analyzer", path)?;
-    let Some(rustup) = which_in("rustup", path) else {
+    // The app runs `rustup` itself, outside the jail, so it never takes one
+    // from `path`: the runtime's `PATH` holds folders the jail can write.
+    let Some(rustup) = trusted_rustup() else {
         return Some(found);
     };
     if !same_binary(&found, &rustup) {
@@ -678,6 +698,24 @@ fn find_rust_analyzer(path: &OsStr) -> Option<PathBuf> {
     let output = capture_stdout(cmd, Duration::from_secs(5), None)?;
     let real = PathBuf::from(output.trim());
     (real.is_absolute() && is_executable(&real)).then_some(real)
+}
+
+/// A `rustup` the app may run unjailed: only from where rustup installs
+/// itself (`~/.cargo/bin`, whose writes the jail refuses by name) or a system
+/// package prefix, never a folder found on the runtime's `PATH`.
+fn trusted_rustup() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(cargo_home) = std::env::var_os("CARGO_HOME").filter(|value| !value.is_empty()) {
+        candidates.push(PathBuf::from(cargo_home).join("bin").join("rustup"));
+    }
+    if let Some(home) = home_dir() {
+        candidates.push(home.join(".cargo").join("bin").join("rustup"));
+    }
+    candidates.push(PathBuf::from("/opt/homebrew/bin/rustup"));
+    candidates.push(PathBuf::from("/usr/local/bin/rustup"));
+    candidates
+        .into_iter()
+        .find(|candidate| is_executable(candidate))
 }
 
 /// Whether two paths are the same program (a symlink or a hard link).
@@ -1316,5 +1354,16 @@ mod tests {
         let removed = prune_cargo_targets(home.path(), Some(&folders[4]), later);
         assert_eq!(removed.len(), CARGO_TARGET_KEEP - 1);
         assert!(cargo_target_dir(home.path(), Some(&folders[4])).is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_login_shell_probe_cannot_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("written");
+        let mut cmd = login_probe_command("/bin/sh");
+        cmd.args(["-c", &format!("echo x > '{}'", target.display())]);
+        let _ = cmd.status();
+        assert!(!target.exists(), "the probe wrote a file");
     }
 }
