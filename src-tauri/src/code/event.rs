@@ -69,6 +69,10 @@ pub enum CodeEvent {
         /// Cumulative, every invocation of the run included.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cost_usd: Option<f64>,
+        /// `cost_usd` leaves out a completion the operator may have billed:
+        /// one cut before its usage arrived, or still under way at the end.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        cost_incomplete: bool,
         turns: u32,
     },
     #[serde(rename = "turn.started")]
@@ -122,11 +126,15 @@ pub enum CodeEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_ms: Option<u64>,
     },
-    /// What a shell tool printed.
+    /// What a shell tool printed, or a chunk of a background process's
+    /// output (`process_id`, no `call_id`).
     #[serde(rename = "terminal.output")]
     TerminalOutput {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         call_id: Option<String>,
+        /// The engine's id of a background process the agent started.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        process_id: Option<String>,
         text: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         exit_code: Option<i64>,
@@ -547,8 +555,16 @@ pub(crate) mod tests {
             },
             CodeEvent::TerminalOutput {
                 call_id: Some("call-3".into()),
+                process_id: None,
                 text: "test result: FAILED. 22 passed; 1 failed\n".into(),
                 exit_code: Some(101),
+                truncated: false,
+            },
+            CodeEvent::TerminalOutput {
+                call_id: None,
+                process_id: Some("proc_1a2b".into()),
+                text: "  VITE v6 ready in 412 ms\n".into(),
+                exit_code: None,
                 truncated: false,
             },
             CodeEvent::ApprovalRequested {
@@ -634,6 +650,7 @@ pub(crate) mod tests {
                 status: RunStatus::BudgetExceeded,
                 reason: Some("The run budget of $2.00 was reached.".into()),
                 cost_usd: Some(2.01),
+                cost_incomplete: true,
                 turns: 1,
             },
         ]

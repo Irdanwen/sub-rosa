@@ -5,10 +5,15 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
 use serde_json::{json, Value};
+use tokio::sync::watch;
 
 use super::{
     args::{PromptSource, RunArgs},
@@ -16,13 +21,14 @@ use super::{
     gateway::Gateway,
     state::{self, RunLock, RunState},
 };
-use crate::carpe_diem::{cache_stats, local_session, settings, sidecar};
+use crate::carpe_diem::{cache_stats, local_session, orphan, settings, sidecar};
 use crate::code::event::{
     ApprovalDecision, ApprovalKind, CodeEvent, Engine, LineWriter, Resolver, RunMode, RunStatus,
     TurnStatus,
 };
-use crate::code::hermes_adapter::HermesAdapter;
+use crate::code::hermes_adapter::{self, HermesAdapter};
 use crate::hermes_bridge::headless::{self, HeadlessOptions};
+use crate::redacted::Redacted;
 
 pub const EXIT_COMPLETED: i32 = 0;
 pub const EXIT_FAILED: i32 = 1;
@@ -32,8 +38,12 @@ pub const EXIT_INTERRUPTED: i32 = 130;
 
 /// How often the ledger is read for `usage` and the budget while a turn runs.
 const METER_EVERY: Duration = Duration::from_millis(500);
-/// How long an interrupted turn gets to close on its own.
+/// How long an interrupted turn gets to close on its own. A second Ctrl-C
+/// (or SIGTERM) does not wait for it.
 const INTERRUPT_GRACE: Duration = Duration::from_secs(15);
+/// How long the end of a run waits for completions still streaming, so their
+/// cost is counted rather than called incomplete.
+const SETTLE_WAIT: Duration = Duration::from_secs(3);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// The answer a question gets when no one is there to answer it.
 const UNATTENDED_ANSWER: &str = "No one can answer during this run. Proceed with your best judgment and say in your final answer what you assumed.";
@@ -45,8 +55,13 @@ const KEY_ENV: &str = "SUBROSA_DEV_API_KEY";
 /// A `june` backend binary to run instead of this build's default.
 const BACKEND_BIN_ENV: &str = "SUBROSA_JUNE_API_BIN";
 /// A file that receives every raw gateway frame, one per line (debugging and
-/// recording adapter fixtures; it holds the conversation in clear).
+/// recording adapter fixtures; it holds the conversation in clear, so it is
+/// written owner-only).
 const TRACE_ENV: &str = "SUBROSA_CODE_TRACE";
+/// The records of the processes a run started (`carpe_diem::orphan`), so the
+/// next run stops the ones a crashed run left behind.
+const BACKEND_RECORD: &str = "june-api.pid";
+const RUNTIME_RECORD: &str = "hermes.pid";
 
 /// How a run ended.
 #[derive(Debug)]
@@ -60,6 +75,13 @@ impl Finish {
         Self {
             status: RunStatus::Failed,
             reason: Some(reason.into()),
+        }
+    }
+
+    fn interrupted(reason: &str) -> Self {
+        Self {
+            status: RunStatus::Interrupted,
+            reason: Some(reason.to_string()),
         }
     }
 }
@@ -81,7 +103,103 @@ impl<W: Write> Emitter<W> {
     }
 }
 
-pub(super) async fn run(args: RunArgs) -> i32 {
+/// Reads the key from [`KEY_ENV`] and takes it out of this process's
+/// environment before anything else runs, so no child inherits it and no
+/// other process of the user reads it back. Removing the variable is not
+/// enough: `ps eww` and `KERN_PROCARGS2` (or `/proc/<pid>/environ`) read the
+/// environment block the process started with, which `unsetenv` leaves in
+/// place, so its bytes are overwritten first. Called from `main` before the
+/// async runtime starts, while this is the only thread.
+pub(super) fn take_env_key() -> Option<Redacted<String>> {
+    let value = std::env::var(KEY_ENV).ok();
+    scrub_env_var(KEY_ENV);
+    value
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
+        .map(Redacted::new)
+}
+
+fn scrub_env_var(name: &str) {
+    #[cfg(unix)]
+    if let Ok(c_name) = std::ffi::CString::new(name) {
+        // SAFETY: getenv returns null or a pointer to the NUL-terminated
+        // value inside this process's environment block, which is writable;
+        // the bytes are overwritten in place, never past the terminator. Only
+        // called while no other thread runs (see `take_env_key`).
+        #[allow(unsafe_code)]
+        unsafe {
+            let value = libc::getenv(c_name.as_ptr());
+            if !value.is_null() {
+                std::ptr::write_bytes(value, 0, libc::strlen(value));
+            }
+        }
+    }
+    std::env::remove_var(name);
+}
+
+/// Ctrl-C and SIGTERM, counted. The first one stops the turn and lets it
+/// close; the second stops the run at once.
+fn listen_for_stops() -> watch::Receiver<u32> {
+    let (sender, receiver) = watch::channel(0u32);
+    tokio::spawn(async move {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let (Ok(mut interrupt), Ok(mut terminate)) = (
+                signal(SignalKind::interrupt()),
+                signal(SignalKind::terminate()),
+            ) else {
+                return;
+            };
+            loop {
+                tokio::select! {
+                    _ = interrupt.recv() => {}
+                    _ = terminate.recv() => {}
+                }
+                sender.send_modify(|count| *count += 1);
+            }
+        }
+        #[cfg(not(unix))]
+        loop {
+            if tokio::signal::ctrl_c().await.is_err() {
+                return;
+            }
+            sender.send_modify(|count| *count += 1);
+        }
+    });
+    receiver
+}
+
+/// Resolves when the run must stop at once: a second stop signal, or a first
+/// one while no turn runs (there is nothing to close then).
+async fn stop_at_once(mut stops: watch::Receiver<u32>, turn_running: Arc<AtomicBool>) {
+    loop {
+        if stops.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+        let count = *stops.borrow_and_update();
+        if count >= 2 || (count >= 1 && !turn_running.load(Ordering::SeqCst)) {
+            return;
+        }
+    }
+}
+
+/// What one invocation works with, owned here so that a run stopped at once
+/// (its `drive` future dropped) can still close its turn, meter what it spent
+/// and stop what it started.
+struct Ctx<'a, W: Write> {
+    out: Emitter<W>,
+    state: RunState,
+    session: Session,
+    adapter: HermesAdapter,
+    budget: BudgetMeter,
+    resumed: bool,
+    args: &'a RunArgs,
+    data_dir: &'a Path,
+    turn_running: Arc<AtomicBool>,
+}
+
+pub(super) async fn run(args: RunArgs, env_key: Option<Redacted<String>>) -> i32 {
     let Some(data_dir) = args.data_dir.clone().or_else(default_data_dir) else {
         eprintln!("The app's data folder cannot be found here; pass --data-dir.");
         return EXIT_USAGE;
@@ -93,6 +211,7 @@ pub(super) async fn run(args: RunArgs) -> i32 {
             return EXIT_USAGE;
         }
     };
+    let stops = listen_for_stops();
     let _lock = match RunLock::acquire(&data_dir) {
         Ok(lock) => lock,
         Err(message) => {
@@ -100,34 +219,70 @@ pub(super) async fn run(args: RunArgs) -> i32 {
             return EXIT_FAILED;
         }
     };
-    let (mut state, resumed) = match prepare_state(&args, &data_dir) {
+    reap_orphans(&data_dir);
+    let (state, resumed) = match prepare_state(&args, &data_dir) {
         Ok(prepared) => prepared,
         Err(message) => {
             eprintln!("{message}");
             return EXIT_USAGE;
         }
     };
-    let mut out = Emitter {
-        lines: LineWriter::new(state.run_id.clone(), state.last_seq),
-        out: std::io::stdout(),
+    let turn_running = Arc::new(AtomicBool::new(false));
+    let mut ctx = Ctx {
+        out: Emitter {
+            lines: LineWriter::new(state.run_id.clone(), state.last_seq),
+            out: std::io::stdout(),
+        },
+        budget: BudgetMeter::new(state.budget_usd, state.spent_usd, cache_stats::snapshot()),
+        state,
+        session: Session::new(&data_dir),
+        adapter: HermesAdapter::new(),
+        resumed,
+        args: &args,
+        data_dir: &data_dir,
+        turn_running: turn_running.clone(),
     };
 
-    let finish = {
-        let mut session = Session::default();
-        let finish = drive(
-            &mut out,
-            &mut state,
-            &mut session,
-            resumed,
-            &args,
-            &data_dir,
-            &prompt,
-        )
-        .await;
-        session.stop().await;
-        finish
+    let finish = tokio::select! {
+        finish = drive(&mut ctx, &prompt, env_key, stops.clone()) => finish,
+        () = stop_at_once(stops, turn_running) => {
+            if let Some(event) = ctx.adapter.end_turn(TurnStatus::Interrupted) {
+                ctx.out.emit(event);
+            }
+            Finish::interrupted("The run was stopped at once.")
+        }
     };
+    ctx.turn_running.store(false, Ordering::SeqCst);
+    let started_a_turn = ctx.state.turns > 0 && ctx.session.runtime.is_some();
+    let Ctx {
+        mut out,
+        mut state,
+        mut session,
+        mut budget,
+        ..
+    } = ctx;
+
+    // The last completion is metered when its body ends, a moment before or
+    // after the runtime closes the turn; one still streaming gets a short
+    // while to end before the runtime is stopped.
+    if started_a_turn {
+        let deadline = Instant::now() + SETTLE_WAIT;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        while cache_stats::snapshot().open_streams > 0 && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+    session.stop().await;
     local_session::clear();
+    let stats = cache_stats::snapshot();
+    state.spent_usd = budget.spent_usd(stats);
+    if let Some(usage) = budget.report(stats) {
+        out.emit(usage);
+    }
+    let cost_incomplete = budget.cost_incomplete(stats);
+    if cost_incomplete {
+        eprintln!("A completion ended before the operator reported its cost, so the cost shown may be short of what was billed.");
+    }
 
     if let Some(reason) = finish.reason.as_deref() {
         eprintln!("{reason}");
@@ -139,6 +294,7 @@ pub(super) async fn run(args: RunArgs) -> i32 {
         status: finish.status,
         reason: finish.reason,
         cost_usd: Some(state.spent_usd),
+        cost_incomplete,
         turns,
     });
     state.last_seq = out.lines.last_seq();
@@ -153,71 +309,98 @@ pub(super) async fn run(args: RunArgs) -> i32 {
     }
 }
 
+/// Stops the backend and the runtime a crashed run left behind, if they still
+/// run the executable recorded for them and nothing else owns them
+/// (`carpe_diem::orphan`). Both lead their own process group.
+fn reap_orphans(data_dir: &Path) {
+    let dir = data_dir.join(headless::CODE_CLI_DIR);
+    for record in [BACKEND_RECORD, RUNTIME_RECORD] {
+        if let Some(pid) = orphan::reap_group(&dir.join(record)) {
+            eprintln!("Stopped process {pid}, left running by an earlier code run.");
+        }
+    }
+}
+
 /// Everything a run started, stopped in reverse order whatever happened.
-#[derive(Default)]
 struct Session {
     backend: Option<Child>,
     proxy: Option<headless::HeadlessProxy>,
     runtime: Option<headless::HeadlessRuntime>,
     gateway: Option<Gateway>,
+    records: PathBuf,
 }
 
 impl Session {
+    fn new(data_dir: &Path) -> Self {
+        Self {
+            backend: None,
+            proxy: None,
+            runtime: None,
+            gateway: None,
+            records: data_dir.join(headless::CODE_CLI_DIR),
+        }
+    }
+
     async fn stop(&mut self) {
         if let Some(gateway) = self.gateway.take() {
-            gateway.close().await;
+            let _ = tokio::time::timeout(Duration::from_secs(2), gateway.close()).await;
         }
         if let Some(mut runtime) = self.runtime.take() {
+            let pid = runtime.pid();
             runtime.shutdown();
+            if let Some(pid) = pid {
+                orphan::forget(&self.records.join(RUNTIME_RECORD), pid);
+            }
         }
         self.proxy = None;
+        self.stop_backend();
+    }
+
+    fn stop_backend(&mut self) {
         if let Some(mut backend) = self.backend.take() {
+            let pid = backend.id();
+            headless::kill_group(pid);
             let _ = backend.kill();
             let _ = backend.wait();
+            orphan::forget(&self.records.join(BACKEND_RECORD), pid);
         }
     }
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
-        if let Some(mut backend) = self.backend.take() {
-            let _ = backend.kill();
-            let _ = backend.wait();
-        }
+        self.stop_backend();
     }
 }
 
 #[allow(clippy::too_many_lines)]
 async fn drive<W: Write>(
-    out: &mut Emitter<W>,
-    state: &mut RunState,
-    session: &mut Session,
-    resumed: bool,
-    args: &RunArgs,
-    data_dir: &Path,
+    ctx: &mut Ctx<'_, W>,
     prompt: &str,
+    env_key: Option<Redacted<String>>,
+    mut stops: watch::Receiver<u32>,
 ) -> Finish {
-    let mut budget = BudgetMeter::new(state.budget_usd, state.spent_usd, cache_stats::snapshot());
-    if budget.exhausted(cache_stats::snapshot()) {
+    let data_dir = ctx.data_dir;
+    if ctx.budget.exhausted(cache_stats::snapshot()) {
         return Finish {
             status: RunStatus::BudgetExceeded,
             reason: Some(format!(
                 "The run budget of ${:.2} was already reached by earlier turns; raise it with --budget to go on.",
-                state.budget_usd
+                ctx.state.budget_usd
             )),
         };
     }
     // Re-validated on every invocation: a folder can vanish or turn into a
     // symlink between two turns.
     let dir = match crate::hermes_working_dir::validate_working_dir_at(
-        &state.dir.to_string_lossy(),
+        &ctx.state.dir.to_string_lossy(),
         Some(data_dir),
     ) {
         Ok(valid) => valid.path,
         Err(error) => return Finish::failed(error.message),
     };
     let jail = headless::sandbox_available();
-    if state.mode == RunMode::Plan && !jail {
+    if ctx.state.mode == RunMode::Plan && !jail {
         return Finish::failed(
             "Plan mode keeps the folder read-only with the macOS write jail (Seatbelt), which is not available here. Run in build mode, or on a Mac.",
         );
@@ -226,27 +409,36 @@ async fn drive<W: Write>(
         eprintln!("Running WITHOUT an OS sandbox: the agent can write anywhere you can.");
     }
 
-    settings::load_from_config_dir(&default_config_dir().unwrap_or_else(|| data_dir.to_path_buf()));
-    let Some((base_url, key)) = resolve_key() else {
+    // The app's settings, read without an app handle: the base URL, and the
+    // protected-mode switches that the guard ledger, the rendered config and
+    // the chat proxy (`protected_mode::check_chat`) enforce. Without the
+    // second load they all read protected mode as off.
+    let config_dir = default_config_dir().unwrap_or_else(|| data_dir.to_path_buf());
+    settings::load_from_config_dir(&config_dir);
+    crate::protected_mode::load_from_config_dir(&config_dir);
+    let Some((base_url, key)) = resolve_key(env_key) else {
         return Finish::failed(format!(
             "No Carpe Diem key: set {KEY_ENV}, or store a key in Sub Rosa."
         ));
     };
 
     match start_backend(data_dir, &base_url, key.expose_str()).await {
-        Ok(child) => session.backend = Some(child),
+        Ok(child) => {
+            orphan::remember(&ctx.session.records.join(BACKEND_RECORD), child.id());
+            ctx.session.backend = Some(child);
+        }
         Err(message) => return Finish::failed(message),
     }
     drop(key);
-    let proxy = match headless::start_provider_proxy(state.model.clone()).await {
+    let proxy = match headless::start_provider_proxy(ctx.state.model.clone()).await {
         Ok(proxy) => proxy,
         Err(error) => return Finish::failed(error.message),
     };
     let runtime = match headless::start_runtime(HeadlessOptions {
         data_dir,
         working_dir: &dir,
-        write_grant: state.mode == RunMode::Build,
-        model: &state.model,
+        write_grant: ctx.state.mode == RunMode::Build,
+        model: &ctx.state.model,
         proxy_port: proxy.port,
         proxy_token: &proxy.token,
     })
@@ -255,11 +447,14 @@ async fn drive<W: Write>(
         Ok(runtime) => runtime,
         Err(error) => return Finish::failed(error.message),
     };
-    session.proxy = Some(proxy);
+    if let Some(pid) = runtime.pid() {
+        orphan::remember(&ctx.session.records.join(RUNTIME_RECORD), pid);
+    }
+    ctx.session.proxy = Some(proxy);
     let sandboxed = runtime.sandboxed;
     let gateway_path = runtime.gateway_path();
     let runtime_port = runtime.port;
-    session.runtime = Some(runtime);
+    ctx.session.runtime = Some(runtime);
     let gateway = match Gateway::connect(runtime_port, &gateway_path).await {
         Ok(gateway) => gateway,
         Err(error) => {
@@ -268,32 +463,35 @@ async fn drive<W: Write>(
             ))
         }
     };
-    let gateway = session.gateway.insert(gateway);
+    let gateway = ctx.session.gateway.insert(gateway);
 
-    let runtime_session = match open_session(gateway, state, &dir, resumed).await {
+    let runtime_session = match open_session(gateway, &mut ctx.state, &dir, ctx.resumed).await {
         Ok(id) => id,
         Err(message) => return Finish::failed(message),
     };
-    if let Err(error) = state::save(data_dir, state) {
+    if let Err(error) = state::save(data_dir, &mut ctx.state) {
         return Finish::failed(format!("The run's state could not be saved: {error}"));
     }
-    out.emit(CodeEvent::RunStarted {
+    ctx.out.emit(CodeEvent::RunStarted {
         engine: Engine::Hermes,
-        model: state.model.clone(),
-        mode: state.mode,
+        model: ctx.state.model.clone(),
+        mode: ctx.state.mode,
         dir: dir.to_string_lossy().into_owned(),
-        budget_usd: Some(state.budget_usd),
-        spent_usd: resumed.then_some(round_usd(state.spent_usd)),
-        resumed,
+        budget_usd: Some(ctx.state.budget_usd),
+        spent_usd: ctx.resumed.then_some(round_usd(ctx.state.spent_usd)),
+        resumed: ctx.resumed,
         sandboxed,
-        session_id: state.hermes_session_id.clone(),
+        session_id: ctx.state.hermes_session_id.clone(),
     });
 
-    let mut adapter = HermesAdapter::new();
-    adapter.watch_session(runtime_session.clone());
-    state.turns += 1;
-    out.emit(adapter.begin_turn(format!("turn-{}", state.turns)));
-    let text = match state.mode {
+    ctx.adapter.watch_session(runtime_session.clone());
+    ctx.state.turns += 1;
+    // From here a first stop signal interrupts the turn instead of the run.
+    ctx.turn_running.store(true, Ordering::SeqCst);
+    let _ = stops.borrow_and_update();
+    let begin = ctx.adapter.begin_turn(format!("turn-{}", ctx.state.turns));
+    ctx.out.emit(begin);
+    let text = match ctx.state.mode {
         RunMode::Plan => format!("{PLAN_PREFIX}{prompt}"),
         RunMode::Build => prompt.to_string(),
     };
@@ -305,8 +503,8 @@ async fn drive<W: Write>(
         )
         .await
     {
-        if let Some(event) = adapter.end_turn(TurnStatus::Failed) {
-            out.emit(event);
+        if let Some(event) = ctx.adapter.end_turn(TurnStatus::Failed) {
+            ctx.out.emit(event);
         }
         return Finish::failed(error.message);
     }
@@ -315,23 +513,22 @@ async fn drive<W: Write>(
     let mut meter = tokio::time::interval(METER_EVERY);
     let mut stop_requested: Option<RunStatus> = None;
     let mut stop_deadline: Option<Instant> = None;
-    let mut signal = Box::pin(shutdown_signal());
     let mut last_turn_status = TurnStatus::Completed;
     let mut last_error: Option<String> = None;
 
-    while adapter.turn_open() {
+    while ctx.adapter.turn_open() {
         tokio::select! {
             frame = gateway.next_event() => {
                 let Some(frame) = frame else {
                     let message = "The agent runtime closed its gateway in the middle of the turn.";
                     last_error = Some(message.to_string());
-                    out.emit(CodeEvent::Error {
+                    ctx.out.emit(CodeEvent::Error {
                         message: message.into(),
                         code: Some("hermes_gateway_closed".into()),
                         recoverable: false,
                     });
-                    if let Some(event) = adapter.end_turn(TurnStatus::Failed) {
-                        out.emit(event);
+                    if let Some(event) = ctx.adapter.end_turn(TurnStatus::Failed) {
+                        ctx.out.emit(event);
                     }
                     last_turn_status = TurnStatus::Failed;
                     break;
@@ -339,10 +536,26 @@ async fn drive<W: Write>(
                 if let Some(file) = trace.as_mut() {
                     let _ = writeln!(file, "{frame}");
                 }
-                for event in adapter.adapt(&frame) {
+                if let Some(request_id) = hermes_adapter::terminal_read_request(&frame) {
+                    // No window, so no terminal to read: answer at once rather
+                    // than let the tool wait out its timeout.
+                    if let Err(error) = gateway
+                        .request(
+                            "terminal.read.respond",
+                            json!({ "request_id": request_id, "text": "" }),
+                            REQUEST_TIMEOUT,
+                        )
+                        .await
+                    {
+                        eprintln!("terminal.read.respond failed: {}", error.message);
+                    }
+                }
+                for event in ctx.adapter.adapt(&frame) {
                     match &event {
                         CodeEvent::TurnFinished { status, .. } => last_turn_status = *status,
-                        CodeEvent::Error { message, .. } => last_error = Some(message.clone()),
+                        CodeEvent::Error { message, recoverable: false, .. } => {
+                            last_error = Some(message.clone());
+                        }
                         _ => {}
                     }
                     let request = match &event {
@@ -351,11 +564,17 @@ async fn drive<W: Write>(
                         }
                         _ => None,
                     };
-                    out.emit(event);
+                    ctx.out.emit(event);
                     if let Some((request_id, kind)) = request {
-                        let decision =
-                            answer_request(gateway, &runtime_session, &request_id, kind, args.approvals).await;
-                        out.emit(CodeEvent::ApprovalResolved {
+                        let decision = answer_request(
+                            gateway,
+                            &runtime_session,
+                            &request_id,
+                            kind,
+                            ctx.args.approvals,
+                        )
+                        .await;
+                        ctx.out.emit(CodeEvent::ApprovalResolved {
                             request_id,
                             decision,
                             by: Resolver::Policy,
@@ -365,16 +584,23 @@ async fn drive<W: Write>(
             }
             _ = meter.tick() => {
                 let stats = cache_stats::snapshot();
-                state.spent_usd = budget.spent_usd(stats);
-                if let Some(usage) = budget.report(stats) {
-                    out.emit(usage);
+                ctx.state.spent_usd = ctx.budget.spent_usd(stats);
+                if let Some(usage) = ctx.budget.report(stats) {
+                    ctx.out.emit(usage);
+                    // What was spent is on disk as soon as it is known: a run
+                    // killed outright (-9) still resumes from it, not from
+                    // what it had spent when it started.
+                    ctx.state.last_seq = ctx.out.lines.last_seq();
+                    if let Err(error) = state::save(data_dir, &mut ctx.state) {
+                        eprintln!("The run's state could not be saved: {error}");
+                    }
                 }
                 if stop_requested.is_none() {
-                    if budget.exhausted(stats) {
+                    if ctx.budget.exhausted(stats) {
                         stop_requested = Some(RunStatus::BudgetExceeded);
-                    } else if budget.unpriced(stats) {
-                        out.emit(CodeEvent::Error {
-                            message: "The operator reported no price for this model's completions, so the run budget cannot be enforced; the run stops.".into(),
+                    } else if ctx.budget.unpriced(stats) {
+                        ctx.out.emit(CodeEvent::Error {
+                            message: "The operator reported no price for a completion of this model, so the run budget cannot be enforced; the run stops.".into(),
                             code: Some("budget_unenforceable".into()),
                             recoverable: false,
                         });
@@ -386,42 +612,34 @@ async fn drive<W: Write>(
                     }
                 }
                 if stop_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-                    if let Some(event) = adapter.end_turn(TurnStatus::Interrupted) {
-                        out.emit(event);
+                    if let Some(event) = ctx.adapter.end_turn(TurnStatus::Interrupted) {
+                        ctx.out.emit(event);
                     }
                     last_turn_status = TurnStatus::Interrupted;
                 }
             }
-            () = &mut signal, if stop_requested.is_none() => {
-                stop_requested = Some(RunStatus::Interrupted);
-                interrupt(gateway, &runtime_session).await;
-                stop_deadline = Some(Instant::now() + INTERRUPT_GRACE);
+            changed = stops.changed(), if stop_requested.is_none() => {
+                if changed.is_ok() {
+                    stop_requested = Some(RunStatus::Interrupted);
+                    eprintln!("Stopping the turn; press Ctrl-C again to stop at once.");
+                    interrupt(gateway, &runtime_session).await;
+                    stop_deadline = Some(Instant::now() + INTERRUPT_GRACE);
+                }
             }
         }
     }
-
-    // The last completion is metered when its body ends, a moment before or
-    // after the runtime closes the turn.
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    let stats = cache_stats::snapshot();
-    state.spent_usd = budget.spent_usd(stats);
-    if let Some(usage) = budget.report(stats) {
-        out.emit(usage);
-    }
+    ctx.turn_running.store(false, Ordering::SeqCst);
 
     match stop_requested {
         Some(RunStatus::BudgetExceeded) => Finish {
             status: RunStatus::BudgetExceeded,
             reason: Some(format!(
                 "The run budget of ${:.2} was reached (spent ${:.4}); the turn was stopped.",
-                budget.limit_usd(),
-                state.spent_usd
+                ctx.budget.limit_usd(),
+                ctx.state.spent_usd
             )),
         },
-        Some(RunStatus::Interrupted) => Finish {
-            status: RunStatus::Interrupted,
-            reason: Some("The run was interrupted.".into()),
-        },
+        Some(RunStatus::Interrupted) => Finish::interrupted("The run was interrupted."),
         Some(status) => Finish {
             status,
             reason: Some("The run budget cannot be enforced on this model.".into()),
@@ -431,10 +649,9 @@ async fn drive<W: Write>(
                 status: RunStatus::Completed,
                 reason: None,
             },
-            TurnStatus::Interrupted => Finish {
-                status: RunStatus::Interrupted,
-                reason: Some("The agent runtime interrupted the turn.".into()),
-            },
+            TurnStatus::Interrupted => {
+                Finish::interrupted("The agent runtime interrupted the turn.")
+            }
             TurnStatus::Failed => {
                 Finish::failed(last_error.unwrap_or_else(|| "The turn failed.".to_string()))
             }
@@ -545,29 +762,6 @@ async fn interrupt(gateway: &mut Gateway, session_id: &str) {
     }
 }
 
-/// Ctrl-C, or SIGTERM where there is one.
-async fn shutdown_signal() {
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{signal, SignalKind};
-        match signal(SignalKind::terminate()) {
-            Ok(mut terminate) => {
-                tokio::select! {
-                    _ = tokio::signal::ctrl_c() => {}
-                    _ = terminate.recv() => {}
-                }
-            }
-            Err(_) => {
-                let _ = tokio::signal::ctrl_c().await;
-            }
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = tokio::signal::ctrl_c().await;
-    }
-}
-
 /// A new run's state, or a resumed one's with the overrides it allows.
 fn prepare_state(args: &RunArgs, data_dir: &Path) -> Result<(RunState, bool), String> {
     if let Some(run_id) = &args.resume {
@@ -644,19 +838,14 @@ fn read_prompt(source: &PromptSource) -> Result<String, String> {
     Ok(text)
 }
 
-/// The key from the environment first (without touching the keychain, which
-/// could prompt with no one to answer), else the app's own.
-fn resolve_key() -> Option<(String, crate::redacted::Redacted<String>)> {
-    if let Ok(key) = std::env::var(KEY_ENV) {
-        let key = key.trim().to_string();
-        if !key.is_empty() {
-            return Some((
-                settings::file_base_url(),
-                crate::redacted::Redacted::new(key),
-            ));
-        }
+/// The key from the environment first (taken out of it by `main`, see
+/// [`take_env_key`]; the keychain is not touched, it could prompt with no one
+/// to answer), else the app's own.
+fn resolve_key(env_key: Option<Redacted<String>>) -> Option<(String, Redacted<String>)> {
+    match env_key {
+        Some(key) => Some((settings::file_base_url(), key)),
+        None => settings::credentials(),
     }
-    settings::credentials()
 }
 
 /// Starts this build's `june` backend on a free port, hands it its secrets on
@@ -673,7 +862,18 @@ async fn start_backend(data_dir: &Path, base_url: &str, key: &str) -> Result<Chi
             command.current_dir(cwd);
         }
     }
+    // Nothing credential-shaped from this process's environment: the key
+    // travels on the backend's stdin only, as the app's sidecar does.
+    crate::child_env::scrub(&mut command);
     sidecar::configure_backend(&mut command, port, base_url);
+    // Its own process group: a Ctrl-C in the terminal reaches this process,
+    // which stops the turn and then the backend, instead of killing the
+    // backend under a turn that is still closing.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        command.process_group(0);
+    }
     let log_path = data_dir.join(headless::CODE_CLI_DIR).join("june-api.log");
     let _ = std::fs::create_dir_all(data_dir.join(headless::CODE_CLI_DIR));
     // Never stdout: it carries the run's events.
@@ -733,11 +933,24 @@ fn resource_dir() -> Option<PathBuf> {
 
 fn open_trace() -> Option<std::fs::File> {
     let path = std::env::var_os(TRACE_ENV).filter(|path| !path.is_empty())?;
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .ok()
+    open_owner_only_append(Path::new(&path)).ok()
+}
+
+/// Opens `path` for appending, readable by its owner only: a trace holds the
+/// conversation in clear. An existing file is narrowed too.
+fn open_owner_only_append(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+        options.mode(0o600);
+        let file = options.open(path)?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        Ok(file)
+    }
+    #[cfg(not(unix))]
+    options.open(path)
 }
 
 fn string_field(value: &Value, keys: &[&str]) -> Option<String> {
@@ -948,6 +1161,229 @@ mod tests {
         );
         assert!(read_prompt(&PromptSource::Text("  ".into())).is_err());
         assert!(read_prompt(&PromptSource::File(dir.path().join("missing"))).is_err());
+    }
+
+    /// A first stop signal during a turn leaves the turn to close (the turn
+    /// loop interrupts it); a second one, or a first one outside a turn,
+    /// stops the run at once.
+    #[test]
+    fn a_second_stop_or_one_outside_a_turn_stops_at_once() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let soon = Duration::from_millis(50);
+            let (sender, receiver) = watch::channel(0u32);
+            let turn = Arc::new(AtomicBool::new(true));
+            let mut stop = Box::pin(stop_at_once(receiver.clone(), turn.clone()));
+            sender.send_modify(|count| *count += 1);
+            assert!(tokio::time::timeout(soon, &mut stop).await.is_err());
+            sender.send_modify(|count| *count += 1);
+            assert!(tokio::time::timeout(soon, &mut stop).await.is_ok());
+
+            let (sender, receiver) = watch::channel(0u32);
+            let idle = Arc::new(AtomicBool::new(false));
+            let stop = stop_at_once(receiver, idle);
+            sender.send_modify(|count| *count += 1);
+            assert!(tokio::time::timeout(soon, stop).await.is_ok());
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_trace_file_is_readable_by_its_owner_only() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("fresh.jsonl");
+        open_owner_only_append(&fresh).unwrap();
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&fresh), 0o600);
+        let old = dir.path().join("old.jsonl");
+        std::fs::write(&old, "{}\n").unwrap();
+        std::fs::set_permissions(&old, std::fs::Permissions::from_mode(0o644)).unwrap();
+        open_owner_only_append(&old).unwrap();
+        assert_eq!(mode(&old), 0o600);
+    }
+
+    /// The key leaves the environment block itself, not only the variable
+    /// list: run in a child process (this test binary again) whose
+    /// environment starts with the key, it must be gone from what other
+    /// processes can read (`KERN_PROCARGS2`, `/proc/self/environ`).
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn the_env_key_is_wiped_from_the_environment_block() {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "code::cli::run::tests::child_takes_the_env_key",
+                "--ignored",
+                "--test-threads=1",
+            ])
+            .env(KEY_ENV, "cdm_scrubprobe0123456789")
+            .env("SUBROSA_CODE_SCRUB_CHILD", "1")
+            .output()
+            .unwrap();
+        let report = String::from_utf8_lossy(&status.stdout);
+        // A filter that matched nothing would pass too: the child must have
+        // run its one test.
+        assert!(
+            report.contains("1 passed"),
+            "the child test did not run: {report}"
+        );
+        assert!(
+            status.status.success(),
+            "the child still exposed the key: {report}"
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    #[ignore = "run by the_env_key_is_wiped_from_the_environment_block"]
+    fn child_takes_the_env_key() {
+        if std::env::var_os("SUBROSA_CODE_SCRUB_CHILD").is_none() {
+            return;
+        }
+        let probe = b"cdm_scrubprobe0123456789";
+        let contains = |haystack: &[u8]| haystack.windows(probe.len()).any(|w| w == probe);
+        assert!(
+            contains(&own_environment_block().unwrap()),
+            "probe not set up"
+        );
+        let key = take_env_key().unwrap();
+        assert_eq!(key.expose_str(), "cdm_scrubprobe0123456789");
+        assert!(std::env::var(KEY_ENV).is_err());
+        assert!(!contains(&own_environment_block().unwrap()));
+    }
+
+    /// What another process of the user reads of this one's environment.
+    #[cfg(target_os = "macos")]
+    fn own_environment_block() -> Option<Vec<u8>> {
+        let pid = libc::c_int::try_from(std::process::id()).ok()?;
+        let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+        let mut size: libc::size_t = 0;
+        // SAFETY: a size query, then a read into a buffer of that size.
+        #[allow(unsafe_code)]
+        unsafe {
+            if libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                std::ptr::null_mut(),
+                &mut size,
+                std::ptr::null_mut(),
+                0,
+            ) != 0
+            {
+                return None;
+            }
+            let mut buffer = vec![0u8; size];
+            if libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                buffer.as_mut_ptr().cast(),
+                &mut size,
+                std::ptr::null_mut(),
+                0,
+            ) != 0
+            {
+                return None;
+            }
+            buffer.truncate(size);
+            Some(buffer)
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn own_environment_block() -> Option<Vec<u8>> {
+        std::fs::read("/proc/self/environ").ok()
+    }
+
+    /// A real, free start: the installed runtime under the CLI's profile
+    /// (plan mode: the folder denied, the app's venv not granted, no `.pyc`
+    /// written), its gateway answering, no prompt sent, so nothing billed.
+    /// Ignored by default: it needs the runtime the app installs. Run with
+    /// `cargo test --features code-cli --lib -- --ignored a_real_runtime`.
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "starts the installed agent runtime"]
+    fn a_real_runtime_starts_under_the_cli_profile_and_its_gateway_answers() {
+        let Some(app_data) = default_data_dir() else {
+            return;
+        };
+        let installed = app_data.join("hermes-runtime");
+        if !installed.join("runtime.json").exists() {
+            eprintln!("no installed runtime in {}; skipped", installed.display());
+            return;
+        }
+        // A data folder of its own, so a run in progress in the app's is not
+        // disturbed; the runtime is the installed one, by a link.
+        let data = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(&installed, data.path().join("hermes-runtime")).unwrap();
+        let work = tempfile::tempdir().unwrap();
+        let work_dir = work.path().canonicalize().unwrap();
+        let venv = installed.canonicalize().unwrap();
+        let started = std::time::SystemTime::now();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let proxy = headless::start_provider_proxy("kimi-k2-7-code".into())
+                .await
+                .unwrap();
+            let mut hermes = headless::start_runtime(HeadlessOptions {
+                data_dir: data.path(),
+                working_dir: &work_dir,
+                write_grant: false,
+                model: "kimi-k2-7-code",
+                proxy_port: proxy.port,
+                proxy_token: &proxy.token,
+            })
+            .await
+            .unwrap();
+            assert!(hermes.sandboxed);
+            let mut gateway = Gateway::connect(hermes.port, &hermes.gateway_path())
+                .await
+                .unwrap();
+            let listed = gateway
+                .request("session.list", json!({}), REQUEST_TIMEOUT)
+                .await;
+            assert!(listed.is_ok(), "the gateway did not answer: {listed:?}");
+            gateway.close().await;
+            hermes.shutdown();
+        });
+        let profile =
+            std::fs::read_to_string(data.path().join("code-cli/hermes-sandbox.sb")).unwrap();
+        assert!(profile.contains(&format!(
+            "(deny file-write* (subpath \"{}\"))",
+            work_dir.display()
+        )));
+        assert!(std::fs::read_dir(&work_dir).unwrap().next().is_none());
+        let written = newer_files(&venv, started);
+        assert!(
+            written.is_empty(),
+            "the runtime wrote its venv: {written:?}"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    fn newer_files(dir: &Path, since: std::time::SystemTime) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let Ok(meta) = entry.metadata() else { continue };
+                if meta.is_dir() {
+                    stack.push(entry.path());
+                } else if meta.modified().is_ok_and(|modified| modified > since) {
+                    found.push(entry.path());
+                }
+            }
+        }
+        found
     }
 
     #[test]

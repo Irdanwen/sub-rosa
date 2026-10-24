@@ -103,6 +103,8 @@ export type CodeEvent =
       status: RunStatus;
       reason?: string;
       cost_usd?: number;
+      /** `cost_usd` leaves out a completion the operator may have billed. */
+      cost_incomplete?: boolean;
       turns: number;
     }
   | { type: "turn.started"; turn_id: string }
@@ -133,6 +135,8 @@ export type CodeEvent =
   | {
       type: "terminal.output";
       call_id?: string;
+      /** A background process's output, apart from any call. */
+      process_id?: string;
       text: string;
       exit_code?: number;
       truncated: boolean;
@@ -204,6 +208,7 @@ const SHAPES: Record<CodeEventType, Shape> = {
     status: req("string", RUN_STATUSES),
     reason: opt("string"),
     cost_usd: opt("number"),
+    cost_incomplete: opt("boolean"),
     turns: req("number"),
   },
   "turn.started": { turn_id: req("string") },
@@ -234,6 +239,7 @@ const SHAPES: Record<CodeEventType, Shape> = {
   },
   "terminal.output": {
     call_id: opt("string"),
+    process_id: opt("string"),
     text: req("string"),
     exit_code: opt("number"),
     truncated: req("boolean"),
@@ -289,62 +295,75 @@ function matchesShape(value: Record<string, unknown>, shape: Shape): boolean {
   });
 }
 
+const DETAIL_SHAPE: Shape = {
+  path: opt("string"),
+  lines: opt("object"),
+  command: opt("string"),
+  query: opt("string"),
+  edit: opt("object"),
+};
+const LINES_SHAPE: Shape = { start: req("number"), end: req("number") };
+const EDIT_SHAPE: Shape = {
+  strategy: opt("string"),
+  formatter: opt("string"),
+  diagnostics: opt("array"),
+  added: req("number"),
+  removed: req("number"),
+  diff: opt("string"),
+  files: opt("array"),
+};
+const DIAGNOSTIC_SHAPE: Shape = {
+  severity: req("string", ["error", "warning", "info"]),
+  message: req("string"),
+  line: opt("number"),
+  source: opt("string"),
+};
+const TODO_SHAPE: Shape = {
+  id: opt("string"),
+  content: req("string"),
+  status: req("string", ["pending", "in_progress", "completed", "cancelled"]),
+};
+
+/**
+ * Every key this side knows, per place in a line. The parser ignores a key it
+ * does not know (a newer writer may add an optional field), so the contract
+ * test compares the Rust fixture's keys to these: a field Rust writes and
+ * TypeScript does not declare fails there instead of passing unseen.
+ */
+export const CODE_EVENT_KNOWN_KEYS = {
+  envelope: Object.keys(ENVELOPE),
+  events: Object.fromEntries(
+    Object.entries(SHAPES).map(([type, shape]) => [type, ["type", ...Object.keys(shape)]]),
+  ) as Record<CodeEventType, string[]>,
+  detail: Object.keys(DETAIL_SHAPE),
+  lines: Object.keys(LINES_SHAPE),
+  edit: Object.keys(EDIT_SHAPE),
+  diagnostic: Object.keys(DIAGNOSTIC_SHAPE),
+  todo: Object.keys(TODO_SHAPE),
+};
+
 function checkDetail(detail: unknown): boolean {
   if (detail === undefined) return true;
   if (!isRecord(detail)) return false;
-  const ok = matchesShape(detail, {
-    path: opt("string"),
-    lines: opt("object"),
-    command: opt("string"),
-    query: opt("string"),
-    edit: opt("object"),
-  });
-  if (!ok) return false;
+  if (!matchesShape(detail, DETAIL_SHAPE)) return false;
   if (
     detail.lines !== undefined &&
-    !matchesShape(detail.lines as Record<string, unknown>, {
-      start: req("number"),
-      end: req("number"),
-    })
+    !matchesShape(detail.lines as Record<string, unknown>, LINES_SHAPE)
   )
     return false;
   if (detail.edit === undefined) return true;
   const edit = detail.edit as Record<string, unknown>;
   return (
-    matchesShape(edit, {
-      strategy: opt("string"),
-      formatter: opt("string"),
-      diagnostics: opt("array"),
-      added: req("number"),
-      removed: req("number"),
-      diff: opt("string"),
-      files: opt("array"),
-    }) &&
+    matchesShape(edit, EDIT_SHAPE) &&
     ((edit.diagnostics as unknown[] | undefined) ?? []).every(
-      (item) =>
-        isRecord(item) &&
-        matchesShape(item, {
-          severity: req("string", ["error", "warning", "info"]),
-          message: req("string"),
-          line: opt("number"),
-          source: opt("string"),
-        }),
+      (item) => isRecord(item) && matchesShape(item, DIAGNOSTIC_SHAPE),
     )
   );
 }
 
 function checkTodos(items: unknown): boolean {
   return (
-    Array.isArray(items) &&
-    items.every(
-      (item) =>
-        isRecord(item) &&
-        matchesShape(item, {
-          id: opt("string"),
-          content: req("string"),
-          status: req("string", ["pending", "in_progress", "completed", "cancelled"]),
-        }),
-    )
+    Array.isArray(items) && items.every((item) => isRecord(item) && matchesShape(item, TODO_SHAPE))
   );
 }
 

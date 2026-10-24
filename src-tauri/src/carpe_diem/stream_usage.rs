@@ -18,13 +18,17 @@ const MAX_LINE_BYTES: usize = 64 * 1024;
 pub(crate) struct StreamUsageTap {
     lines: SseLines,
     usage: Option<TurnUsage>,
+    /// Whether the ledger has been told how this stream ended.
+    settled: bool,
 }
 
 impl StreamUsageTap {
     fn new() -> Self {
+        super::cache_stats::stream_opened();
         Self {
             lines: SseLines::bounded(MAX_LINE_BYTES),
             usage: None,
+            settled: false,
         }
     }
 
@@ -36,19 +40,29 @@ impl StreamUsageTap {
 
     /// Counts the usage found in the prompt-cache ledger, once the body has
     /// been read to its end. A turn abandoned halfway is never recorded: its
-    /// billing frame, which comes last, was not seen.
-    pub(crate) fn record(self) {
-        if let Some(usage) = self.finish() {
+    /// billing frame, which comes last, was not seen. It is counted as an
+    /// unmetered stream instead, when the tap is dropped.
+    pub(crate) fn record(mut self) {
+        let usage = self.finish();
+        if let Some(usage) = usage {
             super::cache_stats::record(usage);
         }
+        self.settle(usage.is_some());
     }
 
     /// The usage found, once the body has been read to its end.
-    fn finish(mut self) -> Option<TurnUsage> {
+    fn finish(&mut self) -> Option<TurnUsage> {
         if let Some(line) = self.lines.finish() {
             self.scan(&line);
         }
         self.usage
+    }
+
+    fn settle(&mut self, metered: bool) {
+        if !self.settled {
+            self.settled = true;
+            super::cache_stats::stream_closed(metered);
+        }
     }
 
     fn scan(&mut self, line: &str) {
@@ -64,6 +78,14 @@ impl StreamUsageTap {
         {
             self.usage = Some(usage);
         }
+    }
+}
+
+impl Drop for StreamUsageTap {
+    /// A stream dropped before its end (the runtime hung up, the connection
+    /// failed) was never metered.
+    fn drop(&mut self) {
+        self.settle(false);
     }
 }
 
@@ -99,6 +121,9 @@ fn turn_usage_from_value(usage: &serde_json::Value) -> Option<TurnUsage> {
         cache_creation_tokens: field(details, "cache_creation_input_tokens"),
         cache_saved_usdc_micro: field(Some(usage), "carpe_cache_saved_usdc_micro"),
         cost_usdc_micro: field(Some(usage), "carpe_cost_usdc_micro"),
+        cost_reported: usage
+            .get("carpe_cost_usdc_micro")
+            .is_some_and(serde_json::Value::is_number),
     })
 }
 
@@ -154,5 +179,32 @@ mod tests {
         let mut tap = usage_tap_for(200, TurnUsage::default(), "text/event-stream").expect("tap");
         tap.feed(b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n");
         assert_eq!(tap.finish(), None);
+    }
+
+    /// A stream the runtime hung up on halfway may still be billed; the
+    /// ledger counts it as unmetered so a budget can say its total is
+    /// incomplete. The counter only grows, so other tests cannot hide it.
+    #[test]
+    fn a_stream_dropped_halfway_is_counted_unmetered() {
+        let before = super::super::cache_stats::snapshot().unmetered_streams;
+        let mut tap = usage_tap_for(200, TurnUsage::default(), "text/event-stream").expect("tap");
+        tap.feed(b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n");
+        drop(tap);
+        assert!(super::super::cache_stats::snapshot().unmetered_streams > before);
+    }
+
+    /// A price of zero is a price (a free model); no price field is none.
+    #[test]
+    fn a_zero_price_is_reported_and_a_missing_one_is_not() {
+        let free = super::turn_usage_from_value(&serde_json::json!({
+            "prompt_tokens": 10, "completion_tokens": 2, "carpe_cost_usdc_micro": 0
+        }))
+        .expect("usage");
+        assert!(free.cost_reported);
+        let unpriced = super::turn_usage_from_value(&serde_json::json!({
+            "prompt_tokens": 10, "completion_tokens": 2
+        }))
+        .expect("usage");
+        assert!(!unpriced.cost_reported);
     }
 }

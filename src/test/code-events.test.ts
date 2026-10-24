@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CODE_EVENT_KNOWN_KEYS,
   CODE_EVENT_SCHEMA_VERSION,
   CODE_EVENT_TYPES,
   type CodeEvent,
@@ -27,6 +28,46 @@ describe("the code event contract (ADR-0123)", () => {
       if (parsed) seen.add(parsed.type);
     }
     expect([...seen].sort()).toEqual([...CODE_EVENT_TYPES].sort());
+  });
+
+  it("declares every key the Rust side writes, nested ones included", () => {
+    const known = CODE_EVENT_KNOWN_KEYS;
+    const unknownKeys = (value: Record<string, unknown>, keys: string[], where: string) =>
+      Object.keys(value)
+        .filter((key) => !keys.includes(key))
+        .map((key) => `${where}.${key}`);
+    const problems: string[] = [];
+    const check = (line: Record<string, unknown>, envelope: boolean) => {
+      const type = line.type as keyof typeof known.events;
+      const keys = [...(envelope ? known.envelope : []), ...(known.events[type] ?? [])];
+      problems.push(...unknownKeys(line, keys, String(type)));
+      const detail = line.detail as Record<string, unknown> | undefined;
+      if (detail) {
+        problems.push(...unknownKeys(detail, known.detail, `${type}.detail`));
+        if (detail.lines) {
+          problems.push(
+            ...unknownKeys(detail.lines as Record<string, unknown>, known.lines, `${type}.lines`),
+          );
+        }
+        const edit = detail.edit as Record<string, unknown> | undefined;
+        if (edit) {
+          problems.push(...unknownKeys(edit, known.edit, `${type}.edit`));
+          for (const diagnostic of (edit.diagnostics as Record<string, unknown>[]) ?? []) {
+            problems.push(...unknownKeys(diagnostic, known.diagnostic, `${type}.diagnostic`));
+          }
+        }
+      }
+      for (const item of (line.items as Record<string, unknown>[] | undefined) ?? []) {
+        problems.push(...unknownKeys(item, known.todo, `${type}.item`));
+      }
+    };
+    for (const line of contract.lines) check(line as Record<string, unknown>, true);
+    for (const event of recordedRun.events) check(event as Record<string, unknown>, false);
+    expect(problems).toEqual([]);
+    // And the check itself bites.
+    const before = problems.length;
+    check({ type: "usage", input_tokens: 1, output_tokens: 1, cached_tokens: 0, extra: 1 }, false);
+    expect(problems.length).toBe(before + 1);
   });
 
   it("reads every event the Hermes adapter made of a real run", () => {

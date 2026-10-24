@@ -130,73 +130,89 @@ fn now() -> String {
 /// One run at a time per data folder: the CLI's Hermes home has one
 /// `config.yaml`, and a second run rewriting it would point the first
 /// runtime at the second run's proxy. Held for the life of the value.
+///
+/// On unix the lock is an advisory `flock` on `run.lock`, which the kernel
+/// releases when the holder's descriptor closes, crash included: no stale
+/// lock to judge, and no window in which a lock just created (still empty)
+/// reads as abandoned. The file is never removed, since unlinking a locked
+/// file would let two runs lock two different files. The pid written in it
+/// only names the holder in the refusal.
 #[derive(Debug)]
 pub struct RunLock {
+    #[cfg(unix)]
+    _file: fs::File,
+    #[cfg(not(unix))]
     path: PathBuf,
 }
 
 impl RunLock {
+    #[cfg(unix)]
     pub fn acquire(data_dir: &Path) -> Result<Self, String> {
-        let dir = data_dir.join(crate::hermes_bridge::headless::CODE_CLI_DIR);
-        fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-        let path = dir.join("run.lock");
-        for _ in 0..2 {
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(mut file) => {
-                    let _ = write!(file, "{}", std::process::id());
-                    return Ok(Self { path });
-                }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    let holder = fs::read_to_string(&path)
-                        .ok()
-                        .and_then(|pid| pid.trim().parse::<u32>().ok());
-                    match holder {
-                        Some(pid) if process_alive(pid) => {
-                            return Err(format!(
-                                "Another code run is in progress in this data folder (process {pid}). Wait for it, or use another --data-dir."
-                            ));
-                        }
-                        // A crashed run left it behind.
-                        _ => {
-                            let _ = fs::remove_file(&path);
-                        }
-                    }
-                }
-                Err(error) => return Err(error.to_string()),
+        use std::os::unix::io::AsRawFd as _;
+        let path = lock_path(data_dir)?;
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|error| error.to_string())?;
+        // SAFETY: flock(2) on a descriptor this function owns; it reads and
+        // writes no memory.
+        #[allow(unsafe_code)]
+        let locked = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0;
+        if !locked {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::EWOULDBLOCK) {
+                return Err(format!("The run lock could not be taken: {error}"));
             }
+            let holder = fs::read_to_string(&path)
+                .ok()
+                .and_then(|pid| pid.trim().parse::<u32>().ok())
+                .map_or_else(String::new, |pid| format!(" (process {pid})"));
+            return Err(format!(
+                "Another code run is in progress in this data folder{holder}. Wait for it, or use another --data-dir."
+            ));
         }
-        Err("The run lock could not be taken.".into())
+        let _ = file.set_len(0);
+        let _ = write!(file, "{}", std::process::id());
+        Ok(Self { _file: file })
+    }
+
+    #[cfg(not(unix))]
+    pub fn acquire(data_dir: &Path) -> Result<Self, String> {
+        let path = lock_path(data_dir)?;
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                let _ = write!(file, "{}", std::process::id());
+                Ok(Self { path })
+            }
+            // Without a cheap liveness check, a lock is assumed live; delete
+            // it by hand after a crash (docs/code-cli.md).
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(format!(
+                "Another code run is in progress in this data folder, or one crashed: delete {} if none runs.",
+                path.display()
+            )),
+            Err(error) => Err(error.to_string()),
+        }
     }
 }
 
+fn lock_path(data_dir: &Path) -> Result<PathBuf, String> {
+    let dir = data_dir.join(crate::hermes_bridge::headless::CODE_CLI_DIR);
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    Ok(dir.join("run.lock"))
+}
+
+#[cfg(not(unix))]
 impl Drop for RunLock {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
     }
-}
-
-#[cfg(unix)]
-fn process_alive(pid: u32) -> bool {
-    let Ok(pid) = libc::pid_t::try_from(pid) else {
-        return false;
-    };
-    // Signal 0 checks existence; EPERM still means it exists.
-    // SAFETY: kill(2) with signal 0 sends nothing; it only reads the process
-    // table for a pid that came from a file we wrote.
-    #[allow(unsafe_code)]
-    let result = unsafe { libc::kill(pid, 0) };
-    result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-}
-
-#[cfg(not(unix))]
-fn process_alive(_pid: u32) -> bool {
-    // Without a cheap check, a lock is assumed live; remove it by hand after
-    // a crash (docs/code-cli.md).
-    true
 }
 
 #[cfg(test)]
@@ -258,20 +274,23 @@ mod tests {
         assert!(first < second);
     }
 
+    #[cfg(unix)]
     #[test]
-    fn the_lock_admits_one_run_and_recovers_from_a_dead_holder() {
+    fn the_lock_admits_one_run_and_frees_itself_with_its_holder() {
         let data = tempfile::tempdir().unwrap();
         let held = RunLock::acquire(data.path()).unwrap();
-        assert!(RunLock::acquire(data.path())
-            .unwrap_err()
-            .contains("Another code run"));
+        let refused = RunLock::acquire(data.path()).unwrap_err();
+        assert!(refused.contains("Another code run"), "{refused}");
+        assert!(refused.contains(&std::process::id().to_string()));
+        // A lock just taken, its pid not written yet, is still a lock: the
+        // file's content is never what decides.
+        fs::write(data.path().join("code-cli/run.lock"), "").unwrap();
+        assert!(RunLock::acquire(data.path()).is_err());
         drop(held);
         let again = RunLock::acquire(data.path()).unwrap();
         drop(again);
-        // A lock left by a process that no longer exists is taken over.
-        let lock = data.path().join("code-cli/run.lock");
-        fs::write(&lock, "999999999").unwrap();
-        #[cfg(unix)]
+        // A file left by a crashed run, whatever pid it names, is no lock.
+        fs::write(data.path().join("code-cli/run.lock"), "999999999").unwrap();
         assert!(RunLock::acquire(data.path()).is_ok());
     }
 }

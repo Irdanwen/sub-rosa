@@ -37,7 +37,13 @@ pub(crate) const CODE_CLI_DIR: &str = "code-cli";
 /// narrows the schema in a code workspace; this list covers a folder that is
 /// not one yet, and the toolsets that need a person (clarify) or the app
 /// (memory, cron, messaging).
-const CODE_DISABLED_TOOLSETS: &str = "  disabled_toolsets: [browser, clarify, memory, session_search, cronjob, image_gen, video_gen, video, tts, computer_use, homeassistant, spotify, kanban, discord, discord_admin, x_search]\n";
+///
+/// `delegation` is off too, for now (ADR-0123): a delegated subagent's work
+/// can outlive the turn that started it, and the CLI stops everything on the
+/// turn's last frame, so a subagent would be killed mid-task with nothing said.
+/// The Code surface exposes subagents with their own lifecycle (plan P3,
+/// C3.3); the app's chat keeps delegation.
+const CODE_DISABLED_TOOLSETS: &str = "  disabled_toolsets: [browser, clarify, delegation, memory, session_search, cronjob, image_gen, video_gen, video, tts, computer_use, homeassistant, spotify, kanban, discord, discord_admin, x_search]\n";
 
 /// What a code run's SOUL.md says after the identity paragraph.
 const CODE_SOUL_MD: &str = r#"
@@ -80,6 +86,12 @@ pub(super) fn write_sandbox_profile(
         agent_cli_access,
         working_dir,
     );
+    write_profile_file(profile_path, &profile)
+}
+
+/// Writes a rendered profile where `sandbox-exec -f` will read it.
+#[cfg(target_os = "macos")]
+fn write_profile_file(profile_path: &Path, profile: &str) -> Option<PathBuf> {
     if std::fs::create_dir_all(profile_path.parent()?).is_err() {
         return None;
     }
@@ -168,6 +180,11 @@ impl HeadlessRuntime {
         format!("/api/ws?token={}", urlencoding::encode(&self.token))
     }
 
+    /// The runtime's pid, which is also its process group's id.
+    pub(crate) fn pid(&self) -> Option<u32> {
+        self.child.as_ref().map(Child::id)
+    }
+
     /// Stops the runtime and every process it started.
     pub(crate) fn shutdown(&mut self) {
         if let Some(mut child) = self.child.take() {
@@ -183,6 +200,15 @@ impl Drop for HeadlessRuntime {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+/// SIGKILL to the process group `pid` leads (a child spawned with
+/// `process_group(0)`). Nothing where there are no process groups.
+pub(crate) fn kill_group(pid: u32) {
+    #[cfg(unix)]
+    super::kill_process_group(pid);
+    #[cfg(not(unix))]
+    let _ = pid;
 }
 
 /// The Hermes home of the code CLI under `data_dir`.
@@ -253,6 +279,11 @@ pub(crate) async fn start_runtime(
     }
     let hint = environment_hint(sandboxed, options.write_grant, options.working_dir);
     super::apply_isolated_hermes_env(&mut cmd, &hermes_home, &token, hint.as_deref());
+    // The app's venv is read-only to a code run (see `cli_sandbox_profile`):
+    // no `.pyc` written beside its sources. And no desktop-only tool (the
+    // in-app terminal reader) on a runtime no window drives.
+    cmd.env("PYTHONDONTWRITEBYTECODE", "1")
+        .env_remove("HERMES_DESKTOP");
     cmd.current_dir(options.working_dir);
     #[cfg(unix)]
     {
@@ -286,16 +317,92 @@ fn write_sandbox_profile_for_cli(
     options: &HeadlessOptions<'_>,
     hermes_home: &Path,
 ) -> Option<PathBuf> {
-    write_sandbox_profile(
+    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    let profile = cli_sandbox_profile(
+        &home,
+        &options.data_dir.join("hermes-runtime"),
+        hermes_home,
+        options.working_dir,
+        options.write_grant,
+    );
+    write_profile_file(
         &options
             .data_dir
             .join(CODE_CLI_DIR)
             .join("hermes-sandbox.sb"),
-        &options.data_dir.join("hermes-runtime"),
-        hermes_home,
-        false,
-        options.write_grant.then_some(options.working_dir),
+        &profile,
     )
+}
+
+/// The app's profile, with two differences that only the CLI needs:
+///
+/// - The app's runtime folder (`<data>/hermes-runtime`, the venv the app
+///   itself executes) is not a write root: a code run reads it and runs it,
+///   and an injected instruction must not be able to change code the app will
+///   run later. It is also denied by name at the end, so a data folder that
+///   happens to sit under a temp root (`--data-dir /tmp/...`) does not
+///   re-open it. `PYTHONDONTWRITEBYTECODE` keeps Python from trying to write
+///   its `.pyc` files there.
+/// - A run without the write grant ends on a deny of the folder itself. The
+///   base profile re-grants the temp folders whatever the mode, so a folder
+///   under `/private/tmp` or `$TMPDIR` would stay writable from them; in
+///   SBPL the last rule that matches wins, so a deny written after every
+///   grant takes the folder back. A write root strictly inside the folder
+///   (the run's scratch, when the folder spans `$TMPDIR`) is granted again
+///   after it, or the runtime could not start; one that is the folder itself
+///   stays denied.
+#[cfg(target_os = "macos")]
+fn cli_sandbox_profile(
+    home: &Path,
+    runtime_dir: &Path,
+    hermes_home: &Path,
+    working_dir: &Path,
+    write_grant: bool,
+) -> String {
+    let runtime = std::fs::canonicalize(runtime_dir).unwrap_or_else(|_| runtime_dir.to_path_buf());
+    let roots: Vec<PathBuf> = super::sandbox_write_roots(hermes_home, runtime_dir)
+        .into_iter()
+        .filter(|root| root != &runtime)
+        .collect();
+    let mut profile = super::build_sandbox_profile(
+        home,
+        &roots,
+        &super::sandbox_config_write_path(hermes_home),
+        &super::sandbox_config_temp_prefix(hermes_home),
+        false,
+        write_grant.then_some(working_dir),
+    );
+    if !write_grant {
+        profile
+            .push_str("\n;; Read-only run (plan mode): the folder is denied after every grant\n");
+        profile.push_str(";; above, temp folders included. The last matching rule wins.\n");
+        profile.push_str(&format!(
+            "(deny file-write* (subpath {}))\n",
+            super::sbpl_quote(&working_dir.to_string_lossy())
+        ));
+        let inside: Vec<&PathBuf> = roots
+            .iter()
+            .filter(|root| root.starts_with(working_dir) && root.as_path() != working_dir)
+            .collect();
+        if !inside.is_empty() {
+            profile.push_str("(allow file-write*\n");
+            for root in inside {
+                profile.push_str(&format!(
+                    "  (subpath {})\n",
+                    super::sbpl_quote(&root.to_string_lossy())
+                ));
+            }
+            profile.push_str(")\n");
+        }
+    }
+    // Last, so no grant above (the scratch re-granted inside a plan run's
+    // folder included) can reach the venv.
+    profile.push_str("\n;; The app's own runtime (its venv): read and run, never written.\n");
+    profile.push_str(&format!(
+        "(deny file-write* (subpath {}))\n",
+        super::sbpl_quote(&runtime.to_string_lossy())
+    ));
+    profile
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -459,6 +566,7 @@ mod tests {
         assert_eq!(parsed["agent"]["max_turns"], 200);
         let disabled = parsed["agent"]["disabled_toolsets"].as_sequence().unwrap();
         assert!(disabled.iter().any(|t| t == "clarify"));
+        assert!(disabled.iter().any(|t| t == "delegation"));
         assert!(disabled.iter().any(|t| t == "browser"));
         assert_eq!(parsed["approvals"]["mode"], "manual");
         assert_eq!(parsed["display"]["busy_input_mode"], "queue");
@@ -526,14 +634,17 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn the_cli_profile_grants_the_folder_only_to_a_build_run() {
+    fn the_cli_profile_grants_the_folder_only_to_a_build_run_and_never_the_apps_runtime() {
         let data = tempfile::tempdir().unwrap();
         let work = tempfile::tempdir().unwrap();
         let home = code_hermes_home(data.path());
+        let runtime = data.path().join("hermes-runtime");
+        std::fs::create_dir_all(&runtime).unwrap();
+        let work_dir = work.path().canonicalize().unwrap();
         for write_grant in [true, false] {
             let options = HeadlessOptions {
                 data_dir: data.path(),
-                working_dir: work.path(),
+                working_dir: &work_dir,
                 write_grant,
                 model: "m",
                 proxy_port: 1,
@@ -545,9 +656,76 @@ mod tests {
                 "the profile must sit outside the jail"
             );
             let profile = std::fs::read_to_string(path).unwrap();
-            let granted = profile.contains(&format!("(subpath \"{}\")", work.path().display()));
-            assert_eq!(granted, write_grant);
+            let runtime = runtime.canonicalize().unwrap();
+            assert!(
+                !profile.contains(&format!("  (subpath \"{}\")\n", runtime.display())),
+                "the app's venv is never a write root of a code run"
+            );
+            assert!(profile.contains(&format!(
+                "(deny file-write* (subpath \"{}\"))",
+                runtime.display()
+            )));
+            let denied = profile.contains(&format!(
+                "(deny file-write* (subpath \"{}\"))",
+                work_dir.display()
+            ));
+            assert_eq!(denied, !write_grant);
         }
+    }
+
+    /// The write jail, run for real: a plan run cannot write its folder even
+    /// when the folder sits under `$TMPDIR` (a write root of the base
+    /// profile), a build run can, and neither can write the app's venv.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_plan_run_really_cannot_write_its_folder_even_under_the_temp_dir() {
+        if !Path::new(super::super::SANDBOX_EXEC_PATH).exists() {
+            eprintln!("sandbox-exec is not available; skipped");
+            return;
+        }
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+        let data = tempfile::tempdir().unwrap();
+        // tempdir() is under $TMPDIR, the case the audit found writable.
+        let work = tempfile::tempdir().unwrap();
+        let work_dir = work.path().canonicalize().unwrap();
+        let hermes_home = code_hermes_home(data.path());
+        std::fs::create_dir_all(&hermes_home).unwrap();
+        let runtime = data.path().join("hermes-runtime");
+        std::fs::create_dir_all(&runtime).unwrap();
+        let try_write = |write_grant: bool, target: &Path| -> bool {
+            let profile =
+                cli_sandbox_profile(&home, &runtime, &hermes_home, &work_dir, write_grant);
+            let profile_path = data.path().join(format!("p-{write_grant}.sb"));
+            std::fs::write(&profile_path, profile).unwrap();
+            let _ = std::fs::remove_file(target);
+            let status = std::process::Command::new(super::super::SANDBOX_EXEC_PATH)
+                .arg("-f")
+                .arg(&profile_path)
+                .arg("/bin/sh")
+                .arg("-c")
+                .arg(format!("echo x > '{}'", target.display()))
+                .stderr(Stdio::null())
+                .status()
+                .unwrap();
+            status.success() && target.exists()
+        };
+        let in_folder = work_dir.join("f");
+        assert!(!try_write(false, &in_folder), "plan run wrote its folder");
+        assert!(
+            try_write(true, &in_folder),
+            "build run could not write its folder"
+        );
+        let in_runtime = runtime.canonicalize().unwrap().join("injected.py");
+        assert!(
+            !try_write(true, &in_runtime),
+            "a code run wrote the app's venv"
+        );
+        // The run's own scratch stays writable in plan mode.
+        let scratch = hermes_home.canonicalize().unwrap().join("scratch");
+        assert!(
+            try_write(false, &scratch),
+            "plan run could not write its home"
+        );
     }
 
     #[test]

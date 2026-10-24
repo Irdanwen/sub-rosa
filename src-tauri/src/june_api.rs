@@ -169,6 +169,11 @@ fn turn_usage_from_headers(headers: &reqwest::header::HeaderMap) -> CacheTurnUsa
         cache_creation_tokens: metering_header(headers, "x-june-cache-creation-tokens"),
         cache_saved_usdc_micro: metering_header(headers, "x-june-cache-saved-usdc-micro"),
         cost_usdc_micro: metering_header(headers, "x-june-cost-usdc-micro"),
+        // The sidecar writes this header on every buffered completion, 0 when
+        // the operator sent no price, so a buffered turn always reads as
+        // priced: only a streamed one can tell a free model from an unpriced
+        // one (`stream_usage`).
+        cost_reported: headers.contains_key("x-june-cost-usdc-micro"),
     }
 }
 

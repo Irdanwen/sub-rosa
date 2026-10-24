@@ -6,9 +6,13 @@
 //! invocations of the run spent. The runtime's own token counts are not used:
 //! they know nothing of prices.
 //!
-//! A completion is metered once it has been read to its end, so a stop can
-//! only come after the completion that crossed the line: the run ends a
-//! little over its budget, by at most one completion, and says so.
+//! The budget is a stop line, not a guaranteed ceiling. A completion is
+//! metered once it has been read to its end, so the run notices the line only
+//! after the completion that crossed it, and whatever else was in flight at
+//! that moment is billed too: a run can end over its budget by what was in
+//! flight. A completion cut halfway (an interrupt, a lost connection, a killed
+//! process) never brings its usage frame; the operator may bill it all the
+//! same, so the run says its cost is incomplete rather than pretend.
 
 use crate::carpe_diem::cache_stats::CacheStats;
 use crate::code::event::CodeEvent;
@@ -73,11 +77,24 @@ impl BudgetMeter {
         })
     }
 
-    /// Completions were metered in tokens but none carried a price: the
-    /// budget cannot be enforced on this model, and the run must say so.
+    /// A completion came without the operator's price: the budget cannot be
+    /// enforced on it, and the run must say so. Checked per completion, so a
+    /// free model (a price of zero, reported) passes and one unpriced
+    /// completion among priced ones does not.
     #[must_use]
     pub fn unpriced(&self, stats: CacheStats) -> bool {
-        stats.turns > self.baseline.turns && stats.cost_usdc_micro == self.baseline.cost_usdc_micro
+        let completions = stats.turns.saturating_sub(self.baseline.turns);
+        let priced = stats
+            .priced_turns
+            .saturating_sub(self.baseline.priced_turns);
+        completions > priced
+    }
+
+    /// Some completion of this invocation ended without its usage, or is
+    /// still under way: what it cost is not in [`Self::spent_usd`].
+    #[must_use]
+    pub fn cost_incomplete(&self, stats: CacheStats) -> bool {
+        stats.unmetered_streams > self.baseline.unmetered_streams || stats.open_streams > 0
     }
 }
 
@@ -97,6 +114,7 @@ mod tests {
             prompt_tokens: turns * 1_000,
             completion_tokens: turns * 100,
             cost_usdc_micro,
+            priced_turns: turns,
             ..CacheStats::default()
         }
     }
@@ -136,11 +154,36 @@ mod tests {
     }
 
     #[test]
-    fn a_model_without_a_price_is_noticed() {
+    fn a_completion_without_a_price_is_noticed_and_a_free_one_is_not() {
         let meter = BudgetMeter::new(1.0, 0.0, CacheStats::default());
         assert!(!meter.unpriced(CacheStats::default()));
-        assert!(meter.unpriced(stats(1, 0)));
+        // A free model: priced at zero, the run goes on.
+        assert!(!meter.unpriced(stats(1, 0)));
         assert!(!meter.unpriced(stats(1, 10)));
+        // One completion without a price among priced ones stops it.
+        let one_unpriced = CacheStats {
+            priced_turns: 1,
+            ..stats(2, 10)
+        };
+        assert!(meter.unpriced(one_unpriced));
+    }
+
+    #[test]
+    fn a_cut_or_unfinished_completion_makes_the_cost_incomplete() {
+        let baseline = CacheStats {
+            unmetered_streams: 3,
+            ..CacheStats::default()
+        };
+        let meter = BudgetMeter::new(1.0, 0.0, baseline);
+        assert!(!meter.cost_incomplete(baseline));
+        assert!(meter.cost_incomplete(CacheStats {
+            unmetered_streams: 4,
+            ..baseline
+        }));
+        assert!(meter.cost_incomplete(CacheStats {
+            open_streams: 1,
+            ..baseline
+        }));
     }
 
     #[test]

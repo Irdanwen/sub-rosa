@@ -2962,6 +2962,10 @@ privées ; l'app appelle désormais `headless::runtime_current` et
 | `src-tauri/src/hermes_working_dir.rs` | `validate_working_dir_at` (le dossier de données passé par l'appelant) | Réappliquer |
 | `src-tauri/src/app_paths.rs` | `app_data_dir_for_build` et `use_prod_data_dir` en `pub(crate)` | Réappliquer |
 | `docs/hermes-upgrade-checklist.md` | Étape 5 : réenregistrer le run de code à chaque bump | Réappliquer |
+| `src-tauri/src/june_api.rs` | `turn_usage_from_headers` remplit `cost_reported` (présence de `x-june-cost-usdc-micro`) | Réappliquer |
+| `src-tauri/src/carpe_diem/{cache_stats,stream_usage}.rs` | Compteurs du budget du CLI hors webview (`#[serde(skip)]`) : `priced_turns`, `unmetered_streams`, `open_streams` ; un `StreamUsageTap` lâché avant sa fin compte comme non mesuré (`Drop`) | Réappliquer |
+| `src-tauri/src/carpe_diem/{mod,orphan}.rs` | `orphan` en `pub(crate)`, `reap_group` (le groupe de processus entier) pour les processus du CLI | Réappliquer |
+| `src-tauri/src/protected_mode/mod.rs` | `load_from_config_dir` : le CLI charge le mode protégé sans `AppHandle` (sinon `restrictions()` le lit éteint) | Réappliquer |
 
 ### Pièges
 
@@ -2977,6 +2981,19 @@ privées ; l'app appelle désormais `headless::runtime_current` et
   est `reasoning.delta`.
 - **`hermes_bridge.rs` est au plafond de son cliquet** : tout ajout pour le
   mode sans interface va dans `hermes_bridge/headless.rs`.
+- **Le mode plan finit sur un `deny` du dossier** dans le profil du CLI
+  (`headless::cli_sandbox_profile`) : le profil de base réaccorde les
+  dossiers temporaires dans tous les modes, et en SBPL la dernière règle qui
+  correspond gagne. Le venv de l'app (`<data>/hermes-runtime`) n'est jamais
+  une racine d'écriture du CLI, et `PYTHONDONTWRITEBYTECODE=1` évite les
+  `.pyc`. Le profil de l'app n'a pas changé.
+- **`unsetenv` ne retire pas une variable de ce que `ps eww` lit** : le bloc
+  d'environnement initial reste en mémoire. `take_env_key` écrase les octets
+  de la valeur avant de la retirer, avant que le runtime async démarre.
+  Seatbelt n'y peut rien : `process-info*` ne couvre pas `KERN_PROCARGS2`
+  (mesuré sur macOS 26), donc aucune règle de ce genre n'a été ajoutée.
+- Le CLI désactive le toolset `delegation` (limite temporaire de P0,
+  ADR-0123) ; l'app le garde.
 - Les fixtures `src/lib/code/fixtures/*.json` sont écrites par les tests Rust
   (`UPDATE_CODE_EVENT_FIXTURES=1 cargo test --lib code::`, puis
   `pnpm biome format --write src/lib/code/fixtures` : la comparaison porte sur

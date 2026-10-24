@@ -44,6 +44,9 @@ pub struct HermesAdapter {
     /// Name of each tool call between its start and its completion, for the
     /// engines that leave it out of the completion.
     open_tools: HashMap<String, String>,
+    /// Subagents seen started and not yet completed, each reported as a call
+    /// of its own (`subagent:<id>`).
+    open_subagents: HashMap<String, ()>,
     anonymous_requests: u64,
 }
 
@@ -132,21 +135,30 @@ impl HermesAdapter {
             "sudo.request" => vec![self.approval(ApprovalKind::Sudo, payload)],
             "secret.request" => vec![self.approval(ApprovalKind::Secret, payload)],
             "error" => {
+                let recoverable = payload
+                    .get("recoverable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 let mut events = vec![CodeEvent::Error {
                     // Only the message: a provider error can carry a bearer
                     // or a key in its other fields.
                     message: text_of(payload, &["message", "text"], true)
                         .unwrap_or_else(|| "The agent reported an error.".to_string()),
                     code: payload.get("code").and_then(scalar_string),
-                    recoverable: payload
-                        .get("recoverable")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
+                    recoverable,
                 }];
-                events.extend(self.end_turn(TurnStatus::Failed));
+                // A recoverable error is reported and the turn goes on: the
+                // runtime retries or works around it, and its own
+                // `message.complete` closes the turn.
+                if !recoverable {
+                    events.extend(self.end_turn(TurnStatus::Failed));
+                }
                 events
             }
-            _ if kind.starts_with("subagent.") => subagent(kind, payload),
+            // A background process the agent started (`terminal` with
+            // `background: true`) streams its output apart from any call.
+            "agent.terminal.output" => background_output(payload),
+            _ if kind.starts_with("subagent.") => self.subagent(kind, payload),
             _ => Vec::new(),
         }
     }
@@ -254,6 +266,7 @@ impl HermesAdapter {
                 let (text, truncated) = clip_end(&output, TERMINAL_OUTPUT_MAX_CHARS);
                 events.push(CodeEvent::TerminalOutput {
                     call_id: Some(call_id),
+                    process_id: None,
                     text,
                     exit_code: result.get("exit_code").and_then(Value::as_i64),
                     truncated,
@@ -264,6 +277,68 @@ impl HermesAdapter {
             events.push(CodeEvent::TodoUpdated {
                 items: items.iter().filter_map(todo_item).collect(),
             });
+        }
+        events
+    }
+
+    /// A delegated subagent, reported as a call of its own: opened on its
+    /// first frame (normally `subagent.start`), its activity as progress of
+    /// that call, closed on `subagent.complete`. A progress line therefore
+    /// never names a call that was not started.
+    fn subagent(&mut self, kind: &str, payload: &Value) -> Vec<CodeEvent> {
+        let id = ["subagent_id", "subagentId", "handle", "id"]
+            .iter()
+            .find_map(|key| payload.get(*key).and_then(scalar_string))
+            .unwrap_or_else(|| "subagent".to_string());
+        let call_id = format!("subagent:{id}");
+        let phase = kind.trim_start_matches("subagent.");
+        let mut events = Vec::new();
+        if self.open_subagents.insert(id.clone(), ()).is_none() {
+            events.push(CodeEvent::ToolStarted {
+                call_id: call_id.clone(),
+                name: "subagent".to_string(),
+                kind: ToolKind::Delegate,
+                label: text_of(payload, &["goal"], true)
+                    .map(|goal| clip_start(&goal, SUMMARY_MAX_CHARS).0),
+                detail: ToolDetail::default(),
+            });
+        }
+        match phase {
+            "start" => {}
+            "complete" => {
+                self.open_subagents.remove(&id);
+                let status = payload.get("status").and_then(Value::as_str).unwrap_or("");
+                let failed = matches!(status, "error" | "failed" | "interrupted" | "cancelled");
+                events.push(CodeEvent::ToolCompleted {
+                    call_id,
+                    name: "subagent".to_string(),
+                    kind: ToolKind::Delegate,
+                    ok: !failed,
+                    detail: ToolDetail::default(),
+                    summary: text_of(payload, &["summary"], true)
+                        .map(|text| clip_start(&text, SUMMARY_MAX_CHARS).0),
+                    error: failed.then(|| format!("The subagent ended: {status}.")),
+                    duration_ms: payload
+                        .get("duration_seconds")
+                        .and_then(Value::as_f64)
+                        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+                        .map(|seconds| (seconds * 1000.0).round() as u64),
+                });
+            }
+            _ => {
+                let detail = text_of(
+                    payload,
+                    &["summary", "tool_preview", "tool_name", "text", "delta"],
+                    false,
+                );
+                events.push(CodeEvent::ToolProgress {
+                    call_id,
+                    text: match detail {
+                        Some(detail) => format!("{phase}: {detail}"),
+                        None => phase.to_string(),
+                    },
+                });
+            }
         }
         events
     }
@@ -576,33 +651,45 @@ fn tool_progress(payload: &Value) -> Vec<CodeEvent> {
     .unwrap_or_default()
 }
 
-/// A delegated subagent's activity, reported as progress of the delegation.
-fn subagent(kind: &str, payload: &Value) -> Vec<CodeEvent> {
-    let id = ["subagent_id", "subagentId", "handle", "id"]
-        .iter()
-        .find_map(|key| payload.get(*key).and_then(scalar_string))
-        .unwrap_or_else(|| "subagent".to_string());
-    let phase = kind.trim_start_matches("subagent.");
-    let detail = text_of(
-        payload,
-        &[
-            "summary",
-            "goal",
-            "tool_preview",
-            "tool_name",
-            "text",
-            "delta",
-        ],
-        false,
-    );
-    let text = match detail {
-        Some(detail) => format!("{phase}: {detail}"),
-        None => phase.to_string(),
+/// A chunk of a background process's output, without ANSI codes.
+fn background_output(payload: &Value) -> Vec<CodeEvent> {
+    let Some(chunk) = payload
+        .get("chunk")
+        .or_else(|| payload.get("text"))
+        .and_then(Value::as_str)
+    else {
+        return Vec::new();
     };
-    vec![CodeEvent::ToolProgress {
-        call_id: format!("subagent:{id}"),
+    let clean = strip_ansi(chunk);
+    if clean.is_empty() {
+        return Vec::new();
+    }
+    let (text, truncated) = clip_end(&clean, TERMINAL_OUTPUT_MAX_CHARS);
+    vec![CodeEvent::TerminalOutput {
+        call_id: None,
+        process_id: ["process_id", "processId", "id"]
+            .iter()
+            .find_map(|key| payload.get(*key).and_then(scalar_string)),
         text,
+        exit_code: None,
+        truncated,
     }]
+}
+
+/// The request id of a `terminal.read.request`: the runtime asks for the
+/// in-app terminal's contents and blocks until an answer. A run without a
+/// window answers it at once with nothing (the tool then says no terminal is
+/// open), rather than let it wait out its timeout. The contract has no event
+/// for it: it is neither a decision nor anything the run did.
+#[must_use]
+pub fn terminal_read_request(frame: &Value) -> Option<String> {
+    if frame.get("type").and_then(Value::as_str) != Some("terminal.read.request") {
+        return None;
+    }
+    frame
+        .get("payload")
+        .and_then(|payload| payload.get("request_id"))
+        .and_then(scalar_string)
 }
 
 fn todo_item(value: &Value) -> Option<TodoItem> {
@@ -904,14 +991,111 @@ mod tests {
     }
 
     #[test]
-    fn subagents_report_as_progress_of_their_delegation() {
+    fn a_subagent_is_a_call_opened_then_closed_and_its_activity_its_progress() {
         let mut adapter = HermesAdapter::new();
         let events = adapt_all(&mut adapter, &fixture("subagent-lifecycle"));
         assert_eq!(events.len(), 5);
-        assert!(events.iter().all(|e| matches!(
+        assert!(matches!(
+            &events[0],
+            CodeEvent::ToolStarted { call_id, kind: ToolKind::Delegate, label: Some(goal), .. }
+                if call_id == "subagent:sub-1" && goal.contains("gateway reconnects")
+        ));
+        assert!(events[1..4].iter().all(|e| matches!(
             e,
             CodeEvent::ToolProgress { call_id, .. } if call_id == "subagent:sub-1"
         )));
+        assert!(matches!(
+            &events[4],
+            CodeEvent::ToolCompleted { call_id, ok: true, summary: Some(_), .. }
+                if call_id == "subagent:sub-1"
+        ));
+    }
+
+    /// Every progress line names a call opened before it, in every recorded
+    /// fixture: a consumer never sees progress on an unknown call.
+    #[test]
+    fn no_progress_ever_names_a_call_that_was_not_started() {
+        for name in ["subagent-lifecycle", "subagent-background-completion"] {
+            let mut adapter = HermesAdapter::new();
+            adapter.begin_turn("t");
+            let mut opened = std::collections::HashSet::new();
+            for event in adapt_all(&mut adapter, &fixture(name)) {
+                match event {
+                    CodeEvent::ToolStarted { call_id, .. } => {
+                        opened.insert(call_id);
+                    }
+                    CodeEvent::ToolProgress { call_id, .. } => {
+                        assert!(opened.contains(&call_id), "{name}: {call_id}");
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_recoverable_error_is_reported_and_the_turn_goes_on() {
+        let mut adapter = HermesAdapter::new();
+        adapter.begin_turn("turn-1");
+        let events = adapter.adapt(&json!({
+            "type": "error",
+            "payload": {"message": "Rate limited, retrying", "recoverable": true}
+        }));
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            CodeEvent::Error {
+                recoverable: true,
+                ..
+            }
+        ));
+        assert!(adapter.turn_open());
+        let fatal = adapter.adapt(&json!({"type": "error", "payload": {"message": "boom"}}));
+        assert!(matches!(
+            fatal.last(),
+            Some(CodeEvent::TurnFinished {
+                status: TurnStatus::Failed,
+                ..
+            })
+        ));
+        assert!(!adapter.turn_open());
+    }
+
+    #[test]
+    fn a_background_process_output_is_terminal_output_of_its_process() {
+        let mut adapter = HermesAdapter::new();
+        let events = adapter.adapt(&json!({
+            "type": "agent.terminal.output",
+            "session_id": "s",
+            "payload": {"process_id": "proc_9", "chunk": "\u{1b}[32mready\u{1b}[0m in 412 ms\n"}
+        }));
+        assert_eq!(
+            events,
+            vec![CodeEvent::TerminalOutput {
+                call_id: None,
+                process_id: Some("proc_9".into()),
+                text: "ready in 412 ms\n".into(),
+                exit_code: None,
+                truncated: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_terminal_read_request_is_recognized_for_an_answer_and_gives_no_event() {
+        let frame = json!({
+            "type": "terminal.read.request",
+            "session_id": "s",
+            "payload": {"request_id": "ab12cd34", "count": 40}
+        });
+        assert_eq!(terminal_read_request(&frame).as_deref(), Some("ab12cd34"));
+        assert!(HermesAdapter::new().adapt(&frame).is_empty());
+        assert_eq!(
+            terminal_read_request(
+                &json!({"type": "clarify.request", "payload": {"request_id": "x"}})
+            ),
+            None
+        );
     }
 
     #[test]

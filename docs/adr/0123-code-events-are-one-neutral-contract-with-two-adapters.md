@@ -72,21 +72,40 @@ and needs them the same way whatever the engine.
      run at a time per data folder, under a lock, for the same reason.
    - The **run budget** is enforced from the operator's own metering of every
      completion that crosses the CLI's in-process proxy
-     (`carpe_diem::cache_stats`), never from the runtime's token counts. A run
-     stops by interrupting its turn once the budget is reached, so it ends over
-     the budget by at most one completion; a model whose completions carry no
-     price stops the run, because a budget that cannot be enforced is not one.
-   - **Plan mode is enforced by the jail**: the folder is simply not granted to
-     the Seatbelt profile, so a plan run cannot write it. Without the jail
-     (not macOS, or the escape hatch set) plan mode refuses to start rather
-     than degrade to a promise.
+     (`carpe_diem::cache_stats`), never from the runtime's token counts, and
+     written to the run's state each time it moves. It is a stop line, not a
+     guaranteed ceiling: a completion is metered when it ends, so a run stops
+     (by interrupting its turn) only after the line is crossed, and ends over
+     the budget by whatever was in flight then. A completion cut before its
+     usage arrived may still be billed; the run cannot know how much and says
+     so (`run.finished.cost_incomplete`). A completion that comes without a
+     price stops the run, because a budget that cannot be enforced is not one;
+     a free model reports a price of zero and runs.
+   - **Plan mode is enforced by the jail**: the folder is not granted to the
+     Seatbelt profile, and the CLI's profile ends on a deny of the folder (the
+     base profile re-grants the temp folders in every mode, and in SBPL the
+     last matching rule wins). Without the jail (not macOS, or the escape
+     hatch set) plan mode refuses to start rather than degrade to a promise.
+     It protects the local disk only; the network stays open.
+   - The CLI's profile never grants the app's runtime folder (the venv the
+     app runs), in either mode, and denies it by name.
+   - **No subagents yet**: the CLI disables Hermes' `delegation` toolset. A
+     delegated task can outlive the turn that started it, and a headless run
+     stops everything when its turn ends, so a subagent would be killed
+     mid-task without a word. This is a temporary limit of the P0 CLI: the
+     Code surface brings subagents back with a lifecycle of their own (P3,
+     C3.3). The app's chat keeps delegation.
    - No one answers mid-run: the `clarify` toolset is off, a flagged command
      is denied unless `--approvals once`, sudo and secret requests are denied,
      a question that still arrives gets a fixed answer. Each is reported as
      `approval.requested` then `approval.resolved` by `policy`.
    - The key comes from `SUBROSA_DEV_API_KEY` first, in every build, without
      touching the keychain (a keychain prompt would hang a run no one
-     watches), then from the app's keychain.
+     watches), then from the app's keychain. The variable is wiped from the
+     process's environment block before any thread or child starts, and the
+     key reaches the backend on stdin only: the jailed agent can read any
+     same-user process's environment (`KERN_PROCARGS2`, which Seatbelt's
+     `process-info*` rules were measured not to cover).
    - The binary sits behind the `code-cli` Cargo feature: the Tauri CLI bundles
      every binary of the package whose required features are enabled, and the
      app must not ship an unsigned second executable.

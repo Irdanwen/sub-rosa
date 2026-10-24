@@ -124,8 +124,11 @@ pub(super) async fn install(app: &tauri::AppHandle, hermes_home: &Path) -> Resul
 }
 
 /// The plugin and a ledger with no temporary chat and no connector rule, for a
-/// runtime the code CLI starts without the app (ADR-0123): the protected-mode
-/// switches still apply, the rest has nothing to name.
+/// runtime the code CLI starts without the app (ADR-0123). The protected-mode
+/// switches apply only because the CLI loaded them first
+/// (`protected_mode::load_from_config_dir`): `restrictions()` reads an
+/// in-process mirror that nothing else fills without an app handle. The rest
+/// has nothing to name.
 pub(super) fn install_headless(hermes_home: &Path) -> Result<(), AppError> {
     install_plugin(hermes_home).map_err(failed)?;
     write_ledger(

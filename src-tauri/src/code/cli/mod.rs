@@ -39,6 +39,8 @@ pub fn main_with_args(args: Vec<String>) -> i32 {
             run::EXIT_USAGE
         }
         Ok(args::Invocation::Run(run_args)) => {
+            // Before the async runtime starts any thread (see `take_env_key`).
+            let env_key = run::take_env_key();
             let runtime = match tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -49,7 +51,7 @@ pub fn main_with_args(args: Vec<String>) -> i32 {
                     return run::EXIT_FAILED;
                 }
             };
-            runtime.block_on(run::run(run_args))
+            runtime.block_on(run::run(run_args, env_key))
         }
     }
 }
