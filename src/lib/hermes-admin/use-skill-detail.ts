@@ -42,6 +42,7 @@ import {
 import type { HermesSkillInfo, HermesSkillSource } from "./schemas";
 import type { SkillSetupEngine } from "./use-skill-setup";
 import { adminTargetForMode, type HermesAdminMode } from "./target";
+import { t } from "../i18n";
 
 /** The detail surface operates on the same wired primitives as the setup panel,
  * so it reuses that engine shape (target + client + cache + lifecycle, all bound
@@ -427,7 +428,7 @@ function unavailableState(skill: string, info?: HermesSkillInfo): SkillDetailSta
     saving: false,
     mode: "sandboxed",
     profile: "default",
-    error: "Hermes is not running.",
+    error: t("The assistant is not running. Open a chat to start it, then try again."),
     retryable: false,
     lifecycle: {
       state: "clean",

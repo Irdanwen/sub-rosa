@@ -128,6 +128,12 @@ decision. See "When to add an ADR" in [AGENTS.md](../AGENTS.md).
 - [adr/0119](adr/0119-an-app-is-a-view-over-its-workflow.md) — a workflow can be shown as an app: a few of its steps' settings and results, stored with the workflow (no second graph), built from a suggestion in three steps, synced, exported and copied with it; the phone's only workflow surface is apps; no migration
 - [adr/0120](adr/0120-the-assistant-proposes-workflows-and-never-runs-them.md) — the assistant's `workflows` tool (desktop MCP and phone agent-lite, one action table): list, read, the step catalog (a schema snapshot the native side embeds), and propose a draft of its own that the person keeps or discards; it never changes a person's workflow and never runs one; no migration
 - [adr/0121](adr/0121-the-default-catalog-is-re-authored-from-comfyui-recipes.md) — the shipped templates are written by hand from ComfyUI's official recipes (a frozen corpus of them also measures the importer), never imported: own prompts, six languages, app forms, covers made by Sub Rosa; chosen for hosted models, use, a gap filled and fit; the catalog is one list of template and kind; no migration
+- [adr/0140](adr/0140-the-jail-writes-nothing-read-outside-it.md) — the sandboxed runtime writes only its working state (workspace, sessions, logs, caches, images, the session database): its home is closed as a whole and its installation is no write root, so nothing the jail writes is run or obeyed outside it; every command names `--profile default` and the app removes `active_profile`; the app writes `.env` at every start from its own filtered record; Settings changes run outside the jail in a one-shot process of the app and survive the next start; one home per mode is proposed, not done; no migration
+
+Numbers 0122 to 0139 belong to two plans in progress on other branches
+(the code plan and the community apps plan); ADR-0140 is a security fix to
+1.97.0 that ships ahead of them, which is why main has a gap there until
+they merge.
 
 Numbers 0103, 0105 and 0106 are reserved and unused: they were handed out in
 advance to parity lots that ran in parallel on 2026-10-08, and those lots

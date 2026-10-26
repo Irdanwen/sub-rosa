@@ -45,6 +45,7 @@ import {
   type SkillSetupModel,
 } from "./skill-setup-view";
 import { adminTargetForMode, type HermesAdminMode, type HermesAdminTarget } from "./target";
+import { t } from "../i18n";
 
 /** The wired-up foundation primitives one setup panel operates on, all bound to
  * the SAME target. Production builds this from a bridge connection; tests build
@@ -476,7 +477,7 @@ function unavailableState(skill: string): SkillSetupState {
     model: buildSkillSetupModel(EMPTY_REQUIREMENTS, new Map(), new Map()),
     pending: new Set<string>(),
     retryable: false,
-    error: "Hermes is not running.",
+    error: t("The assistant is not running. Open a chat to start it, then try again."),
     lifecycle: {
       state: "clean",
       label: "Up to date",

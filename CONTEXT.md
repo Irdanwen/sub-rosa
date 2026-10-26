@@ -408,6 +408,22 @@ _Avoid_: project dir; workspace (that's the Hermes-home scratch area); folder
 (unqualified — `folders`/projects are the session-grouping feature, no
 filesystem meaning).
 
+**Runtime state**:
+The parts of the Hermes home the sandboxed runtime may write (ADR-0140): the
+default workspace, session records and the session database, logs, caches,
+attached images. Everything else in the home (its settings, `.env`, skills,
+memories, routines, plugins, binaries) and the runtime's installation are
+read-only to the jail, because processes outside it read them with authority.
+_Avoid_: write roots (the home is no longer one).
+
+**Settings record**:
+`hermes-settings.json`, next to the Hermes home: the settings a person made in
+Settings (their MCP servers, skill and toolset switches, skill configuration,
+messaging switches, environment keys), kept by the app and written back into
+`config.yaml` and `.env` at every start (ADR-0140). A settings change runs
+outside the jail, in a one-shot process of the app.
+_Avoid_: overlay (code name only), profile.
+
 **Stored session id** vs **runtime session id**:
 The persistent id June keys all UI and history on, versus the live process's
 per-resume id. `session.create` returns both; conflating them attaches

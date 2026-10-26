@@ -2928,3 +2928,44 @@ restait collé dans son coin. Quatre causes, aucune propre à une session :
   on le gare sur un côté (`meeting-hud-zone`), alors que la rotation native qui
   devait les accompagner n'existe que sur macOS. Ses libellés d'accessibilité
   sont aussi hors de `t()`.
+
+## Le jail n'écrit plus ce qui est relu hors de lui (2026-10-25, ADR-0140)
+
+Correctif de sécurité de 1.97.0, sorti seul. Le profil Seatbelt ferme le home
+du runtime et son installation en entier, puis ne rouvre que l'état de travail
+mesuré (`workspace/`, `sessions/`, `logs/`, `cache/`, `images/`,
+`image_cache/`, `audio_cache/`, `state.db*`, `verification_evidence.db*`,
+`auth.lock`) ; `--profile default` sur chaque commande Hermes et
+`active_profile` supprimé à chaque démarrage ; `.env` réécrit par l'app depuis
+son registre filtré (`hermes-settings.json`) ; les changements de Réglages
+passent par un processus ponctuel de l'app hors du jail (`admin_once`) et
+survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
+(voir l'ADR).
+
+### Fichiers ajoutés
+
+- `src-tauri/src/hermes_bridge/sandbox_profile.rs` (+ `sandbox_profile_tests.rs`) : le profil, sorti de `hermes_bridge.rs` (cliquet −597 lignes), la liste d'autorisation, essais noyau
+- `src-tauri/src/hermes_bridge/home_prep.rs` : squelette du home, `.env` depuis le registre, `active_profile`, fichiers possédés remplacés et non suivis
+- `src-tauri/src/hermes_bridge/admin_settings.rs` : le registre, extraction par clés nommées, réinsertion dans `config.yaml`, filtre et lecteur `.env`
+- `src-tauri/src/hermes_bridge/admin_once.rs` + `src-tauri/src/hermes/subrosa_admin.py` : routes de réglage exécutées hors jail, copie des skills livrées
+- `src-tauri/src/hermes_bridge/jail_runtime_tests.rs` + `scripts/jail-eval/runtime_lives.py` : essais réels ignorés (runtime installé, modèle factice local, gratuits)
+
+### Fichiers upstream modifiés
+
+| Fichier | Changement | Re-merge |
+|---|---|---|
+| `src-tauri/src/hermes_bridge.rs` | Profil déplacé (`prepare_sandbox` passe `SandboxGrants`) ; `dashboard_args` avec `--profile default` ; `--profile default` forcé dans `mcp login`, `skills reset`, `skills tap` et le TUI ; `sync_hermes_config` applique le registre puis `home_prep::prepare` ; `config.yaml`/`SOUL.md` via `write_owned` ; `hermes_connection_json` délègue les routes de réglage à `admin_once` ; copie des skills livrées avant un démarrage sandboxé ; `active_profile` retiré avant `gateway start` ; texte sandbox du SOUL ; anciennes constantes `HERMES_CONFIG_*` et tests du profil retirés | Réappliquer ; ne jamais rouvrir le home en racine d'écriture |
+| `src-tauri/src/hermes_bridge/gateway_start.rs` | `--profile default` avant `gateway start`/`install` | Réappliquer |
+| `src-tauri/src/hermes_bridge/builtin_mcp.rs` | `is_builtin_server` | Réappliquer |
+| `src/lib/hermes-admin/errors.ts`, `transport.ts` | Messages sûrs par `t()`, sans nommer le runtime ; un 5xx dit « This change was not made » | Réappliquer, garder les phrases du catalogue |
+| `src/lib/hermes-admin/use-skill-setup.ts`, `use-skill-detail.ts`, `use-skill-bundles.ts` | « Hermes is not running. » remplacé par une phrase traduite | Réappliquer |
+| `src/test/hermes-admin-client.test.ts` | Nouvelles phrases attendues | Réappliquer |
+| `src/components/settings/ConnectorsSection.tsx` (fork) | Nettoyage hérité retiré (mode figé `sandboxed`, suppression passée par le runtime jailé) : aucune copie ne survit à un démarrage | Garder la version fork |
+
+### Pièges
+
+- Le runtime crée `cron/`, `memories/`, `skills/`… et un `SOUL.md` par défaut au chargement de sa config : sous le jail, c'est l'app qui doit les créer avant (sans `cron/`, l'agent d'une session ne démarre pas).
+- Les outils fichiers de Hermes refusent les chemins sous `/private/var` (« sensitive system path ») : un essai réel doit placer son home hors de `$TMPDIR`.
+- Le home d'un essai est souvent sous `$TMPDIR`, qui est une racine d'écriture : c'est pourquoi le profil ferme le home APRÈS toutes les autorisations.
+- Un basculement d'outil écrit `platform_toolsets.cli` en entier (kanban compris) : `agent.disabled_toolsets` reste le dernier mot de l'app, et `platform_toolsets.cron` n'est jamais repris du registre.
+- Conflit attendu à la fusion de `feat/code-p1-checks`, qui crée aussi `sandbox_profile.rs` (refus nommés) : garder l'inversion de ce lot et y reporter la section des toolchains.

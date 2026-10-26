@@ -44,3 +44,12 @@ never as Hermes.
   so a runtime upgrade that adds events is visible rather than silently dropped.
 - See [docs/hermes-architecture.md](../hermes-architecture.md) for the full
   bridge / gateway / control-plane layering.
+
+## Addendum 2026-10-25: the jail no longer writes its whole home
+
+The write-jail described here granted the runtime's whole home and its
+installation. [ADR-0140](0140-the-jail-writes-nothing-read-outside-it.md)
+closes both and re-opens only the runtime's working state, because processes
+outside the jail (the gateway, the unrestricted runtime, the app) read the
+rest with authority; settings changes are now made by the app outside the
+jail, and every command names `--profile default`.

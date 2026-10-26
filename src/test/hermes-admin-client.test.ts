@@ -257,7 +257,7 @@ describe("HermesAdminClient — error normalization", () => {
     expect(adminError.kind).toBe("http");
     expect(adminError.status).toBe(401);
     expect(adminError.retryable).toBe(false);
-    expect(adminError.safeMessage).toBe("Hermes rejected the request (not authorized).");
+    expect(adminError.safeMessage).toBe("The assistant refused this request.");
   });
 
   it("normalizes 404 with the safe not-found message", async () => {
@@ -267,7 +267,7 @@ describe("HermesAdminClient — error normalization", () => {
       (e: unknown) => e as HermesAdminError,
     );
     expect(error?.status).toBe(404);
-    expect(error?.safeMessage).toBe("That Hermes resource was not found.");
+    expect(error?.safeMessage).toBe("This item no longer exists.");
     expect(error?.retryable).toBe(false);
   });
 
@@ -290,7 +290,7 @@ describe("HermesAdminClient — error normalization", () => {
     );
     expect(error?.status).toBe(500);
     expect(error?.retryable).toBe(true);
-    expect(error?.safeMessage).toBe("Hermes ran into a problem with that request.");
+    expect(error?.safeMessage).toBe("This change was not made. Try again.");
   });
 
   it("treats malformed JSON in a 2xx as a parse error, not a crash", async () => {
@@ -310,7 +310,7 @@ describe("HermesAdminClient — error normalization", () => {
       (e: unknown) => e as HermesAdminError,
     );
     expect(error?.kind).toBe("parse");
-    expect(error?.safeMessage).toBe("Hermes returned an unexpected response.");
+    expect(error?.safeMessage).toBe("The assistant sent an answer Sub Rosa could not read.");
     // The error names the REAL endpoint, not a placeholder like "(response)".
     expect(error?.endpoint).toBe("GET /api/skills");
     expect(error?.status).toBe(200);
@@ -330,7 +330,7 @@ describe("HermesAdminClient — error normalization", () => {
     );
     expect(error?.kind).toBe("network");
     expect(error?.retryable).toBe(true);
-    expect(error?.safeMessage).toBe("Could not reach Hermes.");
+    expect(error?.safeMessage).toBe("Sub Rosa could not reach the assistant. Try again.");
   });
 
   it("maps an aborted request (client timeout) to a timeout error", async () => {

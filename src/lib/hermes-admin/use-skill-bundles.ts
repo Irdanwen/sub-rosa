@@ -44,6 +44,7 @@ import {
   type ResolvedSkillBundle,
 } from "./skill-bundles-view";
 import { adminTargetForMode, type HermesAdminMode, type HermesAdminTarget } from "./target";
+import { t } from "../i18n";
 
 /** The bridge I/O the controller needs, injectable so a test can drive it with
  * fakes and assert the create/edit/delete/duplicate/start-chat wiring without a
@@ -357,7 +358,7 @@ const UNAVAILABLE_STATE: SkillBundlesState = Object.freeze({
   notifications: [],
   refresh: () => {},
   save: async () => {
-    throw new Error("Hermes is not running.");
+    throw new Error(t("The assistant is not running. Open a chat to start it, then try again."));
   },
   remove: async () => {},
   duplicate: async () => {},
