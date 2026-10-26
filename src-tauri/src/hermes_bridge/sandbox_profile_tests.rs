@@ -389,6 +389,59 @@ fn the_kernel_refuses_every_vector_and_allows_the_runtime_state() {
             "{file} refused"
         );
     }
+    // No link where processes outside the jail open by name (ADR-0140):
+    // neither symbolic nor hard, nor a symbolic one renamed into `uploads`;
+    // the workspace keeps its links.
+    let target = jail.root.join("outside-target");
+    std::fs::write(&target, "keep").unwrap();
+    for at in [
+        "logs/gateway.log",
+        "sessions/sessions.json",
+        "cache/x",
+        "images/x.png",
+        "workspace/uploads/report.pdf.txt",
+        "state.db",
+    ] {
+        let path = jail.hermes_home.join(at);
+        let symbolic = jail.sh(&format!(
+            "ln -s {} {}",
+            shell_quote(&target),
+            shell_quote(&path)
+        ));
+        assert!(!symbolic.status.success(), "a symbolic link at {at}");
+        let inner = jail.hermes_home.join("logs/agent.log");
+        std::fs::write(&inner, "log").unwrap();
+        let hard = jail.sh(&format!(
+            "ln {} {}",
+            shell_quote(&inner),
+            shell_quote(&path)
+        ));
+        assert!(!hard.status.success(), "a hard link at {at}");
+    }
+    let workspace_link = jail.sh(&format!(
+        "ln -s {} {}",
+        shell_quote(&target),
+        shell_quote(&jail.hermes_home.join("workspace/project-link"))
+    ));
+    assert!(
+        workspace_link.status.success(),
+        "the workspace keeps its links"
+    );
+    let renamed = jail.sh(&format!(
+        "mv {} {} && mv {} {}",
+        shell_quote(&jail.hermes_home.join("workspace/uploads")),
+        shell_quote(&jail.hermes_home.join("workspace/uploads-old")),
+        shell_quote(&jail.hermes_home.join("workspace/project-link")),
+        shell_quote(&jail.hermes_home.join("workspace/uploads")),
+    ));
+    assert!(!renamed.status.success(), "a link renamed into uploads");
+    assert!(!jail
+        .hermes_home
+        .join("workspace/uploads")
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink()));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+
     // Outside every grant (the temp dir itself is one, so probe the home).
     if let Some(home) = std::env::var_os("HOME") {
         let probe = PathBuf::from(home)

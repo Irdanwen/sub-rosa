@@ -36,6 +36,62 @@ def _config_after(home):
         return None
 
 
+def _env_schema(home):
+    """The keys Settings can write into .env, from the pinned runtime: the
+    credentials it declares, the messaging platforms' settings, the tool
+    providers' keys, the keys installed skills ask for, and the MCP servers'
+    bearer tokens. The app keeps nothing else (ADR-0140)."""
+    keys = set()
+    try:
+        from hermes_cli.config import OPTIONAL_ENV_VARS
+
+        for key, meta in OPTIONAL_ENV_VARS.items():
+            if isinstance(meta, dict) and meta.get("password"):
+                keys.add(key)
+    except Exception:
+        pass
+    try:
+        from hermes_cli import web_server
+
+        for entry in web_server._messaging_platform_catalog():
+            keys.update(str(key) for key in entry.get("env_vars") or ())
+    except Exception:
+        pass
+    try:
+        from hermes_cli.tools_config import TOOL_CATEGORIES
+
+        for category in TOOL_CATEGORIES.values():
+            for provider in category.get("providers") or ():
+                for var in provider.get("env_vars") or ():
+                    keys.add(str(var.get("key") if isinstance(var, dict) else var))
+    except Exception:
+        pass
+    try:
+        import glob
+
+        from hermes_cli.config import load_config
+        from hermes_cli.mcp_config import _env_key_for_server
+        from tools.skills_tool import _get_required_environment_variables, _parse_frontmatter
+
+        config = load_config()
+        for name in (config.get("mcp_servers") or {}):
+            keys.add(_env_key_for_server(str(name)))
+        dirs = [os.path.join(home, "skills")]
+        dirs += [str(d) for d in ((config.get("skills") or {}).get("external_dirs") or [])]
+        for root in dirs:
+            for path in glob.glob(os.path.join(root, "**", "SKILL.md"), recursive=True):
+                try:
+                    with open(path, encoding="utf-8") as handle:
+                        frontmatter, _ = _parse_frontmatter(handle.read())
+                    for entry in _get_required_environment_variables(frontmatter):
+                        keys.add(str(entry.get("name")))
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return sorted(key for key in keys if key and key.replace("_", "").isalnum())
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
@@ -49,7 +105,10 @@ def main():
 
         synced = sync_skills(quiet=True)
         counts = {k: len(v) if isinstance(v, list) else v for k, v in synced.items()}
-        _write(args.out, {"status": 200, "body": counts, "config": None})
+        _write(
+            args.out,
+            {"status": 200, "body": counts, "config": None, "env_schema": _env_schema(home)},
+        )
         return
     method = str(request.get("method") or "GET").upper()
     path = str(request.get("path") or "/")
@@ -75,6 +134,7 @@ def main():
         "status": response.status_code,
         "body": payload,
         "config": _config_after(home),
+        "env_schema": _env_schema(home),
     }
     _write(args.out, result)
 

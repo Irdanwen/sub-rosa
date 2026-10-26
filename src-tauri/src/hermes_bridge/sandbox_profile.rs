@@ -42,7 +42,6 @@ pub(super) const RUNTIME_STATE_DIRS: &[&str] = &[
 /// The files at the top of the runtime's home the jail may write: the
 /// session database (with SQLite's side files), the edit-verification
 /// database, and the lock the credential store is read under.
-#[cfg(target_os = "macos")]
 pub(super) const RUNTIME_STATE_FILES: &[&str] = &[
     "state.db",
     "state.db-wal",
@@ -222,6 +221,31 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     }
     out.push_str(")\n\n");
 
+    // ADR-0140, links: the state above is opened by name from outside the
+    // jail too (the gateway's logs and sessions, the app's uploads, the
+    // session database), and a link planted there would send those writes
+    // anywhere. So no symbolic or hard link may be made in it; the default
+    // workspace keeps them (development tools need them), except its
+    // `uploads` folder, which the app writes.
+    let linkless: Vec<String> = linkless_paths(grants.hermes_home)
+        .iter()
+        .map(|(subpath, path)| {
+            let kind = if *subpath { "subpath" } else { "literal" };
+            format!("({kind} {})", sbpl_quote(&path.to_string_lossy()))
+        })
+        .collect();
+    out.push_str(";; No link may be made where processes outside the jail open by name.\n");
+    out.push_str("(deny file-write-create\n");
+    for filter in &linkless {
+        out.push_str(&format!("  (require-all {filter} (vnode-type SYMLINK))\n"));
+    }
+    out.push_str(")\n");
+    out.push_str("(deny file-link\n");
+    for filter in &linkless {
+        out.push_str(&format!("  {filter}\n"));
+    }
+    out.push_str(")\n\n");
+
     out.push_str(";; Secret-read denylist: reads are otherwise open so the assistant can\n");
     out.push_str(";; work on the user's files, but credential stores stay off-limits.\n");
     out.push_str("(deny file-read*\n");
@@ -239,6 +263,25 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     push_secret_stores(&mut out, home);
     out.push_str(")\n");
     out
+}
+
+/// Where the jail may write but never make a link: every runtime state
+/// folder but the workspace, the workspace's `uploads`, and the state files.
+/// `true` marks a folder (`subpath`), `false` a file (`literal`).
+#[cfg(target_os = "macos")]
+fn linkless_paths(hermes_home: &Path) -> Vec<(bool, PathBuf)> {
+    let mut paths: Vec<(bool, PathBuf)> = RUNTIME_STATE_DIRS
+        .iter()
+        .filter(|dir| **dir != "workspace")
+        .map(|dir| (true, hermes_home.join(dir)))
+        .collect();
+    paths.push((true, hermes_home.join("workspace").join("uploads")));
+    paths.extend(
+        RUNTIME_STATE_FILES
+            .iter()
+            .map(|file| (false, hermes_home.join(file))),
+    );
+    paths
 }
 
 #[cfg(target_os = "macos")]

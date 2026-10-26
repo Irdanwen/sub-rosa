@@ -1139,6 +1139,9 @@ async fn start_hermes_bridge_inner(
     let custom_working_dir: Option<PathBuf> = working_dir_requirement.flatten();
     let cwd = custom_working_dir.clone().unwrap_or(default_cwd);
     let cwd_display = Some(cwd.to_string_lossy().into_owned());
+    // Before the config: the bundled skills the jailed runtime can no longer
+    // copy, and the keys the runtime declares, which the `.env` is held to.
+    admin_once::sync_bundled_skills(&command, &hermes_home).await;
     let provider_proxy = ensure_provider_proxy(app, bridge).await?;
     let june_web_mcp =
         sync_june_web_mcp(app, &command, provider_proxy.port, &provider_proxy.token)?;
@@ -1160,9 +1163,6 @@ async fn start_hermes_bridge_inner(
     )
     .await?;
     guard::install(app, &hermes_home).await?;
-    if !full_mode {
-        admin_once::sync_bundled_skills(&command, &hermes_home).await;
-    }
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
     // its tool calls, and any subprocess it forks all inherit the profile, so
@@ -3070,7 +3070,13 @@ pub async fn import_hermes_bridge_file(
     fs::create_dir_all(&upload_dir)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
     let destination = unique_upload_path(&upload_dir, &source)?;
-    fs::copy(&source, &destination)
+    // A new file only, never what stands at the name: the jail writes this
+    // folder too (ADR-0140).
+    let mut reader = fs::File::open(&source)
+        .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
+    let mut writer = home_prep::create_new_file(&destination)
+        .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
+    io::copy(&mut reader, &mut writer)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
     let size = fs::metadata(&destination)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?
@@ -3125,8 +3131,12 @@ pub fn import_hermes_bridge_file_bytes(
     fs::create_dir_all(&upload_dir)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
     let destination = unique_upload_path(&upload_dir, Path::new(&file_name))?;
-    fs::write(&destination, bytes)
-        .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
+    {
+        use io::Write as _;
+        home_prep::create_new_file(&destination)
+            .and_then(|mut file| file.write_all(bytes))
+            .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
+    }
     let name = destination
         .file_name()
         .and_then(|value| value.to_str())
@@ -3261,7 +3271,7 @@ fn unique_download_path(downloads_dir: &Path, source: &Path) -> Result<PathBuf, 
             )
         })?;
     let candidate = downloads_dir.join(file_name);
-    if !candidate.exists() {
+    if candidate.symlink_metadata().is_err() {
         return Ok(candidate);
     }
 
@@ -3276,7 +3286,7 @@ fn unique_download_path(downloads_dir: &Path, source: &Path) -> Result<PathBuf, 
             _ => format!("{stem} ({index})"),
         };
         let candidate = downloads_dir.join(file_name);
-        if !candidate.exists() {
+        if candidate.symlink_metadata().is_err() {
             return Ok(candidate);
         }
     }
@@ -3298,7 +3308,7 @@ fn unique_upload_path(upload_dir: &Path, source: &Path) -> Result<PathBuf, AppEr
             )
         })?;
     let candidate = upload_dir.join(file_name);
-    if !candidate.exists() {
+    if candidate.symlink_metadata().is_err() {
         return Ok(candidate);
     }
 
@@ -3313,7 +3323,7 @@ fn unique_upload_path(upload_dir: &Path, source: &Path) -> Result<PathBuf, AppEr
             _ => format!("{stem} ({index})"),
         };
         let candidate = upload_dir.join(file_name);
-        if !candidate.exists() {
+        if candidate.symlink_metadata().is_err() {
             return Ok(candidate);
         }
     }
@@ -5226,7 +5236,7 @@ async fn wait_for_hermes_gateway(connection: &HermesBridgeConnection) -> Result<
 /// which sits outside the jail's write roots.
 ///
 /// Fire-and-forget like the bridge endpoint was: the CLI's stdout/stderr go to
-/// `<hermes_home>/logs/gateway-start.log` (the same file the bridge's action
+/// `<app data>/logs/gateway-start.log` (the same file the bridge's action
 /// runner appends to) and the exit status is reaped in the background.
 fn spawn_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result<(), AppError> {
     let mut cmd = hermes_gateway_start_command(connection);
@@ -5310,17 +5320,17 @@ fn answer_gateway_install_prompts(child: &mut std::process::Child) {
     }
 }
 
-/// Opens `<hermes_home>/logs/gateway-start.log` for appending and writes the
+/// Opens `<app data>/logs/gateway-start.log` for appending and writes the
 /// same header line the bridge's action runner does, tagged with the app as
 /// the spawner. Returns two handles (stdout, stderr) onto the same file, or
 /// `None` when the log can't be opened — the spawn then proceeds silenced
 /// rather than failing gateway startup over diagnostics.
-/// Opens `logs/dashboard.log` for the bridge (dashboard) process's
+/// Opens `<app data>/logs/dashboard.log` for the bridge (dashboard) process's
 /// stdout/stderr. Truncated on every spawn: the file holds the current
 /// process's output only, so uvicorn chatter can't grow it unbounded across
 /// months while the traceback of the latest failure stays easy to find.
 fn open_dashboard_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::File)> {
-    let log_dir = hermes_home.join("logs");
+    let log_dir = home_prep::app_log_dir(hermes_home);
     fs::create_dir_all(&log_dir).ok()?;
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -5339,7 +5349,7 @@ fn open_dashboard_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::Fil
 }
 
 fn open_gateway_start_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::File)> {
-    let log_dir = hermes_home.join("logs");
+    let log_dir = home_prep::app_log_dir(hermes_home);
     fs::create_dir_all(&log_dir).ok()?;
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -5547,7 +5557,9 @@ fn launch_hermes_tui_debug_terminal(
 ) -> Result<(), AppError> {
     use std::os::unix::fs::PermissionsExt;
 
-    let log_dir = hermes_home.join("logs");
+    // The app's data folder, never the home's `logs/`: the jail writes there,
+    // and this script runs in a terminal outside it (ADR-0140).
+    let log_dir = home_prep::app_log_dir(hermes_home);
     fs::create_dir_all(&log_dir)
         .map_err(|error| AppError::new("hermes_tui_debug_failed", error.to_string()))?;
     // A `.command` file opens in Terminal and runs on launch. Name it by
@@ -6825,7 +6837,12 @@ fn write_june_web_proxy_coordinates(path: &Path, contents: &str) -> std::io::Res
     let tmp_path = path.with_extension("json.tmp");
     {
         use std::io::Write as _;
-        let mut file = fs::File::create(&tmp_path)?;
+        // A new file, never what stands at the name (ADR-0140).
+        let _ = fs::remove_file(&tmp_path);
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;

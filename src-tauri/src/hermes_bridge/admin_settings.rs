@@ -12,7 +12,7 @@
 //! command allowlist, hooks, plugins, the model, the routines' toolsets and
 //! every other key stay the app's, whatever the file held.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,11 @@ pub(super) struct HermesSettings {
     /// `.env` has been imported once (see `home_prep::prepare`).
     #[serde(default)]
     pub env: Option<BTreeMap<String, String>>,
+    /// The keys Settings can write, as the pinned runtime declares them
+    /// (`subrosa_admin.py`, `_env_schema`), refreshed at every start and with
+    /// every change. The environment file keeps no other key.
+    #[serde(default)]
+    pub env_schema: BTreeSet<String>,
 }
 
 /// The `config.yaml` keys a person owns.
@@ -97,19 +102,35 @@ pub(super) fn save(hermes_home: &Path, settings: &HermesSettings) -> std::io::Re
 /// After a change made outside the jail: the settings a person owns, read
 /// back from the files the runtime's route just wrote. `config` is the
 /// runtime's `config.yaml` as JSON (`None` when it could not be read: the
-/// record of the config is then kept as it was).
-pub(super) fn capture(hermes_home: &Path, config: Option<&Value>) -> std::io::Result<()> {
+/// record of the config is then kept as it was); `schema`, the keys the
+/// runtime declares (`None`: the last one known).
+pub(super) fn capture(
+    hermes_home: &Path,
+    config: Option<&Value>,
+    schema: Option<Vec<String>>,
+) -> std::io::Result<()> {
     let mut settings = load(hermes_home);
     if let Some(config) = config {
         settings.config = extract(config);
     }
+    if let Some(schema) = schema {
+        settings.env_schema = schema.into_iter().collect();
+    }
     let env = std::fs::read_to_string(hermes_home.join(".env")).unwrap_or_default();
+    let schema = settings.env_schema.clone();
     settings.env = Some(
         parse_dotenv(&env)
             .into_iter()
-            .filter(|(key, _)| env_key_allowed(key, false))
+            .filter(|(key, _)| env_key_allowed(key, false, &schema))
             .collect(),
     );
+    save(hermes_home, &settings)
+}
+
+/// Records the keys the runtime declares, from a start's refresh.
+pub(super) fn record_schema(hermes_home: &Path, schema: Vec<String>) -> std::io::Result<()> {
+    let mut settings = load(hermes_home);
+    settings.env_schema = schema.into_iter().collect();
     save(hermes_home, &settings)
 }
 
@@ -256,15 +277,15 @@ fn json(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
-/// Whether a key may sit in the runtime's environment file. Refused: keys
-/// that change what the runtime asks before running (`HERMES_*`, the
-/// scanner's `TIRITH_*`), how and where commands run (`TERMINAL_*`, `SUDO_*`,
-/// the shell and interpreter variables a child process loads code from),
-/// and where its traffic goes (`*_PROXY`, certificate bundles). `importing`
-/// also refuses who may command the messaging gateway (`*ALLOW*`): kept when
-/// a person sets them through Settings, never carried over from a file a
-/// jailed process could have written.
-pub(super) fn env_key_allowed(key: &str, importing: bool) -> bool {
+/// Whether a key may sit in the runtime's environment file: only a key the
+/// runtime declares as one Settings write (`schema`: a credential, a
+/// messaging platform's setting, a tool provider's key, a key an installed
+/// skill asks for, an MCP server's token), and even then never one that
+/// changes what needs approval or how commands run (`HERMES_*`, `SUDO_*`,
+/// `TERMINAL_*`, the scanner's `TIRITH_*`). `importing` also refuses who may
+/// command the messaging gateway (`*ALLOW*`): kept when a person sets it in
+/// Settings, never carried over from a file a jailed process could write.
+pub(super) fn env_key_allowed(key: &str, importing: bool, schema: &BTreeSet<String>) -> bool {
     let well_formed = !key.is_empty()
         && key.len() <= 128
         && key
@@ -272,57 +293,12 @@ pub(super) fn env_key_allowed(key: &str, importing: bool) -> bool {
             .next()
             .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
         && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-    if !well_formed {
+    if !well_formed || !schema.contains(key) {
         return false;
     }
+    const NEVER: &[&str] = &["HERMES_", "SUDO_", "TERMINAL_", "TIRITH_"];
     let upper = key.to_ascii_uppercase();
-    const PREFIXES: &[&str] = &[
-        "HERMES_",
-        "TIRITH_",
-        "TERMINAL_",
-        "SUDO_",
-        "DYLD_",
-        "LD_",
-        "PYTHON",
-        "NODE_",
-        "NPM_",
-        "BASH_",
-        "GIT_",
-        "SSH_",
-        "OP_",
-        "PERL",
-        "RUBY",
-        "JAVA_",
-        "LC_",
-        "XDG_",
-    ];
-    const EXACT: &[&str] = &[
-        "PATH",
-        "HOME",
-        "SHELL",
-        "ENV",
-        "ZDOTDIR",
-        "TMPDIR",
-        "EDITOR",
-        "VISUAL",
-        "PAGER",
-        "BROWSER",
-        "PROMPT_COMMAND",
-        "OPENSSL_CONF",
-        "SSL_CERT_FILE",
-        "SSL_CERT_DIR",
-        "REQUESTS_CA_BUNDLE",
-        "CURL_CA_BUNDLE",
-        "VIRTUAL_ENV",
-        "USER",
-        "LOGNAME",
-        "LANG",
-    ];
-    if PREFIXES.iter().any(|prefix| upper.starts_with(prefix))
-        || EXACT.contains(&upper.as_str())
-        || upper.ends_with("_PROXY")
-        || upper.ends_with("_FAIL_OPEN")
-    {
+    if NEVER.iter().any(|prefix| upper.starts_with(prefix)) {
         return false;
     }
     !(importing && upper.contains("ALLOW"))
@@ -388,13 +364,13 @@ pub(super) fn parse_dotenv(text: &str) -> Vec<(String, String)> {
 /// The `.env` the app writes at every start: values single-quoted (read
 /// literally), or double-quoted with escapes when they hold a quote or a
 /// line break.
-pub(super) fn render_dotenv(env: &BTreeMap<String, String>) -> String {
+pub(super) fn render_dotenv(env: &BTreeMap<String, String>, schema: &BTreeSet<String>) -> String {
     let mut out = String::from(
         "# Written by Sub Rosa at every start (ADR-0140). Change these in Settings:\n\
          # a line added here is gone at the next start.\n",
     );
     for (key, value) in env {
-        if !env_key_allowed(key, false) {
+        if !env_key_allowed(key, false, schema) {
             continue;
         }
         if value.contains('\'') || value.contains('\n') || value.contains('\r') {
@@ -499,37 +475,52 @@ mod tests {
         assert_eq!(value["mcp_servers"]["x"]["command"], "/bin/x");
     }
 
+    fn schema(keys: &[&str]) -> BTreeSet<String> {
+        keys.iter().map(|key| key.to_string()).collect()
+    }
+
     #[test]
-    fn authority_keys_never_reach_the_environment_file() {
-        for key in [
-            "HERMES_YOLO_MODE",
-            "HERMES_ENABLE_PROJECT_PLUGINS",
-            "hermes_yolo_mode",
-            "TIRITH_FAIL_OPEN",
-            "TERMINAL_ENV",
+    fn only_keys_the_runtime_declares_reach_the_environment_file() {
+        let declared = schema(&[
+            "NOTION_API_KEY",
+            "TELEGRAM_BOT_TOKEN",
+            "TELEGRAM_ALLOWED_USERS",
             "SUDO_PASSWORD",
-            "PATH",
-            "DYLD_INSERT_LIBRARIES",
-            "PYTHONPATH",
-            "NODE_OPTIONS",
-            "GIT_SSH_COMMAND",
-            "HTTPS_PROXY",
-            "BASH_ENV",
-            "bad-key",
-            "",
-        ] {
-            assert!(!env_key_allowed(key, false), "{key} allowed");
-        }
+            "HERMES_LANGFUSE_SECRET_KEY",
+        ]);
         for key in [
             "NOTION_API_KEY",
             "TELEGRAM_BOT_TOKEN",
-            "GITHUB_TOKEN",
             "TELEGRAM_ALLOWED_USERS",
         ] {
-            assert!(env_key_allowed(key, false), "{key} refused");
+            assert!(env_key_allowed(key, false, &declared), "{key} refused");
         }
-        assert!(!env_key_allowed("TELEGRAM_ALLOWED_USERS", true));
-        assert!(!env_key_allowed("GATEWAY_ALLOW_ALL_USERS", true));
+        // Not declared: a package index, a base address, a key nobody knows.
+        for key in [
+            "PIP_INDEX_URL",
+            "UV_INDEX_URL",
+            "CARGO_HOME",
+            "GOPROXY",
+            "OPENAI_BASE_URL",
+            "SOME_UNKNOWN_KEY",
+            "HERMES_YOLO_MODE",
+            "PATH",
+            "bad-key",
+            "",
+        ] {
+            assert!(!env_key_allowed(key, false, &declared), "{key} allowed");
+        }
+        // Declared, but they change what needs approval or how commands run.
+        assert!(!env_key_allowed("SUDO_PASSWORD", false, &declared));
+        assert!(!env_key_allowed(
+            "HERMES_LANGFUSE_SECRET_KEY",
+            false,
+            &declared
+        ));
+        // Who may command the gateway is never imported from a file.
+        assert!(!env_key_allowed("TELEGRAM_ALLOWED_USERS", true, &declared));
+        // Without a schema, nothing.
+        assert!(!env_key_allowed("NOTION_API_KEY", false, &BTreeSet::new()));
     }
 
     #[test]
@@ -545,7 +536,7 @@ mod tests {
             "${NOT_EXPANDED} #not a comment".to_string(),
         );
         env.insert("HERMES_YOLO_MODE".to_string(), "1".to_string());
-        let text = render_dotenv(&env);
+        let text = render_dotenv(&env, &schema(&["A", "B", "C", "HERMES_YOLO_MODE"]));
         assert!(!text.contains("HERMES_YOLO_MODE"));
         let parsed: BTreeMap<String, String> = parse_dotenv(&text).into_iter().collect();
         env.remove("HERMES_YOLO_MODE");

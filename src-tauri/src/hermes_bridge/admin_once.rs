@@ -69,6 +69,37 @@ pub(super) fn runs_outside_jail(method: &Method, path: &str) -> bool {
     }
 }
 
+/// A key written by `PUT /api/env` (a skill's setup) must be one the
+/// runtime declares: anything else would be dropped at the next start, so it
+/// is refused now, with the reason (ADR-0140).
+fn refuse_undeclared_key(
+    hermes_home: &Path,
+    method: &Method,
+    path: &str,
+    body: Option<&Value>,
+) -> Result<(), AppError> {
+    let path = path.split('?').next().unwrap_or(path);
+    if *method != Method::PUT || path.trim_end_matches('/') != "/api/env" {
+        return Ok(());
+    }
+    let key = body
+        .and_then(|body| body.get("key"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let schema = admin_settings::load(hermes_home).env_schema;
+    if admin_settings::env_key_allowed(key, false, &schema) {
+        return Ok(());
+    }
+    let body = serde_json::json!({
+        "detail": format!("{key} is not a key Sub Rosa's settings can set."),
+        "code": "setting_key_not_declared",
+    });
+    Err(AppError::new(
+        "hermes_bridge_api_failed",
+        format!("Hermes API returned 422 Unprocessable Entity: {body}"),
+    ))
+}
+
 #[derive(Debug, Deserialize)]
 struct AdminResult {
     status: u16,
@@ -76,6 +107,9 @@ struct AdminResult {
     body: Value,
     #[serde(default)]
     config: Option<Value>,
+    /// The keys the runtime declares Settings can write into `.env`.
+    #[serde(default)]
+    env_schema: Option<Vec<String>>,
 }
 
 /// Runs one settings change outside the jail, for the runtime `connection`
@@ -89,6 +123,7 @@ pub(super) async fn run(
     body: Option<Value>,
 ) -> Result<Value, AppError> {
     let hermes_home = PathBuf::from(&connection.hermes_home);
+    refuse_undeclared_key(&hermes_home, &method, path, body.as_ref())?;
     let python = hermes_python_command(&connection.command);
     let request = serde_json::json!({
         "method": method.as_str(),
@@ -104,10 +139,11 @@ pub(super) async fn run(
     respond(&hermes_home, result)
 }
 
-/// Copies the runtime's bundled skills into its home before a sandboxed
-/// start: the runtime does it itself when it starts, which the jail now
-/// refuses (ADR-0140). Best effort: a failure leaves the skills already
-/// there, and is logged.
+/// Before a start: copies the runtime's bundled skills into its home (the
+/// runtime does it itself when it starts, which the jail now refuses), and
+/// records the keys it declares Settings can write into `.env` (ADR-0140).
+/// Best effort: a failure leaves the skills and the keys already known, and
+/// is logged.
 pub(super) async fn sync_bundled_skills(hermes_command: &str, hermes_home: &Path) {
     let python = hermes_python_command(hermes_command);
     let home = hermes_home.to_path_buf();
@@ -117,7 +153,13 @@ pub(super) async fn sync_bundled_skills(hermes_command: &str, hermes_home: &Path
     })
     .await;
     match outcome {
-        Ok(Ok(result)) if result.0.status == 200 => {}
+        Ok(Ok(result)) if result.0.status == 200 => {
+            if let Some(schema) = result.0.env_schema {
+                if let Err(error) = admin_settings::record_schema(hermes_home, schema) {
+                    eprintln!("hermes settings: could not record the keys: {error}");
+                }
+            }
+        }
         Ok(Ok(result)) => eprintln!("hermes skills: sync answered {}", result.0.status),
         Ok(Err(error)) => eprintln!("hermes skills: sync failed: {}", error.message),
         Err(error) => eprintln!("hermes skills: sync failed: {error}"),
@@ -195,7 +237,9 @@ pub(super) fn respond(hermes_home: &Path, result: AdminResultFile) -> Result<Val
             format!("Hermes API returned {} {reason}: {body}", result.status),
         ));
     }
-    if let Err(error) = admin_settings::capture(hermes_home, result.config.as_ref()) {
+    if let Err(error) =
+        admin_settings::capture(hermes_home, result.config.as_ref(), result.env_schema)
+    {
         // The change is made; only its survival across a restart is lost.
         eprintln!("hermes settings: could not keep the change: {error}");
     }
@@ -203,7 +247,7 @@ pub(super) fn respond(hermes_home: &Path, result: AdminResultFile) -> Result<Val
 }
 
 fn open_admin_log(hermes_home: &Path) -> Option<(std::fs::File, std::fs::File)> {
-    let dir = hermes_home.join("logs");
+    let dir = super::home_prep::app_log_dir(hermes_home);
     std::fs::create_dir_all(&dir).ok()?;
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -273,6 +317,35 @@ mod tests {
     }
 
     #[test]
+    fn a_key_the_runtime_does_not_declare_is_refused_before_the_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        std::fs::create_dir_all(&home).unwrap();
+        admin_settings::record_schema(&home, vec!["NOTION_API_KEY".into()]).unwrap();
+        let put = |key: &str| {
+            refuse_undeclared_key(
+                &home,
+                &Method::PUT,
+                "/api/env?profile=default",
+                Some(&serde_json::json!({"key": key, "value": "v"})),
+            )
+        };
+        assert!(put("NOTION_API_KEY").is_ok());
+        for key in ["PIP_INDEX_URL", "SOME_UNKNOWN_KEY", "HERMES_YOLO_MODE"] {
+            let error = put(key).unwrap_err();
+            assert!(
+                error.message.starts_with("Hermes API returned 422"),
+                "{}",
+                error.message
+            );
+            assert!(error.message.contains(key));
+            assert!(error.message.contains("setting_key_not_declared"));
+        }
+        // Other routes are not this check's business.
+        assert!(refuse_undeclared_key(&home, &Method::DELETE, "/api/env", None).is_ok());
+    }
+
+    #[test]
     fn a_refused_change_answers_like_the_dashboard() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("hermes");
@@ -283,6 +356,7 @@ mod tests {
                 status: 409,
                 body: serde_json::json!({"detail": "Server 'x' already exists"}),
                 config: None,
+                env_schema: None,
             }),
         )
         .unwrap_err();
@@ -308,6 +382,7 @@ mod tests {
                     "approvals": {"mode": "off"},
                     "skills": {"disabled": ["pdf"]}
                 })),
+                env_schema: Some(vec!["NOTION_API_KEY".into(), "HERMES_YOLO_MODE".into()]),
             }),
         )
         .unwrap();

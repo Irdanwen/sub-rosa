@@ -127,7 +127,19 @@ pub fn extract_beside(path: &Path) -> Option<String> {
     let mut file_name = path.file_name()?.to_os_string();
     file_name.push(".txt");
     target.set_file_name(file_name);
-    std::fs::write(&target, text).ok()?;
+    // Beside an upload, in a folder the sandboxed runtime also writes
+    // (ADR-0140): never follow what stands at the name, replace it.
+    if target.symlink_metadata().is_ok() {
+        std::fs::remove_file(&target).ok()?;
+    }
+    use std::io::Write as _;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+        .ok()?
+        .write_all(text.as_bytes())
+        .ok()?;
     Some(target.to_string_lossy().into_owned())
 }
 

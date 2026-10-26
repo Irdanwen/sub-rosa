@@ -46,9 +46,16 @@ pub(super) fn config_block(memory_off: bool) -> String {
 /// runtime start, so an app update carries its guard with it.
 pub(super) fn install_plugin(hermes_home: &Path) -> std::io::Result<()> {
     let dir = hermes_home.join("plugins").join(PLUGIN_NAME);
+    // A link in place of the folder (planted before ADR-0140) goes first.
+    if dir
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink() || !meta.is_dir())
+    {
+        std::fs::remove_file(&dir)?;
+    }
     std::fs::create_dir_all(&dir)?;
-    std::fs::write(dir.join("plugin.yaml"), PLUGIN_MANIFEST)?;
-    std::fs::write(dir.join("__init__.py"), PLUGIN_SOURCE)
+    super::home_prep::write_owned(&dir.join("plugin.yaml"), PLUGIN_MANIFEST)?;
+    super::home_prep::write_owned(&dir.join("__init__.py"), PLUGIN_SOURCE)
 }
 
 pub fn render_ledger(
