@@ -2957,7 +2957,9 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 | `src-tauri/src/hermes_bridge.rs` | Profil déplacé (`prepare_sandbox` passe `SandboxGrants`) ; `dashboard_args` avec `--profile default` ; `--profile default` forcé dans `mcp login`, `skills reset`, `skills tap` et le TUI ; `sync_hermes_config` applique le registre puis `home_prep::prepare` ; `config.yaml`/`SOUL.md` via `write_owned` ; `hermes_connection_json` délègue les routes de réglage à `admin_once` ; copie des skills livrées avant un démarrage sandboxé ; `active_profile` retiré avant `gateway start` ; texte sandbox du SOUL ; anciennes constantes `HERMES_CONFIG_*` et tests du profil retirés | Réappliquer ; ne jamais rouvrir le home en racine d'écriture |
 | `src-tauri/src/hermes_bridge/gateway_start.rs` | `--profile default` avant `gateway start`/`install` | Réappliquer |
 | `src-tauri/src/hermes_bridge/builtin_mcp.rs` | `is_builtin_server` | Réappliquer |
-| `src/lib/hermes-admin/errors.ts`, `transport.ts` | Messages sûrs par `t()`, sans nommer le runtime ; un 5xx dit « This change was not made » | Réappliquer, garder les phrases du catalogue |
+| `src/lib/hermes-admin/errors.ts`, `transport.ts` | Messages sûrs par `t()`, sans nommer le runtime ; un 5xx dit « This change was not made » ; le code `setting_key_not_declared` a sa phrase | Réappliquer, garder les phrases du catalogue |
+| `src-tauri/src/documents.rs` | `extract_beside` écrit en fichier neuf (remplace ce qui est au nom, ne le suit pas) | Réappliquer |
+| `src-tauri/src/hermes_bridge/guard.rs` | Le plugin est écrit par `write_owned`, un lien à la place du dossier est retiré | Réappliquer |
 | `src/lib/hermes-admin/use-skill-setup.ts`, `use-skill-detail.ts`, `use-skill-bundles.ts` | « Hermes is not running. » remplacé par une phrase traduite | Réappliquer |
 | `src/test/hermes-admin-client.test.ts` | Nouvelles phrases attendues | Réappliquer |
 | `src/components/settings/ConnectorsSection.tsx` (fork) | Nettoyage hérité retiré (mode figé `sandboxed`, suppression passée par le runtime jailé) : aucune copie ne survit à un démarrage | Garder la version fork |
@@ -2968,4 +2970,7 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 - Les outils fichiers de Hermes refusent les chemins sous `/private/var` (« sensitive system path ») : un essai réel doit placer son home hors de `$TMPDIR`.
 - Le home d'un essai est souvent sous `$TMPDIR`, qui est une racine d'écriture : c'est pourquoi le profil ferme le home APRÈS toutes les autorisations.
 - Un basculement d'outil écrit `platform_toolsets.cli` en entier (kanban compris) : `agent.disabled_toolsets` reste le dernier mot de l'app, et `platform_toolsets.cron` n'est jamais repris du registre.
+- Les journaux de l'app (`dashboard.log`, `gateway-start.log`, `settings-changes.log`, le lanceur `tui-debug-*.command`) sont dans `<données de l'app>/logs/`, plus dans `hermes/logs/` que le jail écrit ; le profil refuse les liens (symboliques et physiques) dans l'état du runtime sauf le workspace (mais pas `workspace/uploads`), et l'app n'écrit un téléversement qu'en fichier neuf.
+- `.env` : liste d'autorisation tirée du schéma du runtime épinglé (`_env_schema`), pas une liste de refus ; une clé inconnue est refusée en 422 avec le code `setting_key_not_declared`.
+- Un essai réel qui « plante » dans le runtime emprunté ne doit créer que des fichiers neufs : une mutation a un jour ajouté un octet à `run_agent.py` du runtime de dev (réparé, identique au bundle).
 - Conflit attendu à la fusion de `feat/code-p1-checks`, qui crée aussi `sandbox_profile.rs` (refus nommés) : garder l'inversion de ce lot et y reporter la section des toolchains.

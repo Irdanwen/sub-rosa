@@ -4953,6 +4953,7 @@
   "Sub Rosa will stop running this routine. This can’t be undone.": "Sub Rosa dejará de ejecutar esta rutina. Esta acción no se puede deshacer.",
   "Sub Rosa works in the folder you pick: it reads and writes files there.": "Sub Rosa trabaja en la carpeta que elijas: lee y escribe archivos allí.",
   "Sub Rosa's own folder inside the app.": "La carpeta propia de Sub Rosa, dentro de la app.",
+  "Sub Rosa's settings cannot set this key. Only the keys a skill or a service asks for are kept.": "Los ajustes de Sub Rosa no pueden definir esta clave. Solo se guardan las claves que pide una skill o un servicio.",
   "Submission uncertain": "Envío incierto",
   "Submit": "Enviar",
   "Submitting": "Enviando",

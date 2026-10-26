@@ -63,15 +63,22 @@ under the profile with no paid call, showed what that meant:
    `active_profile` before every start and before the gateway starts; the jail
    cannot write it back.
 4. **The app writes `.env` at every start** from its own record
-   (`hermes-settings.json`, next to the home, outside the jail's reach). The
-   existing file is imported once, filtered: keys that change what needs
-   approval or how commands run (`HERMES_*`, `TIRITH_*`, `TERMINAL_*`,
-   `SUDO_*`, interpreter and shell variables, proxies, certificate bundles)
-   are never kept, and on import also who may command the messaging gateway
-   (`*ALLOW*`). A line added to `.env` afterwards, by anything, is gone at the
-   next start. The files the app owns at the top of the home (`config.yaml`,
-   `.env`, `SOUL.md`) are replaced, not followed, when a symlink stands in
-   their place.
+   (`hermes-settings.json`, next to the home, outside the jail's reach), and
+   the record keeps only the keys the pinned runtime declares Settings write:
+   the credentials of its environment schema, the messaging platforms'
+   settings, the tool providers' keys, the keys installed skills ask for and
+   the MCP servers' tokens (`_env_schema` in `subrosa_admin.py`, refreshed
+   before every start and with every change). An allowlist, not a denylist:
+   a package index (`PIP_INDEX_URL`), a base address or any unknown key is
+   refused, and `PUT /api/env` with such a key answers 422 with the reason
+   before anything is written. Even declared, `HERMES_*`, `SUDO_*`,
+   `TERMINAL_*` and `TIRITH_*` never pass, and on import who may command the
+   messaging gateway (`*ALLOW*`) does not either. The existing file is set
+   aside once in the app's data folder and imported when the runtime has
+   declared its keys; a line added to `.env` afterwards, by anything, is gone
+   at the next start. The files the app owns in the home (`config.yaml`,
+   `.env`, `SOUL.md`, the guard plugin) are replaced, not followed, when a
+   link stands in their place.
 5. **The homes are not split in this fix.** Both runtime modes and the
    gateway keep one home. A home per mode would close the last channel (the
    transcripts and the caches the jail still writes are read by the
@@ -99,8 +106,21 @@ under the profile with no paid call, showed what that meant:
    was lost at the next start, because `config.yaml` is rewritten from
    scratch. Reads, a server's test and everything else still go to the
    runtime; profiles stay out of reach. The bundled skills, which the runtime
-   copies into its home when it starts, are copied by the app before a
-   sandboxed start.
+   copies into its home when it starts, are copied by the app before every
+   start.
+
+7. **No link where processes outside the jail open by name.** The runtime
+   state is written by the jail but also opened by name from outside it (the
+   gateway's logs and sessions, the session database, the app's uploads), so
+   the profile refuses symbolic and hard links there (`file-write-create` of
+   a `SYMLINK` vnode, `file-link`), renames included; the default workspace
+   keeps its links (development tools need them), except its `uploads`
+   folder. Links planted before this fix are swept at every start. The app
+   writes an upload, and the text extracted beside it, only as a new file
+   (`create_new`, which never follows what stands at the name), and its own
+   logs (the runtime's output, the gateway's start, settings changes, the
+   developer terminal launcher) live in its data folder, never in the home's
+   `logs/`.
 
 ## Consequences
 
@@ -134,7 +154,11 @@ under the profile with no paid call, showed what that meant:
   - Windows has no jail; the unrestricted mode is not jailed by design.
 - **Tests:** the profile's write grants are pinned by hand
   (`the_write_grants_are_exactly_the_declared_list`), the kernel refuses
-  every vector and allows the working state (`sandbox_profile_tests.rs`);
+  every vector, every link where others open by name, and allows the working
+  state (`sandbox_profile_tests.rs`); the app sweeps left-over links, writes
+  uploads only as new files and keeps its logs out of the home
+  (`home_prep.rs`); only declared keys reach `.env`, and an undeclared one is
+  refused before the change (`admin_settings.rs`, `admin_once.rs`);
   under the real runtime, no vector can be planted and the next session
   still asks, a left-over profile is neither followed nor kept, the runtime
   lives with its home read-only, and every settings change succeeds from the

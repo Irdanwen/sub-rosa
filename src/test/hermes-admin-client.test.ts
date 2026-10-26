@@ -293,6 +293,31 @@ describe("HermesAdminClient — error normalization", () => {
     expect(error?.safeMessage).toBe("This change was not made. Try again.");
   });
 
+  it("says plainly when the app refused a key its settings do not know", async () => {
+    // ADR-0140: the Rust side answers 422 with this code before the change.
+    const fetch422 = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            detail: "PIP_INDEX_URL is not a key Sub Rosa's settings can set.",
+            code: "setting_key_not_declared",
+          }),
+          { status: 422, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    const client = createHermesAdminClient(targetForFake(new FakeHermesServer()), {
+      fetch: fetch422,
+    });
+    const error = await client.skills.list().then(
+      () => undefined,
+      (e: unknown) => e as HermesAdminError,
+    );
+    expect(error?.status).toBe(422);
+    expect(error?.safeMessage).toBe(
+      "Sub Rosa's settings cannot set this key. Only the keys a skill or a service asks for are kept.",
+    );
+  });
+
   it("treats malformed JSON in a 2xx as a parse error, not a crash", async () => {
     const fetchBadJson = vi.fn(
       async () =>

@@ -61,7 +61,7 @@ export class HermesAdminError extends Error {
   readonly rawBodyPreview?: string;
 
   constructor(init: HermesAdminErrorInit) {
-    const safeMessage = init.safeMessage ?? defaultSafeMessage(init.kind, init.status);
+    const safeMessage = init.safeMessage ?? defaultSafeMessage(init.kind, init.status, init.code);
     // The Error message itself must be safe: it can land in a console or a
     // generic crash reporter, so it gets the SAFE text, never the raw body.
     super(safeMessage);
@@ -120,7 +120,13 @@ function isAbortError(error: unknown): boolean {
  * assistant (ADR-0017). Since ADR-0140 a settings change is made by the app
  * itself, so a 5xx means the change was not made, not that the assistant is
  * broken. */
-function defaultSafeMessage(kind: HermesAdminErrorKind, status?: number): string {
+function defaultSafeMessage(kind: HermesAdminErrorKind, status?: number, code?: string): string {
+  // The app refused a key its settings do not know (ADR-0140).
+  if (code === "setting_key_not_declared") {
+    return t(
+      "Sub Rosa's settings cannot set this key. Only the keys a skill or a service asks for are kept.",
+    );
+  }
   switch (kind) {
     case "offline":
       return t("The assistant is not running. Open a chat to start it, then try again.");
@@ -136,6 +142,7 @@ function defaultSafeMessage(kind: HermesAdminErrorKind, status?: number): string
       }
       if (status === 404) return t("This item no longer exists.");
       if (status === 409) return t("That change conflicts with the current state.");
+
       if (status !== undefined && status >= 500) {
         return t("This change was not made. Try again.");
       }
