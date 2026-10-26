@@ -1,0 +1,303 @@
+//! The Seatbelt (SBPL) profile the sandboxed runtime runs under (ADR-0006,
+//! ADR-0014, ADR-0140). Moved out of `hermes_bridge.rs` whole, so the
+//! bridge file's size ratchet goes down.
+//!
+//! The rule since ADR-0140: the jail writes nothing a process outside it
+//! reads with authority. Its home is closed as a whole and re-opened only
+//! where the runtime keeps its working state ([`RUNTIME_STATE_DIRS`],
+//! [`RUNTIME_STATE_FILES`]); its settings, its permissions, its code and
+//! everything another process runs from (the gateway, the unrestricted
+//! runtime, the app) stay read-only to it, and the app writes them from
+//! outside before each start.
+
+#[cfg(target_os = "macos")]
+use std::path::{Path, PathBuf};
+
+#[cfg(target_os = "macos")]
+use super::{AGENT_CLI_STATE_DIRS, AGENT_CLI_STATE_FILE_PREFIXES};
+
+/// The folders of the runtime's home the jail may write, relative to it.
+/// Measured on the pinned runtime under the profile (ADR-0140): its dashboard
+/// starts and answers, a session opens and runs terminal, file, search, todo,
+/// skill reading, session search, code, delegation and image attachment, and
+/// no other folder of the home is written. None of them holds a setting, a
+/// permission or a program another process runs.
+///
+/// - `workspace`: the default working folder of a sandboxed session.
+/// - `sessions`: session transcripts and request dumps.
+/// - `logs`: the runtime's own logs.
+/// - `cache`: model metadata, delegation progress, vision and document caches.
+/// - `images`: images attached to a turn (`image.attach_bytes`).
+/// - `image_cache`, `audio_cache`: generated media on its way to the chat.
+pub(super) const RUNTIME_STATE_DIRS: &[&str] = &[
+    "workspace",
+    "sessions",
+    "logs",
+    "cache",
+    "images",
+    "image_cache",
+    "audio_cache",
+];
+
+/// The files at the top of the runtime's home the jail may write: the
+/// session database (with SQLite's side files), the edit-verification
+/// database, and the lock the credential store is read under.
+#[cfg(target_os = "macos")]
+pub(super) const RUNTIME_STATE_FILES: &[&str] = &[
+    "state.db",
+    "state.db-wal",
+    "state.db-shm",
+    "state.db-journal",
+    "verification_evidence.db",
+    "verification_evidence.db-wal",
+    "verification_evidence.db-shm",
+    "verification_evidence.db-journal",
+    "auth.lock",
+];
+
+/// What a sandboxed spawn is granted, gathered by `prepare_sandbox`. Every
+/// path is canonical, so the rules match the realpaths the kernel checks.
+#[cfg(target_os = "macos")]
+pub(super) struct SandboxGrants<'a> {
+    /// The person's home directory (`$HOME`).
+    pub home: &'a Path,
+    /// The runtime's home (`$HERMES_HOME`), closed but for the runtime state.
+    pub hermes_home: &'a Path,
+    /// The runtime's installation (source and virtualenv): never written.
+    pub runtime_dir: &'a Path,
+    /// Shared and per-session temp folders.
+    pub temp_roots: &'a [PathBuf],
+    pub agent_cli_access: bool,
+    /// The session's working folder, already validated (ADR-0014).
+    pub working_dir: Option<&'a Path>,
+}
+
+/// The temp folders the jail may write. Canonicalized (macOS resolves
+/// `/tmp` -> `/private/tmp` and `$TMPDIR` under `/private/var/folders`).
+///
+/// Deliberately scoped to `$TMPDIR` (this app's per-session temp dir) rather
+/// than the whole `/private/var/folders` tree, which is the parent of every
+/// other app's caches too.
+#[cfg(target_os = "macos")]
+pub(super) fn sandbox_temp_roots() -> Vec<PathBuf> {
+    let mut roots = vec![
+        // Shared temp dirs, used mainly as a fallback when $TMPDIR is unset.
+        PathBuf::from("/private/tmp"),
+        PathBuf::from("/private/var/tmp"),
+    ];
+    // The per-session temp dir. The Python runtime and its children use it
+    // for scratch files and multiprocessing sockets.
+    if let Some(tmpdir) = std::env::var_os("TMPDIR") {
+        if !tmpdir.is_empty() {
+            roots.push(PathBuf::from(tmpdir));
+        }
+    }
+    let mut canonical: Vec<PathBuf> = Vec::with_capacity(roots.len());
+    for root in roots {
+        let resolved = std::fs::canonicalize(&root).unwrap_or(root);
+        if !canonical.contains(&resolved) {
+            canonical.push(resolved);
+        }
+    }
+    canonical
+}
+
+/// Renders the profile text. Strategy: allow broadly, because the embedded
+/// Python runtime needs wide syscall, mach-service, and exec rights and any
+/// tighter base brings the runtime down; then deny every write and re-grant
+/// only what the jail may write, and deny reads of credential stores. In
+/// SBPL the last matching rule wins, so the order of the sections is the
+/// enforcement. Pure (no IO) so it can be unit-tested.
+#[cfg(target_os = "macos")]
+pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
+    let home = grants.home;
+    let mut out = String::new();
+    out.push_str("(version 1)\n");
+    out.push_str(";; Sub Rosa desktop agent sandbox, generated by the app, do not edit.\n");
+    out.push_str(";; Allow broadly (the Python runtime needs wide syscall/mach access and\n");
+    out.push_str(";; must exec interpreters), then carve a hard write-jail and a secret-read\n");
+    out.push_str(";; denylist. Subprocesses inherit this profile.\n");
+    out.push_str("(allow default)\n\n");
+
+    out.push_str(";; Write jail: deny all writes, then re-grant the temp folders.\n");
+    out.push_str("(deny file-write*)\n");
+    out.push_str("(allow file-write*\n");
+    for root in grants.temp_roots {
+        out.push_str(&format!(
+            "  (subpath {})\n",
+            sbpl_quote(&root.to_string_lossy())
+        ));
+    }
+    out.push_str(")\n\n");
+
+    if let Some(working_dir) = grants.working_dir {
+        // The one user-directory grant, and it exists only because
+        // `validate_working_dir` accepted this exact canonical path (the
+        // spawn re-validates every start). The trailing denies below still
+        // outrank it.
+        out.push_str(";; Working folder (per-session, user-picked, validated): the one\n");
+        out.push_str(";; user directory this session may write. See\n");
+        out.push_str(";; docs/adr/0014-per-session-working-folder.md.\n");
+        out.push_str("(allow file-write*\n");
+        out.push_str(&format!(
+            "  (subpath {})\n",
+            sbpl_quote(&working_dir.to_string_lossy())
+        ));
+        out.push_str(")\n\n");
+    }
+
+    if grants.agent_cli_access {
+        out.push_str(";; Agent CLI state (explicit user opt-in from Settings > Agent):\n");
+        out.push_str(";; lets installed coding CLIs (Claude Code, Codex, Gemini, opencode)\n");
+        out.push_str(";; run under the jail while keeping their sessions and refreshed\n");
+        out.push_str(";; logins. These folders configure tools that later run OUTSIDE the\n");
+        out.push_str(";; sandbox (hooks, settings), which is why this is off by default.\n");
+        out.push_str("(allow file-write*\n");
+        for relative in AGENT_CLI_STATE_DIRS {
+            out.push_str(&format!(
+                "  (subpath {})\n",
+                sbpl_quote(&home.join(relative).to_string_lossy())
+            ));
+        }
+        for prefix in AGENT_CLI_STATE_FILE_PREFIXES {
+            // Prefix regex instead of a literal: the CLIs write these files
+            // atomically through randomly suffixed temp names + rename.
+            out.push_str(&format!(
+                "  (regex #\"^{}.*$\")\n",
+                sbpl_regex_escape(&home.join(prefix).to_string_lossy())
+            ));
+        }
+        out.push_str(")\n\n");
+    }
+
+    out.push_str(";; Character devices and pipes the runtime needs to write.\n");
+    out.push_str("(allow file-write*\n");
+    for device in [
+        "/dev/null",
+        "/dev/zero",
+        "/dev/dtracehelper",
+        "/dev/tty",
+        "/dev/stdout",
+        "/dev/stderr",
+        "/dev/random",
+        "/dev/urandom",
+    ] {
+        out.push_str(&format!("  (literal {})\n", sbpl_quote(device)));
+    }
+    out.push_str("  (regex #\"^/dev/fd/[0-9]+$\")\n");
+    out.push_str("  (regex #\"^/dev/ttys[0-9]+$\")\n");
+    out.push_str(")\n\n");
+
+    // ADR-0140. After every grant above, so no temp root, working folder or
+    // CLI grant can span them: the runtime's home and its installation are
+    // closed as a whole. Processes outside the jail read them with
+    // authority: the gateway runs its routines, hooks and plugins from the
+    // home, the unrestricted runtime and the app read its settings, and the
+    // installation is the code all of them run.
+    out.push_str(";; The runtime's home and installation: closed as a whole (ADR-0140).\n");
+    out.push_str("(deny file-write*\n");
+    out.push_str(&format!(
+        "  (subpath {})\n",
+        sbpl_quote(&grants.hermes_home.to_string_lossy())
+    ));
+    out.push_str(&format!(
+        "  (subpath {})\n",
+        sbpl_quote(&grants.runtime_dir.to_string_lossy())
+    ));
+    out.push_str(")\n\n");
+
+    out.push_str(";; ...and re-opened only where the runtime keeps its working state.\n");
+    out.push_str("(allow file-write*\n");
+    for dir in RUNTIME_STATE_DIRS {
+        out.push_str(&format!(
+            "  (subpath {})\n",
+            sbpl_quote(&grants.hermes_home.join(dir).to_string_lossy())
+        ));
+    }
+    for file in RUNTIME_STATE_FILES {
+        out.push_str(&format!(
+            "  (literal {})\n",
+            sbpl_quote(&grants.hermes_home.join(file).to_string_lossy())
+        ));
+    }
+    out.push_str(")\n\n");
+
+    out.push_str(";; Secret-read denylist: reads are otherwise open so the assistant can\n");
+    out.push_str(";; work on the user's files, but credential stores stay off-limits.\n");
+    out.push_str("(deny file-read*\n");
+    push_secret_stores(&mut out, home);
+    out.push_str(")\n\n");
+
+    // Last on purpose: in SBPL the later rule wins, so this deny outranks
+    // every write grant above it. Working-dir validation already refuses
+    // folders that contain (or live inside) a credential store; this is the
+    // second, kernel-level line for the same invariant: no grant, present
+    // or future, may make a credential store writable.
+    out.push_str(";; Secret-write denylist: credential stores stay unwritable even when a\n");
+    out.push_str(";; write grant above (workspace, working folder, CLI state) spans them.\n");
+    out.push_str("(deny file-write*\n");
+    push_secret_stores(&mut out, home);
+    out.push_str(")\n");
+    out
+}
+
+#[cfg(target_os = "macos")]
+fn push_secret_stores(out: &mut String, home: &Path) {
+    for relative in crate::hermes_working_dir::SECRET_STORE_DIRS {
+        out.push_str(&format!(
+            "  (subpath {})\n",
+            sbpl_quote(&home.join(relative).to_string_lossy())
+        ));
+    }
+    out.push_str("  (subpath \"/Library/Keychains\")\n");
+    for relative in crate::hermes_working_dir::SECRET_STORE_FILES {
+        out.push_str(&format!(
+            "  (literal {})\n",
+            sbpl_quote(&home.join(relative).to_string_lossy())
+        ));
+    }
+}
+
+/// Quotes a string as an SBPL literal: wrap in double quotes, backslash-escape
+/// embedded quotes and backslashes. Spaces (e.g. "Application Support") are
+/// fine inside the quotes.
+#[cfg(target_os = "macos")]
+pub(super) fn sbpl_quote(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('"');
+    for ch in value.chars() {
+        if ch == '\\' || ch == '"' {
+            quoted.push('\\');
+        }
+        quoted.push(ch);
+    }
+    quoted.push('"');
+    quoted
+}
+
+/// Escapes a path for embedding in an SBPL `(regex #"...")` pattern so it
+/// matches itself literally: dots in file names and any other regex
+/// metacharacters must not widen the grant.
+#[cfg(target_os = "macos")]
+pub(super) fn sbpl_regex_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(
+            ch,
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '^' | '$' | '|'
+        ) {
+            escaped.push('\\');
+        }
+        if ch == '"' {
+            // SBPL string layer: a quote would end the #"..." pattern.
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+#[path = "sandbox_profile_tests.rs"]
+mod tests;

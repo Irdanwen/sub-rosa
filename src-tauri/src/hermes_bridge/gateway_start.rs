@@ -18,7 +18,10 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use super::{apply_isolated_hermes_env, gateway_label, HermesBridgeConnection};
+use super::{
+    apply_isolated_hermes_env, gateway_label, HermesBridgeConnection, HERMES_DEFAULT_PROFILE,
+    HERMES_PROFILE_FLAG,
+};
 
 /// Set to take the shared gateway over from a debug build anyway.
 pub(super) const TAKEOVER_ENV: &str = "SUBROSA_DEV_GATEWAY";
@@ -61,6 +64,10 @@ pub(super) fn build_hermes_gateway_start_command(
     hermes_home: &Path,
 ) -> Command {
     let mut cmd = Command::new(&connection.command);
+    // ADR-0140: the default profile, never a sticky `active_profile`. The
+    // service definition the runtime writes carries no profile of its own,
+    // which is why the app also removes that file before each start.
+    cmd.args([HERMES_PROFILE_FLAG, HERMES_DEFAULT_PROFILE]);
     if cfg!(windows) {
         // `gateway start` is a dead end on a fresh Windows install: with no
         // service registered it asks "Install it now? [Y/n]", and Hermes'

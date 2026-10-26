@@ -231,7 +231,8 @@ You cannot start a render or spend anything. Compiling the shots into a producti
 const JUNE_SOUL_SANDBOX_MD: &str = r#"
 Your environment: sessions run by default inside a macOS kernel sandbox (Seatbelt) that the Sub Rosa app applies to you and to every subprocess you start. It is a write-jail, part of the same privacy-by-architecture story. The user chooses the mode per session: sessions are Sandboxed unless they explicitly started this one in Unrestricted mode. When a "Sandbox status for this session" line appears in your environment notes, it is the authoritative answer for the current session — trust it over any assumption. In a sandboxed session:
 
-- You can write only inside your own area — your Hermes home (including your workspace), your runtime directory, and your temp directory. Writes anywhere else (the user's dotfiles, Desktop, Documents, system settings) are denied by the kernel.
+- You can write only inside your own area: your workspace, your temp directory, and the records the runtime keeps of your sessions. Writes anywhere else (the user's dotfiles, Desktop, Documents, system settings) are denied by the kernel.
+- Your own settings are read-only to you: your configuration, environment file, installed skills, saved memories, scheduled routines, plugins and the runtime itself. Other parts of Sub Rosa run them outside this sandbox, so a sandboxed session may not change them. When a write there fails with "operation not permitted", do not look for another way in: tell the user what to change, and that they change it in Sub Rosa's Settings (skills, connectors, tools) or in Routines. Sub Rosa remembers facts about the user through its own memory, which works in every session.
 - The user can also give a session a working folder: when a "Working folder for this session" line appears in your environment notes, that folder is your current directory and the jail explicitly allows writes inside it (credential stores stay blocked). Work on the user's files there directly. Without that line, no user folder is writable.
 - Reads stay broad so you can work with the user's files, except credential stores (~/.ssh, ~/.aws, ~/.gnupg, keychains, .netrc), which are blocked.
 - When a command fails with "operation not permitted" on a write outside your area, that is the sandbox working as designed. Don't retry or look for workarounds: produce the file in your workspace and tell the user where it is, or ask them to do that one step. If the user wants you to write outside the jail, they can start a new session in Unrestricted mode.
@@ -339,21 +340,27 @@ const AGENT_CLI_STATE_DIRS: &[&str] = &[
 /// through randomly suffixed temp names (`.claude.json.<hash>` + rename).
 const AGENT_CLI_STATE_FILE_PREFIXES: &[&str] = &[".claude.json"];
 
-/// The single Hermes config file the sandboxed runtime owns, relative to
-/// `$HERMES_HOME`. June's native admin surfaces (skill toggle, MCP add,
-/// catalog install, skill config) all persist through Hermes' `save_config`,
-/// which lives inside the jailed runtime process, so the jail must let the
-/// runtime rewrite its own config or every admin mutation fails with a 500.
-const HERMES_CONFIG_FILE: &str = "config.yaml";
+/// The runtime's command line. No --tui: upstream removed the flag from the
+/// dashboard subcommand before v2026.7.20, and the embedded chat gateway
+/// (/api/ws) is always enabled; passing it is an argparse error.
+fn dashboard_args(port: &str) -> [&str; 8] {
+    [
+        HERMES_PROFILE_FLAG,
+        HERMES_DEFAULT_PROFILE,
+        "dashboard",
+        "--no-open",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        port,
+    ]
+}
 
-/// `save_config` writes `config.yaml` atomically: it streams a temp file then
-/// `os.replace()`s it onto the real path. The replace needs write+unlink on the
-/// target and the temp, and the temp is named with a random suffix
-/// (`.config_<random>.tmp`), so it must be granted via a prefix regex rather
-/// than a literal — exactly like `AGENT_CLI_STATE_FILE_PREFIXES` does for
-/// Claude Code's `.claude.json.<hash>` atomic writes. The prefix is relative to
-/// `$HERMES_HOME`; the trailing wildcard covers the random suffix.
-const HERMES_CONFIG_ATOMIC_TEMP_PREFIX: &str = ".config_";
+/// Every command the app runs names the default profile (ADR-0140): left
+/// without one, the runtime's command line follows the `active_profile`
+/// file of its home into another home.
+const HERMES_PROFILE_FLAG: &str = "--profile";
+const HERMES_DEFAULT_PROFILE: &str = "default";
 
 const ISOLATED_HERMES_ENV_VARS: &[&str] = &[
     "HERMES_HOME",
@@ -1153,6 +1160,9 @@ async fn start_hermes_bridge_inner(
     )
     .await?;
     guard::install(app, &hermes_home).await?;
+    if !full_mode {
+        admin_once::sync_bundled_skills(&command, &hermes_home).await;
+    }
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
     // its tool calls, and any subprocess it forks all inherit the profile, so
@@ -1196,17 +1206,7 @@ async fn start_hermes_bridge_inner(
         );
     }
     let port_string = port.to_string();
-    // No --tui: upstream removed the flag from the dashboard subcommand before
-    // v2026.7.20, and the embedded chat gateway (/api/ws) is always enabled.
-    // Passing the flag is an argparse error.
-    let hermes_args: [&str; 6] = [
-        "dashboard",
-        "--no-open",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        port_string.as_str(),
-    ];
+    let hermes_args = dashboard_args(&port_string);
 
     let mut cmd = match &sandbox_profile {
         Some(profile_path) => {
@@ -3514,21 +3514,21 @@ fn is_safe_mcp_server_name(name: &str) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
-/// Builds the `hermes mcp login <server> [--profile <p>]` command, isolated to
+/// Builds the `hermes mcp login <server> --profile default` command, isolated to
 /// the connection's home/token, non-interactive, in the connection's mode. Pure
 /// (no spawn) so a test can assert the exact argument vector and that the server
 /// name is a discrete argument rather than shell-interpolated.
 fn build_hermes_mcp_login_command(
     connection: &HermesBridgeConnection,
     server: &str,
-    profile: Option<&str>,
+    _profile: Option<&str>,
 ) -> Command {
     let hermes_home = PathBuf::from(&connection.hermes_home);
     let mut cmd = Command::new(&connection.command);
     cmd.args(["mcp", "login", server]);
-    if let Some(profile) = profile {
-        cmd.args(["--profile", profile]);
-    }
+    // Always the default profile, whatever the webview asked (ADR-0140): the
+    // app provisions no other, and another one's home is not the app's.
+    cmd.args([HERMES_PROFILE_FLAG, HERMES_DEFAULT_PROFILE]);
     apply_isolated_hermes_env(&mut cmd, &hermes_home, &connection.token, None);
     // Non-interactive: the CLI must print the authorization URL and not block on
     // a terminal prompt June cannot answer. June opens the URL in the browser.
@@ -3787,7 +3787,7 @@ fn is_safe_skill_name(name: &str) -> bool {
     is_safe_mcp_server_name(name)
 }
 
-/// Builds `hermes skills reset <name> [--restore] [--profile <p>]`, isolated to
+/// Builds `hermes skills reset <name> [--restore] --profile default`, isolated to
 /// the connection's home/token, non-interactive, in the connection's mode. Pure
 /// (no spawn) so a test can assert the exact argument vector and that the skill
 /// name is a discrete argument rather than shell-interpolated.
@@ -3795,7 +3795,7 @@ fn build_hermes_skill_reset_command(
     connection: &HermesBridgeConnection,
     name: &str,
     restore: bool,
-    profile: Option<&str>,
+    _profile: Option<&str>,
 ) -> Command {
     let hermes_home = PathBuf::from(&connection.hermes_home);
     let mut cmd = Command::new(&connection.command);
@@ -3803,9 +3803,9 @@ fn build_hermes_skill_reset_command(
     if restore {
         cmd.arg("--restore");
     }
-    if let Some(profile) = profile {
-        cmd.args(["--profile", profile]);
-    }
+    // Always the default profile, whatever the webview asked (ADR-0140): the
+    // app provisions no other, and another one's home is not the app's.
+    cmd.args([HERMES_PROFILE_FLAG, HERMES_DEFAULT_PROFILE]);
     apply_isolated_hermes_env(&mut cmd, &hermes_home, &connection.token, None);
     cmd.env("HERMES_NONINTERACTIVE", "1");
     cmd.current_dir(&hermes_home);
@@ -3985,7 +3985,7 @@ fn is_safe_tap_path(path: &str) -> bool {
     true
 }
 
-/// Builds `hermes skills tap <subcommand> [args...] [--profile <p>]`, isolated to
+/// Builds `hermes skills tap <subcommand> [args...] --profile default`, isolated to
 /// the connection's home/token, non-interactive, in the connection's mode. Pure
 /// (no spawn) so a test can assert the exact argument vector and that every value
 /// is a discrete argument rather than shell-interpolated.
@@ -3994,7 +3994,7 @@ fn build_hermes_skill_tap_command(
     subcommand: &str,
     repo: Option<&str>,
     path: Option<&str>,
-    profile: Option<&str>,
+    _profile: Option<&str>,
 ) -> Command {
     let hermes_home = PathBuf::from(&connection.hermes_home);
     let mut cmd = Command::new(&connection.command);
@@ -4005,9 +4005,9 @@ fn build_hermes_skill_tap_command(
     if let Some(path) = path {
         cmd.args(["--path", path]);
     }
-    if let Some(profile) = profile {
-        cmd.args(["--profile", profile]);
-    }
+    // Always the default profile, whatever the webview asked (ADR-0140): the
+    // app provisions no other, and another one's home is not the app's.
+    cmd.args([HERMES_PROFILE_FLAG, HERMES_DEFAULT_PROFILE]);
     apply_isolated_hermes_env(&mut cmd, &hermes_home, &connection.token, None);
     cmd.env("HERMES_NONINTERACTIVE", "1");
     cmd.current_dir(&hermes_home);
@@ -5285,6 +5285,8 @@ async fn run_hermes_gateway_start(connection: &HermesBridgeConnection) -> Result
 
 fn hermes_gateway_start_command(connection: &HermesBridgeConnection) -> Command {
     let hermes_home = PathBuf::from(&connection.hermes_home);
+    // The service the runtime registers restarts without a profile flag.
+    home_prep::neutralize_active_profile(&hermes_home);
     let mut cmd = gateway_start::start_command(connection, &hermes_home);
     match open_gateway_start_log(&hermes_home) {
         Some((log_for_stdout, log_for_stderr)) => {
@@ -5515,7 +5517,11 @@ pub async fn open_hermes_tui_debug(
     eprintln!("{trace_line}");
 
     let token = random_token();
-    let args = hermes_tui_resume_args(&session_id);
+    let mut args = vec![
+        HERMES_PROFILE_FLAG.to_string(),
+        HERMES_DEFAULT_PROFILE.to_string(),
+    ];
+    args.extend(hermes_tui_resume_args(&session_id));
     let script = build_hermes_tui_debug_launcher_script(
         &command,
         &args,
@@ -5594,6 +5600,10 @@ async fn hermes_connection_json(
     path: &str,
     body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, AppError> {
+    // ADR-0140: a settings change runs outside the jail, by the app.
+    if admin_once::runs_outside_jail(&method, path) {
+        return admin_once::run(connection, method, path, body).await;
+    }
     let url = format!("{}{}", connection.base_url, path);
     // Exceed Hermes' own 30s budgets (e.g. the skill hub's parallel
     // source-search timeout) so a slow but successful response — partial
@@ -6561,10 +6571,10 @@ fn apply_isolated_hermes_env(
 /// set, or if the profile can't be written. Callers treat `None` as "not
 /// sandboxed" and surface that honestly in the UI.
 ///
-/// The profile is written to `app_data_dir` itself, deliberately *outside* every
-/// granted write root (the `hermes/` and `hermes-runtime/` subdirs), so the
-/// jailed agent can't rewrite the policy that governs it or the one the next
-/// spawn will read.
+/// The profile is written to `app_data_dir` itself, which the jail cannot
+/// write (only parts of `hermes/` are re-opened, ADR-0140), so the jailed
+/// agent can't rewrite the policy that governs it or the one the next spawn
+/// will read.
 #[cfg(target_os = "macos")]
 fn prepare_sandbox(
     app: &AppHandle,
@@ -6580,22 +6590,23 @@ fn prepare_sandbox(
         return None;
     }
     let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    let runtime_dir = managed_hermes_runtime_dir(app).ok()?;
-    let write_roots = sandbox_write_roots(hermes_home, &runtime_dir);
-    let config_write_path = sandbox_config_write_path(hermes_home);
-    let config_temp_prefix = sandbox_config_temp_prefix(hermes_home);
+    // Canonical, so the rules match the realpaths the kernel checks.
+    let canonical = |path: PathBuf| std::fs::canonicalize(&path).unwrap_or(path);
+    let runtime_dir = canonical(managed_hermes_runtime_dir(app).ok()?);
+    let hermes_home = canonical(hermes_home.to_path_buf());
+    let temp_roots = sandbox_profile::sandbox_temp_roots();
     // `working_dir` only ever arrives here through
     // `hermes_working_dir::validate_working_dir` (the spawn re-validates on
-    // every start) — this is the "explicit, validated grant" that lets the
-    // jail span one user-picked folder without ever widening past it.
-    let profile = build_sandbox_profile(
-        &home,
-        &write_roots,
-        &config_write_path,
-        &config_temp_prefix,
+    // every start): the "explicit, validated grant" that lets the jail span
+    // one user-picked folder without ever widening past it.
+    let profile = sandbox_profile::build_sandbox_profile(&sandbox_profile::SandboxGrants {
+        home: &home,
+        hermes_home: &hermes_home,
+        runtime_dir: &runtime_dir,
+        temp_roots: &temp_roots,
         agent_cli_access,
         working_dir,
-    );
+    });
     let app_data_dir = crate::app_paths::app_data_dir(app).ok()?;
     if std::fs::create_dir_all(&app_data_dir).is_err() {
         return None;
@@ -6660,257 +6671,6 @@ fn env_flag_enabled(name: &str) -> bool {
         }
         Err(_) => false,
     }
-}
-
-/// Directories the jailed agent may write to. Everything else is read-only.
-/// Paths are canonicalized so `subpath` rules match the realpaths the kernel
-/// enforces against (macOS resolves `/tmp` -> `/private/tmp` and `$TMPDIR`
-/// under `/private/var/folders`).
-///
-/// Deliberately scoped to `$TMPDIR` (this app's per-session temp dir) rather
-/// than the whole `/private/var/folders` tree, which is the parent of every
-/// other app's caches too. The session cwd is intentionally *not* a write root:
-/// it defaults to the workspace (already under `hermes_home`), and a non-default
-/// cwd is user-influenced, so granting it write would let the jail span an
-/// arbitrary directory — a project-dir feature would need an explicit, validated
-/// grant instead.
-#[cfg(target_os = "macos")]
-fn sandbox_write_roots(hermes_home: &Path, runtime_dir: &Path) -> Vec<PathBuf> {
-    let mut roots = vec![
-        hermes_home.to_path_buf(),
-        runtime_dir.to_path_buf(),
-        // Shared temp dirs, used mainly as a fallback when $TMPDIR is unset.
-        PathBuf::from("/private/tmp"),
-        PathBuf::from("/private/var/tmp"),
-    ];
-    // The per-session temp dir (resolves under /private/var/folders). The Python
-    // runtime and its children use it for scratch files and multiprocessing
-    // sockets; scoping to it keeps other apps' caches out of the jail.
-    if let Some(tmpdir) = std::env::var_os("TMPDIR") {
-        if !tmpdir.is_empty() {
-            roots.push(PathBuf::from(tmpdir));
-        }
-    }
-    let mut canonical: Vec<PathBuf> = Vec::with_capacity(roots.len());
-    for root in roots {
-        let resolved = std::fs::canonicalize(&root).unwrap_or(root);
-        if !canonical.contains(&resolved) {
-            canonical.push(resolved);
-        }
-    }
-    canonical
-}
-
-/// The Hermes config file the jailed runtime persists through `save_config`,
-/// as an absolute path under `$HERMES_HOME`. Returned separately from the broad
-/// write roots so the grant is auditable and scoped to exactly this one file.
-#[cfg(target_os = "macos")]
-fn sandbox_config_write_path(hermes_home: &Path) -> PathBuf {
-    hermes_home.join(HERMES_CONFIG_FILE)
-}
-
-/// Absolute atomic-temp prefix for `config.yaml` writes under `$HERMES_HOME`
-/// (e.g. `…/hermes/.config_`). Granted as a regex prefix so the random suffix
-/// in `.config_<random>.tmp` is covered.
-#[cfg(target_os = "macos")]
-fn sandbox_config_temp_prefix(hermes_home: &Path) -> PathBuf {
-    hermes_home.join(HERMES_CONFIG_ATOMIC_TEMP_PREFIX)
-}
-
-/// Renders the Seatbelt (SBPL) profile text. Strategy: allow broadly, because
-/// the embedded Python runtime needs wide syscall, mach-service, and exec
-/// rights and any tighter base brings the runtime down; then deny every write
-/// and re-grant only the app-owned roots, and deny reads of credential stores.
-/// Pure (no IO) so it can be unit-tested.
-#[cfg(target_os = "macos")]
-fn build_sandbox_profile(
-    home: &Path,
-    write_roots: &[PathBuf],
-    config_write_path: &Path,
-    config_temp_prefix: &Path,
-    agent_cli_access: bool,
-    working_dir: Option<&Path>,
-) -> String {
-    let mut out = String::new();
-    out.push_str("(version 1)\n");
-    out.push_str(";; June desktop agent sandbox — generated by June, do not edit.\n");
-    out.push_str(";; Allow broadly (the Python runtime needs wide syscall/mach access and\n");
-    out.push_str(";; must exec interpreters), then carve a hard write-jail and a secret-read\n");
-    out.push_str(";; denylist. Subprocesses inherit this profile.\n");
-    out.push_str("(allow default)\n\n");
-
-    out.push_str(";; Write jail: deny all writes, then re-grant only app-owned roots.\n");
-    out.push_str("(deny file-write*)\n");
-    out.push_str("(allow file-write*\n");
-    for root in write_roots {
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&root.to_string_lossy())
-        ));
-    }
-    out.push_str(")\n\n");
-
-    // June's own config sync (the Rust host, unsandboxed) rewrites config.yaml
-    // at every spawn, but the *sandboxed runtime* also persists it in-session
-    // through Hermes' `save_config` whenever an admin surface mutates skills,
-    // toolsets, or MCP servers. That write is atomic: a `.config_<random>.tmp`
-    // is streamed then `os.replace`d onto config.yaml, which needs write+unlink
-    // on the target and the temp. The temp already lives under a write root
-    // ($HERMES_HOME), but spell out both the config file and its random-suffixed
-    // temp prefix explicitly so the grant is auditable and survives any future
-    // tightening of the broad roots. Nothing outside $HERMES_HOME is widened.
-    out.push_str(";; Hermes' own config.yaml: the jailed runtime persists admin changes\n");
-    out.push_str(";; through save_config (atomic temp + os.replace). Grant the file and its\n");
-    out.push_str(";; random-suffixed atomic temp; everything else stays under the write jail.\n");
-    out.push_str("(allow file-write*\n");
-    out.push_str(&format!(
-        "  (literal {})\n",
-        sbpl_quote(&config_write_path.to_string_lossy())
-    ));
-    out.push_str(&format!(
-        "  (regex #\"^{}.*$\")\n",
-        sbpl_regex_escape(&config_temp_prefix.to_string_lossy())
-    ));
-    out.push_str(")\n\n");
-
-    if let Some(working_dir) = working_dir {
-        // The one user-directory grant, and it exists only because
-        // `validate_working_dir` accepted this exact canonical path (the
-        // spawn re-validates every start). The trailing secret write-deny
-        // below still outranks it, so even a folder that somehow gained a
-        // credential store keeps those paths unwritable.
-        out.push_str(";; Working folder (per-session, user-picked, validated): the one\n");
-        out.push_str(";; user directory this session may write. See\n");
-        out.push_str(";; docs/adr/0014-per-session-working-folder.md.\n");
-        out.push_str("(allow file-write*\n");
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&working_dir.to_string_lossy())
-        ));
-        out.push_str(")\n\n");
-    }
-
-    if agent_cli_access {
-        out.push_str(";; Agent CLI state (explicit user opt-in from Settings > Agent):\n");
-        out.push_str(";; lets installed coding CLIs (Claude Code, Codex, Gemini, opencode)\n");
-        out.push_str(";; run under the jail while keeping their sessions and refreshed\n");
-        out.push_str(";; logins. These folders configure tools that later run OUTSIDE the\n");
-        out.push_str(";; sandbox (hooks, settings), which is why this is off by default.\n");
-        out.push_str("(allow file-write*\n");
-        for relative in AGENT_CLI_STATE_DIRS {
-            out.push_str(&format!(
-                "  (subpath {})\n",
-                sbpl_quote(&home.join(relative).to_string_lossy())
-            ));
-        }
-        for prefix in AGENT_CLI_STATE_FILE_PREFIXES {
-            // Prefix regex instead of a literal: the CLIs write these files
-            // atomically through randomly suffixed temp names + rename.
-            out.push_str(&format!(
-                "  (regex #\"^{}.*$\")\n",
-                sbpl_regex_escape(&home.join(prefix).to_string_lossy())
-            ));
-        }
-        out.push_str(")\n\n");
-    }
-
-    out.push_str(";; Character devices and pipes the runtime needs to write.\n");
-    out.push_str("(allow file-write*\n");
-    for device in [
-        "/dev/null",
-        "/dev/zero",
-        "/dev/dtracehelper",
-        "/dev/tty",
-        "/dev/stdout",
-        "/dev/stderr",
-        "/dev/random",
-        "/dev/urandom",
-    ] {
-        out.push_str(&format!("  (literal {})\n", sbpl_quote(device)));
-    }
-    out.push_str("  (regex #\"^/dev/fd/[0-9]+$\")\n");
-    out.push_str("  (regex #\"^/dev/ttys[0-9]+$\")\n");
-    out.push_str(")\n\n");
-
-    out.push_str(";; Secret-read denylist: reads are otherwise open so June can work on\n");
-    out.push_str(";; the user's files, but credential stores stay off-limits.\n");
-    out.push_str("(deny file-read*\n");
-    for relative in crate::hermes_working_dir::SECRET_STORE_DIRS {
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&home.join(relative).to_string_lossy())
-        ));
-    }
-    out.push_str("  (subpath \"/Library/Keychains\")\n");
-    for relative in crate::hermes_working_dir::SECRET_STORE_FILES {
-        out.push_str(&format!(
-            "  (literal {})\n",
-            sbpl_quote(&home.join(relative).to_string_lossy())
-        ));
-    }
-    out.push_str(")\n\n");
-
-    // Last on purpose: in SBPL the later rule wins, so this deny outranks
-    // every write grant above it. Working-dir validation already refuses
-    // folders that contain (or live inside) a credential store; this is the
-    // second, kernel-level line for the same invariant — no grant, present
-    // or future, may make a credential store writable.
-    out.push_str(";; Secret-write denylist: credential stores stay unwritable even when a\n");
-    out.push_str(";; write grant above (workspace, working folder, CLI state) spans them.\n");
-    out.push_str("(deny file-write*\n");
-    for relative in crate::hermes_working_dir::SECRET_STORE_DIRS {
-        out.push_str(&format!(
-            "  (subpath {})\n",
-            sbpl_quote(&home.join(relative).to_string_lossy())
-        ));
-    }
-    out.push_str("  (subpath \"/Library/Keychains\")\n");
-    for relative in crate::hermes_working_dir::SECRET_STORE_FILES {
-        out.push_str(&format!(
-            "  (literal {})\n",
-            sbpl_quote(&home.join(relative).to_string_lossy())
-        ));
-    }
-    out.push_str(")\n");
-    out
-}
-
-/// Quotes a string as an SBPL literal: wrap in double quotes, backslash-escape
-/// embedded quotes and backslashes. Spaces (e.g. "Application Support") are
-/// fine inside the quotes.
-#[cfg(target_os = "macos")]
-fn sbpl_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('"');
-    for ch in value.chars() {
-        if ch == '\\' || ch == '"' {
-            quoted.push('\\');
-        }
-        quoted.push(ch);
-    }
-    quoted.push('"');
-    quoted
-}
-
-/// Escapes a path for embedding in an SBPL `(regex #"...")` pattern so it
-/// matches itself literally — dots in file names and any other regex
-/// metacharacters must not widen the grant.
-fn sbpl_regex_escape(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for ch in value.chars() {
-        if matches!(
-            ch,
-            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '^' | '$' | '|'
-        ) {
-            escaped.push('\\');
-        }
-        if ch == '"' {
-            // SBPL string layer: a quote would end the #"..." pattern.
-            escaped.push('\\');
-        }
-        escaped.push(ch);
-    }
-    escaped
 }
 
 pub(crate) fn resolve_june_hermes_home(app: &AppHandle) -> Result<PathBuf, AppError> {
@@ -7121,12 +6881,20 @@ async fn sync_hermes_config(
 ) -> Result<(), AppError> {
     let model = crate::providers::generation_model();
     let base_url = format!("http://127.0.0.1:{provider_proxy_port}/v1");
+    // ADR-0140: the settings a person made in Settings, kept by the app.
+    let overlay = admin_settings::load(hermes_home).config;
+    let mut skill_dirs = external_skill_dirs.to_vec();
+    for dir in overlay.skills_external_dirs.iter().map(PathBuf::from) {
+        if !skill_dirs.contains(&dir) {
+            skill_dirs.push(dir);
+        }
+    }
     let config = render_hermes_config(
         &model,
         &base_url,
         provider_proxy_token,
         &builtin_mcp::cron_toolsets(CRON_SANDBOXED_TOOLSETS),
-        external_skill_dirs,
+        &skill_dirs,
         // Catalog-sourced, never assumed: an unreachable catalog writes no key
         // and leaves Hermes on its own detection (see the function's docs).
         crate::providers::generation_model_supports_vision().await,
@@ -7136,8 +6904,10 @@ async fn sync_hermes_config(
         Some(june_studio_mcp),
     );
     let guard = guard::config_block(crate::protected_mode::restrictions().memory_off);
-    std::fs::write(hermes_home.join("config.yaml"), config + &guard)
-        .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))
+    let config = admin_settings::apply_overlay(config + &guard, &overlay);
+    home_prep::write_owned(&hermes_home.join("config.yaml"), &config)
+        .map_err(|error| AppError::new("hermes_bridge_config_failed", error.to_string()))?;
+    home_prep::prepare(hermes_home)
 }
 
 /// Renders the `config.yaml` June owns for every Hermes spawn. Pure so the
@@ -7298,7 +7068,7 @@ fn sync_june_soul(
     } else {
         format!("{JUNE_SOUL_MD}{memory_section}{JUNE_SOUL_CONTEXT_MD}{JUNE_SOUL_CLARIFY_MD}{JUNE_SOUL_WEB_MD}{JUNE_SOUL_BLOCKS_MD}{data_section}{JUNE_SOUL_MEDIA_MD}{JUNE_SOUL_LONG_TASKS_MD}{JUNE_SOUL_STUDIO_MD}")
     };
-    std::fs::write(hermes_home.join("SOUL.md"), soul)
+    home_prep::write_owned(&hermes_home.join("SOUL.md"), &soul)
         .map_err(|error| AppError::new("hermes_bridge_soul_failed", error.to_string()))
 }
 
@@ -8262,6 +8032,8 @@ async fn wait_for_hermes(base_url: &str, token: &str) -> Result<(), AppError> {
     ))
 }
 
+mod admin_once;
+mod admin_settings;
 mod builtin_mcp;
 mod connectors_mcp;
 mod gateway_label;
@@ -8273,10 +8045,15 @@ use builtin_mcp::{
     JuneWebMcpConfig, RUNTIME_DISABLED_TOOLSETS,
 };
 pub mod guard;
+mod home_prep;
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+mod jail_runtime_tests;
 mod local_reads;
 mod project_memory;
 mod provider_proxy;
 use provider_proxy::provider_models_body;
+mod sandbox_profile;
 
 #[cfg(test)]
 mod config_tests;
@@ -8821,6 +8598,23 @@ mod tests {
     }
 
     #[test]
+    fn the_runtime_starts_on_the_default_profile() {
+        assert_eq!(
+            dashboard_args("4242"),
+            [
+                "--profile",
+                "default",
+                "dashboard",
+                "--no-open",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "4242"
+            ]
+        );
+    }
+
+    #[test]
     fn mcp_login_command_passes_server_as_discrete_argument() {
         let connection = oauth_test_connection();
         let cmd = build_hermes_mcp_login_command(&connection, "linear", Some("work"));
@@ -8830,18 +8624,19 @@ mod tests {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
         assert_eq!(program, "/usr/local/bin/hermes");
-        assert_eq!(args, vec!["mcp", "login", "linear", "--profile", "work"]);
+        // ADR-0140: whatever profile was asked, the default one.
+        assert_eq!(args, vec!["mcp", "login", "linear", "--profile", "default"]);
     }
 
     #[test]
-    fn mcp_login_command_omits_profile_when_none() {
+    fn mcp_login_command_names_the_default_profile_when_none() {
         let connection = oauth_test_connection();
         let cmd = build_hermes_mcp_login_command(&connection, "linear", None);
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().to_string())
             .collect();
-        assert_eq!(args, vec!["mcp", "login", "linear"]);
+        assert_eq!(args, vec!["mcp", "login", "linear", "--profile", "default"]);
     }
 
     #[test]
@@ -8865,18 +8660,28 @@ mod tests {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
         assert_eq!(program, "/usr/local/bin/hermes");
-        assert_eq!(args, vec!["skills", "reset", "pdf", "--profile", "work"]);
+        assert_eq!(args, vec!["skills", "reset", "pdf", "--profile", "default"]);
     }
 
     #[test]
-    fn skill_reset_command_adds_restore_flag_and_omits_profile() {
+    fn skill_reset_command_adds_restore_flag_and_names_the_default_profile() {
         let connection = oauth_test_connection();
         let cmd = build_hermes_skill_reset_command(&connection, "pdf", true, None);
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().to_string())
             .collect();
-        assert_eq!(args, vec!["skills", "reset", "pdf", "--restore"]);
+        assert_eq!(
+            args,
+            vec![
+                "skills",
+                "reset",
+                "pdf",
+                "--restore",
+                "--profile",
+                "default"
+            ]
+        );
     }
 
     #[test]
@@ -8891,7 +8696,7 @@ mod tests {
     }
 
     #[test]
-    fn skill_tap_list_command_passes_profile_as_discrete_argument() {
+    fn skill_tap_list_command_names_the_default_profile() {
         let connection = oauth_test_connection();
         let cmd = build_hermes_skill_tap_command(&connection, "list", None, None, Some("work"));
         let program = cmd.get_program().to_string_lossy().to_string();
@@ -8900,7 +8705,7 @@ mod tests {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
         assert_eq!(program, "/usr/local/bin/hermes");
-        assert_eq!(args, vec!["skills", "tap", "list", "--profile", "work"]);
+        assert_eq!(args, vec!["skills", "tap", "list", "--profile", "default"]);
     }
 
     #[test]
@@ -8925,13 +8730,15 @@ mod tests {
                 "add",
                 "acme/runbooks",
                 "--path",
-                "skills/ops"
+                "skills/ops",
+                "--profile",
+                "default"
             ]
         );
     }
 
     #[test]
-    fn skill_tap_remove_command_omits_path_and_profile() {
+    fn skill_tap_remove_command_omits_path() {
         let connection = oauth_test_connection();
         let cmd = build_hermes_skill_tap_command(
             &connection,
@@ -8944,7 +8751,17 @@ mod tests {
             .get_args()
             .map(|a| a.to_string_lossy().to_string())
             .collect();
-        assert_eq!(args, vec!["skills", "tap", "remove", "acme/runbooks"]);
+        assert_eq!(
+            args,
+            vec![
+                "skills",
+                "tap",
+                "remove",
+                "acme/runbooks",
+                "--profile",
+                "default"
+            ]
+        );
     }
 
     #[test]
@@ -9602,9 +9419,10 @@ mod tests {
         if cfg!(windows) {
             // Windows must go through `install`: `start` on a never-installed
             // service prompts, and Hermes' prompt_yes_no exits on stdin EOF.
-            assert_eq!(args, ["gateway", "install"]);
+            assert_eq!(args, ["--profile", "default", "gateway", "install"]);
         } else {
-            assert_eq!(args, ["gateway", "start"]);
+            // ADR-0140: never a sticky `active_profile`.
+            assert_eq!(args, ["--profile", "default", "gateway", "start"]);
         }
         let envs: std::collections::HashMap<String, String> = cmd
             .get_envs()
@@ -10412,418 +10230,6 @@ mod tests {
                 .expect_err("invalid skill name");
             assert_eq!(err.code, "hermes_skill_name_invalid");
         }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn write_roots_are_scoped_and_exclude_the_var_folders_blanket() {
-        let hermes_home = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
-        let runtime_dir = PathBuf::from("/Users/test/Library/Application Support/june/runtime");
-        let roots = sandbox_write_roots(&hermes_home, &runtime_dir);
-
-        assert!(roots.contains(&hermes_home), "workspace root missing");
-        assert!(roots.contains(&runtime_dir), "runtime root missing");
-        // The blanket /private/var/folders (parent of every app's caches) must
-        // not be a write root — only this app's $TMPDIR may slip under it.
-        assert!(
-            !roots.contains(&PathBuf::from("/private/var/folders")),
-            "must not grant the whole /private/var/folders tree"
-        );
-        // No root may be the home dir or a filesystem root — the jail must never
-        // span the user's whole account (regression guard for the dropped cwd).
-        for root in &roots {
-            assert!(root != &PathBuf::from("/"), "root / granted");
-            assert!(
-                !root.to_string_lossy().eq("/Users/test"),
-                "home dir granted as a write root"
-            );
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sandbox_profile_jails_writes_to_allowed_roots() {
-        let home = PathBuf::from("/Users/test");
-        let workspace = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            None,
-        );
-
-        // Allow-everything base, then a hard write-jail re-granting the root.
-        assert!(profile.contains("(allow default)"));
-        assert!(profile.contains("(deny file-write*)"));
-        assert!(
-            profile.contains("(subpath \"/Users/test/Library/Application Support/june/hermes\")")
-        );
-        // The sandboxed runtime owns config.yaml: it must be able to persist
-        // admin mutations through save_config's atomic temp + os.replace.
-        assert!(profile.contains(
-            "(literal \"/Users/test/Library/Application Support/june/hermes/config.yaml\")"
-        ));
-        // The atomic temp is granted via a prefix regex (random suffix), with
-        // the path's dots escaped so the grant can't widen.
-        assert!(profile.contains(
-            "(regex #\"^/Users/test/Library/Application Support/june/hermes/\\.config_.*$\")"
-        ));
-        // The re-grant must come after the blanket write deny, or it's a no-op.
-        let deny_at = profile.find("(deny file-write*)").expect("deny present");
-        let grant_at = profile
-            .find("(allow file-write*\n  (subpath")
-            .expect("grant present");
-        assert!(deny_at < grant_at);
-        let config_grant_at = profile
-            .find(";; Hermes' own config.yaml: the jailed runtime persists admin changes")
-            .expect("config grant present");
-        assert!(deny_at < config_grant_at);
-
-        // Credential stores stay unreadable even though reads are otherwise open.
-        assert!(profile.contains("(deny file-read*"));
-        assert!(profile.contains("(subpath \"/Users/test/.ssh\")"));
-        assert!(profile.contains("(subpath \"/Users/test/Library/Keychains\")"));
-
-        // Without the opt-in, no agent CLI state dir is writable.
-        assert!(!profile.contains(".claude"));
-        assert!(!profile.contains(".codex"));
-        assert!(!profile.contains(".gemini"));
-        assert!(!profile.contains("opencode"));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sandbox_profile_opt_in_grants_agent_cli_state_only() {
-        let home = PathBuf::from("/Users/test");
-        let workspace = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            true,
-            None,
-        );
-
-        // The CLI state dirs become writable...
-        assert!(profile.contains("(subpath \"/Users/test/.claude\")"));
-        assert!(profile.contains("(subpath \"/Users/test/.codex\")"));
-        assert!(profile.contains("(subpath \"/Users/test/.gemini\")"));
-        assert!(profile.contains("(subpath \"/Users/test/.config/opencode\")"));
-        // ...including Claude Code's atomically written top-level config (a
-        // prefix regex, because writes go through random temp suffixes), with
-        // the path's dots escaped so the grant can't widen.
-        assert!(profile.contains("(regex #\"^/Users/test/\\.claude\\.json.*$\")"));
-
-        // The jail and the secret-read denylist are unchanged.
-        assert!(profile.contains("(deny file-write*)"));
-        assert!(profile.contains("(subpath \"/Users/test/.ssh\")"));
-        assert!(profile.contains("(subpath \"/Users/test/Library/Keychains\")"));
-        // The CLI grant must come after the blanket write deny to take effect.
-        let deny_at = profile.find("(deny file-write*)").expect("deny present");
-        let cli_grant_at = profile
-            .find("(subpath \"/Users/test/.claude\")")
-            .expect("cli grant present");
-        assert!(deny_at < cli_grant_at);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sbpl_regex_escape_neutralizes_metacharacters() {
-        assert_eq!(
-            sbpl_regex_escape("/Users/test/.claude.json"),
-            "/Users/test/\\.claude\\.json"
-        );
-        assert_eq!(sbpl_regex_escape("a+b(c)[d]"), "a\\+b\\(c\\)\\[d\\]");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sbpl_quote_escapes_quotes_and_backslashes() {
-        assert_eq!(sbpl_quote("/plain/path"), "\"/plain/path\"");
-        assert_eq!(sbpl_quote("/with space/x"), "\"/with space/x\"");
-        assert_eq!(sbpl_quote("a\"b\\c"), "\"a\\\"b\\\\c\"");
-    }
-
-    /// Runs the *actual* generated profile through the kernel via `sandbox-exec`
-    /// to prove it's valid SBPL and enforces the jail — not just that the string
-    /// looks right. Catches malformed regexes, bad escaping, or rule ordering
-    /// that a string-content assertion would miss.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn generated_profile_is_enforced_by_the_kernel() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        // Canonicalize so the profile's subpaths match the realpaths the kernel
-        // resolves (/var/folders -> /private/var/folders).
-        let home = std::fs::canonicalize(dir.path()).expect("canonicalize home");
-        let workspace = home.join("workspace");
-        std::fs::create_dir_all(&workspace).expect("create workspace");
-        std::fs::create_dir_all(home.join(".ssh")).expect("create .ssh");
-        std::fs::write(home.join(".ssh").join("id_secret"), "TOPSECRET").expect("seed secret");
-
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile_text = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            None,
-        );
-        let profile_path = home.join("test.sb");
-        std::fs::write(&profile_path, &profile_text).expect("write profile");
-
-        let run = |script: &str| {
-            std::process::Command::new(SANDBOX_EXEC_PATH)
-                .arg("-f")
-                .arg(&profile_path)
-                .arg("/bin/bash")
-                .arg("-c")
-                .arg(script)
-                .output()
-                .expect("run sandbox-exec")
-        };
-
-        // Allowed: write inside the workspace root.
-        let inside = workspace.join("ok.txt");
-        let out = run(&format!("echo ok > {}", sbpl_shell_quote(&inside)));
-        assert!(
-            out.status.success() && inside.exists(),
-            "workspace write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Allowed: the sandboxed runtime persists its own config.yaml through
-        // save_config — a directly written file must succeed.
-        let config = workspace.join("config.yaml");
-        let out = run(&format!("echo cfg > {}", sbpl_shell_quote(&config)));
-        assert!(
-            out.status.success() && config.exists(),
-            "direct config write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        std::fs::remove_file(&config).expect("reset config");
-
-        // Allowed: the real save_config path — stream a random-suffixed
-        // `.config_<random>.tmp` then os.replace (mv) it onto config.yaml. This
-        // is the exact operation the jail denied before, breaking every admin
-        // mutation with an HTTP 500.
-        let config_tmp = workspace.join(".config_vsc99h39.tmp");
-        let out = run(&format!(
-            "echo cfg > {tmp} && mv {tmp} {config}",
-            tmp = sbpl_shell_quote(&config_tmp),
-            config = sbpl_shell_quote(&config),
-        ));
-        assert!(
-            out.status.success() && config.exists(),
-            "atomic config replacement should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Denied: write outside the workspace (home root is not a write root here).
-        let outside = home.join("escaped.txt");
-        run(&format!("echo bad > {}", sbpl_shell_quote(&outside)));
-        assert!(
-            !outside.exists(),
-            "write outside the jail must be denied, but the file was created"
-        );
-
-        // Denied: read a credential store even though reads are otherwise open.
-        let out = run(&format!(
-            "cat {}",
-            sbpl_shell_quote(&home.join(".ssh").join("id_secret"))
-        ));
-        assert!(
-            !String::from_utf8_lossy(&out.stdout).contains("TOPSECRET"),
-            "secret read must be denied, but the contents leaked"
-        );
-    }
-
-    /// Same kernel-level proof for the Agent CLI access opt-in: the CLI state
-    /// paths become writable (including Claude Code's atomic temp-name
-    /// config writes) while the rest of the jail holds.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn cli_access_profile_is_enforced_by_the_kernel() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let home = std::fs::canonicalize(dir.path()).expect("canonicalize home");
-        let workspace = home.join("workspace");
-        std::fs::create_dir_all(&workspace).expect("create workspace");
-
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile_text = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            true,
-            None,
-        );
-        let profile_path = home.join("test.sb");
-        std::fs::write(&profile_path, &profile_text).expect("write profile");
-
-        let run = |script: &str| {
-            std::process::Command::new(SANDBOX_EXEC_PATH)
-                .arg("-f")
-                .arg(&profile_path)
-                .arg("/bin/bash")
-                .arg("-c")
-                .arg(script)
-                .output()
-                .expect("run sandbox-exec")
-        };
-
-        // Allowed: create ~/.claude itself and write session state under it.
-        let claude_state = home.join(".claude").join("session.json");
-        let out = run(&format!(
-            "mkdir -p {} && echo state > {}",
-            sbpl_shell_quote(&home.join(".claude")),
-            sbpl_shell_quote(&claude_state)
-        ));
-        assert!(
-            out.status.success() && claude_state.exists(),
-            "CLI state write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Allowed: the atomic config write pattern (temp suffix + rename).
-        let config_tmp = home.join(".claude.json.1a2b3c");
-        let config = home.join(".claude.json");
-        let out = run(&format!(
-            "echo cfg > {tmp} && mv {tmp} {cfg}",
-            tmp = sbpl_shell_quote(&config_tmp),
-            cfg = sbpl_shell_quote(&config)
-        ));
-        assert!(
-            out.status.success() && config.exists(),
-            "atomic CLI config write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Still denied: anything else in the home directory.
-        let outside = home.join("escaped.txt");
-        run(&format!("echo bad > {}", sbpl_shell_quote(&outside)));
-        assert!(
-            !outside.exists(),
-            "write outside the jail must stay denied with CLI access on"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn sandbox_profile_grants_the_working_folder_and_still_denies_secrets() {
-        let home = PathBuf::from("/Users/test");
-        let workspace = PathBuf::from("/Users/test/Library/Application Support/june/hermes");
-        let working_dir = PathBuf::from("/Users/test/Projects/Un projet");
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        let profile = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            Some(&working_dir),
-        );
-
-        // The validated folder is granted, after the blanket deny.
-        assert!(profile.contains("(subpath \"/Users/test/Projects/Un projet\")"));
-        let deny_at = profile.find("(deny file-write*)").expect("deny present");
-        let grant_at = profile
-            .find("(subpath \"/Users/test/Projects/Un projet\")")
-            .expect("working dir grant present");
-        assert!(deny_at < grant_at);
-        // The secret WRITE deny comes after every grant: in SBPL the later
-        // rule wins, so ordering is the enforcement.
-        let write_deny_at = profile
-            .find(";; Secret-write denylist")
-            .expect("secret write deny present");
-        assert!(grant_at < write_deny_at);
-        assert!(profile[write_deny_at..].contains("(subpath \"/Users/test/.ssh\")"));
-
-        // Without a working dir, no user folder appears anywhere.
-        let bare = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            None,
-        );
-        assert!(!bare.contains("Projects"));
-        assert!(!bare.contains(";; Working folder"));
-    }
-
-    /// Kernel-level proof of the working-folder story: the granted folder is
-    /// writable, and — layering test — a credential store stays unwritable
-    /// even when the grant spans it (validation refuses such folders, but
-    /// the profile must hold on its own).
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn working_dir_profile_is_enforced_by_the_kernel() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let home = std::fs::canonicalize(dir.path()).expect("canonicalize home");
-        let workspace = home.join("workspace");
-        std::fs::create_dir_all(&workspace).expect("create workspace");
-        let project = home.join("Projects").join("demo app");
-        std::fs::create_dir_all(&project).expect("create project");
-        std::fs::create_dir_all(home.join(".ssh")).expect("create .ssh");
-
-        let config_path = sandbox_config_write_path(&workspace);
-        let config_temp_prefix = sandbox_config_temp_prefix(&workspace);
-        // Deliberately grant HOME itself as the working dir for the layering
-        // assertion — the strongest case the write-deny must survive.
-        let profile_text = build_sandbox_profile(
-            &home,
-            std::slice::from_ref(&workspace),
-            &config_path,
-            &config_temp_prefix,
-            false,
-            Some(&home),
-        );
-        let profile_path = workspace.join("test.sb");
-        std::fs::write(&profile_path, &profile_text).expect("write profile");
-
-        let run = |script: &str| {
-            std::process::Command::new(SANDBOX_EXEC_PATH)
-                .arg("-f")
-                .arg(&profile_path)
-                .arg("/bin/bash")
-                .arg("-c")
-                .arg(script)
-                .output()
-                .expect("run sandbox-exec")
-        };
-
-        // Allowed: a write inside the granted folder (path with spaces).
-        let inside = project.join("notes.md");
-        let out = run(&format!("echo ok > {}", sbpl_shell_quote(&inside)));
-        assert!(
-            out.status.success() && inside.exists(),
-            "working folder write should be allowed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // Denied: the credential store, even though the grant spans it.
-        let secret = home.join(".ssh").join("id_new");
-        run(&format!("echo bad > {}", sbpl_shell_quote(&secret)));
-        assert!(
-            !secret.exists(),
-            "secret store write must stay denied inside a granted folder"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    fn sbpl_shell_quote(path: &Path) -> String {
-        format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
     }
 
     #[test]
