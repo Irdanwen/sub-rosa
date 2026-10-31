@@ -2945,6 +2945,7 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 ### Fichiers ajoutés
 
 - `src-tauri/src/hermes_bridge/sandbox_profile.rs` (+ `sandbox_profile_tests.rs`) : le profil, sorti de `hermes_bridge.rs` (cliquet −597 lignes), la liste d'autorisation, essais noyau
+- `src-tauri/src/hermes_bridge/home_split.rs` : un home par mode (`hermes-sandboxed/` pour le runtime sandboxé), routage des requêtes de tableau de bord par home (sessions fusionnées, routines et messageries sur le home partagé), lecteur ponctuel sous le jail, copie unique des conversations
 - `src-tauri/src/hermes_bridge/quarantine.rs` : mise de côté unique de ce qui n'est pas à l'app, avis aux Réglages
 - `src-tauri/src/hermes_bridge/home_prep.rs` : squelette du home, `.env` depuis le registre, `active_profile`, fichiers possédés remplacés et non suivis
 - `src-tauri/src/hermes_bridge/admin_settings.rs` : le registre, extraction par clés nommées, réinsertion dans `config.yaml`, filtre et lecteur `.env`
@@ -2959,6 +2960,7 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 | `src-tauri/src/hermes_bridge/gateway_start.rs` | `--profile default` avant `gateway start`/`install` | Réappliquer |
 | `src-tauri/src/hermes_bridge/builtin_mcp.rs` | `is_builtin_server` | Réappliquer |
 | `src/lib/hermes-admin/errors.ts`, `transport.ts` | Messages sûrs par `t()`, sans nommer le runtime ; un 5xx dit « This change was not made » ; le code `setting_key_not_declared` a sa phrase | Réappliquer, garder les phrases du catalogue |
+| `src-tauri/src/commands.rs`, `src-tauri/src/account/conversations.rs`, `src-tauri/src/temporary_chat/mod.rs`, `src-tauri/src/personalization/mod.rs`, `src-tauri/src/hermes_working_dir.rs` | Lisent ou nettoient les deux homes (`hermes-sandboxed` d'abord) ; le workspace par défaut d'une session sandboxée est celui du home sandboxé | Réappliquer |
 | `src-tauri/src/lib.rs` | `hermes_bridge::quarantine::{hermes_quarantine_notice, dismiss_hermes_quarantine_notice}` dans la liste desktop (préfixe `hermes`, propre au bureau) | Réappliquer |
 | `src/components/settings/AgentSettingsSection.tsx`, `src/lib/tauri.ts` | Ligne « In a sandboxed session » (ce qui ne marche pas en bac à sable, vérificateur de commandes coupé) et avis unique « Files set aside » | Réappliquer |
 | `src-tauri/src/documents.rs` | `extract_beside` écrit en fichier neuf (remplace ce qui est au nom, ne le suit pas) | Réappliquer |
@@ -2979,4 +2981,6 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 - Premier démarrage sous ADR-0140 : `quarantine.rs` met de côté (jamais ne supprime) `bin/tirith`, `hooks/`, `scripts/`, `mcp-installs/`, `plugins/` (sauf le garde), `profiles/` et les routines à `script`/`no_agent`, dans `<données de l'app>/quarantine/<date>/`, puis redémarre une fois le gateway (seulement un runtime au service nommé d'après son home).
 - `gateway_auto_continue_freshness: 1`, pas 0 : pour le runtime, 0 veut dire « toujours frais » ; `gateway.delivery_ledger: false`.
 - Le profil ferme par `literal` chaque ancêtre du home et du runtime jusqu'à `/` : écrire dedans reste permis, renommer ou remplacer non.
+- Le gateway est TOUJOURS lancé sur le home partagé (`hermes_gateway_start_command`), même demandé depuis le runtime sandboxé ; son état « running » se lit sur le home partagé (lecteur ponctuel), pas sur le tableau de bord sandboxé qui n'a pas de gateway.
+- Le profil sandboxé ferme le home partagé en entier et refuse les signaux hors du sandbox (`(deny signal (target others))` + `(allow signal (target same-sandbox))`, mesuré : le runtime arrête encore ses enfants en nouvelle session).
 - Conflit attendu à la fusion de `feat/code-p1-checks`, qui crée aussi `sandbox_profile.rs` (refus nommés) : garder l'inversion de ce lot et y reporter la section des toolchains.

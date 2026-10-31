@@ -408,12 +408,21 @@ _Avoid_: project dir; workspace (that's the Hermes-home scratch area); folder
 (unqualified — `folders`/projects are the session-grouping feature, no
 filesystem meaning).
 
+**Sandboxed home / shared home**:
+Since ADR-0140 each runtime mode has its Hermes home. The **sandboxed home**
+(`<app data>/hermes-sandboxed/`) belongs to the sandboxed runtime alone: no
+process outside the jail runs or resumes anything from it, and the app reads
+it as data. The **shared home** (`<app data>/hermes/`) belongs to the
+unrestricted runtime, the gateway (routines, messaging, task boards) and the
+app's settings changes; the jail cannot write it.
+_Avoid_: "the Hermes home" unqualified when the mode matters.
+
 **Runtime state**:
-The parts of the Hermes home the sandboxed runtime may write (ADR-0140): the
-default workspace, session records and the session database, logs, caches,
-attached images. Everything else in the home (its settings, `.env`, skills,
-memories, routines, plugins, binaries) and the runtime's installation are
-read-only to the jail, because processes outside it read them with authority.
+The parts of the sandboxed home the jail may write (ADR-0140): the default
+workspace, session records and the session database, logs, caches, attached
+images. Everything else there (its settings, `.env`, skills, memories,
+routines, plugins) and the runtime's installation are read-only to the
+jail, written by the app at every start.
 _Avoid_: write roots (the home is no longer one).
 
 **Settings record**:

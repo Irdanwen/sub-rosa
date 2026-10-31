@@ -13,201 +13,181 @@ shipped on its own, ahead of the two plans that hold numbers 0122 to 0139.
 
 The sandboxed runtime runs under a Seatbelt write-jail. Until this ADR the
 jail could write its whole home (`$HERMES_HOME`, `app_data/hermes`) and the
-runtime's installation (`hermes-runtime/`, source and virtualenv); five names
-were refused on another branch, nothing on main. Two audits, run for real
-under the profile with no paid call, showed what that meant:
+runtime's installation (`hermes-runtime/`, source and virtualenv), and that
+home was shared with processes that are not jailed. Three audits, run for
+real under the profile with no paid call, showed what that meant:
 
 - A jailed process writes `config.yaml` (`command_allowlist: ["*"]`,
   `approvals.mode: off`) or `.env` (`HERMES_YOLO_MODE=1`), and the next
   dangerous command runs without asking: the approval mode is read at every
   call, the allowlist at every session, `.env` at every start.
-- The home is read with authority by processes that are not jailed. The
-  gateway, started by launchd outside the jail, runs `cron/jobs.json` (a
+- The gateway, started by launchd outside the jail, runs `cron/jobs.json` (a
   `no_agent` job runs a `scripts/` file), loads `hooks/` and `plugins/`,
-  executes `bin/tirith`, dispatches `kanban.db` tasks to full agents, and
-  follows `active_profile` into `profiles/<p>/`, because the service
-  definition the runtime writes names no profile. The unrestricted runtime
-  shares the home and runs the same `bin/`, `node/`, `lsp/`, `mcp-installs/`.
-  `memories/`, `SOUL.md`, `skills/` and the routines' prompts are read into
-  the prompts of sessions that are not jailed.
-- `.env` was never rewritten by the app, so a planted one survived restarts.
+  executes `bin/tirith`, dispatches `kanban.db` tasks to full agents,
+  follows `active_profile` into `profiles/<p>/` (its service definition
+  names no profile), and opens `logs/gateway.log` by name at every start.
+  The unrestricted runtime runs the same `bin/`, `node/`, `lsp/`,
+  `mcp-installs/`.
+- Even with every one of those files read-only to the jail, the shared home
+  stayed a way out: the gateway delivers, at its start and with no person,
+  the delegation results it finds in `state.db` (`internal=True`, route and
+  text chosen by whoever wrote the row) and resumes the turns its store
+  marks interrupted, as full agents outside the jail; a folder of the jail's
+  own, carrying links, could be renamed into the place of `logs/`, which
+  launchd then writes through; and the jail could stop the gateway at will
+  for launchd to start it again.
+
+Closing those one file at a time had already failed twice. Their common
+cause is one home written by the jail and read with authority by processes
+that are not jailed.
 
 ## Decision
 
-1. **Inversion: inside its home, the jail writes only its working state.**
-   The profile closes the home and the installation as a whole, after every
+1. **One home per runtime mode.** The sandboxed runtime lives in
+   `<app data>/hermes-sandboxed/`, with its own `state.db`, sessions,
+   workspace and logs (`hermes_bridge/home_split.rs`). The unrestricted
+   runtime, the gateway, routines, messaging, task boards and the app's
+   settings changes keep `<app data>/hermes/`, the shared home, which the
+   jail cannot write at all: its profile closes it as a whole, every
+   ancestor included. No process outside the jail runs, resumes or delivers
+   anything from the sandboxed home: the gateway is always started on the
+   shared home, whichever runtime asks for it. The app reads the sandboxed
+   home as data only (the list of conversations, a transcript, the files of
+   the workspace), through the sandboxed runtime when it runs, or through a
+   one-off reader under the same jail when it does not, and never follows a
+   link there to write.
+2. **Inside its own home, the jail writes only its working state.** The
+   profile closes the home and the installation as a whole, after every
    other grant (temp folders, the working folder, the agent CLI opt-in), and
    re-opens only `workspace/`, `sessions/`, `logs/`, `cache/`, `images/`,
    `image_cache/`, `audio_cache/`, `state.db` and its SQLite side files,
-   `verification_evidence.db` and its side files, and `auth.lock`
-   (`hermes_bridge/sandbox_profile.rs`). Everything else, present or added by
-   a future runtime, is read-only to the jail: `config.yaml`, `.env`,
-   `profiles/`, `active_profile`, `cron/`, `scripts/`, `hooks/`, `bin/`,
-   `plugins/`, `mcp-installs/`, `skills/`, `memories/`, `SOUL.md`,
-   `auth.json`, `kanban.db`, `pairing/`, `node/`, `lsp/`.
-   The list was measured, not guessed: the pinned runtime ran its dashboard,
-   a session, and a turn played by a local fake model calling terminal,
-   background process, file read, write, patch and search, todo, skills,
-   session search, delegation and an image attachment, first under the
-   old profile (to see every path written) and then under the list (to see
-   that nothing it needs is refused and that nothing outside it is written).
-   `scripts/jail-eval/runtime_lives.py` repeats the second run as a test.
-2. **The runtime's installation is not a write root** (as in the CLI's own
-   profile). Its bytecode caches are not written; nothing else was.
-3. **Every command the app runs names `--profile default`**: the dashboard,
+   `verification_evidence.db` and its side files, and `auth.lock`. What the
+   jailed runtime itself reads with authority for its next sessions stays
+   closed and is written by the app at every start: `config.yaml`, `.env`,
+   `SOUL.md`, `plugins/`, `skills/`, `profiles/`, `active_profile`, `cron/`,
+   `hooks/`, `memories/`, so a jailed session cannot turn off the approvals
+   of the next one. The list was measured: the pinned runtime ran its
+   dashboard, a session, and a turn played by a local fake model calling
+   terminal, background process, file read, write, patch and search, todo,
+   skills, session search, delegation and an image attachment;
+   `scripts/jail-eval/runtime_lives.py` repeats that run as a test. In the
+   re-opened state no link, pipe or socket may be made (the workspace keeps
+   links, but for its `uploads`), a re-opened folder's own name can be
+   neither replaced by a link nor removed or renamed over, and links left
+   from before are swept at every start.
+3. **The runtime's installation is not a write root** (as in the CLI's own
+   profile).
+4. **No signal leaves the jail.** The profile refuses signals to other
+   processes (`(deny signal (target others))`) and allows those within the
+   same sandbox, so the runtime still stops its own children, in their own
+   process groups too, while the app, the gateway and the unrestricted
+   runtime are out of its reach.
+5. **Every command the app runs names `--profile default`**: the dashboard,
    `gateway start`, `mcp login`, `skills reset`, `skills tap` and the
-   developer TUI, whatever profile the webview asked for (the app provisions
-   no other). The runtime follows `active_profile` only in its command line
-   when no profile is named (`hermes_cli/main.py`, `_apply_profile_override`),
-   and the launchd service it writes names none, so the app also removes
-   `active_profile` before every start and before the gateway starts; the jail
-   cannot write it back.
-4. **The app writes `.env` at every start** from its own record
-   (`hermes-settings.json`, next to the home, outside the jail's reach), and
-   the record keeps only the keys the pinned runtime declares Settings write:
-   the credentials of its environment schema, the messaging platforms'
-   settings, the tool providers' keys, the keys installed skills ask for and
-   the MCP servers' tokens (`_env_schema` in `subrosa_admin.py`, refreshed
-   before every start and with every change). An allowlist, not a denylist:
-   a package index (`PIP_INDEX_URL`), a base address or any unknown key is
-   refused, and `PUT /api/env` with such a key answers 422 with the reason
-   before anything is written. Even declared, `HERMES_*`, `SUDO_*`,
-   `TERMINAL_*`, `TIRITH_*`, the gateway's network doors (`API_SERVER_*`,
-   which would open a full agent on a local port outside the jail,
-   `WEBHOOK_*`, `GATEWAY_*`) and `*_PROXY` never pass, and no setting
-   switches on the `api_server`, `webhook`, `msgraph_webhook` or `relay`
-   platform. The import and a skill's setup keep credentials only (the
-   secrets of the schema), never an address, a port, a switch, a home
-   channel or who may command the gateway: those come only from a messaging
-   platform's own setting, a gesture of the person. The existing file is set
-   aside once in the app's data folder and imported when the runtime has
-   declared its keys; a line added to `.env` afterwards, by anything, is gone
-   at the next start. The files the app owns in the home (`config.yaml`,
-   `.env`, `SOUL.md`, the guard plugin) are replaced, not followed, when a
-   link stands in their place.
-5. **The homes are not split in this fix.** Both runtime modes and the
-   gateway keep one home. A home per mode would close the last channel (the
-   transcripts and the caches the jail still writes are read by the
-   unrestricted runtime and the gateway), but the session list, the messages
-   of a session, the hydration and backfill that read `state.db` directly,
-   temporary chats, routines and the unidirectional mode fallback all assume
-   one store; splitting it in a hotfix would hide every unrestricted
-   conversation whenever its runtime is not running. What remains, and the
-   proposal, are under Consequences.
-6. **Settings changes are made by the app, outside the jail.** The admin
-   routes the Settings screens call (MCP servers, the catalog install,
-   skills, toolsets, `PUT /api/config`, `PUT`/`DELETE /api/env`, messaging
-   platforms, routines) are no longer sent to the runtime's dashboard:
-   `hermes_connection_json` hands them to `admin_once`, which runs the
-   runtime's own route once in a short-lived process of the app
-   (`hermes/subrosa_admin.py`, the dashboard application loaded in process,
-   same home, `--profile` never followed), one change at a time. After a
-   change that worked, the app copies the keys a person owns (their MCP
-   servers, `mcp.exposure_policy`, `skills.disabled`, `platform_disabled`,
-   `config`, `external_dirs`, `platform_toolsets` but `cron`,
-   `platforms.<p>.enabled`) and the filtered `.env` into its record, and
-   writes them back at every start (`admin_settings::apply_overlay`), so the
-   approvals, the allowlist, hooks, plugins, the model and the routines' gate
-   stay the app's whatever the file held. Before this ADR every such change
-   was lost at the next start, because `config.yaml` is rewritten from
-   scratch. Reads, a server's test and everything else still go to the
-   runtime; profiles stay out of reach. The bundled skills, which the runtime
-   copies into its home when it starts, are copied by the app before every
-   start.
-
-7. **No link where processes outside the jail open by name.** The runtime
-   state is written by the jail but also opened by name from outside it (the
-   gateway's logs and sessions, the session database, the app's uploads), so
-   the profile refuses symbolic and hard links there (`file-write-create` of
-   a `SYMLINK` vnode, `file-link`), renames included; the default workspace
-   keeps its links (development tools need them), except its `uploads`
-   folder. Links planted before this fix are swept at every start. The app
-   writes an upload, and the text extracted beside it, only as a new file
-   (`create_new`, which never follows what stands at the name), and its own
-   logs (the runtime's output, the gateway's start, settings changes, the
-   developer terminal launcher) live in its data folder, never in the home's
-   `logs/`. No pipe or socket either, and each re-opened folder's own name
-   must stay a folder (the workspace cannot become a link to the person's
-   home); the app drops a root that is a link and refuses to upload through
-   one. Every ancestor of the home and of the installation, up to the root,
-   is closed by name: a `subpath` covers what is under a path, not the way
-   to it, and renaming a parent (a working folder can span one) would carry
-   the home off and back.
-8. **What a jailed process could plant before this fix is set aside once.**
-   At the first start under this ADR, with the `.env` set aside, the app
-   moves into `<app data>/quarantine/<date>/` (never deletes) the scanner
-   binary (the runtime downloads it again) and everything in `hooks/`,
+   developer terminal, whatever profile the webview asked for. The runtime
+   follows `active_profile` only when no profile is named, and the launchd
+   service it writes names none, so the app also removes `active_profile`
+   before every start and before the gateway starts.
+6. **The app writes `.env` at every start** from its own record
+   (`hermes-settings.json`, in its data folder), which keeps only the keys
+   the pinned runtime declares Settings write (`_env_schema` in
+   `subrosa_admin.py`, refreshed before every start and with every change).
+   An allowlist: a package index (`PIP_INDEX_URL`), a base address or any
+   unknown key is refused, and `PUT /api/env` with such a key answers 422
+   with the reason before anything is written. Never, whatever the source:
+   `HERMES_*`, `SUDO_*`, `TERMINAL_*`, `TIRITH_*`, the gateway's network
+   doors (`API_SERVER_*`, which would open a full agent on a local port,
+   `WEBHOOK_*`, `GATEWAY_*`) and `*_PROXY`; no setting switches on the
+   `api_server`, `webhook`, `msgraph_webhook` or `relay` platform. The
+   import of the existing file and a skill's setup keep credentials only;
+   a messaging platform's address, port, home channel or allowlist comes
+   only from that platform's own setting.
+7. **Settings changes are made by the app, outside the jail, on the shared
+   home.** The admin routes the Settings screens call (MCP servers, the
+   catalog install, skills, toolsets, `PUT /api/config`, `PUT`/`DELETE
+   /api/env`, messaging platforms, routines) run once in a short-lived
+   process of the app (`hermes/subrosa_admin.py`), one change at a time.
+   After a change that worked, the app copies the keys a person owns into
+   its record and writes them back at every start of either home
+   (`admin_settings::apply_overlay`); the sandboxed home's `config.yaml` and
+   `.env` are also written again right away from the base rendered at its
+   last start (`admin_settings::reapply`). The approvals, the allowlist,
+   hooks, plugins, the model and the routines' gate stay the app's.
+   Skills a person installs land in the shared home and the sandboxed
+   runtime reads them there; the bundled skills are copied into each home
+   by the app before it starts.
+8. **What a jailed process could plant in the shared home before this fix
+   is set aside once.** At the first start under this ADR the app moves
+   into `<app data>/quarantine/<date>/` (never deletes), writing the
+   manifest one line per item as it goes: everything in `bin/`, `hooks/`,
    `scripts/`, `mcp-installs/`, `plugins/` (but the guard) and `profiles/`,
-   and removes from `cron/jobs.json` the routines that run a script or no
-   agent (the app creates neither); a manifest lists them, the gateway is
-   restarted once so nothing it loaded stays, and Settings › Agent says it
-   once.
-9. **Nothing resumes on its own.** The gateway re-ran by itself, at its
-   start, the turns its store marked interrupted (`sessions/`, `state.db`,
-   which the jail writes) within `gateway_auto_continue_freshness`; that
-   window is now one second (0 means "always" to the runtime), and its
-   delivery ledger, which re-sends stored answers from `state.db` to a chat,
-   is off. Sessions marked interrupted wait for a person's next message.
+   the task board (`kanban.db`), who may write to the messaging gateway
+   (`pairing/`, `platforms/pairing/`), `lsp/`, `node/`, `processes.json`,
+   and the routines that run a script or no agent. Skills and memories a run
+   may have written are flagged in `flagged.json` and left in place. The
+   gateway is restarted once so nothing it loaded stays; Settings › Agent
+   says it once.
+9. **Nothing resumes on its own.** In the shared home too, the gateway's
+   window for re-running interrupted turns at its start is one second (0
+   means "always" to the runtime) and its delivery ledger is off.
+
+## What the person sees
+
+- One list of conversations: both homes are merged, a conversation present
+  in both counted once. At the first start of the sandboxed home, the
+  conversations of the shared home are copied into it once
+  (`VACUUM INTO`), so a conversation from before continues in either mode:
+  sandboxed in the copy, unrestricted in the original. The copy stops there:
+  a conversation continued on one side after the split does not change on
+  the other.
+- Routines, messaging channels and task boards run on the unrestricted side,
+  in the shared home, as before; the "In a sandboxed session" line in
+  Settings › Agent says so. A sandboxed session's files are in its own
+  workspace (the Files panel lists both workspaces); files you attach go to
+  the shared home's `workspace/uploads`, which the sandboxed runtime reads
+  and cannot change.
+- In a sandboxed session the runtime's own memory tool, its skill writer,
+  its scheduling tool, its kanban and project tools, the scanner's and the
+  language servers' self-install fail with "operation not permitted"; the
+  soul and Settings › Agent say where the person changes them. Sub Rosa's
+  own memory is unaffected.
+- A settings change takes about half a second more (a process starts) and
+  now survives a restart.
+- After the update, items set aside in the shared home are listed once in
+  Settings › Agent; an MCP server installed from the catalog before must be
+  installed again, the scanner and Node are downloaded again when needed.
 
 ## Consequences
 
-- **In a sandboxed session**, the runtime's own memory tool, its skill
-  writer, its scheduling tool, its kanban and project tools, the scanner's
-  self-install and the language servers' self-install fail with "operation
-  not permitted"; the soul tells the assistant they are read-only and where
-  the person changes them. Sub Rosa's own memory is unaffected. The scanner
-  stays fail-open where it is not installed, as it was before it was
-  downloaded.
-- **Settings screens** no longer fail with a 500 from the jail; a change
-  that fails reads "This change was not made", and no generic error copy
-  names the runtime. A change takes about half a second more (a process
-  starts). Changes apply when the runtime next discovers them, as before.
-- **Settings › Agent** says, for sandboxed sessions, what does not work
-  there (the assistant's own memory, routines and skills it would create,
-  tools it would install, the command checker it would download).
-- **Still open, documented rather than closed:**
-  - **the shared home (M2, the follow-up).** A jailed process can still
-    write transcripts (`state.db`, `sessions/`), caches, and files in the
-    default workspace. The most serious remaining channel: the context files
-    of that workspace (`AGENTS.md`, `.hermes.md` and the like) are read into
-    the system prompt of an unrestricted session started there, an
-    injection into a session that is not jailed. Second: the delegation
-    records in `state.db`, which a runtime or the gateway delivers as a new
-    turn after its own restart (the gateway's idle watcher does so without a
-    person, but only into a messaging session it has a route to: none unless
-    a messaging platform is set up). Both are injection, not execution:
-    nothing the jail can write is run outside it any more. **Proposal:** one
-    home per mode, with the gateway on the unrestricted one; the session
-    list and the message reads merge both stores (reading the other
-    `state.db` directly when its runtime is not running), `state.db` and
-    `sessions/` copied once into the sandboxed home so every conversation
-    stays where the person left it, routines moved with the gateway, and the
-    unrestricted mode's default workspace separate from the jail's.
-  - Windows has no jail; the unrestricted mode is not jailed by design.
-- **Tests:** the profile's write grants are pinned by hand
-  (`the_write_grants_are_exactly_the_declared_list`), the kernel refuses
-  every vector, every link where others open by name, and allows the working
-  state (`sandbox_profile_tests.rs`); the app sweeps left-over links, writes
-  uploads only as new files and keeps its logs out of the home
-  (`home_prep.rs`); only declared keys reach `.env`, and an undeclared one is
-  refused before the change, an import keeps no `API_SERVER_KEY`
-  (`admin_settings.rs`, `admin_once.rs`, `home_prep.rs`); what was planted
-  before is set aside once (`quarantine.rs`); the way to the home cannot be
-  moved and the workspace cannot become a link (`sandbox_profile_tests.rs`);
-  under the real runtime, no vector can be planted and the next session
-  still asks, a left-over profile is neither followed nor kept, the runtime
-  lives with its home read-only, and every settings change succeeds from the
-  app while the same change from the jail is refused
-  (`jail_runtime_tests.rs`, ignored, free).
+- **Still open:** Windows has no jail; the unrestricted mode is not jailed
+  by design (its sessions read what the person and the unrestricted runtime
+  put in the shared home, nothing the jail writes).
+- **Tests:** the profile's write grants are pinned by hand and the shared
+  home is never one (`the_write_grants_are_exactly_the_declared_list`); the
+  kernel refuses every vector, every write in the shared home, a carrier
+  folder in a re-opened folder's place and any signal to a process outside
+  the jail (`sandbox_profile_tests.rs`); the gateway starts on the shared
+  home even when the sandboxed runtime asks, the sessions are merged, the
+  conversations from before are copied once (`home_split.rs`); only
+  declared keys reach `.env` and an import keeps no `API_SERVER_KEY`
+  (`admin_settings.rs`, `admin_once.rs`, `home_prep.rs`); the shared home's
+  plants are set aside once (`quarantine.rs`); under the real runtime, in
+  its own home, no vector (in either home) can be planted and the next
+  session still asks, a left-over profile is neither followed nor kept, the
+  runtime lives with its home read-only, and every settings change succeeds
+  from the app while the same change from the jail is refused
+  (`jail_runtime_tests.rs`, ignored, free). Each test was checked by
+  breaking the rule it holds.
 
 ## Alternatives rejected
 
-- **A denylist of the files that grant rights** (the partial fix on
-  `feat/code-p1-checks`): every file a future runtime starts reading would be
-  writable by default, and the audits had already found more vectors than it
-  named.
-- **Patching the runtime** to read its settings from elsewhere or to pin its
-  profile: the fork carries no new managed patch.
+- **Closing the shared home file by file** (this ADR's first two passes): a
+  denylist, then an allowlist inside a shared home; each audit found one
+  more file a process outside the jail obeyed, then a database row it acted
+  on. The cause was the sharing.
+- **Patching the runtime** to read its settings from elsewhere, to pin its
+  profile or to stop delivering delegations: the fork carries no new managed
+  patch.
 - **A second, unjailed dashboard kept running for settings**: a process
   lifecycle (ports, tokens, reaping) for a change a person makes a few times
   a month; a one-shot process costs half a second.
