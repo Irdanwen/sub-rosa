@@ -442,6 +442,26 @@ fn the_kernel_refuses_every_vector_and_allows_the_runtime_state() {
         .is_ok_and(|meta| meta.file_type().is_symlink()));
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
 
+    // No pipe or socket either where others open by name.
+    let fifo = jail.sh(&format!(
+        "mkfifo {}",
+        shell_quote(&jail.hermes_home.join("logs/gateway.err"))
+    ));
+    assert!(!fifo.status.success(), "a pipe in logs/");
+    // A re-opened folder's own name stays a folder: removable (it is the
+    // jail's), never replaced by a link out of the home.
+    let swapped = jail.sh(&format!(
+        "rm -rf {ws} && ln -s {root} {ws}",
+        ws = shell_quote(&jail.hermes_home.join("sessions")),
+        root = shell_quote(&jail.root),
+    ));
+    assert!(!swapped.status.success(), "sessions/ replaced by a link");
+    assert!(!jail
+        .hermes_home
+        .join("sessions")
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink()));
+
     // Outside every grant (the temp dir itself is one, so probe the home).
     if let Some(home) = std::env::var_os("HOME") {
         let probe = PathBuf::from(home)
@@ -483,6 +503,50 @@ fn a_working_folder_spanning_the_home_does_not_reopen_it() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// The auditor's rename-parent: with a working folder spanning the home's
+/// parent, carrying the parent off, rewriting the home elsewhere and
+/// bringing it back is refused (each ancestor is closed), as is replacing
+/// the workspace with a link to the person's home.
+#[test]
+fn the_way_to_the_home_cannot_be_moved_or_replaced() {
+    let Some(jail) = KernelJail::new(false, Some(".")) else {
+        return;
+    };
+    let config = jail.hermes_home.join("config.yaml");
+    std::fs::write(&config, "approvals:\n  mode: manual\n").unwrap();
+    // The working folder is the parent of the home here (validation would
+    // refuse it; the kernel must hold anyway).
+    let moved = jail.root.join("moved");
+    let out = jail.sh(&format!(
+        "mv {home} {moved} && printf 'approvals:\\n  mode: off\\n' > {moved}/config.yaml && mv {moved} {home}",
+        home = shell_quote(&jail.hermes_home),
+        moved = shell_quote(&moved),
+    ));
+    assert!(!out.status.success(), "the home was moved");
+    let out = jail.sh(&format!(
+        "mv {root} {root}.old",
+        root = shell_quote(&jail.root)
+    ));
+    assert!(!out.status.success(), "an ancestor of the home was moved");
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        "approvals:\n  mode: manual\n"
+    );
+    // Writing inside an ancestor stays as granted.
+    assert!(jail.can_write(&jail.root.join("Projects/notes.md")));
+    // The workspace may be emptied, never turned into a link.
+    let ws = jail.hermes_home.join("workspace");
+    let out = jail.sh(&format!(
+        "rm -rf {ws} && ln -s {home} {ws}",
+        ws = shell_quote(&ws),
+        home = shell_quote(&jail.root),
+    ));
+    assert!(!out.status.success(), "the workspace became a link");
+    assert!(!ws
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink()));
 }
 
 #[test]

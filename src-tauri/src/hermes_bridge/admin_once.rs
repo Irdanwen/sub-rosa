@@ -69,35 +69,54 @@ pub(super) fn runs_outside_jail(method: &Method, path: &str) -> bool {
     }
 }
 
-/// A key written by `PUT /api/env` (a skill's setup) must be one the
-/// runtime declares: anything else would be dropped at the next start, so it
-/// is refused now, with the reason (ADR-0140).
+/// What a settings change may not do, refused before it runs, with the
+/// reason (ADR-0140): a key written by `PUT /api/env` (a skill's setup)
+/// must be a credential the runtime declares (anything else would be
+/// dropped at the next start, or would reshape the gateway), and no
+/// setting switches on one of the gateway's network doors (its agent API,
+/// its webhooks, a relay).
 fn refuse_undeclared_key(
     hermes_home: &Path,
     method: &Method,
     path: &str,
     body: Option<&Value>,
 ) -> Result<(), AppError> {
-    let path = path.split('?').next().unwrap_or(path);
-    if *method != Method::PUT || path.trim_end_matches('/') != "/api/env" {
+    let path = path.split('?').next().unwrap_or(path).trim_end_matches('/');
+    if *method != Method::PUT {
+        return Ok(());
+    }
+    if let Some(platform) = path.strip_prefix("/api/messaging/platforms/") {
+        if admin_settings::NETWORK_PLATFORMS.contains(&platform) {
+            return Err(refused(
+                format!("Sub Rosa does not open the {platform} door of the gateway."),
+                "setting_platform_not_offered",
+            ));
+        }
+        return Ok(());
+    }
+    if path != "/api/env" {
         return Ok(());
     }
     let key = body
         .and_then(|body| body.get("key"))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let schema = admin_settings::load(hermes_home).env_schema;
-    if admin_settings::env_key_allowed(key, false, &schema) {
+    let settings = admin_settings::load(hermes_home);
+    if admin_settings::env_key_allowed(key, admin_settings::KeyUse::Credential, &settings) {
         return Ok(());
     }
-    let body = serde_json::json!({
-        "detail": format!("{key} is not a key Sub Rosa's settings can set."),
-        "code": "setting_key_not_declared",
-    });
-    Err(AppError::new(
+    Err(refused(
+        format!("{key} is not a key Sub Rosa's settings can set."),
+        "setting_key_not_declared",
+    ))
+}
+
+fn refused(detail: String, code: &str) -> AppError {
+    let body = serde_json::json!({ "detail": detail, "code": code });
+    AppError::new(
         "hermes_bridge_api_failed",
         format!("Hermes API returned 422 Unprocessable Entity: {body}"),
-    ))
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,6 +129,19 @@ struct AdminResult {
     /// The keys the runtime declares Settings can write into `.env`.
     #[serde(default)]
     env_schema: Option<Vec<String>>,
+    /// Among them, the credentials.
+    #[serde(default)]
+    env_secrets: Option<Vec<String>>,
+}
+
+impl AdminResult {
+    fn schema(&mut self) -> Option<admin_settings::EnvSchemaLists> {
+        let declared = self.env_schema.take()?;
+        Some(admin_settings::EnvSchemaLists {
+            declared,
+            secrets: self.env_secrets.take().unwrap_or_default(),
+        })
+    }
 }
 
 /// Runs one settings change outside the jail, for the runtime `connection`
@@ -153,8 +185,8 @@ pub(super) async fn sync_bundled_skills(hermes_command: &str, hermes_home: &Path
     })
     .await;
     match outcome {
-        Ok(Ok(result)) if result.0.status == 200 => {
-            if let Some(schema) = result.0.env_schema {
+        Ok(Ok(mut result)) if result.0.status == 200 => {
+            if let Some(schema) = result.0.schema() {
                 if let Err(error) = admin_settings::record_schema(hermes_home, schema) {
                     eprintln!("hermes settings: could not record the keys: {error}");
                 }
@@ -222,7 +254,7 @@ impl AdminResultFile {
 
 /// Keeps the person's settings after a change that worked, and answers.
 pub(super) fn respond(hermes_home: &Path, result: AdminResultFile) -> Result<Value, AppError> {
-    let result = result.0;
+    let mut result = result.0;
     if !(200..300).contains(&result.status) {
         let reason = reqwest::StatusCode::from_u16(result.status)
             .ok()
@@ -237,9 +269,8 @@ pub(super) fn respond(hermes_home: &Path, result: AdminResultFile) -> Result<Val
             format!("Hermes API returned {} {reason}: {body}", result.status),
         ));
     }
-    if let Err(error) =
-        admin_settings::capture(hermes_home, result.config.as_ref(), result.env_schema)
-    {
+    let schema = result.schema();
+    if let Err(error) = admin_settings::capture(hermes_home, result.config.as_ref(), schema) {
         // The change is made; only its survival across a restart is lost.
         eprintln!("hermes settings: could not keep the change: {error}");
     }
@@ -321,7 +352,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("hermes");
         std::fs::create_dir_all(&home).unwrap();
-        admin_settings::record_schema(&home, vec!["NOTION_API_KEY".into()]).unwrap();
+        admin_settings::record_schema(
+            &home,
+            admin_settings::EnvSchemaLists {
+                declared: vec!["NOTION_API_KEY".into(), "TELEGRAM_HOME_CHANNEL".into()],
+                secrets: vec!["NOTION_API_KEY".into()],
+            },
+        )
+        .unwrap();
         let put = |key: &str| {
             refuse_undeclared_key(
                 &home,
@@ -331,7 +369,13 @@ mod tests {
             )
         };
         assert!(put("NOTION_API_KEY").is_ok());
-        for key in ["PIP_INDEX_URL", "SOME_UNKNOWN_KEY", "HERMES_YOLO_MODE"] {
+        for key in [
+            "PIP_INDEX_URL",
+            "SOME_UNKNOWN_KEY",
+            "HERMES_YOLO_MODE",
+            "API_SERVER_KEY",
+            "TELEGRAM_HOME_CHANNEL",
+        ] {
             let error = put(key).unwrap_err();
             assert!(
                 error.message.starts_with("Hermes API returned 422"),
@@ -341,6 +385,24 @@ mod tests {
             assert!(error.message.contains(key));
             assert!(error.message.contains("setting_key_not_declared"));
         }
+        // No setting opens the gateway's agent API or webhooks.
+        for platform in ["api_server", "webhook"] {
+            let error = refuse_undeclared_key(
+                &home,
+                &Method::PUT,
+                &format!("/api/messaging/platforms/{platform}"),
+                Some(&serde_json::json!({"enabled": true, "env": {}})),
+            )
+            .unwrap_err();
+            assert!(error.message.contains("setting_platform_not_offered"));
+        }
+        assert!(refuse_undeclared_key(
+            &home,
+            &Method::PUT,
+            "/api/messaging/platforms/telegram",
+            Some(&serde_json::json!({"enabled": true, "env": {}})),
+        )
+        .is_ok());
         // Other routes are not this check's business.
         assert!(refuse_undeclared_key(&home, &Method::DELETE, "/api/env", None).is_ok());
     }
@@ -357,6 +419,7 @@ mod tests {
                 body: serde_json::json!({"detail": "Server 'x' already exists"}),
                 config: None,
                 env_schema: None,
+                env_secrets: None,
             }),
         )
         .unwrap_err();
@@ -383,6 +446,7 @@ mod tests {
                     "skills": {"disabled": ["pdf"]}
                 })),
                 env_schema: Some(vec!["NOTION_API_KEY".into(), "HERMES_YOLO_MODE".into()]),
+                env_secrets: Some(vec!["NOTION_API_KEY".into()]),
             }),
         )
         .unwrap();

@@ -192,8 +192,14 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     // closed as a whole. Processes outside the jail read them with
     // authority: the gateway runs its routines, hooks and plugins from the
     // home, the unrestricted runtime and the app read its settings, and the
-    // installation is the code all of them run.
-    out.push_str(";; The runtime's home and installation: closed as a whole (ADR-0140).\n");
+    // installation is the code all of them run. A `subpath` covers what is
+    // under a path, not the way to it: renaming an ancestor (a working
+    // folder can span one) would carry the home off, rewrite it elsewhere
+    // and bring it back. So every ancestor, up to the root, is closed too:
+    // nothing may rename, remove or replace it, while writing inside one
+    // stays as granted.
+    out.push_str(";; The runtime's home and installation: closed as a whole (ADR-0140),\n");
+    out.push_str(";; and the folders that lead to them cannot be renamed or replaced.\n");
     out.push_str("(deny file-write*\n");
     out.push_str(&format!(
         "  (subpath {})\n",
@@ -203,6 +209,12 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
         "  (subpath {})\n",
         sbpl_quote(&grants.runtime_dir.to_string_lossy())
     ));
+    for ancestor in ancestors(&[grants.hermes_home, grants.runtime_dir]) {
+        out.push_str(&format!(
+            "  (literal {})\n",
+            sbpl_quote(&ancestor.to_string_lossy())
+        ));
+    }
     out.push_str(")\n\n");
 
     out.push_str(";; ...and re-opened only where the runtime keeps its working state.\n");
@@ -224,9 +236,10 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     // ADR-0140, links: the state above is opened by name from outside the
     // jail too (the gateway's logs and sessions, the app's uploads, the
     // session database), and a link planted there would send those writes
-    // anywhere. So no symbolic or hard link may be made in it; the default
-    // workspace keeps them (development tools need them), except its
-    // `uploads` folder, which the app writes.
+    // anywhere, a pipe or a socket would hang or answer them. So no link,
+    // pipe or socket may be made in it; the default workspace keeps them
+    // (development tools need them), except its `uploads` folder, which the
+    // app writes, and its own name, which must stay a folder.
     let linkless: Vec<String> = linkless_paths(grants.hermes_home)
         .iter()
         .map(|(subpath, path)| {
@@ -237,7 +250,16 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     out.push_str(";; No link may be made where processes outside the jail open by name.\n");
     out.push_str("(deny file-write-create\n");
     for filter in &linkless {
-        out.push_str(&format!("  (require-all {filter} (vnode-type SYMLINK))\n"));
+        out.push_str(&format!(
+            "  (require-all {filter} (require-any (vnode-type SYMLINK) (vnode-type FIFO) (vnode-type SOCKET)))\n"
+        ));
+    }
+    for dir in RUNTIME_STATE_DIRS {
+        // Each re-opened folder's own name stays a folder.
+        out.push_str(&format!(
+            "  (require-all (literal {}) (vnode-type SYMLINK))\n",
+            sbpl_quote(&grants.hermes_home.join(dir).to_string_lossy())
+        ));
     }
     out.push_str(")\n");
     out.push_str("(deny file-link\n");
@@ -262,6 +284,21 @@ pub(super) fn build_sandbox_profile(grants: &SandboxGrants<'_>) -> String {
     out.push_str("(deny file-write*\n");
     push_secret_stores(&mut out, home);
     out.push_str(")\n");
+    out
+}
+
+/// Every folder above `paths`, up to the root, once each.
+#[cfg(target_os = "macos")]
+fn ancestors(paths: &[&Path]) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for path in paths {
+        for ancestor in path.ancestors().skip(1) {
+            let ancestor = ancestor.to_path_buf();
+            if !ancestor.as_os_str().is_empty() && !out.contains(&ancestor) {
+                out.push(ancestor);
+            }
+        }
+    }
     out
 }
 

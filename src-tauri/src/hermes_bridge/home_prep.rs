@@ -64,6 +64,10 @@ pub(super) fn create_skeleton(hermes_home: &Path) -> std::io::Result<()> {
 /// record (importing the existing one once, filtered), and no sticky
 /// profile. Fails the start rather than leave a file it could not rewrite.
 pub(super) fn prepare(hermes_home: &Path) -> Result<(), AppError> {
+    // First start under ADR-0140: what a jailed process could plant before
+    // goes aside first, before the gateway or a runtime starts on it.
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    super::quarantine::run_once(hermes_home, &date).map_err(failed)?;
     create_skeleton(hermes_home).map_err(failed)?;
     sweep_links(hermes_home);
     let mut settings = admin_settings::load(hermes_home);
@@ -83,7 +87,13 @@ pub(super) fn prepare(hermes_home: &Path) -> Result<(), AppError> {
             let existing = std::fs::read_to_string(&aside).unwrap_or_default();
             let imported: BTreeMap<String, String> = admin_settings::parse_dotenv(&existing)
                 .into_iter()
-                .filter(|(key, _)| admin_settings::env_key_allowed(key, true, &settings.env_schema))
+                .filter(|(key, _)| {
+                    admin_settings::env_key_allowed(
+                        key,
+                        admin_settings::KeyUse::Credential,
+                        &settings,
+                    )
+                })
                 .collect();
             settings.env = Some(imported);
             admin_settings::save(hermes_home, &settings).map_err(failed)?;
@@ -93,7 +103,7 @@ pub(super) fn prepare(hermes_home: &Path) -> Result<(), AppError> {
     let env = settings.env.clone().unwrap_or_default();
     write_owned(
         &hermes_home.join(".env"),
-        &admin_settings::render_dotenv(&env, &settings.env_schema),
+        &admin_settings::render_dotenv(&env, &settings),
     )
     .map_err(failed)?;
     remove_owned(&hermes_home.join(ACTIVE_PROFILE_FILE)).map_err(failed)
@@ -142,6 +152,35 @@ pub(super) fn app_log_dir(hermes_home: &Path) -> std::path::PathBuf {
     hermes_home.parent().unwrap_or(hermes_home).join("logs")
 }
 
+/// Whether `path` is a link (never followed to answer).
+pub(super) fn is_link(path: &Path) -> bool {
+    path.symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink())
+}
+
+/// The workspace's `uploads` folder, made if missing, refused when it or the
+/// workspace is not a real folder: the jail writes both, and a link there
+/// would carry the app's writes out of the home (ADR-0140).
+pub(super) fn upload_dir(hermes_home: &Path) -> std::io::Result<std::path::PathBuf> {
+    let workspace = hermes_home.join("workspace");
+    let uploads = workspace.join("uploads");
+    for path in [&workspace, &uploads] {
+        if is_link(path) {
+            return Err(std::io::Error::other(format!(
+                "{} is a link, not a folder",
+                path.display()
+            )));
+        }
+    }
+    std::fs::create_dir_all(&uploads)?;
+    if is_link(&workspace) || is_link(&uploads) {
+        return Err(std::io::Error::other(
+            "the uploads folder changed into a link",
+        ));
+    }
+    Ok(uploads)
+}
+
 /// Creates a file the app writes in a folder the jail also writes (the
 /// workspace's `uploads`): only a new file, never whatever stands at the
 /// name, which `create_new` refuses without following it.
@@ -166,7 +205,10 @@ fn sweep_links(hermes_home: &Path) {
     for file in RUNTIME_STATE_FILES {
         let path = hermes_home.join(file);
         if let Ok(meta) = path.symlink_metadata() {
-            if meta.file_type().is_symlink() || (meta.is_file() && hard_linked(&meta)) {
+            if meta.file_type().is_symlink()
+                || (meta.is_file() && hard_linked(&meta))
+                || special(&meta)
+            {
                 if let Err(error) = std::fs::remove_file(&path) {
                     eprintln!("hermes home: could not remove a link: {error}");
                 }
@@ -183,7 +225,10 @@ fn sweep_links(hermes_home: &Path) {
             let Ok(meta) = path.symlink_metadata() else {
                 continue;
             };
-            if meta.file_type().is_symlink() || (meta.is_file() && hard_linked(&meta)) {
+            if meta.file_type().is_symlink()
+                || (meta.is_file() && hard_linked(&meta))
+                || special(&meta)
+            {
                 if let Err(error) = std::fs::remove_file(&path) {
                     eprintln!("hermes home: could not remove a link: {error}");
                 }
@@ -192,6 +237,20 @@ fn sweep_links(hermes_home: &Path) {
             }
         }
     }
+}
+
+/// A pipe, a socket or a device: something that would hang or answer an
+/// open by name instead of holding data.
+#[cfg(unix)]
+fn special(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::FileTypeExt as _;
+    let kind = meta.file_type();
+    kind.is_fifo() || kind.is_socket() || kind.is_char_device() || kind.is_block_device()
+}
+
+#[cfg(not(unix))]
+fn special(_meta: &std::fs::Metadata) -> bool {
+    false
 }
 
 #[cfg(unix)]
@@ -229,7 +288,7 @@ mod tests {
         std::fs::create_dir_all(&home).unwrap();
         std::fs::write(
             home.join(".env"),
-            "NOTION_API_KEY=secret\nHERMES_YOLO_MODE=1\nexport TELEGRAM_ALLOWED_USERS=42\nPIP_INDEX_URL=http://example.invalid/simple\n",
+            "NOTION_API_KEY=secret\nHERMES_YOLO_MODE=1\nexport TELEGRAM_ALLOWED_USERS=42\nPIP_INDEX_URL=http://example.invalid/simple\nAPI_SERVER_KEY=planted\nAPI_SERVER_ENABLED=true\nTELEGRAM_HOME_CHANNEL=1\n",
         )
         .unwrap();
         std::fs::write(home.join("active_profile"), "planted\n").unwrap();
@@ -246,11 +305,17 @@ mod tests {
         // Once it has: the declared keys come back from the set-aside copy.
         admin_settings::record_schema(
             &home,
-            vec![
-                "NOTION_API_KEY".into(),
-                "TELEGRAM_ALLOWED_USERS".into(),
-                "HERMES_YOLO_MODE".into(),
-            ],
+            admin_settings::EnvSchemaLists {
+                declared: vec![
+                    "NOTION_API_KEY".into(),
+                    "TELEGRAM_ALLOWED_USERS".into(),
+                    "HERMES_YOLO_MODE".into(),
+                    "API_SERVER_KEY".into(),
+                    "API_SERVER_ENABLED".into(),
+                    "TELEGRAM_HOME_CHANNEL".into(),
+                ],
+                secrets: vec!["NOTION_API_KEY".into(), "API_SERVER_KEY".into()],
+            },
         )
         .unwrap();
         prepare(&home).unwrap();
@@ -260,6 +325,10 @@ mod tests {
         assert!(!env.contains("HERMES_YOLO_MODE"), "{env}");
         // An undeclared key (a package index) is not imported either.
         assert!(!env.contains("PIP_INDEX_URL"), "{env}");
+        // The gateway's agent API is never switched on by an import, nor a
+        // messaging home channel carried over from a file (ADR-0140, E1).
+        assert!(!env.contains("API_SERVER"), "{env}");
+        assert!(!env.contains("TELEGRAM_HOME_CHANNEL"), "{env}");
         // An authorization a planted file could carry is not imported.
         assert!(!env.contains("ALLOWED_USERS"), "{env}");
         assert!(!home.join("active_profile").exists());
@@ -274,6 +343,22 @@ mod tests {
         let env = std::fs::read_to_string(home.join(".env")).unwrap();
         assert!(env.contains("NOTION_API_KEY='secret'"));
         assert!(!env.contains("HERMES_YOLO_MODE") && !env.contains("OTHER"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_app_writes_no_upload_through_a_linked_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("hermes");
+        std::fs::create_dir_all(&home).unwrap();
+        assert!(upload_dir(&home).unwrap().ends_with("workspace/uploads"));
+        std::fs::remove_dir_all(home.join("workspace")).unwrap();
+        std::os::unix::fs::symlink(dir.path(), home.join("workspace")).unwrap();
+        assert!(upload_dir(&home).is_err());
+        assert!(!dir.path().join("uploads").exists());
+        // Nor is a linked workspace a root to read or list files from.
+        let roots = super::super::filesystem_roots(&home).unwrap();
+        assert!(roots.iter().all(|root| root.id != "workspace"));
     }
 
     #[test]
@@ -303,12 +388,18 @@ mod tests {
         link("workspace/uploads/report.pdf.txt");
         link("workspace/project-link");
         link("state.db");
+        assert!(std::process::Command::new("mkfifo")
+            .arg(home.join("logs/gateway.err"))
+            .status()
+            .unwrap()
+            .success());
         std::fs::hard_link(outside.join("target"), home.join("cache/hard")).unwrap();
         std::fs::remove_dir_all(home.join("images")).unwrap();
         std::os::unix::fs::symlink(&outside, home.join("images")).unwrap();
         prepare(&home).unwrap();
         for gone in [
             "logs/gateway.log",
+            "logs/gateway.err",
             "sessions/sessions.json",
             "workspace/uploads/report.pdf.txt",
             "cache/hard",

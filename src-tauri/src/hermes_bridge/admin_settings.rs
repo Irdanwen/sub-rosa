@@ -34,6 +34,36 @@ pub(super) struct HermesSettings {
     /// every change. The environment file keeps no other key.
     #[serde(default)]
     pub env_schema: BTreeSet<String>,
+    /// Among them, the credentials (a password, a token, a key a skill or a
+    /// tool provider asks for): the only keys an import or a skill's setup
+    /// may write. The others (a messaging platform's address, port, home
+    /// channel, who may write to it) only come from that platform's own
+    /// setting, a named gesture of the person.
+    #[serde(default)]
+    pub env_secrets: BTreeSet<String>,
+    /// Whether the first start under ADR-0140 has set aside what was not the
+    /// app's (`quarantine.rs`), and what it set aside.
+    #[serde(default)]
+    pub quarantine_done: bool,
+    #[serde(default)]
+    pub quarantine: Option<super::quarantine::QuarantineRecord>,
+}
+
+/// Where a `.env` key comes from, which decides what may pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum KeyUse {
+    /// Kept after a named setting wrote it (a messaging platform's own
+    /// setting), or written back at a start.
+    Kept,
+    /// An import of the file found at the first start, or a skill's setup
+    /// (`PUT /api/env`): credentials only.
+    Credential,
+}
+
+/// The schema lists a refresh of the runtime reports.
+pub(super) struct EnvSchemaLists {
+    pub declared: Vec<String>,
+    pub secrets: Vec<String>,
 }
 
 /// The `config.yaml` keys a person owns.
@@ -107,32 +137,38 @@ pub(super) fn save(hermes_home: &Path, settings: &HermesSettings) -> std::io::Re
 pub(super) fn capture(
     hermes_home: &Path,
     config: Option<&Value>,
-    schema: Option<Vec<String>>,
+    schema: Option<EnvSchemaLists>,
 ) -> std::io::Result<()> {
     let mut settings = load(hermes_home);
     if let Some(config) = config {
         settings.config = extract(config);
     }
     if let Some(schema) = schema {
-        settings.env_schema = schema.into_iter().collect();
+        settings.env_schema = schema.declared.into_iter().collect();
+        settings.env_secrets = schema.secrets.into_iter().collect();
     }
     let env = std::fs::read_to_string(hermes_home.join(".env")).unwrap_or_default();
-    let schema = settings.env_schema.clone();
-    settings.env = Some(
-        parse_dotenv(&env)
-            .into_iter()
-            .filter(|(key, _)| env_key_allowed(key, false, &schema))
-            .collect(),
-    );
+    let kept = parse_dotenv(&env)
+        .into_iter()
+        .filter(|(key, _)| env_key_allowed(key, KeyUse::Kept, &settings))
+        .collect();
+    settings.env = Some(kept);
     save(hermes_home, &settings)
 }
 
 /// Records the keys the runtime declares, from a start's refresh.
-pub(super) fn record_schema(hermes_home: &Path, schema: Vec<String>) -> std::io::Result<()> {
+pub(super) fn record_schema(hermes_home: &Path, schema: EnvSchemaLists) -> std::io::Result<()> {
     let mut settings = load(hermes_home);
-    settings.env_schema = schema.into_iter().collect();
+    settings.env_schema = schema.declared.into_iter().collect();
+    settings.env_secrets = schema.secrets.into_iter().collect();
     save(hermes_home, &settings)
 }
+
+/// The gateway's "platforms" that are not a messaging service but a door on
+/// the network (an agent API, webhooks, a relay): Sub Rosa offers none of
+/// them, so neither a setting nor the record may switch one on (ADR-0140).
+pub(super) const NETWORK_PLATFORMS: &[&str] =
+    &["api_server", "webhook", "msgraph_webhook", "relay"];
 
 /// A name the runtime and the YAML both take as written.
 fn is_slug(name: &str) -> bool {
@@ -187,7 +223,7 @@ pub(super) fn extract(config: &Value) -> ConfigOverlay {
     if let Some(platforms) = config.get("platforms").and_then(Value::as_object) {
         for (platform, entry) in platforms {
             if let Some(enabled) = entry.get("enabled").filter(|value| value.is_boolean()) {
-                if is_slug(platform) {
+                if is_slug(platform) && !NETWORK_PLATFORMS.contains(&platform.as_str()) {
                     overlay
                         .platforms_enabled
                         .insert(platform.clone(), enabled.clone());
@@ -277,15 +313,17 @@ fn json(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
-/// Whether a key may sit in the runtime's environment file: only a key the
-/// runtime declares as one Settings write (`schema`: a credential, a
+/// Whether a key may sit in the runtime's environment file. Only a key the
+/// runtime declares as one Settings write (`env_schema`: a credential, a
 /// messaging platform's setting, a tool provider's key, a key an installed
-/// skill asks for, an MCP server's token), and even then never one that
-/// changes what needs approval or how commands run (`HERMES_*`, `SUDO_*`,
-/// `TERMINAL_*`, the scanner's `TIRITH_*`). `importing` also refuses who may
-/// command the messaging gateway (`*ALLOW*`): kept when a person sets it in
-/// Settings, never carried over from a file a jailed process could write.
-pub(super) fn env_key_allowed(key: &str, importing: bool, schema: &BTreeSet<String>) -> bool {
+/// skill asks for, an MCP server's token), and never one that changes what
+/// needs approval or how commands run (`HERMES_*`, `SUDO_*`, `TERMINAL_*`,
+/// the scanner's `TIRITH_*`), opens the gateway to the network (its API
+/// server, its webhooks, `GATEWAY_*`) or sends traffic elsewhere
+/// (`*_PROXY`). A `Credential` use (the import, a skill's setup) keeps only
+/// credentials, and none that is an address, a port, a switch, a home
+/// channel or a list of who may command the gateway.
+pub(super) fn env_key_allowed(key: &str, use_: KeyUse, settings: &HermesSettings) -> bool {
     let well_formed = !key.is_empty()
         && key.len() <= 128
         && key
@@ -293,15 +331,39 @@ pub(super) fn env_key_allowed(key: &str, importing: bool, schema: &BTreeSet<Stri
             .next()
             .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
         && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-    if !well_formed || !schema.contains(key) {
+    if !well_formed || !settings.env_schema.contains(key) {
         return false;
     }
-    const NEVER: &[&str] = &["HERMES_", "SUDO_", "TERMINAL_", "TIRITH_"];
+    const NEVER: &[&str] = &[
+        "HERMES_",
+        "SUDO_",
+        "TERMINAL_",
+        "TIRITH_",
+        "API_SERVER_",
+        "WEBHOOK_",
+        "GATEWAY_",
+    ];
     let upper = key.to_ascii_uppercase();
-    if NEVER.iter().any(|prefix| upper.starts_with(prefix)) {
+    if NEVER.iter().any(|prefix| upper.starts_with(prefix)) || upper.ends_with("_PROXY") {
         return false;
     }
-    !(importing && upper.contains("ALLOW"))
+    match use_ {
+        KeyUse::Kept => true,
+        KeyUse::Credential => {
+            const STRUCTURE: &[&str] = &[
+                "_HOST",
+                "_PORT",
+                "_URL",
+                "_ENDPOINT",
+                "_ENABLED",
+                "_HOME_CHANNEL",
+                "_HOME_CHANNEL_NAME",
+            ];
+            settings.env_secrets.contains(key)
+                && !STRUCTURE.iter().any(|suffix| upper.ends_with(suffix))
+                && !upper.contains("ALLOW")
+        }
+    }
 }
 
 /// A small `.env` reader: `KEY=value` lines, an optional `export `, single
@@ -364,13 +426,13 @@ pub(super) fn parse_dotenv(text: &str) -> Vec<(String, String)> {
 /// The `.env` the app writes at every start: values single-quoted (read
 /// literally), or double-quoted with escapes when they hold a quote or a
 /// line break.
-pub(super) fn render_dotenv(env: &BTreeMap<String, String>, schema: &BTreeSet<String>) -> String {
+pub(super) fn render_dotenv(env: &BTreeMap<String, String>, settings: &HermesSettings) -> String {
     let mut out = String::from(
         "# Written by Sub Rosa at every start (ADR-0140). Change these in Settings:\n\
          # a line added here is gone at the next start.\n",
     );
     for (key, value) in env {
-        if !env_key_allowed(key, false, schema) {
+        if !env_key_allowed(key, KeyUse::Kept, settings) {
             continue;
         }
         if value.contains('\'') || value.contains('\n') || value.contains('\r') {
@@ -407,7 +469,7 @@ mod tests {
                 "bad name": {"command": "x"}
             },
             "mcp": {"exposure_policy": {"default": "ask"}},
-            "platforms": {"telegram": {"enabled": true, "home_channel": "planted"}, "x y": {"enabled": true}},
+            "platforms": {"telegram": {"enabled": true, "home_channel": "planted"}, "x y": {"enabled": true}, "api_server": {"enabled": true}},
             "skills": {"disabled": ["pdf"], "config": {"pdf": {"dpi": 300}}, "external_dirs": ["/x"]}
         });
         let overlay = extract(&config);
@@ -475,52 +537,105 @@ mod tests {
         assert_eq!(value["mcp_servers"]["x"]["command"], "/bin/x");
     }
 
-    fn schema(keys: &[&str]) -> BTreeSet<String> {
-        keys.iter().map(|key| key.to_string()).collect()
+    fn known(declared: &[&str], secrets: &[&str]) -> HermesSettings {
+        HermesSettings {
+            env_schema: declared.iter().map(|key| key.to_string()).collect(),
+            env_secrets: secrets.iter().map(|key| key.to_string()).collect(),
+            ..HermesSettings::default()
+        }
     }
 
     #[test]
     fn only_keys_the_runtime_declares_reach_the_environment_file() {
-        let declared = schema(&[
-            "NOTION_API_KEY",
-            "TELEGRAM_BOT_TOKEN",
-            "TELEGRAM_ALLOWED_USERS",
-            "SUDO_PASSWORD",
-            "HERMES_LANGFUSE_SECRET_KEY",
-        ]);
+        let settings = known(
+            &[
+                "NOTION_API_KEY",
+                "TELEGRAM_BOT_TOKEN",
+                "TELEGRAM_ALLOWED_USERS",
+                "TELEGRAM_HOME_CHANNEL",
+                "TELEGRAM_PROXY",
+                "SUDO_PASSWORD",
+                "HERMES_LANGFUSE_SECRET_KEY",
+                "API_SERVER_KEY",
+                "API_SERVER_ENABLED",
+                "API_SERVER_HOST",
+                "WEBHOOK_SECRET",
+                "FIRECRAWL_API_URL",
+            ],
+            &[
+                "NOTION_API_KEY",
+                "TELEGRAM_BOT_TOKEN",
+                "SUDO_PASSWORD",
+                "API_SERVER_KEY",
+                "WEBHOOK_SECRET",
+                "FIRECRAWL_API_URL",
+            ],
+        );
+        // Kept after the platform's own setting wrote them.
         for key in [
             "NOTION_API_KEY",
             "TELEGRAM_BOT_TOKEN",
             "TELEGRAM_ALLOWED_USERS",
+            "TELEGRAM_HOME_CHANNEL",
         ] {
-            assert!(env_key_allowed(key, false, &declared), "{key} refused");
+            assert!(
+                env_key_allowed(key, KeyUse::Kept, &settings),
+                "{key} refused"
+            );
         }
-        // Not declared: a package index, a base address, a key nobody knows.
+        // Imported or set by a skill's setup: credentials only.
+        for key in ["NOTION_API_KEY", "TELEGRAM_BOT_TOKEN"] {
+            assert!(
+                env_key_allowed(key, KeyUse::Credential, &settings),
+                "{key} refused"
+            );
+        }
+        for key in [
+            "TELEGRAM_ALLOWED_USERS",
+            "TELEGRAM_HOME_CHANNEL",
+            "FIRECRAWL_API_URL",
+        ] {
+            assert!(
+                !env_key_allowed(key, KeyUse::Credential, &settings),
+                "{key} imported"
+            );
+        }
+        // Never, whatever the use: the gateway's agent API and webhooks, a
+        // proxy, what changes approvals or how commands run.
+        for key in [
+            "API_SERVER_KEY",
+            "API_SERVER_ENABLED",
+            "API_SERVER_HOST",
+            "WEBHOOK_SECRET",
+            "TELEGRAM_PROXY",
+            "SUDO_PASSWORD",
+            "HERMES_LANGFUSE_SECRET_KEY",
+        ] {
+            assert!(!env_key_allowed(key, KeyUse::Kept, &settings), "{key} kept");
+            assert!(
+                !env_key_allowed(key, KeyUse::Credential, &settings),
+                "{key} imported"
+            );
+        }
+        // Not declared at all.
         for key in [
             "PIP_INDEX_URL",
             "UV_INDEX_URL",
-            "CARGO_HOME",
-            "GOPROXY",
-            "OPENAI_BASE_URL",
             "SOME_UNKNOWN_KEY",
-            "HERMES_YOLO_MODE",
             "PATH",
             "bad-key",
             "",
         ] {
-            assert!(!env_key_allowed(key, false, &declared), "{key} allowed");
+            assert!(
+                !env_key_allowed(key, KeyUse::Kept, &settings),
+                "{key} allowed"
+            );
         }
-        // Declared, but they change what needs approval or how commands run.
-        assert!(!env_key_allowed("SUDO_PASSWORD", false, &declared));
         assert!(!env_key_allowed(
-            "HERMES_LANGFUSE_SECRET_KEY",
-            false,
-            &declared
+            "NOTION_API_KEY",
+            KeyUse::Kept,
+            &HermesSettings::default()
         ));
-        // Who may command the gateway is never imported from a file.
-        assert!(!env_key_allowed("TELEGRAM_ALLOWED_USERS", true, &declared));
-        // Without a schema, nothing.
-        assert!(!env_key_allowed("NOTION_API_KEY", false, &BTreeSet::new()));
     }
 
     #[test]
@@ -536,7 +651,7 @@ mod tests {
             "${NOT_EXPANDED} #not a comment".to_string(),
         );
         env.insert("HERMES_YOLO_MODE".to_string(), "1".to_string());
-        let text = render_dotenv(&env, &schema(&["A", "B", "C", "HERMES_YOLO_MODE"]));
+        let text = render_dotenv(&env, &known(&["A", "B", "C", "HERMES_YOLO_MODE"], &[]));
         assert!(!text.contains("HERMES_YOLO_MODE"));
         let parsed: BTreeMap<String, String> = parse_dotenv(&text).into_iter().collect();
         env.remove("HERMES_YOLO_MODE");

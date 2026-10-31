@@ -97,6 +97,27 @@ pub(super) fn build_hermes_gateway_start_command(
     cmd
 }
 
+/// Restarts the gateway's service once after the first start under ADR-0140
+/// set something aside: a gateway running since before may hold a hook or
+/// a plugin it loaded from the home. Best effort: a gateway that is not
+/// installed has nothing to restart.
+pub(super) fn restart_command(hermes_command: &str, hermes_home: &Path) -> Command {
+    let mut cmd = Command::new(hermes_command);
+    cmd.args([
+        HERMES_PROFILE_FLAG,
+        HERMES_DEFAULT_PROFILE,
+        "gateway",
+        "restart",
+    ]);
+    apply_isolated_hermes_env(&mut cmd, hermes_home, &super::random_token(), None);
+    cmd.env("HERMES_NONINTERACTIVE", "1");
+    cmd.current_dir(hermes_home);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    cmd
+}
+
 /// Why starting the gateway would take over someone else's, if it would.
 /// `plist` is the shared LaunchAgent's contents, `None` when there is none.
 #[cfg_attr(

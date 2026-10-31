@@ -37,24 +37,33 @@ def _config_after(home):
 
 
 def _env_schema(home):
-    """The keys Settings can write into .env, from the pinned runtime: the
-    credentials it declares, the messaging platforms' settings, the tool
-    providers' keys, the keys installed skills ask for, and the MCP servers'
-    bearer tokens. The app keeps nothing else (ADR-0140)."""
-    keys = set()
+    """The keys Settings can write into .env, from the pinned runtime, as
+    (declared, secrets). Declared: the credentials it lists, the messaging
+    platforms' settings, the tool providers' keys, the keys installed skills
+    ask for, the MCP servers' bearer tokens. Secrets: the credentials among
+    them, the only keys an import or a skill's setup may write; a messaging
+    platform's other settings come only from that platform's own setting
+    (ADR-0140)."""
+    declared, secrets = set(), set()
     try:
         from hermes_cli.config import OPTIONAL_ENV_VARS
 
         for key, meta in OPTIONAL_ENV_VARS.items():
             if isinstance(meta, dict) and meta.get("password"):
-                keys.add(key)
+                declared.add(key)
+                secrets.add(key)
     except Exception:
         pass
     try:
         from hermes_cli import web_server
 
         for entry in web_server._messaging_platform_catalog():
-            keys.update(str(key) for key in entry.get("env_vars") or ())
+            for key in entry.get("env_vars") or ():
+                key = str(key)
+                declared.add(key)
+                info = web_server._messaging_env_info(key)
+                if info.get("password") or info.get("is_password") or info.get("secret"):
+                    secrets.add(key)
     except Exception:
         pass
     try:
@@ -63,7 +72,9 @@ def _env_schema(home):
         for category in TOOL_CATEGORIES.values():
             for provider in category.get("providers") or ():
                 for var in provider.get("env_vars") or ():
-                    keys.add(str(var.get("key") if isinstance(var, dict) else var))
+                    key = str(var.get("key") if isinstance(var, dict) else var)
+                    declared.add(key)
+                    secrets.add(key)
     except Exception:
         pass
     try:
@@ -75,7 +86,9 @@ def _env_schema(home):
 
         config = load_config()
         for name in (config.get("mcp_servers") or {}):
-            keys.add(_env_key_for_server(str(name)))
+            key = _env_key_for_server(str(name))
+            declared.add(key)
+            secrets.add(key)
         dirs = [os.path.join(home, "skills")]
         dirs += [str(d) for d in ((config.get("skills") or {}).get("external_dirs") or [])]
         for root in dirs:
@@ -84,12 +97,18 @@ def _env_schema(home):
                     with open(path, encoding="utf-8") as handle:
                         frontmatter, _ = _parse_frontmatter(handle.read())
                     for entry in _get_required_environment_variables(frontmatter):
-                        keys.add(str(entry.get("name")))
+                        key = str(entry.get("name"))
+                        declared.add(key)
+                        secrets.add(key)
                 except Exception:
                     continue
     except Exception:
         pass
-    return sorted(key for key in keys if key and key.replace("_", "").isalnum())
+
+    def clean(keys):
+        return sorted(key for key in keys if key and key.replace("_", "").isalnum())
+
+    return clean(declared), clean(secrets)
 
 
 def main():
@@ -105,9 +124,16 @@ def main():
 
         synced = sync_skills(quiet=True)
         counts = {k: len(v) if isinstance(v, list) else v for k, v in synced.items()}
+        declared, secrets = _env_schema(home)
         _write(
             args.out,
-            {"status": 200, "body": counts, "config": None, "env_schema": _env_schema(home)},
+            {
+                "status": 200,
+                "body": counts,
+                "config": None,
+                "env_schema": declared,
+                "env_secrets": secrets,
+            },
         )
         return
     method = str(request.get("method") or "GET").upper()
@@ -130,11 +156,13 @@ def main():
         payload = response.json()
     except ValueError:
         payload = response.text
+    declared, secrets = _env_schema(home)
     result = {
         "status": response.status_code,
         "body": payload,
         "config": _config_after(home),
-        "env_schema": _env_schema(home),
+        "env_schema": declared,
+        "env_secrets": secrets,
     }
     _write(args.out, result)
 

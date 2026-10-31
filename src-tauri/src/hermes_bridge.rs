@@ -1163,6 +1163,14 @@ async fn start_hermes_bridge_inner(
     )
     .await?;
     guard::install(app, &hermes_home).await?;
+    // Only a runtime that names its service after its home: another one's
+    // gateway is not this app's to restart.
+    if gateway_label::names_service_per_home(Path::new(&command))
+        && quarantine::take_gateway_restart(&hermes_home)
+    {
+        let mut restart = gateway_start::restart_command(&command, &hermes_home);
+        let _ = tauri::async_runtime::spawn_blocking(move || restart.status()).await;
+    }
 
     // Wrap the spawn in a macOS Seatbelt write-jail when possible. The model,
     // its tool calls, and any subprocess it forks all inherit the profile, so
@@ -3066,8 +3074,7 @@ pub async fn import_hermes_bridge_file(
         ));
     }
     let hermes_home = resolve_june_hermes_home(&app)?;
-    let upload_dir = hermes_home.join("workspace").join("uploads");
-    fs::create_dir_all(&upload_dir)
+    let upload_dir = home_prep::upload_dir(&hermes_home)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
     let destination = unique_upload_path(&upload_dir, &source)?;
     // A new file only, never what stands at the name: the jail writes this
@@ -3127,8 +3134,7 @@ pub fn import_hermes_bridge_file_bytes(
         .unwrap_or_default();
     let file_name = validate_dropped_file_name(&raw_name)?;
     let hermes_home = resolve_june_hermes_home(&app)?;
-    let upload_dir = hermes_home.join("workspace").join("uploads");
-    fs::create_dir_all(&upload_dir)
+    let upload_dir = home_prep::upload_dir(&hermes_home)
         .map_err(|error| AppError::new("hermes_file_import_failed", error.to_string()))?;
     let destination = unique_upload_path(&upload_dir, Path::new(&file_name))?;
     {
@@ -6987,13 +6993,15 @@ fn render_hermes_config(
 {agent_vision_line}  max_turns: 200
   gateway_timeout: 7200
   gateway_timeout_warning: 3600
-  gateway_auto_continue_freshness: 10800
+  gateway_auto_continue_freshness: 1
 {RUNTIME_DISABLED_TOOLSETS}approvals:
   mode: manual
   cron_mode: deny
 display:
   skin: mono
   busy_input_mode: queue
+gateway:
+  delivery_ledger: false
 platform_toolsets:
   cron: [{cron_toolsets}]
 skills:
@@ -7119,6 +7127,9 @@ fn filesystem_roots(hermes_home: &Path) -> Result<Vec<FilesystemRootCandidate>, 
             description: description.to_string(),
         });
     }
+    // A root the jail turned into a link would carry every read through it
+    // out of the home (ADR-0140): only a real folder is a root.
+    roots.retain(|root| !home_prep::is_link(&root.path));
     Ok(dedupe_filesystem_roots(roots))
 }
 
@@ -8070,6 +8081,7 @@ mod local_reads;
 mod project_memory;
 mod provider_proxy;
 use provider_proxy::provider_models_body;
+pub mod quarantine;
 mod sandbox_profile;
 
 #[cfg(test)]
@@ -9108,12 +9120,14 @@ mod tests {
     ///   gateway's inactivity kill (`gateway/run.py`; the TUI channel never
     ///   reads it). Governs Routines/cron agent runs stuck in one long tool
     ///   call. Kept non-zero so a truly wedged agent still gets evicted.
-    /// - `gateway_auto_continue_freshness` 3600 → 10800: must stay LARGER
-    ///   than `gateway_timeout` — the freshness window decides whether an
-    ///   interrupted platform-gateway turn auto-resumes on the next message,
-    ///   so a window shorter than the timeout would classify every
-    ///   timeout-adjacent interruption as stale and silently drop the resume
-    ///   (upstream's 3600 covers its 1800 default the same way).
+    /// - `gateway_auto_continue_freshness` 1 (ADR-0140, was 10800): the
+    ///   gateway, outside the jail, re-runs on its own at startup the turns
+    ///   its session store marks interrupted, from `sessions/` and
+    ///   `state.db`, which the jail writes. Until the homes are split, no
+    ///   interrupted turn is fresh: nothing resumes without a person. Not
+    ///   0, which the runtime reads as "always fresh". `gateway.
+    ///   delivery_ledger: false` likewise stops it re-sending stored answers
+    ///   from `state.db` to a messaging chat at startup.
     #[test]
     fn render_hermes_config_extends_long_run_budgets() {
         let config = render_hermes_config(
@@ -9130,8 +9144,9 @@ mod tests {
         );
 
         assert!(config.contains(
-            "agent:\n  max_turns: 200\n  gateway_timeout: 7200\n  gateway_timeout_warning: 3600\n  gateway_auto_continue_freshness: 10800\n"
+            "agent:\n  max_turns: 200\n  gateway_timeout: 7200\n  gateway_timeout_warning: 3600\n  gateway_auto_continue_freshness: 1\n"
         ));
+        assert!(config.contains("gateway:\n  delivery_ledger: false\n"));
     }
 
     /// An attached photo reached the model as base64 *text* and blew the
