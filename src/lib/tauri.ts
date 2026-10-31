@@ -1258,6 +1258,19 @@ export async function setHermesAgentCliAccess(enabled: boolean) {
   });
 }
 
+/** What the first start under ADR-0140 set aside from the assistant's
+ * folder (hooks, scripts, routines that run a script, plugins, installed
+ * servers, the scanner), while the person has not seen it. */
+export type HermesQuarantineNotice = { dir: string; count: number };
+
+export async function hermesQuarantineNotice() {
+  return invoke<HermesQuarantineNotice | null>("hermes_quarantine_notice");
+}
+
+export async function dismissHermesQuarantineNotice() {
+  return invoke<void>("dismiss_hermes_quarantine_notice");
+}
+
 export async function hermesBridgeMessagingPlatforms() {
   return invoke<HermesMessagingPlatformsResponse>("hermes_bridge_messaging_platforms");
 }

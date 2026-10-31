@@ -2945,6 +2945,7 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 ### Fichiers ajoutés
 
 - `src-tauri/src/hermes_bridge/sandbox_profile.rs` (+ `sandbox_profile_tests.rs`) : le profil, sorti de `hermes_bridge.rs` (cliquet −597 lignes), la liste d'autorisation, essais noyau
+- `src-tauri/src/hermes_bridge/quarantine.rs` : mise de côté unique de ce qui n'est pas à l'app, avis aux Réglages
 - `src-tauri/src/hermes_bridge/home_prep.rs` : squelette du home, `.env` depuis le registre, `active_profile`, fichiers possédés remplacés et non suivis
 - `src-tauri/src/hermes_bridge/admin_settings.rs` : le registre, extraction par clés nommées, réinsertion dans `config.yaml`, filtre et lecteur `.env`
 - `src-tauri/src/hermes_bridge/admin_once.rs` + `src-tauri/src/hermes/subrosa_admin.py` : routes de réglage exécutées hors jail, copie des skills livrées
@@ -2958,6 +2959,8 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 | `src-tauri/src/hermes_bridge/gateway_start.rs` | `--profile default` avant `gateway start`/`install` | Réappliquer |
 | `src-tauri/src/hermes_bridge/builtin_mcp.rs` | `is_builtin_server` | Réappliquer |
 | `src/lib/hermes-admin/errors.ts`, `transport.ts` | Messages sûrs par `t()`, sans nommer le runtime ; un 5xx dit « This change was not made » ; le code `setting_key_not_declared` a sa phrase | Réappliquer, garder les phrases du catalogue |
+| `src-tauri/src/lib.rs` | `hermes_bridge::quarantine::{hermes_quarantine_notice, dismiss_hermes_quarantine_notice}` dans la liste desktop (préfixe `hermes`, propre au bureau) | Réappliquer |
+| `src/components/settings/AgentSettingsSection.tsx`, `src/lib/tauri.ts` | Ligne « In a sandboxed session » (ce qui ne marche pas en bac à sable, vérificateur de commandes coupé) et avis unique « Files set aside » | Réappliquer |
 | `src-tauri/src/documents.rs` | `extract_beside` écrit en fichier neuf (remplace ce qui est au nom, ne le suit pas) | Réappliquer |
 | `src-tauri/src/hermes_bridge/guard.rs` | Le plugin est écrit par `write_owned`, un lien à la place du dossier est retiré | Réappliquer |
 | `src/lib/hermes-admin/use-skill-setup.ts`, `use-skill-detail.ts`, `use-skill-bundles.ts` | « Hermes is not running. » remplacé par une phrase traduite | Réappliquer |
@@ -2973,4 +2976,7 @@ survivent au démarrage suivant. Homes séparés par mode : proposé, pas fait
 - Les journaux de l'app (`dashboard.log`, `gateway-start.log`, `settings-changes.log`, le lanceur `tui-debug-*.command`) sont dans `<données de l'app>/logs/`, plus dans `hermes/logs/` que le jail écrit ; le profil refuse les liens (symboliques et physiques) dans l'état du runtime sauf le workspace (mais pas `workspace/uploads`), et l'app n'écrit un téléversement qu'en fichier neuf.
 - `.env` : liste d'autorisation tirée du schéma du runtime épinglé (`_env_schema`), pas une liste de refus ; une clé inconnue est refusée en 422 avec le code `setting_key_not_declared`.
 - Un essai réel qui « plante » dans le runtime emprunté ne doit créer que des fichiers neufs : une mutation a un jour ajouté un octet à `run_agent.py` du runtime de dev (réparé, identique au bundle).
+- Premier démarrage sous ADR-0140 : `quarantine.rs` met de côté (jamais ne supprime) `bin/tirith`, `hooks/`, `scripts/`, `mcp-installs/`, `plugins/` (sauf le garde), `profiles/` et les routines à `script`/`no_agent`, dans `<données de l'app>/quarantine/<date>/`, puis redémarre une fois le gateway (seulement un runtime au service nommé d'après son home).
+- `gateway_auto_continue_freshness: 1`, pas 0 : pour le runtime, 0 veut dire « toujours frais » ; `gateway.delivery_ledger: false`.
+- Le profil ferme par `literal` chaque ancêtre du home et du runtime jusqu'à `/` : écrire dedans reste permis, renommer ou remplacer non.
 - Conflit attendu à la fusion de `feat/code-p1-checks`, qui crée aussi `sandbox_profile.rs` (refus nommés) : garder l'inversion de ce lot et y reporter la section des toolchains.

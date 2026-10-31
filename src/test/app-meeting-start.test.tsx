@@ -107,6 +107,8 @@ vi.mock("../lib/tauri", () => ({
     veniceApiKeyConfigured: false,
   })),
   hermesAgentCliAccess: vi.fn(async () => ({ enabled: false })),
+  hermesQuarantineNotice: vi.fn(async () => null),
+  dismissHermesQuarantineNotice: vi.fn(async () => undefined),
   listVeniceModels: vi.fn(async () => ({
     mode: "generation",
     modelType: "text",

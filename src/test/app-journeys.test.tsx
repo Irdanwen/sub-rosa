@@ -80,6 +80,8 @@ vi.mock("../lib/tauri", async () => {
       models: [],
     })),
     hermesAgentCliAccess: vi.fn(async () => ({ enabled: false })),
+    hermesQuarantineNotice: vi.fn(async () => null),
+    dismissHermesQuarantineNotice: vi.fn(async () => undefined),
     checkRecordingSourceReadiness: vi.fn(async () => ({
       sourceMode: "microphonePlusSystem",
       sources: [

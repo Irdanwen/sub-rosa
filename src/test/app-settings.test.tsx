@@ -32,6 +32,8 @@ const mocks = vi.hoisted(() => ({
   agentHudShow: vi.fn(),
   agentHudHide: vi.fn(),
   hermesAgentCliAccess: vi.fn(),
+  hermesQuarantineNotice: vi.fn(async (): Promise<{ dir: string; count: number } | null> => null),
+  dismissHermesQuarantineNotice: vi.fn(async () => undefined),
   setHermesAgentCliAccess: vi.fn(),
   listDictionaryEntries: vi.fn(),
   createDictionaryEntry: vi.fn(),
@@ -88,6 +90,8 @@ vi.mock("../lib/tauri", () => ({
   agentHudShow: mocks.agentHudShow,
   agentHudHide: mocks.agentHudHide,
   hermesAgentCliAccess: mocks.hermesAgentCliAccess,
+  hermesQuarantineNotice: mocks.hermesQuarantineNotice,
+  dismissHermesQuarantineNotice: mocks.dismissHermesQuarantineNotice,
   setHermesAgentCliAccess: mocks.setHermesAgentCliAccess,
   listDictionaryEntries: mocks.listDictionaryEntries,
   createDictionaryEntry: mocks.createDictionaryEntry,
@@ -342,6 +346,8 @@ describe("AppSettings", () => {
     mocks.agentHudShow.mockResolvedValue(undefined);
     mocks.agentHudHide.mockResolvedValue(undefined);
     mocks.hermesAgentCliAccess.mockResolvedValue({ enabled: false });
+    mocks.hermesQuarantineNotice.mockResolvedValue(null);
+    mocks.dismissHermesQuarantineNotice.mockResolvedValue(undefined);
     mocks.setHermesAgentCliAccess.mockImplementation(async (enabled: boolean) => ({ enabled }));
     mocks.setDictationShortcut.mockImplementation(async (kind, shortcut) => ({
       ...baseSettings,
@@ -1766,6 +1772,30 @@ describe("AppSettings", () => {
     expect(screen.getByText("sample.pdf")).toBeInTheDocument();
     expect(screen.getByText("USER.md")).toBeInTheDocument();
     expect(screen.queryByText("Logs")).toBeNull();
+  });
+
+  it("says once what the first start set aside, and what a sandboxed session cannot do", async () => {
+    const user = userEvent.setup();
+    mocks.hermesQuarantineNotice.mockResolvedValue({
+      dir: "/data/quarantine/2026-10-31",
+      count: 3,
+    });
+    render(
+      <AppSettings
+        sourceMode="microphoneOnly"
+        checkingSourceReadiness={false}
+        onSourceModeChange={vi.fn()}
+        onEnableSystemAudio={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("tab", { name: "Agent" }));
+    expect(screen.getByText("In a sandboxed session")).toBeInTheDocument();
+    expect(screen.getByText(/the command checker it would download stays off/)).toBeInTheDocument();
+    expect(await screen.findByText(/moved 3 items/)).toBeInTheDocument();
+    expect(screen.getByText(/\/data\/quarantine\/2026-10-31/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Got it" }));
+    expect(mocks.dismissHermesQuarantineNotice).toHaveBeenCalled();
+    expect(screen.queryByText("Files set aside")).toBeNull();
   });
 
   it("shows a refreshable messaging state when platform loading hangs", async () => {

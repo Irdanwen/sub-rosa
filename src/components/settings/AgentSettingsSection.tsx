@@ -2,7 +2,9 @@ import { t } from "../../lib/i18n";
 import { useEffect, useState } from "react";
 import { FilesystemPanel, MessagingPanel } from "../agent/AgentWorkspace";
 import {
+  dismissHermesQuarantineNotice,
   hermesAgentCliAccess,
+  hermesQuarantineNotice,
   hermesBridgeFilesystemSnapshot,
   hermesBridgeMessagingPlatforms,
   agentHudHide,
@@ -10,6 +12,7 @@ import {
   setHermesAgentCliAccess,
   updateHermesBridgeMessagingPlatform,
   type HermesMessagingPlatformInfo,
+  type HermesQuarantineNotice,
   type HermesFilesystemSnapshot,
 } from "../../lib/tauri";
 import {
@@ -44,6 +47,20 @@ export function AgentSettingsSection() {
   // default for a setting with security weight.
   const [cliAccessEnabled, setCliAccessEnabled] = useState<boolean | null>(null);
   const [cliAccessSaving, setCliAccessSaving] = useState(false);
+  const [quarantine, setQuarantine] = useState<HermesQuarantineNotice | null>(null);
+
+  // ADR-0140: told once what the first start set aside.
+  useEffect(() => {
+    let cancelled = false;
+    hermesQuarantineNotice()
+      .then((notice) => {
+        if (!cancelled) setQuarantine(notice);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -234,6 +251,41 @@ export function AgentSettingsSection() {
               />
             </div>
           </div>
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <h3 className="settings-row-title">{t("In a sandboxed session")}</h3>
+              <p className="settings-row-description">
+                {t(
+                  "The assistant cannot change its own setup there: it does not save memories of its own, create its own routines or skills, or install tools by itself, and the command checker it would download stays off. Sub Rosa still remembers what matters through its own memory, and you change skills, connectors, tools and routines here, in Settings.",
+                )}
+              </p>
+            </div>
+          </div>
+          {quarantine ? (
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <h3 className="settings-row-title">{t("Files set aside")}</h3>
+                <p className="settings-row-description">
+                  {t(
+                    "To close a gap in earlier versions, Sub Rosa moved {count} items out of the assistant's folder: add-ons, scripts and routines it had not created itself. Nothing was deleted; they are in {dir}.",
+                    { count: quarantine.count, dir: quarantine.dir },
+                  )}
+                </p>
+              </div>
+              <div className="settings-row-control">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setQuarantine(null);
+                    void dismissHermesQuarantineNotice().catch(() => undefined);
+                  }}
+                >
+                  {t("Got it")}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="settings-card settings-agent-card">

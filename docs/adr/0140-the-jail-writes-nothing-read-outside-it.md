@@ -72,8 +72,14 @@ under the profile with no paid call, showed what that meant:
    a package index (`PIP_INDEX_URL`), a base address or any unknown key is
    refused, and `PUT /api/env` with such a key answers 422 with the reason
    before anything is written. Even declared, `HERMES_*`, `SUDO_*`,
-   `TERMINAL_*` and `TIRITH_*` never pass, and on import who may command the
-   messaging gateway (`*ALLOW*`) does not either. The existing file is set
+   `TERMINAL_*`, `TIRITH_*`, the gateway's network doors (`API_SERVER_*`,
+   which would open a full agent on a local port outside the jail,
+   `WEBHOOK_*`, `GATEWAY_*`) and `*_PROXY` never pass, and no setting
+   switches on the `api_server`, `webhook`, `msgraph_webhook` or `relay`
+   platform. The import and a skill's setup keep credentials only (the
+   secrets of the schema), never an address, a port, a switch, a home
+   channel or who may command the gateway: those come only from a messaging
+   platform's own setting, a gesture of the person. The existing file is set
    aside once in the app's data folder and imported when the runtime has
    declared its keys; a line added to `.env` afterwards, by anything, is gone
    at the next start. The files the app owns in the home (`config.yaml`,
@@ -120,7 +126,28 @@ under the profile with no paid call, showed what that meant:
    (`create_new`, which never follows what stands at the name), and its own
    logs (the runtime's output, the gateway's start, settings changes, the
    developer terminal launcher) live in its data folder, never in the home's
-   `logs/`.
+   `logs/`. No pipe or socket either, and each re-opened folder's own name
+   must stay a folder (the workspace cannot become a link to the person's
+   home); the app drops a root that is a link and refuses to upload through
+   one. Every ancestor of the home and of the installation, up to the root,
+   is closed by name: a `subpath` covers what is under a path, not the way
+   to it, and renaming a parent (a working folder can span one) would carry
+   the home off and back.
+8. **What a jailed process could plant before this fix is set aside once.**
+   At the first start under this ADR, with the `.env` set aside, the app
+   moves into `<app data>/quarantine/<date>/` (never deletes) the scanner
+   binary (the runtime downloads it again) and everything in `hooks/`,
+   `scripts/`, `mcp-installs/`, `plugins/` (but the guard) and `profiles/`,
+   and removes from `cron/jobs.json` the routines that run a script or no
+   agent (the app creates neither); a manifest lists them, the gateway is
+   restarted once so nothing it loaded stays, and Settings › Agent says it
+   once.
+9. **Nothing resumes on its own.** The gateway re-ran by itself, at its
+   start, the turns its store marked interrupted (`sessions/`, `state.db`,
+   which the jail writes) within `gateway_auto_continue_freshness`; that
+   window is now one second (0 means "always" to the runtime), and its
+   delivery ledger, which re-sends stored answers from `state.db` to a chat,
+   is off. Sessions marked interrupted wait for a person's next message.
 
 ## Consequences
 
@@ -135,22 +162,27 @@ under the profile with no paid call, showed what that meant:
   that fails reads "This change was not made", and no generic error copy
   names the runtime. A change takes about half a second more (a process
   starts). Changes apply when the runtime next discovers them, as before.
+- **Settings › Agent** says, for sandboxed sessions, what does not work
+  there (the assistant's own memory, routines and skills it would create,
+  tools it would install, the command checker it would download).
 - **Still open, documented rather than closed:**
-  - the shared home: a jailed process can still write transcripts
-    (`state.db`, `sessions/`), the delegation records the next process
-    delivers as a turn, caches, and files in the default workspace that an
-    unrestricted session or a gateway agent reads into its prompt (context
-    files). That is injection, not execution: nothing the jail can write is
-    run outside it any more. **Proposal:** one home per mode, with the
-    gateway on the unrestricted one; the session list and the message reads
-    merge both stores (reading the other `state.db` directly when its
-    runtime is not running), `state.db` and `sessions/` copied once into the
-    sandboxed home so every conversation stays where the person left it, and
-    routines moved with the gateway.
-  - what a jailed process planted before this fix in `bin/`, `hooks/`,
-    `scripts/`, `cron/`, `mcp-installs/` or `plugins/` (other than the
-    guard, which the app rewrites) is not swept: the app does not own those
-    files.
+  - **the shared home (M2, the follow-up).** A jailed process can still
+    write transcripts (`state.db`, `sessions/`), caches, and files in the
+    default workspace. The most serious remaining channel: the context files
+    of that workspace (`AGENTS.md`, `.hermes.md` and the like) are read into
+    the system prompt of an unrestricted session started there, an
+    injection into a session that is not jailed. Second: the delegation
+    records in `state.db`, which a runtime or the gateway delivers as a new
+    turn after its own restart (the gateway's idle watcher does so without a
+    person, but only into a messaging session it has a route to: none unless
+    a messaging platform is set up). Both are injection, not execution:
+    nothing the jail can write is run outside it any more. **Proposal:** one
+    home per mode, with the gateway on the unrestricted one; the session
+    list and the message reads merge both stores (reading the other
+    `state.db` directly when its runtime is not running), `state.db` and
+    `sessions/` copied once into the sandboxed home so every conversation
+    stays where the person left it, routines moved with the gateway, and the
+    unrestricted mode's default workspace separate from the jail's.
   - Windows has no jail; the unrestricted mode is not jailed by design.
 - **Tests:** the profile's write grants are pinned by hand
   (`the_write_grants_are_exactly_the_declared_list`), the kernel refuses
@@ -158,7 +190,10 @@ under the profile with no paid call, showed what that meant:
   state (`sandbox_profile_tests.rs`); the app sweeps left-over links, writes
   uploads only as new files and keeps its logs out of the home
   (`home_prep.rs`); only declared keys reach `.env`, and an undeclared one is
-  refused before the change (`admin_settings.rs`, `admin_once.rs`);
+  refused before the change, an import keeps no `API_SERVER_KEY`
+  (`admin_settings.rs`, `admin_once.rs`, `home_prep.rs`); what was planted
+  before is set aside once (`quarantine.rs`); the way to the home cannot be
+  moved and the workspace cannot become a link (`sandbox_profile_tests.rs`);
   under the real runtime, no vector can be planted and the next session
   still asks, a left-over profile is neither followed nor kept, the runtime
   lives with its home read-only, and every settings change succeeds from the
